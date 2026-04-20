@@ -118,3 +118,8 @@ shadow_results/
 secrets/
 *.pem
 *.key
+
+# ===== Claude Code 本地运行时 =====
+.claude/scheduled_tasks.lock
+.claude/*.lock
+.claude/cache/
