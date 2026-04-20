@@ -2,7 +2,7 @@
 name = "otc-agent"
 version = "0.1.0"
 description = "场外衍生品 AI 指令助手 - LangGraph + FastAPI + MySQL"
-requires-python = ">=3.11,<3.13"
+requires-python = ">=3.11"
 dependencies = [
     # Web 框架
     "fastapi>=0.115.0",
@@ -62,6 +62,10 @@ testpaths = ["tests"]
 python_version = "3.11"
 strict = true
 ignore_missing_imports = true
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["app*"]
 
 [tool.setuptools.package-data]
 "app.prompts" = ["**/*.md"]
