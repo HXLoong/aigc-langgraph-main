@@ -104,6 +104,48 @@ def load_prompt(category: str, name: str) -> Prompt:
     return Prompt(name=f"{category}/{name}", system=system, user_template=user_template)
 
 
+@lru_cache(maxsize=128)
+def compose_prompt(category: str, name: str, version: str = "v1") -> Prompt:
+    """版本化加载，支持把多个 md 片段拼装成一个 Prompt。
+
+    - version="v1"：行为等同 load_prompt(category, name)，直接读原 md
+    - version="v2"+：从 `{category}/{version}/` 子目录加载：
+        1. `_base.md`（所有意图共享的规则基底）
+        2. `{name}.md`（意图专属示例 / 输出约束）
+      两者的 `[system]` 段按顺序拼接为最终 system prompt
+
+    设计目的：
+    - 把原本巨型单体 prompt 拆成 base + 意图片段，裁剪冗余示例降低延迟
+    - 多个意图片段共享 base，避免规则被复制多份
+    - 通过版本号做 A/B 切换，一键回滚 v1
+
+    Args:
+        category: 一级目录，如 "swap"
+        name: 意图片段文件名（不含 .md），如 "place_order"
+        version: "v1" 走原 load_prompt；"v2" 起走 {category}/{version}/ 子目录拼装
+
+    Example:
+        >>> p = compose_prompt("swap", "place_order", version="v2")
+        >>> # p.system = swap/v2/_base.md 的 system + "\\n\\n" + swap/v2/place_order.md 的 system
+    """
+    if version == "v1":
+        return load_prompt(category, name)
+
+    subcat = f"{category}/{version}"
+    base = load_prompt(subcat, "_base")
+    leaf = load_prompt(subcat, name)
+
+    merged_system = base.system + "\n\n" + leaf.system
+    # user_template 优先取叶片段的；叶没定义就用 base 的（兜底）
+    user_template = leaf.user_template or base.user_template
+    return Prompt(
+        name=f"{subcat}/{name}",
+        system=merged_system,
+        user_template=user_template,
+    )
+
+
 def clear_cache() -> None:
     """清空加载缓存（测试或热更新时使用）。"""
     load_prompt.cache_clear()
+    compose_prompt.cache_clear()
