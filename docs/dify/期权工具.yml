@@ -1,0 +1,1320 @@
+app:
+  description: 用于处理场外期权交易指令，包括询价、下单、改单、撤单及确认。
+  icon: 🤖
+  icon_background: '#FFEAD5'
+  mode: workflow
+  name: 场外交易-期权工具
+  use_icon_as_answer_icon: false
+dependencies: []
+kind: app
+version: 0.5.0
+workflow:
+  conversation_variables: []
+  environment_variables: []
+  features:
+    file_upload:
+      allowed_file_extensions:
+      - .JPG
+      - .JPEG
+      - .PNG
+      - .GIF
+      - .WEBP
+      - .SVG
+      allowed_file_types:
+      - image
+      allowed_file_upload_methods:
+      - local_file
+      - remote_url
+      enabled: false
+      fileUploadConfig:
+        audio_file_size_limit: 50
+        batch_count_limit: 5
+        file_size_limit: 80
+        image_file_size_limit: 10
+        video_file_size_limit: 100
+        workflow_file_upload_limit: 10
+      image:
+        enabled: false
+        number_limits: 3
+        transfer_methods:
+        - local_file
+        - remote_url
+      number_limits: 3
+    opening_statement: ''
+    retriever_resource:
+      enabled: true
+    sensitive_word_avoidance:
+      enabled: false
+    speech_to_text:
+      enabled: false
+    suggested_questions: []
+    suggested_questions_after_answer:
+      enabled: false
+    text_to_speech:
+      enabled: false
+      language: ''
+      voice: ''
+  graph:
+    edges:
+    - data:
+        isInIteration: false
+        isInLoop: false
+        sourceType: code
+        targetType: if-else
+      id: 1753688137365-source-1753688250150-target
+      selected: false
+      source: '1753688137365'
+      sourceHandle: source
+      target: '1753688250150'
+      targetHandle: target
+      type: custom
+      zIndex: 0
+    - data:
+        isInIteration: false
+        isInLoop: false
+        sourceType: code
+        targetType: if-else
+      id: 1753690125988-source-1753690157544-target
+      selected: false
+      source: '1753690125988'
+      sourceHandle: source
+      target: '1753690157544'
+      targetHandle: target
+      type: custom
+      zIndex: 0
+    - data:
+        isInLoop: false
+        sourceType: code
+        targetType: variable-aggregator
+      id: 1753690188951-source-1753690487998-target
+      selected: false
+      source: '1753690188951'
+      sourceHandle: source
+      target: '1753690487998'
+      targetHandle: target
+      type: custom
+      zIndex: 0
+    - data:
+        isInIteration: false
+        isInLoop: false
+        sourceType: variable-aggregator
+        targetType: end
+      id: 1753690487998-source-1753690528891-target
+      selected: false
+      source: '1753690487998'
+      sourceHandle: source
+      target: '1753690528891'
+      targetHandle: target
+      type: custom
+      zIndex: 0
+    - data:
+        isInLoop: false
+        sourceType: if-else
+        targetType: variable-aggregator
+      id: 1753690157544-true-1753690487998-target
+      source: '1753690157544'
+      sourceHandle: 'true'
+      target: '1753690487998'
+      targetHandle: target
+      type: custom
+      zIndex: 0
+    - data:
+        isInIteration: false
+        isInLoop: false
+        sourceType: start
+        targetType: if-else
+      id: 1753674410578-source-1756533843886-target
+      source: '1753674410578'
+      sourceHandle: source
+      target: '1756533843886'
+      targetHandle: target
+      type: custom
+      zIndex: 0
+    - data:
+        isInLoop: false
+        sourceType: if-else
+        targetType: code
+      id: 1756533843886-true-1753688137365-target
+      source: '1756533843886'
+      sourceHandle: 'true'
+      target: '1753688137365'
+      targetHandle: target
+      type: custom
+      zIndex: 0
+    - data:
+        isInIteration: false
+        isInLoop: false
+        sourceType: if-else
+        targetType: code
+      id: 1756533843886-false-1756533896551-target
+      source: '1756533843886'
+      sourceHandle: 'false'
+      target: '1756533896551'
+      targetHandle: target
+      type: custom
+      zIndex: 0
+    - data:
+        isInLoop: false
+        sourceType: code
+        targetType: code
+      id: 1756533896551-source-17565383704470-target
+      source: '1756533896551'
+      sourceHandle: source
+      target: '17565383704470'
+      targetHandle: target
+      type: custom
+      zIndex: 0
+    - data:
+        isInLoop: false
+        sourceType: code
+        targetType: variable-aggregator
+      id: 17565383704470-source-1753690487998-target
+      source: '17565383704470'
+      sourceHandle: source
+      target: '1753690487998'
+      targetHandle: target
+      type: custom
+      zIndex: 0
+    - data:
+        isInIteration: false
+        isInLoop: false
+        sourceType: if-else
+        targetType: code
+      id: 1753688250150-e141edbb-69ab-474a-b7f1-141e42788064-1756947760798-target
+      source: '1753688250150'
+      sourceHandle: e141edbb-69ab-474a-b7f1-141e42788064
+      target: '1756947760798'
+      targetHandle: target
+      type: custom
+      zIndex: 0
+    - data:
+        isInIteration: false
+        isInLoop: false
+        sourceType: code
+        targetType: if-else
+      id: 1756947760798-source-1756954889784-target
+      source: '1756947760798'
+      sourceHandle: source
+      target: '1756954889784'
+      targetHandle: target
+      type: custom
+      zIndex: 0
+    - data:
+        isInLoop: false
+        sourceType: if-else
+        targetType: variable-aggregator
+      id: 1756954889784-true-1753690487998-target
+      source: '1756954889784'
+      sourceHandle: 'true'
+      target: '1753690487998'
+      targetHandle: target
+      type: custom
+      zIndex: 0
+    - data:
+        isInIteration: false
+        isInLoop: false
+        sourceType: if-else
+        targetType: code
+      id: 1753688250150-true-1756981155562-target
+      source: '1753688250150'
+      sourceHandle: 'true'
+      target: '1756981155562'
+      targetHandle: target
+      type: custom
+      zIndex: 0
+    - data:
+        isInLoop: false
+        sourceType: if-else
+        targetType: code
+      id: 1756954889784-false-1756982163507-target
+      source: '1756954889784'
+      sourceHandle: 'false'
+      target: '1756982163507'
+      targetHandle: target
+      type: custom
+      zIndex: 0
+    - data:
+        isInLoop: false
+        sourceType: if-else
+        targetType: code
+      id: 1753690157544-false-1756982163507-target
+      source: '1753690157544'
+      sourceHandle: 'false'
+      target: '1756982163507'
+      targetHandle: target
+      type: custom
+      zIndex: 0
+    - data:
+        isInLoop: false
+        sourceType: if-else
+        targetType: code
+      id: 1753688250150-false-1756982163507-target
+      source: '1753688250150'
+      sourceHandle: 'false'
+      target: '1756982163507'
+      targetHandle: target
+      type: custom
+      zIndex: 0
+    - data:
+        isInLoop: false
+        sourceType: code
+        targetType: code
+      id: 1756982163507-source-1753690188951-target
+      source: '1756982163507'
+      sourceHandle: source
+      target: '1753690188951'
+      targetHandle: target
+      type: custom
+      zIndex: 0
+    - data:
+        isInLoop: false
+        sourceType: code
+        targetType: code
+      id: 1756981155562-source-1753690125988-target
+      source: '1756981155562'
+      sourceHandle: source
+      target: '1753690125988'
+      targetHandle: target
+      type: custom
+      zIndex: 0
+    nodes:
+    - data:
+        desc: ''
+        selected: false
+        title: 开始
+        type: start
+        variables:
+        - label: query
+          max_length: 10000
+          options: []
+          required: true
+          type: paragraph
+          variable: query
+        - label: apiUrl
+          max_length: 10000
+          options: []
+          required: true
+          type: paragraph
+          variable: apiUrl
+        - label: llmText
+          max_length: 10000000
+          options: []
+          required: true
+          type: paragraph
+          variable: llmText
+        - label: conversationId
+          max_length: 256
+          options: []
+          required: true
+          type: text-input
+          variable: conversationId
+        - label: messageId
+          max_length: 256
+          options: []
+          required: true
+          type: text-input
+          variable: messageId
+        - label: quoteAppinfo
+          max_length: 10000000
+          options: []
+          required: true
+          type: paragraph
+          variable: quoteAppinfo
+        - label: roomId
+          max_length: 256
+          options: []
+          required: true
+          type: text-input
+          variable: roomId
+        - label: guid
+          max_length: 256
+          options: []
+          required: true
+          type: text-input
+          variable: guid
+        - label: history_query
+          max_length: 10000000
+          options: []
+          required: true
+          type: paragraph
+          variable: history_query
+        - label: inventory_instruction 不为空是存量指令
+          max_length: 48
+          options: []
+          required: false
+          type: text-input
+          variable: inventory_instruction
+        - label: otc_secret
+          max_length: 48
+          options: []
+          required: true
+          type: text-input
+          variable: otc_secret
+        - label: raw_content
+          max_length: 10000000
+          options: []
+          required: false
+          type: paragraph
+          variable: raw_content
+        - label: quote_content
+          max_length: 10000000
+          options: []
+          required: false
+          type: paragraph
+          variable: quote_content
+      height: 421
+      id: '1753674410578'
+      position:
+        x: 30
+        y: 336
+      positionAbsolute:
+        x: 30
+        y: 336
+      selected: false
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 242
+    - data:
+        code: "import json\nimport re\n\ndef main(data: str) -> dict:\n    \"\"\"\n\
+          \    只做 JSON 解析，不做 order_list 和 query 的处理\n    \"\"\"\n    res = parse_flexible_json_string(data)\n\
+          \    return {\n        \"operate\": res.get('operate') if res else None,\n\
+          \        \"type\": res.get('type') if res else None,\n        \"orderList\"\
+          : res.get('orderList') if res else None,\n        \"errMsg\": res.get('errMsg',\
+          \ '') if res else '',\n        \"limit_code\": res.get('limit_code') if\
+          \ res else None,\n        \"limit_strike_price\": res.get('limit_strike_price')\
+          \ if res else None,\n        \"limit_tenor\": res.get('limit_tenor') if\
+          \ res else None,\n        \"limit_total\": res.get('limit_total') if res\
+          \ else None,\n    }\n\n\ndef parse_flexible_json_string(data_str: str):\n\
+          \    \"\"\"\n    解析灵活的JSON字符串，支持有answer和没有answer两种情况\n    \"\"\"\n    try:\n\
+          \        try:\n            result = json.loads(data_str)\n            if\
+          \ 'answer' not in result:\n                return result\n            data_str\
+          \ = result['answer']\n        except json.JSONDecodeError:\n           \
+          \ pass\n\n        protected_err_msg = None\n        protected_str = data_str\n\
+          \n        err_msg_match = re.search(r'\"errMsg\"\\s*:\\s*\"((?:[^\"\\\\\\\
+          \\]|\\\\\\\\.)*)\"', data_str)\n        if err_msg_match:\n            protected_err_msg\
+          \ = err_msg_match.group(1)\n            protected_str = re.sub(r'\"errMsg\"\
+          \\s*:\\s*\"((?:[^\"\\\\\\\\]|\\\\\\\\.)*)\"',\n                        \
+          \           '\"errMsg\":\"__PROTECTED_ERRMSG__\"', data_str)\n\n       \
+          \ cleaned_str = protected_str\n        cleaned_str = re.sub(r'(\\\\{{1,}})n',\
+          \ '', cleaned_str)\n        cleaned_str = re.sub(r'(\\w+)\\s*:', r'\"\\\
+          1\":', cleaned_str)\n        cleaned_str = cleaned_str.replace(\"'\", '\"\
+          ')\n        cleaned_str = re.sub(r',\\s*]', ']', cleaned_str)\n        cleaned_str\
+          \ = re.sub(r',\\s*}', '}', cleaned_str)\n        cleaned_str = re.sub(r'\\\
+          s+', ' ', cleaned_str)\n        cleaned_str = re.sub(r'```json\\s*|\\s*```',\
+          \ '', cleaned_str)\n        cleaned_str = re.sub(r':\\s*null\\b', ': null',\
+          \ cleaned_str)\n        cleaned_str = re.sub(r':(\\d+)([,\\\\]}])', r':\\\
+          1\\2', cleaned_str)\n        cleaned_str = cleaned_str.strip()\n\n     \
+          \   if '\\\\\"' in cleaned_str:\n            cleaned_str = cleaned_str.replace('\\\
+          \\\"', '\"')\n        if '\\\\\\\\' in cleaned_str:\n            cleaned_str\
+          \ = cleaned_str.replace('\\\\\\\\', '\\\\')\n\n        if protected_err_msg\
+          \ is not None:\n            cleaned_str = cleaned_str.replace('\"errMsg\"\
+          :\"__PROTECTED_ERRMSG__\"',\n                                          \
+          \    f'\"errMsg\":\"{protected_err_msg}\"')\n\n        return json.loads(cleaned_str)\n\
+          \n    except Exception as error:\n        print(f'JSON解析失败: {error}')\n\
+          \        return None\n\n# if __name__ == '__main__':\n#     # 测试有answer的情况\n\
+          #     test_data1 = '{\"answer\": \"{\\\\\"operate\\\\\": \\\\\"询价\\\\\"\
+          , \\\\\"type\\\\\": \\\\\"new_inquiry\\\\\", \\\\\"orderList\\\\\": [{\\\
+          \\\"stockCode\\\\\": \\\\\"600877\\\\\", \\\\\"stockName\\\\\": null, \\\
+          \\\"optionType\\\\\": \\\\\"欧式看涨\\\\\", \\\\\"tenor\\\\\": \\\\\"1M\\\\\"\
+          , \\\\\"strikePercentage\\\\\": 80.00, \\\\\"notionalAmount\\\\\": null,\
+          \ \\\\\"participationRate\\\\\": null}]}\"}'\n\n#     result1 = main(test_data1)\n\
+          #     print(\"有answer的情况:\")\n#     print(json.dumps(result1, ensure_ascii=False,\
+          \ indent=2))\n\n#     # 测试没有answer的情况\n#     test_data2 = '{\\n  \"operate\"\
+          : \"询价\",\\n  \"type\": \"new_inquiry\",\\n  \"orderList\": [\\n    {\\\
+          n      \"stockCode\": \"600023\",\\n      \"stockName\": null,\\n      \"\
+          optionType\": \"欧式看涨\",\\n      \"strikePercentage\": 80.00,\\n      \"\
+          tenor\": \"1M\",\\n      \"notionalAmount\": null,\\n      \"participationRate\"\
+          : null\\n    }\\n  ],\\n  \"errMsg\": \"\"\\n}'\n\n#     result2 = main(test_data2)\n\
+          #     print(\"\\n没有answer的情况:\")\n#     print(json.dumps(result2, ensure_ascii=False,\
+          \ indent=2))"
+        code_language: python3
+        desc: ''
+        outputs:
+          errMsg:
+            children: null
+            type: string
+          limit_code:
+            children: null
+            type: number
+          limit_strike_price:
+            children: null
+            type: number
+          limit_tenor:
+            children: null
+            type: number
+          limit_total:
+            children: null
+            type: number
+          operate:
+            children: null
+            type: string
+          orderList:
+            children: null
+            type: array[object]
+          type:
+            children: null
+            type: string
+        selected: false
+        title: JSON参数解析
+        type: code
+        variables:
+        - value_selector:
+          - '1753674410578'
+          - llmText
+          value_type: string
+          variable: data
+      height: 52
+      id: '1753688137365'
+      position:
+        x: 673.8741140387795
+        y: 336
+      positionAbsolute:
+        x: 673.8741140387795
+        y: 336
+      selected: false
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 242
+    - data:
+        cases:
+        - case_id: 'true'
+          conditions:
+          - comparison_operator: contains
+            id: 4daf7d2c-6a37-4067-871f-ff646e4f9e67
+            value: new_inquiry
+            varType: string
+            variable_selector:
+            - '1753688137365'
+            - type
+          id: 'true'
+          logical_operator: and
+        - case_id: e141edbb-69ab-474a-b7f1-141e42788064
+          conditions:
+          - comparison_operator: contains
+            id: 2c5c1cf5-24e5-4aa8-b94c-729cd5bce5e5
+            value: place_order_from_quote
+            varType: string
+            variable_selector:
+            - '1753688137365'
+            - type
+          id: e141edbb-69ab-474a-b7f1-141e42788064
+          logical_operator: and
+        desc: ''
+        selected: false
+        title: 判断是否为询价
+        type: if-else
+      height: 172
+      id: '1753688250150'
+      position:
+        x: 988.8385479944639
+        y: 336
+      positionAbsolute:
+        x: 988.8385479944639
+        y: 336
+      selected: false
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 242
+    - data:
+        code: "def main(data):\n    \"\"\"验证期权数据的主函数\"\"\"\n    # 强制设置所有项的optionType为\"\
+          欧式看涨\"\n    for item in data:\n        item['optionType'] = '欧式看涨'\n\n \
+          \   result = validate_data(data)\n    return {\n        'result': result,\n\
+          \        'code': 0 if result == 'ok' else 500\n    }\n\n\ndef is_empty_value(value):\n\
+          \    \"\"\"检查值是否为空\"\"\"\n    if not value or value is None:\n        return\
+          \ True\n    if isinstance(value, str) and value.strip() == '':\n       \
+          \ return True\n    return False\n\n\ndef add_error_to_list(error_dict, unique_texts,\
+          \ errors_list):\n    \"\"\"添加错误到列表中并去重\"\"\"\n    if error_dict['text']\
+          \ not in unique_texts:\n        unique_texts.add(error_dict['text'])\n \
+          \       errors_list.append(error_dict)\n\n\ndef validate_basic_fields(item,\
+          \ unique_texts, errors_list):\n    \"\"\"验证基础字段\"\"\"\n    # 检查股票代码或名称\n\
+          \    if is_empty_value(item.get('stockCode')) and is_empty_value(item.get('stockName')):\n\
+          \        error_dict = {'text': '标的代码或名称', 'example': '300098.SZ'}\n    \
+          \    add_error_to_list(error_dict, unique_texts, errors_list)\n\n    # 检查期权类型\n\
+          \    if is_empty_value(item.get('optionType')):\n        error_dict = {'text':\
+          \ '期权类型', 'example': '欧式看涨'}\n        add_error_to_list(error_dict, unique_texts,\
+          \ errors_list)\n\n\ndef validate_snowball_fields(item, unique_texts, errors_list):\n\
+          \    \"\"\"验证雪球类型期权的字段\"\"\"\n    snowball_config = {\n        'snowballKnockInLowerBarrierPct':\
+          \ {'text': '雪球期初敲入价格百分比', 'example': '80%'},\n        'snowballKnockOutUpperBarrierPct':\
+          \ {'text': '雪球期初敲出价格百分比', 'example': '100%'},\n        'snowballLockInPeriodMonths':\
+          \ {'text': '雪球锁定期', 'example': '3个月'},\n        'snowballTenorMonths': {'text':\
+          \ '雪球存续期', 'example': '3个月'},\n        'snowballAnnualizedCouponRatePct':\
+          \ {'text': '雪球年化返息百分比', 'example': '0.5%'},\n        'snowballFeaturesText':\
+          \ {'text': '雪球其他特性描述', 'example': '不追保降敲sd0.5%'}\n    }\n\n    for field_name,\
+          \ error_info in snowball_config.items():\n        if is_empty_value(item.get(field_name)):\n\
+          \            add_error_to_list(error_info, unique_texts, errors_list)\n\n\
+          \ndef validate_regular_option_fields(item, unique_texts, errors_list):\n\
+          \    \"\"\"验证普通期权的字段\"\"\"\n    if is_empty_value(item.get('strikePercentage')):\n\
+          \        error_dict = {'text': '执行价格百分比', 'example': '102%'}\n        add_error_to_list(error_dict,\
+          \ unique_texts, errors_list)\n\n    if is_empty_value(item.get('tenor')):\n\
+          \        error_dict = {'text': '期权期限', 'example': '3个月'}\n        add_error_to_list(error_dict,\
+          \ unique_texts, errors_list)\n\n\ndef generate_error_message(errors_list):\n\
+          \    \"\"\"生成错误提示信息\"\"\"\n    if not errors_list:\n        return 'ok'\n\
+          \n    texts = [error['text'] for error in errors_list]\n    examples = [f\"\
+          {error['text']}：{error['example']}\" for error in errors_list]\n\n    message\
+          \ = f\"已收到您的期权询价请求，请问您期望的{'，'.join(texts)}是？ \\n例：{'  '.join(examples)}\
+          \  \\n请引用本消息，输入{'、'.join(texts)}\"\n    return message\n\n\ndef validate_data(data):\n\
+          \    \"\"\"验证数据列表\"\"\"\n    unique_error_texts = set()\n    errors_list\
+          \ = []\n\n    for item in data:\n        # 验证基础字段\n        validate_basic_fields(item,\
+          \ unique_error_texts, errors_list)\n\n        # 根据期权类型验证不同字段\n        option_type\
+          \ = item.get('optionType')\n        if option_type == '雪球':\n          \
+          \  validate_snowball_fields(item, unique_error_texts, errors_list)\n   \
+          \     else:\n            validate_regular_option_fields(item, unique_error_texts,\
+          \ errors_list)\n\n    return generate_error_message(errors_list)\n\n\n#\
+          \ # 示例用法\n# if __name__ == \"__main__\":\n#     # 测试数据示例\n#     test_data\
+          \ = [\n#         # {\n#         #     'stockCode': '300098.SZ',\n#     \
+          \    #     'stockName': '',\n#         #     'optionType': '欧式看涨',\n#  \
+          \       #     # 'strikePercentage': '102%',\n#         #     # 'tenor':\
+          \ '3个月'\n#         # },\n#         # {\n#         #     'stockCode': '300098.SZ',\n\
+          #         #     'stockName': '高新兴',\n#         #     'optionType': '雪球',\n\
+          #         #     'snowballKnockInLowerBarrierPct': '',\n#         #     'snowballKnockOutUpperBarrierPct':\
+          \ '100%',\n#         #     'snowballLockInPeriodMonths': '3个月',\n#     \
+          \    #     'snowballTenorMonths': '3个月',\n#         #     'snowballAnnualizedCouponRatePct':\
+          \ '0.5%',\n#         #     'snowballFeaturesText': '不追保降敲sd0.5%'\n#    \
+          \     # }\n#     ]\n#\n#     result = main(test_data)\n#     print(\"验证结果：\"\
+          )\n#     print(f\"代码: {result['code']}\")\n#     print(f\"信息: {result['result']}\"\
+          )"
+        code_language: python3
+        desc: ''
+        outputs:
+          code:
+            children: null
+            type: number
+          result:
+            children: null
+            type: string
+        selected: false
+        title: 判断询价参数是否缺失
+        type: code
+        variables:
+        - value_selector:
+          - '1756981155562'
+          - orderList
+          value_type: array[object]
+          variable: data
+      height: 52
+      id: '1753690125988'
+      position:
+        x: 1722.7796081643453
+        y: -59.52197481469197
+      positionAbsolute:
+        x: 1722.7796081643453
+        y: -59.52197481469197
+      selected: false
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 242
+    - data:
+        cases:
+        - case_id: 'true'
+          conditions:
+          - comparison_operator: not contains
+            id: 08fc5b57-eead-46d9-ae21-d5f5d3067ff3
+            value: ok
+            varType: string
+            variable_selector:
+            - '1753690125988'
+            - result
+          id: 'true'
+          logical_operator: and
+        desc: ''
+        selected: false
+        title: 条件分支 2
+        type: if-else
+      height: 124
+      id: '1753690157544'
+      position:
+        x: 2458.032219683325
+        y: -59.52197481469197
+      positionAbsolute:
+        x: 2458.032219683325
+        y: -59.52197481469197
+      selected: false
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 242
+    - data:
+        code: "\"\"\"\n期权聚合接口\n\"\"\"\n\nimport requests\nimport json\n\n\ndef main(\n\
+          \        conversationId,\n        messageId,\n        messageContent,\n\
+          \        quoteAppinfo,\n        roomId,\n        guid,\n        userId,\n\
+          \        type,\n        operate,\n        orderList,\n        apiUrl,\n\
+          \        otc_secret,\n        rawContent,\n        quoteContent\n      \
+          \  ) -> dict:\n\n    url = f\"{apiUrl}/admin-api/financial-orders/operate\"\
+          \n    headers = {\n        \"Content-Type\": \"application/json\",\n   \
+          \     \"Authorization\": otc_secret\n    }\n    payload = {\n        \"\
+          conversationId\": conversationId,\n        \"messageId\": messageId,\n \
+          \       \"messageContent\": messageContent,\n        \"quoteAppinfo\": quoteAppinfo,\n\
+          \        \"roomId\": roomId,\n        \"guid\": guid,\n        \"userId\"\
+          : userId,\n        \"type\": type,\n        \"operate\": operate,\n    \
+          \    \"orderList\": orderList,\n        \"rawContent\": rawContent,\n  \
+          \      \"quoteContent\": quoteContent\n    }\n\n    code = None\n    error\
+          \ = \"\"\n    response_info = None\n    try:\n        response = requests.post(url,\
+          \ json=payload, headers=headers, timeout=30)\n        response.raise_for_status()\
+          \  # HTTP 错误抛异常\n\n        # 构造可 JSON 序列化的响应摘要，避免返回 Response 对象导致序列化报错\n\
+          \        response_info = {\n            \"status_code\": response.status_code,\n\
+          \            \"ok\": response.ok,\n            \"url\": response.url,\n\
+          \            \"headers\": dict(response.headers),\n            \"text\"\
+          : response.text\n        }\n\n        parsed = response.json()  # 自动解析 JSON\n\
+          \        code = parsed.get(\"code\")\n        if code == 0:\n          \
+          \  result = parsed.get(\"data\", \"\")\n        elif code == 500:\n    \
+          \        result = \"交易指令服务暂不可用\"\n        else:\n            result = parsed.get(\"\
+          msg\", \"未知错误\")\n\n    except Exception as e:\n        # 统一处理所有异常，并记录异常信息\n\
+          \        code = 500\n        result = \"交易指令服务暂不可用\"\n        error = str(e)\n\
+          \n    return {\n        \"result\": result,\n        \"code\": code,\n \
+          \       \"error\": error,\n        \"response\": response_info\n    }\n\n\
+          \n"
+        code_language: python3
+        desc: ''
+        outputs:
+          code:
+            children: null
+            type: number
+          error:
+            children: null
+            type: string
+          response:
+            children: null
+            type: object
+          result:
+            children: null
+            type: string
+        selected: false
+        title: 期权API
+        type: code
+        variables:
+        - value_selector:
+          - '1753674410578'
+          - conversationId
+          value_type: string
+          variable: conversationId
+        - value_selector:
+          - '1753674410578'
+          - messageId
+          value_type: string
+          variable: messageId
+        - value_selector:
+          - '1753674410578'
+          - query
+          value_type: string
+          variable: messageContent
+        - value_selector:
+          - '1753674410578'
+          - quoteAppinfo
+          value_type: string
+          variable: quoteAppinfo
+        - value_selector:
+          - '1753674410578'
+          - roomId
+          value_type: string
+          variable: roomId
+        - value_selector:
+          - '1753674410578'
+          - guid
+          value_type: string
+          variable: guid
+        - value_selector:
+          - sys
+          - user_id
+          value_type: string
+          variable: userId
+        - value_selector:
+          - '1753688137365'
+          - type
+          value_type: string
+          variable: type
+        - value_selector:
+          - '1753688137365'
+          - operate
+          value_type: string
+          variable: operate
+        - value_selector:
+          - '1756982163507'
+          - result
+          value_type: array[object]
+          variable: orderList
+        - value_selector:
+          - '1753674410578'
+          - apiUrl
+          value_type: string
+          variable: apiUrl
+        - value_selector:
+          - '1753674410578'
+          - otc_secret
+          value_type: string
+          variable: otc_secret
+        - value_selector:
+          - '1753674410578'
+          - raw_content
+          value_type: string
+          variable: rawContent
+        - value_selector:
+          - '1753674410578'
+          - quote_content
+          value_type: string
+          variable: quoteContent
+      height: 52
+      id: '1753690188951'
+      position:
+        x: 3200.8803393828252
+        y: 303.05007930326883
+      positionAbsolute:
+        x: 3200.8803393828252
+        y: 303.05007930326883
+      selected: true
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 242
+    - data:
+        advanced_settings:
+          group_enabled: true
+          groups:
+          - groupId: 8989783a-bf77-4d0d-9fd1-e2bc7320b73b
+            group_name: code
+            output_type: number
+            variables:
+            - - '1753690188951'
+              - code
+            - - '1753690125988'
+              - code
+            - - '17565383704470'
+              - code
+            - - '1756947760798'
+              - code
+          - groupId: f5e1b1b7-5a86-4f99-a21a-e17a99552a15
+            group_name: result
+            output_type: string
+            variables:
+            - - '1753690188951'
+              - result
+            - - '1753690125988'
+              - result
+            - - '17565383704470'
+              - result
+            - - '1756947760798'
+              - result
+          - groupId: fe30de96-5e13-483e-96fb-3f0a42af2054
+            group_name: type
+            output_type: string
+            variables:
+            - - '1756533896551'
+              - type
+            - - '1753688137365'
+              - type
+        desc: ''
+        output_type: number
+        selected: false
+        title: 变量聚合器
+        type: variable-aggregator
+        variables:
+        - - '1753690188951'
+          - code
+      height: 401
+      id: '1753690487998'
+      position:
+        x: 4282.966969079621
+        y: 357.57235751873895
+      positionAbsolute:
+        x: 4282.966969079621
+        y: 357.57235751873895
+      selected: false
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 242
+    - data:
+        desc: ''
+        outputs:
+        - value_selector:
+          - '1753690487998'
+          - code
+          - output
+          value_type: object
+          variable: code
+        - value_selector:
+          - '1753690487998'
+          - result
+          - output
+          value_type: object
+          variable: result
+        - value_selector:
+          - '1753688137365'
+          - orderList
+          value_type: array[object]
+          variable: orderList
+        - value_selector:
+          - '1753690487998'
+          - type
+          - output
+          value_type: object
+          variable: intent
+        selected: false
+        title: 结束
+        type: end
+      height: 167
+      id: '1753690528891'
+      position:
+        x: 4835.545140812806
+        y: 357.57235751873895
+      positionAbsolute:
+        x: 4835.545140812806
+        y: 357.57235751873895
+      selected: false
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 242
+    - data:
+        cases:
+        - case_id: 'true'
+          conditions:
+          - comparison_operator: empty
+            id: 9833653a-a188-479a-9f14-6ad9e5690bb0
+            value: ''
+            varType: string
+            variable_selector:
+            - '1753674410578'
+            - inventory_instruction
+          id: 'true'
+          logical_operator: and
+        desc: ''
+        selected: false
+        title: 判断是否为存量指令
+        type: if-else
+      height: 124
+      id: '1756533843886'
+      position:
+        x: 346.91136457114897
+        y: 336
+      positionAbsolute:
+        x: 346.91136457114897
+        y: 336
+      selected: false
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 242
+    - data:
+        code: "import json\nfrom typing import Any, Dict\n\ndef main(llmText: str)\
+          \ -> Dict[str, Any]:\n    \"\"\"\n    尝试把 JSON 字符串解析为 Python dict\n    \"\
+          \"\"\n    if not llmText:\n        return {\"result\": {}}\n\n    try:\n\
+          \        # 处理转义的JSON字符串\n        # 如果字符串中包含 \\\\\" 说明JSON的引号被转义了\n     \
+          \   if '\\\\\"' in llmText:\n            # 将转义的引号还原\n            llmText\
+          \ = llmText.replace('\\\\\"', '\"')\n        \n        data_dict = json.loads(llmText)\n\
+          \        if not isinstance(data_dict, dict):\n            # 如果解析后不是 dict，比如是\
+          \ list 或 str，也转为空 dict\n            data_dict = {}\n    except (json.JSONDecodeError,\
+          \ TypeError):\n        data_dict = {}\n\n    return {\n        \"result\"\
+          : data_dict,\n        \"operate\": \"询价\",\n        \"type\": \"new_inquiry\"\
+          ,\n        \"orderList\": []\n    }"
+        code_language: python3
+        desc: ''
+        outputs:
+          operate:
+            children: null
+            type: string
+          orderList:
+            children: null
+            type: array[object]
+          result:
+            children: null
+            type: object
+          type:
+            children: null
+            type: string
+        selected: false
+        title: 存量指令JSON解析
+        type: code
+        variables:
+        - value_selector:
+          - '1753674410578'
+          - llmText
+          value_type: string
+          variable: llmText
+      height: 52
+      id: '1756533896551'
+      position:
+        x: 662.5275472413002
+        y: 624.0080498321273
+      positionAbsolute:
+        x: 662.5275472413002
+        y: 624.0080498321273
+      selected: false
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 242
+    - data:
+        code: "\"\"\"\n\n存量指令期权API\n\n\"\"\"\n\nimport requests\nimport json\n\n\n\
+          def main(\n        conversationId,\n        messageId,\n        messageContent,\n\
+          \        quoteAppinfo,\n        roomId,\n        guid,\n        userId,\n\
+          \        type,\n        operate,\n        orderList,\n        apiUrl,\n\
+          \        optionRfq,\n        otc_secret,\n        rawContent,\n        quoteContent)\
+          \ -> dict:\n\n    # TODO 测试时固定\n    url = f\"{apiUrl}/admin-api/financial-orders/operate\"\
+          \n    headers = {\n        \"Content-Type\": \"application/json\",\n   \
+          \     \"Authorization\": otc_secret\n    }\n    payload = {\n        \"\
+          conversationId\": conversationId,\n        \"messageId\": messageId,\n \
+          \       \"messageContent\": messageContent,\n        \"quoteAppinfo\": quoteAppinfo,\n\
+          \        \"roomId\": roomId,\n        \"guid\": guid,\n        \"userId\"\
+          : userId,\n        \"type\": type,\n        \"operate\": operate,\n    \
+          \    \"orderList\": orderList,\n        \"optionRfq\": optionRfq,\n    \
+          \    \"rawContent\": rawContent,\n        \"quoteContent\": quoteContent\n\
+          \    }\n\n    code = None\n    error = \"\"\n    response_info = None\n\
+          \    try:\n        response = requests.post(url, json=payload, headers=headers,\
+          \ timeout=30)\n        response.raise_for_status()  # HTTP 错误抛异常\n\n   \
+          \     # 构造可 JSON 序列化的响应摘要，避免返回 Response 对象导致序列化报错\n        response_info\
+          \ = {\n            \"status_code\": response.status_code,\n            \"\
+          ok\": response.ok,\n            \"url\": response.url,\n            \"headers\"\
+          : dict(response.headers),\n            \"text\": response.text\n       \
+          \ }\n\n        parsed = response.json()  # 自动解析 JSON\n        code = parsed.get(\"\
+          code\")\n        if code == 0:\n            result = parsed.get(\"data\"\
+          , \"\")\n        elif code == 500:\n            result = \"交易指令服务暂不可用\"\n\
+          \        else:\n            result = parsed.get(\"msg\", \"未知错误\")\n\n \
+          \   except Exception as e:\n        # 统一处理所有异常，并记录异常信息\n        code = 500\n\
+          \        result = \"交易指令服务暂不可用\"\n        error = str(e)\n\n    return {\n\
+          \        \"result\": result,\n        \"code\": code,\n        \"error\"\
+          : error,\n        \"response\": response_info\n    }"
+        code_language: python3
+        desc: ''
+        outputs:
+          code:
+            children: null
+            type: number
+          error:
+            children: null
+            type: string
+          response:
+            children: null
+            type: object
+          result:
+            children: null
+            type: string
+        selected: false
+        title: 存量指令期权API
+        type: code
+        variables:
+        - value_selector:
+          - '1753674410578'
+          - conversationId
+          value_type: string
+          variable: conversationId
+        - value_selector:
+          - '1753674410578'
+          - messageId
+          value_type: string
+          variable: messageId
+        - value_selector:
+          - '1753674410578'
+          - query
+          value_type: string
+          variable: messageContent
+        - value_selector:
+          - '1753674410578'
+          - quoteAppinfo
+          value_type: string
+          variable: quoteAppinfo
+        - value_selector:
+          - '1753674410578'
+          - roomId
+          value_type: string
+          variable: roomId
+        - value_selector:
+          - '1753674410578'
+          - guid
+          value_type: string
+          variable: guid
+        - value_selector:
+          - sys
+          - user_id
+          value_type: string
+          variable: userId
+        - value_selector:
+          - '1756533896551'
+          - type
+          value_type: string
+          variable: type
+        - value_selector:
+          - '1756533896551'
+          - operate
+          value_type: string
+          variable: operate
+        - value_selector:
+          - '1756533896551'
+          - orderList
+          value_type: array[object]
+          variable: orderList
+        - value_selector:
+          - '1753674410578'
+          - apiUrl
+          value_type: string
+          variable: apiUrl
+        - value_selector:
+          - '1756533896551'
+          - result
+          value_type: object
+          variable: optionRfq
+        - value_selector:
+          - '1753674410578'
+          - otc_secret
+          value_type: string
+          variable: otc_secret
+        - value_selector:
+          - '1753674410578'
+          - raw_content
+          value_type: string
+          variable: rawContent
+        - value_selector:
+          - '1753674410578'
+          - quote_content
+          value_type: string
+          variable: quoteContent
+      height: 52
+      id: '17565383704470'
+      position:
+        x: 2901.938252708025
+        y: 443.56623781943483
+      positionAbsolute:
+        x: 2901.938252708025
+        y: 443.56623781943483
+      selected: false
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 242
+    - data:
+        code: "def main(data):\n    \"\"\"验证建仓指令参数的主函数\"\"\"\n    # 从data中提取orderList\n\
+          \    order_list = data\n    result = validate_order_params(order_list)\n\
+          \    return {\n        'result': result,\n        'code': 0 if result ==\
+          \ 'ok' else 500\n    }\n\n\ndef is_empty_value(value):\n    \"\"\"检查值是否为空\"\
+          \"\"\n    if not value or value is None:\n        return True\n    if isinstance(value,\
+          \ str) and value.strip() == '':\n        return True\n    if isinstance(value,\
+          \ (int, float)) and value <= 0:\n        return True\n    return False\n\
+          \n\ndef add_error_to_list(error_dict, unique_texts, errors_list):\n    \"\
+          \"\"添加错误到列表中并去重\"\"\"\n    if error_dict['text'] not in unique_texts:\n\
+          \        unique_texts.add(error_dict['text'])\n        errors_list.append(error_dict)\n\
+          \n\ndef validate_basic_order_fields(item, unique_texts, errors_list):\n\
+          \    \"\"\"验证基础订单字段\"\"\"\n    # 检查建仓方式，如果为空则设置默认值\n    if is_empty_value(item.get('orderType')):\n\
+          \        item['orderType'] = 'POV'\n        item['povRatio'] = 25\n\n  \
+          \  # 检查名义本金（必填参数）\n    if is_empty_value(item.get('notionalAmount')):\n\
+          \        error_dict = {'text': '名义本金', 'example': '1000000（元）'}\n      \
+          \  add_error_to_list(error_dict, unique_texts, errors_list)\n\n\ndef validate_limit_price_order(item,\
+          \ unique_texts, errors_list):\n    \"\"\"验证限价单参数\"\"\"\n    if is_empty_value(item.get('limitPrice')):\n\
+          \        error_dict = {'text': '限定价格', 'example': '6.30'}\n        add_error_to_list(error_dict,\
+          \ unique_texts, errors_list)\n\n\ndef validate_market_price_order(item,\
+          \ unique_texts, errors_list):\n    \"\"\"验证市价单参数\"\"\"\n    # 市价单只需要名义本金，已在基础字段中验证\n\
+          \    pass\n\n\ndef validate_pov_order(item, unique_texts, errors_list):\n\
+          \    \"\"\"验证POV建仓方式参数\"\"\"\n    # POV需要限定价格\n    if is_empty_value(item.get('limitPrice')):\n\
+          \        error_dict = {'text': '限定价格', 'example': '6.30'}\n        add_error_to_list(error_dict,\
+          \ unique_texts, errors_list)\n\n    # POV需要比例\n    pov_ratio = item.get('povRatio')\n\
+          \    if is_empty_value(pov_ratio):\n        error_dict = {'text': 'POV比例范围',\
+          \ 'example': '1.0-25.0之间（1%-25%）'}\n        add_error_to_list(error_dict,\
+          \ unique_texts, errors_list)\n    elif isinstance(pov_ratio, (int, float)):\n\
+          \        # 验证POV比例范围：1%-25%之间，支持小数\n        if pov_ratio < 1.0:\n      \
+          \      error_dict = {'text': 'POV比例过小', 'example': '最小值为1.0（1%）'}\n    \
+          \        add_error_to_list(error_dict, unique_texts, errors_list)\n    \
+          \    elif pov_ratio > 25.0:\n            error_dict = {'text': 'POV比例过大',\
+          \ 'example': '最大值为25.0（25%），当前值超出范围'}\n            add_error_to_list(error_dict,\
+          \ unique_texts, errors_list)\n\n\ndef validate_twap_order(item, unique_texts,\
+          \ errors_list):\n    \"\"\"验证TWAP建仓方式参数\"\"\"\n    # TWAP需要限定价格\n    if\
+          \ is_empty_value(item.get('limitPrice')):\n        error_dict = {'text':\
+          \ '限定价格', 'example': '6.30'}\n        add_error_to_list(error_dict, unique_texts,\
+          \ errors_list)\n\n    # TWAP需要起始时间\n    if is_empty_value(item.get('twapStartTime')):\n\
+          \        error_dict = {'text': 'TWAP起始时刻', 'example': '09:30'}\n       \
+          \ add_error_to_list(error_dict, unique_texts, errors_list)\n\n    # TWAP需要终止时间\n\
+          \    if is_empty_value(item.get('twapEndTime')):\n        error_dict = {'text':\
+          \ 'TWAP终止时刻', 'example': '15:00'}\n        add_error_to_list(error_dict,\
+          \ unique_texts, errors_list)\n\n    # 验证时间逻辑\n    start_time = item.get('twapStartTime')\n\
+          \    end_time = item.get('twapEndTime')\n    if not is_empty_value(start_time)\
+          \ and not is_empty_value(end_time):\n        if isinstance(start_time, str)\
+          \ and isinstance(end_time, str):\n            try:\n                from\
+          \ datetime import datetime\n                # 支持 HH:MM 格式\n            \
+          \    start_dt = datetime.strptime(start_time, '%H:%M')\n               \
+          \ end_dt = datetime.strptime(end_time, '%H:%M')\n                if end_dt\
+          \ <= start_dt:\n                    error_dict = {'text': 'TWAP时间顺序', 'example':\
+          \ '终止时刻必须晚于起始时刻'}\n                    add_error_to_list(error_dict, unique_texts,\
+          \ errors_list)\n            except ValueError:\n                error_dict\
+          \ = {'text': 'TWAP时间格式', 'example': 'HH:MM格式，如09:30'}\n                add_error_to_list(error_dict,\
+          \ unique_texts, errors_list)\n\n\ndef validate_option_type_consistency(order_list):\n\
+          \    \"\"\"验证期权类型一致性\"\"\"\n    if len(order_list) <= 1:\n        return\
+          \ None\n\n    option_types = [item.get('optionType') for item in order_list\
+          \ if not is_empty_value(item.get('optionType'))]\n    if len(set(option_types))\
+          \ > 1:\n        # 特殊处理：返回固定错误信息\n        return \"批量下单只允许相同期权类型\"\n\n  \
+          \  return None\n\n\ndef validate_order_type_params(item, unique_texts, errors_list):\n\
+          \    \"\"\"根据建仓方式验证对应参数\"\"\"\n    order_type = item.get('orderType')\n\
+          \    if is_empty_value(order_type):\n        return\n\n    order_type_str\
+          \ = str(order_type).strip()\n\n    if order_type_str == '限价单':\n       \
+          \ validate_limit_price_order(item, unique_texts, errors_list)\n    elif\
+          \ order_type_str == '市价单':\n        validate_market_price_order(item, unique_texts,\
+          \ errors_list)\n    elif order_type_str == 'POV':\n        validate_pov_order(item,\
+          \ unique_texts, errors_list)\n    elif order_type_str == 'TWAP':\n     \
+          \   validate_twap_order(item, unique_texts, errors_list)\n    else:\n  \
+          \      error_dict = {'text': '有效建仓方式', 'example': '限价单/市价单/POV/TWAP'}\n\
+          \        add_error_to_list(error_dict, unique_texts, errors_list)\n\n\n\
+          def generate_order_error_message(errors_list):\n    \"\"\"生成建仓指令错误提示信息\"\
+          \"\"\n    if not errors_list:\n        return 'ok'\n\n    texts = [error['text']\
+          \ for error in errors_list]\n    examples = [f\"{error['text']}：{error['example']}\"\
+          \ for error in errors_list]\n\n    message = f\"\"\"\n您的期权建仓指令参数不完整，请补充以下信息：{'，'.join(texts)}。\n\
+          \n缺失参数说明：\n{chr(10).join(examples)}\n\n请引用本消息，补充完整的建仓指令参数。\n\"\"\"\n   \
+          \ return message\n\n\ndef validate_order_params(order_list):\n    \"\"\"\
+          验证建仓指令参数列表\"\"\"\n    # 首先验证期权类型一致性（优先检查）\n    consistency_error = validate_option_type_consistency(order_list)\n\
+          \    if consistency_error:\n        return consistency_error\n\n    unique_error_texts\
+          \ = set()\n    errors_list = []\n\n    for item in order_list:\n       \
+          \ # 验证基础订单字段\n        validate_basic_order_fields(item, unique_error_texts,\
+          \ errors_list)\n\n        # 根据建仓方式验证对应参数\n        validate_order_type_params(item,\
+          \ unique_error_texts, errors_list)\n\n    return generate_order_error_message(errors_list)"
+        code_language: python3
+        desc: ''
+        outputs:
+          code:
+            children: null
+            type: number
+          result:
+            children: null
+            type: string
+        selected: false
+        title: 下单意图-判断建仓指令是否缺失
+        type: code
+        variables:
+        - value_selector:
+          - '1753688137365'
+          - orderList
+          value_type: array[object]
+          variable: data
+      height: 52
+      id: '1756947760798'
+      position:
+        x: 1358.1745028803537
+        y: 126.93496876999572
+      positionAbsolute:
+        x: 1358.1745028803537
+        y: 126.93496876999572
+      selected: false
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 242
+    - data:
+        cases:
+        - case_id: 'true'
+          conditions:
+          - comparison_operator: not contains
+            id: 51d5b63b-cbb4-4b05-9715-dd6a2cd46b5e
+            value: ok
+            varType: string
+            variable_selector:
+            - '1756947760798'
+            - result
+          id: 'true'
+          logical_operator: and
+        desc: ''
+        selected: false
+        title: 判断建仓指令参数是否缺失
+        type: if-else
+      height: 124
+      id: '1756954889784'
+      position:
+        x: 1722.7796081643453
+        y: 131.16341418670675
+      positionAbsolute:
+        x: 1722.7796081643453
+        y: 131.16341418670675
+      selected: false
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 242
+    - data:
+        code: "import json\n\n\ndef main(order_list, query) -> dict:\n    \"\"\"\n\
+          \    只做 order_list 和 query 的校验，不负责 JSON 解析\n    \"\"\"\n    return {\n \
+          \       \"orderList\": process_order_list(order_list, query)\n    }\n\n\
+          def process_order_list(order_list, query):\n    if order_list is None:\n\
+          \        return []\n\n    target_stock_code = ''\n    if isinstance(query,\
+          \ str):\n        target_stock_code = query\n    elif isinstance(query, list)\
+          \ and query:\n        target_stock_code = str(query[0])\n\n    for order\
+          \ in order_list:\n        if order.get('stockCode') and order['stockCode']\
+          \ not in target_stock_code:\n            order['stockCode'] = None\n\n \
+          \   filtered_order_list = []\n    for order in order_list:\n        is_code_empty\
+          \ = order.get('stockCode') is None or order.get('stockCode') == ''\n   \
+          \     is_name_empty = order.get('stockName') is None or order.get('stockName')\
+          \ == ''\n        if not (is_code_empty and is_name_empty):\n           \
+          \ filtered_order_list.append(order)\n\n    return filtered_order_list\n\n"
+        code_language: python3
+        desc: ''
+        outputs:
+          orderList:
+            children: null
+            type: array[object]
+        selected: false
+        title: 期权询价orderList校验
+        type: code
+        variables:
+        - value_selector:
+          - '1753688137365'
+          - orderList
+          value_type: array[object]
+          variable: order_list
+        - value_selector:
+          - '1753674410578'
+          - history_query
+          value_type: string
+          variable: query
+      height: 52
+      id: '1756981155562'
+      position:
+        x: 1358.1745028803537
+        y: -59.52197481469197
+      positionAbsolute:
+        x: 1358.1745028803537
+        y: -59.52197481469197
+      selected: false
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 242
+    - data:
+        code: "def main(newInquiryOrderList: list[dict], jsonOrderList: list[dict])\
+          \ -> dict:\n    if newInquiryOrderList:\n        return {\n            \"\
+          result\": newInquiryOrderList,\n        }\n    elif jsonOrderList:\n   \
+          \     return {\n            \"result\": jsonOrderList,\n        }\n    else:\n\
+          \        return {\n            \"result\": []\n        }"
+        code_language: python3
+        desc: ''
+        outputs:
+          result:
+            children: null
+            type: array[object]
+        selected: false
+        title: API数据聚合
+        type: code
+        variables:
+        - value_selector:
+          - '1756981155562'
+          - orderList
+          value_type: array[object]
+          variable: newInquiryOrderList
+        - value_selector:
+          - '1753688137365'
+          - orderList
+          value_type: array[object]
+          variable: jsonOrderList
+      height: 52
+      id: '1756982163507'
+      position:
+        x: 2781.5721850166788
+        y: 303.05007930326883
+      positionAbsolute:
+        x: 2781.5721850166788
+        y: 303.05007930326883
+      selected: false
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 242
+    viewport:
+      x: 416.78856422015645
+      y: 283.6603026595868
+      zoom: 0.40276215107105523
+  rag_pipeline_variables: []
