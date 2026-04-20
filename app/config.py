@@ -22,9 +22,9 @@ class Settings(BaseSettings):
     # === LLM ===
     qwen_api_base: str
     qwen_api_key: str
-    qwen_model_standard: str = "internal-qwen3-30b-a3b"
-    qwen_model_thinking: str = "internal-qwen3-30b-a3b-think"
-    qwen_model_vl: str = "external-qwen3-vl-235b-a22b-instruct"
+    qwen_model_standard: str = "qwen3.5-32b"
+    qwen_model_thinking: str = "qwen3.5-32b"
+    qwen_model_vl: str = "qwen-vl-max-latest"
 
     anthropic_api_key: str | None = None
 
@@ -45,9 +45,11 @@ class Settings(BaseSettings):
     # === 可观测性 ===
     log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR"] = "INFO"
     environment: Literal["development", "staging", "production"] = "development"
-    enable_langsmith: bool = False
-    langsmith_api_key: str = ""
-    langsmith_project: str = "otc-agent"
+    enable_langfuse: bool = False
+    langfuse_public_key: str = ""
+    langfuse_secret_key: str = ""
+    langfuse_host: str = "https://cloud.langfuse.com"
+    langfuse_project: str = "otc-agent"
 
     # === 灰度切换 ===
     use_langgraph: bool = True

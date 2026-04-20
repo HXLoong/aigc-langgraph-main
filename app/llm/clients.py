@@ -31,7 +31,7 @@ def get_qwen_standard() -> ChatOpenAI:
 
 @lru_cache(maxsize=1)
 def get_qwen_thinking() -> ChatOpenAI:
-    """思考型 Qwen：复杂参数提取、Agent 推理。"""
+    """思考型 Qwen：复杂参数提取、Agent 推理。启用 enable_thinking 触发链式推理。"""
     settings = get_settings()
     return ChatOpenAI(
         model=settings.qwen_model_thinking,
@@ -40,6 +40,7 @@ def get_qwen_thinking() -> ChatOpenAI:
         temperature=0.0,
         timeout=60,
         max_retries=2,
+        extra_body={"enable_thinking": True},
     )
 
 

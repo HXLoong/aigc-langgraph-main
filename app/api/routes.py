@@ -12,6 +12,7 @@ from app.api.schemas import (
     MessageResponse,
     WechatCallback,
 )
+from app.observability.tracing import get_langfuse_handler
 from app.state import WechatInput, make_initial_state
 
 logger = logging.getLogger(__name__)
@@ -59,9 +60,11 @@ async def handle_message(req: WechatCallback, request: Request) -> MessageRespon
     except Exception as e:
         logger.warning("历史预加载失败（非致命）: %s", e)
 
+    lf_handler = get_langfuse_handler()
     config: dict[str, Any] = {
         "configurable": {"thread_id": req.conversation_id},
         "recursion_limit": 25,
+        **({"callbacks": [lf_handler]} if lf_handler else {}),
     }
 
     try:
