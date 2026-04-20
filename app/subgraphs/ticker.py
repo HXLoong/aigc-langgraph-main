@@ -15,12 +15,7 @@ from __future__ import annotations
 
 import logging
 
-# LangGraph 1.0+ 已把 create_react_agent 迁移到 langchain.agents.create_agent
-# 这里做向后兼容的导入
-try:
-    from langchain.agents import create_agent as create_react_agent
-except ImportError:
-    from langgraph.prebuilt import create_react_agent  # type: ignore[no-redef]
+from langgraph.prebuilt import create_react_agent
 
 from app.llm.clients import get_qwen_thinking
 from app.subgraphs.ticker_tools import (
