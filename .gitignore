@@ -1,0 +1,120 @@
+# ===== Python =====
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# ===== 虚拟环境 =====
+.env
+.env.*
+!.env.example
+.venv/
+venv/
+env/
+ENV/
+env.bak/
+venv.bak/
+
+# ===== 测试 & 覆盖率 =====
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+.tox/
+.nox/
+coverage.xml
+*.cover
+*.py,cover
+.hypothesis/
+nosetests.xml
+
+# ===== 类型检查 & Lint 缓存 =====
+.mypy_cache/
+.dmypy.json
+dmypy.json
+.pyre/
+.pytype/
+.ruff_cache/
+
+# ===== IDE / 编辑器 =====
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.project
+.pydevproject
+.settings/
+
+# ===== macOS =====
+.DS_Store
+.AppleDouble
+.LSOverride
+Icon
+._*
+
+# ===== Windows =====
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+
+# ===== Linux =====
+*~
+.fuse_hidden*
+.directory
+.Trash-*
+
+# ===== 日志 & 临时文件 =====
+*.log
+logs/
+*.tmp
+*.temp
+*.bak
+*.orig
+
+# ===== 数据库 & 数据文件 =====
+*.db
+*.sqlite
+*.sqlite3
+data/
+dumps/
+
+# ===== Docker =====
+docker-compose.override.yml
+
+# ===== Jupyter =====
+.ipynb_checkpoints/
+*.ipynb_checkpoints
+
+# ===== 项目专用 =====
+# Dify 导出的中间文件
+dify_export/
+dify_raw/
+
+# 本地评估结果
+eval_results/
+shadow_results/
+
+# Secrets / 本地配置
+secrets/
+*.pem
+*.key

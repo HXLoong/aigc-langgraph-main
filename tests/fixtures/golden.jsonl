@@ -1,0 +1,10 @@
+{"id": "g001", "category": "swap/place_order", "raw_content": "@机器人 做一笔招商银行的 TRS，买 1000 手，市价", "expected": {"product_type": "swap", "intent": "place_order_request", "ticker": "600036.SH", "quantity": 1000}}
+{"id": "g002", "category": "swap/confirm", "raw_content": "确认单号 H-20260304-0000001", "quote_content": "互换订单 H-20260304-0000001 已生成...", "expected": {"product_type": "swap", "intent": "confirm_order", "order_id": "H-20260304-0000001"}}
+{"id": "g003", "category": "option/inquiry", "raw_content": "帮我询价茅台 3 个月雪球 名义 1000w", "expected": {"product_type": "option", "intent": "new_inquiry", "ticker": "600519.SH", "tenor": "3M", "notional": 10000000}}
+{"id": "g004", "category": "close/query", "raw_content": "我有哪些期权持仓", "expected": {"product_type": "option_close", "intent": "close_order_query"}}
+{"id": "g005", "category": "close/request", "raw_content": "平 CO-20260304-4FE9C941 全部", "expected": {"product_type": "option_close", "intent": "close_order_request", "order_no": "CO-20260304-4FE9C941"}}
+{"id": "g006", "category": "ticker/fuzzy", "raw_content": "做 纳指 一笔互换", "expected": {"product_type": "swap", "intent": "place_order_request", "ticker_candidates_min": 1, "ticker_note": "应命中 NDX 或 NASDAQ 100"}}
+{"id": "g007", "category": "ticker/futures", "raw_content": "沪金下月合约互换 买 100 手", "expected": {"product_type": "swap", "intent": "place_order_request", "ticker_family": "FUTURE", "ticker_note": "根据当前日期推断下月合约代码"}}
+{"id": "g008", "category": "unknown", "raw_content": "你好，在吗", "expected": {"product_type": "unknown"}}
+{"id": "g009", "category": "swap/cancel", "raw_content": "撤 H-20260304-0000001", "expected": {"product_type": "swap", "intent": "cancel_order_request", "order_id": "H-20260304-0000001"}}
+{"id": "g010", "category": "option/confirm_from_quote", "raw_content": "确认第二笔", "quote_content": "报价明细：\n1. 茅台 行权价400 ...\n2. 五粮液 行权价150 ...", "expected": {"product_type": "option", "intent": "confirm", "picked_item": 2}}

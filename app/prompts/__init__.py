@@ -1,0 +1,109 @@
+"""提示词加载器。
+
+从 `app/prompts/**/*.md` 中加载由 `scripts/export_dify_prompts.py` 导出的提示词。
+
+md 格式约定：
+    # 提示词标题
+    - **node_id**: `...`
+    - **model**: `...`
+
+    ## [system]
+    ```
+    <system 提示词内容>
+    ```
+
+    ## [user]
+    ```
+    <user 模板，可能包含 {{#node.var#}} 变量占位符>
+    ```
+
+使用方式：
+    from app.prompts import load_prompt
+    p = load_prompt("swap", "intent")
+    # p.system → str
+    # p.user_template → str（原始 Dify 占位符未替换）
+"""
+from __future__ import annotations
+
+import re
+from dataclasses import dataclass
+from functools import lru_cache
+from pathlib import Path
+
+PROMPTS_DIR = Path(__file__).parent
+
+
+@dataclass(frozen=True)
+class Prompt:
+    """单条提示词，包含 system 与 user 两部分。"""
+    name: str
+    system: str
+    user_template: str   # 可能包含 Dify 占位符 {{#xxx.yyy#}}
+
+    def render_user(self, **kwargs: str) -> str:
+        """把 user_template 中的 {{variable_name}} 占位符替换成实际值。
+
+        注意：此方法只替换简单的 {{name}} 占位符。
+        Dify 原始占位符（{{#node_id.var#}}）会被保留在原文中，
+        视为大模型能够理解的上下文信息。
+        """
+        text = self.user_template
+        for k, v in kwargs.items():
+            text = text.replace("{{" + k + "}}", str(v) if v is not None else "")
+        return text
+
+
+_MD_SYSTEM_RE = re.compile(
+    r"##\s*\[system\]\s*\n+```[a-zA-Z]*\n(.*?)\n```",
+    re.DOTALL,
+)
+_MD_USER_RE = re.compile(
+    r"##\s*\[user\]\s*\n+```[a-zA-Z]*\n(.*?)\n```",
+    re.DOTALL,
+)
+
+
+def _parse_prompt_md(text: str) -> tuple[str, str]:
+    """从 md 文本中提取 system 与 user 段。"""
+    sys_match = _MD_SYSTEM_RE.search(text)
+    user_match = _MD_USER_RE.search(text)
+    system = sys_match.group(1).strip() if sys_match else ""
+    user_template = user_match.group(1).strip() if user_match else ""
+    return system, user_template
+
+
+@lru_cache(maxsize=128)
+def load_prompt(category: str, name: str) -> Prompt:
+    """加载 app/prompts/{category}/{name}.md。
+
+    Args:
+        category: 分类目录名，如 "swap" / "option_close" / "ticker"
+        name: 文件名（不含 .md）
+
+    Raises:
+        FileNotFoundError: 对应文件不存在
+
+    Example:
+        >>> p = load_prompt("swap", "intent")
+        >>> p.system
+        '你是一个互换(Swap)交易意图识别引擎...'
+    """
+    path = PROMPTS_DIR / category / f"{name}.md"
+    if not path.exists():
+        raise FileNotFoundError(
+            f"提示词不存在：{path}。"
+            f"可用的 category: {[p.name for p in PROMPTS_DIR.iterdir() if p.is_dir()]}"
+        )
+
+    text = path.read_text(encoding="utf-8")
+    system, user_template = _parse_prompt_md(text)
+
+    if not system:
+        raise ValueError(f"{path} 未找到 [system] 段")
+
+    return Prompt(name=f"{category}/{name}", system=system, user_template=user_template)
+
+
+def clear_cache() -> None:
+    """清空加载缓存（测试或热更新时使用）。"""
+    load_prompt.cache_clear()

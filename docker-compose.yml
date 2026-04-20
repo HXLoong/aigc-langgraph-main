@@ -1,0 +1,40 @@
+services:
+  mysql:
+    image: mysql:8.0.36      # 8.0.19+，避开 9.6.0 的 MD5 问题
+    container_name: otc-agent-mysql
+    environment:
+      MYSQL_ROOT_PASSWORD: rootpassword
+      MYSQL_USER: otc_agent
+      MYSQL_PASSWORD: password
+    ports:
+      - "3306:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+      - ./sql/init.sql:/docker-entrypoint-initdb.d/01-init.sql:ro
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_unicode_ci
+      - --default-authentication-plugin=mysql_native_password
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-uroot", "-prootpassword"]
+      interval: 5s
+      timeout: 3s
+      retries: 15
+
+  app:
+    build: .
+    container_name: otc-agent-app
+    depends_on:
+      mysql:
+        condition: service_healthy
+    environment:
+      CHECKPOINT_MYSQL_URI: mysql://otc_agent:password@mysql:3306/otc_agent_checkpoint
+      BUSINESS_MYSQL_URI: mysql+aiomysql://otc_agent:password@mysql:3306/otc_agent_business
+    env_file:
+      - .env
+    ports:
+      - "8000:8000"
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+
+volumes:
+  mysql_data:
