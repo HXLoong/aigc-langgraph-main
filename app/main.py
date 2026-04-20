@@ -18,6 +18,7 @@ from app.api.routes import router
 from app.checkpointer.factory import close_checkpointer, init_checkpointer
 from app.config import get_settings
 from app.graphs.main_graph import build_main_graph
+from app.observability.tracing import setup_observability
 
 
 def _configure_logging() -> None:
@@ -70,6 +71,7 @@ def create_app() -> FastAPI:
     )
 
     app.include_router(router)
+    setup_observability(app)
 
     @app.get("/health")
     async def health() -> dict:

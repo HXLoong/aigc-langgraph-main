@@ -23,15 +23,24 @@ def setup_observability(app) -> None:
 
     if settings.enable_langfuse and settings.langfuse_public_key and settings.langfuse_secret_key:
         try:
-            from langfuse.callback import CallbackHandler
-            _langfuse_handler = CallbackHandler(
+            # langfuse 4.x：先初始化全局 client，再从 langchain 子模块取 CallbackHandler
+            from langfuse import Langfuse
+            from langfuse.langchain import CallbackHandler
+
+            Langfuse(
                 public_key=settings.langfuse_public_key,
                 secret_key=settings.langfuse_secret_key,
                 host=settings.langfuse_host,
             )
-            logger.info("Langfuse 已启用，host=%s project=%s", settings.langfuse_host, settings.langfuse_project)
-        except ImportError:
-            logger.warning("langfuse 未安装，请执行：pip install langfuse")
+            _langfuse_handler = CallbackHandler()
+            logger.info(
+                "Langfuse 已启用，host=%s project=%s",
+                settings.langfuse_host, settings.langfuse_project,
+            )
+        except ImportError as e:
+            logger.warning("langfuse 未安装或版本不兼容：%s", e)
+        except Exception as e:
+            logger.warning("Langfuse 初始化失败：%s", e)
 
     # OpenTelemetry FastAPI 自动埋点
     try:
