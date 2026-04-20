@@ -58,12 +58,13 @@ def test_swap_order_leg_minimum():
 
 
 def test_swap_order_leg_participation_rate_bounds():
+    # 参与率值域 0~100（与 Dify placeOrderPovPercent 的百分比一致）
     with pytest.raises(ValidationError):
         SwapOrderLeg(
             stock_code="600519.SH",
             direction="buy",
             quantity=100,
-            participation_rate=1.5,
+            participation_rate=150.0,
         )
 
 
@@ -86,6 +87,66 @@ def test_swap_place_order_valid():
     ])
     assert len(out.order_list) == 1
     assert out.type == "place_order_request"
+
+
+# ============================================================
+# Dify camelCase alias 兼容（LLM 按原提示词输出时走这里）
+# ============================================================
+def test_swap_order_leg_accepts_dify_camelcase():
+    """验证 LLM 按 Dify prompt 输出的 camelCase JSON 能被 Pydantic 正确解析。"""
+    leg = SwapOrderLeg.model_validate({
+        "placeOrderWindCode": "0700.HK",
+        "placeOrderOrderDirection": "BUY",
+        "placeOrderQuantity": 2000,
+        "placeOrderPriceType": "LimitOrder",
+        "placeOrderPrice": 320,
+        "placeOrderAlgorithmType": "POV",
+        "placeOrderPovPercent": 25,
+        "placeOrderShortname": "ACCOUNT_L",
+        "placeOrderTransactionType": "HK_STOCK",
+        "orderId": None,
+    })
+    # 归一化：BUY → buy，LimitOrder → limit
+    assert leg.direction == "buy"
+    assert leg.price_type == "limit"
+    # alias 字段命名映射
+    assert leg.stock_code == "0700.HK"
+    assert leg.quantity == 2000
+    assert leg.limit_price == 320
+    assert leg.counterparty_name == "ACCOUNT_L"
+    assert leg.transaction_type == "HK_STOCK"
+
+
+def test_swap_place_order_accepts_dify_camelcase_orderlist():
+    """LLM 输出顶层 orderList（camelCase）也能被解析为 order_list。"""
+    out = SwapPlaceOrderOutput.model_validate({
+        "type": "place_order_request",
+        "orderList": [
+            {
+                "placeOrderWindCode": "600519.SH",
+                "placeOrderOrderDirection": "SELL",
+                "placeOrderQuantity": 500,
+                "placeOrderPriceType": "MarketOrder",
+            }
+        ],
+    })
+    assert out.type == "place_order_request"
+    assert len(out.order_list) == 1
+    assert out.order_list[0].stock_code == "600519.SH"
+    assert out.order_list[0].direction == "sell"
+    assert out.order_list[0].price_type == "market"
+
+
+def test_swap_order_leg_extra_fields_ignored():
+    """Dify 原提示词里的字段比 Pydantic 覆盖的多，多余字段应被安全忽略。"""
+    leg = SwapOrderLeg.model_validate({
+        "placeOrderWindCode": "000001.SZ",
+        "placeOrderOrderDirection": "buy",
+        "placeOrderQuantity": 100,
+        "unknownFutureField": "任何未来字段",  # 不认识的字段 → extra="ignore" 丢弃
+    })
+    assert leg.stock_code == "000001.SZ"
+    # 没有抛 ValidationError 就说明 extra=ignore 生效
 
 
 # ============================================================
