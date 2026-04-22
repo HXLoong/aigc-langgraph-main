@@ -156,7 +156,10 @@ async def search_goats(
             )
             r.raise_for_status()
             data = r.json()
-            return data.get("data") or []
+            items: list[dict] = data.get("data") or []
+            for item in items:
+                item["from_goats"] = True
+            return items
     except Exception as e:
         logger.error("search_goats 失败: %s", e)
         return []
