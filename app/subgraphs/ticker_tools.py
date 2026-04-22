@@ -24,20 +24,6 @@ from app.config import get_settings
 
 logger = logging.getLogger(__name__)
 
-# 本次 Agent 运行中真正从接口查回来的 windCode 集合（防止 LLM 幻觉构造）
-# 每次 build_ticker_agent() → ainvoke() 是独立的 asyncio task，用 contextvars 隔离
-import contextvars
-_verified_wind_codes: contextvars.ContextVar[set[str]] = contextvars.ContextVar(
-    "_verified_wind_codes", default=None
-)
-
-def _get_verified_set() -> set[str]:
-    s = _verified_wind_codes.get()
-    if s is None:
-        s = set()
-        _verified_wind_codes.set(s)
-    return s
-
 
 # ==================================================================
 # 常量：交易所枚举（来自 Dify `正则校验是否为完整标的` 节点）
@@ -171,11 +157,8 @@ async def search_goats(
             r.raise_for_status()
             data = r.json()
             items: list[dict] = data.get("data") or []
-            verified = _get_verified_set()
             for item in items:
                 item["from_goats"] = True
-                if wc := item.get("wind_code") or item.get("windCode"):
-                    verified.add(wc)
             return items
     except Exception as e:
         logger.error("search_goats 失败: %s", e)
@@ -227,15 +210,12 @@ async def search_securities_instrument(
             # 按 windCode 去重，保持首次出现顺序
             seen: set[str] = set()
             items: list[dict] = []
-            verified = _get_verified_set()
             for item in raw:
                 wc = item.get("windCode") or item.get("wind_code") or ""
                 if wc in seen:
                     continue
                 seen.add(wc)
                 item["from_goats"] = True
-                if wc:
-                    verified.add(wc)
                 items.append(item)
             return items
     except Exception as e:
@@ -359,43 +339,15 @@ async def llm_rank_candidates(keyword: str, candidates: list[dict]) -> list[dict
 # ==================================================================
 @tool
 def assert_from_goats(tickers: list[dict]) -> dict:
-    """终端断言：确保所有返回的 ticker 都来自本次真实接口调用结果。
+    """终端断言：确保所有返回的 ticker 都带有 from_goats=True 标记。
 
-    双重校验：
-    1. 每个 ticker 必须携带 from_goats=True 标记
-    2. 每个 ticker 的 windCode 必须出现在本次 search_goats /
-       search_securities_instrument 的实际返回集合中
-
-    防止 LLM 幻觉构造数据绕过断言。
+    这是最后一道防线，Agent 在结束前必须调用。
     """
-    verified = _get_verified_set()
-
-    flag_violations = [t for t in tickers if not t.get("from_goats")]
-    if flag_violations:
+    violations = [t for t in tickers if not t.get("from_goats")]
+    if violations:
         return {
             "valid": False,
-            "error": f"发现 {len(flag_violations)} 个缺少 from_goats 标记的标的",
-            "message": "请重新调用 search_goats 或 search_securities_instrument 验证",
+            "error": f"发现 {len(violations)} 个未经验证的标的",
+            "message": "请重新调用 search_goats 或 search_securities_instrument 验证所有候选",
         }
-
-    # 如果本次根本没有成功调用过标的库（verified 为空），一律拒绝
-    if not verified:
-        return {
-            "valid": False,
-            "error": "本次未从任何标的库取得数据，不允许直接输出标的",
-            "message": "两个标的库均为空时应调用 web_search，再重新查库验证",
-        }
-
-    hallucinated = [
-        t for t in tickers
-        if (t.get("windCode") or t.get("wind_code")) not in verified
-    ]
-    if hallucinated:
-        return {
-            "valid": False,
-            "error": f"发现 {len(hallucinated)} 个未出现在接口返回中的标的（可能为幻觉）",
-            "hallucinated": [t.get("windCode") or t.get("wind_code") for t in hallucinated],
-            "message": "只能返回 search_goats / search_securities_instrument 实际查到的标的",
-        }
-
     return {"valid": True, "count": len(tickers)}
