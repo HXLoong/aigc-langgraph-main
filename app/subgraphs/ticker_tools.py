@@ -24,20 +24,6 @@ from app.config import get_settings
 
 logger = logging.getLogger(__name__)
 
-# 本次 Agent 运行中真正从接口查回来的 windCode 集合（防止 LLM 幻觉构造）
-# 每次 build_ticker_agent() → ainvoke() 是独立的 asyncio task，用 contextvars 隔离
-import contextvars
-_verified_wind_codes: contextvars.ContextVar[set[str]] = contextvars.ContextVar(
-    "_verified_wind_codes", default=None
-)
-
-def _get_verified_set() -> set[str]:
-    s = _verified_wind_codes.get()
-    if s is None:
-        s = set()
-        _verified_wind_codes.set(s)
-    return s
-
 
 # ==================================================================
 # 常量：交易所枚举（来自 Dify `正则校验是否为完整标的` 节点）
@@ -162,7 +148,7 @@ async def search_goats(
     }
 
     try:
-        async with httpx.AsyncClient(timeout=10.0, proxy=None) as client:
+        async with httpx.AsyncClient(timeout=10.0) as client:
             r = await client.post(
                 f"{settings.goats_base_url}/api/search",
                 json=payload,
@@ -170,76 +156,9 @@ async def search_goats(
             )
             r.raise_for_status()
             data = r.json()
-            items: list[dict] = data.get("data") or []
-            verified = _get_verified_set()
-            for item in items:
-                item["from_goats"] = True
-                if wc := item.get("wind_code") or item.get("windCode"):
-                    verified.add(wc)
-            return items
+            return data.get("data") or []
     except Exception as e:
         logger.error("search_goats 失败: %s", e)
-        return []
-
-
-# ==================================================================
-# 工具 3b：securities-instrument 标的查询（新接口，支持批量）
-# ==================================================================
-@tool
-async def search_securities_instrument(
-    keyword_items: list[dict],
-) -> list[dict]:
-    """在 securities-instrument 接口中批量搜索标的（支持中英文混合）。
-
-    当 search_goats 不可用或返回空时，优先调用此接口作为替代终点。
-    最终返回的标的同样视为 from_goats=True（由该接口统一校验）。
-
-    Args:
-        keyword_items: 查询条件列表，每项包含 isFull（是否精确）和 keyword（关键字），例如：
-            [{"isFull": False, "keyword": "TME"}, {"isFull": False, "keyword": "腾讯音乐"}]
-
-    Returns:
-        候选列表，每项含 windCode / insShtDesc / insLngDesc 等字段，
-        并自动附加 from_goats=True 标记
-    """
-    settings = get_settings()
-    keyword_items = [item for item in keyword_items if item.get("keyword")]
-    if not keyword_items:
-        return []
-
-    params = {"keywordItems": keyword_items}
-    headers = {"key": settings.securities_instrument_key}
-
-    import json as _json
-
-    try:
-        # 内网地址不走系统代理（防止本地 Clash/v2ray 代理拦截返回 502）
-        async with httpx.AsyncClient(timeout=15.0, proxy=None) as client:
-            r = await client.request(
-                "GET",
-                settings.securities_instrument_url,
-                content=_json.dumps(params).encode(),
-                headers={**headers, "Content-Type": "application/json"},
-            )
-            r.raise_for_status()
-            data = r.json()
-            raw: list[dict] = data.get("data") or []
-            # 按 windCode 去重，保持首次出现顺序
-            seen: set[str] = set()
-            items: list[dict] = []
-            verified = _get_verified_set()
-            for item in raw:
-                wc = item.get("windCode") or item.get("wind_code") or ""
-                if wc in seen:
-                    continue
-                seen.add(wc)
-                item["from_goats"] = True
-                if wc:
-                    verified.add(wc)
-                items.append(item)
-            return items
-    except Exception as e:
-        logger.error("search_securities_instrument 失败: %s", e)
         return []
 
 
@@ -359,43 +278,15 @@ async def llm_rank_candidates(keyword: str, candidates: list[dict]) -> list[dict
 # ==================================================================
 @tool
 def assert_from_goats(tickers: list[dict]) -> dict:
-    """终端断言：确保所有返回的 ticker 都来自本次真实接口调用结果。
+    """终端断言：确保所有返回的 ticker 都带有 from_goats=True 标记。
 
-    双重校验：
-    1. 每个 ticker 必须携带 from_goats=True 标记
-    2. 每个 ticker 的 windCode 必须出现在本次 search_goats /
-       search_securities_instrument 的实际返回集合中
-
-    防止 LLM 幻觉构造数据绕过断言。
+    这是最后一道防线，Agent 在结束前必须调用。
     """
-    verified = _get_verified_set()
-
-    flag_violations = [t for t in tickers if not t.get("from_goats")]
-    if flag_violations:
+    violations = [t for t in tickers if not t.get("from_goats")]
+    if violations:
         return {
             "valid": False,
-            "error": f"发现 {len(flag_violations)} 个缺少 from_goats 标记的标的",
-            "message": "请重新调用 search_goats 或 search_securities_instrument 验证",
+            "error": f"发现 {len(violations)} 个未经 goats 验证的标的：{violations}",
+            "message": "请重新调用 search_goats 验证所有候选",
         }
-
-    # 如果本次根本没有成功调用过标的库（verified 为空），一律拒绝
-    if not verified:
-        return {
-            "valid": False,
-            "error": "本次未从任何标的库取得数据，不允许直接输出标的",
-            "message": "两个标的库均为空时应调用 web_search，再重新查库验证",
-        }
-
-    hallucinated = [
-        t for t in tickers
-        if (t.get("windCode") or t.get("wind_code")) not in verified
-    ]
-    if hallucinated:
-        return {
-            "valid": False,
-            "error": f"发现 {len(hallucinated)} 个未出现在接口返回中的标的（可能为幻觉）",
-            "hallucinated": [t.get("windCode") or t.get("wind_code") for t in hallucinated],
-            "message": "只能返回 search_goats / search_securities_instrument 实际查到的标的",
-        }
-
     return {"valid": True, "count": len(tickers)}
