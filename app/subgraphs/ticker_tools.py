@@ -148,7 +148,7 @@ async def search_goats(
     }
 
     try:
-        async with httpx.AsyncClient(timeout=10.0, proxy=None) as client:
+        async with httpx.AsyncClient(timeout=10.0) as client:
             r = await client.post(
                 f"{settings.goats_base_url}/api/search",
                 json=payload,
@@ -156,10 +156,7 @@ async def search_goats(
             )
             r.raise_for_status()
             data = r.json()
-            items: list[dict] = data.get("data") or []
-            for item in items:
-                item["from_goats"] = True
-            return items
+            return data.get("data") or []
     except Exception as e:
         logger.error("search_goats 失败: %s", e)
         return []
