@@ -38,6 +38,10 @@ class Settings(BaseSettings):
     goats_client_secret: str = ""
     goats_extapp_salt: str = ""
 
+    # === securities instrument API ===
+    securities_instrument_url: str = "http://172.16.8.28:8807/admin-api/integration/securities-instrument/select"
+    securities_instrument_key: str = "jTGVgohOq9EOuHEh"
+
     # === 外部搜索 ===
     bocha_api_key: str = ""
     tavily_api_key: str = ""
