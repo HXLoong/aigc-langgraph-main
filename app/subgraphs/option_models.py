@@ -51,7 +51,7 @@ class OptionIntentOutput(BaseModel):
 
 class OptionExtractOutput(BaseModel):
     """期权参数提取输出。"""
-    type: OptionIntentType
+    type: OptionIntentType = "unknown"
     operate: str = ""
     order_list: list[OptionOrderLeg] = Field(default_factory=list)
 

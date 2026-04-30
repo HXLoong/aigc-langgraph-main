@@ -64,13 +64,12 @@ async def dispatch_modality(state: AgentState) -> dict[str, Any]:
 
     return {
         "trace": [{"node": "dispatch_modality", "decision": modality}],
-        # TypedDict 允许额外键；用非状态键传递模态给路由函数
-        "_modality": modality,
+        "modality": modality,
     }
 
 
 def route_by_modality(state: AgentState) -> str:
-    return state.get("_modality", "text")
+    return state.get("modality", "text")
 
 
 # ==============================================================
@@ -236,7 +235,7 @@ async def parse_excel(state: AgentState) -> dict[str, Any]:
     # 拼装结构化文本（每行一个字典的 JSON 字符串）
     lines = []
     for row in rows[1:]:
-        obj = {h: v for h, v in zip(headers, row) if v is not None}
+        obj = {h: v for h, v in zip(headers, row, strict=False) if v is not None}
         if obj:
             lines.append(", ".join(f"{k}={v}" for k, v in obj.items()))
 

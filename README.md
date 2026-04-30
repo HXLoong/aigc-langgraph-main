@@ -113,7 +113,9 @@ cp .env.example .env
 ```bash
 docker compose up -d mysql
 # 等待 MySQL 健康
-docker compose exec mysql mysql -uroot -prootpassword < sql/schema.sql
+# docker compose exec mysql mysql -uroot -prootpassword < sql/schema.sql
+docker compose exec -T mysql mysql -uroot -prootpassword < sql/schema.sql
+
 ```
 
 ### 3. 安装 Python 依赖并启动应用
@@ -121,7 +123,12 @@ docker compose exec mysql mysql -uroot -prootpassword < sql/schema.sql
 ```bash
 pip install -e ".[dev]"
 pytest tests/ -v     # 应该看到 30+ 测试通过
-uvicorn app.main:app --reload --port 8000
+
+conda activate otc-agent
+python -m uvicorn app.main:app --reload --port 8000
+
+python .\scripts\smoke_test.py
+
 ```
 
 首次启动会看到日志：
@@ -164,54 +171,67 @@ curl -X POST http://localhost:8000/v1/message \
 ## 目录结构
 
 ```
-app/
-├── main.py                      # FastAPI 入口 + lifespan
-├── config.py                    # pydantic-settings
-├── state.py                     # AgentState + 枚举
-├── api/
-│   ├── routes.py                # /v1/message, /v1/message/confirm
-│   └── schemas.py
-├── checkpointer/
-│   └── factory.py               # AIOMySQLSaver 生命周期
-├── graphs/
-│   └── main_graph.py            # 主图组装（接受任何 BaseCheckpointSaver）
-├── subgraphs/
-│   ├── ticker.py                # 标的识别 ReAct Agent
-│   ├── ticker_tools.py          # 7 个标的工具（含 goats 验证）
-│   ├── swap.py                  # 互换子图（8 节点，含 VL 图片 + Excel）
-│   ├── swap_models.py           # 互换 Pydantic 模型
-│   ├── option.py                # 期权子图（含快速询价旁路 + 参数限制）
-│   ├── option_models.py         # 期权 Pydantic 模型
-│   ├── close.py                 # 平仓子图（5 种意图）
-│   └── close_models.py          # 平仓 Pydantic 模型
-├── nodes/
-│   ├── common.py                # @safe_node 装饰器
-│   ├── ingest.py
-│   ├── route.py                 # 规则路由
-│   ├── persist.py
-│   └── render.py
-├── tools/
-│   └── otc_backend.py           # 统一后端 HTTP 客户端（带 tenacity 重试）
-├── llm/
-│   └── clients.py               # Qwen standard / thinking / VL
-└── observability/
-    └── tracing.py
-
-tests/
-├── test_route.py                # 8 个路由测试
-├── test_models.py               # 22 个 Pydantic 模型测试
-├── test_e2e.py                  # 5 个端到端集成测试（含 Excel 解析 + checkpoint）
-└── fixtures/
-    └── golden.jsonl             # 10 条 golden case（用作回归基线）
-
-scripts/
-├── export_dify_prompts.py       # 从 Dify YAML 批量导出 19 个 LLM 提示词
-├── eval_golden.py               # 在 golden set 上评估端到端准确率
-└── shadow_compare.py            # LangGraph vs Dify 双跑对比（灰度切换期用）
-
-sql/
-├── init.sql                     # 建两个独立库
-└── schema.sql                   # 4 张业务表（流水/trace/shadow/反馈）
+.
+├── app/
+│   ├── main.py                  # FastAPI 入口，负责 lifespan（checkpointer 初始化）
+│   ├── config.py
+│   ├── state.py                 # AgentState + 全部枚举，新字段必须在这里声明
+│   ├── api/
+│   │   ├── routes.py            # /v1/message、/v1/message/confirm、/v1/conversations/{id}/state
+│   │   └── schemas.py
+│   ├── checkpointer/
+│   │   └── factory.py           # AIOMySQLSaver 的创建与关闭，应用级单例
+│   ├── graphs/
+│   │   └── main_graph.py        # 主图，把各子图拼在一起
+│   ├── subgraphs/               # 三条业务线各一对文件（逻辑 + 模型）
+│   │   ├── swap.py / swap_models.py
+│   │   ├── option.py / option_models.py
+│   │   ├── close.py / close_models.py
+│   │   ├── ticker.py            # 标的识别，用 create_react_agent 实现
+│   │   └── ticker_tools.py      # 7 个工具，最终都要过 goats 验证
+│   ├── nodes/
+│   │   ├── common.py            # @safe_node 装饰器
+│   │   ├── ingest.py
+│   │   ├── route.py
+│   │   ├── history.py
+│   │   ├── persist.py
+│   │   └── render.py
+│   ├── prompts/                 # 23 个从 Dify 导出的提示词，只读，不要手改
+│   │   ├── swap/
+│   │   ├── option_close/
+│   │   └── ticker/
+│   ├── tools/
+│   │   └── otc_backend.py       # 后端 HTTP 客户端，所有子图统一走这里
+│   ├── llm/
+│   │   └── clients.py
+│   └── observability/
+│       └── tracing.py
+│
+├── tests/
+│   ├── test_route.py
+│   ├── test_models.py
+│   ├── test_prompts_and_history.py
+│   ├── test_e2e.py
+│   └── fixtures/
+│       └── golden.jsonl
+│
+├── scripts/
+│   ├── export_dify_prompts.py   # 从 Dify YAML 重新导出提示词时用
+│   ├── eval_golden.py
+│   └── shadow_compare.py
+│
+├── sql/
+│   ├── init.sql
+│   └── schema.sql
+│
+├── docs/
+│   ├── ARCHITECTURE.md
+│   ├── DEVELOPMENT.md
+│   ├── DIFY_MIGRATION.md
+│   └── TROUBLESHOOTING.md
+│
+├── docker-compose.yml
+└── pyproject.toml
 ```
 
 ## 关键技术约束

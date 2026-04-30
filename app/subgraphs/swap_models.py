@@ -71,7 +71,7 @@ class SwapPlaceOrderOutput(BaseModel):
     对应 Dify `互换-节点-下单` LLM 节点。
     """
     type: Literal["place_order_request"] = "place_order_request"
-    order_list: list[SwapOrderLeg] = Field(..., min_length=1, max_length=50)
+    order_list: list[SwapOrderLeg] = Field(default_factory=list, min_length=1, max_length=50)
     raw_text_preserved: str | None = Field(
         None, description="原始文本（字符级精确保留，防止标点转换）",
     )

@@ -2,7 +2,7 @@
 
 统一封装对 otc-backend 的所有 HTTP 调用，包括：
 - /admin-api/swap-order/operate          互换订单操作
-- /admin-api/option-order/operate        期权订单操作
+- /admin-api/financial-orders/operate    期权/平仓操作
 - /admin-api/financial-orders/operate    期权平仓
 - /admin-api/openapi/xbot/message/set-intent   意图审计
 
@@ -134,48 +134,7 @@ class OtcBackendClient:
             return {"code": 500, "result": "交易指令服务暂不可用", "error": str(e)}
 
     # ------------------------------------------------------------
-    # 期权
-    # ------------------------------------------------------------
-    async def option_operate(
-        self,
-        *,
-        conversation_id: str,
-        message_id: str,
-        message_content: str,
-        raw_content: str,
-        quote_content: str | None,
-        quote_appinfo: str | None,
-        user_id: str,
-        room_id: str,
-        guid: str,
-        operate: str,
-        type_: str,
-        order_list: list[dict],
-    ) -> dict[str, Any]:
-        """调用 /admin-api/option-order/operate。"""
-        payload = {
-            "conversationId": conversation_id,
-            "messageId": message_id,
-            "messageContent": message_content,
-            "rawContent": raw_content,
-            "quoteContent": quote_content,
-            "quoteAppinfo": quote_appinfo,
-            "userId": user_id,
-            "roomId": room_id,
-            "guid": guid,
-            "operate": operate,
-            "type": type_,
-            "orderList": order_list,
-        }
-        try:
-            resp = await self._post("/admin-api/option-order/operate", payload)
-            return self._normalize(resp, "option_operate")
-        except httpx.HTTPError as e:
-            logger.exception("option_operate HTTP 错误")
-            return {"code": 500, "result": "交易指令服务暂不可用", "error": str(e)}
-
-    # ------------------------------------------------------------
-    # 期权平仓（统一接口）
+    # 期权 / 平仓（统一走 financial-orders/operate，与 Dify 原始工作流一致）
     # ------------------------------------------------------------
     async def financial_orders_operate(
         self, **payload: Any,
@@ -221,8 +180,13 @@ class OtcBackendClient:
 
     async def bot_name_list(self) -> list[str]:
         try:
-            resp = await self._get("/admin-api/openapi/xbot/bot/name-list")
-            return resp.get("data") or []
+            resp = await self._post("/admin-api/business/config/bot/name/list", {})
+            data = resp.get("data")
+            # 后端返回 JSON 字符串或 list
+            if isinstance(data, str):
+                import json as _json
+                return _json.loads(data) if data else []
+            return data or []
         except httpx.HTTPError as e:
             logger.warning("bot_name_list 失败: %s", e)
             return []

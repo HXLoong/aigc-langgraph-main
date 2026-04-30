@@ -109,6 +109,8 @@ class AgentState(TypedDict, total=False):
 
     # === 路由决策 ===
     product_type: ProductType
+    modality: str
+    operate: str
     intent: str | None
     fast_query: bool
     existing_command: bool
@@ -145,6 +147,8 @@ def make_initial_state(wechat_input: WechatInput) -> AgentState:
         conversation_orders=[],
         counterparty_list=[],
         product_type="unknown",
+        modality="text",
+        operate="",
         intent=None,
         fast_query=False,
         existing_command=False,
