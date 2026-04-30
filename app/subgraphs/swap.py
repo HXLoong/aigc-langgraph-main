@@ -505,14 +505,14 @@ def build_swap_graph():
                            END
     """
     # 延迟导入避免循环
-    from app.subgraphs.ticker import build_ticker_agent
+    from app.subgraphs.ticker import build_ticker_graph
 
     g = StateGraph(AgentState)
 
     g.add_node("dispatch_modality", dispatch_modality)
     g.add_node("parse_image", parse_image)
     g.add_node("parse_excel", parse_excel)
-    g.add_node("ticker_identify", build_ticker_agent())
+    g.add_node("ticker_identify", build_ticker_graph().compile())
     g.add_node("classify_intent", classify_intent)
     g.add_node("extract_place_order", extract_place_order)
     g.add_node("extract_order_id", extract_order_id)

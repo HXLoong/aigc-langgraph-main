@@ -11,11 +11,8 @@
 """
 from __future__ import annotations
 
-import hashlib
 import logging
 import re
-import time
-from typing import Literal
 
 import httpx
 from langchain_core.tools import tool
@@ -106,67 +103,7 @@ def regex_validate(keyword: str) -> dict:
 
 
 # ==================================================================
-# 工具 3：goats 库搜索（强制终点）
-# ==================================================================
-@tool
-async def search_goats(
-    keyword: str,
-    ins_family: Literal["EQUITY", "FUTURE", "FUND", "INDEX", "BOND", ""] = "",
-    limit: int = 10,
-) -> list[dict]:
-    """在 goats 标的库中搜索（模糊匹配 wind_code / ins_sht_desc / ins_lng_desc）。
-
-    这是**强制终点** —— 最终返回给用户的标的必须经此工具验证。
-
-    Args:
-        keyword: 搜索关键字
-        ins_family: 可选的产品类型过滤
-        limit: 最多返回条数
-
-    Returns:
-        候选列表，每项含 wind_code / ins_sht_desc / ins_lng_desc 等字段
-    """
-    settings = get_settings()
-    if not settings.goats_base_url:
-        logger.warning("goats_base_url 未配置，返回空")
-        return []
-
-    timestamp = int(time.time() * 1000)
-    # 签名算法示意（实际按业务规范）
-    sign_str = f"{settings.goats_client_id}{timestamp}{settings.goats_extapp_salt}"
-    signature = hashlib.md5(sign_str.encode()).hexdigest()
-
-    payload = {
-        "keyword": keyword,
-        "insFamily": ins_family or None,
-        "limit": limit,
-    }
-    headers = {
-        "X-Client-Id": settings.goats_client_id,
-        "X-Timestamp": str(timestamp),
-        "X-Signature": signature,
-    }
-
-    try:
-        async with httpx.AsyncClient(timeout=10.0) as client:
-            r = await client.post(
-                f"{settings.goats_base_url}/api/search",
-                json=payload,
-                headers=headers,
-            )
-            r.raise_for_status()
-            data = r.json()
-            items: list[dict] = data.get("data") or []
-            for item in items:
-                item["from_goats"] = True
-            return items
-    except Exception as e:
-        logger.error("search_goats 失败: %s", e)
-        return []
-
-
-# ==================================================================
-# 工具 3b：securities-instrument 标的查询（新接口，支持批量）
+# 工具 3：securities-instrument 标的查询（标的验证唯一终点）
 # ==================================================================
 @tool
 async def search_securities_instrument(
@@ -174,8 +111,8 @@ async def search_securities_instrument(
 ) -> list[dict]:
     """在 securities-instrument 接口中批量搜索标的（支持中英文混合）。
 
-    当 search_goats 不可用或返回空时，优先调用此接口作为替代终点。
-    最终返回的标的同样视为 from_goats=True（由该接口统一校验）。
+    这是标的验证的**唯一终点**，所有标的必须经此接口校验。
+    返回的标的均标记 from_goats=True。
 
     Args:
         keyword_items: 查询条件列表，每项包含 isFull（是否精确）和 keyword（关键字），例如：
@@ -190,23 +127,38 @@ async def search_securities_instrument(
     if not keyword_items:
         return []
 
-    params = {"keywordItems": keyword_items}
-    headers = {"key": settings.securities_instrument_key}
-
     import json as _json
+
+    headers = {
+        "Authorization": f"Bearer {settings.securities_instrument_key}",
+        "Content-Type": "application/json",
+    }
+    body = _json.dumps({"keywordItems": keyword_items}).encode()
 
     try:
         # 内网地址不走系统代理（防止本地 Clash/v2ray 代理拦截返回 502）
+        # GET 请求通过 content 传 JSON body（与 requests.get(json=...) 行为一致）
         async with httpx.AsyncClient(timeout=15.0, proxy=None) as client:
             r = await client.request(
                 "GET",
                 settings.securities_instrument_url,
-                content=_json.dumps(params).encode(),
-                headers={**headers, "Content-Type": "application/json"},
+                headers=headers,
+                content=body,
             )
             r.raise_for_status()
-            data = r.json()
-            raw: list[dict] = data.get("data") or []
+            resp_json = r.json()
+
+            if resp_json.get("code") != 0:
+                logger.warning(
+                    "search_securities_instrument 业务失败: code=%s msg=%s",
+                    resp_json.get("code"), resp_json.get("msg"),
+                )
+                return []
+
+            raw: list[dict] = resp_json.get("data") or []
+            if len(raw) > 100:
+                raw = raw[:100]
+
             # 按 windCode 去重，保持首次出现顺序
             seen: set[str] = set()
             items: list[dict] = []
@@ -218,9 +170,18 @@ async def search_securities_instrument(
                 item["from_goats"] = True
                 items.append(item)
             return items
+    except httpx.ConnectTimeout:
+        logger.error("search_securities_instrument 连接超时（API 不可达）")
+        return [{"_error": "API 不可达：连接超时，请检查网络/VPN"}]
+    except httpx.TimeoutException:
+        logger.error("search_securities_instrument 请求超时")
+        return [{"_error": "API 请求超时"}]
+    except httpx.HTTPStatusError as e:
+        logger.error("search_securities_instrument HTTP 错误: %s %s", e.response.status_code, e.response.text[:200])
+        return [{"_error": f"API 返回 HTTP {e.response.status_code}"}]
     except Exception as e:
         logger.error("search_securities_instrument 失败: %s", e)
-        return []
+        return [{"_error": f"API 调用失败: {e}"}]
 
 
 # ==================================================================
@@ -343,11 +304,20 @@ def assert_from_goats(tickers: list[dict]) -> dict:
 
     这是最后一道防线，Agent 在结束前必须调用。
     """
+    # 检查是否有 API 调用失败的 marker
+    api_errors = [t.get("_error") for t in tickers if t.get("_error")]
+    if api_errors:
+        return {
+            "valid": False,
+            "error": f"search_securities_instrument 调用失败: {api_errors}",
+            "message": "API 不可用，不要编造标的。请告知用户当前无法查询标的。",
+        }
+
     violations = [t for t in tickers if not t.get("from_goats")]
     if violations:
         return {
             "valid": False,
             "error": f"发现 {len(violations)} 个未经验证的标的",
-            "message": "请重新调用 search_goats 或 search_securities_instrument 验证所有候选",
+            "message": "请重新调用 search_securities_instrument 验证所有候选",
         }
     return {"valid": True, "count": len(tickers)}

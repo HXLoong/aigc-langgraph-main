@@ -292,13 +292,13 @@ def build_option_graph():
                                                     ↓
                                                    END
     """
-    from app.subgraphs.ticker import build_ticker_agent
+    from app.subgraphs.ticker import build_ticker_graph
 
     g = StateGraph(AgentState)
 
     g.add_node("detect_quick_query", detect_quick_query)
     g.add_node("fast_query_api", fast_query_api)
-    g.add_node("ticker_identify", build_ticker_agent())
+    g.add_node("ticker_identify", build_ticker_graph().compile())
     g.add_node("extract_option", extract_option)
     g.add_node("check_param_limit", check_param_limit)
     g.add_node("call_option_api", call_option_api)
