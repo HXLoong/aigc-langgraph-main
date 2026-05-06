@@ -468,6 +468,92 @@ async def dify_rerank():
 
 
 # ===================================================================
+# 后端业务 API Mock（OTC Backend，6 个接口）
+# 响应格式：{"code": 0, "data": ..., "msg": "success"}
+# 对应 app/tools/otc_backend.py 的 OtcBackendClient
+# ===================================================================
+
+def backend_ok(data=None):
+    """后端统一成功响应。"""
+    return {"code": 0, "data": data, "msg": "success"}
+
+
+def backend_fail(code: int = 400, msg: str = "业务错误"):
+    """后端统一错误响应。"""
+    return {"code": code, "data": None, "msg": msg}
+
+
+# 1. 互换订单操作（下单/撤单/改单/确认/查询）
+@app.post("/admin-api/swap-order/operate")
+async def swap_order_operate(request: Request):
+    body = await request.json() if await request.body() else {}
+    type_ = body.get("type", "unknown")
+    return backend_ok(f"[mock] 互换{type_}操作已受理，订单号 TRS-{today().replace('-', '')}-0001")
+
+
+# 2. 期权/平仓操作（询价/下单/撤单/持仓查询）
+@app.post("/admin-api/financial-orders/operate")
+async def financial_orders_operate(request: Request):
+    body = await request.json() if await request.body() else {}
+    type_ = body.get("type", "unknown")
+    return backend_ok(f"[mock] 期权平仓{type_}操作已受理，单号 OPT-{today().replace('-', '')}-0001")
+
+
+# 3. 交易对手列表
+@app.get("/admin-api/counterparty/info/list")
+async def counterparty_info_list():
+    return backend_ok([
+        {
+            "id": 10049,
+            "shortName": "临沂阿凡提",
+            "longName": "上海猎鲸志投资管理有限公司",
+            "groupFlag": "N",
+        },
+        {
+            "id": 10833,
+            "shortName": "10833测试",
+            "longName": "10833测试产品",
+            "groupFlag": "N",
+        },
+        {
+            "id": 11125,
+            "shortName": "11125测试",
+            "longName": "吕测试企业-Ukey",
+            "groupFlag": "N",
+        },
+    ])
+
+
+# 4. 会话历史订单
+@app.post("/admin-api/swap-order/get-conversation-orders")
+async def get_conversation_orders():
+    return backend_ok([
+        {
+            "orderId": f"TRS-{today().replace('-', '')}-0001",
+            "windCode": "0700.HK",
+            "insShtDesc": "腾讯控股",
+            "quantity": 1000,
+            "direction": "BUY",
+            "status": "FILLED",
+            "createTime": now(),
+        },
+    ])
+
+
+# 5. Bot 名称列表（返回 JSON 字符串，与真实后端一致）
+@app.post("/admin-api/business/config/bot/name/list")
+async def bot_name_list():
+    import json as _json
+    return backend_ok(_json.dumps(["otc-agent", "交易助手", "OTC小助手"]))
+
+
+# 6. 意图审计写入（无返回值，只需 code=0）
+@app.post("/admin-api/openapi/xbot/message/set-intent")
+async def set_intent():
+    return backend_ok(None)
+
+
+# ===================================================================
 # health check + API list
 # ===================================================================
 
