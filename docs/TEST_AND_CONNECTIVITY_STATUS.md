@@ -1,14 +1,16 @@
 # 测试结果与联调状态
 
-> 更新时间：2026-05-06
+> 更新时间：2026-05-07
 
-## 一、全模块集成测试（14 条）
+## 一、全模块集成测试（15 条）
 
 ### 1.1 测试结果总览
 
 目标：`http://localhost:8000/v1/message`
 
-**14/14 PASS** — 路由正确率 100%，子图链路完整率 100%。
+**15/15 PASS** — 路由正确率 100%，子图链路完整率 100%。
+
+> 2026-05-07 更新：新增 `securities-instrument` 标的查询 mock，**已脱离 VPN 依赖**，CI / 离线环境可全量跑通。
 
 ### 1.2 详细结果
 
@@ -27,7 +29,8 @@
 | 11 | Close-确认平仓 | `确认平仓 CO-20260304-ABCD...` | option_close | close_order_confirm | classify_close → extract_order_no_list → call_close_api | 0 |
 | 12 | Close-撤销平仓单 | `撤销平仓单 CO-20260304-ABCD...` | option_close | close_order_cancel | classify_close → extract_order_no_list → call_close_api | 0 |
 | 13 | Unknown-兜底 | `今天天气怎么样` | unknown | None | render_reply | None |
-| 14 | 优先级-单号格式优先 | `互换订单 CO-20260304-...帮我平仓` | option_close | close_order_request | classify_close → extract_place_close → call_close_api | 0 |
+| 14 | Ticker-多标的批量识别 | `互换下单 帮我同时买入贵州茅台、腾讯控股、特斯拉` | swap | place_order_request | dispatch → ticker → classify → extract_place_order → call_swap_api | 0 |
+| 15 | 优先级-单号格式优先 | `互换订单 CO-20260304-...帮我平仓` | option_close | close_order_request | classify_close → extract_place_close → call_close_api | 0 |
 
 ### 1.3 验证维度说明
 
@@ -43,17 +46,16 @@
 
 ## 二、本地环境搭建
 
-### 2.1 架构（无需 Java 后端）
+### 2.1 架构（无需 Java 后端 / 无需 VPN）
 
 ```
-LangGraph (8000) ──→ mock_api (8099)  ← 同时模拟 GOATS 20 + 后端 6 个接口
+LangGraph (8000) ──→ mock_api (8099)  ← 同时模拟 GOATS 20 + 后端 6 + 标的查询 1
      │
      ├── LLM: dashscope.aliyuncs.com (公网)
-     ├── Docker: MySQL + Redis + RabbitMQ
-     └── 标的查询: 需 VPN（mock_api 暂未覆盖）
+     └── Docker: MySQL + Redis + RabbitMQ
 ```
 
-mock_api 合并了之前的 mock_goats_api + Java Backend，一个端口覆盖全部后端调用。
+mock_api 合并了之前的 mock_goats_api + Java Backend + 标的查询服务，一个端口覆盖全部外部调用。
 
 ### 2.2 Docker 服务
 
@@ -130,7 +132,7 @@ uv run uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload &
 ### 2.5 运行测试
 
 ```bash
-# 全模块集成测试（14 条，约 3 分钟）
+# 全模块集成测试（15 条，约 3 分钟）
 python tests/run_integration_test.py
 
 # 单元测试（含 ticker 子图 27 条）
@@ -142,7 +144,7 @@ pytest -s tests/test_ticker.py -v
 
 ## 三、mock_api 接口覆盖
 
-mock_api 在 8099 端口统一模拟 26 个接口：
+mock_api 在 8099 端口统一模拟 27 个接口：
 
 ### GOATS 内部接口（20 个）
 期权 11 + 收益互换 6 + 交易对手 1 + 投管系统 1 + Dify 1
@@ -157,6 +159,12 @@ mock_api 在 8099 端口统一模拟 26 个接口：
 | `POST /admin-api/swap-order/get-conversation-orders` | `conversation_orders()` |
 | `POST /admin-api/business/config/bot/name/list` | `bot_name_list()` |
 | `POST /admin-api/openapi/xbot/message/set-intent` | `set_intent()` |
+
+### 标的查询接口（1 个，新增 2026-05-07）
+
+| 路径 | 对应工具 | 说明 |
+|------|---------|------|
+| `GET/POST /admin-api/integration/securities-instrument/select` | `app/subgraphs/ticker_tools.py:search_securities_instrument` | 内置 17 条常用 A 股 / 港股 / 美股 / 期货词典；支持 `isFull=True` 精确匹配 windCode、`isFull=False` 模糊匹配 wind/短名/长名 |
 
 ---
 
