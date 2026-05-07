@@ -17,6 +17,9 @@ OPTION_CLOSE_PATTERN = re.compile(
     r"CO-\d{8}-[0-9A-F]{8}|OPTG?-[A-Z]{4,8}\d{6,10}"
 )
 
+# 互换订单号正则：H-YYYYMMDD-XXXXXXXXXX（宽松匹配 4~16 位，兼容用户手输短形式）
+SWAP_ORDER_ID_PATTERN = re.compile(r"H-\d{8}-[A-Z0-9]{4,16}")
+
 # 期权平仓关键词
 OPTION_CLOSE_KEYWORDS: frozenset[str] = frozenset({
     "我想平仓", "我要平仓", "帮我平仓", "想平仓", "要平仓",
@@ -64,6 +67,13 @@ async def route_product(state: AgentState) -> dict[str, Any]:
             "trace": [{"node": "route_product", "decision": "close_pattern_match"}],
         }
 
+    # 规则 1.5：互换订单号格式（H-YYYYMMDD-...）
+    if SWAP_ORDER_ID_PATTERN.search(combined):
+        return {
+            "product_type": "swap",
+            "trace": [{"node": "route_product", "decision": "swap_id_pattern_match"}],
+        }
+
     # 规则 2：附件 → 互换
     if attachments:
         return {
@@ -71,22 +81,24 @@ async def route_product(state: AgentState) -> dict[str, Any]:
             "trace": [{"node": "route_product", "decision": "has_attachment"}],
         }
 
-    # 规则 3：关键词匹配（顺序有讲究，先判更具体的）
-    if _hit(raw, OPTION_CLOSE_KEYWORDS):
-        return {
-            "product_type": "option_close",
-            "trace": [{"node": "route_product", "decision": "close_keyword"}],
-        }
-    if _hit(raw, SWAP_KEYWORDS):
-        return {
-            "product_type": "swap",
-            "trace": [{"node": "route_product", "decision": "swap_keyword"}],
-        }
-    if _hit(raw, OPTION_KEYWORDS):
-        return {
-            "product_type": "option",
-            "trace": [{"node": "route_product", "decision": "option_keyword"}],
-        }
+    # 规则 3：关键词匹配。先看 raw_content（原行为），未命中再 fallback 到
+    # combined（含 quote_content）—— 处理"用户引用之前消息只回复'确认'"的场景。
+    for source_name, source_text in (("raw", raw), ("quote", combined)):
+        if _hit(source_text, OPTION_CLOSE_KEYWORDS):
+            return {
+                "product_type": "option_close",
+                "trace": [{"node": "route_product", "decision": f"close_keyword_{source_name}"}],
+            }
+        if _hit(source_text, SWAP_KEYWORDS):
+            return {
+                "product_type": "swap",
+                "trace": [{"node": "route_product", "decision": f"swap_keyword_{source_name}"}],
+            }
+        if _hit(source_text, OPTION_KEYWORDS):
+            return {
+                "product_type": "option",
+                "trace": [{"node": "route_product", "decision": f"option_keyword_{source_name}"}],
+            }
 
     return {
         "product_type": "unknown",

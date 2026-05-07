@@ -2,6 +2,28 @@
 
 > 更新时间：2026-05-07
 
+## V1 闭环验证：✅ 已就绪
+
+| 验证维度 | 命令 | 结果 |
+|---|---|---|
+| 单元测试 + 闭环 CI | `pytest tests/ -v` | **117/117 PASS** |
+| 离线闭环 demo（30 条 golden case） | `python scripts/demo_closed_loop.py` | **30/30 PASS（100%）** |
+| 全链路集成测试（15 条） | `python tests/run_integration_test.py` | 15/15 PASS（需启 mock_api + LangGraph） |
+| Mock 接口端点 | `python mock_api/test_all_endpoints.py` | 全部 32 个端点 200 OK |
+
+**外部依赖状态：**
+
+| 依赖 | V0 状态 | V1 状态 |
+|---|---|---|
+| Java 后端 | 必须 | ✅ mock_api 替代 |
+| GOATS API | 必须 | ✅ mock_api 替代 |
+| 标的查询接口 | 需 VPN | ✅ mock_api/securities-instrument 替代（2026-05-07） |
+| Docker（MySQL/Redis/RabbitMQ） | 必须 | 仅集成测试需要；闭环 demo 用 InMemorySaver |
+| LLM API Key | 必须 | 仅集成测试需要；闭环 demo 用 SmartLLMMock |
+| Dify 实例 | 必须 | 不再依赖 |
+
+---
+
 ## 一、全模块集成测试（15 条）
 
 ### 1.1 测试结果总览
@@ -177,3 +199,45 @@ mock_api 在 8099 端口统一模拟 27 个接口：
 | 3 | `app/subgraphs/option.py` | `_operate` 未在 AgentState 中声明，被静默过滤 | 改用已声明的 `operate` 字段 |
 
 同时在 `app/state.py` 中补了 `modality` 和 `operate` 的字段声明及默认值。
+
+---
+
+## 五、V1 闭环 demo（2026-05-07 新增）
+
+`scripts/demo_closed_loop.py` 是**零外部依赖**的端到端验证：
+
+```bash
+# 直接跑（不需要 Docker / mock_api / LLM key / Dify）
+python scripts/demo_closed_loop.py
+
+# 输出：
+# [001/30] ✓ g001   swap/place_order                   152ms  ok
+# ...
+# [030/30] ✓ g030   priority/contract_no                38ms  ok
+# 结果: 30/30 PASS  (100.0%)
+# 平均延迟: 46ms  (in-process，无网络)
+```
+
+设计：
+- **LangGraph 主图** + InMemorySaver（不依赖 MySQL）
+- **SmartLLMMock**：根据 raw_content 关键词模式 + 目标 Pydantic 类型，合成结构化输出
+- **Mock backend**：所有 OtcBackendClient 调用返回 code=0
+- **Mock 标的查询**：内置 16 个常用标的词典
+
+**职责边界**：本 demo 只验证图拓扑/State 流转/节点串联是否正确，不验证 LLM 准确率。
+LLM 准确率验证用 `python scripts/eval_golden.py tests/fixtures/golden.jsonl --endpoint http://localhost:8000/v1/message`（需真实 LLM key）。
+
+**CI 集成**：`tests/test_closed_loop.py` 包装为 pytest，每次 `pytest tests/` 都会自动跑。
+
+---
+
+## 六、route.py 改进（2026-05-07）
+
+为通过 V1 demo 中的引用消息场景（如"用户回复'确认'引用之前的互换订单"），新增两条路由规则：
+
+| 规则 | 触发条件 | 路由到 |
+|---|---|---|
+| 1.5（新） | 文本中包含 `H-YYYYMMDD-XXXX` 互换订单号格式（宽松 4-16 位） | `swap` |
+| 3 fallback（新） | raw_content 没命中关键词，但 quote_content 含产品关键词 | 对应产品子图 |
+
+向后兼容：先看 raw（原行为），未命中再看 quote_content。`tests/test_route.py` 7 条用例全绿。
