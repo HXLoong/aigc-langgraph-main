@@ -11,13 +11,17 @@
 | 阶段 3 · 业务子图 | ✅ 完成 | 互换 / 期权 / 平仓 + 图片 OCR + Excel 解析 |
 | 阶段 3.5 · 提示词整合 | ✅ 完成 | **23 个真实 Dify 提示词已整合，可开箱即用** |
 | 阶段 3.6 · 历史加载 | ✅ 完成 | 基于 checkpoint 的多轮对话历史自动重建 |
-| 阶段 4 · 灰度切换 | 🧰 已提供工具 | `shadow_compare.py` + `eval_golden.py` |
+| 阶段 3.7 · 闭环验证 | ✅ 完成（2026-05） | **零依赖闭环 demo 30/30 PASS**、mock_api 替代 VPN 标的查询 |
+| 阶段 4 · 灰度切换 | 🧰 已提供工具 | `shadow_compare.py`（重构）+ `eval_golden.py` + 30 条 golden |
 
-**测试状态**：**49 tests passed**
-- 8 路由规则测试
-- 22 + 3 模型与子图路由测试
-- 5 端到端集成测试（含真实 Excel 解析、checkpoint 持久化）
-- **11 提示词加载器 + 历史消息加载测试（新增）**
+**测试状态**：**117/117 tests passed**
+- 路由规则、模型与子图路由测试
+- 端到端集成测试（含真实 Excel 解析、checkpoint 持久化）
+- 提示词加载器 + 历史消息加载测试
+- **闭环 demo 30/30 PASS**：`python scripts/demo_closed_loop.py`（in-process，零外部依赖）
+- **GOATS 20 个接口连通性测试**（`tests/api/`，需真实后端）
+
+> 详细的近期变更与下一步计划见 [`docs/CHANGELOG_2026-05.md`](docs/CHANGELOG_2026-05.md)。
 
 ## 提示词整合
 
@@ -212,13 +216,29 @@ curl -X POST http://localhost:8000/v1/message \
 │   ├── test_models.py
 │   ├── test_prompts_and_history.py
 │   ├── test_e2e.py
+│   ├── test_closed_loop.py            # CI 入口：调用 scripts/demo_closed_loop.py
+│   ├── test_ticker.py / test_option.py
+│   ├── run_integration_test.py        # 全链路集成（需 mock_api + LangGraph）
+│   ├── api/                           # GOATS 20 个接口连通性测试（独立运行）
+│   │   ├── _utils.py / run_all.py / README.md
+│   │   └── test_01_*.py ... test_20_*.py
 │   └── fixtures/
-│       └── golden.jsonl
+│       └── golden.jsonl               # 30 条端到端用例
 │
 ├── scripts/
 │   ├── export_dify_prompts.py   # 从 Dify YAML 重新导出提示词时用
 │   ├── eval_golden.py
-│   └── shadow_compare.py
+│   ├── demo_closed_loop.py      # 零外部依赖闭环 demo（30/30 PASS）
+│   └── shadow_compare.py        # 重构后的 LangGraph vs Dify 双跑工具
+│
+├── mock_api/
+│   ├── server.py                # 32 个端点：GOATS 20 + 后端 6 + 标的查询 1 + 其他
+│   └── test_all_endpoints.py
+│
+├── dify/
+│   ├── sync.py                  # 从内网 Dify 平台拉最新工作流 YAML
+│   ├── README.md
+│   └── yaml/                    # 5 个 Dify 工作流的导出文件（只读资产）
 │
 ├── sql/
 │   ├── init.sql
@@ -228,6 +248,9 @@ curl -X POST http://localhost:8000/v1/message \
 │   ├── ARCHITECTURE.md
 │   ├── DEVELOPMENT.md
 │   ├── DIFY_MIGRATION.md
+│   ├── SHADOW_COMPARE_GUIDE.md
+│   ├── TEST_AND_CONNECTIVITY_STATUS.md
+│   ├── CHANGELOG_2026-05.md     # 最近变更与下一步计划
 │   └── TROUBLESHOOTING.md
 │
 ├── docker-compose.yml
@@ -257,14 +280,29 @@ curl -X POST http://localhost:8000/v1/message \
 
 ### 运行测试
 ```bash
-pytest -v                              # 全部
+pytest -v                              # 全部（目标 117+ 通过）
 pytest tests/test_e2e.py -v            # 端到端（Mock LLM + Mock 后端）
 pytest tests/test_route.py --cov=app.nodes.route
+
+# 零外部依赖闭环 demo（in-process，无需 Docker / LLM key / VPN）
+python scripts/demo_closed_loop.py     # 期望：30/30 PASS
+
+# GOATS 后端 20 个接口连通性测试（需真实后端）
+python tests/api/run_all.py
 ```
 
-### 从 Dify 导出提示词
+### 从 Dify 同步提示词
 ```bash
-python scripts/export_dify_prompts.py path/to/dify-yamls/ output/prompts/
+# 1) 拉最新 Dify YAML 到本地（需内网/VPN，登录凭据通过 env 注入）
+export DIFY_EMAIL="..." DIFY_PASSWORD="..."
+python dify/sync.py                    # 输出到 dify/yaml/
+
+# 2) 把 YAML 中的 LLM 节点提示词导出为 .md
+python scripts/export_dify_prompts.py dify/yaml/ /tmp/new-prompts/
+
+# 3) diff 后选择性合入到 app/prompts/，并跑 golden 回归
+diff -r app/prompts/ /tmp/new-prompts/ | head -50
+python scripts/eval_golden.py tests/fixtures/golden.jsonl
 ```
 
 ### 在 golden set 上评估
@@ -275,11 +313,26 @@ python scripts/eval_golden.py tests/fixtures/golden.jsonl \
 
 ### Shadow 双跑（灰度切换期）
 ```bash
+# 本地 dev：明细写 JSON 文件
 python scripts/shadow_compare.py \
-    --langgraph http://langgraph:8000/v1/message \
-    --dify http://dify:5000/v1/workflows/run \
-    --sample tests/fixtures/golden.jsonl
+    --langgraph http://localhost:8000/v1/message \
+    --dify https://dify.example.com/v1/workflows/run \
+    --dify-api-key app-xxxxxxxxxxxx \
+    --sample tests/fixtures/golden.jsonl \
+    --output /tmp/shadow_diff.json
+
+# 生产灰度：写到 MySQL otc_agent_business.shadow_compare 表
+python scripts/shadow_compare.py \
+    --langgraph https://lg-canary.internal/v1/message \
+    --dify https://dify-prod.internal/v1/workflows/run \
+    --dify-api-key $DIFY_API_KEY \
+    --sample sample_real_traffic.jsonl \
+    --mysql-host mysql-prod.internal \
+    --mysql-db otc_agent_business \
+    --mysql-user otc_agent --mysql-password "$MYSQL_PASSWORD"
 ```
+
+详见 `docs/SHADOW_COMPARE_GUIDE.md`。
 
 ### 调试：查看某个会话的当前状态
 ```bash
@@ -297,11 +350,24 @@ curl http://localhost:8000/v1/conversations/test-conv-1/state
 
 ## 下一步工作（阶段 4 灰度切换）
 
-1. **提示词调优**：运行 `export_dify_prompts.py` 把 19 个 Dify 提示词导出，逐个迁移到 `app/subgraphs/*.py`，跑 `eval_golden.py` 对比
-2. **扩充 golden set 至 200+ 条**：从生产日志脱敏抽取
-3. **接入 goats 真实签名**：`ticker_tools.py:search_goats` 目前是签名示意代码
-4. **企微确认卡片集成**：把 `interrupt_before` 与确认卡片按钮联动
-5. **Shadow 双跑验证差异率** → 5% 金丝雀 → 50% → 100%
+> 本节是摘要。完整时间线、commit 列表、改动指标见 [`docs/CHANGELOG_2026-05.md`](docs/CHANGELOG_2026-05.md)。
+
+**P0 · 灰度切换准备（本周内）**
+
+1. **Shadow 双跑接入生产采样流量** —— 跑满 24 小时，差异率目标 < 3%；写入 `otc_agent_business.shadow_compare`，详见 `docs/SHADOW_COMPARE_GUIDE.md`
+2. **修 Option 标准询价 LLM 不稳定** —— `extract_option` 偶将 `new_inquiry` 识别为 `unknown`，扩 golden 后按 `_v2.md` A/B 调
+3. **接入 goats 真实签名** —— `ticker_tools.py:search_goats` 目前是签名示意代码，联调内网鉴权后保留 `MOCK_GOATS=true` 回退
+
+**P1 · 提示词与 Dify 同步流水线（下周）**
+
+4. **从最新 Dify YAML 同步提示词** —— `dify/sync.py` → `export_dify_prompts.py` → diff → 选择性合入 → `eval_golden.py` 回归
+5. **扩充 golden set 至 200+ 条** —— 从生产日志脱敏抽取，覆盖图片/Excel、多标的、参与型/雪球询价、引用上下文回复
+
+**P2 · 工程基建（持续）**
+
+6. **企微确认卡片集成** —— 把 `interrupt_before` 与确认卡片按钮联动
+7. **CI 接入** —— GitHub Actions 跑 `pytest` + `demo_closed_loop.py` + `ruff check`，PR 卡口差异率 < 5%
+8. **观测** —— 生产开 LangSmith 或自建 OpenTelemetry，`trace` 字段写到 `node_trace` 表
 
 ## 常见问题
 
