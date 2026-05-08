@@ -60,6 +60,11 @@ class Settings(BaseSettings):
     langgraph_traffic_ratio: float = Field(default=1.0, ge=0.0, le=1.0)
     shadow_mode: bool = False
 
+    # === Prompt 版本 ===
+    # v1：Dify 原始 md 直接加载（兼容/回滚）
+    # v2：裁剪版，compose_prompt 把 _base + 意图片段拼接，字符数少 ~20%
+    swap_prompt_version: Literal["v1", "v2"] = "v1"
+
 
 @lru_cache(maxsize=1)
 def get_settings() -> Settings:

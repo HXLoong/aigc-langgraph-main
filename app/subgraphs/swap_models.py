@@ -3,12 +3,18 @@
 用于：
 1. with_structured_output 强制 LLM 输出结构化结果，替代 Dify 里的字符串 JSON 清洗
 2. 所有互换相关节点的输入/输出校验
+
+命名规约：
+- 内部字段一律 snake_case（符合 Python 风格）
+- 通过 Field alias 对齐 Dify 原提示词里的 camelCase 字段名
+- populate_by_name=True 允许两种方式构造（业务代码传 snake_case，LLM 传 camelCase）
+- BeforeValidator 对枚举值做大小写/命名归一化（Dify "BUY" / "MarketOrder" → "buy" / "market"）
 """
 from __future__ import annotations
 
-from typing import Literal
+from typing import Annotated, Any, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, BeforeValidator, ConfigDict, Field
 
 # ============================================================
 # 意图分类
@@ -35,43 +41,104 @@ class SwapIntentOutput(BaseModel):
 
 
 # ============================================================
+# 值域归一化：Dify prompt 里使用大写/CamelCase，归一到 snake_case 小写
+# ============================================================
+def _norm_direction(v: Any) -> Any:
+    """BUY/SELL → buy/sell。"""
+    return v.lower() if isinstance(v, str) else v
+
+
+def _norm_price_type(v: Any) -> Any:
+    """MarketOrder/LimitOrder → market/limit。"""
+    if not isinstance(v, str):
+        return v
+    mapping = {"marketorder": "market", "limitorder": "limit"}
+    return mapping.get(v.lower(), v.lower())
+
+
+Direction = Annotated[Literal["buy", "sell"], BeforeValidator(_norm_direction)]
+PriceType = Annotated[Literal["market", "limit"], BeforeValidator(_norm_price_type)]
+
+
+# ============================================================
 # 下单参数
 # ============================================================
-PriceType = Literal["market", "limit"]  # 市价 / 限价
-Direction = Literal["buy", "sell"]       # 买入 / 卖出
-
-
 class SwapOrderLeg(BaseModel):
-    """互换订单的单条交易腿。"""
-    stock_code: str = Field(..., description="标的 Wind 代码（必须来自 goats）")
-    stock_name: str | None = Field(None, description="标的名称")
-    direction: Direction = Field(..., description="买卖方向")
-    quantity: int = Field(..., ge=1, description="数量（股数/手数）")
-    price_type: PriceType = Field(default="market")
-    limit_price: float | None = Field(None, description="限价单价格")
+    """互换订单的单条交易腿。
 
-    # 执行方式
-    participation_rate: float | None = Field(
-        None, ge=0.0, le=1.0,
-        description="跟量比例（0~1）",
+    字段设计：
+    - 核心字段保留非空约束（stock_code / direction / quantity）
+    - 其余一律可选，允许 LLM 输出 null（参数未提取完整时）
+    - 通过 alias 对齐 Dify 原提示词中的 placeOrderXxx 命名
+    """
+    model_config = ConfigDict(populate_by_name=True, extra="ignore")
+
+    # 核心必填
+    stock_code: str = Field(
+        ..., alias="placeOrderWindCode",
+        description="标的 Wind 代码（必须来自 goats）",
     )
-    time_window_start: str | None = Field(None, description="时间窗开始，HH:MM")
-    time_window_end: str | None = Field(None, description="时间窗结束，HH:MM")
+    direction: Direction = Field(
+        ..., alias="placeOrderOrderDirection",
+        description="买卖方向",
+    )
+    quantity: int = Field(
+        ..., ge=1, alias="placeOrderQuantity",
+        description="数量（股数/手数）",
+    )
 
-    # 可选字段
-    counterparty_id: int | None = Field(None, description="交易对手 ID")
-    counterparty_name: str | None = None
+    # 价格相关
+    price_type: PriceType = Field(default="market", alias="placeOrderPriceType")
+    limit_price: float | None = Field(None, alias="placeOrderPrice")
+
+    # 执行算法
+    algorithm: str | None = Field(None, alias="placeOrderAlgorithmType")
+    participation_rate: float | None = Field(
+        None, ge=0.0, le=100.0, alias="placeOrderPovPercent",
+        description="POV 跟量比例（百分比 0~100，与 Dify 一致）",
+    )
+    total_pov_percent: float | None = Field(
+        None, ge=0.0, le=100.0, alias="placeOrderTotalPovPercent",
+    )
+    time_window_start: str | None = Field(None, alias="placeOrderStartTime")
+    time_window_end: str | None = Field(None, alias="placeOrderEndTime")
+    relative_time_minutes: int | None = Field(None, alias="placeOrderRelativeTimeMinutes")
+
+    # 交易对手
+    counterparty_name: str | None = Field(None, alias="placeOrderShortname")
+    counterparty_id: int | None = None  # Dify 侧无此字段，仅业务层使用
     product_full_name: str | None = None
-    algorithm: str | None = None
+
+    # 数量拆分
+    display_qty: int | None = Field(None, alias="placeOrderDisplayQty")
+    quantity_total: int | None = Field(None, alias="placeOrderQuantityTotal")
+
+    # 期货专属
+    ultra_contract_code: str | None = Field(None, alias="placeOrderUltraContractCode")
+    transaction_type: str | None = Field(
+        None, alias="placeOrderTransactionType",
+        description="A_SHARE / HK_STOCK / FUTURES 等",
+    )
+
+    # 订单号（改单/撤单时 LLM 会回填）
+    order_id: str | None = Field(None, alias="orderId")
+
+    # 标的名称（Pydantic 保留字段，Dify 原提示词不单独输出）
+    stock_name: str | None = None
 
 
 class SwapPlaceOrderOutput(BaseModel):
     """请求下单的结构化输出。
 
     对应 Dify `互换-节点-下单` LLM 节点。
+    注意：order_list 用 alias="orderList" 对齐 Dify。
     """
+    model_config = ConfigDict(populate_by_name=True, extra="ignore")
+
     type: Literal["place_order_request"] = "place_order_request"
+
     order_list: list[SwapOrderLeg] = Field(default_factory=list, min_length=1, max_length=50)
+
     raw_text_preserved: str | None = Field(
         None, description="原始文本（字符级精确保留，防止标点转换）",
     )

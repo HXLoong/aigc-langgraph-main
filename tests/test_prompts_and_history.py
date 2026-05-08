@@ -26,6 +26,51 @@ def test_load_swap_place_order_prompt():
     assert len(p.system) > 10000
 
 
+# ============================================================
+# compose_prompt：v2 版本化拼装
+# ============================================================
+def test_compose_prompt_v1_equivalent_to_load_prompt():
+    """v1 版本走 load_prompt，行为完全等价。"""
+    from app.prompts import compose_prompt, load_prompt
+
+    v1_direct = load_prompt("swap", "place_order")
+    v1_compose = compose_prompt("swap", "place_order", version="v1")
+    assert v1_compose.system == v1_direct.system
+
+
+def test_compose_prompt_v2_merges_base_and_leaf():
+    """v2 版本拼接 _base.md + place_order.md，总长小于 v1。"""
+    from app.prompts import compose_prompt, load_prompt
+
+    v1 = load_prompt("swap", "place_order")
+    v2 = compose_prompt("swap", "place_order", version="v2")
+
+    # v2 明显短（预期 22% 左右裁剪）
+    assert len(v2.system) < len(v1.system)
+    assert len(v2.system) < len(v1.system) * 0.85
+
+    # v2 应含 base 里的字段规则 + 叶子里的示例关键词
+    base = load_prompt("swap/v2", "_base")
+    leaf = load_prompt("swap/v2", "place_order")
+    assert base.system in v2.system
+    assert leaf.system in v2.system
+
+
+def test_compose_prompt_v2_place_order_example_retained():
+    """v2 的 place_order 片段保留了三个代表性示例关键词。"""
+    from app.prompts import compose_prompt
+
+    v2 = compose_prompt("swap", "place_order", version="v2")
+    # 三个保留示例的特征词
+    assert "POV25" in v2.system         # 示例 1) POV 基础
+    assert "09:30" in v2.system          # 示例 5) TWAP 时间窗
+    assert "中国平安" in v2.system        # 示例 7.1) 排除法
+    # 示例段专有的标识不应出现（被裁掉的示例编号）
+    assert "5.1)请求下单" not in v2.system
+    assert "9.1)请求下单" not in v2.system
+    assert "6.1)请求下单" not in v2.system
+
+
 def test_load_swap_confirm_order_has_orderid_rules():
     from app.prompts import load_prompt
 

@@ -315,10 +315,12 @@ def route_by_intent(state: AgentState) -> str:
 @safe_node
 async def extract_place_order(state: AgentState) -> dict[str, Any]:
     """提取下单参数。对应 Dify `互换-节点-下单`。"""
+    from app.config import get_settings
     from app.llm.clients import get_qwen_thinking
-    from app.prompts import load_prompt
+    from app.prompts import compose_prompt
 
-    prompt = load_prompt("swap", "place_order")
+    version = get_settings().swap_prompt_version
+    prompt = compose_prompt("swap", "place_order", version=version)
 
     wx = state["wechat_input"]
     resolved = state.get("resolved_tickers", [])

@@ -44,13 +44,23 @@ class OptionOrderLeg(BaseModel):
 
 
 class OptionIntentOutput(BaseModel):
-    """期权意图识别输出。"""
-    type: OptionIntentType
+    """期权意图识别输出。
+
+    type 给默认 'unknown' 避免 LLM 漏字段时直接抛 ValidationError；
+    上游节点应根据 type == 'unknown' 决定走兜底分支。
+    """
+    type: OptionIntentType = "unknown"
     operate: str = Field(default="", description="具体操作（后端接口需要）")
 
 
 class OptionExtractOutput(BaseModel):
-    """期权参数提取输出。"""
+
+    """期权参数提取输出。
+
+    同上，type 默认 'unknown'，order_list 默认空列表，保证 LLM 部分遵循
+    schema 时也能成功解析，再由业务层判断数据完整性。
+    """
+
     type: OptionIntentType = "unknown"
     operate: str = ""
     order_list: list[OptionOrderLeg] = Field(default_factory=list)
