@@ -1,7 +1,12 @@
 """全模块集成测试脚本。
 
-用法：先确保后端(48080)、mock(8099)、LangGraph(8000)都跑着，然后：
+用法：先确保 mock_api(8099) 和 LangGraph(8000) 都跑着，然后：
     python tests/run_integration_test.py
+
+mock_api 一个端口覆盖了：
+- GOATS 内部 20 接口（期权/互换/交易对手/...）
+- 后端业务 6 接口（swap-order/financial-orders/counterparty/...）
+- securities-instrument 标的查询（脱离 VPN）
 
 测试覆盖：
     Swap（文本下单/确认/撤单/改单/查询）
@@ -186,6 +191,16 @@ def main():
              expect_intent="",
              expect_trace=["render_reply"],
              require_backend=False),
+
+        # ============================================================
+        # Ticker 子图（依赖 mock_api 的 securities-instrument 端点，无需 VPN）
+        # ============================================================
+        Case("Ticker-多标的批量识别",
+             "互换下单 帮我同时买入贵州茅台、腾讯控股、特斯拉",
+             expect_product="swap",
+             expect_intent="place_order_request",
+             expect_trace=["dispatch_modality", "tokenize_keywords", "search_candidates",
+                          "classify_intent", "extract_place_order", "call_swap_api"]),
 
         # ============================================================
         # 路由优先级
