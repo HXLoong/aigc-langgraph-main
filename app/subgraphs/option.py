@@ -90,46 +90,27 @@ async def fast_query_api(state: AgentState) -> dict[str, Any]:
 
 
 # ==============================================================
-# 标准路径：意图识别 + 参数提取（Dify 原节点合并，简化为一个 LLM 调用）
+# 标准路径：意图识别 + 参数提取
+#
+# 最新 Dify（2026-05）把"期权-参数限制检查 + 期权-意图识别"合并为单一节点
+# `期权-意图识别、参数提取`（node_id=1755073106378）。我们对应加载
+# app/prompts/option/intent_extract.md。参数限制检查仍由后续 check_param_limit
+# 节点用纯 Python 实现（更快、更准）。
 # ==============================================================
-OPTION_EXTRACT_PROMPT = """你是一个金融交易指令解析引擎，专门处理期权询价/下单/改单/撤单/确认。
-
-## 任务
-从用户输入中识别意图并提取完整的订单参数。
-
-## 意图枚举
-- new_inquiry: 新询价
-- existing_command: 存量指令（引用已有订单的参数）
-- place_order: 下单
-- modify_order: 改单
-- cancel_order: 撤单
-- confirm: 确认
-- unknown: 兜底
-
-## 输入
-- raw_content: 用户原始消息
-- quote_content: 引用消息
-- history_query_str: 历史对话
-- resolved_tickers: 已 goats 验证的标的列表
-
-## 硬约束
-1. 标的代码必须来自 resolved_tickers
-2. option_type 限定为枚举内的值
-3. 若用户未指定 optionType，默认 "欧式看涨"
-
-## 输出
-严格 JSON，符合 OptionExtractOutput 结构。
-"""
 
 
 @safe_node
 async def extract_option(state: AgentState) -> dict[str, Any]:
-    """期权意图识别 + 参数提取（合并 Dify 两个节点）。"""
+    """期权意图识别 + 参数提取（最新 Dify 合并节点）。"""
     from app.llm.clients import get_qwen_thinking
+    from app.prompts import load_prompt
+
+    prompt = load_prompt("option", "intent_extract")
 
     wx = state["wechat_input"]
     history = state.get("history_messages", [])
     resolved = state.get("resolved_tickers", [])
+    bot_names = ", ".join(state.get("bot_name_list", []))
 
     history_str = "\n".join(
         f"[{m.get('role')}] {m.get('content', '')[:200]}" for m in history[-10:]
@@ -141,13 +122,14 @@ async def extract_option(state: AgentState) -> dict[str, Any]:
     user_message = f"""raw_content: {wx.get('raw_content', '')}
 quote_content: {wx.get('quote_content', '') or '(无)'}
 history_query_str: {history_str or '(无)'}
+bot_name_list: {bot_names}
 resolved_tickers:
 {resolved_str}"""
 
     llm = get_qwen_thinking().with_structured_output(OptionExtractOutput)
     try:
         result: OptionExtractOutput = await llm.ainvoke([
-            ("system", OPTION_EXTRACT_PROMPT),
+            ("system", prompt.system),
             ("user", user_message),
         ])
     except Exception as e:

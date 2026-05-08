@@ -82,9 +82,18 @@ class SwapOrderLeg(BaseModel):
         ..., alias="placeOrderOrderDirection",
         description="买卖方向",
     )
-    quantity: int = Field(
-        ..., ge=1, alias="placeOrderQuantity",
-        description="数量（股数/手数）",
+    # 数量字段：股 与 手 互斥（最新 Dify 拆分规则，2026-05）
+    # - 用户明确说"股"或仅给纯数字 → quantity
+    # - 用户明确说"手" → quantity_hand
+    # 两者均允许 None（参数补充场景），上层 (call_swap_api) 会校验至少一个非空
+    quantity: int | None = Field(
+        None, ge=1, alias="placeOrderQuantity",
+        description="数量（股），用户明确说\"股\"或仅给纯数字时填写",
+    )
+    quantity_hand: int | None = Field(
+        None, ge=1, alias="placeOrderQuantityHand",
+        description="数量（手），用户明确说\"手\"时填写；非期货标的会经"
+                    "互换-手转为股节点换算到 quantity",
     )
 
     # 价格相关
@@ -137,7 +146,9 @@ class SwapPlaceOrderOutput(BaseModel):
 
     type: Literal["place_order_request"] = "place_order_request"
 
-    order_list: list[SwapOrderLeg] = Field(default_factory=list, min_length=1, max_length=50)
+    order_list: list[SwapOrderLeg] = Field(
+        default_factory=list, alias="orderList", min_length=1, max_length=50,
+    )
 
     raw_text_preserved: str | None = Field(
         None, description="原始文本（字符级精确保留，防止标点转换）",
@@ -147,17 +158,40 @@ class SwapPlaceOrderOutput(BaseModel):
 # ============================================================
 # 订单 ID 相关（用于 confirm / cancel / modify / query）
 # ============================================================
+SWAP_ORDER_ID_PATTERN = r"^H-\d{8}-[A-Z0-9]{10}$"
+
+
+class SwapOrderIdItem(BaseModel):
+    """单条 orderId 条目（与 Dify confirm/cancel 输出 orderList[].orderId 对齐）。"""
+    model_config = ConfigDict(populate_by_name=True, extra="ignore")
+
+    order_id: str | None = Field(None, alias="orderId")
+
+
 class SwapOrderIdOutput(BaseModel):
-    """单一 orderId 提取的结构化输出。
+    """互换 confirm/cancel/modify/query 共用的结构化输出。
 
-    orderId 格式：H-YYYYMMDD-XXXXXXXXXX
+    最新 Dify 提示词改为：从 quote_content 中提取**所有** orderId（而非单个），
+    输出格式 `{type, orderList: [{orderId}, ...]}`。
     """
-    order_id: str = Field(..., pattern=r"^H-\d{8}-[A-Z0-9]{10}$")
+    model_config = ConfigDict(populate_by_name=True, extra="ignore")
 
+    type: str | None = None  # confirm_order / cancel_order_request / ...
+    order_list: list[SwapOrderIdItem] = Field(
+        default_factory=list, alias="orderList", min_length=1, max_length=50,
+    )
 
-class SwapOrderIdListOutput(BaseModel):
-    """多 orderId 提取。"""
-    order_ids: list[str] = Field(..., min_length=1)
+    @property
+    def order_ids(self) -> list[str]:
+        """所有非空 orderId 的去重列表（保持出现顺序）。"""
+        seen: set[str] = set()
+        result: list[str] = []
+        for item in self.order_list:
+            oid = item.order_id
+            if oid and oid not in seen:
+                seen.add(oid)
+                result.append(oid)
+        return result
 
 
 # ============================================================

@@ -147,6 +147,39 @@ class OtcBackendClient:
             logger.exception("financial_orders_operate HTTP 错误")
             return {"code": 500, "result": "期权平仓服务暂不可用", "error": str(e)}
 
+    async def query_close_orders(
+        self,
+        *,
+        order_ids: list[str] | None = None,
+        contract_codes: list[str] | None = None,
+        room_id: str = "",
+        message_id: str = "",
+    ) -> list[dict[str, Any]]:
+        """调用 /admin-api/financial-orders/query-close-orders。
+
+        最新 Dify 主工作流（2026-05）在 `请求下单和确认全部平仓参数提取` 之前
+        新增 `获取订单信息` HTTP 节点，按 orderId / contractCode 拉取每笔订单的
+        availableNotional / notional / contractCode，喂给 LLM 计算"平一半"、
+        "平X%"、"平剩到Xw" 等基于比例/余量目标的平仓金额。
+
+        响应统一封装为 list[dict]：[] 表示无可用订单（不会抛异常，避免阻断主流程）。
+        """
+        payload = {
+            "orderIds": order_ids or [],
+            "contractCodes": contract_codes or [],
+            "roomId": room_id,
+            "messageId": message_id,
+        }
+        try:
+            resp = await self._post(
+                "/admin-api/financial-orders/query-close-orders", payload,
+            )
+            data = resp.get("data") or []
+            return data if isinstance(data, list) else []
+        except httpx.HTTPError as e:
+            logger.warning("query_close_orders 失败: %s", e)
+            return []
+
     # ------------------------------------------------------------
     # 辅助
     # ------------------------------------------------------------

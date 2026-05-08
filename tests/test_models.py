@@ -75,6 +75,17 @@ def test_swap_order_leg_quantity_positive():
         SwapOrderLeg(stock_code="600519.SH", direction="buy", quantity=0)
 
 
+def test_swap_order_leg_quantity_hand():
+    """支持 placeOrderQuantityHand（手），与 placeOrderQuantity（股）互斥。"""
+    leg = SwapOrderLeg.model_validate({
+        "placeOrderWindCode": "CU2609.SHF",
+        "placeOrderOrderDirection": "buy",
+        "placeOrderQuantityHand": 4,
+    })
+    assert leg.quantity_hand == 4
+    assert leg.quantity is None
+
+
 # ============================================================
 # SwapPlaceOrderOutput
 # ============================================================
@@ -152,23 +163,43 @@ def test_swap_order_leg_extra_fields_ignored():
 
 
 # ============================================================
-# SwapOrderIdOutput
+# SwapOrderIdOutput（最新 Dify 提示词改为多 orderId 提取）
 # ============================================================
-def test_swap_order_id_format():
-    o = SwapOrderIdOutput(order_id="H-20260304-ABCD123456")
-    assert o.order_id == "H-20260304-ABCD123456"
+def test_swap_order_id_single():
+    """单个 orderId 仍可通过 orderList 形式传入。"""
+    o = SwapOrderIdOutput.model_validate({
+        "type": "confirm_order",
+        "orderList": [{"orderId": "H-20260304-ABCD123456"}],
+    })
+    assert o.order_ids == ["H-20260304-ABCD123456"]
 
 
-def test_swap_order_id_invalid_format():
-    # 小写字母应被拒
+def test_swap_order_id_multi():
+    """多 orderId 按出现顺序输出，自动去重。"""
+    o = SwapOrderIdOutput.model_validate({
+        "type": "confirm_order",
+        "orderList": [
+            {"orderId": "H-20260428-8580817072"},
+            {"orderId": "H-20260428-2581869704"},
+            {"orderId": "H-20260428-8580817072"},  # 重复
+        ],
+    })
+    assert o.order_ids == ["H-20260428-8580817072", "H-20260428-2581869704"]
+
+
+def test_swap_order_id_not_found():
+    """LLM 未提取到任何 orderId 时输出 [{orderId: null}]。"""
+    o = SwapOrderIdOutput.model_validate({
+        "type": "confirm_order",
+        "orderList": [{"orderId": None}],
+    })
+    assert o.order_ids == []
+
+
+def test_swap_order_id_requires_orderlist():
+    """orderList 不可为空数组。"""
     with pytest.raises(ValidationError):
-        SwapOrderIdOutput(order_id="h-20260304-ABCD123456")
-    # 缺少前缀
-    with pytest.raises(ValidationError):
-        SwapOrderIdOutput(order_id="20260304-ABCD123456")
-    # 日期位数不对
-    with pytest.raises(ValidationError):
-        SwapOrderIdOutput(order_id="H-2026304-ABCD123456")
+        SwapOrderIdOutput.model_validate({"type": "confirm_order", "orderList": []})
 
 
 # ============================================================
