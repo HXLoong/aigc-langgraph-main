@@ -1,10 +1,30 @@
-{"id": "g001", "category": "swap/place_order", "raw_content": "@机器人 做一笔招商银行的 TRS，买 1000 手，市价", "expected": {"product_type": "swap", "intent": "place_order_request", "ticker": "600036.SH", "quantity": 1000}}
-{"id": "g002", "category": "swap/confirm", "raw_content": "确认单号 H-20260304-0000001", "quote_content": "互换订单 H-20260304-0000001 已生成...", "expected": {"product_type": "swap", "intent": "confirm_order", "order_id": "H-20260304-0000001"}}
-{"id": "g003", "category": "option/inquiry", "raw_content": "帮我询价茅台 3 个月雪球 名义 1000w", "expected": {"product_type": "option", "intent": "new_inquiry", "ticker": "600519.SH", "tenor": "3M", "notional": 10000000}}
-{"id": "g004", "category": "close/query", "raw_content": "我有哪些期权持仓", "expected": {"product_type": "option_close", "intent": "close_order_query"}}
-{"id": "g005", "category": "close/request", "raw_content": "平 CO-20260304-4FE9C941 全部", "expected": {"product_type": "option_close", "intent": "close_order_request", "order_no": "CO-20260304-4FE9C941"}}
-{"id": "g006", "category": "ticker/fuzzy", "raw_content": "做 纳指 一笔互换", "expected": {"product_type": "swap", "intent": "place_order_request", "ticker_candidates_min": 1, "ticker_note": "应命中 NDX 或 NASDAQ 100"}}
-{"id": "g007", "category": "ticker/futures", "raw_content": "沪金下月合约互换 买 100 手", "expected": {"product_type": "swap", "intent": "place_order_request", "ticker_family": "FUTURE", "ticker_note": "根据当前日期推断下月合约代码"}}
-{"id": "g008", "category": "unknown", "raw_content": "你好，在吗", "expected": {"product_type": "unknown"}}
-{"id": "g009", "category": "swap/cancel", "raw_content": "撤 H-20260304-0000001", "expected": {"product_type": "swap", "intent": "cancel_order_request", "order_id": "H-20260304-0000001"}}
-{"id": "g010", "category": "option/confirm_from_quote", "raw_content": "确认第二笔", "quote_content": "报价明细：\n1. 茅台 行权价400 ...\n2. 五粮液 行权价150 ...", "expected": {"product_type": "option", "intent": "confirm", "picked_item": 2}}
+{"id": "g001", "category": "swap/place_order", "raw_content": "@机器人 做一笔招商银行的 TRS，买 1000 手，市价", "expected": {"product_type": "swap", "intent": "place_order_request"}}
+{"id": "g002", "category": "swap/place_order", "raw_content": "互换下单 帮我买入1000股腾讯控股，市价单", "expected": {"product_type": "swap", "intent": "place_order_request"}}
+{"id": "g003", "category": "swap/place_order_multi", "raw_content": "互换下单 帮我同时买入贵州茅台、腾讯控股、特斯拉各 100 股", "expected": {"product_type": "swap", "intent": "place_order_request"}}
+{"id": "g004", "category": "swap/confirm", "raw_content": "确认单号 H-20260304-0000001", "quote_content": "互换订单 H-20260304-0000001 已生成...", "expected": {"product_type": "swap", "intent": "confirm_order"}}
+{"id": "g005", "category": "swap/confirm", "raw_content": "互换 确认下单 H-20260304-ABCD12345678", "expected": {"product_type": "swap", "intent": "confirm_order"}}
+{"id": "g006", "category": "swap/cancel_request", "raw_content": "撤 H-20260304-0000001", "expected": {"product_type": "swap", "intent": "cancel_order_request"}}
+{"id": "g007", "category": "swap/cancel_request", "raw_content": "互换撤单 撤销订单 H-20260304-ABCD12345678", "expected": {"product_type": "swap", "intent": "cancel_order_request"}}
+{"id": "g008", "category": "swap/confirm_modify", "raw_content": "swap确认修改订单 H-20260304-ABCD12345678", "expected": {"product_type": "swap", "intent": "confirm_modify_order"}}
+{"id": "g009", "category": "swap/query", "raw_content": "TRS 查一下订单 H-20260304-ABCD12345678 的状态", "expected": {"product_type": "swap", "intent": "query_order_status"}}
+{"id": "g010", "category": "swap/ticker_fuzzy", "raw_content": "做 纳指 一笔互换", "expected": {"product_type": "swap", "intent": "place_order_request"}}
+{"id": "g011", "category": "swap/ticker_futures", "raw_content": "沪金下月合约互换 买 100 手", "expected": {"product_type": "swap", "intent": "place_order_request"}}
+{"id": "g012", "category": "option/quick_inquiry", "raw_content": "参与型看涨 腾讯控股 1个月", "expected": {"product_type": "option", "intent": "new_inquiry"}}
+{"id": "g013", "category": "option/quick_inquiry", "raw_content": "参与型看跌 阿里巴巴 3个月", "expected": {"product_type": "option", "intent": "new_inquiry"}}
+{"id": "g014", "category": "option/quick_inquiry_snowball", "raw_content": "雪球询价 腾讯控股", "expected": {"product_type": "option", "intent": "new_inquiry"}}
+{"id": "g015", "category": "option/standard_inquiry", "raw_content": "帮我询价茅台 3 个月雪球 名义 1000w", "expected": {"product_type": "option", "intent": "new_inquiry"}}
+{"id": "g016", "category": "option/standard_inquiry", "raw_content": "期权询价 腾讯控股 欧式看涨 行权价500 1个月", "expected": {"product_type": "option", "intent": "new_inquiry"}}
+{"id": "g017", "category": "option/place_order", "raw_content": "期权下单 茅台 欧式看涨 行权价 1800 期限 1M 名义 500万", "expected": {"product_type": "option", "intent": "place_order"}}
+{"id": "g018", "category": "option/cancel", "raw_content": "期权撤单 OPT-20260304-0001", "expected": {"product_type": "option", "intent": "cancel_order"}}
+{"id": "g019", "category": "option/confirm_from_quote", "raw_content": "确认第二笔", "quote_content": "报价明细：\n1. 茅台 行权价400 ...\n2. 五粮液 行权价150 ...", "expected": {"product_type": "option", "intent": "confirm"}}
+{"id": "g020", "category": "close/query", "raw_content": "我有哪些期权持仓", "expected": {"product_type": "option_close", "intent": "close_order_query"}}
+{"id": "g021", "category": "close/query", "raw_content": "查一下我现在的持仓", "expected": {"product_type": "option_close", "intent": "close_order_query"}}
+{"id": "g022", "category": "close/request", "raw_content": "平 CO-20260304-4FE9C941 全部", "expected": {"product_type": "option_close", "intent": "close_order_request"}}
+{"id": "g023", "category": "close/request", "raw_content": "帮我平仓 CO-20260304-ABCD1234", "expected": {"product_type": "option_close", "intent": "close_order_request"}}
+{"id": "g024", "category": "close/confirm", "raw_content": "确认平仓 CO-20260304-ABCD1234", "expected": {"product_type": "option_close", "intent": "close_order_confirm"}}
+{"id": "g025", "category": "close/cancel", "raw_content": "撤销平仓单 CO-20260304-ABCD1234", "expected": {"product_type": "option_close", "intent": "close_order_cancel"}}
+{"id": "g026", "category": "close/confirm_cancel", "raw_content": "确认撤销平仓 CO-20260304-ABCD1234", "expected": {"product_type": "option_close", "intent": "close_order_confirm_cancel"}}
+{"id": "g027", "category": "unknown", "raw_content": "你好，在吗", "expected": {"product_type": "unknown"}}
+{"id": "g028", "category": "unknown", "raw_content": "今天天气怎么样", "expected": {"product_type": "unknown"}}
+{"id": "g029", "category": "priority/order_no_over_keyword", "raw_content": "互换订单 CO-20260304-ABCD1234 帮我平仓", "expected": {"product_type": "option_close", "intent": "close_order_request"}}
+{"id": "g030", "category": "priority/contract_no", "raw_content": "查询 OPTG-WFJJ202509030002 的状态", "expected": {"product_type": "option_close"}}

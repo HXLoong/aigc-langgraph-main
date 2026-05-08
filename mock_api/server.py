@@ -554,6 +554,97 @@ async def set_intent():
 
 
 # ===================================================================
+# Securities-Instrument 标的查询 Mock（脱离 VPN）
+# 对应 app/subgraphs/ticker_tools.py:search_securities_instrument
+# 真实接口：GET http://172.16.8.28:8807/admin-api/integration/securities-instrument/select
+# Body：{"keywordItems": [{"isFull": false, "keyword": "贵州茅台"}, ...]}
+# 返回：{"code": 0, "data": [{windCode, insShtDesc, ...}]}
+# ===================================================================
+
+# 内置词典：覆盖常用 A 股 / 港股 / 美股 / 期货，足够本地集成测试使用
+_SECURITIES_DICT: list[dict] = [
+    # === A 股 ===
+    {"windCode": "600519.SH", "insShtDesc": "贵州茅台", "insLngDesc": "贵州茅台股份有限公司", "insFamily": "EQUITY", "currency": "CNY", "exchange": "SH"},
+    {"windCode": "000858.SZ", "insShtDesc": "五粮液", "insLngDesc": "宜宾五粮液股份有限公司", "insFamily": "EQUITY", "currency": "CNY", "exchange": "SZ"},
+    {"windCode": "600036.SH", "insShtDesc": "招商银行", "insLngDesc": "招商银行股份有限公司", "insFamily": "EQUITY", "currency": "CNY", "exchange": "SH"},
+    {"windCode": "601398.SH", "insShtDesc": "工商银行", "insLngDesc": "中国工商银行股份有限公司", "insFamily": "EQUITY", "currency": "CNY", "exchange": "SH"},
+    {"windCode": "600030.SH", "insShtDesc": "中信证券", "insLngDesc": "中信证券股份有限公司", "insFamily": "EQUITY", "currency": "CNY", "exchange": "SH"},
+    {"windCode": "300750.SZ", "insShtDesc": "宁德时代", "insLngDesc": "宁德时代新能源科技股份有限公司", "insFamily": "EQUITY", "currency": "CNY", "exchange": "SZ"},
+    {"windCode": "688472.SH", "insShtDesc": "阿特斯", "insLngDesc": "阿特斯阳光电力科技股份有限公司", "insFamily": "EQUITY", "currency": "CNY", "exchange": "SH"},
+    # === 港股 ===
+    {"windCode": "0700.HK", "insShtDesc": "腾讯控股", "insLngDesc": "腾讯控股有限公司", "insFamily": "EQUITY", "currency": "HKD", "exchange": "HK"},
+    {"windCode": "0941.HK", "insShtDesc": "中国移动", "insLngDesc": "中国移动有限公司", "insFamily": "EQUITY", "currency": "HKD", "exchange": "HK"},
+    {"windCode": "0200.HK", "insShtDesc": "新濠国际发展", "insLngDesc": "新濠国际发展有限公司", "insFamily": "EQUITY", "currency": "HKD", "exchange": "HK"},
+    {"windCode": "9988.HK", "insShtDesc": "阿里巴巴-W", "insLngDesc": "阿里巴巴集团控股有限公司", "insFamily": "EQUITY", "currency": "HKD", "exchange": "HK"},
+    # === 美股 ===
+    {"windCode": "AAPL.O", "insShtDesc": "苹果", "insLngDesc": "Apple Inc.", "insFamily": "EQUITY", "currency": "USD", "exchange": "O"},
+    {"windCode": "TSLA.O", "insShtDesc": "特斯拉", "insLngDesc": "Tesla, Inc.", "insFamily": "EQUITY", "currency": "USD", "exchange": "O"},
+    {"windCode": "NVDA.O", "insShtDesc": "英伟达", "insLngDesc": "NVIDIA Corporation", "insFamily": "EQUITY", "currency": "USD", "exchange": "O"},
+    {"windCode": "TME.N", "insShtDesc": "腾讯音乐", "insLngDesc": "Tencent Music Entertainment Group", "insFamily": "EQUITY", "currency": "USD", "exchange": "N"},
+    # === 期货（验证 YYMM/月份字母两种格式共存）===
+    {"windCode": "CLN26.NYM", "insShtDesc": "WTI原油2607", "insLngDesc": "Light Sweet Crude Oil July 2026", "insFamily": "FUTURE", "currency": "USD", "exchange": "NYM"},
+    {"windCode": "IF2607.CFE", "insShtDesc": "沪深300股指期货2607", "insLngDesc": "CSI 300 Index Futures July 2026", "insFamily": "FUTURE", "currency": "CNY", "exchange": "CFE"},
+]
+
+
+def _match_securities(keyword: str, is_full: bool) -> list[dict]:
+    """根据 keyword 在词典中匹配（精确 or 模糊），保留首次出现顺序。"""
+    if not keyword:
+        return []
+    kw = keyword.strip().upper()
+    matches: list[dict] = []
+    for item in _SECURITIES_DICT:
+        wc_upper = item["windCode"].upper()
+        if is_full:
+            # 精确匹配 windCode
+            if wc_upper == kw or wc_upper.split(".")[0] == kw:
+                matches.append(item)
+        else:
+            # 模糊匹配：windCode / 短名 / 长名 任一包含
+            if (
+                kw in wc_upper
+                or kw in item["insShtDesc"].upper()
+                or kw in item["insLngDesc"].upper()
+                or keyword in item["insShtDesc"]
+                or keyword in item["insLngDesc"]
+            ):
+                matches.append(item)
+    return matches
+
+
+async def _securities_instrument_select(request: Request):
+    """统一处理逻辑：从 body 取 keywordItems，按词典匹配返回 code=0。"""
+    raw = await request.body()
+    try:
+        body = __import__("json").loads(raw) if raw else {}
+    except Exception:
+        body = {}
+    items = body.get("keywordItems") or []
+
+    seen: set[str] = set()
+    data: list[dict] = []
+    for item in items:
+        keyword = (item or {}).get("keyword", "")
+        is_full = bool((item or {}).get("isFull", False))
+        for match in _match_securities(keyword, is_full):
+            if match["windCode"] in seen:
+                continue
+            seen.add(match["windCode"])
+            data.append(match)
+
+    return backend_ok(data)
+
+
+# 真实客户端走 GET（带 body），同时挂 POST 兼容标准用法
+@app.api_route(
+    "/admin-api/integration/securities-instrument/select",
+    methods=["GET", "POST"],
+)
+async def securities_instrument_select(request: Request):
+    return await _securities_instrument_select(request)
+
+
+# ===================================================================
 # health check + API list
 # ===================================================================
 

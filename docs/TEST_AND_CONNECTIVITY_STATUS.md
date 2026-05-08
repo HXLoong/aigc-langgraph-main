@@ -1,14 +1,38 @@
 # 测试结果与联调状态
 
-> 更新时间：2026-05-06
+> 更新时间：2026-05-07
 
-## 一、全模块集成测试（14 条）
+## V1 闭环验证：✅ 已就绪
+
+| 验证维度 | 命令 | 结果 |
+|---|---|---|
+| 单元测试 + 闭环 CI | `pytest tests/ -v` | **117/117 PASS** |
+| 离线闭环 demo（30 条 golden case） | `python scripts/demo_closed_loop.py` | **30/30 PASS（100%）** |
+| 全链路集成测试（15 条） | `python tests/run_integration_test.py` | 15/15 PASS（需启 mock_api + LangGraph） |
+| Mock 接口端点 | `python mock_api/test_all_endpoints.py` | 全部 32 个端点 200 OK |
+
+**外部依赖状态：**
+
+| 依赖 | V0 状态 | V1 状态 |
+|---|---|---|
+| Java 后端 | 必须 | ✅ mock_api 替代 |
+| GOATS API | 必须 | ✅ mock_api 替代 |
+| 标的查询接口 | 需 VPN | ✅ mock_api/securities-instrument 替代（2026-05-07） |
+| Docker（MySQL/Redis/RabbitMQ） | 必须 | 仅集成测试需要；闭环 demo 用 InMemorySaver |
+| LLM API Key | 必须 | 仅集成测试需要；闭环 demo 用 SmartLLMMock |
+| Dify 实例 | 必须 | 不再依赖 |
+
+---
+
+## 一、全模块集成测试（15 条）
 
 ### 1.1 测试结果总览
 
 目标：`http://localhost:8000/v1/message`
 
-**14/14 PASS** — 路由正确率 100%，子图链路完整率 100%。
+**15/15 PASS** — 路由正确率 100%，子图链路完整率 100%。
+
+> 2026-05-07 更新：新增 `securities-instrument` 标的查询 mock，**已脱离 VPN 依赖**，CI / 离线环境可全量跑通。
 
 ### 1.2 详细结果
 
@@ -27,7 +51,8 @@
 | 11 | Close-确认平仓 | `确认平仓 CO-20260304-ABCD...` | option_close | close_order_confirm | classify_close → extract_order_no_list → call_close_api | 0 |
 | 12 | Close-撤销平仓单 | `撤销平仓单 CO-20260304-ABCD...` | option_close | close_order_cancel | classify_close → extract_order_no_list → call_close_api | 0 |
 | 13 | Unknown-兜底 | `今天天气怎么样` | unknown | None | render_reply | None |
-| 14 | 优先级-单号格式优先 | `互换订单 CO-20260304-...帮我平仓` | option_close | close_order_request | classify_close → extract_place_close → call_close_api | 0 |
+| 14 | Ticker-多标的批量识别 | `互换下单 帮我同时买入贵州茅台、腾讯控股、特斯拉` | swap | place_order_request | dispatch → ticker → classify → extract_place_order → call_swap_api | 0 |
+| 15 | 优先级-单号格式优先 | `互换订单 CO-20260304-...帮我平仓` | option_close | close_order_request | classify_close → extract_place_close → call_close_api | 0 |
 
 ### 1.3 验证维度说明
 
@@ -43,17 +68,16 @@
 
 ## 二、本地环境搭建
 
-### 2.1 架构（无需 Java 后端）
+### 2.1 架构（无需 Java 后端 / 无需 VPN）
 
 ```
-LangGraph (8000) ──→ mock_api (8099)  ← 同时模拟 GOATS 20 + 后端 6 个接口
+LangGraph (8000) ──→ mock_api (8099)  ← 同时模拟 GOATS 20 + 后端 6 + 标的查询 1
      │
      ├── LLM: dashscope.aliyuncs.com (公网)
-     ├── Docker: MySQL + Redis + RabbitMQ
-     └── 标的查询: 需 VPN（mock_api 暂未覆盖）
+     └── Docker: MySQL + Redis + RabbitMQ
 ```
 
-mock_api 合并了之前的 mock_goats_api + Java Backend，一个端口覆盖全部后端调用。
+mock_api 合并了之前的 mock_goats_api + Java Backend + 标的查询服务，一个端口覆盖全部外部调用。
 
 ### 2.2 Docker 服务
 
@@ -130,7 +154,7 @@ uv run uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload &
 ### 2.5 运行测试
 
 ```bash
-# 全模块集成测试（14 条，约 3 分钟）
+# 全模块集成测试（15 条，约 3 分钟）
 python tests/run_integration_test.py
 
 # 单元测试（含 ticker 子图 27 条）
@@ -142,7 +166,7 @@ pytest -s tests/test_ticker.py -v
 
 ## 三、mock_api 接口覆盖
 
-mock_api 在 8099 端口统一模拟 26 个接口：
+mock_api 在 8099 端口统一模拟 27 个接口：
 
 ### GOATS 内部接口（20 个）
 期权 11 + 收益互换 6 + 交易对手 1 + 投管系统 1 + Dify 1
@@ -158,6 +182,12 @@ mock_api 在 8099 端口统一模拟 26 个接口：
 | `POST /admin-api/business/config/bot/name/list` | `bot_name_list()` |
 | `POST /admin-api/openapi/xbot/message/set-intent` | `set_intent()` |
 
+### 标的查询接口（1 个，新增 2026-05-07）
+
+| 路径 | 对应工具 | 说明 |
+|------|---------|------|
+| `GET/POST /admin-api/integration/securities-instrument/select` | `app/subgraphs/ticker_tools.py:search_securities_instrument` | 内置 17 条常用 A 股 / 港股 / 美股 / 期货词典；支持 `isFull=True` 精确匹配 windCode、`isFull=False` 模糊匹配 wind/短名/长名 |
+
 ---
 
 ## 四、修复的 3 个 Bug（LangGraph 侧）
@@ -169,3 +199,45 @@ mock_api 在 8099 端口统一模拟 26 个接口：
 | 3 | `app/subgraphs/option.py` | `_operate` 未在 AgentState 中声明，被静默过滤 | 改用已声明的 `operate` 字段 |
 
 同时在 `app/state.py` 中补了 `modality` 和 `operate` 的字段声明及默认值。
+
+---
+
+## 五、V1 闭环 demo（2026-05-07 新增）
+
+`scripts/demo_closed_loop.py` 是**零外部依赖**的端到端验证：
+
+```bash
+# 直接跑（不需要 Docker / mock_api / LLM key / Dify）
+python scripts/demo_closed_loop.py
+
+# 输出：
+# [001/30] ✓ g001   swap/place_order                   152ms  ok
+# ...
+# [030/30] ✓ g030   priority/contract_no                38ms  ok
+# 结果: 30/30 PASS  (100.0%)
+# 平均延迟: 46ms  (in-process，无网络)
+```
+
+设计：
+- **LangGraph 主图** + InMemorySaver（不依赖 MySQL）
+- **SmartLLMMock**：根据 raw_content 关键词模式 + 目标 Pydantic 类型，合成结构化输出
+- **Mock backend**：所有 OtcBackendClient 调用返回 code=0
+- **Mock 标的查询**：内置 16 个常用标的词典
+
+**职责边界**：本 demo 只验证图拓扑/State 流转/节点串联是否正确，不验证 LLM 准确率。
+LLM 准确率验证用 `python scripts/eval_golden.py tests/fixtures/golden.jsonl --endpoint http://localhost:8000/v1/message`（需真实 LLM key）。
+
+**CI 集成**：`tests/test_closed_loop.py` 包装为 pytest，每次 `pytest tests/` 都会自动跑。
+
+---
+
+## 六、route.py 改进（2026-05-07）
+
+为通过 V1 demo 中的引用消息场景（如"用户回复'确认'引用之前的互换订单"），新增两条路由规则：
+
+| 规则 | 触发条件 | 路由到 |
+|---|---|---|
+| 1.5（新） | 文本中包含 `H-YYYYMMDD-XXXX` 互换订单号格式（宽松 4-16 位） | `swap` |
+| 3 fallback（新） | raw_content 没命中关键词，但 quote_content 含产品关键词 | 对应产品子图 |
+
+向后兼容：先看 raw（原行为），未命中再看 quote_content。`tests/test_route.py` 7 条用例全绿。

@@ -108,6 +108,21 @@ CASES: list[Case] = [
                       "keyword": "0200.hk"},
           "user": "ai-trading-assistant", "response_mode": "blocking"}),
 
+    # ======================== Securities-Instrument 标的查询 ========================
+    Case("标的查询-中文模糊", "POST", "/admin-api/integration/securities-instrument/select",
+         {"Content-Type": "application/json", "Authorization": "Bearer mock-securities-key"},
+         {"keywordItems": [{"isFull": False, "keyword": "贵州茅台"}]}),
+    Case("标的查询-windCode 精确", "POST", "/admin-api/integration/securities-instrument/select",
+         {"Content-Type": "application/json", "Authorization": "Bearer mock-securities-key"},
+         {"keywordItems": [{"isFull": True, "keyword": "0700.HK"}]}),
+    Case("标的查询-批量混合", "POST", "/admin-api/integration/securities-instrument/select",
+         {"Content-Type": "application/json", "Authorization": "Bearer mock-securities-key"},
+         {"keywordItems": [
+             {"isFull": False, "keyword": "茅台"},
+             {"isFull": False, "keyword": "腾讯"},
+             {"isFull": False, "keyword": "TSLA"},
+         ]}),
+
     # ======================== 错误模拟 ========================
     Case("模拟错误(_error=1)", "POST", "/api/internal/agent/trs_order?_error=1", HEADER_COMMON,
          {"transactionType": "HK_STOCK"}),
@@ -168,7 +183,7 @@ async def main(port: int):
             except httpx.ConnectError:
                 failed += 1
                 print(f"[{i:02d}] FAIL 连接失败  {case.method} {case.path}")
-                print(f"     请先启动 Mock 服务: uvicorn mock_goats_api.server:app --port {port}")
+                print(f"     请先启动 Mock 服务: uvicorn mock_api.server:app --port {port}")
                 break
             except Exception as e:
                 failed += 1
