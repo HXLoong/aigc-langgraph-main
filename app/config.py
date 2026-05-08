@@ -38,6 +38,10 @@ class Settings(BaseSettings):
     goats_client_secret: str = ""
     goats_extapp_salt: str = ""
 
+    # === securities-instrument 标的查询 ===
+    securities_instrument_url: str = ""
+    securities_instrument_key: str = ""
+
     # === 外部搜索 ===
     bocha_api_key: str = ""
     tavily_api_key: str = ""

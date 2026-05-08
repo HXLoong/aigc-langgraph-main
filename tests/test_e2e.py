@@ -228,8 +228,8 @@ async def test_e2e_parse_excel_row_extraction(mock_settings):
     except ImportError:
         pytest.skip("openpyxl 未安装")
 
-    from app.subgraphs.swap import parse_excel
     from app.state import make_initial_state
+    from app.subgraphs.swap import parse_excel
 
     # 构造一个内存 Excel
     wb = openpyxl.Workbook()

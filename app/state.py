@@ -109,6 +109,8 @@ class AgentState(TypedDict, total=False):
 
     # === 路由决策 ===
     product_type: ProductType
+    modality: str
+    operate: str
     intent: str | None
     fast_query: bool
     existing_command: bool
@@ -118,6 +120,7 @@ class AgentState(TypedDict, total=False):
     raw_tickers: list[str]                    # LLM 分词结果
     ticker_candidates: list[TickerCandidate]  # goats 返回的候选
     resolved_tickers: list[TickerCandidate]   # 排序过滤后的最终结果
+    _needs_refinement: bool                    # 分词质量不足，需重试
 
     # === 订单参数（统一结构） ===
     order_list: list[dict]
@@ -145,6 +148,8 @@ def make_initial_state(wechat_input: WechatInput) -> AgentState:
         conversation_orders=[],
         counterparty_list=[],
         product_type="unknown",
+        modality="text",
+        operate="",
         intent=None,
         fast_query=False,
         existing_command=False,
@@ -152,6 +157,7 @@ def make_initial_state(wechat_input: WechatInput) -> AgentState:
         raw_tickers=[],
         ticker_candidates=[],
         resolved_tickers=[],
+        _needs_refinement=False,
         order_list=[],
         order_ids=[],
         api_code=None,

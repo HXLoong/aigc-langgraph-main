@@ -46,14 +46,13 @@ async def detect_quick_query(state: AgentState) -> dict[str, Any]:
     is_quick = any(k in raw for k in QUICK_QUERY_KEYWORDS)
     return {
         "fast_query": is_quick,
-        "_quick": "yes" if is_quick else "no",
         "trace": [{"node": "detect_quick_query",
                    "decision": "quick" if is_quick else "standard"}],
     }
 
 
 def route_quick_query(state: AgentState) -> str:
-    return state.get("_quick", "no")
+    return "yes" if state.get("fast_query", False) else "no"
 
 
 # ==============================================================
@@ -65,22 +64,22 @@ async def fast_query_api(state: AgentState) -> dict[str, Any]:
 
     Dify 用 Python 代码节点直接调后端接口，不过 LLM。
     """
-    # 简化：这里直接调 option_operate 接口，带特殊 type
+    # 简化：这里直接调 financial_orders_operate 接口，带特殊 type
     wx = state["wechat_input"]
     async with OtcBackendClient() as client:
-        resp = await client.option_operate(
-            conversation_id=wx.get("conversation_id", ""),
-            message_id=wx.get("message_id", ""),
-            message_content=wx.get("raw_content", ""),
-            raw_content=wx.get("raw_content", ""),
-            quote_content=wx.get("quote_content"),
-            quote_appinfo=wx.get("quote_appinfo"),
-            user_id=wx.get("user_id", ""),
-            room_id=wx.get("room_id", ""),
+        resp = await client.financial_orders_operate(
+            conversationId=wx.get("conversation_id", ""),
+            messageId=wx.get("message_id", ""),
+            messageContent=wx.get("raw_content", ""),
+            rawContent=wx.get("raw_content", ""),
+            quoteContent=wx.get("quote_content"),
+            quoteAppinfo=wx.get("quote_appinfo"),
+            userId=wx.get("user_id", ""),
+            roomId=wx.get("room_id", ""),
             guid=wx.get("guid", ""),
             operate="fast_inquiry",
-            type_="new_inquiry",
-            order_list=[],  # 快速询价由后端解析
+            type="new_inquiry",
+            orderList=[],  # 快速询价由后端解析
         )
     return {
         "api_code": resp.get("code"),
@@ -161,7 +160,7 @@ resolved_tickers:
     return {
         "intent": result.type,
         "order_list": order_dicts,
-        "_operate": result.operate,
+        "operate": result.operate,
         "trace": [{
             "node": "extract_option",
             "decision": result.type,
@@ -246,23 +245,23 @@ async def call_option_api(state: AgentState) -> dict[str, Any]:
 
     wx = state["wechat_input"]
     intent = state.get("intent", "unknown")
-    operate = state.get("_operate", "")
+    operate = state.get("operate", "")
     order_list = state.get("order_list", [])
 
     async with OtcBackendClient() as client:
-        resp = await client.option_operate(
-            conversation_id=wx.get("conversation_id", ""),
-            message_id=wx.get("message_id", ""),
-            message_content=wx.get("raw_content", ""),
-            raw_content=wx.get("raw_content", ""),
-            quote_content=wx.get("quote_content"),
-            quote_appinfo=wx.get("quote_appinfo"),
-            user_id=wx.get("user_id", ""),
-            room_id=wx.get("room_id", ""),
+        resp = await client.financial_orders_operate(
+            conversationId=wx.get("conversation_id", ""),
+            messageId=wx.get("message_id", ""),
+            messageContent=wx.get("raw_content", ""),
+            rawContent=wx.get("raw_content", ""),
+            quoteContent=wx.get("quote_content"),
+            quoteAppinfo=wx.get("quote_appinfo"),
+            userId=wx.get("user_id", ""),
+            roomId=wx.get("room_id", ""),
             guid=wx.get("guid", ""),
             operate=operate,
-            type_=intent,
-            order_list=order_list,
+            type=intent,
+            orderList=order_list,
         )
 
     return {
@@ -292,13 +291,13 @@ def build_option_graph():
                                                     ↓
                                                    END
     """
-    from app.subgraphs.ticker import build_ticker_agent
+    from app.subgraphs.ticker import build_ticker_graph
 
     g = StateGraph(AgentState)
 
     g.add_node("detect_quick_query", detect_quick_query)
     g.add_node("fast_query_api", fast_query_api)
-    g.add_node("ticker_identify", build_ticker_agent())
+    g.add_node("ticker_identify", build_ticker_graph().compile())
     g.add_node("extract_option", extract_option)
     g.add_node("check_param_limit", check_param_limit)
     g.add_node("call_option_api", call_option_api)

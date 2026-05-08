@@ -7,6 +7,8 @@
 """
 from __future__ import annotations
 
+import importlib.util
+
 import pytest
 from pydantic import ValidationError
 
@@ -223,9 +225,6 @@ def test_close_intent_all_types():
 def test_close_order_no_list_empty_default():
     o = CloseOrderNoListOutput()
     assert o.order_no_list == []
-
-
-import importlib.util
 
 
 # ============================================================
