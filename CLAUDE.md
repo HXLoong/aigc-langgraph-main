@@ -11,13 +11,28 @@ pip install -e ".[dev]"          # 首次安装
 docker compose up -d mysql        # 启 MySQL 依赖
 docker compose exec mysql mysql -uroot -prootpassword < sql/schema.sql  # 建业务表
 uvicorn app.main:app --reload     # 启服务（本地开发）
-pytest tests/ -v                  # 跑全部测试（目标 49+ 通过）
+pytest tests/ -v                  # 跑全部测试（目标 117+ 通过）
 pytest tests/test_e2e.py -v       # 只跑端到端测试
+
+# 闭环验证（零外部依赖，CI 友好）
+python scripts/demo_closed_loop.py            # 期望 30/30 PASS
+uv run uvicorn mock_api.server:app --port 8099 &   # 启 mock 后端（GOATS + 业务 + 标的查询）
+python tests/run_integration_test.py          # 全链路 15 条 case，需 mock_api + LangGraph
+python tests/api/run_all.py                   # GOATS 20 个接口连通性，需真实后端
 
 # 评估与运维
 python scripts/eval_golden.py tests/fixtures/golden.jsonl
-python scripts/shadow_compare.py --langgraph <url> --dify <url> --sample <file>
-python scripts/export_dify_prompts.py <dify-yaml-dir> <output-dir>
+python scripts/shadow_compare.py \
+    --langgraph http://localhost:8000/v1/message \
+    --dify https://dify.example.com/v1/workflows/run \
+    --dify-api-key app-xxxx --sample tests/fixtures/golden.jsonl \
+    --output /tmp/shadow_diff.json
+
+# Dify 同步：先拉 YAML，再导出提示词，再合入
+export DIFY_EMAIL="..." DIFY_PASSWORD="..."
+python dify/sync.py                                       # → dify/yaml/
+python scripts/export_dify_prompts.py dify/yaml/ /tmp/new-prompts/
+diff -r app/prompts/ /tmp/new-prompts/                    # 选择性合入
 ```
 
 ## 项目结构
@@ -35,9 +50,26 @@ app/
 ├── llm/clients.py           # Qwen standard / thinking / VL
 ├── prompts/                 # 23 个真实 Dify 提示词（.md 资源文件）
 └── api/routes.py            # /v1/message + /v1/message/confirm
+
+dify/                        # Dify 工作流同步工具（2026-05 新增）
+├── sync.py                  # 从内网 Dify 拉最新 YAML
+└── yaml/                    # 5 个工作流的导出文件（只读资产）
+
+mock_api/server.py           # 32 个端点：GOATS 20 + 业务 6 + 标的查询 1 + 其他
+
+scripts/
+├── demo_closed_loop.py      # 零依赖闭环 demo（30/30 PASS，CI 入口）
+├── shadow_compare.py        # LangGraph vs Dify 双跑（重构后）
+├── eval_golden.py / export_dify_prompts.py
+
+tests/
+├── test_*.py                # 单元 + E2E + 闭环 CI（117 条）
+├── api/                     # GOATS 20 个接口连通性（独立运行）
+└── fixtures/golden.jsonl    # 30 条端到端用例
 ```
 
 详见 @docs/ARCHITECTURE.md，规则详见 `.claude/rules/`。
+近期变更与下一步计划见 @docs/CHANGELOG_2026-05.md。
 
 ## 核心原则（永远有效）
 
@@ -68,11 +100,15 @@ app/
 
 ## 当前阶段
 
-v1.0 已完成：骨架 + 标的识别 + 业务子图 + 真实 Dify 提示词 + 历史加载。
-下一步：Shadow 双跑验证差异率 → 金丝雀切换。
+v1.0 已完成：骨架 + 标的识别 + 业务子图 + 真实 Dify 提示词 + 历史加载 + **闭环验证**（30/30 PASS）。
+mock_api 已覆盖 GOATS 20 + 业务 6 + 标的查询 1，**整条链路可脱离 VPN / 真实后端跑通**。
+下一步：Shadow 双跑验证差异率 → 金丝雀切换；详见 @docs/CHANGELOG_2026-05.md。
 
 详见：
 - 架构：@docs/ARCHITECTURE.md
 - Dify 迁移：@docs/DIFY_MIGRATION.md
 - 开发指南：@docs/DEVELOPMENT.md
+- Shadow 双跑：@docs/SHADOW_COMPARE_GUIDE.md
+- 测试与联调状态：@docs/TEST_AND_CONNECTIVITY_STATUS.md
+- 近期变更与下一步：@docs/CHANGELOG_2026-05.md
 - 常见问题：@docs/TROUBLESHOOTING.md
