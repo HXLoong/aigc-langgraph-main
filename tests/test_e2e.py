@@ -57,6 +57,7 @@ def mock_backend(monkeypatch):
     mock_client.financial_orders_operate = AsyncMock(return_value={
         "code": 0, "result": "平仓操作成功",
     })
+    mock_client.query_close_orders = AsyncMock(return_value=[])
     mock_client.bot_name_list = AsyncMock(return_value=["机器人A"])
     mock_client.conversation_orders = AsyncMock(return_value=[])
     mock_client.counterparty_list = AsyncMock(return_value=[

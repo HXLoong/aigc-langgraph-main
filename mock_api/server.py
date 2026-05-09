@@ -499,6 +499,35 @@ async def financial_orders_operate(request: Request):
     return backend_ok(f"[mock] 期权平仓{type_}操作已受理，单号 OPT-{today().replace('-', '')}-0001")
 
 
+# 2.1 平仓订单详情查询（按 orderIds / contractCodes 批量拉取 availableNotional 等）
+# 对应最新 Dify 主工作流（2026-05）`获取订单信息` HTTP 节点，
+# 用于喂给 `请求下单和确认全部平仓参数提取` 的 orderList 输入。
+@app.post("/admin-api/financial-orders/query-close-orders")
+async def query_close_orders(request: Request):
+    body = await request.json() if await request.body() else {}
+    order_ids = body.get("orderIds") or []
+    contract_codes = body.get("contractCodes") or []
+
+    data: list[dict] = []
+    for idx, oid in enumerate(order_ids, start=1):
+        data.append({
+            "orderId": oid,
+            "contractCode": f"OPT-{today().replace('-', '')}-{idx:04d}",
+            "notional": 5_000_000,
+            "availableNotional": 5_000_000,
+        })
+    for code in contract_codes:
+        # 没绑定具体 orderId 的合约直查（直平合约场景）
+        if not any(d.get("contractCode") == code for d in data):
+            data.append({
+                "orderId": None,
+                "contractCode": code,
+                "notional": 3_000_000,
+                "availableNotional": 3_000_000,
+            })
+    return backend_ok(data)
+
+
 # 3. 交易对手列表
 @app.get("/admin-api/counterparty/info/list")
 async def counterparty_info_list():

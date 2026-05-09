@@ -73,19 +73,8 @@ def route_by_modality(state: AgentState) -> str:
 
 
 # ==============================================================
-# 图片识别（VL OCR）
+# 图片识别（VL OCR，使用 Dify 原始提示词）
 # ==============================================================
-IMAGE_OCR_SYSTEM_PROMPT = """你是专业的金融交易图片文字识别引擎。
-
-## 任务
-将交易界面截图中的所有文字准确识别并输出为结构化文本。
-
-## 规则
-1. 逐字节精确识别：标点/全半角/特殊符号原样保留
-2. 若图中有表格，以 Markdown 表格输出
-3. 若图中有多段文字（如"总单" + 明细列表），分段输出并保持顺序
-4. 只输出识别结果，不添加任何说明
-"""
 
 
 @safe_node
@@ -143,10 +132,13 @@ async def parse_image(state: AgentState) -> dict[str, Any]:
         }
 
     # 调 VL 模型（OpenAI 兼容的多模态 content）
+    from app.prompts import load_prompt
+
+    ocr_prompt = load_prompt("swap", "image_ocr")
     vl = get_qwen_vl()
     try:
         resp = await vl.ainvoke([
-            ("system", IMAGE_OCR_SYSTEM_PROMPT),
+            ("system", ocr_prompt.system),
             ("user", [
                 {"type": "text", "text": "请识别这张图中的全部文字。"},
                 {"type": "image_url",
@@ -310,17 +302,38 @@ def route_by_intent(state: AgentState) -> str:
 
 
 # ==============================================================
-# 参数提取 - 下单（使用 Dify 原始提示词，58K 字符）
+# 参数提取 - 下单（按模态选择对应 Dify 提示词）
+#
+# Dify 主工作流将下单参数解析拆为三个 LLM 节点：
+#   - text   → 互换-节点-下单 (place_order.md, 60K+ 字符)
+#   - image  → 图片-互换-请求下单参数解析 (image_extract.md, 25K 字符)
+#   - excel  → Excel-互换-请求下单参数解析 (excel_extract.md, 7K 字符)
+# 三者最终都汇聚到 模型数据聚合 → 后端互换API。这里按 state.modality 选用，
+# 保持和 Dify 1:1 对齐。
 # ==============================================================
+_MODALITY_TO_PROMPT = {
+    "text": "place_order",
+    "image": "image_extract",
+    "excel": "excel_extract",
+}
+
+
 @safe_node
 async def extract_place_order(state: AgentState) -> dict[str, Any]:
-    """提取下单参数。对应 Dify `互换-节点-下单`。"""
+    """提取下单参数。按模态选择 Dify 对应提示词。"""
     from app.config import get_settings
     from app.llm.clients import get_qwen_thinking
-    from app.prompts import compose_prompt
+    from app.prompts import compose_prompt, load_prompt
 
-    version = get_settings().swap_prompt_version
-    prompt = compose_prompt("swap", "place_order", version=version)
+    modality = state.get("modality", "text")
+    prompt_name = _MODALITY_TO_PROMPT.get(modality, "place_order")
+
+    if prompt_name == "place_order":
+        # 文本路径支持 v2 拆分
+        version = get_settings().swap_prompt_version
+        prompt = compose_prompt("swap", "place_order", version=version)
+    else:
+        prompt = load_prompt("swap", prompt_name)
 
     wx = state["wechat_input"]
     resolved = state.get("resolved_tickers", [])
@@ -367,6 +380,7 @@ counterparty_list:
         "order_list": order_dicts,
         "trace": [{
             "node": "extract_place_order",
+            "decision": f"modality={modality} prompt=swap/{prompt_name}",
             "output_preview": preview(order_dicts),
         }],
     }
@@ -421,20 +435,111 @@ history_query_str: {history_str or '(无)'}"""
                        "error": str(e)}],
         }
 
-    order_id = result.order_id
-    if order_id.startswith("NOT_FOUND"):
+    # 最新 Dify 提示词支持从 quote_content 一次性提取多个 orderId
+    order_ids = result.order_ids
+    if not order_ids:
         return {
             "error": "未能从输入中识别出订单号，请提供完整订单号（如 H-20260304-ABCD123456）",
             "trace": [{"node": "extract_order_id", "decision": "not_found"}],
         }
 
-    order_list = [{"orderId": order_id, "action": intent}]
+    order_list = [{"orderId": oid, "action": intent} for oid in order_ids]
     return {
         "order_list": order_list,
-        "order_ids": [order_id],
+        "order_ids": order_ids,
         "trace": [{"node": "extract_order_id",
-                   "output_preview": order_id,
-                   "decision": f"prompt={prompt_name}"}],
+                   "output_preview": ", ".join(order_ids),
+                   "decision": f"prompt={prompt_name} count={len(order_ids)}"}],
+    }
+
+
+# ==============================================================
+# 手 → 股 换算（最新 Dify 节点：互换-手转为股）
+#
+# Dify 用 LLM 调外部 kimi 做单笔换算，循环每个 leg 调一次。
+# 这里用纯 Python 实现常见品种的"每手股数"映射，速度更快且不依赖外部 LLM。
+# 期货品种保持原值透传（与 Dify 提示词的硬约束一致）。
+# ==============================================================
+# 港股每手股数（少量主流标的，未命中走默认 100）
+_HK_LOT_SIZE: dict[str, int] = {
+    "0700.HK": 100,
+    "9988.HK": 100,
+    "0941.HK": 500,
+    "0200.HK": 1000,
+}
+
+# 期货合约后缀：保留原值不换算
+_FUTURE_SUFFIXES = (
+    ".SHF", ".CFE", ".DCE", ".CZC", ".INE",
+    ".NYM", ".CMX", ".CBT", ".CME", ".ICE", ".LME", ".SGX", ".IPE",
+)
+
+
+def _is_future(wind_code: str | None) -> bool:
+    if not wind_code:
+        return False
+    upper = wind_code.upper()
+    return any(upper.endswith(suf) for suf in _FUTURE_SUFFIXES)
+
+
+def _shares_per_hand(wind_code: str | None) -> int:
+    """根据 wind code 推断每手股数。
+
+    A 股普通股每手 100，港股按 _HK_LOT_SIZE 查表（默认 100），
+    美股每手 = 1，无法识别的标的默认 100（保守取 A 股口径）。
+    """
+    if not wind_code:
+        return 100
+    upper = wind_code.upper()
+    if upper.endswith(".HK"):
+        return _HK_LOT_SIZE.get(upper, 100)
+    if upper.endswith((".N", ".O", ".A")):  # 美股
+        return 1
+    return 100
+
+
+@safe_node
+async def hand_to_share(state: AgentState) -> dict[str, Any]:
+    """对每个 leg 把 placeOrderQuantityHand 换算为 placeOrderQuantity（股）。
+
+    规则（与 Dify 提示词 `互换-手转为股` 一致）：
+    - 期货标的：Hand 与 Qty 原值透传，不换算
+    - 非期货且 Hand 为 null：原值透传
+    - 非期货且有手数：placeOrderQuantity = placeOrderQuantityHand × 每手股数，
+      Hand 字段保留原值不置 null
+    """
+    order_list = state.get("order_list", [])
+    if not order_list:
+        return {"trace": [{"node": "hand_to_share", "status": "skip",
+                            "decision": "empty_order_list"}]}
+
+    converted = 0
+    new_list: list[dict[str, Any]] = []
+    for leg in order_list:
+        leg = dict(leg)  # 拷贝避免改动 state
+        wind_code = leg.get("placeOrderWindCode") or leg.get("stock_code")
+        hand = leg.get("placeOrderQuantityHand")
+        qty = leg.get("placeOrderQuantity")
+
+        # 字符串容错
+        if isinstance(hand, str) and hand.strip().isdigit():
+            hand = int(hand)
+        if isinstance(qty, str) and qty.strip().isdigit():
+            qty = int(qty)
+
+        if hand and not _is_future(wind_code) and not qty:
+            multiplier = _shares_per_hand(wind_code)
+            leg["placeOrderQuantity"] = int(hand) * multiplier
+            leg["placeOrderQuantityHand"] = int(hand)
+            converted += 1
+        new_list.append(leg)
+
+    return {
+        "order_list": new_list,
+        "trace": [{
+            "node": "hand_to_share",
+            "decision": f"converted={converted}/{len(order_list)}",
+        }],
     }
 
 
@@ -499,6 +604,9 @@ def build_swap_graph():
                       ▼            ▼          ▼              ▼
             extract_place_order  extract_order_id       (其他/兜底)
                       │            │
+                      ▼            │
+                hand_to_share      │   ← 互换-手转为股（2026-05 新增）
+                      │            │
                       └─────┬──────┘
                             ▼
                        call_swap_api
@@ -517,6 +625,7 @@ def build_swap_graph():
     g.add_node("classify_intent", classify_intent)
     g.add_node("extract_place_order", extract_place_order)
     g.add_node("extract_order_id", extract_order_id)
+    g.add_node("hand_to_share", hand_to_share)
     g.add_node("call_swap_api", call_swap_api)
 
     g.add_edge(START, "dispatch_modality")
@@ -543,7 +652,9 @@ def build_swap_graph():
         },
     )
 
-    g.add_edge("extract_place_order", "call_swap_api")
+    # 下单链路追加 hand → share 换算（最新 Dify 节点：互换-手转为股）
+    g.add_edge("extract_place_order", "hand_to_share")
+    g.add_edge("hand_to_share", "call_swap_api")
     g.add_edge("extract_order_id", "call_swap_api")
     g.add_edge("call_swap_api", END)
 

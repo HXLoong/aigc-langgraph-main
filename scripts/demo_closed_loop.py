@@ -273,6 +273,7 @@ def _make_mock_backend():
     mock_client.swap_operate = AsyncMock(return_value={"code": 0, "result": "[mock] swap ok"})
     mock_client.option_operate = AsyncMock(return_value={"code": 0, "result": "[mock] option ok"})
     mock_client.financial_orders_operate = AsyncMock(return_value={"code": 0, "result": "[mock] close ok"})
+    mock_client.query_close_orders = AsyncMock(return_value=[])
     mock_client.fast_query = AsyncMock(return_value={"code": 0, "result": "[mock] fast query ok"})
     mock_client.bot_name_list = AsyncMock(return_value=["机器人A"])
     mock_client.conversation_orders = AsyncMock(return_value=[])

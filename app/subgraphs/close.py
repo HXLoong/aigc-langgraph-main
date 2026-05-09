@@ -100,8 +100,28 @@ async def extract_holding_query(state: AgentState) -> dict[str, Any]:
 
 
 # ==============================================================
-# 请求平仓参数提取（使用 Dify 原始 44K 字符提示词）
+# 请求平仓参数提取（使用 Dify 原始 50K+ 字符提示词）
+#
+# 最新 Dify 版本（2026-05）的关键变化：
+# 1. 新增 `orderList` 输入（含 availableNotional / contractCode / notional），
+#    LLM 用它支持基于比例 / 余量目标的平仓金额计算（平一半 / 平X% / 平剩到Xw）。
+# 2. 因此本节点前需要先调 /admin-api/financial-orders/query-close-orders 拉取
+#    待平仓订单的实际 availableNotional。
 # ==============================================================
+def _extract_close_targets(text: str) -> tuple[list[str], list[str]]:
+    """从用户文本中粗取 orderId（CO-...） / contractCode（OPT-/OPTG-...）。
+
+    LLM 提示词依赖 orderList，但我们在调 LLM 之前需要知道要拉哪些订单的明细，
+    因此先用正则拿到候选 ID。漏拣不影响主流程（mock 后端会按 orderId 兜底）。
+    """
+    import re
+
+    order_ids = re.findall(r"\bCO-\d{8}-[A-Z0-9]{8,12}\b", text or "")
+    contract_codes = re.findall(r"\b(?:OPT|OPTG)-\d{8}-[A-Z0-9]{4,12}\b", text or "")
+    # 去重，保持出现顺序
+    return list(dict.fromkeys(order_ids)), list(dict.fromkeys(contract_codes))
+
+
 @safe_node
 async def extract_place_close(state: AgentState) -> dict[str, Any]:
     from app.llm.clients import get_qwen_thinking
@@ -110,8 +130,26 @@ async def extract_place_close(state: AgentState) -> dict[str, Any]:
     prompt = load_prompt("option_close", "place_close")
 
     wx = state["wechat_input"]
-    user_msg = f"""User input: {wx.get('raw_content', '')}
-quote_content: {wx.get('quote_content', '') or '(无)'}"""
+    raw = wx.get("raw_content", "") or ""
+    quote = wx.get("quote_content", "") or ""
+
+    # 拉 orderList（含 availableNotional），失败时降级为空列表
+    order_ids, contract_codes = _extract_close_targets(raw + "\n" + quote)
+    order_list_for_llm: list[dict[str, Any]] = []
+    if order_ids or contract_codes:
+        async with OtcBackendClient() as client:
+            order_list_for_llm = await client.query_close_orders(
+                order_ids=order_ids,
+                contract_codes=contract_codes,
+                room_id=wx.get("room_id", ""),
+                message_id=wx.get("message_id", ""),
+            )
+
+    import json as _json
+    order_list_str = _json.dumps(order_list_for_llm, ensure_ascii=False)
+    user_msg = f"""User input: {raw}
+quote_content: {quote or '(无)'}
+orderList: {order_list_str}"""
 
     llm = get_qwen_thinking().with_structured_output(ClosePlaceOrderOutput)
     try:
@@ -125,10 +163,15 @@ quote_content: {wx.get('quote_content', '') or '(无)'}"""
             "trace": [{"node": "extract_place_close", "status": "error"}],
         }
 
-    order_list = [leg.model_dump(exclude_none=True) for leg in result.close_order_list]
+    order_list = [leg.model_dump(exclude_none=True, by_alias=True)
+                  for leg in result.close_order_list]
     return {
         "order_list": order_list,
-        "trace": [{"node": "extract_place_close", "output_preview": preview(order_list)}],
+        "trace": [{
+            "node": "extract_place_close",
+            "decision": f"orderList_size={len(order_list_for_llm)}",
+            "output_preview": preview(order_list),
+        }],
     }
 
 
