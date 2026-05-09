@@ -302,17 +302,38 @@ def route_by_intent(state: AgentState) -> str:
 
 
 # ==============================================================
-# 参数提取 - 下单（使用 Dify 原始提示词，58K 字符）
+# 参数提取 - 下单（按模态选择对应 Dify 提示词）
+#
+# Dify 主工作流将下单参数解析拆为三个 LLM 节点：
+#   - text   → 互换-节点-下单 (place_order.md, 60K+ 字符)
+#   - image  → 图片-互换-请求下单参数解析 (image_extract.md, 25K 字符)
+#   - excel  → Excel-互换-请求下单参数解析 (excel_extract.md, 7K 字符)
+# 三者最终都汇聚到 模型数据聚合 → 后端互换API。这里按 state.modality 选用，
+# 保持和 Dify 1:1 对齐。
 # ==============================================================
+_MODALITY_TO_PROMPT = {
+    "text": "place_order",
+    "image": "image_extract",
+    "excel": "excel_extract",
+}
+
+
 @safe_node
 async def extract_place_order(state: AgentState) -> dict[str, Any]:
-    """提取下单参数。对应 Dify `互换-节点-下单`。"""
+    """提取下单参数。按模态选择 Dify 对应提示词。"""
     from app.config import get_settings
     from app.llm.clients import get_qwen_thinking
-    from app.prompts import compose_prompt
+    from app.prompts import compose_prompt, load_prompt
 
-    version = get_settings().swap_prompt_version
-    prompt = compose_prompt("swap", "place_order", version=version)
+    modality = state.get("modality", "text")
+    prompt_name = _MODALITY_TO_PROMPT.get(modality, "place_order")
+
+    if prompt_name == "place_order":
+        # 文本路径支持 v2 拆分
+        version = get_settings().swap_prompt_version
+        prompt = compose_prompt("swap", "place_order", version=version)
+    else:
+        prompt = load_prompt("swap", prompt_name)
 
     wx = state["wechat_input"]
     resolved = state.get("resolved_tickers", [])
@@ -359,6 +380,7 @@ counterparty_list:
         "order_list": order_dicts,
         "trace": [{
             "node": "extract_place_order",
+            "decision": f"modality={modality} prompt=swap/{prompt_name}",
             "output_preview": preview(order_dicts),
         }],
     }
