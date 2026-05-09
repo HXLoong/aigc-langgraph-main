@@ -52,6 +52,11 @@ async def ingest(state: AgentState) -> dict[str, Any]:
         "bot_name_list": bot_names,
         "conversation_orders": conv_orders,
         "counterparty_list": counterparties,
+        "history_messages": [*state.get("history_messages", []), {
+            "role": "user",
+            "content": wx.get("raw_content", ""),
+            "quote_content": wx.get("quote_content", "") or "",
+        }],
         "trace": [{
             "node": "ingest",
             "output_preview": (

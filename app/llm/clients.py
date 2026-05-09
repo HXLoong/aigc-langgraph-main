@@ -45,6 +45,24 @@ def get_qwen_thinking() -> ChatOpenAI:
 
 
 @lru_cache(maxsize=1)
+def get_qwen_structured() -> ChatOpenAI:
+    """Qwen 模型专用于 with_structured_output（json_mode）。
+
+    使用 standard 模型而非 thinking，因为 qwen-max-latest 不支持
+    structured output（function calling），会返回垃圾值导致 Pydantic 解析失败。
+    """
+    settings = get_settings()
+    return ChatOpenAI(
+        model=settings.qwen_model_standard,
+        base_url=settings.qwen_api_base,
+        api_key=settings.qwen_api_key,
+        temperature=0.0,
+        timeout=60,
+        max_retries=2,
+    )
+
+
+@lru_cache(maxsize=1)
 def get_qwen_vl() -> ChatOpenAI:
     """视觉 Qwen：图片 OCR / 截图识别。"""
     settings = get_settings()

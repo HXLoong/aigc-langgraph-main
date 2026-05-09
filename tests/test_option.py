@@ -753,7 +753,11 @@ class TestOptionGraph:
         _show("子图路径4: 空order_list",
               {"raw_content": "期权询价", "order_list": []},
               {"api_code": result.get("api_code"),
-               "trace_nodes": trace_nodes})
+               "trace_nodes": trace_nodes,
+               "error": result.get("error"),
+               "reply_text": (result.get("reply_text") or "")[:80]})
+        # check_param_limit 遇空 order_list 跳过，call_option_api 正常调用得到 code=0
+        # （check_param_completeness 在图中未挂载，空参数直接透传）
         assert "check_param_limit" in trace_nodes
         assert "call_option_api" in trace_nodes
         assert result.get("api_code") == 0

@@ -22,6 +22,7 @@ from langgraph.graph import END, START, StateGraph
 from app.nodes.common import safe_node
 from app.state import AgentState, preview
 from app.subgraphs.option_models import (
+    _INTENT_TYPE_NORMALIZE,
     OptionExtractOutput,
     OptionParamLimit,
 )
@@ -119,12 +120,42 @@ async def extract_option(state: AgentState) -> dict[str, Any]:
         f"- {t.wind_code} ({t.ins_sht_desc})" for t in resolved
     ) or "(空)"
 
-    user_message = f"""raw_content: {wx.get('raw_content', '')}
-quote_content: {wx.get('quote_content', '') or '(无)'}
+    raw_content = wx.get("raw_content", "")
+    quote_content = wx.get("quote_content", "") or ""
+
+    # "-" 是多轮对话中的快捷确认信号
+    if raw_content.strip() == "-":
+        return {
+            "intent": "confirm",
+            "order_list": [],
+            "operate": "确认",
+            "trace": [{"node": "extract_option", "decision": "dash_as_confirm"}],
+        }
+
+    # 术语规范化提示
+    term_hint = ""
+    raw_lower = raw_content.lower()
+    if any(k in raw_lower for k in ("call", "put")):
+        term_hint = "\n术语提示：英文 'call' = 看涨期权，'put' = 看跌期权"
+    # 多标的提示
+    if len(resolved) >= 2:
+        codes = ", ".join(t.wind_code for t in resolved[:8])
+        term_hint += (
+            f"\n多标的提示: 已识别 {len(resolved)} 个标的 ({codes})，"
+            "必须为每个标的创建独立的 orderList 对象"
+        )
+    if not resolved and history_str:
+        term_hint += (
+            "\n重要上下文提示：当前消息未识别到标的代码，请从 history_query_str 中提取"
+            "标的代码、期限等信息，与当前消息的参数合并。"
+        )
+
+    user_message = f"""raw_content: {raw_content}
+quote_content: {quote_content or '(无)'}
 history_query_str: {history_str or '(无)'}
 bot_name_list: {bot_names}
 resolved_tickers:
-{resolved_str}"""
+{resolved_str}{term_hint}"""
 
     llm = get_qwen_thinking().with_structured_output(OptionExtractOutput)
     try:
@@ -139,18 +170,54 @@ resolved_tickers:
         }
 
     order_dicts = [leg.model_dump(exclude_none=True) for leg in result.order_list]
+    normalized = _INTENT_TYPE_NORMALIZE.get(result.type, result.type)
     return {
-        "intent": result.type,
+        "intent": normalized,
         "order_list": order_dicts,
         "operate": result.operate,
         "trace": [{
             "node": "extract_option",
-            "decision": result.type,
+            "decision": normalized,
             "output_preview": preview(order_dicts),
         }],
     }
 
 
+# ==============================================================
+# 参数完整性检查
+# ==============================================================
+@safe_node
+async def check_param_completeness(state: AgentState) -> dict[str, Any]:
+    """检查询价参数是否完整（标的、方向、期限、行权价）。
+
+    对应 Dify `期权-参数完整性检查`。
+    """
+    order_list = state.get("order_list", [])
+    intent = state.get("intent", "")
+    if not order_list or intent not in ("new_inquiry", "modify_order"):
+        return {"trace": [{"node": "check_param_completeness", "decision": "skip"}]}
+
+    missing_fields: list[str] = []
+    for i, order in enumerate(order_list):
+        if not order.get("stock_code"):
+            missing_fields.append(f"第{i + 1}条：标的代码")
+        if not order.get("option_type"):
+            missing_fields.append(f"第{i + 1}条：期权类型（欧式/美式）")
+        if not order.get("tenor"):
+            missing_fields.append(f"第{i + 1}条：期限")
+
+    if missing_fields:
+        msg = "询价参数不完整，请补充以下信息：\n" + "\n".join(missing_fields)
+        return {
+            "error": msg,
+            "reply_text": msg,
+            "trace": [{"node": "check_param_completeness", "decision": "incomplete"}],
+        }
+
+    return {"trace": [{"node": "check_param_completeness", "decision": "complete"}]}
+
+
+# ==============================================================
 # ==============================================================
 # 参数限制检查
 # ==============================================================
@@ -214,6 +281,44 @@ async def check_param_limit(state: AgentState) -> dict[str, Any]:
 # ==============================================================
 # 调用后端 API
 # ==============================================================
+def _format_reply(intent: str, order_list: list[dict], raw_result: str) -> str:
+    """根据意图类型格式化客服回复。"""
+    order_no = ""
+    if order_list:
+        order_no = (
+            order_list[0].get("order_no")
+            or order_list[0].get("order_id")
+            or order_list[0].get("orderId")
+            or ""
+        )
+
+    if intent == "cancel_order":
+        if order_no:
+            return (
+                f"已接收撤单指令\n单号：{order_no}\n"
+                f"请回复\"确认撤单\"以提交撤单申请。"
+            )
+        return f"已接收撤单指令\n{raw_result}"
+
+    if intent == "confirm":
+        if order_no:
+            return (
+                f"已确认下单\n单号：{order_no}\n"
+                f"您的订单已提交，请等待交易员审核。"
+            )
+        return f"已确认操作\n{raw_result}"
+
+    if intent == "place_order":
+        if order_no:
+            return (
+                f"{raw_result}\n\n"
+                f"已收到下单指令（单号：{order_no}），请回复\"确认下单\"以提交订单。"
+            )
+        return f"{raw_result}\n\n已收到下单指令，请回复\"确认下单\"以提交订单。"
+
+    return raw_result
+
+
 @safe_node
 async def call_option_api(state: AgentState) -> dict[str, Any]:
     """调用 /admin-api/option-order/operate。对应 Dify 期权工具的 `期权API`。"""
@@ -246,12 +351,15 @@ async def call_option_api(state: AgentState) -> dict[str, Any]:
             orderList=order_list,
         )
 
+    raw_result = resp.get("result", "")
+    api_result = _format_reply(intent, order_list, raw_result)
+
     return {
         "api_code": resp.get("code"),
-        "api_result": resp.get("result"),
+        "api_result": api_result,
         "trace": [{
             "node": "call_option_api",
-            "output_preview": f"code={resp.get('code')}",
+            "output_preview": f"code={resp.get('code')} intent={intent}",
         }],
     }
 
@@ -281,6 +389,7 @@ def build_option_graph():
     g.add_node("fast_query_api", fast_query_api)
     g.add_node("ticker_identify", build_ticker_graph().compile())
     g.add_node("extract_option", extract_option)
+    g.add_node("check_param_completeness", check_param_completeness)
     g.add_node("check_param_limit", check_param_limit)
     g.add_node("call_option_api", call_option_api)
 
@@ -292,7 +401,8 @@ def build_option_graph():
     )
     g.add_edge("fast_query_api", END)
     g.add_edge("ticker_identify", "extract_option")
-    g.add_edge("extract_option", "check_param_limit")
+    g.add_edge("extract_option", "check_param_completeness")
+    g.add_edge("check_param_completeness", "check_param_limit")
     g.add_edge("check_param_limit", "call_option_api")
     g.add_edge("call_option_api", END)
 

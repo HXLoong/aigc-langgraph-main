@@ -1033,7 +1033,7 @@ query包含机器人转述：您希望下单的是"我要下3M那单"，以下�
 
 * **提取步骤**（必须严格按顺序执行）：
   1. **预处理**：执行【机器人名称过滤规则】，移除所有 bot_name_list 中的机器人名称及 @ 提及
-  2. **拆分**：将过滤后的文本按分隔符（逗号、顿号、空格、换行）拆分为独立片段；如果无任何分隔符，则按关键词边界拆分
+  2. **拆分**：将过滤后的文本按分隔符（逗号、顿号、空格、换行）拆分为独立片段；如果无任何分隔符，则按关键词边界拆分。**【重要】"X%call" → 必须拆成 "X%" + "call"；"X%put" → 必须拆成 "X%" + "put"；"call"/"put" 是期权方向关键词，必须从百分比中分离**
   3. **逐片段分类**：对每个片段独立判断它属于哪个字段（参照上方排除模式清单）
   4. **取剩余**：排除以上所有已识别字段后，剩余的片段就是标的候选
   5. **统一写入 stockCode**：
@@ -1041,7 +1041,7 @@ query包含机器人转述：您希望下单的是"我要下3M那单"，以下�
      - 若剩余片段是**纯中文名称**（如"中海油"、"贵州茅台"、"银行ETF"）→ stockCode 原样保留该名称
      - 若剩余片段是**代码+名称的连续整体串**（如"2333长城汽车"、"中国平安601318.SH"、"512800.SH银行ETF"）→ **整体保留到 stockCode**（参见下文【代码+名称混合串完整保留规则】）
      - 若存在多个独立的剩余片段（用户同时输入代码和名称，且两者之间有分隔符，如"中国平安, 601318.SH"）→ **优先选择代码格式的片段**（如"601318.SH"）作为 stockCode；若都不是代码格式，选择中文名称片段
-  6. **多标的场景例外**：仅当用户通过"/"分隔明确提供多个独立代码（如"600519/600520"）时，为每个代码生成独立的 orderList 对象（见下文【多标的解析规则】）
+  6. **多标的场景例外**：当用户通过"/"或逗号（中英文）分隔提供多个独立代码时（如"600519/600520"、"002597,002074,002690"、"002597，002074，002690"），为每个代码生成独立的 orderList 对象（见下文【多标的解析规则】）
 
 
 
@@ -1494,10 +1494,18 @@ orderList 对象: stockCode: "600519", optionType: "欧式看涨", strikePercent
 
 
 
-多标的询价示例：@机器人 欧式看涨，600519/600520，100%，1M
+多标的询价示例（斜杠分隔）：@机器人 欧式看涨，600519/600520，100%，1M
 应创建两个orderList对象，每个标的一个：
 对象1: stockCode: "600519", optionType: "欧式看涨", strikePercentage: 100.00, tenor: "1M", participationRate: null
 对象2: stockCode: "600520", optionType: "欧式看涨", strikePercentage: 100.00, tenor: "1M", participationRate: null
+
+多标的询价示例（逗号分隔）：@机器人 002597，002074，002690，603308，603198，欧式看涨，1M,105%
+应创建五个orderList对象，每个标的一个：
+对象1: stockCode: "002597", optionType: "欧式看涨", strikePercentage: 105.00, tenor: "1M", participationRate: null
+对象2: stockCode: "002074", optionType: "欧式看涨", strikePercentage: 105.00, tenor: "1M", participationRate: null
+对象3: stockCode: "002690", optionType: "欧式看涨", strikePercentage: 105.00, tenor: "1M", participationRate: null
+对象4: stockCode: "603308", optionType: "欧式看涨", strikePercentage: 105.00, tenor: "1M", participationRate: null
+对象5: stockCode: "603198", optionType: "欧式看涨", strikePercentage: 105.00, tenor: "1M", participationRate: null
 
 
 

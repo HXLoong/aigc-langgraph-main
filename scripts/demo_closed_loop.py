@@ -268,8 +268,8 @@ def _synthesize_output(output_cls, text: str) -> Any:
 # ============================================================
 def _make_mock_backend():
     mock_client = AsyncMock()
-    mock_client.__aenter__.return_value = mock_client
-    mock_client.__aexit__.return_value = None
+    mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+    mock_client.__aexit__ = AsyncMock(return_value=None)
     mock_client.swap_operate = AsyncMock(return_value={"code": 0, "result": "[mock] swap ok"})
     mock_client.option_operate = AsyncMock(return_value={"code": 0, "result": "[mock] option ok"})
     mock_client.financial_orders_operate = AsyncMock(return_value={"code": 0, "result": "[mock] close ok"})
@@ -354,6 +354,7 @@ async def run_one_case(graph, case: dict, *, verbose: bool) -> dict:
         "quote_appinfo": case.get("quote_appinfo"),
         "attachments": case.get("attachments", []),
     })
+    state["at_bot"] = True
     config = {"configurable": {"thread_id": f"demo-{case['id']}"}, "recursion_limit": 30}
 
     start = time.monotonic()

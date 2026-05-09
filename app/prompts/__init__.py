@@ -1,6 +1,8 @@
 """提示词加载器。
 
 从 `app/prompts/**/*.md` 中加载由 `scripts/export_dify_prompts.py` 导出的提示词。
+当 ENABLE_LANGFUSE=true 且 use_langfuse_prompts=true 时，优先从 Langfuse 拉取，
+失败时回退到本地 .md 文件。
 
 md 格式约定：
     # 提示词标题
@@ -22,13 +24,17 @@ md 格式约定：
     p = load_prompt("swap", "intent")
     # p.system → str
     # p.user_template → str（原始 Dify 占位符未替换）
+    # p.config → dict（Langfuse 附带的 model / temperature 等，本地加载时为 None）
 """
 from __future__ import annotations
 
+import logging
 import re
 from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
+
+logger = logging.getLogger(__name__)
 
 PROMPTS_DIR = Path(__file__).parent
 
@@ -39,6 +45,7 @@ class Prompt:
     name: str
     system: str
     user_template: str   # 可能包含 Dify 占位符 {{#xxx.yyy#}}
+    config: dict | None = None  # Langfuse 附带的 model / temperature 等
 
     def render_user(self, **kwargs: str) -> str:
         """把 user_template 中的 {{variable_name}} 占位符替换成实际值。
@@ -72,9 +79,54 @@ def _parse_prompt_md(text: str) -> tuple[str, str]:
     return system, user_template
 
 
+def _langfuse_name(category: str, name: str) -> str:
+    """category/name → Langfuse prompt name（下划线连接）。"""
+    return "_".join(category.split("/") + [name])
+
+
+def _load_from_langfuse(category: str, name: str) -> Prompt | None:
+    """从 Langfuse 拉取提示词，失败返回 None。"""
+    try:
+        from langfuse import Langfuse
+
+        lf = Langfuse()
+        lf_name = _langfuse_name(category, name)
+        lf_prompt = lf.get_prompt(lf_name)
+
+        if isinstance(lf_prompt.prompt, list):
+            system = ""
+            user_template = ""
+            for msg in lf_prompt.prompt:
+                if msg.get("role") == "system":
+                    system = msg.get("content", "")
+                elif msg.get("role") == "user":
+                    user_template = msg.get("content", "")
+        else:
+            system = lf_prompt.prompt
+            user_template = ""
+
+        if not system:
+            logger.warning("Langfuse 提示词 %s 无 system 内容，回退本地", lf_name)
+            return None
+
+        logger.info("从 Langfuse 加载: %s v%s", lf_name, lf_prompt.version)
+        return Prompt(
+            name=f"{category}/{name}",
+            system=system,
+            user_template=user_template,
+            config=lf_prompt.config or {},
+        )
+    except Exception:
+        logger.debug("Langfuse 加载 %s/%s 失败，回退本地", category, name, exc_info=True)
+        return None
+
+
 @lru_cache(maxsize=128)
 def load_prompt(category: str, name: str) -> Prompt:
-    """加载 app/prompts/{category}/{name}.md。
+    """加载提示词，Langfuse 优先 + 本地 .md 兜底。
+
+    当 enable_langfuse=true 且 use_langfuse_prompts=true 时，
+    优先从 Langfuse 拉取，失败回退本地 .md。
 
     Args:
         category: 分类目录名，如 "swap" / "option_close" / "ticker"
@@ -82,12 +134,16 @@ def load_prompt(category: str, name: str) -> Prompt:
 
     Raises:
         FileNotFoundError: 对应文件不存在
-
-    Example:
-        >>> p = load_prompt("swap", "intent")
-        >>> p.system
-        '你是一个互换(Swap)交易意图识别引擎...'
     """
+    from app.config import get_settings
+
+    settings = get_settings()
+    if settings.enable_langfuse and settings.use_langfuse_prompts:
+        lf_prompt = _load_from_langfuse(category, name)
+        if lf_prompt is not None:
+            return lf_prompt
+
+    # 本地 .md 兜底
     path = PROMPTS_DIR / category / f"{name}.md"
     if not path.exists():
         raise FileNotFoundError(

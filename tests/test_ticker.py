@@ -209,9 +209,10 @@ class TestTokenizeKeywords:
 
     @pytest.mark.asyncio
     async def test_llm_error_caught_by_safe_node(self):
-        """LLM 抛异常 → @safe_node 兜底
+        """LLM 抛异常 → 内部 try/except 捕获，回退正则提取。
         INPUT:  LLM 抛出 RuntimeError("超时")
-        OUTPUT: state.error 非空，trace 中有一条 status="error"
+        OUTPUT: raw_tickers 由正则兜底，不抛 error。
+                 （tokenize_keywords 内部已 try/except，异常不再传到 @safe_node）
         """
         from app.subgraphs.ticker import tokenize_keywords
 
@@ -223,10 +224,13 @@ class TestTokenizeKeywords:
 
         _show("tokenize_keywords LLM异常降级",
               {"raw_content": "x", "error": "LLM抛RuntimeError"},
-              {"error": result.get("error", ""),
-               "trace_status": [t.get("status") for t in result.get("trace", [])]})
-        assert "error" in result
-        assert any(t.get("status") == "error" for t in result["trace"])
+              {"raw_tickers": result.get("raw_tickers", []),
+               "_needs_refinement": result.get("_needs_refinement"),
+               "trace_decision": result.get("trace", [{}])[0].get("decision", "")})
+        # 异常被内部捕获 → 正则兜底，raw_tickers 为空（"x" 不匹配 Wind 代码正则）
+        assert result["raw_tickers"] == []
+        assert result["_needs_refinement"] is False
+        assert "regex_fallback" in result.get("trace", [{}])[0].get("decision", "")
 
 
 class TestRetokenize:
@@ -658,36 +662,36 @@ class TestSearchSecuritiesInstrument:
 
     @pytest.mark.asyncio
     async def test_business_error(self):
-        """业务 code != 0 → 返回 []
+        """MySQL 连接失败 → 返回 [{"_error": ...}]
         INPUT:  keyword_items = [{"keyword":"x"}]
-               HTTP 返回 code=500
-        OUTPUT: []
+               mock aiomysql.connect 抛异常
+        OUTPUT: [{"_error": "标的池 MySQL 不可达: ..."}]
         """
         from app.subgraphs.ticker_tools import search_securities_instrument
 
-        mock_response = MagicMock()
-        mock_response.json.return_value = {"code": 500, "msg": "内部错误"}
-        mock_response.raise_for_status = MagicMock()
-
-        with patch("httpx.AsyncClient.request", AsyncMock(return_value=mock_response)):
+        with patch("aiomysql.connect", AsyncMock(side_effect=OSError("连接拒绝"))):
             result = await search_securities_instrument.ainvoke({
                 "keyword_items": [{"isFull": False, "keyword": "x"}],
             })
-        _show("search_securities_instrument 业务错误",
-              {"keyword_items": [{"keyword": "x"}], "api_code": 500},
+        _show("search_securities_instrument MySQL 连接失败",
+              {"keyword_items": [{"keyword": "x"}], "error": "OSError"},
               {"result": result})
-        assert result == []
+        assert len(result) == 1
+        assert "_error" in result[0]
+        assert "MySQL" in result[0]["_error"]
 
     @pytest.mark.asyncio
     async def test_connect_timeout(self):
-        """连接超时 → 返回 _error 标记
-        INPUT:  httpx.AsyncClient.request 抛 ConnectTimeout
-        OUTPUT: [{"_error": "..."}]
+        """MySQL 连接超时 → 返回 _error 标记
+        INPUT:  mock aiomysql.connect 抛 ConnectTimeout
+        OUTPUT: [{"_error": "标的池 MySQL 不可达: ..."}]
         """
         from app.subgraphs.ticker_tools import search_securities_instrument
 
-        with patch("httpx.AsyncClient.request",
-                   AsyncMock(side_effect=__import__("httpx").ConnectTimeout("超时"))):
+        class MockTimeout(Exception):
+            pass
+
+        with patch("aiomysql.connect", AsyncMock(side_effect=MockTimeout("连接超时"))):
             result = await search_securities_instrument.ainvoke({
                 "keyword_items": [{"isFull": False, "keyword": "x"}],
             })

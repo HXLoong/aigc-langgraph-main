@@ -42,6 +42,13 @@ class Settings(BaseSettings):
     securities_instrument_url: str = ""
     securities_instrument_key: str = ""
 
+    # 标的池 MySQL（直连查询）
+    ticker_mysql_host: str = "172.16.8.27"
+    ticker_mysql_port: int = 3306
+    ticker_mysql_user: str = "dev-user"
+    ticker_mysql_password: str = "xyWss45^772"
+    ticker_mysql_db: str = "aigc-test"
+
     # === 外部搜索 ===
     bocha_api_key: str = ""
     tavily_api_key: str = ""
@@ -64,6 +71,9 @@ class Settings(BaseSettings):
     # v1：Dify 原始 md 直接加载（兼容/回滚）
     # v2：裁剪版，compose_prompt 把 _base + 意图片段拼接，字符数少 ~20%
     swap_prompt_version: Literal["v1", "v2"] = "v1"
+
+    # 从 Langfuse 拉提示词（需同时 enable_langfuse=true）
+    use_langfuse_prompts: bool = False
 
 
 @lru_cache(maxsize=1)

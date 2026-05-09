@@ -75,12 +75,33 @@ def _route_after_search(state: AgentState) -> str:
 # ==================================================================
 
 
+# Wind 代码正则：6 位数字 + . + 交易所后缀（不加 \b，中文逗号/空格会导致边界失败）
+_WIND_CODE_RE = _re.compile(r"(\d{6}\.[A-Z]{2,3})")
+
+# 股票名称常见模式：中文 + 可能跟 Wind 代码
+_STOCK_NAME_HINT_RE = _re.compile(r"[一-鿿]{2,6}(?:股票|股份|集团|银行|证券|保险)?")
+
+
+def _regex_extract_keywords(text: str) -> list[str]:
+    """从文本中用正则提取 Wind 代码作为关键词（LLM 不可用时的兜底）。"""
+    codes = _WIND_CODE_RE.findall(text)
+    seen: set[str] = set()
+    result = []
+    for c in codes:
+        if c not in seen:
+            seen.add(c)
+            result.append(c)
+    return result
+
+
 @safe_node
 async def tokenize_keywords(state: AgentState) -> dict[str, Any]:
     """LLM 分词：从用户输入中提取标的关键词并自检质量。
 
     使用 load_prompt("ticker", "tokenize") 的 system prompt，
     LLM 通过 with_structured_output(TokenizeOutput) 返回结构化结果。
+
+    若 LLM 不可用（如 429 限流），回退到正则提取 Wind 代码。
     """
     from app.llm.clients import get_qwen_standard
     from app.prompts import load_prompt
@@ -88,24 +109,46 @@ async def tokenize_keywords(state: AgentState) -> dict[str, Any]:
     prompt = load_prompt("ticker", "tokenize_v2")
     wx = state["wechat_input"]
     raw = wx.get("raw_content", "")
+    quote = wx.get("quote_content") or ""
+    combined = f"{raw}\n{quote}"
 
-    llm = get_qwen_standard().with_structured_output(TokenizeOutput)
-    result: TokenizeOutput = await llm.ainvoke([
-        ("system", prompt.system),
-        ("user", raw),
-    ])
+    # 正则预提取兜底关键词
+    fallback_keywords = _regex_extract_keywords(combined)
+
+    try:
+        llm = get_qwen_standard().with_structured_output(TokenizeOutput)
+        result: TokenizeOutput = await llm.ainvoke([
+            ("system", prompt.system),
+            ("user", raw),
+        ])
+    except Exception as exc:
+        logger.warning("tokenize_keywords LLM 失败，回退正则: %s", exc)
+        return {
+            "raw_tickers": fallback_keywords,
+            "_needs_refinement": False,
+            "trace": [{"node": "tokenize_keywords",
+                       "decision": f"regex_fallback_{len(fallback_keywords)}_keywords",
+                       "output_preview": str(fallback_keywords)[:200]}],
+        }
 
     logger.info(
         "tokenize_keywords(v2): extracted=%d needs_refinement=%s",
         len(result.keywords), result.needs_refinement,
     )
+
+    # 若 LLM 返回空 keywords 但正则提取到了 Wind 代码，合并兜底
+    keywords = list(result.keywords)
+    if not keywords and fallback_keywords:
+        keywords = fallback_keywords
+        logger.info("tokenize_keywords: LLM 空结果，使用正则兜底 %s", fallback_keywords)
+
     return {
-        "raw_tickers": result.keywords,
+        "raw_tickers": keywords,
         "_needs_refinement": result.needs_refinement,
         "trace": [{
             "node": "tokenize_keywords",
-            "decision": f"extracted {len(result.keywords)} keywords",
-            "output_preview": ", ".join(result.keywords[:10]),
+            "decision": f"extracted {len(keywords)} keywords",
+            "output_preview": ", ".join(keywords[:10]),
         }],
     }
 
@@ -176,6 +219,7 @@ async def search_candidates(state: AgentState) -> dict[str, Any]:
         return {
             "resolved_tickers": [],
             "ticker_candidates": [],
+            "_ticker_search_error": True,
             "trace": [{"node": "search_candidates", "status": "error", "error": error_msg}],
         }
 

@@ -492,40 +492,152 @@ async def swap_order_operate(request: Request):
 
 
 # 2. 期权/平仓操作（询价/下单/撤单/持仓查询）
+def _lookup_stock_name(code: str) -> str:
+    """MySQL 查标的名称，失败返回代码本身。"""
+    try:
+        import aiomysql, asyncio
+        from app.config import get_settings
+        s = get_settings()
+        async def _q():
+            conn = await aiomysql.connect(host=s.ticker_mysql_host, port=s.ticker_mysql_port,
+                user=s.ticker_mysql_user, password=s.ticker_mysql_password,
+                db=s.ticker_mysql_db, charset="utf8mb4", connect_timeout=3)
+            try:
+                async with conn.cursor() as cur:
+                    await cur.execute("SELECT stock_name FROM stock_exchange_sec_data WHERE bond_code LIKE %s LIMIT 1", (f"%{code}%",))
+                    row = await cur.fetchone()
+                    return row[0] if row else code
+            finally:
+                conn.close()
+        return asyncio.run(_q())
+    except Exception:
+        return code
+
+
 @app.post("/admin-api/financial-orders/operate")
 async def financial_orders_operate(request: Request):
     body = await request.json() if await request.body() else {}
     type_ = body.get("type", "unknown")
-    return backend_ok(f"[mock] 期权平仓{type_}操作已受理，单号 OPT-{today().replace('-', '')}-0001")
+    operate = body.get("operate", "")
+    order_list = body.get("orderList") or []
+    if isinstance(order_list, list) and order_list and isinstance(order_list[0], dict):
+        stock = order_list[0].get("stock_code") or order_list[0].get("stockCode", "600519.SH")
+        stock_name = order_list[0].get("stock_name") or _lookup_stock_name(stock)
+        opt_type = order_list[0].get("option_type") or order_list[0].get("optionType", "欧式看涨")
+        tenor = order_list[0].get("tenor", "1M")
+        strike = order_list[0].get("strike_price") or order_list[0].get("strikePercentage", "80%")
+    else:
+        stock, stock_name, opt_type, tenor, strike = "600519.SH", "贵州茅台", "欧式看涨", "1M", "80%"
+
+    if type_ in ("close_order_query",):
+        return backend_ok(
+            "\n".join([
+                "-----场外期权持仓详情-----",
+                f"序号：{i+1}",
+                f"单号：{p['orderId']}",
+                f"合约编号：{p['contractCode']}",
+                f"期权类型：{p['optionType']}",
+                f"标的信息：{p['underlyingCode']} {p['underlyingName']}",
+                f"当日剩余可申请平仓名义本金：{p['availableNotional']:,}",
+                f"合约剩余名义本金：{p['notional']:,}",
+                f"是否可平仓：{'是' if p['availableNotional'] > 0 else '否'}",
+                "" if i < len(_POSITIONS) - 1 else (
+                    "\n如需平仓，请引用本消息回复【持仓序号或合约编号】【平仓名义本金】【平仓价格方式】。\n"
+                    "例如：序号1，200w,市价下单"
+                ),
+            ] for i, p in enumerate(_POSITIONS))
+        )
+
+    if type_ in ("new_inquiry",):
+        return backend_ok(
+            f"-----场外期权询价详情-----\n"
+            f"单号：Q-{today().replace('-','')}-0001\n"
+            f"期权类型：{opt_type}\n"
+            f"标的代码：{stock}\n"
+            f"标的名称：{stock_name}\n"
+            f"期限：{tenor}\n"
+            f"行权价格：{strike}\n"
+            f"期权费率：6.9%\n名义本金：待补充\n建仓指令：待补充\n交易对手：待补充\n\n"
+            f"如需下单，请引用本消息补充【交易对手】【名义本金】【建仓指令】。\n"
+            f"本群可选交易对手列表：A.交易对手A  B.交易对手B"
+        )
+    if type_ in ("place_order", "place_order_from_quote", "confirm", "confirm_order"):
+        return backend_ok(
+            f"-----场外期权下单确认-----\n"
+            f"单号：Q-{today().replace('-','')}-0001\n"
+            f"期权类型：{opt_type}\n标的代码：{stock}\n"
+            f"名义本金：200万元\n建仓指令：市价下单\n交易对手：交易对手A\n\n"
+            f"已收到您的下单指令，请引用本消息回复【确认下单】以提交审核。"
+        )
+    return backend_ok(f"[mock] {operate or type_}操作已受理，单号 OPT-{today().replace('-', '')}-0001")
 
 
 # 2.1 平仓订单详情查询（按 orderIds / contractCodes 批量拉取 availableNotional 等）
 # 对应最新 Dify 主工作流（2026-05）`获取订单信息` HTTP 节点，
 # 用于喂给 `请求下单和确认全部平仓参数提取` 的 orderList 输入。
+
+# 模拟持仓数据库（与 eval golden set 的合约信息对齐）
+_POSITIONS: list[dict] = [
+    {
+        "id": 1, "orderId": "CO-20260506-85AB8526",
+        "contractCode": "OPT-LYAFT20260001",
+        "notional": 10_000_000, "availableNotional": 10_000_000,
+        "underlyingCode": "000155.SZ", "underlyingName": "川能动力",
+        "optionType": "欧式看涨", "createTime": "2026-05-06 15:18",
+    },
+    {
+        "id": 2, "orderId": "CO-20260506-E74E24BF",
+        "contractCode": "OPT-SZZSCF20260001",
+        "notional": 10_000_000, "availableNotional": 10_000_000,
+        "underlyingCode": "000155.SZ", "underlyingName": "川能动力",
+        "optionType": "欧式看涨", "createTime": "2026-05-06 15:49",
+    },
+    {
+        "id": 3, "orderId": "CO-20260506-7C8DEF06",
+        "contractCode": "OPT-SZZSCF20260004",
+        "notional": 10_000_000, "availableNotional": 10_000_000,
+        "underlyingCode": "002382.SZ", "underlyingName": "蓝帆医疗",
+        "optionType": "雪球", "createTime": "2026-05-06 15:05",
+    },
+    {
+        "id": 4, "orderId": "CO-20260506-DEAF117C",
+        "contractCode": "OPT-LYAFT20260001",
+        "notional": 10_000_000, "availableNotional": 10_000_000,
+        "underlyingCode": "000155.SZ", "underlyingName": "川能动力",
+        "optionType": "欧式看涨", "createTime": "2026-05-06 15:21",
+    },
+]
+
+
+def _find_positions(order_ids: list[str], contract_codes: list[str]) -> list[dict]:
+    """按 orderId / contractCode 查找持仓。"""
+    if not order_ids and not contract_codes:
+        return [_POSITIONS[0]]
+    result: list[dict] = []
+    seen: set[str] = set()
+    for pos in _POSITIONS:
+        if pos["orderId"] in order_ids or pos["contractCode"] in contract_codes:
+            key = pos["orderId"] or pos["contractCode"]
+            if key not in seen:
+                seen.add(key)
+                result.append(dict(pos))
+    # 没匹配到时返回序号对应的持仓（按 id 匹配）
+    if not result:
+        for oid in order_ids:
+            for pos in _POSITIONS:
+                if str(pos["id"]) == str(oid):
+                    if pos["orderId"] not in seen:
+                        seen.add(pos["orderId"])
+                        result.append(dict(pos))
+    return result
+
+
 @app.post("/admin-api/financial-orders/query-close-orders")
 async def query_close_orders(request: Request):
     body = await request.json() if await request.body() else {}
     order_ids = body.get("orderIds") or []
     contract_codes = body.get("contractCodes") or []
-
-    data: list[dict] = []
-    for idx, oid in enumerate(order_ids, start=1):
-        data.append({
-            "orderId": oid,
-            "contractCode": f"OPT-{today().replace('-', '')}-{idx:04d}",
-            "notional": 5_000_000,
-            "availableNotional": 5_000_000,
-        })
-    for code in contract_codes:
-        # 没绑定具体 orderId 的合约直查（直平合约场景）
-        if not any(d.get("contractCode") == code for d in data):
-            data.append({
-                "orderId": None,
-                "contractCode": code,
-                "notional": 3_000_000,
-                "availableNotional": 3_000_000,
-            })
-    return backend_ok(data)
+    return backend_ok(_find_positions(order_ids, contract_codes))
 
 
 # 3. 交易对手列表

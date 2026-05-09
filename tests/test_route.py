@@ -19,6 +19,7 @@ async def test_route_close_by_order_number():
         "raw_content": "请帮我平 CO-20260304-4FE9C941",
     }
     state = make_initial_state(wx)
+    state["at_bot"] = True
     result = await route_product(state)
     assert result["product_type"] == "option_close"
 
@@ -35,6 +36,7 @@ async def test_route_close_by_contract_number():
         "raw_content": "OPTG-SZZSCF20250030 平仓",
     }
     state = make_initial_state(wx)
+    state["at_bot"] = True
     result = await route_product(state)
     assert result["product_type"] == "option_close"
 
@@ -47,6 +49,7 @@ async def test_route_swap_by_keyword():
         "raw_content": "做一笔 TRS 互换，跟量 100%",
     }
     state = make_initial_state(wx)
+    state["at_bot"] = True
     result = await route_product(state)
     assert result["product_type"] == "swap"
 
@@ -61,6 +64,7 @@ async def test_route_swap_by_attachment():
         "attachments": [{"url": "http://example.com/x.xlsx", "type": "excel"}],
     }
     state = make_initial_state(wx)
+    state["at_bot"] = True
     result = await route_product(state)
     assert result["product_type"] == "swap"
 
@@ -73,6 +77,7 @@ async def test_route_option_by_keyword():
         "raw_content": "茅台雪球报价",
     }
     state = make_initial_state(wx)
+    state["at_bot"] = True
     result = await route_product(state)
     assert result["product_type"] == "option"
 
@@ -85,6 +90,7 @@ async def test_route_unknown():
         "raw_content": "今天天气不错",
     }
     state = make_initial_state(wx)
+    state["at_bot"] = True
     result = await route_product(state)
     assert result["product_type"] == "unknown"
 
@@ -99,6 +105,7 @@ async def test_route_priority_close_over_swap():
         "attachments": [{"url": "http://example.com/x.xlsx"}],
     }
     state = make_initial_state(wx)
+    state["at_bot"] = True
     result = await route_product(state)
     assert result["product_type"] == "option_close"
 

@@ -44,12 +44,16 @@ class SwapIntentOutput(BaseModel):
 # 值域归一化：Dify prompt 里使用大写/CamelCase，归一到 snake_case 小写
 # ============================================================
 def _norm_direction(v: Any) -> Any:
-    """BUY/SELL → buy/sell。"""
+    """BUY/SELL → buy/sell。None → buy（默认买入）。"""
+    if v is None:
+        return "buy"
     return v.lower() if isinstance(v, str) else v
 
 
 def _norm_price_type(v: Any) -> Any:
-    """MarketOrder/LimitOrder → market/limit。"""
+    """MarketOrder/LimitOrder → market/limit。None → market（默认市价）。"""
+    if v is None:
+        return "market"
     if not isinstance(v, str):
         return v
     mapping = {"marketorder": "market", "limitorder": "limit"}

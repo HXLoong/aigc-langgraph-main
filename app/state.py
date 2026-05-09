@@ -29,6 +29,7 @@ SwapIntent = Literal[
 OptionIntent = Literal[
     "new_inquiry",               # 新询价
     "place_order",               # 下单
+    "place_order_from_quote",    # 引用询价结果下单
     "modify_order",              # 改单
     "cancel_order",              # 撤单
     "confirm",                   # 确认
@@ -103,7 +104,7 @@ class AgentState(TypedDict, total=False):
     bot_name_list: list[str]
 
     # === 上下文 ===
-    history_messages: Annotated[list[dict], add]    # 本会话历史
+    history_messages: list[dict]    # 本会话历史（节点内手动累加，避免 subgraph 传递时 add reducer 重复触发）
     conversation_orders: list[dict]                   # 本会话的已下单记录
     counterparty_list: list[dict]                     # 交易对手列表
 
@@ -121,6 +122,7 @@ class AgentState(TypedDict, total=False):
     ticker_candidates: list[TickerCandidate]  # goats 返回的候选
     resolved_tickers: list[TickerCandidate]   # 排序过滤后的最终结果
     _needs_refinement: bool                    # 分词质量不足，需重试
+    _ticker_search_error: bool                 # MySQL 标的池不可达，跳过标的校验
 
     # === 订单参数（统一结构） ===
     order_list: list[dict]
@@ -144,10 +146,8 @@ def make_initial_state(wechat_input: WechatInput) -> AgentState:
     return AgentState(
         wechat_input=wechat_input,
         bot_name_list=[],
-        history_messages=[],
         conversation_orders=[],
         counterparty_list=[],
-        product_type="unknown",
         modality="text",
         operate="",
         intent=None,
@@ -158,6 +158,7 @@ def make_initial_state(wechat_input: WechatInput) -> AgentState:
         ticker_candidates=[],
         resolved_tickers=[],
         _needs_refinement=False,
+        _ticker_search_error=False,
         order_list=[],
         order_ids=[],
         api_code=None,

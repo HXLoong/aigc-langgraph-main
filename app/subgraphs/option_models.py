@@ -3,20 +3,38 @@ from __future__ import annotations
 
 from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import AliasChoices, BaseModel, ConfigDict, Field
 
 # ============================================================
 # 期权意图与操作
 # ============================================================
 OptionIntentType = Literal[
-    "new_inquiry",       # 新询价
-    "existing_command",  # 存量指令（沿用之前已有订单）
-    "place_order",       # 下单
-    "modify_order",      # 改单
-    "cancel_order",      # 撤单
-    "confirm",           # 确认
+    "new_inquiry",             # 新询价
+    "existing_command",        # 存量指令（沿用之前已有订单）
+    "place_order",             # 下单
+    "place_order_from_quote",  # Dify 原版：引用询价结果下单
+    "modify_order",            # 改单
+    "cancel_order",            # 撤单
+    "confirm",                 # 确认
+    "confirm_order",           # Dify 原版：确认下单
+    "cancel_order_request",    # Dify 原版：请求撤单
+    "request_cancel_order",    # Dify 原版：撤单请求（含"撤单"关键词）
+    "confirm_cancel_order",    # Dify 原版：确认撤单
+    "query_order_status",      # Dify 原版：查询订单状态
     "unknown",
+    "unknown_intent",          # Dify 原版：未知意图
 ]
+
+# Dify 原版提示词中使用的别名 → 代码规范名
+_INTENT_TYPE_NORMALIZE: dict[str, str] = {
+    "place_order_from_quote": "place_order",
+    "confirm_order": "confirm",
+    "cancel_order_request": "cancel_order",
+    "request_cancel_order": "cancel_order",
+    "confirm_cancel_order": "cancel_order",
+    "query_order_status": "unknown",
+    "unknown_intent": "unknown",
+}
 
 OptionType = Literal[
     "欧式看涨", "欧式看跌",
@@ -28,16 +46,41 @@ OptionType = Literal[
 
 
 class OptionOrderLeg(BaseModel):
-    """期权订单的单条腿。"""
-    stock_code: str = Field(..., description="标的 Wind 代码")
+    """期权订单的单条腿。
+
+    字段同时接受 snake_case（代码）和 camelCase（Dify 提示词 JSON 示例）。"""
+
+    model_config = ConfigDict(populate_by_name=True, extra="allow")
+
+    stock_code: str = Field(
+        ..., validation_alias=AliasChoices("stock_code", "stockCode"),
+        description="标的 Wind 代码",
+    )
     stock_name: str | None = None
-    option_type: OptionType = Field(default="欧式看涨")
-    strike_price: float | None = Field(None, description="行权价（元/股或比例）")
+    option_type: OptionType = Field(
+        default="欧式看涨",
+        validation_alias=AliasChoices("option_type", "optionType"),
+    )
+    strike_price: float | None = Field(
+        None,
+        validation_alias=AliasChoices("strike_price", "strikePercentage"),
+        description="行权价（元/股或比例）",
+    )
     strike_price_type: Literal["absolute", "percent"] = "absolute"
     tenor: str | None = Field(None, description="期限，如 '3M' / '1Y' / '90D'")
-    notional: float | None = Field(None, description="名义本金")
+    notional: float | None = Field(
+        None,
+        validation_alias=AliasChoices("notional", "notionalAmount"),
+        description="名义本金",
+    )
     quantity: int | None = Field(None, description="手数/股数")
     direction: Literal["buy", "sell"] = "buy"
+
+    order_no: str | None = Field(
+        None,
+        validation_alias=AliasChoices("order_no", "orderNo", "orderId"),
+        description="期权订单号（Q-YYYYMMDD-XXXXXXXX，用于撤单/改单/确认等操作）",
+    )
 
     counterparty_id: int | None = None
     counterparty_name: str | None = None

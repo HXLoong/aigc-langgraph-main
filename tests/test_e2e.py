@@ -46,8 +46,8 @@ def mock_backend(monkeypatch):
     而不是 patch 定义它的原模块。
     """
     mock_client = AsyncMock()
-    mock_client.__aenter__.return_value = mock_client
-    mock_client.__aexit__.return_value = None
+    mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+    mock_client.__aexit__ = AsyncMock(return_value=None)
     mock_client.swap_operate = AsyncMock(return_value={
         "code": 0, "result": "互换订单已创建",
     })
@@ -96,6 +96,7 @@ async def test_e2e_unknown_intent(mock_settings, mock_backend):
         "room_id": "r", "user_id": "u", "guid": "",
         "raw_content": "你好，今天天气真好",
     })
+    state["at_bot"] = True
     config = {"configurable": {"thread_id": "c-unknown"}}
     result = await graph.ainvoke(state, config=config)
 
@@ -109,36 +110,41 @@ async def test_e2e_option_close_by_order_number(mock_settings, mock_backend):
     """平仓路径：命中 CO- 单号 → option_close 子图。"""
     from langgraph.checkpoint.memory import InMemorySaver
 
-    # Mock LLM 结构化输出
+    # close 子图同时用 get_qwen_standard (classify/extract_holding/extract_order)
+    # 和 get_qwen_structured (extract_close_place)，两边的 with_structured_output
+    # 共用同一个 side_effect 分流逻辑。
     with patch("app.llm.clients.get_qwen_standard") as mock_std, \
-         patch("app.llm.clients.get_qwen_thinking") as mock_thk:
+         patch("app.llm.clients.get_qwen_structured") as mock_struct:
 
-        # 平仓意图识别
-        from app.subgraphs.close_models import CloseIntentOutput
-
-        mock_intent_llm = MagicMock()
-        mock_intent_llm.ainvoke = AsyncMock(
-            return_value=CloseIntentOutput(type="close_order_request")
-        )
-        mock_std.return_value.with_structured_output.return_value = mock_intent_llm
-
-        # 平仓参数提取（thinking 模型）
         from app.subgraphs.close_models import (
+            CloseIntentOutput,
             ClosePlaceOrderLeg,
             ClosePlaceOrderOutput,
         )
 
-        mock_extract_llm = MagicMock()
-        mock_extract_llm.ainvoke = AsyncMock(return_value=ClosePlaceOrderOutput(
-            close_order_list=[
-                ClosePlaceOrderLeg(
-                    internal_trade_id="CO-20260304-4FE9C941",
-                    price_type="market",
-                    full_close=True,
+        def _make_llm_for(model_cls):
+            mock_llm = MagicMock()
+            if model_cls is CloseIntentOutput:
+                mock_llm.ainvoke = AsyncMock(
+                    return_value=CloseIntentOutput(type="close_order_request")
                 )
-            ],
-        ))
-        mock_thk.return_value.with_structured_output.return_value = mock_extract_llm
+            elif model_cls is ClosePlaceOrderOutput:
+                mock_llm.ainvoke = AsyncMock(return_value=ClosePlaceOrderOutput(
+                    close_order_list=[
+                        ClosePlaceOrderLeg(
+                            internal_trade_id="CO-20260304-4FE9C941",
+                            price_type="market",
+                            full_close=True,
+                        )
+                    ],
+                ))
+            else:
+                # 其他模型（CloseHoldingQueryOutput, CloseOrderNoListOutput）用默认空值
+                mock_llm.ainvoke = AsyncMock(return_value=model_cls())
+            return mock_llm
+
+        mock_std.return_value.with_structured_output.side_effect = _make_llm_for
+        mock_struct.return_value.with_structured_output.side_effect = _make_llm_for
 
         from app.graphs.main_graph import build_main_graph
         from app.state import make_initial_state
@@ -152,15 +158,16 @@ async def test_e2e_option_close_by_order_number(mock_settings, mock_backend):
             "room_id": "r", "user_id": "u", "guid": "",
             "raw_content": "请平 CO-20260304-4FE9C941 全部",
         })
+        state["at_bot"] = True
         config = {"configurable": {"thread_id": "c-close"}}
         result = await graph.ainvoke(state, config=config)
 
         assert result["product_type"] == "option_close"
         assert result["intent"] == "close_order_request"
         assert result["api_code"] == 0
-        assert result["api_result"] == "平仓操作成功"
-        # 确认后端被调用
-        mock_backend.financial_orders_operate.assert_awaited_once()
+        # 平仓确认应包含申请详情和确认引导
+        assert "平仓申请" in result.get("api_result", "")
+        assert "确认平仓" in result.get("api_result", "")
 
 
 @pytest.mark.asyncio
@@ -255,8 +262,8 @@ async def test_e2e_parse_excel_row_extraction(mock_settings):
     mock_response.raise_for_status = MagicMock()
 
     mock_client = AsyncMock()
-    mock_client.__aenter__.return_value = mock_client
-    mock_client.__aexit__.return_value = None
+    mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+    mock_client.__aexit__ = AsyncMock(return_value=None)
     mock_client.get = AsyncMock(return_value=mock_response)
 
     with _patch("httpx.AsyncClient", return_value=mock_client):

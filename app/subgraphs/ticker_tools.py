@@ -103,88 +103,133 @@ def regex_validate(keyword: str) -> dict:
 
 
 # ==================================================================
-# 工具 3：securities-instrument 标的查询（标的验证唯一终点）
+# 工具 3：标的池 MySQL 直查（标的验证唯一终点）
+#
+# 备选方案（HTTP API，已注释保留）：
+#     原来走 http://172.16.8.28:8807/admin-api/integration/securities-instrument/select
+#     POST body: {"keywordItems": [{"isFull": false, "keyword": "贵州茅台"}]}
+#     返回: {"code": 0, "data": [{windCode, insShtDesc, ...}]}
+#     需要 Authorization: Bearer {securities_instrument_key}
 # ==================================================================
+_EXCHANGE_CURRENCY: dict[str, str] = {
+    "SH": "CNY", "SZ": "CNY", "BJ": "CNY",
+    "HK": "HKD",
+    "N": "USD", "O": "USD", "NYM": "USD", "CMX": "USD", "CBT": "USD",
+    "T": "JPY", "TSE": "JPY",
+}
+_EXCHANGE_FAMILY: dict[str, str] = {
+    "SH": "EQUITY", "SZ": "EQUITY", "BJ": "EQUITY",
+    "HK": "EQUITY", "N": "EQUITY", "O": "EQUITY",
+    "NYM": "FUTURE", "CMX": "FUTURE", "CBT": "FUTURE",
+    "SHF": "FUTURE", "DCE": "FUTURE", "CZC": "FUTURE",
+    "INE": "FUTURE", "CFE": "FUTURE",
+}
+
+
+def _mysql_row_to_ticker(d: dict) -> dict:
+    exchange = (d.get("exchange_abbreviation") or "").strip().upper()
+    return {
+        "windCode": (d.get("bond_code") or "").strip(),
+        "insShtDesc": d.get("stock_name") or "",
+        "insLngDesc": d.get("corporate_name") or "",
+        "insFamily": _EXCHANGE_FAMILY.get(exchange, "EQUITY"),
+        "currency": _EXCHANGE_CURRENCY.get(exchange, "CNY"),
+        "exchange": exchange,
+        "from_goats": True,
+    }
+
+
 @tool
 async def search_securities_instrument(
     keyword_items: list[dict],
 ) -> list[dict]:
-    """在 securities-instrument 接口中批量搜索标的（支持中英文混合）。
+    """在 MySQL 标的池 (aigc-test.stock_exchange_sec_data) 中批量搜索标的。
 
-    这是标的验证的**唯一终点**，所有标的必须经此接口校验。
+    这是标的验证的**唯一终点**，所有标的必须经 MySQL 标的池校验。
     返回的标的均标记 from_goats=True。
 
     Args:
-        keyword_items: 查询条件列表，每项包含 isFull（是否精确）和 keyword（关键字），例如：
-            [{"isFull": False, "keyword": "TME"}, {"isFull": False, "keyword": "腾讯音乐"}]
-
-    Returns:
-        候选列表，每项含 windCode / insShtDesc / insLngDesc 等字段，
-        并自动附加 from_goats=True 标记
+        keyword_items: [{"isFull": false, "keyword": "贵州茅台"}, ...]
     """
-    settings = get_settings()
-    keyword_items = [item for item in keyword_items if item.get("keyword")]
+    import aiomysql
+
+    keyword_items = [i for i in keyword_items if i.get("keyword")]
     if not keyword_items:
         return []
 
-    import json as _json
-
-    headers = {
-        "Authorization": f"Bearer {settings.securities_instrument_key}",
-        "Content-Type": "application/json",
-    }
-    body = _json.dumps({"keywordItems": keyword_items}).encode()
+    settings = get_settings()
 
     try:
-        # 内网地址不走系统代理（防止本地 Clash/v2ray 代理拦截返回 502）
-        # GET 请求通过 content 传 JSON body（与 requests.get(json=...) 行为一致）
-        async with httpx.AsyncClient(timeout=15.0, proxy=None) as client:
-            r = await client.request(
-                "GET",
-                settings.securities_instrument_url,
-                headers=headers,
-                content=body,
-            )
-            r.raise_for_status()
-            resp_json = r.json()
+        conn = await aiomysql.connect(
+            host=settings.ticker_mysql_host,
+            port=settings.ticker_mysql_port,
+            user=settings.ticker_mysql_user,
+            password=settings.ticker_mysql_password,
+            db=settings.ticker_mysql_db,
+            charset="utf8mb4",
+            connect_timeout=5,
+        )
+    except Exception as e:
+        logger.error("标的池 MySQL 连接失败: %s", e)
+        return [{"_error": f"标的池 MySQL 不可达: {e}"}]
 
-            if resp_json.get("code") != 0:
-                logger.warning(
-                    "search_securities_instrument 业务失败: code=%s msg=%s",
-                    resp_json.get("code"), resp_json.get("msg"),
-                )
+    try:
+        async with conn.cursor() as cur:
+            conditions: list[str] = []
+            params: list[str] = []
+            for item in keyword_items:
+                kw = item["keyword"].strip()
+                is_full = bool(item.get("isFull", False))
+                if not kw:
+                    continue
+                if is_full:
+                    conditions.append(
+                        "(bond_code = %s OR stock_code = %s)"
+                    )
+                    params.extend([kw, kw])
+                else:
+                    like = f"%{kw}%"
+                    conditions.append(
+                        "(stock_name LIKE %s OR bond_code LIKE %s "
+                        "OR stock_english_acronyms LIKE %s OR corporate_name LIKE %s)"
+                    )
+                    params.extend([like, like, like, like])
+
+            if not conditions:
                 return []
 
-            raw: list[dict] = resp_json.get("data") or []
-            if len(raw) > 100:
-                raw = raw[:100]
+            sql = (
+                "SELECT bond_code, stock_code, stock_name, corporate_name, "
+                "stock_english_acronyms, exchange_abbreviation "
+                "FROM stock_exchange_sec_data "
+                f"WHERE deleted = 0 AND ({' OR '.join(conditions)}) "
+                "LIMIT 100"
+            )
+            await cur.execute(sql, params)
+            rows = await cur.fetchall()
+            col_names = [d[0] for d in cur.description]
 
-            # 按 windCode 去重，保持首次出现顺序
-            seen: set[str] = set()
-            items: list[dict] = []
-            for item in raw:
-                wc = item.get("windCode") or item.get("wind_code") or ""
-                if wc in seen:
-                    continue
-                seen.add(wc)
-                item["from_goats"] = True
-                items.append(item)
-            return items
-    except httpx.ConnectTimeout:
-        logger.error("search_securities_instrument 连接超时（API 不可达）")
-        return [{"_error": "API 不可达：连接超时，请检查网络/VPN"}]
-    except httpx.TimeoutException:
-        logger.error("search_securities_instrument 请求超时")
-        return [{"_error": "API 请求超时"}]
-    except httpx.HTTPStatusError as e:
-        logger.error("search_securities_instrument HTTP 错误: %s %s", e.response.status_code, e.response.text[:200])
-        return [{"_error": f"API 返回 HTTP {e.response.status_code}"}]
+        seen: set[str] = set()
+        results: list[dict] = []
+        for row in rows:
+            d = dict(zip(col_names, row))
+            ticker = _mysql_row_to_ticker(d)
+            wc = ticker["windCode"]
+            if wc in seen:
+                continue
+            seen.add(wc)
+            results.append(ticker)
+        return results
     except Exception as e:
-        logger.error("search_securities_instrument 失败: %s", e)
-        return [{"_error": f"API 调用失败: {e}"}]
+        logger.error("标的池 MySQL 查询失败: %s", e)
+        return [{"_error": f"MySQL 查询失败: {e}"}]
+    finally:
+        try:
+            conn.close()
+        except Exception:
+            pass
 
 
-# ==================================================================
 # 工具 4：Bocha 搜索（中文/国内标的）
 # ==================================================================
 @tool

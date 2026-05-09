@@ -67,8 +67,8 @@
       "Bash(rm -rf ~:*)",
       "Bash(sudo:*)",
       "Bash(chmod 777:*)",
-      "Bash(curl:* | sh)",
-      "Bash(curl:* | bash)",
+      "Bash(curl *| sh)",
+      "Bash(curl *| bash)",
       "Bash(docker compose down -v)"
     ]
   },
