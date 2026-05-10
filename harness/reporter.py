@@ -251,6 +251,78 @@ def summarize_by_source(
     return summary
 
 
+def summarize_by_prompt_version(
+    results: list[tuple[RunResult, list[FieldDiff]]],
+) -> dict[str, dict[str, dict[str, Any]]]:
+    """按 trace 中 `llm_output.prompt_name` 分组统计 PASS 率（节点 → 版本）。
+
+    用途：ADR 0003 灰度上线后，按节点的不同 prompt 版本对比 PASS 率，
+    支撑实证 A/B 决策（v2 是否扩流量、是否回滚）。
+
+    数据来源：节点函数在 trace 中写 `llm_output={"prompt_name": <name>, ...}`。
+    无 prompt_name 的 trace 条目跳过（不影响主统计）。
+
+    返回结构：
+        {
+          "swap_intent": {
+            "intent":    {"total": 28, "passed": 27, "failed": 1, "pass_rate": 0.964},
+            "intent_v2": {"total":  2, "passed":  2, "failed": 0, "pass_rate": 1.000},
+          },
+          ...
+        }
+
+    去重原则：每条 case 对同一 (node, prompt_name) 只计 1 次（LangGraph 子图嵌入
+    reducer add 会让 trace 重复，但 PASS 率口径上重复无意义）。
+    """
+    bucket: dict[str, dict[str, dict[str, int]]] = defaultdict(
+        lambda: defaultdict(lambda: {"total": 0, "passed": 0})
+    )
+
+    for r, d in results:
+        passed = is_pass(d)
+        seen: set[tuple[str, str]] = set()
+        for entry in r.final_state.get("trace", []):
+            # entry 可能是 TraceEntry 实例或 dict（兼容两种表达）
+            llm_output = (
+                getattr(entry, "llm_output", None)
+                if not isinstance(entry, dict)
+                else entry.get("llm_output")
+            )
+            node_name = (
+                getattr(entry, "node", None)
+                if not isinstance(entry, dict)
+                else entry.get("node")
+            )
+            if not isinstance(llm_output, dict) or not node_name:
+                continue
+            prompt_name = llm_output.get("prompt_name")
+            if not prompt_name:
+                continue
+
+            key = (node_name, prompt_name)
+            if key in seen:
+                continue
+            seen.add(key)
+
+            bucket[node_name][prompt_name]["total"] += 1
+            if passed:
+                bucket[node_name][prompt_name]["passed"] += 1
+
+    out: dict[str, dict[str, dict[str, Any]]] = {}
+    for node, versions in bucket.items():
+        out[node] = {}
+        for ver, stats in versions.items():
+            t = stats["total"]
+            p = stats["passed"]
+            out[node][ver] = {
+                "total": t,
+                "passed": p,
+                "failed": t - p,
+                "pass_rate": (p / t) if t else 0.0,
+            }
+    return out
+
+
 def render_markdown(
     results: list[tuple[RunResult, list[FieldDiff]]],
 ) -> str:
@@ -289,6 +361,30 @@ def render_markdown(
                 f"{info['pass_rate']:.1%} | {info['threshold']:.0%} | {ok} |"
             )
         lines.append("")
+
+    # ADR 0003 灰度：按 prompt 版本分桶（A/B 对比）
+    by_prompt = summarize_by_prompt_version(results)
+    multi_version_nodes = sorted(
+        node for node, versions in by_prompt.items() if len(versions) >= 2
+    )
+    if multi_version_nodes:
+        lines.append("## 按 prompt 版本分桶（ADR 0003 灰度 A/B 对比）")
+        lines.append("")
+        for node in multi_version_nodes:
+            versions = by_prompt[node]
+            lines.append(f"### `{node}`")
+            lines.append("")
+            lines.append("| 版本 | 总数 | PASS | FAIL | 通过率 |")
+            lines.append("|---|---|---|---|---|")
+            # 总数倒序，便于看主版本 vs 灰度
+            for ver, info in sorted(
+                versions.items(), key=lambda kv: -kv[1]["total"]
+            ):
+                lines.append(
+                    f"| `{ver}` | {info['total']} | {info['passed']} | "
+                    f"{info['failed']} | {info['pass_rate']:.1%} |"
+                )
+            lines.append("")
 
     failures = [(r, d) for r, d in results if not is_pass(d)]
     if failures:
