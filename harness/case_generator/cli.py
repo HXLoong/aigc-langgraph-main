@@ -1,12 +1,14 @@
-"""case_generator CLI：批量生成业务方种子收集模板。
+"""case_generator CLI：批量生成业务方种子收集模板 + LLM 对抗式 paraphrase。
 
 用法：
     python -m harness.case_generator generate-seeds [--out-dir docs/m2-golden-seeds]
     python -m harness.case_generator list-nodes
+    python -m harness.case_generator paraphrase [--num 3] [--out docs/m2-llm-generated-cases.md]
 """
 from __future__ import annotations
 
 import argparse
+import asyncio
 import sys
 from pathlib import Path
 
@@ -79,6 +81,46 @@ def cmd_list_nodes() -> int:
     return 0
 
 
+async def _cmd_paraphrase_async(
+    out_path: Path, num_variants: int, golden_path: Path
+) -> int:
+    """LLM 对抗式 paraphrase 子命令。"""
+    from harness.case_generator.llm_paraphrase import (
+        paraphrase_case,
+        render_review_markdown,
+    )
+    from harness.golden import load_golden
+
+    seeds = load_golden(golden_path)
+    if not seeds:
+        print(f"ERROR: no golden cases at {golden_path}", file=sys.stderr)
+        return 2
+
+    # 仅对 business_seed 来源的种子做 paraphrase（不对 LLM 生成的再 paraphrase）
+    business_seeds = [
+        s for s in seeds if getattr(s, "source", "business_seed") == "business_seed"
+    ]
+    print(f"paraphrasing {len(business_seeds)} business seeds, {num_variants} variants each ...")
+
+    pairs: list[tuple] = []
+    for i, seed in enumerate(business_seeds, 1):
+        print(f"  [{i}/{len(business_seeds)}] {seed.id} ({seed.category}) ...", flush=True)
+        try:
+            variants = await paraphrase_case(seed, num_variants=num_variants)
+            pairs.append((seed, variants))
+        except Exception as exc:
+            print(f"    SKIP: {exc}", file=sys.stderr)
+
+    md = render_review_markdown(pairs)
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    out_path.write_text(md, encoding="utf-8")
+
+    total_variants = sum(len(v) for _, v in pairs)
+    print(f"\nGenerated {total_variants} variants from {len(pairs)} seeds")
+    print(f"Review checklist → {out_path}")
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="harness.case_generator")
     sub = parser.add_subparsers(dest="cmd", required=True)
@@ -101,11 +143,38 @@ def main(argv: list[str] | None = None) -> int:
 
     sub.add_parser("list-nodes", help="列出已注册的节点")
 
+    p_para = sub.add_parser(
+        "paraphrase",
+        help="LLM 对抗式生成候选 case（business_seed → llm_paraphrase 候选）",
+    )
+    p_para.add_argument(
+        "--out",
+        default="docs/m2-llm-generated-cases.md",
+        type=Path,
+        help="输出 review 候选清单 markdown（默认 docs/m2-llm-generated-cases.md）",
+    )
+    p_para.add_argument(
+        "--num",
+        type=int,
+        default=3,
+        help="每条种子生成的变体数（默认 3）",
+    )
+    p_para.add_argument(
+        "--golden",
+        default="tests/fixtures/golden.jsonl",
+        type=Path,
+        help="种子来源 golden.jsonl 路径",
+    )
+
     args = parser.parse_args(argv)
     if args.cmd == "generate-seeds":
         return cmd_generate_seeds(args.out_dir, num_slots=args.num_slots)
     if args.cmd == "list-nodes":
         return cmd_list_nodes()
+    if args.cmd == "paraphrase":
+        return asyncio.run(
+            _cmd_paraphrase_async(args.out, args.num, args.golden)
+        )
     parser.print_help()
     return 1
 
