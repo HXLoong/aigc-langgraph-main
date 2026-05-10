@@ -111,7 +111,7 @@ class TestIntentRouteNode:
     ) -> None:
         """LLM 兜底场景：raw_text 无订单号无关键词，走 LLM。"""
 
-        async def fake_classify(text: str) -> str:
+        async def fake_classify(text: str, quote_content: str | None = None) -> str:
             return "option"
 
         monkeypatch.setattr(
@@ -125,7 +125,7 @@ class TestIntentRouteNode:
     async def test_node_layer_3_unknown(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        async def fake_classify(text: str) -> str:
+        async def fake_classify(text: str, quote_content: str | None = None) -> str:
             return "unknown"
 
         monkeypatch.setattr(
@@ -138,7 +138,7 @@ class TestIntentRouteNode:
     async def test_node_handles_empty_raw_text(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        async def fake_classify(text: str) -> str:
+        async def fake_classify(text: str, quote_content: str | None = None) -> str:
             return "unknown"
 
         monkeypatch.setattr(

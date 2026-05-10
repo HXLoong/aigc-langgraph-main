@@ -97,7 +97,7 @@ async def test_main_graph_e2e_unknown_routes_to_fallback(
     """ADR 0015 第 3 层 + cascade：无关键词 + LLM 判 unknown → fallback。"""
     from app.nodes import intent_route as intent_route_module
 
-    async def fake_classify(text: str) -> str:
+    async def fake_classify(text: str, quote_content: str | None = None) -> str:
         return "unknown"
 
     monkeypatch.setattr(

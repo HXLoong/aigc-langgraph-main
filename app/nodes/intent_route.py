@@ -89,14 +89,23 @@ class ProductTypeOutput(BaseModel):
     product_type: Literal["swap", "option", "option_close", "unknown"]
 
 
-async def _classify_with_llm(text: str) -> ProductType:
-    """第 3 层：LLM 兜底分类。"""
+async def _classify_with_llm(
+    text: str, quote_content: str | None = None
+) -> ProductType:
+    """第 3 层：LLM 兜底分类。
+
+    传 quote_content 让 LLM 利用引用消息上下文判断（如"确认第二笔" + 引用
+    含期权报价 → option）。
+    """
     prompt = load_prompt("router", "product_type")
     llm = get_qwen_structured().with_structured_output(ProductTypeOutput)
+    user_text = prompt.render_user(raw_text=text)
+    if quote_content:
+        user_text += f"\n\n引用消息（上下文）：\n{quote_content}"
     result: Any = await llm.ainvoke(
         [
             ("system", prompt.system),
-            ("user", prompt.render_user(raw_text=text)),
+            ("user", user_text),
         ]
     )
     return result.product_type
@@ -141,7 +150,8 @@ async def intent_route(state: AgentState) -> dict[str, Any]:
         }
 
     # 第 3 层
-    pt = await _classify_with_llm(text)
+    quote = state.get("quote_content")
+    pt = await _classify_with_llm(text, quote_content=quote)
     return {
         "product_type": pt,
         "trace": [TraceEntry(node="intent_route", decision=f"llm→{pt}")],
