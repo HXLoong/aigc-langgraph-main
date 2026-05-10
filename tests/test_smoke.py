@@ -19,8 +19,32 @@ async def test_main_graph_compiles() -> None:
 
 
 @pytest.mark.asyncio
-async def test_main_graph_e2e_swap_keyword() -> None:
-    """ADR 0015 第 2 层：'互换' 关键词 → product=swap → swap stub。"""
+async def test_main_graph_e2e_swap_keyword(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """ADR 0015 第 2 层：'互换' 关键词 → product=swap → swap 子图（intent + todo）。
+
+    swap 子图嵌入后，trace 含子图内部节点（swap_intent / swap_todo）。
+    LangGraph 0.6 子图嵌入特性：reducer add 会让 ingest/intent_route 在
+    主图 + 子图 input 累积时出现两次——本测试用 contains 而非精确等于。
+    """
+    # mock swap.intent 的 LLM 调用（避免联网）
+    from unittest.mock import AsyncMock, MagicMock
+
+    from app.subgraphs.swap import intent as swap_intent_module
+    from app.subgraphs.swap.models import SwapIntentOutput
+
+    fake_output = SwapIntentOutput(type="place_order_request")
+    fake_llm_with_schema = MagicMock()
+    fake_llm_with_schema.ainvoke = AsyncMock(return_value=fake_output)
+    fake_base_llm = MagicMock()
+    fake_base_llm.with_structured_output = MagicMock(
+        return_value=fake_llm_with_schema
+    )
+    monkeypatch.setattr(
+        swap_intent_module, "get_qwen_structured", lambda: fake_base_llm
+    )
+
     graph = build_main_graph()
     final = await graph.ainvoke(
         {
@@ -36,17 +60,25 @@ async def test_main_graph_e2e_swap_keyword() -> None:
     assert final.get("error") is None, f"unexpected error: {final.get('error')}"
 
     trace_nodes = [entry.node for entry in final.get("trace", [])]
-    assert trace_nodes == [
+    required = {
         "ingest",
         "intent_route",
-        "_swap_stub",
+        "swap_intent",
+        "swap_todo",
         "persist",
         "render",
-    ], f"unexpected trace path: {trace_nodes}"
+    }
+    assert required.issubset(set(trace_nodes)), (
+        f"missing nodes: {required - set(trace_nodes)} in {trace_nodes}"
+    )
 
     assert final.get("product_type") == "swap"
-    intent_route_decision = final["trace"][1].decision
-    assert intent_route_decision == "rule:keyword→swap"
+    assert final.get("intent") == "place_order_request"
+    # 验证 intent_route 决策是规则层命中
+    intent_route_entries = [e for e in final["trace"] if e.node == "intent_route"]
+    assert any(
+        e.decision == "rule:keyword→swap" for e in intent_route_entries
+    )
 
 
 @pytest.mark.asyncio
