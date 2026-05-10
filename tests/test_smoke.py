@@ -1,4 +1,9 @@
-"""M1 smoke test: 主图编译 + 端到端 stub run（替代 legacy tests，符合 ADR 0001 D1）."""
+"""M1 smoke test: 主图编译 + 端到端 stub run。
+
+ADR 0001 D1 + ADR 0015：M1 smoke 已升级为含 intent_route 的端到端验证：
+- ingest → intent_route（规则层）→ swap/option/option_close stub → persist → render
+- unknown / cascade 路径走 fallback
+"""
 from __future__ import annotations
 
 import pytest
@@ -14,31 +19,89 @@ async def test_main_graph_compiles() -> None:
 
 
 @pytest.mark.asyncio
-async def test_main_graph_e2e_stub_run() -> None:
-    """ADR 0001 #10 退出门：空状态能跑通 ingest → route → render。"""
+async def test_main_graph_e2e_swap_keyword() -> None:
+    """ADR 0015 第 2 层：'互换' 关键词 → product=swap → swap stub。"""
     graph = build_main_graph()
     final = await graph.ainvoke(
         {
-            "raw_text": "M1 smoke",
+            "raw_text": "做一笔互换 100 手",
             "conversation_id": "smoke-1",
             "user_id": "u-smoke",
             "room_id": "r-smoke",
             "message_id": 1,
-            "message_content": "M1 smoke",
+            "message_content": "做一笔互换 100 手",
         }
     )
 
     assert final.get("error") is None, f"unexpected error: {final.get('error')}"
 
     trace_nodes = [entry.node for entry in final.get("trace", [])]
-    assert trace_nodes == ["ingest", "_swap_stub", "persist", "render"], (
-        f"unexpected trace path: {trace_nodes}"
+    assert trace_nodes == [
+        "ingest",
+        "intent_route",
+        "_swap_stub",
+        "persist",
+        "render",
+    ], f"unexpected trace path: {trace_nodes}"
+
+    assert final.get("product_type") == "swap"
+    intent_route_decision = final["trace"][1].decision
+    assert intent_route_decision == "rule:keyword→swap"
+
+
+@pytest.mark.asyncio
+async def test_main_graph_e2e_unknown_routes_to_fallback(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """ADR 0015 第 3 层 + cascade：无关键词 + LLM 判 unknown → fallback。"""
+    from app.nodes import intent_route as intent_route_module
+
+    async def fake_classify(text: str) -> str:
+        return "unknown"
+
+    monkeypatch.setattr(
+        intent_route_module, "_classify_with_llm", fake_classify
     )
 
-    # M1 默认 product_type=swap（intent_route 在 M2 才接 LLM）
-    assert final.get("product_type") == "swap"
-    # _swap_stub 在 M1 占位 intent
-    assert final.get("intent") == "place_order_request"
+    graph = build_main_graph()
+    final = await graph.ainvoke(
+        {
+            "raw_text": "你好，在吗",
+            "conversation_id": "smoke-unknown",
+            "user_id": "u-smoke",
+            "room_id": "r-smoke",
+            "message_id": 1,
+            "message_content": "你好，在吗",
+        }
+    )
+
+    assert final.get("error") is None
+    trace_nodes = [entry.node for entry in final.get("trace", [])]
+    assert "fallback" in trace_nodes
+    assert "_swap_stub" not in trace_nodes
+    assert final.get("product_type") == "unknown"
+
+
+@pytest.mark.asyncio
+async def test_main_graph_e2e_option_close_order_no() -> None:
+    """ADR 0015 第 1 层：CO- 订单号 → option_close stub。"""
+    graph = build_main_graph()
+    final = await graph.ainvoke(
+        {
+            "raw_text": "平 CO-20260304-ABCD1234 全部",
+            "conversation_id": "smoke-close",
+            "user_id": "u-smoke",
+            "room_id": "r-smoke",
+            "message_id": 1,
+            "message_content": "平 CO-20260304-ABCD1234 全部",
+        }
+    )
+
+    assert final.get("error") is None
+    trace_nodes = [entry.node for entry in final.get("trace", [])]
+    assert "_option_close_stub" in trace_nodes
+    assert final.get("product_type") == "option_close"
+    assert final["trace"][1].decision == "rule:order_no→option_close"
 
 
 @pytest.mark.asyncio

@@ -1,0 +1,31 @@
+# 一级路由 - 关键词优先级表（ADR 0015 第 1 层规则）
+#
+# 业务方可单文件维护，按列表顺序遍历，命中即 break。
+# 订单号正则规则（最高优先级）写在 app/nodes/intent_route.py 内（业务硬约定）。
+
+priority_rules:
+  # 平仓优先（覆盖 g020 "我有哪些期权持仓" / g022 "平 CO-... 全部"）
+  - product_type: option_close
+    keywords:
+      - 平仓
+      - 持仓
+      - 平掉
+    regex_patterns:
+      - 平.*全部
+
+  # 期权（覆盖 g012 "参与型看涨" / g015 "询价" / g016 "雪球"）
+  - product_type: option
+    keywords:
+      - 期权
+      - 询价
+      - 雪球
+      - 看涨
+      - 看跌
+      - 行权价
+
+  # 互换（覆盖 g001 "招商银行的 TRS" / g002 "互换下单" / g010 "做 纳指 一笔互换"）
+  - product_type: swap
+    keywords:
+      - 互换
+      - TRS
+      - 总收益互换

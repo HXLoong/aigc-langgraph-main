@@ -88,10 +88,15 @@ def test_differ_handles_lists() -> None:
 
 @pytest.mark.asyncio
 async def test_runner_executes_case() -> None:
+    """harness 跑一条强信号 case（含"互换"关键词），验证规则层路由 → swap stub。
+
+    ADR 0015 修订后，raw_content 必须含订单号或关键词才能不走 LLM 兜底；
+    用"做一笔互换"让第 2 层关键词命中。
+    """
     case = GoldenCase(
         id="harness-smoke",
         category="swap/place_order",
-        raw_content="测试",
+        raw_content="做一笔互换 100 手",
         expected={"product_type": "swap"},
     )
     result = await run_case(case)

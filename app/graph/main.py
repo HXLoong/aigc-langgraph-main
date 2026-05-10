@@ -1,7 +1,7 @@
-"""主图组装 + 一级路由（ADR 0001 D6）。
+"""主图组装 + 一级路由（ADR 0001 D6 + ADR 0015）。
 
-M1 阶段：子图（swap/option/close）为占位 stub。
-M2 阶段：替换为真实子图编译入口。
+M1 阶段：子图（swap/option/option_close）为占位 stub；intent_route 占位。
+M2 阶段：intent_route 已实现真三层路由（ADR 0015）；子图逐一替换为真实编译入口。
 """
 from __future__ import annotations
 
@@ -13,46 +13,54 @@ from langgraph.graph.state import CompiledStateGraph
 
 from app.graph.safe_node import safe_node
 from app.graph.state import AgentState
+from app.nodes.fallback import fallback
 from app.nodes.ingest import ingest
+from app.nodes.intent_route import intent_route
 from app.nodes.persist import persist
 from app.nodes.render import render
 
 
 # ============================================================
-# M1 占位子图 stub（M2 替换为真实子图）
+# 占位子图 stub（M2 子图 PR 逐个替换）
 # ============================================================
 
 
 @safe_node
 async def _swap_stub(state: AgentState) -> dict[str, Any]:
-    """M1: swap 子图占位。M2 替换为 build_swap_graph().compile()。"""
+    """占位 swap 子图。M2 替换为 build_swap_graph().compile()。"""
     return {"intent": state.get("intent") or "place_order_request"}
 
 
 @safe_node
 async def _option_stub(state: AgentState) -> dict[str, Any]:
-    """M1: option 子图占位。"""
+    """占位 option 子图。"""
     return {"intent": state.get("intent") or "new_inquiry"}
 
 
 @safe_node
-async def _close_stub(state: AgentState) -> dict[str, Any]:
-    """M1: close 子图占位。"""
+async def _option_close_stub(state: AgentState) -> dict[str, Any]:
+    """占位 option_close 子图。"""
     return {"intent": state.get("intent") or "close_order_request"}
 
 
 # ============================================================
-# 一级路由
+# 路由函数（含 cascade 防御 + unknown 兜底）
 # ============================================================
 
 
-def _route_by_product(state: AgentState) -> str:
-    """主图路由：按 product_type 选子图。
+def _route_after_intent(state: AgentState) -> str:
+    """intent_route 节点后的路由。
 
-    ingest 节点已在 M1 中默认设置 product_type = swap；M2 阶段会根据
-    raw_text + history 用 LLM 分类后正确设置。
+    优先级：
+    1. state['error'] 存在 → fallback（cascade 防御，CLAUDE.md 核心原则第 8 条）
+    2. product_type == "unknown" → fallback（ADR 0015 第 3 层兜底）
+    3. 否则按 product_type 选子图
     """
-    pt = state.get("product_type", "swap")
+    if state.get("error") is not None:
+        return "fallback"
+    pt = state.get("product_type", "unknown")
+    if pt == "unknown":
+        return "fallback"
     return pt
 
 
@@ -67,28 +75,37 @@ def build_main_graph(
     """组装并编译主图。
 
     流程：
-        START → ingest → [route by product_type] → swap | option | close → persist → render → END
+        START → ingest → intent_route → [route_after_intent] →
+            swap | option | option_close | fallback → persist → render → END
 
-    入参：
-        checkpointer: AIOMySQLSaver 等。开发/测试可传 None；
-                      生产必须传以支持多轮对话（ADR 0009）。
+    cascade 防御：
+    - intent_route 写 state['error'] → 跳 fallback
+    - product_type == 'unknown' → 跳 fallback
     """
     g: StateGraph = StateGraph(AgentState)
 
     g.add_node("ingest", ingest)
+    g.add_node("intent_route", intent_route)
     g.add_node("swap", _swap_stub)
     g.add_node("option", _option_stub)
-    g.add_node("close", _close_stub)
+    g.add_node("option_close", _option_close_stub)
+    g.add_node("fallback", fallback)
     g.add_node("persist", persist)
     g.add_node("render", render)
 
     g.add_edge(START, "ingest")
+    g.add_edge("ingest", "intent_route")
     g.add_conditional_edges(
-        "ingest",
-        _route_by_product,
-        {"swap": "swap", "option": "option", "close": "close"},
+        "intent_route",
+        _route_after_intent,
+        {
+            "swap": "swap",
+            "option": "option",
+            "option_close": "option_close",
+            "fallback": "fallback",
+        },
     )
-    for sub in ("swap", "option", "close"):
+    for sub in ("swap", "option", "option_close", "fallback"):
         g.add_edge(sub, "persist")
     g.add_edge("persist", "render")
     g.add_edge("render", END)

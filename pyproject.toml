@@ -28,6 +28,7 @@ dependencies = [
     "tenacity>=8.5.0",
     "structlog>=24.4.0",
     "openpyxl>=3.1.0",
+    "pyyaml>=6.0",  # ADR 0015: 一级路由 keywords 表 yaml 维护
 
     # 可观测性（可选）
     "opentelemetry-api>=1.27.0",
