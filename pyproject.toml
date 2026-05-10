@@ -57,6 +57,8 @@ ignore = ["E501"]
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]
+# tests/api 是 GOATS 接口连通性测试，需要真实后端 + VPN，M3 阶段联调时再启用
+addopts = "--ignore=tests/api"
 
 [tool.mypy]
 python_version = "3.11"
