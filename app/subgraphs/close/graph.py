@@ -5,13 +5,13 @@ ADR 0001 D6 + grill-with-docs。
 当前路径：
     START → close_intent → [route_by_intent]
         → close_holding_query   (close_order_query)
+        → close_place_close     (close_order_request)         ← P0 核心
         → close_confirm_close   (close_order_confirm)
         → close_cancel_close    (close_order_cancel_request)
-        → close_todo            (剩余 3 个 close_order_* + unknown_intent)
+        → close_todo            (剩余 2 个 close_order_* + unknown_intent)
         → END
 
 后续 PR 添加：
-- close_place_close（close_order_request，P0 核心）
 - close_confirm_cancel（close_order_cancel_confirm）
 - close_query_status（close_order_order_query）
 """
@@ -29,6 +29,7 @@ from app.subgraphs.close.cancel_close import close_cancel_close
 from app.subgraphs.close.confirm_close import close_confirm_close
 from app.subgraphs.close.holding_query import close_holding_query
 from app.subgraphs.close.intent import close_intent
+from app.subgraphs.close.place_close import close_place_close
 
 
 @safe_node
@@ -48,6 +49,7 @@ async def close_todo(state: AgentState) -> dict[str, Any]:
 #: 子图内 intent → 真节点 key 的路由表（新增真节点时只改这里）
 _INTENT_TO_NODE: dict[str, str] = {
     "close_order_query": "close_holding_query",
+    "close_order_request": "close_place_close",
     "close_order_confirm": "close_confirm_close",
     "close_order_cancel_request": "close_cancel_close",
 }
@@ -66,6 +68,7 @@ def build_close_graph() -> CompiledStateGraph:
     g: StateGraph = StateGraph(AgentState)
     g.add_node("close_intent", close_intent)
     g.add_node("close_holding_query", close_holding_query)
+    g.add_node("close_place_close", close_place_close)
     g.add_node("close_confirm_close", close_confirm_close)
     g.add_node("close_cancel_close", close_cancel_close)
     g.add_node("close_todo", close_todo)
@@ -76,6 +79,7 @@ def build_close_graph() -> CompiledStateGraph:
         _route_after_close_intent,
         {
             "close_holding_query": "close_holding_query",
+            "close_place_close": "close_place_close",
             "close_confirm_close": "close_confirm_close",
             "close_cancel_close": "close_cancel_close",
             "close_todo": "close_todo",
@@ -83,6 +87,7 @@ def build_close_graph() -> CompiledStateGraph:
     )
     for n in (
         "close_holding_query",
+        "close_place_close",
         "close_confirm_close",
         "close_cancel_close",
         "close_todo",

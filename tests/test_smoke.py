@@ -118,21 +118,35 @@ async def test_main_graph_e2e_unknown_routes_to_fallback(
 async def test_main_graph_e2e_option_close_order_no(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """ADR 0015 第 1 层：CO- 订单号 → close 子图（intent + todo）。"""
+    """ADR 0015 第 1 层：CO- 订单号 → close 子图 → close_order_request → place_close 真节点。"""
     from unittest.mock import AsyncMock, MagicMock
 
     from app.subgraphs.close import intent as close_intent_module
-    from app.subgraphs.close.models import CloseIntentOutput
-
-    fake_output = CloseIntentOutput(type="close_order_request")
-    fake_llm_with_schema = MagicMock()
-    fake_llm_with_schema.ainvoke = AsyncMock(return_value=fake_output)
-    fake_base_llm = MagicMock()
-    fake_base_llm.with_structured_output = MagicMock(
-        return_value=fake_llm_with_schema
+    from app.subgraphs.close import place_close as close_pc_module
+    from app.subgraphs.close.models import (
+        CloseIntentOutput,
+        CloseOrderItem,
+        ClosePlaceParams,
     )
-    monkeypatch.setattr(
-        close_intent_module, "get_qwen_structured", lambda: fake_base_llm
+
+    def _patch(module: object, value: object) -> None:
+        fake_llm = MagicMock()
+        fake_llm.ainvoke = AsyncMock(return_value=value)
+        fake_base = MagicMock()
+        fake_base.with_structured_output = MagicMock(return_value=fake_llm)
+        monkeypatch.setattr(module, "get_qwen_structured", lambda: fake_base)
+
+    _patch(close_intent_module, CloseIntentOutput(type="close_order_request"))
+    _patch(
+        close_pc_module,
+        ClosePlaceParams(
+            closeOrderList=[
+                CloseOrderItem(
+                    orderId="CO-20260304-ABCD1234",
+                    confirmFullClose=True,
+                )
+            ]
+        ),
     )
 
     graph = build_main_graph()
@@ -153,7 +167,7 @@ async def test_main_graph_e2e_option_close_order_no(
         "ingest",
         "intent_route",
         "close_intent",
-        "close_todo",
+        "close_place_close",
         "persist",
         "render",
     }
@@ -166,6 +180,13 @@ async def test_main_graph_e2e_option_close_order_no(
     assert any(
         e.decision == "rule:order_no→option_close"
         for e in intent_route_entries
+    )
+    # 验证 close.place_close 输出确实写入 state['close_params']
+    close_params = final.get("close_params", {})
+    assert close_params.get("closeOrderList")
+    assert (
+        close_params["closeOrderList"][0]["orderId"]
+        == "CO-20260304-ABCD1234"
     )
 
 

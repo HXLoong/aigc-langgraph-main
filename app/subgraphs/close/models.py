@@ -98,6 +98,49 @@ class CancelCloseParams(BaseModel):
     cancelOrderNoList: list[str] = Field(default_factory=list)
 
 
+# ============================================================
+# 平仓下单参数（close.place_close）
+# ============================================================
+
+
+#: 平仓订单类型枚举（与 Dify place_close.md 输出值集一致）
+ClosePriceType = Literal["市价单", "限价单", "POV", "TWAP"]
+
+
+class CloseOrderItem(BaseModel):
+    """closeOrderList 中的单个平仓订单条目（9 字段）。
+
+    与 Dify place_close.md JSON schema 完全对齐。allow null 在所有字段
+    （Dify prompt 明确允许 null 表示"用户未提供"）。
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    orderId: str | None = None
+    internalTradeId: str | None = None
+    #: 平仓金额（字符串数字，"全部" 时由后端语义而非此字段）
+    closeOrderNotionalDelta: str | None = None
+    closeOrderType: ClosePriceType | None = None
+    closeOrderPrice: float | int | None = None
+    closeOrderPovRatio: int | None = None
+    #: TWAP 起始时间，格式 "HH:MM"
+    closeOrderAlgoStartTime: str | None = None
+    closeOrderAlgoEndTime: str | None = None
+    confirmFullClose: bool | None = None
+
+
+class ClosePlaceParams(BaseModel):
+    """close.place_close 节点 LLM 输出。
+
+    顶层结构 `{"closeOrderList": [...]}` 与 Dify prompt 输出契约一致。
+    空列表表示"无可绑定订单"或"输入语义为空"。
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    closeOrderList: list[CloseOrderItem] = Field(default_factory=list)
+
+
 __all__ = [
     "CloseIntentType",
     "CloseIntentOutput",
@@ -106,4 +149,7 @@ __all__ = [
     "HoldingQueryParams",
     "ConfirmCloseParams",
     "CancelCloseParams",
+    "ClosePriceType",
+    "CloseOrderItem",
+    "ClosePlaceParams",
 ]

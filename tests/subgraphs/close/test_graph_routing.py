@@ -61,25 +61,26 @@ async def test_close_query_routes_to_holding_query(
 
 
 @pytest.mark.asyncio
-async def test_close_request_routes_to_todo(
+async def test_unimplemented_intent_routes_to_todo(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """close_order_request 当前还没真节点 → 落到 todo。"""
-    _patch_intent(monkeypatch, "close_order_request")
+    """剩余未实现意图（如 close_order_order_query）走 todo。"""
+    _patch_intent(monkeypatch, "close_order_order_query")
     graph = build_close_graph()
     final = await graph.ainvoke(
         {
-            "raw_text": "平 CO-20260304-0001 全部",
+            "raw_text": "查 CO-20260304-0001 状态",
             "conversation_id": "t",
             "user_id": "u",
             "room_id": "r",
             "message_id": 1,
-            "message_content": "平 CO-20260304-0001 全部",
+            "message_content": "查 CO-20260304-0001 状态",
         }
     )
     trace_nodes = [e.node for e in final.get("trace", [])]
     assert "close_todo" in trace_nodes
     assert "close_holding_query" not in trace_nodes
+    assert "close_place_close" not in trace_nodes
 
 
 @pytest.mark.asyncio
