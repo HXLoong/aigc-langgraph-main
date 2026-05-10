@@ -11,26 +11,15 @@ from langgraph.checkpoint.base import BaseCheckpointSaver
 from langgraph.graph import END, START, StateGraph
 from langgraph.graph.state import CompiledStateGraph
 
-from app.graph.safe_node import safe_node
 from app.graph.state import AgentState
 from app.nodes.fallback import fallback
 from app.nodes.ingest import ingest
 from app.nodes.intent_route import intent_route
 from app.nodes.persist import persist
 from app.nodes.render import render
+from app.subgraphs.close import build_close_graph
 from app.subgraphs.option import build_option_graph
 from app.subgraphs.swap import build_swap_graph
-
-
-# ============================================================
-# 占位子图 stub（M2 子图 PR 逐个替换）
-# ============================================================
-
-
-@safe_node
-async def _option_close_stub(state: AgentState) -> dict[str, Any]:
-    """占位 option_close 子图。M2 替换为 build_close_graph().compile()。"""
-    return {"intent": state.get("intent") or "close_order_request"}
 
 
 # ============================================================
@@ -78,7 +67,7 @@ def build_main_graph(
     g.add_node("intent_route", intent_route)
     g.add_node("swap", build_swap_graph())
     g.add_node("option", build_option_graph())
-    g.add_node("option_close", _option_close_stub)
+    g.add_node("option_close", build_close_graph())
     g.add_node("fallback", fallback)
     g.add_node("persist", persist)
     g.add_node("render", render)

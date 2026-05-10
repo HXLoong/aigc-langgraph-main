@@ -115,8 +115,26 @@ async def test_main_graph_e2e_unknown_routes_to_fallback(
 
 
 @pytest.mark.asyncio
-async def test_main_graph_e2e_option_close_order_no() -> None:
-    """ADR 0015 第 1 层：CO- 订单号 → option_close stub。"""
+async def test_main_graph_e2e_option_close_order_no(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """ADR 0015 第 1 层：CO- 订单号 → close 子图（intent + todo）。"""
+    from unittest.mock import AsyncMock, MagicMock
+
+    from app.subgraphs.close import intent as close_intent_module
+    from app.subgraphs.close.models import CloseIntentOutput
+
+    fake_output = CloseIntentOutput(type="close_order_request")
+    fake_llm_with_schema = MagicMock()
+    fake_llm_with_schema.ainvoke = AsyncMock(return_value=fake_output)
+    fake_base_llm = MagicMock()
+    fake_base_llm.with_structured_output = MagicMock(
+        return_value=fake_llm_with_schema
+    )
+    monkeypatch.setattr(
+        close_intent_module, "get_qwen_structured", lambda: fake_base_llm
+    )
+
     graph = build_main_graph()
     final = await graph.ainvoke(
         {
@@ -131,9 +149,24 @@ async def test_main_graph_e2e_option_close_order_no() -> None:
 
     assert final.get("error") is None
     trace_nodes = [entry.node for entry in final.get("trace", [])]
-    assert "_option_close_stub" in trace_nodes
+    required = {
+        "ingest",
+        "intent_route",
+        "close_intent",
+        "close_todo",
+        "persist",
+        "render",
+    }
+    assert required.issubset(set(trace_nodes)), (
+        f"missing nodes: {required - set(trace_nodes)} in {trace_nodes}"
+    )
     assert final.get("product_type") == "option_close"
-    assert final["trace"][1].decision == "rule:order_no→option_close"
+    assert final.get("intent") == "close_order_request"
+    intent_route_entries = [e for e in final["trace"] if e.node == "intent_route"]
+    assert any(
+        e.decision == "rule:order_no→option_close"
+        for e in intent_route_entries
+    )
 
 
 @pytest.mark.asyncio
