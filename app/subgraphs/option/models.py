@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 
 #: option 子图处理的 10 个基础意图（不含 close_order_*）
@@ -39,4 +39,54 @@ class OptionIntentOutput(BaseModel):
     type: OptionIntentType
 
 
-__all__ = ["OptionIntentType", "OptionIntentOutput"]
+# ============================================================
+# 下单/改单参数（option.extract_place_or_modify）
+# ============================================================
+
+
+#: 期权下单订单类型枚举
+OptionOrderType = Literal["市价单", "限价单", "POV", "TWAP"]
+
+
+class OptionOrderItem(BaseModel):
+    """orderList 中的单个订单条目（与 Dify 拆分版 prompt 对齐）。
+
+    orderId 必需（Q- 询价单号），其余字段全 Optional——LLM 仅提取用户提供的，
+    未提供字段保持 null（与 close.place_close 同模式）。
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    #: Q- 开头的询价单号（必需）
+    orderId: str
+    orderType: OptionOrderType | None = None
+    limitPrice: float | int | None = None
+    povRatio: float | int | None = None
+    #: 名义本金（字符串数字，如 "1000000"）
+    notionalAmount: str | None = None
+    shortName: str | None = None
+    #: TWAP 起始时间，格式 "HH:MM"
+    algoStartTime: str | None = None
+    algoEndTime: str | None = None
+
+
+class OptionPlaceOrModifyParams(BaseModel):
+    """option.extract_place_or_modify 节点 LLM 输出。
+
+    结构与 close.place_close 类似：顶层 orderList 列表，每元素含订单参数。
+    适用于 place_order_from_quote + request_modify_order 两个意图（共用 schema，
+    靠 expected_action 区分；本骨架版 expected_action 由调用方根据 intent 推导）。
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    orderList: list[OptionOrderItem] = Field(default_factory=list)
+
+
+__all__ = [
+    "OptionIntentType",
+    "OptionIntentOutput",
+    "OptionOrderType",
+    "OptionOrderItem",
+    "OptionPlaceOrModifyParams",
+]
