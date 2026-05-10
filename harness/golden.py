@@ -13,9 +13,15 @@ import json
 from collections import defaultdict
 from collections.abc import Iterable
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
+
+#: case 来源（grill-with-docs 2026-05-10 第 4 决策）
+#: - business_seed: 业务方手写种子（高质量基线，PASS 阈值 ≥ 90%）
+#: - llm_paraphrase: LLM 对抗式 paraphrase（C 来源，PASS 阈值 ≥ 80%）
+#: - production_log: 生产日志抽样（A 来源，M3 阶段累积）
+CaseSource = Literal["business_seed", "llm_paraphrase", "production_log"]
 
 
 class GoldenCase(BaseModel):
@@ -29,6 +35,8 @@ class GoldenCase(BaseModel):
     expected: dict[str, Any] = Field(default_factory=dict)
     quote_content: str | None = None
     notes: str | None = None
+    #: case 来源（默认 business_seed 以兼容现有 30 条）
+    source: CaseSource = "business_seed"
 
 
 def load_golden(path: str | Path) -> list[GoldenCase]:

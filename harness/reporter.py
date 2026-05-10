@@ -17,12 +17,20 @@ Markdown 汇总（人读）：含 PASS/FAIL 计数、Top 5 失败 case、各 cat
 from __future__ import annotations
 
 import json
-from collections import Counter
+from collections import Counter, defaultdict
 from pathlib import Path
 from typing import Any
 
 from harness.differ import FieldDiff, is_pass
 from harness.runner import RunResult
+
+
+#: case source → PASS 阈值（grill-with-docs 2026-05-10 第 4 决策）
+SOURCE_PASS_THRESHOLDS: dict[str, float] = {
+    "business_seed": 0.90,
+    "llm_paraphrase": 0.80,
+    "production_log": 0.85,
+}
 
 
 # ============================================================
@@ -151,6 +159,42 @@ def summarize(
     }
 
 
+def summarize_by_source(
+    results: list[tuple[RunResult, list[FieldDiff]]],
+) -> dict[str, dict[str, Any]]:
+    """按 case source 分桶统计 PASS 率 + 阈值检查。
+
+    grill-with-docs 2026-05-10 第 4 决策：
+    - business_seed PASS ≥ 90%
+    - llm_paraphrase PASS ≥ 80%
+    - production_log PASS ≥ 85%
+    """
+    counts: dict[str, dict[str, int]] = defaultdict(
+        lambda: {"total": 0, "passed": 0}
+    )
+    for r, d in results:
+        src = getattr(r.case, "source", "business_seed")
+        counts[src]["total"] += 1
+        if is_pass(d):
+            counts[src]["passed"] += 1
+
+    summary: dict[str, dict[str, Any]] = {}
+    for src, c in counts.items():
+        total = c["total"]
+        passed = c["passed"]
+        rate = (passed / total) if total else 0.0
+        threshold = SOURCE_PASS_THRESHOLDS.get(src, 0.0)
+        summary[src] = {
+            "total": total,
+            "passed": passed,
+            "failed": total - passed,
+            "pass_rate": rate,
+            "threshold": threshold,
+            "meets_threshold": rate >= threshold,
+        }
+    return summary
+
+
 def render_markdown(
     results: list[tuple[RunResult, list[FieldDiff]]],
 ) -> str:
@@ -173,6 +217,21 @@ def render_markdown(
         )[:5]:
             total = s["by_category"].get(cat, 0)
             lines.append(f"- `{cat}`: {cnt} / {total}")
+        lines.append("")
+
+    # ADR 0001 D9.2 + grill-with-docs 第 4 决策：按 case source 分桶
+    by_source = summarize_by_source(results)
+    if by_source:
+        lines.append("## 按 case 来源分桶（B+C 阈值检查）")
+        lines.append("")
+        lines.append("| 来源 | 总数 | PASS | 通过率 | 阈值 | 是否达标 |")
+        lines.append("|---|---|---|---|---|---|")
+        for src, info in sorted(by_source.items()):
+            ok = "✅" if info["meets_threshold"] else "❌"
+            lines.append(
+                f"| `{src}` | {info['total']} | {info['passed']} | "
+                f"{info['pass_rate']:.1%} | {info['threshold']:.0%} | {ok} |"
+            )
         lines.append("")
 
     failures = [(r, d) for r, d in results if not is_pass(d)]
