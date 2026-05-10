@@ -97,19 +97,19 @@ async def test_request_modify_routes_to_extract_place(
 
 
 @pytest.mark.asyncio
-async def test_unmapped_intent_routes_to_todo(
+async def test_unknown_intent_routes_to_option_unknown(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """剩余未实现意图（cancel / confirm / query 等 7 个）当前还没真节点 → todo。"""
+    """unknown_intent 走 option_unknown 兜底（option 子图 6/6 真节点全到位）。"""
     _patch(
         monkeypatch,
         intent_module,
-        OptionIntentOutput(type="confirm_order"),
+        OptionIntentOutput(type="unknown_intent"),
     )
     graph = build_option_graph()
     final = await graph.ainvoke(
         {
-            "raw_text": "确认下单",
+            "raw_text": "你好",
             "conversation_id": "t",
             "user_id": "u",
             "room_id": "r",
@@ -118,6 +118,6 @@ async def test_unmapped_intent_routes_to_todo(
         }
     )
     trace_nodes = [e.node for e in final.get("trace", [])]
-    assert "option_todo" in trace_nodes
+    assert "option_unknown" in trace_nodes
     assert "option_extract_place_or_modify" not in trace_nodes
     assert "option_extract_inquiry" not in trace_nodes

@@ -123,6 +123,48 @@ class OptionInquiryParams(BaseModel):
     orderList: list[OptionInquiryItem] = Field(default_factory=list)
 
 
+# ============================================================
+# 撤单 / 确认 / 查询参数（option.extract_cancel / extract_confirm / extract_query）
+#
+# 三个节点输出共用 schema：仅含 orderList[orderId]。
+# 上游 intent 节点决定调用哪个节点，下游业务根据 intent 区分行为。
+# ============================================================
+
+
+class OptionOrderRefItem(BaseModel):
+    """轻量订单引用（仅 orderId，对齐 Dify cancel/confirm/query 输出）。"""
+
+    model_config = ConfigDict(extra="ignore")
+
+    orderId: str
+
+
+class OptionExtractCancelParams(BaseModel):
+    """option.extract_cancel 输出（cancel_order_request + request_cancel_order 合并）。"""
+
+    model_config = ConfigDict(extra="ignore")
+
+    orderList: list[OptionOrderRefItem] = Field(default_factory=list)
+
+
+class OptionExtractConfirmParams(BaseModel):
+    """option.extract_confirm 输出（confirm_order + confirm_cancel_order +
+    confirm_modify_order 合并版，靠 expected_action 区分子意图）。
+    """
+
+    model_config = ConfigDict(extra="ignore")
+
+    orderList: list[OptionOrderRefItem] = Field(default_factory=list)
+
+
+class OptionExtractQueryParams(BaseModel):
+    """option.extract_query 输出（query_order_status）。"""
+
+    model_config = ConfigDict(extra="ignore")
+
+    orderList: list[OptionOrderRefItem] = Field(default_factory=list)
+
+
 __all__ = [
     "OptionIntentType",
     "OptionIntentOutput",
@@ -132,4 +174,8 @@ __all__ = [
     "OptionContractType",
     "OptionInquiryItem",
     "OptionInquiryParams",
+    "OptionOrderRefItem",
+    "OptionExtractCancelParams",
+    "OptionExtractConfirmParams",
+    "OptionExtractQueryParams",
 ]
