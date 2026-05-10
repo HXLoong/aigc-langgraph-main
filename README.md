@@ -9,7 +9,7 @@
 | 里程碑 | 状态 | 内容 | 退出门 |
 |--------|------|------|--------|
 | **M1 · 骨架** | ✅ 完成 | LangFuse 部署 + 主图骨架 + 公共节点 + 3 个 Client Protocol + Harness MVP | smoke + tools + api + harness 测试 PASS |
-| **M2 · 子图实现** | ⏸ 待做 | 17 个 LLM 节点逐一实现 + golden 扩到 200+ | golden 200+ 全 PASS |
+| **M2 · 子图实现** | ⏸ 待做 | 24 个 LangGraph 节点逐一实现（swap 10 + option 6 + option_close 7 + ticker 1）+ golden 扩到 200+ | P0 golden ≥ 80 + ticker PASS ≥ 90% + 三链路 PASS ≥ 85% |
 | **M3 · Shadow 双跑** | ⏸ 待做 | LangGraph vs Dify diff 率达标 | 主要意图 < 5%，下单/平仓 < 1% |
 | **M4 · 金丝雀切换** | ⏸ 待做 | 5% → 25% → 50% → 100% | 100% + 7 天无重大事故 |
 

@@ -80,19 +80,27 @@ await client.request("GET", url, json=payload)  # 不是 client.get()
 
 ### D5 · 节点合并策略：保守路 A+ 加 option 拆分（按真实 Java 意图枚举调整）
 
-> **2026-05-10 修订**：option 拆分的"7 个 extract"按真实 Java 枚举 `stockOptionIntentionType`（16 值）调整为 **6 个 extract**（按职责合并的版本，见 ADR 0011 修订）。
+> **2026-05-10 修订（二次）**：option 拆分按 grill-with-docs 复盘订正为 **5 个 extract**（不含 `extract_close`）。原 6 个版本错误地把 close_order_* 意图算进 option，但 close 是独立子图。详见 ADR 0011 二次修订。
 
 逻辑层与 Dify **大部分 1:1**，但有两处定向重构：
 
 | 处置 | 内容 | 来源 |
 |------|------|------|
 | **合并** | 互换-节点-确认下单 (129) + 互换-节点-确认撤单 (128) + 互换-节点-确认改单 (128) → 1 个 `swap.confirm(expected_action)`，新写统一 confirm 提示词 | 本 ADR |
-| **拆分** | 期权-意图识别、参数提取（2870 行单节点）→ 1 个 intent 节点 + 6 个 extract 节点（按 Java 真实 16 个意图按职责合并） | 沿用 ADR 0011 |
+| **拆分** | 期权-意图识别、参数提取（2870 行单节点）→ 1 个 intent 节点 + 5 个 extract 节点（按 Java 真实 10 个 option 基础意图按职责合并；6 个 close_order_* 归 close 子图） | 沿用 ADR 0011（二次修订）|
 | **保持** | 其他 Dify LLM 节点 | 1:1 复刻，提示词照搬 |
 
-option 6 个 extract 按职责合并：`extract_inquiry` / `extract_place_or_modify` / `extract_cancel` / `extract_confirm` / `extract_query` / `extract_close`（6 个 close_order_* 合 1）。
+option 5 个 extract 按职责合并：`extract_inquiry` / `extract_place_or_modify` / `extract_cancel` / `extract_confirm` / `extract_query`。
 
-最终节点数：互换 10 + 期权 7（1 intent + 6 extract）+ 标的 1（ReAct Agent 子图）= **18 LangGraph 节点**（其中 LLM 节点 17 个）。
+最终节点数（grill-with-docs 2026-05-10 修订）：
+
+| 子图 | 节点数 | 备注 |
+|---|---|---|
+| swap | 10 | 含合并后的 confirm 节点 |
+| option | 6 | 1 intent + 5 extract |
+| option_close | 7 | intent + place_close + holding_query + confirm_close + confirm_cancel + cancel_close + query_status |
+| ticker | 1 | ReAct Agent 子图 |
+| **合计** | **24 LangGraph 节点**（其中 23 个常规 LLM 节点 + 1 个 ReAct 子图）|
 
 > **重要差异**：互换的"下单 vs 改单"在 Java 端**共用同一个 `place_order_request` 类型**（靠 `orderList[i].orderId` 是否存在区分），不是独立意图。LangGraph 子图设计也照此处理——swap.place_order 节点同时承担 placement + modification，由 OrderClient 决定 `orderId` 字段。
 
@@ -152,17 +160,15 @@ app/
 │   │   ├── image_recognize.py
 │   │   ├── hand_to_share.py
 │   │   └── models.py              # 该子图所有 Pydantic Output
-│   ├── option/                    # 8 节点（1 intent + 7 extract，沿用 ADR 0011）
+│   ├── option/                    # 6 节点（1 intent + 5 extract，沿用 ADR 0011 二次修订）
 │   │   ├── graph.py
 │   │   ├── intent.py              # 新写：仅意图分类（< 500 行 prompt）
-│   │   ├── extract_quote.py       # 新写：询价参数提取
-│   │   ├── extract_place.py       # 新写：下单参数提取
-│   │   ├── extract_cancel.py      # 新写：撤单参数提取
-│   │   ├── extract_modify.py      # 新写：改单参数提取
-│   │   ├── extract_query.py       # 新写：查询参数提取
-│   │   ├── extract_confirm.py     # 新写：确认参数提取
-│   │   ├── extract_holding.py     # 新写：持仓查询参数提取
-│   │   └── models.py              # 8 个 Pydantic Output（intent + 7 extract）
+│   │   ├── extract_inquiry.py     # 新写：询价参数提取（new_inquiry）
+│   │   ├── extract_place_or_modify.py  # 新写：下单/改单参数（共用 schema，靠 expected_action 区分）
+│   │   ├── extract_cancel.py      # 新写：撤单参数提取（cancel_order_request + request_cancel_order）
+│   │   ├── extract_confirm.py     # 新写：3 种确认参数提取（confirm_order/cancel/modify）
+│   │   ├── extract_query.py       # 新写：查询参数提取（query_order_status）
+│   │   └── models.py              # 6 个 Pydantic Output（intent + 5 extract）
 │   ├── close/                     # 6 节点
 │   │   └── {graph,intent,place_close,confirm_close,confirm_cancel,
 │   │        holding_query,query_status,models}.py
@@ -204,8 +210,8 @@ class AgentState(TypedDict, total=False):
     conversation_id: str
     history_messages: Annotated[list[Message], add]
     
-    # 业务路由
-    product_type: Literal["swap", "option", "close"]
+    # 业务路由（ProductType 4 类，详见 ADR 0015）
+    product_type: Literal["swap", "option", "option_close", "unknown"]
     intent: str  # 二级意图（place_order / cancel_order / query / ...）
     
     # 业务对象（聚合，多节点共享同字段）
@@ -267,7 +273,7 @@ Markdown 配套报告：汇总统计 + 失败列表 + 各节点失败率 top 5�
 | 里程碑 | 内容 | 退出条件 |
 |--------|------|----------|
 | **M1 · 骨架（1-2 周）** | 新 `app/graph` + `state.py` + 4 个 `tools/` Protocol（mock_api 实现）+ harness MVP（runner / differ / golden loader / cli） | 30 条现 golden 跑通，全 PASS |
-| **M2 · 子图实现（2-3 周）** | 17 个 LLM 节点逐个实现；每补一个加 5-10 条 golden | golden 扩到 200+；子图覆盖率达标 |
+| **M2 · 子图实现（3-4 周）** | 24 个 LangGraph 节点逐个实现（swap 10 + option 6 + option_close 7 + ticker 1）；每节点 5-15 条 golden；按 D9.1 半串行 schedule | D9.2 退出门表（P0 golden ≥ 80，ticker PASS ≥ 90%，三链路 PASS ≥ 85%）|
 | **M3 · Shadow 双跑（2 周）** | LangGraph 暴露 `/v1/workflows/run`；shadow 工具同时打 Dify + LangGraph diff | 主要意图 diff 率 < 5%；下单/平仓 < 1% |
 | **M4 · 金丝雀切换（持续）** | Java 配 `agentUrl` 5% → 25% → 50% → 100%；harness 在线持续监控 | 100% 流量 + 7 天无重大事故 |
 
@@ -298,6 +304,27 @@ P2（边角）：
 ```
 
 P0 跑通即可进 M3；P1 P2 可与 M3 并行。
+
+#### D9.1 · P0 执行 schedule（grill-with-docs 2026-05-10）
+
+**半串行 + 双轨 ticker**：
+
+- **Week 1 · ticker 子图独占**：4-5 个 PR（骨架 → tokenize → completeness/rank → infer_code → 端到端 ReAct）。退出门 = 30+ 条 ticker-only golden，PASS ≥ 90% + 100% `from_goats=True`
+- **Week 2-3 · 三节点并行**：swap.place_order / option (intent + extract_place_or_modify) / close (intent + holding_query + place_close) 三条链路并行；节点 PR 默认用真 ticker 跑 golden
+- **双轨 ticker**：harness 提供 `--mock-ticker` 开关，CI / pre-commit 用 mock（白名单 50 个固定代码应答），shadow / 周回归用真 ticker。CI 全集 < 1 分钟
+
+#### D9.2 · P0 退出门（M2 → M3 转场硬条件）
+
+| 条件 | 阈值 |
+|---|---|
+| ticker 子图 ticker-only golden | PASS ≥ 90% + 100% `from_goats=True` |
+| swap.place_order 节点 golden | PASS ≥ 85%（含真 ticker 链） |
+| option intent + extract_place_or_modify 联合 | PASS ≥ 85% |
+| close.place_close + intent + holding_query 联合 | PASS ≥ 85% |
+| 总 P0 golden 数量 | ≥ 80 条（每节点至少 10-15 条） |
+| `python -m harness run` 全集 | 无 crash，全部能产出 trace |
+
+shadow 阶段（M3）的"主要意图 diff < 5% / 下单平仓 < 1%"是更严的退出门，不在 P0 范围。
 
 ### D3 · LangGraph 暴露给 Java Worker 的协议
 
@@ -386,6 +413,7 @@ LangGraph 暴露 `POST /v1/workflows/run`，**完全模拟 Dify Workflow Run API
 - **ADR 0010** · Qwen 三型号分工（每个节点的 LLM 客户端按此选）
 - **ADR 0013** · 加载后端动态 prompt 片段（ticker 子图 ReAct Agent 拼接 prompt 时遵循）
 - **ADR 0014** · LangFuse 作为 Harness 后台服务（修订本 ADR D7 的失败报告格式；trace / dataset / eval / annotation 四件套统一）
+- **ADR 0015** · 一级路由：规则前置 + LLM 兜底（精确化本 ADR D6 的 `intent_route` 节点实现，订正 ProductType schema）
 
 ### 引用资源
 

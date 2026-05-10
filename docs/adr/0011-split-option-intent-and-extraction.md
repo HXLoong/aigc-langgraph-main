@@ -1,6 +1,6 @@
 # option 子图拆分"意图识别"与"参数提取"为两阶段 LLM 调用
 
-> **Status update (2026-05-10)**：术语和意图列表对齐 Java 真实枚举 `stockOptionIntentionType`（`StockEnum.java:42-79`）。原文中的"7 个 extract"现按真实枚举展开为对应数量。
+> **Status update (2026-05-10, 二次修订)**：grill-with-docs 复盘后定为 **5 个 extract**（去掉原列表中的 `extract_close`）。原 6-7 份方案错误地把 6 个 `close_order_*` 意图算进 option 子图——但 close 已是**独立子图**（`option_close/`，独立 product_type），一级路由判定 `product=close` 后根本不会进 option 子图。option 子图只处理基础 10 个意图（去掉 6 个 close_order_*）。
 
 Dify 主干工作流中"期权-意图识别、参数提取"是单 LLM 节点同时承担分类 + 完整参数抽取，对应 LangGraph 的 `app/prompts/option/intent_extract.md` 高达 **2870 行**。这个"双任务巨型提示词"是当前用户体验差的最大单一根因，被 Dify 迁移按"原封保留"原则带进了 LangGraph，路由和 trace 问题虽已解，意图准确率仍未显著好转。
 
@@ -28,14 +28,14 @@ Dify 主干工作流中"期权-意图识别、参数提取"是单 LLM 节点同�
 
 `unknown_intent` 兜底。
 
-按职责合并后的 extract 提示词建议：
+按职责合并后的 extract 提示词（**5 份**，covered 10 个 option 基础意图，不含 close）：
 1. `extract_inquiry.md` — 询价（new_inquiry）
 2. `extract_place_or_modify.md` — 下单/改单参数（place_order_from_quote + request_modify_order）
 3. `extract_cancel.md` — 撤单（cancel_order_request + request_cancel_order）
 4. `extract_confirm.md` — 各种确认（confirm_order + confirm_cancel_order + confirm_modify_order）
 5. `extract_query.md` — 查询（query_order_status）
-6. `extract_close.md` — 平仓全流程（6 个 close_order_* 合并）
-7. （可选）拆出独立的 confirm_close / query_close
+
+`unknown_intent` 走兜底无需 extract。**6 个 `close_order_*` 意图归 close 子图（`option_close/`），不在 option 内**。
 
 意图分类后的路由层与 ADR 0001 D5 的"互换 confirm 合并"原则一致：高度相似的"确认 X"用同一个 extract + 一个 expected_action 字段区分。
 
@@ -50,7 +50,7 @@ Dify 主干工作流中"期权-意图识别、参数提取"是单 LLM 节点同�
 ## Consequences
 
 - 单次请求多一次 LLM 调用，端到端延迟会增加（预估 +200~400ms）。需要在 ADR-0004 trace 里观察"option 子图 P95 延迟"作为反向指标，确认延迟代价 < 准确率收益。
-- 7 份抽取提示词必须独立做 golden set 覆盖，否则拆开后某一意图无样本回归会被遗漏。
+- 5 份抽取提示词必须独立做 golden set 覆盖，否则拆开后某一意图无样本回归会被遗漏。
 - 拆分按 ADR-0003 文件并存策略推进：先做 `option/intent_v2.md` + `option/extract_*.md`，与原 `intent_extract.md` 并存，灰度切流验证准确率；老版本满稳定期后下线。
 - 此举是 Phase 1.5 的提示词架构清理，应纳入 ADR-0002 的路线图（在 Phase 2 trace 监测能力之上才能量化收益）。
 - close 子图同样问题待评估：`option_close/place_close.md` 1036 行尚未拆分，是否走同样路径取决于本 ADR 实施后的收益数据。

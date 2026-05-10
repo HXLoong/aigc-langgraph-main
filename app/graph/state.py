@@ -67,7 +67,7 @@ class ErrorInfo(BaseModel):
 # 路由层枚举
 # ============================================================
 
-ProductType = Literal["swap", "option", "close"]
+ProductType = Literal["swap", "option", "option_close", "unknown"]
 
 
 # ============================================================

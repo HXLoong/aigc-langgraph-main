@@ -3,7 +3,7 @@
 场外衍生品 AI 指令助手。**FastAPI + LangGraph + MySQL + LangFuse self-hosted**，从 Dify 工作流迁移而来。
 企微群客户消息 → 意图解析 → 后端业务/交易系统。
 
-> 当前阶段：**M1 已完成**（issues #9-#13 全 closed）→ M2 待启动（17 个 LLM 节点逐一实现）
+> 当前阶段：**M1 已完成**（issues #9-#13 全 closed）→ M2 待启动（24 个 LangGraph 节点逐一实现：swap 10 + option 6 + option_close 7 + ticker 1）
 
 ## 关键命令
 
@@ -67,7 +67,7 @@ harness/                     # 评测台（与 app/ 解耦，仅 import build_ma
 └── cli.py                   # python -m harness <run|diff|sync-golden|...>
 
 infra/langfuse/              # LangFuse self-hosted Docker Compose（PG + ClickHouse + Redis + MinIO + Web + Worker）
-docs/adr/                    # 15 个架构决定（ADR 0000-0014）
+docs/adr/                    # 16 个架构决定（ADR 0000-0015）
 docs/api-contracts/          # Java 后端真实业务 API 契约
 mock_api/server.py           # 业务后端 mock（M3 联调前用）
 tests/                       # test_smoke + test_api + test_harness + test_tools + tests/api（GOATS 连通性）
@@ -80,8 +80,9 @@ tests/                       # test_smoke + test_api + test_harness + test_tools
 3. **每个节点用 `@safe_node` 装饰** —— 异常降级到 `state['error']`，不让图崩
 4. **State 字段只通过 TypedDict 约定** —— 新增字段必须先在 `app/graph/state.py` 中声明
 5. **测试优先** —— 改代码前先改/加测试。商业逻辑必须有单元测试，链路必须有 E2E
-6. **Dify 原始提示词在重构期内可改写** —— ADR 0001 D5：仅合并 3 个"确认 X"节点 + option 拆 1+6 节点；其他保持 1:1。重构完成（shadow PASS）后恢复"只读"纪律
+6. **Dify 原始提示词在重构期内可改写** —— ADR 0001 D5：仅合并 3 个"确认 X"节点 + option 拆 1 intent + 5 extract（不含 close）；其他保持 1:1。重构完成（shadow PASS）后恢复"只读"纪律
 7. **标的代码必须 from_goats=True** —— Ticker Agent 的绝对约束（ADR 0008）
+8. **节点失败必须 cascade 防御** —— 任一节点写入 `state['error']` 后，下游 conditional 路由必须检查并跳到 fallback render，禁止 cascade 失败。具体：主图 `_route_by_product` 与每子图首节点后的 conditional 都加 `if state.get('error'): return 'fallback'`。fallback 节点输出友好回复（"我没完全理解你的意思，能换种说法重新告诉我吗"）+ trace 记录原 fail 节点名。LLM 解析失败由 `with_structured_output` 自带 1 次重试 + `@safe_node` 兜底捕获 ValidationError 写入 error；不走 HITL（HITL 仅用于 ADR 0006 的业务参数二次确认场景）
 
 ## 绝对禁止
 
@@ -101,7 +102,9 @@ tests/                       # test_smoke + test_api + test_harness + test_tools
 
 ## 下一步：M2
 
-按 ADR 0001 D9 P0/P1/P2 优先级实施 17 个 LLM 节点：
+按 ADR 0001 D9 P0/P1/P2 优先级实施 **24 个 LangGraph 节点**（23 常规 LLM 节点 + 1 个 ticker ReAct 子图）：
+
+> 节点分布（grill-with-docs 2026-05-10 修订）：swap 10 + option 6（1 intent + 5 extract）+ option_close 7 + ticker 1 = 24
 
 ```
 P0（最先做）：swap.place_order / option.intent_extract / close.place_close / ticker 子图
@@ -111,10 +114,34 @@ P2（边角）：swap.place_order_image / place_order_excel / image_recognize / 
 
 每个节点的实施模板：`@safe_node` + `with_structured_output(<NodePydanticOutput>)` + `load_prompt()` + 5-10 条 golden case。
 
+### M2 PR 颗粒度（grill-with-docs 2026-05-10）
+
+**工作单元 = 节点为单位**，一节点一 PR。两条约束：
+
+1. **同子图首个 PR 含骨架** —— 该子图第一个被实施的节点 PR 必须同时建立 `app/subgraphs/<name>/graph.py` + `models.py` 骨架；后续节点 PR 只挂自己的 `<node>.py` + 在 graph.py 加边
+2. **golden 同枝合入** —— 节点 PR 的"绿"标准 = 该节点至少 5 条 golden 全 PASS（PASS 率，不是行覆盖率）。禁止"先合代码、稍后补 case"
+
+理由：M1 已建好 graph 骨架 + safe_node + tools 层 + harness CLI；M2 真正工作量在节点函数 + Pydantic + 提示词 + golden，正好对应一节点一 PR 的天然单元。shadow 双跑（M3）的"节点级 diff"机制天然要求节点级 PR 颗粒度，可一一定位回归来源。
+
+### M2 golden case 来源策略（grill-with-docs 2026-05-10）
+
+**B + C 组合，A 暂搁**：
+
+| 来源 | 配比 | 执行约定 |
+|---|---|---|
+| **B · 业务方手写种子** | P0 ≥ 50 条（每节点 6-8 条）；M2 全程 ≥ 130 条 | 用 `golden.jsonl` schema 填模板；只标 `product_type` + `intent`，不标参数细节（参数 expected 跑出 actual 后业务方再 review）|
+| **C · LLM 对抗式生成**（基于种子 paraphrase + 边界 case）| P0 ≥ 30 条；M2 全程 ≥ 70 条 | 工具放 `harness/case_generator/`，用 thinking 模型；生成的 case **必须** 经业务方 review pass 才合入 |
+| ~~A · 历史企微日志抽样~~ | 暂搁 | 留给 M3 shadow 阶段——线上真实输入 + Dify 输出会自然累积成 case 集 |
+
+**退出门按 case 来源分桶**（避免 LLM 生成 case 拉低真门槛）：
+- B 桶 PASS 率必须 ≥ 90%
+- C 桶 PASS 率 ≥ 80%（容忍 LLM 生成的同质化抖动）
+- harness reporter 输出按桶分别统计
+
 详见：
 
 - 领域语言：`@CONTEXT.md`
-- 架构决定：`@docs/adr/`（15 个 ADR）
+- 架构决定：`@docs/adr/`（16 个 ADR）
 - Java 契约：`@docs/api-contracts/java-backend.md`
 - M1 退出门验证：`@tests/test_smoke.py` + `test_api.py` + `test_harness.py` + `test_tools.py`
 
