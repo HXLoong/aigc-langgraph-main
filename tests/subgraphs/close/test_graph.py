@@ -29,27 +29,26 @@ def test_close_graph_compiles() -> None:
 
 
 @pytest.mark.asyncio
-async def test_close_graph_runs_intent_then_todo_for_unimplemented_intent(
+async def test_close_graph_routes_unknown_intent_to_close_unknown(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """未实现意图（close_order_cancel_confirm 当前还没真节点）→ 走 todo。"""
-    _patch_llm(monkeypatch, "close_order_cancel_confirm")
+    """unknown_intent → close_unknown 兜底（close 子图所有 6 个 close_order_* 真节点已到位）。"""
+    _patch_llm(monkeypatch, "unknown_intent")
     graph = build_close_graph()
     final = await graph.ainvoke(
         {
-            "raw_text": "确认撤销平仓 CO-20260304-0001",
+            "raw_text": "你好啊",
             "conversation_id": "test-1",
             "user_id": "u1",
             "room_id": "r1",
             "message_id": 1,
-            "message_content": "确认撤销平仓 CO-20260304-0001",
+            "message_content": "你好啊",
         }
     )
-    assert final.get("intent") == "close_order_cancel_confirm"
+    assert final.get("intent") == "unknown_intent"
     trace_nodes = [e.node for e in final.get("trace", [])]
     assert "close_intent" in trace_nodes
-    assert "close_todo" in trace_nodes
+    assert "close_unknown" in trace_nodes
     assert "close_holding_query" not in trace_nodes
-    assert "close_confirm_close" not in trace_nodes
-    todo_entry = next(e for e in final["trace"] if e.node == "close_todo")
-    assert "close_order_cancel_confirm" in todo_entry.decision
+    unknown_entry = next(e for e in final["trace"] if e.node == "close_unknown")
+    assert "unhandled_intent=unknown_intent" in unknown_entry.decision

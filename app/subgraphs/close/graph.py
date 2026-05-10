@@ -2,18 +2,20 @@
 
 ADR 0001 D6 + grill-with-docs。
 
-当前路径：
+★ close 子图所有 7 节点真节点全部到位（intent + 6 真节点）：
+
     START → close_intent → [route_by_intent]
         → close_holding_query   (close_order_query)
         → close_place_close     (close_order_request)         ← P0 核心
         → close_confirm_close   (close_order_confirm)
         → close_cancel_close    (close_order_cancel_request)
-        → close_todo            (剩余 2 个 close_order_* + unknown_intent)
+        → close_confirm_cancel  (close_order_cancel_confirm)
+        → close_query_status    (close_order_order_query)
+        → close_unknown         (unknown_intent / cascade 错误兜底)
         → END
 
-后续 PR 添加：
-- close_confirm_cancel（close_order_cancel_confirm）
-- close_query_status（close_order_order_query）
+注：原 close_todo 占位节点已删除（所有真节点到位）。仅保留 close_unknown
+处理 unknown_intent + cascade 防御场景。
 """
 from __future__ import annotations
 
@@ -26,52 +28,63 @@ from app.graph.cascade import has_error
 from app.graph.safe_node import safe_node
 from app.graph.state import AgentState, TraceEntry
 from app.subgraphs.close.cancel_close import close_cancel_close
+from app.subgraphs.close.confirm_cancel import close_confirm_cancel
 from app.subgraphs.close.confirm_close import close_confirm_close
 from app.subgraphs.close.holding_query import close_holding_query
 from app.subgraphs.close.intent import close_intent
 from app.subgraphs.close.place_close import close_place_close
+from app.subgraphs.close.query_status import close_query_status
 
 
 @safe_node
-async def close_todo(state: AgentState) -> dict[str, Any]:
-    """占位节点：M2 后续 PR 替换为真节点。"""
+async def close_unknown(state: AgentState) -> dict[str, Any]:
+    """unknown_intent + cascade 错误兜底节点。
+
+    替代原 close_todo 占位（close 子图所有真节点已实施）。仍保留以处理：
+    - LLM 判 unknown_intent
+    - intent 节点失败后的 cascade 防御目的地
+    """
     intent = state.get("intent") or "unknown_intent"
     return {
         "trace": [
             TraceEntry(
-                node="close_todo",
-                decision=f"not_implemented_yet:intent={intent}",
+                node="close_unknown",
+                decision=f"unhandled_intent={intent}",
             )
         ]
     }
 
 
-#: 子图内 intent → 真节点 key 的路由表（新增真节点时只改这里）
+#: intent → 真节点 key 路由表（close 子图全 6 个 close_order_* 意图全覆盖）
 _INTENT_TO_NODE: dict[str, str] = {
     "close_order_query": "close_holding_query",
     "close_order_request": "close_place_close",
     "close_order_confirm": "close_confirm_close",
     "close_order_cancel_request": "close_cancel_close",
+    "close_order_cancel_confirm": "close_confirm_cancel",
+    "close_order_order_query": "close_query_status",
 }
 
 
 def _route_after_close_intent(state: AgentState) -> str:
     """close.intent 后路由：cascade 防御 + intent 分发。"""
     if has_error(state):
-        return "close_todo"  # 主图 cascade 防御接管
+        return "close_unknown"
     intent = state.get("intent") or "unknown_intent"
-    return _INTENT_TO_NODE.get(intent, "close_todo")
+    return _INTENT_TO_NODE.get(intent, "close_unknown")
 
 
 def build_close_graph() -> CompiledStateGraph:
-    """构建 close 子图。"""
+    """构建 close 子图（7/7 真节点全部到位）。"""
     g: StateGraph = StateGraph(AgentState)
     g.add_node("close_intent", close_intent)
     g.add_node("close_holding_query", close_holding_query)
     g.add_node("close_place_close", close_place_close)
     g.add_node("close_confirm_close", close_confirm_close)
     g.add_node("close_cancel_close", close_cancel_close)
-    g.add_node("close_todo", close_todo)
+    g.add_node("close_confirm_cancel", close_confirm_cancel)
+    g.add_node("close_query_status", close_query_status)
+    g.add_node("close_unknown", close_unknown)
 
     g.add_edge(START, "close_intent")
     g.add_conditional_edges(
@@ -82,7 +95,9 @@ def build_close_graph() -> CompiledStateGraph:
             "close_place_close": "close_place_close",
             "close_confirm_close": "close_confirm_close",
             "close_cancel_close": "close_cancel_close",
-            "close_todo": "close_todo",
+            "close_confirm_cancel": "close_confirm_cancel",
+            "close_query_status": "close_query_status",
+            "close_unknown": "close_unknown",
         },
     )
     for n in (
@@ -90,7 +105,9 @@ def build_close_graph() -> CompiledStateGraph:
         "close_place_close",
         "close_confirm_close",
         "close_cancel_close",
-        "close_todo",
+        "close_confirm_cancel",
+        "close_query_status",
+        "close_unknown",
     ):
         g.add_edge(n, END)
     return g.compile()

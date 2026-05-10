@@ -99,12 +99,12 @@ async def test_unmapped_intent_still_routes_to_todo(
     _patch(
         monkeypatch,
         intent_module,
-        CloseIntentOutput(type="close_order_cancel_confirm"),
+        CloseIntentOutput(type="unknown_intent"),
     )
     graph = build_close_graph()
     final = await graph.ainvoke(
         {
-            "raw_text": "确认撤销平仓 CO-...",
+            "raw_text": "你好啊",
             "conversation_id": "t",
             "user_id": "u",
             "room_id": "r",
@@ -113,6 +113,6 @@ async def test_unmapped_intent_still_routes_to_todo(
         }
     )
     trace_nodes = [e.node for e in final.get("trace", [])]
-    assert "close_todo" in trace_nodes
+    assert "close_unknown" in trace_nodes
     assert "close_confirm_close" not in trace_nodes
     assert "close_cancel_close" not in trace_nodes

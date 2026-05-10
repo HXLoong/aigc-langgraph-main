@@ -141,6 +141,32 @@ class ClosePlaceParams(BaseModel):
     closeOrderList: list[CloseOrderItem] = Field(default_factory=list)
 
 
+# ============================================================
+# 确认撤单参数（close.confirm_cancel）
+# ============================================================
+
+
+class ConfirmCancelParams(BaseModel):
+    """close.confirm_cancel 节点 LLM 输出。"""
+
+    model_config = ConfigDict(extra="forbid")
+
+    confirmCancelOrderNoList: list[str] = Field(default_factory=list)
+
+
+# ============================================================
+# 平仓订单查询参数（close.query_status）
+# ============================================================
+
+
+class QueryStatusParams(BaseModel):
+    """close.query_status 节点 LLM 输出。"""
+
+    model_config = ConfigDict(extra="forbid")
+
+    queryOrderNoList: list[str] = Field(default_factory=list)
+
+
 __all__ = [
     "CloseIntentType",
     "CloseIntentOutput",
@@ -152,4 +178,6 @@ __all__ = [
     "ClosePriceType",
     "CloseOrderItem",
     "ClosePlaceParams",
+    "ConfirmCancelParams",
+    "QueryStatusParams",
 ]
