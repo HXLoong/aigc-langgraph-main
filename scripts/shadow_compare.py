@@ -126,13 +126,11 @@ def _normalize_dify(dify_resp: dict) -> dict:
 
 
 def _normalize_langgraph(lg_resp: dict) -> dict:
-    """LangGraph 响应已经是扁平字段，直接抽出对比维度。"""
-    body = lg_resp.get("body") or {}
-    return {
-        "product_type": body.get("product_type"),
-        "intent": body.get("intent"),
-        "api_code": body.get("api_code"),
-    }
+    """LangGraph 响应是 Dify 协议（ADR 0001 D3 完全模拟 Dify Workflow Run API）。
+
+    与 `_normalize_dify` 解析逻辑一致，只是来源端不同。
+    """
+    return _normalize_dify(lg_resp)
 
 
 def compare(lg_resp: dict, dify_resp: dict) -> tuple[bool, dict]:
@@ -232,9 +230,12 @@ async def main(args: argparse.Namespace) -> int:
     results: list[CompareResult] = []
     dify_headers = {"Authorization": f"Bearer {args.dify_api_key}"} if args.dify_api_key else None
 
-    async with httpx.AsyncClient() as client:
+    # trust_env=False 跳过系统代理（macOS scutil --proxy 配置会让 httpx 把
+    # localhost 请求路由到 127.0.0.1:1082 等代理 → 503）。
+    # 真 Dify 在公网时如需走代理，按需注入 mounts={"https://": httpx.AsyncHTTPTransport(proxy=...)}
+    async with httpx.AsyncClient(trust_env=False) as client:
         for i, case in enumerate(cases, 1):
-            payload = {
+            inputs = {
                 "conversation_id": f"shadow-{case['id']}",
                 "message_id": f"shadow-m-{case['id']}",
                 "room_id": "shadow-room",
@@ -246,16 +247,17 @@ async def main(args: argparse.Namespace) -> int:
                 "attachments": case.get("attachments", []),
             }
 
-            # Dify 工作流通常需要包一层 inputs
-            dify_payload = {
-                "inputs": payload,
-                "user": "shadow-compare",
+            # ADR 0001 D3: LangGraph 完全模拟 Dify Workflow Run API
+            # → 两边请求体结构一致 {inputs, user, response_mode}
+            shared_payload = {
+                "inputs": inputs,
+                "user": f"shadow-{case['id']}",
                 "response_mode": "blocking",
             }
 
             (lg_resp, lg_lat), (dify_resp, dify_lat) = await asyncio.gather(
-                call_endpoint(client, args.langgraph, payload),
-                call_endpoint(client, args.dify, dify_payload, headers=dify_headers),
+                call_endpoint(client, args.langgraph, shared_payload),
+                call_endpoint(client, args.dify, shared_payload, headers=dify_headers),
             )
 
             is_equal, diffs = compare(lg_resp, dify_resp)
