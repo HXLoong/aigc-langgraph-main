@@ -72,16 +72,16 @@ async def test_place_order_request_routes_to_place_order_node(
 async def test_other_intents_still_route_to_todo(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """剩余 6 个意图（如 cancel_order_request）当前无真节点 → todo。"""
+    """unknown_intent 走 swap_unknown 兜底（swap 子图主路由 7/7 意图全到位）。"""
     _patch(
         monkeypatch,
         intent_module,
-        SwapIntentOutput(type="cancel_order_request"),
+        SwapIntentOutput(type="unknown_intent"),
     )
     graph = build_swap_graph()
     final = await graph.ainvoke(
         {
-            "raw_text": "撤 H-20260304-0001",
+            "raw_text": "你好",
             "conversation_id": "t",
             "user_id": "u",
             "room_id": "r",
@@ -90,5 +90,5 @@ async def test_other_intents_still_route_to_todo(
         }
     )
     trace_nodes = [e.node for e in final.get("trace", [])]
-    assert "swap_todo" in trace_nodes
+    assert "swap_unknown" in trace_nodes
     assert "swap_place_order" not in trace_nodes

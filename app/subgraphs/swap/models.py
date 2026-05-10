@@ -105,6 +105,48 @@ class SwapPlaceOrderParams(BaseModel):
     orderList: list[SwapOrderItem] = Field(default_factory=list)
 
 
+# ============================================================
+# 确认/撤单/查询 共享 schema（confirm / cancel / query）
+#
+# 三个节点输出共用 schema：仅含 orderList[orderId]。
+# orderId 允许 null（与 Dify 原 schema 一致，表示"找不到订单号"兜底）。
+# ============================================================
+
+
+class SwapOrderRefItem(BaseModel):
+    """轻量订单引用（与 Dify swap/confirm/cancel/query 输出 schema 对齐）。"""
+
+    model_config = ConfigDict(extra="ignore")
+
+    orderId: str | None = None
+
+
+class SwapConfirmParams(BaseModel):
+    """swap.confirm 合并版输出（confirm_order + confirm_cancel_order +
+    confirm_modify_order 三子意图共用，靠 expected_action 区分）。
+    """
+
+    model_config = ConfigDict(extra="ignore")
+
+    orderList: list[SwapOrderRefItem] = Field(default_factory=list)
+
+
+class SwapCancelParams(BaseModel):
+    """swap.cancel 输出（cancel_order_request 意图）。"""
+
+    model_config = ConfigDict(extra="ignore")
+
+    orderList: list[SwapOrderRefItem] = Field(default_factory=list)
+
+
+class SwapQueryParams(BaseModel):
+    """swap.query_order 输出（query_order_status 意图）。"""
+
+    model_config = ConfigDict(extra="ignore")
+
+    orderList: list[SwapOrderRefItem] = Field(default_factory=list)
+
+
 __all__ = [
     "SwapIntentType",
     "SwapIntentOutput",
@@ -114,4 +156,8 @@ __all__ = [
     "SwapAlgorithmType",
     "SwapOrderItem",
     "SwapPlaceOrderParams",
+    "SwapOrderRefItem",
+    "SwapConfirmParams",
+    "SwapCancelParams",
+    "SwapQueryParams",
 ]

@@ -30,27 +30,26 @@ def test_swap_graph_compiles() -> None:
 
 
 @pytest.mark.asyncio
-async def test_swap_graph_runs_intent_then_todo_for_unimplemented(
+async def test_swap_graph_routes_unknown_intent_to_swap_unknown(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """未实现意图（query_order_status）→ swap_todo（剩余 6 个意图待 PR）。"""
-    _patch_llm(monkeypatch, "query_order_status")
+    """unknown_intent → swap_unknown 兜底（swap 子图主路由 7/7 意图全到位）。"""
+    _patch_llm(monkeypatch, "unknown_intent")
     graph = build_swap_graph()
     final = await graph.ainvoke(
         {
-            "raw_text": "查 H-20260304-0001 状态",
+            "raw_text": "你好啊",
             "conversation_id": "test-1",
             "user_id": "u1",
             "room_id": "r1",
             "message_id": 1,
-            "message_content": "查 H-20260304-0001 状态",
+            "message_content": "你好啊",
         }
     )
-    assert final.get("intent") == "query_order_status"
+    assert final.get("intent") == "unknown_intent"
     trace_nodes = [e.node for e in final.get("trace", [])]
     assert "swap_intent" in trace_nodes
-    assert "swap_todo" in trace_nodes
+    assert "swap_unknown" in trace_nodes
     assert "swap_place_order" not in trace_nodes
-    todo_entry = next(e for e in final["trace"] if e.node == "swap_todo")
-    assert "not_implemented_yet" in todo_entry.decision
-    assert "query_order_status" in todo_entry.decision
+    unknown_entry = next(e for e in final["trace"] if e.node == "swap_unknown")
+    assert "unhandled_intent=unknown_intent" in unknown_entry.decision
