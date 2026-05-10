@@ -156,6 +156,41 @@ NODE_REGISTRY: dict[str, NodeSeedSpec] = {
             "改单 OPT-20260304-0001 行权价改 1850",
         ],
     ),
+    "option.extract_cancel": NodeSeedSpec(
+        node_name="option.extract_cancel",
+        product_type="option",
+        intent_values=["cancel_order_request", "request_cancel_order"],
+        description="期权撤单参数提取（合并 cancel_order_request + request_cancel_order）。",
+        sample_inputs=[
+            "期权撤单 OPT-20260304-0001",
+            "撤销期权订单 OPT-20260304-0002",
+        ],
+    ),
+    "option.extract_confirm": NodeSeedSpec(
+        node_name="option.extract_confirm",
+        product_type="option",
+        intent_values=[
+            "confirm_order",
+            "confirm_cancel_order",
+            "confirm_modify_order",
+        ],
+        description="期权三种确认参数提取（合并版，靠 expected_action 区分）。",
+        sample_inputs=[
+            "确认第二笔",
+            "期权 确认下单 OPT-20260304-0001",
+            "确认期权撤单 OPT-20260304-0001",
+        ],
+    ),
+    "option.extract_query": NodeSeedSpec(
+        node_name="option.extract_query",
+        product_type="option",
+        intent_values=["query_order_status"],
+        description="期权查询订单状态参数提取。",
+        sample_inputs=[
+            "查询期权订单 OPT-20260304-0001 状态",
+            "OPT-20260304-0001 现在怎么样了",
+        ],
+    ),
     # ---- option_close 子图（7 节点，P0/P1）----
     "close.intent": NodeSeedSpec(
         node_name="close.intent",
@@ -194,6 +229,45 @@ NODE_REGISTRY: dict[str, NodeSeedSpec] = {
             "平 CO-20260304-4FE9C941 全部",
             "帮我平仓 CO-20260304-ABCD1234",
             "平 茅台 一半",
+        ],
+    ),
+    "close.confirm_close": NodeSeedSpec(
+        node_name="close.confirm_close",
+        product_type="option_close",
+        intent_values=["close_order_confirm"],
+        description="确认平仓参数提取。",
+        sample_inputs=[
+            "确认平仓 CO-20260304-ABCD1234",
+            "确认 CO-20260304-0001",
+        ],
+    ),
+    "close.cancel_close": NodeSeedSpec(
+        node_name="close.cancel_close",
+        product_type="option_close",
+        intent_values=["close_order_cancel_request"],
+        description="平仓撤单参数提取（撤销已下的平仓单）。",
+        sample_inputs=[
+            "撤销平仓单 CO-20260304-ABCD1234",
+            "取消平仓 CO-20260304-0001",
+        ],
+    ),
+    "close.confirm_cancel": NodeSeedSpec(
+        node_name="close.confirm_cancel",
+        product_type="option_close",
+        intent_values=["close_order_cancel_confirm"],
+        description="确认撤销平仓参数提取。",
+        sample_inputs=[
+            "确认撤销平仓 CO-20260304-ABCD1234",
+        ],
+    ),
+    "close.query_status": NodeSeedSpec(
+        node_name="close.query_status",
+        product_type="option_close",
+        intent_values=["close_order_order_query"],
+        description="平仓订单状态查询。",
+        sample_inputs=[
+            "查询 OPTG-WFJJ202509030002 的状态",
+            "CO-20260304-0001 现在怎样了",
         ],
     ),
 }
