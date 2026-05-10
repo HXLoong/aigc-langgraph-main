@@ -29,26 +29,28 @@ def test_option_graph_compiles() -> None:
 
 
 @pytest.mark.asyncio
-async def test_option_graph_runs_intent_then_todo(
+async def test_option_graph_runs_intent_then_todo_for_unimplemented(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """骨架阶段：intent → todo 路径完整跑通。"""
-    _patch_llm(monkeypatch, "new_inquiry")
+    """未实现意图（如 query_order_status）→ option_todo。"""
+    _patch_llm(monkeypatch, "query_order_status")
     graph = build_option_graph()
     final = await graph.ainvoke(
         {
-            "raw_text": "期权询价 腾讯控股 1个月",
+            "raw_text": "查 OPT-20260304-0001 状态",
             "conversation_id": "test-1",
             "user_id": "u1",
             "room_id": "r1",
             "message_id": 1,
-            "message_content": "期权询价 腾讯控股 1个月",
+            "message_content": "查 OPT-20260304-0001 状态",
         }
     )
-    assert final.get("intent") == "new_inquiry"
+    assert final.get("intent") == "query_order_status"
     trace_nodes = [e.node for e in final.get("trace", [])]
     assert "option_intent" in trace_nodes
     assert "option_todo" in trace_nodes
+    assert "option_extract_inquiry" not in trace_nodes
+    assert "option_extract_place_or_modify" not in trace_nodes
     todo_entry = next(e for e in final["trace"] if e.node == "option_todo")
     assert "not_implemented_yet" in todo_entry.decision
-    assert "new_inquiry" in todo_entry.decision
+    assert "query_order_status" in todo_entry.decision

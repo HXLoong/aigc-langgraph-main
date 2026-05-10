@@ -24,6 +24,7 @@ from langgraph.graph.state import CompiledStateGraph
 from app.graph.cascade import has_error
 from app.graph.safe_node import safe_node
 from app.graph.state import AgentState, TraceEntry
+from app.subgraphs.option.extract_inquiry import option_extract_inquiry
 from app.subgraphs.option.extract_place_or_modify import (
     option_extract_place_or_modify,
 )
@@ -46,6 +47,7 @@ async def option_todo(state: AgentState) -> dict[str, Any]:
 
 #: intent → 真节点 key 路由表（新增真节点时只改这里）
 _INTENT_TO_NODE: dict[str, str] = {
+    "new_inquiry": "option_extract_inquiry",
     "place_order_from_quote": "option_extract_place_or_modify",
     "request_modify_order": "option_extract_place_or_modify",
 }
@@ -63,6 +65,7 @@ def build_option_graph() -> CompiledStateGraph:
     """构建 option 子图。"""
     g: StateGraph = StateGraph(AgentState)
     g.add_node("option_intent", option_intent)
+    g.add_node("option_extract_inquiry", option_extract_inquiry)
     g.add_node("option_extract_place_or_modify", option_extract_place_or_modify)
     g.add_node("option_todo", option_todo)
 
@@ -71,11 +74,16 @@ def build_option_graph() -> CompiledStateGraph:
         "option_intent",
         _route_after_option_intent,
         {
+            "option_extract_inquiry": "option_extract_inquiry",
             "option_extract_place_or_modify": "option_extract_place_or_modify",
             "option_todo": "option_todo",
         },
     )
-    for n in ("option_extract_place_or_modify", "option_todo"):
+    for n in (
+        "option_extract_inquiry",
+        "option_extract_place_or_modify",
+        "option_todo",
+    ):
         g.add_edge(n, END)
     return g.compile()
 

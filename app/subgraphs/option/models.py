@@ -83,10 +83,53 @@ class OptionPlaceOrModifyParams(BaseModel):
     orderList: list[OptionOrderItem] = Field(default_factory=list)
 
 
+# ============================================================
+# 询价参数（option.extract_inquiry）
+# ============================================================
+
+
+#: 期权类型枚举（与 Dify intent_extract.md 用词对齐）
+OptionContractType = Literal[
+    "欧式看涨",
+    "欧式看跌",
+    "雪球",
+    "气囊",
+    "参与型看涨",
+]
+
+
+class OptionInquiryItem(BaseModel):
+    """询价 orderList 中的单元素。
+
+    LLM 提取自然语言不做标的标准化——`stockCode` 是用户原话片段；
+    标准 wind 代码由调用方通过 ticker resolver 写入 state['tickers']。
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    stockCode: str | None = None
+    optionType: OptionContractType | None = None
+    tenor: str | None = None
+    strikePercentage: float | int | None = None
+    notionalAmount: float | int | None = None
+    participationRate: float | int | None = None
+
+
+class OptionInquiryParams(BaseModel):
+    """option.extract_inquiry 节点 LLM 输出。"""
+
+    model_config = ConfigDict(extra="forbid")
+
+    orderList: list[OptionInquiryItem] = Field(default_factory=list)
+
+
 __all__ = [
     "OptionIntentType",
     "OptionIntentOutput",
     "OptionOrderType",
     "OptionOrderItem",
     "OptionPlaceOrModifyParams",
+    "OptionContractType",
+    "OptionInquiryItem",
+    "OptionInquiryParams",
 ]

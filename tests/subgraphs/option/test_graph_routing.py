@@ -100,16 +100,16 @@ async def test_request_modify_routes_to_extract_place(
 async def test_unmapped_intent_routes_to_todo(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """new_inquiry / cancel / confirm / query 等 8 个意图当前还没真节点 → todo。"""
+    """剩余未实现意图（cancel / confirm / query 等 7 个）当前还没真节点 → todo。"""
     _patch(
         monkeypatch,
         intent_module,
-        OptionIntentOutput(type="new_inquiry"),
+        OptionIntentOutput(type="confirm_order"),
     )
     graph = build_option_graph()
     final = await graph.ainvoke(
         {
-            "raw_text": "期权询价 腾讯 1个月",
+            "raw_text": "确认下单",
             "conversation_id": "t",
             "user_id": "u",
             "room_id": "r",
@@ -120,3 +120,4 @@ async def test_unmapped_intent_routes_to_todo(
     trace_nodes = [e.node for e in final.get("trace", [])]
     assert "option_todo" in trace_nodes
     assert "option_extract_place_or_modify" not in trace_nodes
+    assert "option_extract_inquiry" not in trace_nodes
