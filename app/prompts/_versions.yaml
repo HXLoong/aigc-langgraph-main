@@ -16,5 +16,13 @@
 #     - name: intent_v2    # → app/prompts/swap/intent_v2.md
 #       weight: 0.05
 
-# 当前所有节点默认 v1（无 override）
-overrides: {}
+# 当前灰度配置
+overrides:
+  # swap.intent · g008 偶发误判修复（"swap 确认修改订单 H-..." → confirm_modify_order）
+  # 5% 流量切 v2 验证修复效果，95% 保持 v1 生产基线
+  swap.intent:
+    versions:
+      - name: intent       # → app/prompts/swap/intent.md (v1，生产基线)
+        weight: 0.95
+      - name: intent_v2    # → app/prompts/swap/intent_v2.md (修 g008，加冲突仲裁规则)
+        weight: 0.05
