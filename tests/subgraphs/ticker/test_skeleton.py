@@ -52,32 +52,34 @@ def test_ticker_tools_have_expected_names() -> None:
 
 
 # ============================================================
-# Day 1 stub 行为（确认 stub 工具能被直接调用）
+# 工具签名 smoke（detail behavior 见 test_tools_real.py）
 # ============================================================
 
 
-def test_tokenize_stub_splits_by_space() -> None:
-    result = tokenize.invoke({"raw_text": "买 腾讯 1000 股"})
-    assert result == ["买", "腾讯", "1000", "股"]
-
-
-def test_tokenize_stub_handles_empty() -> None:
+def test_tokenize_basic_invocation() -> None:
+    """tokenize 至少能被空字符串调用并返回 list。"""
     assert tokenize.invoke({"raw_text": ""}) == []
 
 
-def test_completeness_stub_detects_suffix() -> None:
-    assert completeness.invoke({"keyword": "00700.HK"})["is_complete"] is True
-    assert completeness.invoke({"keyword": "腾讯"})["is_complete"] is False
-    assert completeness.invoke({"keyword": "510050.SH"})["is_complete"] is True
+def test_completeness_signature() -> None:
+    """completeness 接收 keyword + 返回 dict（含 is_complete / candidates）。"""
+    # 后端不可达时退化后缀规则（不触发 mock_api）
+    result = completeness.invoke({"keyword": "00700.HK"})
+    assert "is_complete" in result
+    assert "keyword" in result
 
 
-def test_rank_stub_returns_first_non_empty() -> None:
-    assert rank.invoke({"candidates": ["", "00700.HK", "TCEHY"]}) == "00700.HK"
-    assert rank.invoke({"candidates": []}) == ""
+def test_rank_signature() -> None:
+    """rank 接收 keyword（不再是 candidates list），返回含 winner/needs_hitl 的 dict。"""
+    result = rank.invoke({"keyword": ""})
+    assert "winner" in result
+    assert "needs_hitl" in result
+    assert "candidates" in result
 
 
-def test_infer_code_stub_passthrough() -> None:
-    assert infer_code.invoke({"keyword": "腾讯"}) == "腾讯"
+def test_infer_code_signature() -> None:
+    """infer_code 接收 keyword 返回 str。空输入短路。"""
+    assert infer_code.invoke({"keyword": ""}) == ""
 
 
 # ============================================================
