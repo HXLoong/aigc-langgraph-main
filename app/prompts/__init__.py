@@ -28,7 +28,9 @@ md 格式约定：
 """
 from __future__ import annotations
 
+import hashlib
 import logging
+import os
 import re
 from dataclasses import dataclass
 from functools import lru_cache
@@ -37,6 +39,8 @@ from pathlib import Path
 logger = logging.getLogger(__name__)
 
 PROMPTS_DIR = Path(__file__).parent
+_VERSIONS_YAML = PROMPTS_DIR / "_versions.yaml"
+_HASH_BUCKETS = 10_000  # conversation_id hash 桶大小（4 位 16 进制 → 0..9999）
 
 
 @dataclass(frozen=True)
@@ -201,7 +205,139 @@ def compose_prompt(category: str, name: str, version: str = "v1") -> Prompt:
     )
 
 
+# ============================================================
+# v1/v2 灰度切流（ADR 0003 同目录并存模式）
+# ============================================================
+
+
+@lru_cache(maxsize=1)
+def _load_versions_config() -> dict[str, dict]:
+    """读取并缓存 _versions.yaml 的 overrides 段。
+
+    yaml 缺失或解析失败时返回空 dict（默认全部走 v1）。
+    """
+    if not _VERSIONS_YAML.exists():
+        return {}
+    try:
+        import yaml
+
+        data = yaml.safe_load(_VERSIONS_YAML.read_text(encoding="utf-8")) or {}
+    except Exception:
+        logger.exception("解析 %s 失败，回退默认 v1", _VERSIONS_YAML)
+        return {}
+    overrides = data.get("overrides")
+    return overrides if isinstance(overrides, dict) else {}
+
+
+_VERSION_TAG_RE = re.compile(r"^v\d+$")
+
+
+def _resolve_env_override(category: str, base_name: str) -> str | None:
+    """读取 `OTC_PROMPT_<CATEGORY>_<BASE_NAME>_VERSION` 覆盖。
+
+    取值约定：
+    - 空 / 未设 → None（不覆盖）
+    - "v1" → base_name（生产默认）
+    - "vN"（N ≥ 2）→ f"{base_name}_v{N}"（如 swap.intent + v2 → intent_v2）
+    - 其他字符串 → 直接当 name 返回（开发者明确指定文件名时用）
+    """
+    env_key = (
+        f"OTC_PROMPT_"
+        f"{category.upper().replace('/', '_').replace('.', '_')}_"
+        f"{base_name.upper()}_VERSION"
+    )
+    raw = os.environ.get(env_key)
+    if not raw:
+        return None
+    value = raw.strip()
+    if value == "v1":
+        return base_name
+    if _VERSION_TAG_RE.fullmatch(value):
+        return f"{base_name}_{value}"
+    return value
+
+
+def _hash_bucket(seed: str) -> int:
+    """conversation_id → 稳定 0.._HASH_BUCKETS-1 整数（sha256 前 8 位 16 进制）。"""
+    digest = hashlib.sha256(seed.encode("utf-8")).hexdigest()
+    return int(digest[:8], 16) % _HASH_BUCKETS
+
+
+def resolve_prompt_version(
+    category: str,
+    base_name: str,
+    conversation_id: str | None = None,
+) -> str:
+    """按灰度配置返回应加载的 prompt name（不含 .md 后缀）。
+
+    决策顺序（前者命中即短路）：
+    1. 环境变量 `OTC_PROMPT_<CATEGORY>_<BASE_NAME>_VERSION` → 强制覆盖（开发调试）
+    2. `_versions.yaml` `overrides[<category>.<base_name>]` 按 weight 分流
+    3. 默认返回 base_name（v1，无后缀）
+
+    分流稳定性：
+    - 同一 conversation_id 永远命中同一版本（sha256 前 8 位 hex 取模）
+    - conversation_id 为 None / 空 → 返回 versions 列表第一个（视为默认）
+
+    Args:
+        category: prompt 一级目录，如 "swap" / "option_close"
+        base_name: 生产版文件名（不含后缀），如 "intent" / "place_order"
+        conversation_id: 用于稳定 hash 分流；同一会话保持同一版本
+
+    Returns:
+        实际加载的 prompt name，如 "intent" 或 "intent_v2"
+
+    Examples:
+        >>> # 默认无配置 → v1
+        >>> resolve_prompt_version("swap", "intent", "conv-1")
+        'intent'
+
+        >>> # _versions.yaml 配置了 95/5 灰度 + conversation_id 落到 v2 桶
+        >>> # 同一 conversation_id 永远走同一版本
+    """
+    # 1. env var 强制覆盖
+    env_name = _resolve_env_override(category, base_name)
+    if env_name is not None:
+        return env_name
+
+    # 2. yaml overrides
+    overrides = _load_versions_config()
+    cfg = overrides.get(f"{category}.{base_name}")
+    if not isinstance(cfg, dict):
+        return base_name
+
+    versions = cfg.get("versions")
+    if not isinstance(versions, list) or not versions:
+        return base_name
+
+    # conversation_id 缺失：固定取第一个（默认）
+    if not conversation_id:
+        first = versions[0]
+        return first.get("name", base_name) if isinstance(first, dict) else base_name
+
+    total_weight = sum(
+        float(v.get("weight", 1.0))
+        for v in versions
+        if isinstance(v, dict)
+    )
+    if total_weight <= 0:
+        return base_name
+
+    bucket_pos = _hash_bucket(conversation_id) / _HASH_BUCKETS  # 0.0 .. 1.0
+    cumulative = 0.0
+    for v in versions:
+        if not isinstance(v, dict):
+            continue
+        cumulative += float(v.get("weight", 1.0)) / total_weight
+        if bucket_pos < cumulative:
+            return v.get("name", base_name)
+
+    last = versions[-1]
+    return last.get("name", base_name) if isinstance(last, dict) else base_name
+
+
 def clear_cache() -> None:
     """清空加载缓存（测试或热更新时使用）。"""
     load_prompt.cache_clear()
     compose_prompt.cache_clear()
+    _load_versions_config.cache_clear()

@@ -1,10 +1,14 @@
 """swap.intent 节点 · 互换二级意图分类。
 
-输入：raw_text / quote_content / history_messages
+输入：raw_text / quote_content / history_messages / conversation_id
 输出：state['intent'] = SwapIntentType 之一（7 值）
 
 LLM：standard 模型 + with_structured_output（ADR 0010 强制规则）。
 prompt：app/prompts/swap/intent.md（Dify 原文，重构期内只读）。
+
+ADR 0003 灰度：通过 `resolve_prompt_version("swap", "intent", conversation_id)`
+按 `app/prompts/_versions.yaml` 配置或 `OTC_PROMPT_SWAP_INTENT_VERSION` 环境变量
+切到 intent_v2.md 等版本（同一会话稳定路由）。
 """
 from __future__ import annotations
 
@@ -13,7 +17,7 @@ from typing import Any
 from app.graph.safe_node import safe_node
 from app.graph.state import AgentState, Message, TraceEntry
 from app.llm.clients import get_qwen_structured
-from app.prompts import load_prompt
+from app.prompts import load_prompt, resolve_prompt_version
 from app.subgraphs.swap.models import SwapIntentOutput
 
 
@@ -57,9 +61,11 @@ async def swap_intent(state: AgentState) -> dict[str, Any]:
 
     出参约定：
     - intent: SwapIntentType 之一（小写下划线）
-    - trace: 单条 TraceEntry，记录 LLM 输出
+    - trace: 单条 TraceEntry，记录 LLM 输出 + 实际加载的 prompt name（含灰度版本号）
     """
-    prompt = load_prompt("swap", "intent")
+    conversation_id = state.get("conversation_id")
+    prompt_name = resolve_prompt_version("swap", "intent", conversation_id)
+    prompt = load_prompt("swap", prompt_name)
     llm = get_qwen_structured().with_structured_output(SwapIntentOutput)
 
     user_message = _build_user_message(state)
@@ -75,8 +81,8 @@ async def swap_intent(state: AgentState) -> dict[str, Any]:
         "trace": [
             TraceEntry(
                 node="swap_intent",
-                decision=f"intent={result.type}",
-                llm_output={"type": result.type},
+                decision=f"intent={result.type} prompt={prompt_name}",
+                llm_output={"type": result.type, "prompt_name": prompt_name},
             )
         ],
     }
