@@ -30,12 +30,19 @@ LANGFUSE_HOST=http://localhost:3000   # self-hosted
 ### 2. 启动业务依赖（mock + LangFuse）
 
 ```bash
-# Mock API（GOATS / securities / 后端订单）
-docker compose up -d mock-api  # 或 python -m mock_api.server
+# Mock API（GOATS / securities / 后端订单）— 在另一个终端开起来
+uvicorn mock_api.server:app --port 8099
+# 或后台运行：
+# nohup uvicorn mock_api.server:app --port 8099 > /tmp/mock_api.log 2>&1 &
 
-# LangFuse self-hosted（可选）
+# 健康检查（应返回 JSON 不报错）
+curl -s http://localhost:8099/admin-api/integration/securities-instrument/select?keyword=test | head -c 200
+
+# LangFuse self-hosted（可选，开了能在 UI 按 prompt_name 过滤 trace）
 docker compose -f infra/langfuse/docker-compose.yml --env-file infra/langfuse/.env up -d
 ```
+
+> docker-compose.yml 里只有 `mysql` 和 `app` 两个 service，没有 mock-api — mock_api 是 Python 直跑的 FastAPI 子进程。
 
 ### 3. 验证 LLM 连通性
 

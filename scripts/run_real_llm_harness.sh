@@ -17,6 +17,8 @@ cd "$ROOT"
 # ============================================================
 preflight() {
     echo ">>> 预检环境"
+
+    # .env 检查
     if [ ! -f ".env" ]; then
         echo "ERROR: .env 缺失，复制 .env.example 并填实际 key" >&2
         exit 1
@@ -26,6 +28,20 @@ preflight() {
         exit 1
     fi
     echo "    .env OK"
+
+    # mock_api 健康检查（端口 8099）
+    local mock_url="http://localhost:8099/admin-api/integration/securities-instrument/select?keyword=test"
+    if ! curl -fs --max-time 3 "$mock_url" > /dev/null 2>&1; then
+        echo "ERROR: mock_api 未启动（http://localhost:8099 不通）" >&2
+        echo "       请在另一终端运行：" >&2
+        echo "         uvicorn mock_api.server:app --port 8099" >&2
+        echo "       或后台：" >&2
+        echo "         nohup uvicorn mock_api.server:app --port 8099 > /tmp/mock_api.log 2>&1 &" >&2
+        exit 1
+    fi
+    echo "    mock_api OK (http://localhost:8099)"
+
+    # LLM 连通性
     echo "    LLM 连通性测试 ..."
     python -c "
 import asyncio
