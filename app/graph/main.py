@@ -18,18 +18,13 @@ from app.nodes.ingest import ingest
 from app.nodes.intent_route import intent_route
 from app.nodes.persist import persist
 from app.nodes.render import render
+from app.subgraphs.option import build_option_graph
 from app.subgraphs.swap import build_swap_graph
 
 
 # ============================================================
 # 占位子图 stub（M2 子图 PR 逐个替换）
 # ============================================================
-
-
-@safe_node
-async def _option_stub(state: AgentState) -> dict[str, Any]:
-    """占位 option 子图。M2 替换为 build_option_graph().compile()。"""
-    return {"intent": state.get("intent") or "new_inquiry"}
 
 
 @safe_node
@@ -82,7 +77,7 @@ def build_main_graph(
     g.add_node("ingest", ingest)
     g.add_node("intent_route", intent_route)
     g.add_node("swap", build_swap_graph())
-    g.add_node("option", _option_stub)
+    g.add_node("option", build_option_graph())
     g.add_node("option_close", _option_close_stub)
     g.add_node("fallback", fallback)
     g.add_node("persist", persist)
