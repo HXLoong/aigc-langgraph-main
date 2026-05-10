@@ -154,14 +154,26 @@ class TestIntentRouteNode:
 
 
 def _load_golden_with_strong_signal() -> list[dict]:
-    """加载有订单号或关键词的 golden case（即规则层应该命中的）。"""
+    """加载规则层应命中的 golden 锚点 case。
+
+    范围：原 30 条手写锚点（g001-g030）— ADR 0015 规则层校准样本。
+    业务方批量种子（g101+）多含参数补充类输入（"200万,市价下单"/"撤单"等），
+    天然走 LLM 兜底，不应纳入规则层覆盖率统计（否则覆盖率会被填空类拉低）。
+    """
+    import re
+
     path = Path(__file__).parent / "fixtures" / "golden.jsonl"
-    cases = [json.loads(line) for line in path.read_text().splitlines() if line.strip()]
-    # 过滤 unknown product_type 的 case（它们应该走 LLM 兜底，规则层不命中）
+    cases = [
+        json.loads(line)
+        for line in path.read_text().splitlines()
+        if line.strip()
+    ]
+    anchor_re = re.compile(r"^g0\d{2}$")  # g001..g099 视为锚点
     return [
         c
         for c in cases
-        if c.get("expected", {}).get("product_type") != "unknown"
+        if anchor_re.match(c.get("id", ""))
+        and c.get("expected", {}).get("product_type") != "unknown"
     ]
 
 
