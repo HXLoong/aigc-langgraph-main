@@ -22,27 +22,35 @@ async def test_main_graph_compiles() -> None:
 async def test_main_graph_e2e_swap_keyword(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """ADR 0015 第 2 层：'互换' 关键词 → product=swap → swap 子图（intent + todo）。
-
-    swap 子图嵌入后，trace 含子图内部节点（swap_intent / swap_todo）。
-    LangGraph 0.6 子图嵌入特性：reducer add 会让 ingest/intent_route 在
-    主图 + 子图 input 累积时出现两次——本测试用 contains 而非精确等于。
-    """
-    # mock swap.intent 的 LLM 调用（避免联网）
+    """ADR 0015 第 2 层：'互换' 关键词 → swap 子图 → place_order_request → swap_place_order 真节点。"""
     from unittest.mock import AsyncMock, MagicMock
 
     from app.subgraphs.swap import intent as swap_intent_module
-    from app.subgraphs.swap.models import SwapIntentOutput
-
-    fake_output = SwapIntentOutput(type="place_order_request")
-    fake_llm_with_schema = MagicMock()
-    fake_llm_with_schema.ainvoke = AsyncMock(return_value=fake_output)
-    fake_base_llm = MagicMock()
-    fake_base_llm.with_structured_output = MagicMock(
-        return_value=fake_llm_with_schema
+    from app.subgraphs.swap import place_order as swap_po_module
+    from app.subgraphs.swap.models import (
+        SwapIntentOutput,
+        SwapOrderItem,
+        SwapPlaceOrderParams,
     )
-    monkeypatch.setattr(
-        swap_intent_module, "get_qwen_structured", lambda: fake_base_llm
+
+    def _patch(module: object, value: object) -> None:
+        fake_llm = MagicMock()
+        fake_llm.ainvoke = AsyncMock(return_value=value)
+        fake_base = MagicMock()
+        fake_base.with_structured_output = MagicMock(return_value=fake_llm)
+        monkeypatch.setattr(module, "get_qwen_structured", lambda: fake_base)
+
+    _patch(swap_intent_module, SwapIntentOutput(type="place_order_request"))
+    _patch(
+        swap_po_module,
+        SwapPlaceOrderParams(
+            orderList=[
+                SwapOrderItem(
+                    placeOrderQuantity=100,
+                    placeOrderOrderDirection="BUY",
+                )
+            ]
+        ),
     )
 
     graph = build_main_graph()
@@ -64,7 +72,7 @@ async def test_main_graph_e2e_swap_keyword(
         "ingest",
         "intent_route",
         "swap_intent",
-        "swap_todo",
+        "swap_place_order",
         "persist",
         "render",
     }
@@ -74,11 +82,12 @@ async def test_main_graph_e2e_swap_keyword(
 
     assert final.get("product_type") == "swap"
     assert final.get("intent") == "place_order_request"
-    # 验证 intent_route 决策是规则层命中
     intent_route_entries = [e for e in final["trace"] if e.node == "intent_route"]
     assert any(
         e.decision == "rule:keyword→swap" for e in intent_route_entries
     )
+    # 验证 swap.place_order 真节点写入了 place_params
+    assert final.get("place_params", {}).get("expected_action") == "place"
 
 
 @pytest.mark.asyncio

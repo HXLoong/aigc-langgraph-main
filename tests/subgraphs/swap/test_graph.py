@@ -30,27 +30,27 @@ def test_swap_graph_compiles() -> None:
 
 
 @pytest.mark.asyncio
-async def test_swap_graph_runs_intent_then_todo(
+async def test_swap_graph_runs_intent_then_todo_for_unimplemented(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """骨架阶段：intent → todo 路径完整跑通。"""
-    _patch_llm(monkeypatch, "place_order_request")
+    """未实现意图（query_order_status）→ swap_todo（剩余 6 个意图待 PR）。"""
+    _patch_llm(monkeypatch, "query_order_status")
     graph = build_swap_graph()
     final = await graph.ainvoke(
         {
-            "raw_text": "做一笔招商银行的 TRS",
+            "raw_text": "查 H-20260304-0001 状态",
             "conversation_id": "test-1",
             "user_id": "u1",
             "room_id": "r1",
             "message_id": 1,
-            "message_content": "做一笔招商银行的 TRS",
+            "message_content": "查 H-20260304-0001 状态",
         }
     )
-    assert final.get("intent") == "place_order_request"
+    assert final.get("intent") == "query_order_status"
     trace_nodes = [e.node for e in final.get("trace", [])]
     assert "swap_intent" in trace_nodes
     assert "swap_todo" in trace_nodes
-    # todo 占位写 not_implemented_yet decision
+    assert "swap_place_order" not in trace_nodes
     todo_entry = next(e for e in final["trace"] if e.node == "swap_todo")
     assert "not_implemented_yet" in todo_entry.decision
-    assert "place_order_request" in todo_entry.decision
+    assert "query_order_status" in todo_entry.decision
