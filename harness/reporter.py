@@ -34,46 +34,102 @@ SOURCE_PASS_THRESHOLDS: dict[str, float] = {
 
 
 # ============================================================
-# 启发式定位（M1 简版）
+# 启发式定位（M2 升级版 · ADR 0001 D7）
 # ============================================================
 
 
-# diff path 关键词 → 嫌疑节点名 的简单映射
-# M2 阶段接入真实节点后扩展为"节点 → 写入字段集"的精确反查
-_FIELD_TO_NODE_HINTS = {
-    "intent": "intent_route",  # M1 占位；M2 由 swap.intent / option.intent_extract 等
-    "product_type": "intent_route",
-    "place_params": "swap.place_order",
-    "cancel_params": "swap.cancel",
-    "confirm": "swap.confirm",
-    "query_filter": "swap.query_order",
-    "close_params": "close.place_close",
-    "tickers": "ticker.react_agent",
+#: 字段根名 + product_type → 节点名（M2 真实节点映射）
+#: 同字段被多个子图节点写时（如 intent / place_params），按 product_type 分流
+_FIELD_BY_PRODUCT: dict[str, dict[str, str]] = {
+    "intent": {
+        "swap": "swap_intent",
+        "option": "option_intent",
+        "option_close": "close_intent",
+    },
+    "place_params": {
+        "swap": "swap_place_order",
+        "option": "option_extract_place_or_modify",
+        "option_close": "close_place_close",
+    },
+    "tickers": {
+        # tickers 由含 ticker resolver 集成的节点写
+        "swap": "swap_place_order",
+        "option": "option_extract_inquiry",
+    },
+    "close_params": {
+        # close 子图多个节点都写 close_params；按 intent 进一步细分
+        "option_close": "close_holding_query",  # 默认；具体节点见 trace
+    },
+    "confirm": {
+        "option_close": "close_confirm_close",
+        # swap.confirm 合并版后续 PR 实施
+    },
+    "cancel_params": {
+        "option_close": "close_cancel_close",
+    },
 }
 
 
-def _suspect(diffs: list[FieldDiff]) -> tuple[str | None, str | None]:
-    """从 diffs 推断嫌疑节点 + prompt 文件路径。
+#: 字段根名兜底（product_type 未知或不在分流表）
+_FIELD_FALLBACK: dict[str, str] = {
+    "product_type": "intent_route",
+    "intent": "intent_route",  # 当 product_type=unknown 时漏判在 intent_route
+    "tickers": "ticker_react_agent",
+}
 
-    M1 简版：取第一个 diff path 的根字段，查 _FIELD_TO_NODE_HINTS。
-    M2 阶段：扩展为根据 trace 反向追踪写入字段的最后一个节点。
+
+#: 节点名 → 提示词文件路径
+_NODE_TO_PROMPT: dict[str, str] = {
+    "intent_route": "app/prompts/router/product_type.md",
+    "ticker_react_agent": "app/prompts/ticker/infer_code.md",
+    "swap_intent": "app/prompts/swap/intent.md",
+    "swap_place_order": "app/prompts/swap/place_order.md",
+    "option_intent": "app/prompts/option/intent.md",
+    "option_extract_inquiry": "app/prompts/option/extract_inquiry.md",
+    "option_extract_place_or_modify": (
+        "app/prompts/option/extract_place_or_modify.md"
+    ),
+    "close_intent": "app/prompts/option_close/intent.md",
+    "close_holding_query": "app/prompts/option_close/holding_query.md",
+    "close_place_close": "app/prompts/option_close/place_close.md",
+    "close_confirm_close": "app/prompts/option_close/confirm_close.md",
+    "close_cancel_close": "app/prompts/option_close/cancel_close.md",
+}
+
+
+def _suspect(
+    diffs: list[FieldDiff], final_state: dict[str, Any] | None = None
+) -> tuple[str | None, str | None]:
+    """从 diffs + final_state 推断嫌疑节点 + 提示词文件路径。
+
+    优先级：
+    1. 字段根名 + product_type 命中 _FIELD_BY_PRODUCT → 精确节点
+    2. 否则查 _FIELD_FALLBACK → 兜底节点
+    3. 都不命中 → (None, None)
+
+    M2 升级（ADR 0001 D7）：替代 M1 占位的扁平 _FIELD_TO_NODE_HINTS。
+    后续可进一步通过 trace 反向追踪写入字段的最后一个节点。
     """
     if not diffs:
         return None, None
 
     root = diffs[0].path.split(".")[0].split("[")[0]
-    node = _FIELD_TO_NODE_HINTS.get(root)
-    if node is None:
-        return None, None
+    product_type = (
+        final_state.get("product_type") if final_state is not None else None
+    )
 
-    # 推断 prompt 文件路径（约定：app/prompts/<category>/<name>.md）
-    if "." in node:
-        category, name = node.split(".", 1)
-        prompt = f"app/prompts/{category}/{name}.md"
-    else:
-        prompt = None
+    # 第 1 层：按 product_type 分流
+    by_product = _FIELD_BY_PRODUCT.get(root, {})
+    if product_type and product_type in by_product:
+        node = by_product[product_type]
+        return node, _NODE_TO_PROMPT.get(node)
 
-    return node, prompt
+    # 第 2 层：兜底
+    node = _FIELD_FALLBACK.get(root)
+    if node:
+        return node, _NODE_TO_PROMPT.get(node)
+
+    return None, None
 
 
 # ============================================================
@@ -85,7 +141,7 @@ def render_failure_json(
     result: RunResult, diffs: list[FieldDiff]
 ) -> dict[str, Any]:
     """构造单 case 的失败 JSON 报告。"""
-    suspected_node, suspected_prompt = _suspect(diffs)
+    suspected_node, suspected_prompt = _suspect(diffs, result.final_state)
 
     return {
         "case_id": result.case.id,
