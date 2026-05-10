@@ -1,197 +1,154 @@
-# GOATS Mock API
+# GOATS + OTC Backend Mock API
 
-模拟 GOATS 对客机器人全部 20 个后端接口，供本地开发和测试使用。
+模拟两套接口供本地开发与集成测试，无需 VPN / 真实后端：
+
+1. **GOATS 外部接口**（20 个）— 模拟 GOATS 对客机器人 `/api/internal/agent/*` + `/api/uniweb/...` + `/v1/workflows/run`
+2. **OTC Java 后端接口**（10 个）— 模拟 yudao 后端 `/admin-api/*`，按真实 Java DTO 校验入参 + 按 type 分发业务行为
 
 ## 启动
 
 ```bash
-.venv\Scripts\Activate.ps1
-uvicorn mock_goats_api.server:app --reload --port 8099
+uvicorn mock_api.server:app --reload --port 8099
 ```
 
-## 测试
+启动后访问 `http://127.0.0.1:8099/` 查看完整路由清单。
 
-### 方式一：Python 脚本（一键覆盖全部接口）
+> **重要**：在 macOS 下 `localhost` 优先解析为 `::1`（IPv6），但 uvicorn 默认只 bind 127.0.0.1（IPv4），httpx 调 localhost 会拿到 503。**测试 / 客户端务必用 `127.0.0.1`**。
+
+## 测试方式
+
+### 方式一：pytest（推荐，无需启动 server）
 
 ```bash
-# 1. 先启动 Mock 服务（新终端）
-.venv\Scripts\Activate.ps1
-uvicorn mock_goats_api.server:app --reload --port 8099
-
-# 2. 再运行测试脚本
-python mock_goats_api/test_all_endpoints.py
-
-# 如果改了端口
-python mock_goats_api/test_all_endpoints.py --port 8080
+pytest mock_api/test_backend_api.py -v
 ```
 
-脚本会自动调用全部 22 个端点（20 个接口 + 1 个错误模拟），输出通过/失败统计。
+45 条用例，覆盖 10 个后端接口的全部 type 分发分支 + 入参校验，使用 `httpx.ASGITransport` 内存调用，零网络开销。
 
-### 方式二：Apifox
-
-1. **新建项目** → 名称填 `GOATS Mock API`
-2. **设置环境变量** → `base_url` = `http://localhost:8099`
-3. **全局 Header 预设**（添加到环境或集合级别，避免每个接口重复填）：
-
-```json
-{
-  "Content-Type": "application/json",
-  "agenttype": "WECHAT",
-  "agentid": "10955866372569317@tl",
-  "agentsubid": "1688856778752437",
-  "clientid": "TL_AGENT",
-  "clientsecret": "tltest"
-}
-```
-
-4. **按分类逐个新建接口**，每类一个完整示例如下：
-
-#### 场外期权（以期权询价为例）
-
-| 配置项 | 值 |
-|---|---|
-| 方法 | `POST` |
-| 路径 | `/api/internal/agent/get_option_rfq` |
-| Headers | 勾选全局预设 |
-
-Body (JSON)：
-```json
-下·
-```
-
-> 期权其他接口（下单/撤单/平仓等）同样方式，Body 参考 `test_all_endpoints.py`。
-
-#### 收益互换（以互换下单为例）
-
-| 配置项 | 值 |
-|---|---|
-| 方法 | `POST` |
-| 路径 | `/api/internal/agent/trs_order` |
-| Headers | 勾选全局预设 |
-
-Body (JSON)：
-```json
-{
-  "transactionType": "US_STOCK",
-  "orderType": "BY_QTY",
-  "quantity": 200,
-  "windCode": "TSLA.O",
-  "price": 1,
-  "priceType": "LimitOrder",
-  "orderDirection": "BUY",
-  "shortName": "测试短名"
-}
-```
-
-#### 交易对手查询（GET + Query 参数）
-
-| 配置项 | 值 |
-|---|---|
-| 方法 | `GET` |
-| 路径 | `/api/internal/agent/getCtptyListByChatRoomId` |
-| Headers | 勾选全局预设 |
-| Query 参数 | `type` = `TRS` |
-
-#### 投管系统（GET 无参数）
-
-| 配置项 | 值 |
-|---|---|
-| 方法 | `GET` |
-| 路径 | `/api/uniweb/rpa/trs/tradingHoursConfig` |
-| Headers | 勾选全局预设 |
-
-#### Dify 大模型 rerank
-
-| 配置项 | 值 |
-|---|---|
-| 方法 | `POST` |
-| 路径 | `/v1/workflows/run` |
-| Headers | `Content-Type: application/json`（无需 agenttype 等） |
-
-Body (JSON)：
-```json
-{
-  "inputs": {
-    "list": "[{\"windCode\":\"0200.HK\",\"insShtDesc\":\"新濠国际发展\"}]",
-    "keyword": "0200.hk"
-  },
-  "user": "ai-trading-assistant",
-  "response_mode": "blocking"
-}
-```
-
-5. **模拟错误**：在任意接口的 Query 参数栏追加 `_error` = `1`，返回 400 错误
-
-### 方式三：curl
+### 方式二：脚本（需要 server 在跑）
 
 ```bash
-# 健康检查
-curl http://localhost:8099/
+# 终端 1
+uvicorn mock_api.server:app --port 8099
 
-# 期权询价
-curl -X POST http://localhost:8099/api/internal/agent/get_option_rfq \
-  -H "Content-Type: application/json" \
-  -d '{"chatType":"json","productType":"EUROPEAN_VANILLA","chatInstrument":"询价","productSubtypeList":[],"fuzzyCodeList":["688472.SH"],"tenor":[],"strike":[],"participateRate":[],"knockInPrice":[],"knockOutPrice":[],"estimateMargin":[]}'
-
-# 模拟错误
-curl -X POST "http://localhost:8099/api/internal/agent/trs_order?_error=1"
+# 终端 2
+python mock_api/test_all_endpoints.py            # 默认 127.0.0.1:8099
+python mock_api/test_all_endpoints.py --port 8080 --host 192.168.1.100
 ```
 
-## 接口列表
+24 条 GOATS 端到端用例，含错误模拟（`?_error=1`）。
 
-| # | 方法 | 路径 | 说明 |
+## 后端接口清单
+
+`/admin-api/*` 全部按真实 `*ReqVO.java` Pydantic 校验入参，按 `type` 字段分发到 7（互换）/16（期权）个意图渲染函数：
+
+| 路径 | 方法 | 说明 | 来源 |
 |---|---|---|---|
-| 1 | POST | `/api/internal/agent/get_option_rfq` | 期权询价查询 |
-| 2 | POST | `/api/internal/agent/option_order` | 场外期权下单 |
-| 3 | POST | `/api/internal/agent/option_order_status` | 期权下单状态查询 [轮询] |
-| 4 | POST | `/api/internal/agent/option_order_result` | 期权下单结果查询 |
-| 5 | POST | `/api/internal/agent/option_cancel` | 场外期权撤单 |
-| 6 | POST | `/api/internal/agent/option_cancel_result` | 场外期权撤单结果查询 [轮询] |
-| 7 | POST | `/api/internal/agent/option/position` | 可平仓合约列表查询 |
-| 8 | POST | `/api/internal/agent/option_close_order` | 场外期权平仓 |
-| 9 | POST | `/api/internal/agent/option_close_order_query` | 期权平仓订单查询 |
-| 10 | POST | `/api/internal/agent/option_close_cancel` | 场外期权平仓撤单 |
-| 11 | POST | `/api/internal/agent/option_close_cancel_result` | 场外期权平仓撤单结果查询 [轮询] |
-| 12 | POST | `/api/internal/agent/trs_order` | 收益互换下单 |
-| 13 | POST | `/api/internal/agent/trs_order_status` | 收益互换下单状态查询 [轮询] |
-| 14 | POST | `/api/internal/agent/trs_order_result` | 收益互换下单/撤单结果查询 [轮询] |
-| 15 | POST | `/api/internal/agent/trs_cancel` | 收益互换撤单 |
-| 16 | POST | `/api/internal/agent/trs_replace` | 收益互换改单 |
-| 17 | POST | `/api/internal/agent/trs_replace_status` | 收益互换改单状态查询 [轮询] |
-| 18 | GET | `/api/internal/agent/getCtptyListByChatRoomId` | 企微群绑定交易对手查询 |
-| 19 | GET | `/api/uniweb/rpa/trs/tradingHoursConfig` | 互换交易时间配置查询 |
-| 20 | POST | `/v1/workflows/run` | 大模型 rerank 标的列表 |
+| `/admin-api/swap-order/operate` | POST | 互换操作聚合（7 个意图）| `SwapOrderOpenApiController.operate` |
+| `/admin-api/swap-order/get` | GET | 互换订单详情 | `SwapOrderOpenApiController.get` |
+| `/admin-api/swap-order/get-conversation-orders` | POST | 会话历史订单 | `SwapOrderOpenApiController.getConversationOrders` |
+| `/admin-api/financial-orders/operate` | POST | 期权/平仓操作聚合（16 个意图）| `FinancialOrdersOpenApiController.operate` |
+| `/admin-api/financial-orders/query-close-orders` | POST | 批量查询平仓订单 | `FinancialOrdersOpenApiController.queryCloseOrders` |
+| `/admin-api/integration/securities-instrument/select` | GET / POST | 标的查询（关键词匹配 + relevanceScore）| `SecuritiesInstrumentController.selectSecuritiesInstrumentPage` |
+| `/admin-api/counterparty/info/list` | GET | 交易对手列表 | `CounterpartyInfoController.list` |
+| `/admin-api/counterparty/info/instrument-inference-prompt` | GET | 推断 prompt 配置 | `CounterpartyInfoController.getInstrumentInferencePrompt` |
+| `/admin-api/business/config/bot/name/list` | POST | Bot 名称（data 是 JSON 字符串）| 业务配置 |
+| `/admin-api/openapi/xbot/message/set-intent` | POST | 意图审计写入（无返回）| 审计 |
 
-## 响应结构
+## type 字段分发
 
-所有接口统一返回：
+### 互换 7 个意图（`SwapEnum.SwapIntentionType`）
 
-```json
-{
-  "errMsg": null,
-  "errCode": {"code": 200, "chs": "成功", "eng": "success"},
-  "data": ...
-}
+```
+place_order_request    → 下单 / 改单（靠 orderList[i].orderId 区分）
+confirm_order          → 确认下单
+cancel_order_request   → 撤单请求
+confirm_cancel_order   → 确认撤单
+confirm_modify_order   → 确认改单
+query_order_status     → 订单状态查询
+unknown_intent         → 未识别兜底
 ```
 
-## 模拟错误
+### 期权 16 个意图（`StockEnum.stockOptionIntentionType`）
 
-任意接口追加 `?_error=1` 查询参数即可返回 400 错误：
+```
+new_inquiry                  → 询价卡（含交易对手列表）
+place_order_from_quote       → 下单确认卡
+request_modify_order         → 改单确认卡
+confirm_order                → 确认下单
+cancel_order_request / request_cancel_order → 撤单请求
+confirm_cancel_order         → 确认撤单
+confirm_modify_order         → 确认改单
+query_order_status           → 订单状态查询
+close_order_query            → 持仓详情卡（多条）
+close_order_request          → 平仓申请卡
+close_order_confirm          → 平仓确认下单
+close_order_cancel_request   → 平仓撤单请求
+close_order_cancel_confirm   → 平仓确认撤单
+close_order_order_query      → 平仓订单查询
+unknown_intent               → 未识别兜底
+```
+
+## 入参校验
+
+所有 `/admin-api/*` 接口按真实 Java `@NotBlank @NotNull @Valid` 严格校验：
 
 ```bash
-curl -X POST "http://localhost:8099/api/internal/agent/trs_order?_error=1"
+# 缺 messageId / rawContent → 422
+curl -X POST http://127.0.0.1:8099/admin-api/swap-order/operate \
+  -H "Content-Type: application/json" \
+  -d '{"type":"place_order_request"}'
 ```
 
-响应：
+## 标的词典
 
-```json
-{
-  "errMsg": "模拟错误",
-  "errCode": {"code": 400, "chs": "模拟错误", "eng": "FAIL_REQUEST"},
-  "data": null
-}
+`mock_api/backend/fixtures.py:SECURITIES_DICT` 包含 27 条覆盖：
+- A 股 14 条（茅台、五粮液、招商银行、宁德时代、川能动力 等）
+- 港股 7 条（腾讯、阿里、新濠、美图、六福、智谱 等）
+- 美股 4 条（苹果、特斯拉、英伟达、腾讯音乐）
+- 期货 2 条（CLN26.NYM, IF2607.CFE）
+
+## 持仓数据
+
+`POSITIONS` 4 条（与 `tests/fixtures/golden.jsonl` 中常用 `OPT-LYAFT…` `OPT-SZZSCF…` case 对齐），覆盖：
+- 川能动力欧式看涨 × 3
+- 蓝帆医疗雪球 × 1
+
+## 错误模拟
+
+任何接口加 `?_error=1` 强制返回 GOATS 风格 400：
+
+```bash
+curl http://127.0.0.1:8099/api/internal/agent/trs_order?_error=1
+# {"errMsg":"模拟错误","errCode":{"code":400,...},"data":null}
 ```
 
-## 接口文档
+## 文件结构
 
-完整请求/响应结构见同目录下 `api_spec.md`。
+```
+mock_api/
+├── server.py              # FastAPI app + GOATS 接口（20 个）+ 挂载 backend router
+├── backend/
+│   ├── __init__.py        # 暴露 router
+│   ├── schemas.py         # Pydantic ReqVO/RespVO + 共用枚举
+│   ├── fixtures.py        # 静态测试数据（标的、持仓、交易对手、订单序列）
+│   ├── swap.py            # /admin-api/swap-order/* 路由
+│   ├── financial.py       # /admin-api/financial-orders/* 路由
+│   ├── ticker.py          # /admin-api/integration/* + /admin-api/counterparty/* 路由
+│   └── misc.py            # bot/name/list + set-intent
+├── test_backend_api.py    # pytest 后端 mock 完整测试（45 条，ASGITransport）
+├── test_all_endpoints.py  # 端到端脚本（24 条 GOATS 接口，需启 server）
+├── api_spec.md            # 接口完整字段说明
+├── openapi.json           # OpenAPI 3.0 schema
+└── README.md              # 本文件
+```
+
+## 与 LangGraph 的对接
+
+`app/tools/swap_client.py` / `option_client.py` / `ticker_client.py` 默认 `base_url=http://localhost:8099`，启动 mock 后即可端到端跑：
+
+```bash
+uvicorn mock_api.server:app --port 8099 &
+python -m harness run                  # 跑 golden set 验证
+python scripts/demo_closed_loop.py     # 30/30 PASS 闭环 demo
+```

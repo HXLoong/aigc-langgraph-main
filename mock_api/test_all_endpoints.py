@@ -1,8 +1,12 @@
 """GOATS Mock API 全接口测试脚本。
 用法：
-    1. 先启动 mock：  uvicorn mock_goats_api.server:app --port 8099
-    2. 再运行本脚本：python mock_goats_api/test_all_endpoints.py
-    3. 指定端口：    python mock_goats_api/test_all_endpoints.py --port 8080
+    1. 先启动 mock：  uvicorn mock_api.server:app --port 8099
+    2. 再运行本脚本：python mock_api/test_all_endpoints.py
+    3. 指定端口：    python mock_api/test_all_endpoints.py --port 8080
+    4. 指定 host：   python mock_api/test_all_endpoints.py --host 127.0.0.1
+
+注意：默认用 127.0.0.1 而不是 localhost，避免 macOS 下 localhost 解析到
+IPv6 ::1 但 uvicorn 默认只监听 IPv4 导致 httpx 报 503 的问题。
 """
 from __future__ import annotations
 
@@ -13,7 +17,7 @@ from dataclasses import dataclass
 
 import httpx
 
-BASE = "http://localhost:8099"
+BASE = "http://127.0.0.1:8099"
 
 HEADERS_OPTION = {
     "Content-Type": "application/json",
@@ -154,8 +158,8 @@ async def run_one(client: httpx.AsyncClient, case: Case, base: str) -> dict:
     }
 
 
-async def main(port: int):
-    base = f"http://localhost:{port}"
+async def main(port: int, host: str):
+    base = f"http://{host}:{port}"
     passed = 0
     failed = 0
 
@@ -198,6 +202,11 @@ async def main(port: int):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="GOATS Mock API 全接口测试")
     parser.add_argument("--port", type=int, default=8099, help="Mock 服务端口 (默认 8099)")
+    parser.add_argument(
+        "--host",
+        default="127.0.0.1",
+        help="Mock 服务 host (默认 127.0.0.1，避免 macOS localhost→IPv6 503)",
+    )
     args = parser.parse_args()
     import asyncio
-    asyncio.run(main(args.port))
+    asyncio.run(main(args.port, args.host))
