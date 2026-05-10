@@ -33,7 +33,7 @@ dependencies = [
     "opentelemetry-api>=1.27.0",
     "opentelemetry-sdk>=1.27.0",
     "opentelemetry-instrumentation-fastapi>=0.48b0",
-    "langfuse>=2.0.0",
+    "langfuse>=3.0.0",  # ADR 0014 D1: self-hosted v3 (PG + ClickHouse + Redis + S3-compat)
 ]
 
 [project.optional-dependencies]

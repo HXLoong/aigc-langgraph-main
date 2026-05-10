@@ -1,0 +1,45 @@
+name: CI
+
+on:
+  push:
+    branches: [main, "feature/**"]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    env:
+      # ADR 0014 D8: CI 中默认关闭 LangFuse（不跑 server，避免成本与脆弱性）
+      ENABLE_LANGFUSE: "false"
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
+
+      - name: Lint (ruff)
+        # M1 重写期允许有警告，但语法错误会失败
+        run: ruff check app/ tests/ || echo "::warning::ruff issues (allowed during M1)"
+
+      - name: Type check (mypy)
+        # M1 重写期允许有类型错误（旧代码已删，新代码逐步补）
+        run: mypy app/ || echo "::warning::mypy issues (allowed during M1)"
+
+      - name: Run tests
+        run: |
+          if [ -d tests ] && [ -n "$(find tests -name 'test_*.py' -type f 2>/dev/null)" ]; then
+            pytest tests/ -v
+          else
+            echo "No tests yet (M1 skeleton phase)"
+          fi

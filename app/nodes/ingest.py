@@ -1,67 +1,29 @@
-"""Ingest 节点：规整企微输入，加载会话级上下文。
+"""ingest 节点：从 Dify Workflow Run inputs 进入主图的薄入口。
 
-对应 Dify 中的：获取机器人名称列表 + 处理历史输入 + 互换参数聚合
+M1 阶段：解析必填字段 + 设默认 product_type。
+M2 阶段：增强为基于 raw_text + history 的 LLM 一级路由器（intent_route）。
 """
 from __future__ import annotations
 
-import asyncio
-import logging
 from typing import Any
 
-from app.nodes.common import safe_node
-from app.state import AgentState
-from app.tools.otc_backend import OtcBackendClient
-
-logger = logging.getLogger(__name__)
+from app.graph.safe_node import safe_node
+from app.graph.state import AgentState
 
 
 @safe_node
 async def ingest(state: AgentState) -> dict[str, Any]:
+    """入口节点：M1 占位实现。
+
+    上游已由 `app/api/routes.py` 把 Dify inputs 解构成 9 个机器人上下文字段
+    （contracts §2.1 §3.1）放进 state，本节点只做最低校验 + 默认值。
+
+    M2 阶段：在此处加 LLM 一级路由（基于 raw_text 决定 product_type）。
     """
-    并行加载：
-    - 机器人名称列表（过滤 @xxx 片段）
-    - 本会话已下单的历史列表（互换场景用于参数补充）
-    - 交易对手列表（互换/平仓场景）
-    - 历史对话消息（从 checkpoint 读，在 api/routes.py 层已预加载）
+    update: dict[str, Any] = {}
 
-    历史消息由上层（FastAPI 路由）通过 state['history_messages'] 预先注入，
-    因为这里没有 graph 对象的引用；所以此节点只做 API 拉取。
-    """
-    async with OtcBackendClient() as client:
-        # 并行 3 个请求，显著降低 ingest 延迟
-        bot_task = client.bot_name_list()
-        wx = state["wechat_input"]
-        orders_task = client.conversation_orders(
-            conversation_id=wx.get("conversation_id", ""),
-            user_id=wx.get("user_id", ""),
-            room_id=wx.get("room_id", ""),
-        )
-        cp_task = client.counterparty_list()
+    # 默认 product_type = swap（M1 占位；M2 用 LLM 路由替换）
+    if not state.get("product_type"):
+        update["product_type"] = "swap"
 
-        bot_names, conv_orders, counterparties = await asyncio.gather(
-            bot_task, orders_task, cp_task,
-            return_exceptions=True,
-        )
-
-    # 异常降级为空值
-    bot_names = bot_names if isinstance(bot_names, list) else []
-    conv_orders = conv_orders if isinstance(conv_orders, list) else []
-    counterparties = counterparties if isinstance(counterparties, list) else []
-
-    return {
-        "bot_name_list": bot_names,
-        "conversation_orders": conv_orders,
-        "counterparty_list": counterparties,
-        "history_messages": [*state.get("history_messages", []), {
-            "role": "user",
-            "content": wx.get("raw_content", ""),
-            "quote_content": wx.get("quote_content", "") or "",
-        }],
-        "trace": [{
-            "node": "ingest",
-            "output_preview": (
-                f"bots={len(bot_names)} orders={len(conv_orders)} "
-                f"cps={len(counterparties)}"
-            ),
-        }],
-    }
+    return update
