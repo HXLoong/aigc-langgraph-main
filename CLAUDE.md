@@ -112,3 +112,17 @@ mock_api 已覆盖 GOATS 20 + 业务 6 + 标的查询 1，**整条链路可脱�
 - 测试与联调状态：@docs/TEST_AND_CONNECTIVITY_STATUS.md
 - 近期变更与下一步：@docs/CHANGELOG_2026-05.md
 - 常见问题：@docs/TROUBLESHOOTING.md
+
+## Agent skills
+
+### Issue tracker
+
+Issues 存在 GitHub Issues（`github.com/GZTL-AI/aigc-langgraph`），通过 `gh` CLI 操作。详见 `docs/agents/issue-tracker.md`。
+
+### Triage labels
+
+使用默认标签词汇：`needs-triage` / `needs-info` / `ready-for-agent` / `ready-for-human` / `wontfix`。详见 `docs/agents/triage-labels.md`。
+
+### Domain docs
+
+Single-context 布局：根目录 `CONTEXT.md` + `docs/adr/`。详见 `docs/agents/domain.md`。
