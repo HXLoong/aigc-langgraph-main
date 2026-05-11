@@ -22,7 +22,7 @@ from typing import Any
 
 from app.graph.safe_node import safe_node
 from app.graph.state import AgentState, TraceEntry
-from app.llm.clients import get_qwen_structured
+from app.llm.clients import get_qwen_thinking
 from app.prompts import load_prompt
 from app.subgraphs.close.models import ClosePlaceParams
 import httpx
@@ -54,7 +54,7 @@ async def close_place_close(state: AgentState) -> dict[str, Any]:
     - trace: 单条 TraceEntry，记录提取的订单数 + 类型分布
     """
     prompt = load_prompt("option_close", "place_close")
-    llm = get_qwen_structured().with_structured_output(ClosePlaceParams)
+    llm = get_qwen_thinking().with_structured_output(ClosePlaceParams)
 
     user_message = _build_user_message(state)
     result: Any = await llm.ainvoke(

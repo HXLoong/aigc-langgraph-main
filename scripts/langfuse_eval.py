@@ -11,10 +11,12 @@ from pathlib import Path
 
 _DOTENV = Path(__file__).resolve().parent.parent / ".env"
 if _DOTENV.exists():
-    for line in _DOTENV.read_text().splitlines():
+    for line in _DOTENV.read_text(encoding="utf-8").splitlines():
         line = line.strip()
         if not line or line.startswith("#") or "=" not in line: continue
         k, _, v = line.partition("="); k, v = k.strip(), v.strip()
+        # 去掉行内注释（如 "true  # 注释" → "true"）
+        v = v.split("#")[0].strip()
         if k: os.environ[k] = v
 
 # OTC_API_BASE_URL 由上方 .env 加载提供（mock 或真实 GOATS），不再强制覆盖
@@ -35,7 +37,9 @@ async def _run_graph_once(graph, config, raw_content, has_mention=True, turn=1, 
     wx = WechatInput(
         conversation_id=config["configurable"]["thread_id"],
         message_id=f"m-{config['configurable']['thread_id']}-t{turn}",
-        room_id="eval-room", user_id="eval-user", guid="",
+        room_id=os.environ.get("EVAL_ROOM_ID", "eval-room"),
+        user_id=os.environ.get("EVAL_USER_ID", "eval-user"),
+        guid="",
         raw_content=raw_content, quote_content=quote_content,
     )
     state = make_initial_state(wx)
