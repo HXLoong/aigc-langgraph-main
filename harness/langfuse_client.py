@@ -10,6 +10,10 @@ import logging
 import os
 from typing import Any
 
+from dotenv import load_dotenv
+
+load_dotenv(override=False)
+
 logger = logging.getLogger(__name__)
 
 _callback_handler: Any | None = None
@@ -44,10 +48,9 @@ def get_callback_handler() -> Any | None:
     try:
         from langfuse.langchain import CallbackHandler  # type: ignore[import-not-found]
 
-        host = os.environ.get("LANGFUSE_HOST", "http://localhost:3000")
+        # langfuse v4：从环境变量自动读取 LANGFUSE_PUBLIC_KEY / LANGFUSE_SECRET_KEY / LANGFUSE_BASE_URL
         public_key = os.environ.get("LANGFUSE_PUBLIC_KEY")
         secret_key = os.environ.get("LANGFUSE_SECRET_KEY")
-
         if not (public_key and secret_key):
             logger.warning(
                 "LangFuse keys not set (LANGFUSE_PUBLIC_KEY / LANGFUSE_SECRET_KEY); "
@@ -55,11 +58,8 @@ def get_callback_handler() -> Any | None:
             )
             return None
 
-        _callback_handler = CallbackHandler(
-            host=host,
-            public_key=public_key,
-            secret_key=secret_key,
-        )
+        _callback_handler = CallbackHandler()
+        host = os.environ.get("LANGFUSE_BASE_URL", "http://localhost:3000")
         logger.info("LangFuse callback handler initialized host=%s", host)
         return _callback_handler
 
