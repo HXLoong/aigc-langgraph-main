@@ -65,13 +65,33 @@ async def close_intent(state: AgentState) -> dict[str, Any]:
         ]
     )
 
+    intent = result.type
+    raw = state.get("raw_text", "") or ""
+    quote = state.get("quote_content") or ""
+    text = f"{raw} {quote}"
+
+    # 规则修正：含合约编号+平仓动作词但 LLM 误分为 query → request
+    if intent == "close_order_query":
+        import re as _re
+        has_contract = bool(_re.search(r"(?:OPT|OPTG)-\w+", text))
+        close_actions = ("平掉","平仓","平剩","平留","市价平","部分平","我想平","我要平")
+        if has_contract and any(a in text for a in close_actions):
+            intent = "close_order_request"
+    # "确认撤单" → close_order_confirm_cancel
+    if "确认撤单" in raw:
+        intent = "close_order_confirm_cancel"
+    # "取消" + quote 中有撤单上下文 → confirm_cancel
+    if "取消" in raw:
+        if "撤单" in quote or "撤单请求" in quote:
+            intent = "close_order_confirm_cancel"
+
     return {
-        "intent": result.type,
+        "intent": intent,
         "trace": [
             TraceEntry(
                 node="close_intent",
-                decision=f"intent={result.type}",
-                llm_output={"type": result.type},
+                decision=f"intent={intent}",
+                llm_output={"type": intent},
             )
         ],
     }

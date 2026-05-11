@@ -55,6 +55,26 @@ async def option_intent(state: AgentState) -> dict[str, Any]:
     - intent: OptionIntentType 之一
     - trace: 单条 TraceEntry，记录 LLM 输出
     """
+    raw = state.get("raw_text", "") or ""
+    quote = state.get("quote_content") or ""
+
+    # === 确定性快速路径（调 LLM 前） ===
+    if raw.strip() == "-":
+        return {
+            "intent": "confirm",
+            "trace": [TraceEntry(node="option_intent", decision="deterministic_dash")],
+        }
+    if "确认下单" in raw:
+        return {
+            "intent": "confirm",
+            "trace": [TraceEntry(node="option_intent", decision="deterministic_confirm")],
+        }
+    if "撤单" in raw and ("撤单" in quote or "撤单请求" in quote):
+        return {
+            "intent": "cancel_order",
+            "trace": [TraceEntry(node="option_intent", decision="deterministic_cancel")],
+        }
+
     prompt = load_prompt("option", "intent")
     llm = get_qwen_structured().with_structured_output(OptionIntentOutput)
 
@@ -66,13 +86,30 @@ async def option_intent(state: AgentState) -> dict[str, Any]:
         ]
     )
 
+    intent = result.type
+    # === 后处理规则修正 ===
+    _combined = f"{raw} {quote}"
+    _from_inquiry = any(kw in _combined for kw in (
+        "询价详情", "如需下单", "名义本金", "期权费率", "标的代码",
+        "已收到您的下单指令", "请引用本消息",
+    ))
+    if _from_inquiry and intent in ("new_inquiry", "unknown", ""):
+        if any(kw in raw for kw in ("确认", "好的", "可以", "行", "下单")):
+            intent = "confirm"
+        elif any(kw in raw for kw in ("撤消", "取消", "不要", "算了")):
+            intent = "cancel_order"
+        elif any(kw in raw for kw in ("下单", "市价", "限价", "POV", "TWAP", "改")):
+            intent = "place_order"
+        else:
+            intent = "place_order"
+
     return {
-        "intent": result.type,
+        "intent": intent,
         "trace": [
             TraceEntry(
                 node="option_intent",
-                decision=f"intent={result.type}",
-                llm_output={"type": result.type},
+                decision=f"intent={intent}",
+                llm_output={"type": intent},
             )
         ],
     }

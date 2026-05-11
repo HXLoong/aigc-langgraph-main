@@ -57,6 +57,21 @@ async def option_extract_inquiry(state: AgentState) -> dict[str, Any]:
     """
     raw_text = state.get("raw_text", "") or ""
 
+    # 0. 无效标的预检（代码格式但不在池→直接拒绝，不调 LLM）
+    import re as _re_ticker
+    _has_code_like = bool(_re_ticker.search(
+        r"\d{5,6}[.\s]|[A-Z]{2,6}\d+|L\d{4,}", raw_text
+    ))
+    if _has_code_like:
+        _tickers = await resolve_ticker(raw_text)
+        if not _tickers:
+            return {
+                "place_params": {"expected_action": "inquiry", "orderList": []},
+                "tickers": [],
+                "error": "抱歉！标的代码（或标的名称）不在标的池内，无法自动报价，请联系对口销售或交易员。",
+                "trace": [TraceEntry(node="option_extract_inquiry", decision="invalid_ticker")],
+            }
+
     # 1. LLM 提取询价参数（standard 模型 + structured output）
     prompt = load_prompt("option", "extract_inquiry")
     llm = get_qwen_structured().with_structured_output(OptionInquiryParams)

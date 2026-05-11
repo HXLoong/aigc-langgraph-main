@@ -62,17 +62,36 @@ async def close_place_close(state: AgentState) -> dict[str, Any]:
         ]
     )
 
+    # === 确定性后处理 ===
+    raw = state.get("raw_text", "") or ""
+    quote = state.get("quote_content") or ""
+    combined = f"{raw} {quote}"
+    close_list = result.closeOrderList
+
+    # "不用跟量"/"不跟量" → 跳过 POV，设市价单
+    _no_tracking = any(kw in combined for kw in ("不用跟量", "不跟量", "不要跟量"))
+    _has_explicit_type = any(kw in combined for kw in ("限价", "市价", "POV", "pov", "TWAP"))
+    if "正常挂单" in combined and not _has_explicit_type:
+        for leg in close_list:
+            leg.closeOrderType = "市价单" if _no_tracking else "POV"
+
+    # "最大跟量"/"拉满跟量" → POV 25%
+    _pov_max_kw = ("最大跟量", "拉满跟量", "全跟量", "跟量拉满", "全部最大")
+    if any(k in combined for k in _pov_max_kw):
+        for leg in close_list:
+            if not leg.closeOrderType:
+                leg.closeOrderType = "POV"
+            leg.closeOrderPovRatio = 25
+
     # trace 决策摘要：订单数 + 价格类型分布
     types = [
         item.closeOrderType
-        for item in result.closeOrderList
+        for item in close_list
         if item.closeOrderType
     ]
-    full_closes = sum(
-        1 for item in result.closeOrderList if item.confirmFullClose
-    )
+    full_closes = sum(1 for item in close_list if item.confirmFullClose)
     decision = (
-        f"orders={len(result.closeOrderList)},"
+        f"orders={len(close_list)},"
         f" types={types},"
         f" full_close={full_closes}"
     )
