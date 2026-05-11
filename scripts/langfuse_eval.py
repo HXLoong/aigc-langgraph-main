@@ -17,6 +17,10 @@ if _DOTENV.exists():
         k, _, v = line.partition("="); k, v = k.strip(), v.strip()
         if k: os.environ[k] = v
 
+# 清除 shell 中可能干扰 .env 配置的变量（如 Claude Code 设置的 ANTHROPIC_AUTH_TOKEN）
+for _k in ("ANTHROPIC_AUTH_TOKEN",):
+    os.environ.pop(_k, None)
+
 # OTC_API_BASE_URL 由上方 .env 加载提供（mock 或真实 GOATS），不再强制覆盖
 # Langfuse API 不走代理
 os.environ["NO_PROXY"] = os.environ.get("NO_PROXY", "") + ",cloud.langfuse.com"
