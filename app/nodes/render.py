@@ -11,6 +11,21 @@ from app.graph.safe_node import safe_node
 from app.graph.state import AgentState
 
 
+def _resolve_stock_display(stock_code: str, state: AgentState) -> str:
+    """用 ticker resolver 结果拼接 windCode + 中文名。"""
+    tickers = state.get("tickers") or []
+    for t in tickers:
+        wc = t.windCode if hasattr(t, "windCode") else t.get("windCode", "")
+        desc = t.insShtDesc if hasattr(t, "insShtDesc") else t.get("insShtDesc", "")
+        # 匹配：stockCode 是中文名，insShtDesc 也含中文名
+        if stock_code and desc and (stock_code in desc or desc in stock_code):
+            return f"{wc}{desc}"
+        # 匹配：stockCode 本身就是 windCode
+        if stock_code and wc and stock_code == wc:
+            return f"{wc}{desc or ''}"
+    return stock_code
+
+
 @safe_node
 async def render(state: AgentState) -> dict[str, Any]:
     """从 state 构造自然语言回复。"""
@@ -34,9 +49,10 @@ async def render(state: AgentState) -> dict[str, Any]:
         orders = place.get("orderList", [])
         if orders:
             o = orders[0]
+            stock_code = _resolve_stock_display(o.get("stockCode", "N/A"), state)
             return {"reply_text": (
                 f"-----场外期权询价详情-----\n"
-                f"标的代码: {o.get('stockCode', 'N/A')}\n"
+                f"标的代码: {stock_code}\n"
                 f"期权类型: {o.get('optionType', 'N/A')}\n"
                 f"期限: {o.get('tenor', 'N/A')}\n"
                 f"执行价格: {o.get('strikePercentage', 'N/A')}%\n"
