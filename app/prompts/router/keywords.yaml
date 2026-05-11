@@ -1,0 +1,67 @@
+# 一级路由 - 关键词优先级表（ADR 0015 第 1 层规则）
+#
+# 业务方可单文件维护，按列表顺序遍历，命中即 break。
+# 订单号正则规则（最高优先级）写在 app/nodes/intent_route.py 内（业务硬约定）。
+
+priority_rules:
+  # 平仓优先（覆盖 g020 "我有哪些期权持仓" / g022 "平 CO-... 全部"）
+  - product_type: option_close
+    keywords:
+      - 平仓
+      - 持仓
+      - 平掉
+    regex_patterns:
+      - 平.*全部
+
+  # 期权（覆盖 g012 "参与型看涨" / g015 "询价" / g016 "雪球"）
+  - product_type: option
+    keywords:
+      - 期权
+      - 询价
+      - 雪球
+      - 看涨
+      - 看跌
+      - 行权价
+
+  # 互换 swap
+  # - 显式关键词（互换/TRS/总收益互换）
+  # - 业务种子常见特征（沪港通/深港通/X组合/HTIF合约号/POV/TWAP 算法）
+  # - 业务种子默认 swap 群上下文标记（A股/美股/COMEX/@场外AI交易助手测试C/Excel 附件）
+  # - 参数下单 regex（"占XX%" 是 POV 比例的典型标记）
+  - product_type: swap
+    keywords:
+      - 互换
+      - TRS
+      - 总收益互换
+      - 沪港通
+      - 深港通
+      - A组合
+      - B组合
+      - C组合
+      - D组合
+      - E组合
+      - HTIF
+      - POV
+      - pov
+      - TWAP
+      - twap
+      - VWAP
+      - vwap
+      # 业务种子约定：被 @ 场外 AI 交易助手测试群 = swap 上下文
+      - 场外AI交易助手测试C
+      - 11125测试短名
+      # 海外标的品种（business seed 假设 swap 群上下文）
+      - COMEX
+      - NASDAQ
+      - NYSE
+      - 黄金期货
+    regex_patterns:
+      # POV 比例（"占35%"/"占25%" 等）— swap 特有
+      - 占\d{1,3}%
+      # 期货合约月份（HTIF2504 / IF2606 等）
+      - HTIF\d{4}
+      - IF\d{4}
+      # A股 / 美股 / 港股 + 代码（业务方种子前缀习惯）
+      - A股\d{6}
+      - 美股[A-Z]+
+      - 港股\d{4,5}

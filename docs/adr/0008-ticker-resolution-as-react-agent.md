@@ -27,3 +27,42 @@
 - **标的查询数据源**：原 V1 闭环为脱离 VPN 改成了 MySQL 直连标的池表，丢失了后端打分排序业务规则。已由 **ADR-0012** 修正为恢复走后端 HTTP API（`POST /admin-api/integration/securities-instrument/select`）。
 - **推断 prompt 的动态片段**：Dify 工作流额外拉取 `swap_instrument_inference_prompt` 配置项注入 prompt，本 ADR 未涉及，由 **ADR-0013** 补齐。
 - **本 ADR 描述的"ReAct Agent 收敛 31 节点"在结构层面有效**，但运行时数据获取的两个细节（数据源 + 动态 prompt）必须配合 ADR-0012 / 0013 才与 Dify 等价。
+
+## 运行时约束（grill-with-docs 2026-05-10）
+
+### a · Hard cap = 8 步
+
+```python
+TICKER_MAX_STEPS = 8
+
+graph = create_react_agent(
+    llm_thinking,
+    tools=[tokenize, completeness, rank, infer_code],
+).with_config(recursion_limit=TICKER_MAX_STEPS * 2)
+```
+
+理由：基础路径 4 步（tokenize → completeness → rank → infer_code）+ 4 步 reflection/重试 buffer。超出 8 步直接返回当前最佳候选 + `from_goats=False`，触发 cascade 防御走 fallback。trace 必须记录步数，超 8 步是退化信号。
+
+### b · GOATS 0 命中 → 直接 fallback，不试图编码
+
+```python
+if not candidates:
+    return TickerCandidate(windCode="", from_goats=False, ...)
+```
+
+LLM 在 ReAct 内部已经有 8 步反复尝试。0 命中后再"最后一击"只是浪费一次 LLM 调用。CLAUDE.md "标的必须 from_goats=True" 是硬约束，不让 LLM 编造代码。
+
+### c · 多命中消歧 = 分差 ≥ 10 自动选最高，否则 HITL
+
+```python
+if len(candidates) >= 2:
+    top, second = candidates[0], candidates[1]
+    if top.relevanceScore - second.relevanceScore >= 10:
+        return top
+    else:
+        return interrupt({"need_user_choice": True, "candidates": candidates[:5]})
+```
+
+ADR 0006 把 HITL 定为"业务参数二次确认"边界——"标的多义"是参数歧义的典型场景，正好命中。分差 ≥ 10 是经验阈值（relevanceScore 0-100），M2 落地后实测调整。HITL 消息样例："你说的'腾讯'是指 00700.HK 还是 TCEHY？"
+
+HITL 链路沿用 ADR 0006：interrupt → API 层返回 ASK_USER 响应 → 企微卡片 → 用户回复 → `graph.ainvoke(None, config)` 从 checkpoint 恢复。

@@ -1,101 +1,125 @@
 # Dify 提示词管理规则
 
-## 核心原则：Dify 提示词是**只读资产**
+## 当前阶段：**重构期内可改写**（ADR 0001 D5）
 
-`app/prompts/**/*.md` 下的 23 个提示词是从 Dify 生产工作流 YAML 原封导出的，
-它们是生产验证过的业务逻辑资产。**不要修改内容**，只改加载和使用方式。
+`app/prompts/**/*.md` 来源于 Dify 生产工作流 YAML（由 `python dify/sync.py` 拉取 + `scripts/export_dify_prompts.py` 导出）。
 
-## 提示词目录结构
+**纪律切换**：
+- 重构完成前（shadow PASS 之前）：**允许定向改写**，但每一处改写必须在 ADR 0001 D5 的"处置表"中登记。
+- 重构完成后：恢复"只读资产"纪律——只做加载，不改内容。
+
+已登记的允许改写范围（其他不许扩散）：
+- **合并**：swap 三个"确认 X"节点 → 1 个 `swap.confirm(expected_action)` 统一 confirm 提示词
+- **拆分**：option 单一 2870 行 intent_extract → 1 个 intent + 5 个 extract（`extract_inquiry` / `extract_place_or_modify` / `extract_cancel` / `extract_confirm` / `extract_query`）
+- **保持**：其他 15 个 LLM 节点 1:1 复刻，提示词照搬
+
+## 提示词目录结构（M1 完成后）
 
 ```
 app/prompts/
-├── swap/            # 互换（8 个）
-│   ├── intent.md                    （20K 字符）
-│   ├── place_order.md               （133K 字符，最大的一个）
-│   ├── confirm_order.md / cancel_order.md / confirm_cancel.md
-│   ├── confirm_modify.md / query_order.md
-│   ├── image_extract.md / image_ocr.md
-│   └── excel_extract.md
-├── option_close/    # 期权平仓（7 个）
-│   ├── intent.md / place_close.md / holding_query.md
-│   └── confirm_close.md / cancel_close.md / confirm_cancel.md / query_status.md
-└── ticker/          # 标的识别（4 个）
-    ├── tokenize.md / completeness.md / rank.md / infer_code.md
+├── swap/            # 互换
+├── option/          # 期权（询价/下单/改单/撤单）
+├── option_close/    # 期权平仓
+└── ticker/          # 标的识别
 ```
+
+具体文件清单以 M2 实际产出为准（节点数：swap 10 + option 6 + option_close 7 + ticker 1 = 24）。
 
 ## 加载方式
 
 ```python
-# ✅ 正确
 from app.prompts import load_prompt
 
-prompt = load_prompt("swap", "intent")
+p = load_prompt("swap", "intent")
+# p.system → str
+# p.user_template → str（保留 Dify 原始 {{#node.var#}} 占位符）
+# p.config → dict | None（LangFuse 来源会带 model/temperature；本地 .md 加载为 None）
+
 llm = qwen.with_structured_output(SwapIntentOutput)
 result = await llm.ainvoke([
-    ("system", prompt.system),
+    ("system", p.system),
     ("user", user_message),
 ])
-
-# ❌ 错误：硬编码提示词
-SWAP_INTENT_PROMPT = """你是一个互换交易意图识别引擎..."""  # 禁止
 ```
 
-## 修改工作流
+**禁止**：把提示词内容硬编码进 Python 源码。
 
-### 需要调整提示词效果时
+## 提示词来源优先级（ADR 0014）
 
-**不要**：直接改 `app/prompts/**/*.md` 的内容（这是 Dify 原文的拷贝）
+```
+ENABLE_LANGFUSE=true 且 use_langfuse_prompts=true
+    → 优先从 LangFuse 拉（运行时可热更）
+    → 失败回退到本地 app/prompts/**/*.md
 
-**要**：
-1. 在 `app/prompts/<category>/<name>_v2.md` 创建新版本（保留 v1 做 A/B）
-2. 在代码里用 `load_prompt("swap", "intent_v2")` 测试新版
-3. 跑 `python scripts/eval_golden.py` 对比准确率
-4. 差异 ≥ 1% 以上才合入
+否则
+    → 直接读本地 .md
+```
 
-### 从 Dify 重新同步
+## 在重构期内调整提示词
 
-当 Dify 生产的提示词更新了，要同步过来：
+### 场景 A：直接改写（已登记的两种）
+
+合并 / 拆分写新提示词时：
+
+1. 直接在 `app/prompts/<category>/<name>.md` 创建/覆盖文件
+2. 用 `python -m harness run --category <prefix>` 跑相关 golden 子集
+3. 提交时 commit message 用 `prompt(<scope>): ...` 类型，引用 ADR 0001 D5
+
+### 场景 B：保持 1:1 复刻，但要尝试改进
+
+走 A/B 共存路线（ADR 0003）：
+
+1. 创建新版本 `app/prompts/<category>/<name>_v2.md`（保留 v1）
+2. 在节点函数里临时切换 `load_prompt("...", "<name>_v2")`
+3. 跑 `python -m harness run` 对比两版差异
+4. 显著优于 v1（且业务认可）才合并 v2 → v1，并删 v2
+
+### 场景 C：从 Dify 同步最新版
 
 ```bash
-# 1. 把新版 Dify YAML 放到一个目录
-mkdir -p /tmp/new-dify
-# 把新 YAML 放进去
+# 1. 拉 Dify 最新 YAML
+export DIFY_EMAIL="..." DIFY_PASSWORD="..."
+python dify/sync.py                                       # → dify/yaml/
 
-# 2. 运行导出脚本
-python scripts/export_dify_prompts.py /tmp/new-dify /tmp/new-prompts
+# 2. 导出到临时目录
+python scripts/export_dify_prompts.py dify/yaml/ /tmp/new-prompts/
 
-# 3. 对比差异
+# 3. 对比差异，**不要一键覆盖**
 diff -r app/prompts/ /tmp/new-prompts/ | head -50
 
-# 4. 选择性合入（不要一键覆盖）
-# 5. 跑 golden set 回归
-pytest tests/ -v
-python scripts/eval_golden.py tests/fixtures/golden.jsonl
+# 4. 选择性合入
+# 5. 跑 harness 回归
+python -m harness run
 ```
 
-## 为新提示词加代码
+## 为新 LLM 节点接入提示词
 
-当业务新增一个 Dify LLM 节点需要迁移：
+1. 把 .md 放到 `app/prompts/<category>/` 正确位置
+2. 在 `app/subgraphs/<product>/...` 定义对应 Pydantic Output 模型（M2 子图重建期路径以 ADR 0006 的产出为准）
+3. 节点函数：`@safe_node` + `load_prompt()` + `llm.with_structured_output(...)`
+4. golden 加 5-10 条 case（`tests/fixtures/*.jsonl`）
+5. `python -m harness run --category <prefix>` 验证
 
-1. 把 .md 放到正确的 `app/prompts/<category>/` 目录
-2. 在 `app/subgraphs/<product>_models.py` 定义对应的 Pydantic Output 模型
-3. 在子图里新增一个 `@safe_node` 函数，用 `load_prompt()` + `with_structured_output()`
-4. 在 `tests/test_prompts_and_history.py` 加一个加载测试
-5. 在 golden set 加至少 2 条端到端 case
+## 字符数 / 延迟提示
 
-## 字符数注意
-
-- `swap/place_order.md` **133K 字符** ≈ 40K tokens，接近 Qwen3-30B 上下文一半
-- 长提示词影响延迟（P95 可能 +2-3 秒）
-- 评估时记录延迟，若过高考虑拆分提示词为多阶段
+- swap/place_order.md ≈ 133K 字符 ≈ 40K tokens（Qwen3-30B 上下文上限的一半）
+- 长提示词显著影响 P95 延迟
+- 评估时记录延迟，过高考虑拆分（option 已是先例）
 
 ## 占位符处理
 
-Dify 原提示词中有 `{{#node_id.var#}}` 占位符（如 `{{#1775913928411.date#}}`）。
-这些占位符**保留原样**不替换，LLM 能理解为上下文信息。
-不要用 regex 替换它们，会破坏 Dify 原始行为。
+Dify 的 `{{#node_id.var#}}` 占位符（如 `{{#1775913928411.date#}}`）**保留原样**——LLM 能理解为上下文标记。
+不要用 regex 替换它们，会破坏 Dify 行为对齐。
 
 ## Loader 缓存
 
-`load_prompt()` 内部用 `@lru_cache(maxsize=128)`，应用启动后重复加载是零成本的。
-测试中需要重新加载时：`from app.prompts import clear_cache; clear_cache()`
+`load_prompt()` 内部 `@lru_cache(maxsize=128)`，启动后重复加载零成本。
+测试中需要重新加载：`from app.prompts import clear_cache; clear_cache()`
+
+## 相关 ADR
+
+- ADR 0001 D5：节点合并/拆分策略 + 重构期内纪律调整
+- ADR 0003：提示词版本化通过文件共存（v1 / v2 并存）
+- ADR 0011：option intent 拆分二次修订
+- ADR 0013：动态推理片段加载
+- ADR 0014：LangFuse 作为 harness 后端 + 提示词运行时来源

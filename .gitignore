@@ -125,3 +125,4 @@ secrets/
 .claude/cache/
 
 .VSCodeCounter/
+.harness-runs/

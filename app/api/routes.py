@@ -1,139 +1,194 @@
-"""FastAPI 路由：企微消息回调 + 确认卡片回调 + 调试接口。"""
+"""POST /v1/workflows/run — 兼容 Dify Workflow Run API（ADR 0001 D3）。
+
+设计要点：
+- Body: {inputs: {...}, response_mode: "blocking", user: "<conversation_id>"}
+- Response: Dify 协议形态 — {workflow_run_id, task_id, data: {outputs, status, ...}}
+- 仅支持 blocking 模式（Java StockBotMessageServiceImpl.java:1646 写死 blocking）
+- inputs 字段透传 9 个机器人上下文 + raw_text
+- outputs 字段含 intent / product_type / 业务对象（M1 阶段含 stub 数据）
+"""
 from __future__ import annotations
 
-import logging
 import time
-from typing import Any
+import uuid
+from typing import Any, Literal
 
 from fastapi import APIRouter, HTTPException, Request
+from pydantic import BaseModel, ConfigDict, Field
 
-from app.api.schemas import (
-    ConfirmCallback,
-    MessageResponse,
-    WechatCallback,
-)
-from app.observability.tracing import get_langfuse_handler
-from app.state import WechatInput, make_initial_state
+from app.graph.state import AgentState
 
-logger = logging.getLogger(__name__)
-router = APIRouter(prefix="/v1")
+router = APIRouter()
 
 
-def _to_wechat_input(req: WechatCallback) -> WechatInput:
-    return WechatInput(
-        conversation_id=req.conversation_id,
-        message_id=req.message_id,
-        room_id=req.room_id,
-        user_id=req.user_id,
-        guid=req.guid,
-        raw_content=req.raw_content,
-        quote_content=req.quote_content,
-        quote_appinfo=req.quote_appinfo,
-        attachments=[a.model_dump() for a in req.attachments],
-    )
+# ============================================================
+# Dify Workflow Run API 请求/响应 schema
+# ============================================================
 
 
-@router.post("/message", response_model=MessageResponse)
-async def handle_message(req: WechatCallback, request: Request) -> MessageResponse:
-    """企微群消息回调入口。
+class DifyWorkflowRunRequest(BaseModel):
+    """Dify Workflow Run API 请求体（POST /v1/workflows/run）。"""
 
-    LangGraph thread_id 使用 conversation_id，保证同一会话的历史可被检索。
-    在调用图之前，先从 checkpoint 读取历史对话，注入到初始 state。
-    """
-    graph_app = request.app.state.graph_app
-    if graph_app is None:
-        raise HTTPException(500, "Graph 未就绪")
+    model_config = ConfigDict(extra="allow")
 
-    start = time.monotonic()
-    state = make_initial_state(_to_wechat_input(req))
+    inputs: dict[str, Any] = Field(default_factory=dict)
+    response_mode: Literal["blocking", "streaming"] = "blocking"
+    user: str  # Java 侧传 conversation_id
 
-    # 预加载历史对话（从 checkpoint）
-    from app.nodes.history import load_history_from_checkpoint
 
-    try:
-        history = await load_history_from_checkpoint(
-            graph_app, req.conversation_id, max_turns=10,
+class DifyWorkflowRunData(BaseModel):
+    """Dify response.data 字段。"""
+
+    model_config = ConfigDict(extra="allow")
+
+    id: str
+    workflow_id: str = "otc-agent-langgraph"
+    status: Literal["succeeded", "failed", "stopped"] = "succeeded"
+    outputs: dict[str, Any] = Field(default_factory=dict)
+    error: str | None = None
+    elapsed_time: float = 0.0
+    total_tokens: int = 0
+    total_steps: int = 0
+    created_at: int = 0
+    finished_at: int = 0
+
+
+class DifyWorkflowRunResponse(BaseModel):
+    """Dify Workflow Run API 响应。"""
+
+    model_config = ConfigDict(extra="allow")
+
+    workflow_run_id: str
+    task_id: str
+    data: DifyWorkflowRunData
+
+
+# ============================================================
+# 路由
+# ============================================================
+
+
+@router.post("/v1/workflows/run", response_model=DifyWorkflowRunResponse)
+async def run_workflow(
+    req: DifyWorkflowRunRequest, request: Request
+) -> DifyWorkflowRunResponse:
+    """模拟 Dify 的 Workflow Run API，把请求路由到 LangGraph 主图。"""
+    if req.response_mode != "blocking":
+        raise HTTPException(
+            status_code=400,
+            detail="Only blocking mode is supported (ADR 0001 D3).",
         )
-        state["history_messages"] = history
-        logger.debug("预加载 %d 条历史消息 conv=%s",
-                     len(history), req.conversation_id)
-    except Exception as e:
-        logger.warning("历史预加载失败（非致命）: %s", e)
 
-    lf_handler = get_langfuse_handler()
-    config: dict[str, Any] = {
-        "configurable": {"thread_id": req.conversation_id},
-        "recursion_limit": 25,
-        **({"callbacks": [lf_handler]} if lf_handler else {}),
-    }
+    # 从 app.state 取主图（在 lifespan 创建并注入）
+    graph = request.app.state.main_graph
+    if graph is None:
+        raise HTTPException(status_code=503, detail="Main graph not initialized")
 
+    workflow_run_id = str(uuid.uuid4())
+    task_id = str(uuid.uuid4())
+    created_at = int(time.time())
+
+    # 把 inputs 解构成 AgentState（按 contracts §2.1 §3.1 的 9 个机器人上下文字段）
+    initial_state = _inputs_to_state(req.inputs, fallback_conversation_id=req.user)
+
+    config = {"configurable": {"thread_id": req.user}}
+
+    t0 = time.perf_counter()
     try:
-        result = await graph_app.ainvoke(state, config=config)
-    except Exception as e:
-        logger.exception("Graph 执行异常 msg=%s", req.message_id)
-        raise HTTPException(500, f"Graph 执行失败: {e}") from e
+        final_state: AgentState = await graph.ainvoke(initial_state, config=config)
+        status: Literal["succeeded", "failed", "stopped"] = (
+            "failed" if final_state.get("error") else "succeeded"
+        )
+        error_msg = (
+            final_state["error"].message if final_state.get("error") else None
+        )
+    except Exception as exc:  # noqa: BLE001
+        final_state = {}
+        status = "failed"
+        error_msg = f"{type(exc).__name__}: {exc}"
 
-    latency_ms = int((time.monotonic() - start) * 1000)
-    logger.info(
-        "msg=%s product=%s intent=%s latency=%dms history=%d",
-        req.message_id,
-        result.get("product_type"),
-        result.get("intent"),
-        latency_ms,
-        len(state.get("history_messages") or []),
+    elapsed = time.perf_counter() - t0
+    finished_at = int(time.time())
+
+    outputs = _state_to_outputs(final_state)
+
+    data = DifyWorkflowRunData(
+        id=workflow_run_id,
+        status=status,
+        outputs=outputs,
+        error=error_msg,
+        elapsed_time=elapsed,
+        total_steps=len(final_state.get("trace", [])),
+        created_at=created_at,
+        finished_at=finished_at,
+    )
+    return DifyWorkflowRunResponse(
+        workflow_run_id=workflow_run_id, task_id=task_id, data=data
     )
 
-    return MessageResponse(
-        reply=result.get("reply_text"),
-        product_type=result.get("product_type"),
-        intent=result.get("intent"),
-        api_code=result.get("api_code"),
-        error=result.get("error"),
-        trace=result.get("trace", []),
-    )
+
+# ============================================================
+# Helpers
+# ============================================================
 
 
-@router.post("/message/confirm")
-async def handle_confirm(req: ConfirmCallback, request: Request) -> dict[str, Any]:
-    """确认卡片回调：继续被 interrupt_before 暂停的图执行。
+# Dify inputs 字段名（Java 透传）→ AgentState 字段名 映射
+_INPUT_FIELD_MAP = {
+    "rawContent": "raw_text",
+    "raw_content": "raw_text",
+    "conversationId": "conversation_id",
+    "messageId": "message_id",
+    "userId": "user_id",
+    "roomId": "room_id",
+    "guid": "guid",
+    "messageContent": "message_content",
+    "quoteContent": "quote_content",
+    "quoteAppinfo": "quote_appinfo",
+}
 
-    LangGraph 通过 checkpoint 机制恢复 State，继续执行下一步。
-    """
-    graph_app = request.app.state.graph_app
-    if graph_app is None:
-        raise HTTPException(500, "Graph 未就绪")
 
-    config = {"configurable": {"thread_id": req.conversation_id}}
+def _inputs_to_state(
+    inputs: dict[str, Any], fallback_conversation_id: str
+) -> AgentState:
+    """把 Dify inputs 转成 AgentState（接受 camelCase 和 snake_case 两种）。"""
+    state: dict[str, Any] = {}
+    for src, dst in _INPUT_FIELD_MAP.items():
+        if src in inputs:
+            state[dst] = inputs[src]
 
-    # 根据 action 注入确认/取消信号
-    command_state = {
-        "intent": "confirm_order" if req.action == "confirm" else "cancel_order_request",
-        "order_ids": [req.order_id] if req.order_id else [],
+    # 补默认值
+    if "conversation_id" not in state:
+        state["conversation_id"] = fallback_conversation_id
+    if "raw_text" not in state and "message_content" in state:
+        state["raw_text"] = state["message_content"]
+    return state  # type: ignore[return-value]
+
+
+def _state_to_outputs(state: AgentState) -> dict[str, Any]:
+    """把 final state 渲染成 Dify outputs schema。"""
+    outputs: dict[str, Any] = {
+        "intent": state.get("intent"),
+        "product_type": state.get("product_type"),
+        "tickers": [
+            t.model_dump() if hasattr(t, "model_dump") else t
+            for t in state.get("tickers", [])
+        ],
     }
+    # M1 阶段：业务对象用 dict 占位，直接 dump
+    for key in (
+        "place_params",
+        "cancel_params",
+        "confirm",
+        "query_filter",
+        "close_params",
+    ):
+        v = state.get(key)
+        if v is not None:
+            outputs[key] = v
+    return outputs
 
-    # 更新 checkpoint，继续执行
-    result = await graph_app.ainvoke(command_state, config=config)
-    return {
-        "reply": result.get("reply_text"),
-        "api_code": result.get("api_code"),
-    }
 
-
-@router.get("/conversations/{conversation_id}/state")
-async def get_conversation_state(conversation_id: str, request: Request) -> dict[str, Any]:
-    """调试接口：查看某个会话的当前 State 快照。"""
-    graph_app = request.app.state.graph_app
-    if graph_app is None:
-        raise HTTPException(500, "Graph 未就绪")
-
-    config = {"configurable": {"thread_id": conversation_id}}
-    snapshot = await graph_app.aget_state(config)
-    if snapshot is None:
-        return {"exists": False}
-
-    return {
-        "exists": True,
-        "values": snapshot.values,
-        "next_nodes": list(snapshot.next),
-        "config": snapshot.config,
-    }
+@router.get("/health")
+async def health() -> dict[str, str]:
+    """健康检查。"""
+    return {"status": "ok", "service": "otc-agent-langgraph"}
