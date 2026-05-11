@@ -115,3 +115,8 @@ class AgentState(TypedDict, total=False):
     # -------- 工程层 --------
     trace: Annotated[list[TraceEntry], add]
     error: ErrorInfo | None
+
+    # -------- 输出 --------
+    reply_text: str | None
+    api_result: str | None
+    api_code: int | None
