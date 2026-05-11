@@ -661,37 +661,38 @@ class TestSearchSecuritiesInstrument:
         assert result == []
 
     @pytest.mark.asyncio
+    @pytest.mark.asyncio
     async def test_business_error(self):
-        """MySQL 连接失败 → 返回 [{"_error": ...}]
+        """HTTP 查询失败 → 返回 []
         INPUT:  keyword_items = [{"keyword":"x"}]
-               mock aiomysql.connect 抛异常
-        OUTPUT: [{"_error": "标的池 MySQL 不可达: ..."}]
+               mock HTTP 返回错误
+        OUTPUT: []
         """
         from app.subgraphs.ticker_tools import search_securities_instrument
 
-        with patch("aiomysql.connect", AsyncMock(side_effect=OSError("连接拒绝"))):
+        mock_resp = MagicMock()
+        mock_resp.raise_for_status.side_effect = __import__("httpx").HTTPStatusError(
+            "error", request=MagicMock(), response=MagicMock(status_code=500)
+        )
+        with patch("httpx.AsyncClient.post", AsyncMock(return_value=mock_resp)):
             result = await search_securities_instrument.ainvoke({
                 "keyword_items": [{"isFull": False, "keyword": "x"}],
             })
-        _show("search_securities_instrument MySQL 连接失败",
-              {"keyword_items": [{"keyword": "x"}], "error": "OSError"},
+        _show("search_securities_instrument HTTP 错误",
+              {"keyword_items": [{"keyword": "x"}], "code": 500},
               {"result": result})
-        assert len(result) == 1
-        assert "_error" in result[0]
-        assert "MySQL" in result[0]["_error"]
+        assert result == []
 
     @pytest.mark.asyncio
     async def test_connect_timeout(self):
-        """MySQL 连接超时 → 返回 _error 标记
-        INPUT:  mock aiomysql.connect 抛 ConnectTimeout
-        OUTPUT: [{"_error": "标的池 MySQL 不可达: ..."}]
+        """HTTP 超时 → 返回 []
+        INPUT:  httpx.AsyncClient.post 抛异常
+        OUTPUT: []
         """
         from app.subgraphs.ticker_tools import search_securities_instrument
 
-        class MockTimeout(Exception):
-            pass
-
-        with patch("aiomysql.connect", AsyncMock(side_effect=MockTimeout("连接超时"))):
+        with patch("httpx.AsyncClient.post",
+                   AsyncMock(side_effect=__import__("httpx").ConnectTimeout("超时"))):
             result = await search_securities_instrument.ainvoke({
                 "keyword_items": [{"isFull": False, "keyword": "x"}],
             })
@@ -699,8 +700,7 @@ class TestSearchSecuritiesInstrument:
         _show("search_securities_instrument 连接超时",
               {"keyword_items": [{"keyword": "x"}], "error": "ConnectTimeout"},
               {"result": result})
-        assert len(result) == 1
-        assert result[0].get("_error")
+        assert result == []
 
 
 # ============================================================

@@ -143,92 +143,30 @@ def _mysql_row_to_ticker(d: dict) -> dict:
 async def search_securities_instrument(
     keyword_items: list[dict],
 ) -> list[dict]:
-    """在 MySQL 标的池 (aigc-test.stock_exchange_sec_data) 中批量搜索标的。
-
-    这是标的验证的**唯一终点**，所有标的必须经 MySQL 标的池校验。
-    返回的标的均标记 from_goats=True。
-
-    Args:
-        keyword_items: [{"isFull": false, "keyword": "贵州茅台"}, ...]
-    """
-    import aiomysql
+    """标的查询——通过 HTTP API 校验标的。返回的标的均标记 from_goats=True。"""
+    import httpx
 
     keyword_items = [i for i in keyword_items if i.get("keyword")]
     if not keyword_items:
         return []
 
     settings = get_settings()
-
     try:
-        conn = await aiomysql.connect(
-            host=settings.ticker_mysql_host,
-            port=settings.ticker_mysql_port,
-            user=settings.ticker_mysql_user,
-            password=settings.ticker_mysql_password,
-            db=settings.ticker_mysql_db,
-            charset="utf8mb4",
-            connect_timeout=5,
-        )
-    except Exception as e:
-        logger.error("标的池 MySQL 连接失败: %s", e)
-        return [{"_error": f"标的池 MySQL 不可达: {e}"}]
-
-    try:
-        async with conn.cursor() as cur:
-            conditions: list[str] = []
-            params: list[str] = []
-            for item in keyword_items:
-                kw = item["keyword"].strip()
-                is_full = bool(item.get("isFull", False))
-                if not kw:
-                    continue
-                if is_full:
-                    conditions.append(
-                        "(bond_code = %s OR stock_code = %s)"
-                    )
-                    params.extend([kw, kw])
-                else:
-                    like = f"%{kw}%"
-                    conditions.append(
-                        "(stock_name LIKE %s OR bond_code LIKE %s "
-                        "OR stock_english_acronyms LIKE %s OR corporate_name LIKE %s)"
-                    )
-                    params.extend([like, like, like, like])
-
-            if not conditions:
-                return []
-
-            sql = (
-                "SELECT bond_code, stock_code, stock_name, corporate_name, "
-                "stock_english_acronyms, exchange_abbreviation "
-                "FROM stock_exchange_sec_data "
-                f"WHERE deleted = 0 AND ({' OR '.join(conditions)}) "
-                "LIMIT 100"
+        async with httpx.AsyncClient(
+            base_url=settings.otc_api_base_url, timeout=httpx.Timeout(10.0)
+        ) as client:
+            r = await client.post(
+                "/admin-api/integration/securities-instrument/select",
+                json={"keywordItems": keyword_items},
             )
-            await cur.execute(sql, params)
-            rows = await cur.fetchall()
-            col_names = [d[0] for d in cur.description]
-
-        seen: set[str] = set()
-        results: list[dict] = []
-        for row in rows:
-            d = dict(zip(col_names, row))
-            ticker = _mysql_row_to_ticker(d)
-            wc = ticker["windCode"]
-            if wc in seen:
-                continue
-            seen.add(wc)
-            results.append(ticker)
-        return results
+            r.raise_for_status()
+            data = r.json().get("data", [])
+            for d in data:
+                d["from_goats"] = True
+            return data
     except Exception as e:
-        logger.error("标的池 MySQL 查询失败: %s", e)
-        return [{"_error": f"MySQL 查询失败: {e}"}]
-    finally:
-        try:
-            conn.close()
-        except Exception:
-            pass
-
+        logger.error("标的查询失败: %s", e)
+        return []
 
 # 工具 4：Bocha 搜索（中文/国内标的）
 # ==================================================================

@@ -57,7 +57,13 @@ def mock_backend(monkeypatch):
     mock_client.financial_orders_operate = AsyncMock(return_value={
         "code": 0, "result": "平仓操作成功",
     })
-    mock_client.query_close_orders = AsyncMock(return_value=[])
+    mock_client.query_close_orders = AsyncMock(return_value=[
+        {"orderId": "CO-20260304-4FE9C941",
+         "contractCode": "OPT-CO20260304-4FE9C941",
+         "notional": 10_000_000, "availableNotional": 10_000_000,
+         "underlyingCode": "000155.SZ", "underlyingName": "川能动力",
+         "optionType": "欧式看涨", "createTime": "2026-03-04 10:00"},
+    ])
     mock_client.bot_name_list = AsyncMock(return_value=["机器人A"])
     mock_client.conversation_orders = AsyncMock(return_value=[])
     mock_client.counterparty_list = AsyncMock(return_value=[

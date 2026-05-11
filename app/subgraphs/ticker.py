@@ -75,22 +75,38 @@ def _route_after_search(state: AgentState) -> str:
 # ==================================================================
 
 
-# Wind 代码正则：6 位数字 + . + 交易所后缀（不加 \b，中文逗号/空格会导致边界失败）
-_WIND_CODE_RE = _re.compile(r"(\d{6}\.[A-Z]{2,3})")
+# Wind 代码正则：6 位数字 + 可选交易所后缀（兼容裸 A 股代码如 002597）
+_WIND_CODE_RE = _re.compile(r"(\d{6}(?:\.[A-Z]{2,3})?)")
 
 # 股票名称常见模式：中文 + 可能跟 Wind 代码
 _STOCK_NAME_HINT_RE = _re.compile(r"[一-鿿]{2,6}(?:股票|股份|集团|银行|证券|保险)?")
 
 
 def _regex_extract_keywords(text: str) -> list[str]:
-    """从文本中用正则提取 Wind 代码作为关键词（LLM 不可用时的兜底）。"""
-    codes = _WIND_CODE_RE.findall(text)
+    """从文本中用正则提取标的关键词（LLM 不可用时的兜底）。
+
+    提取：Wind 代码（600519.SH）、中文 ETF/指数名、中文股票名。
+    优先长匹配以避免碎片化（如"创业板ETF"而非"创业板"）。
+    """
     seen: set[str] = set()
-    result = []
-    for c in codes:
+    result: list[str] = []
+    # Wind 代码
+    for c in _WIND_CODE_RE.findall(text):
         if c not in seen:
             seen.add(c)
             result.append(c)
+    # 中文+数字+字母混合：ETF名（创业板ETF）、指数名（沪深300）、带字母后缀（万科A）
+    # 按长度降序排列，长匹配优先
+    _cn_matches = _re.findall(
+        r"[一-鿿]{2,6}(?:ETF|etf)?(?:\d{2,4})?(?:指数|指)?|[一-鿿]{2,4}[A-Za-z]?",
+        text
+    )
+    for m in sorted(set(_cn_matches), key=len, reverse=True):
+        if m not in seen and len(m) >= 2:
+            # 跳过包含于已有关键词的子串
+            if not any(m in s for s in seen if len(s) > len(m)):
+                seen.add(m)
+                result.append(m)
     return result
 
 
@@ -136,11 +152,13 @@ async def tokenize_keywords(state: AgentState) -> dict[str, Any]:
         len(result.keywords), result.needs_refinement,
     )
 
-    # 若 LLM 返回空 keywords 但正则提取到了 Wind 代码，合并兜底
+    # 正则兜底始终补充 LLM 结果（LLM thinking 可能过滤掉合法代码）
     keywords = list(result.keywords)
-    if not keywords and fallback_keywords:
-        keywords = fallback_keywords
-        logger.info("tokenize_keywords: LLM 空结果，使用正则兜底 %s", fallback_keywords)
+    for _fk in fallback_keywords:
+        if _fk not in keywords:
+            keywords.append(_fk)
+    if fallback_keywords:
+        logger.info("tokenize_keywords: 正则补充 %s", fallback_keywords)
 
     return {
         "raw_tickers": keywords,

@@ -41,10 +41,10 @@ lsof -ti:8099 | xargs kill -9 2>/dev/null; sleep 1
 uv run uvicorn mock_api.server:app --port 8099 &>/tmp/mock_api.log & sleep 2
 
 # 评测批次
-uv run python scripts/langfuse_eval.py --limit 10 --concurrency 15    # 小批（1分）
-uv run python scripts/langfuse_eval.py --limit 20 --concurrency 15    # 中批（2分）
-uv run python scripts/langfuse_eval.py --limit 40 --concurrency 20    # 大批（3分）
-uv run python scripts/langfuse_eval.py --limit 98 --concurrency 20     # 全量（5-7分）
+uv run python scripts/langfuse_eval.py --limit 10 --concurrency 10    # 小批（1分）
+uv run python scripts/langfuse_eval.py --limit 20 --concurrency 10    # 中批（2分）
+uv run python scripts/langfuse_eval.py --limit 40 --concurrency 12    # 大批（4分）
+uv run python scripts/langfuse_eval.py --limit 98 --concurrency 15     # 全量（7-10分）
 
 # 只重跑失败的（用 --ids）
 uv run python scripts/langfuse_eval.py --ids opt-001,opt-003 --concurrency 3

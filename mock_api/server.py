@@ -493,25 +493,15 @@ async def swap_order_operate(request: Request):
 
 # 2. 期权/平仓操作（询价/下单/撤单/持仓查询）
 def _lookup_stock_name(code: str) -> str:
-    """MySQL 查标的名称，失败返回代码本身。"""
-    try:
-        import aiomysql, asyncio
-        from app.config import get_settings
-        s = get_settings()
-        async def _q():
-            conn = await aiomysql.connect(host=s.ticker_mysql_host, port=s.ticker_mysql_port,
-                user=s.ticker_mysql_user, password=s.ticker_mysql_password,
-                db=s.ticker_mysql_db, charset="utf8mb4", connect_timeout=3)
-            try:
-                async with conn.cursor() as cur:
-                    await cur.execute("SELECT stock_name FROM stock_exchange_sec_data WHERE bond_code LIKE %s LIMIT 1", (f"%{code}%",))
-                    row = await cur.fetchone()
-                    return row[0] if row else code
-            finally:
-                conn.close()
-        return asyncio.run(_q())
-    except Exception:
-        return code
+    """从内存字典查标的名称（避免 asyncio.run 嵌套事件循环）。"""
+    # 精确匹配
+    if code in _STOCK_NAME_MAP:
+        return _STOCK_NAME_MAP[code]
+    # 模糊匹配（如 600519.SH → 贵州茅台）
+    for wc, name in _STOCK_NAME_MAP.items():
+        if code in wc or wc in code:
+            return name
+    return code
 
 
 @app.post("/admin-api/financial-orders/operate")
@@ -530,9 +520,9 @@ async def financial_orders_operate(request: Request):
         stock, stock_name, opt_type, tenor, strike = "600519.SH", "贵州茅台", "欧式看涨", "1M", "80%"
 
     if type_ in ("close_order_query",):
-        return backend_ok(
-            "\n".join([
-                "-----场外期权持仓详情-----",
+        _lines = ["-----场外期权持仓详情-----"]
+        for i, p in enumerate(_POSITIONS):
+            _lines.extend([
                 f"序号：{i+1}",
                 f"单号：{p['orderId']}",
                 f"合约编号：{p['contractCode']}",
@@ -541,12 +531,19 @@ async def financial_orders_operate(request: Request):
                 f"当日剩余可申请平仓名义本金：{p['availableNotional']:,}",
                 f"合约剩余名义本金：{p['notional']:,}",
                 f"是否可平仓：{'是' if p['availableNotional'] > 0 else '否'}",
-                "" if i < len(_POSITIONS) - 1 else (
-                    "\n如需平仓，请引用本消息回复【持仓序号或合约编号】【平仓名义本金】【平仓价格方式】。\n"
-                    "例如：序号1，200w,市价下单"
-                ),
-            ] for i, p in enumerate(_POSITIONS))
+                "",
+            ])
+        _lines.append(
+            "如需平仓，请引用本消息回复【持仓序号或合约编号】【平仓名义本金】【平仓价格方式】。\n"
+            "例如：序号1，200w,市价下单"
         )
+        return backend_ok("\n".join(_lines))
+
+    # 标的不在标的池时拒绝（通用业务规则）
+    if type_ in ("new_inquiry",) and stock != "600519.SH":
+        _known = {item["windCode"] for item in _SECURITIES_DICT}
+        if stock not in _known:
+            return backend_fail(400, f"抱歉！标的代码（或标的名称）{stock} 不在标的池内，无法自动报价，请联系对口销售或交易员。")
 
     if type_ in ("new_inquiry",):
         return backend_ok(
@@ -592,6 +589,12 @@ _POSITIONS: list[dict] = [
         "underlyingCode": "000155.SZ", "underlyingName": "川能动力",
         "optionType": "欧式看涨", "createTime": "2026-05-06 15:49",
     },
+    # E2E 测试用
+    {"id": 5, "orderId": "CO-20260304-4FE9C941",
+     "contractCode": "OPT-CO20260304-4FE9C941",
+     "notional": 10_000_000, "availableNotional": 10_000_000,
+     "underlyingCode": "000155.SZ", "underlyingName": "川能动力",
+     "optionType": "欧式看涨", "createTime": "2026-03-04 10:00"},
     {
         "id": 3, "orderId": "CO-20260506-7C8DEF06",
         "contractCode": "OPT-SZZSCF20260004",
@@ -612,7 +615,7 @@ _POSITIONS: list[dict] = [
 def _find_positions(order_ids: list[str], contract_codes: list[str]) -> list[dict]:
     """按 orderId / contractCode 查找持仓。"""
     if not order_ids and not contract_codes:
-        return [_POSITIONS[0]]
+        return list(_POSITIONS)
     result: list[dict] = []
     seen: set[str] = set()
     for pos in _POSITIONS:
@@ -712,6 +715,7 @@ _SECURITIES_DICT: list[dict] = [
     {"windCode": "600030.SH", "insShtDesc": "中信证券", "insLngDesc": "中信证券股份有限公司", "insFamily": "EQUITY", "currency": "CNY", "exchange": "SH"},
     {"windCode": "300750.SZ", "insShtDesc": "宁德时代", "insLngDesc": "宁德时代新能源科技股份有限公司", "insFamily": "EQUITY", "currency": "CNY", "exchange": "SZ"},
     {"windCode": "688472.SH", "insShtDesc": "阿特斯", "insLngDesc": "阿特斯阳光电力科技股份有限公司", "insFamily": "EQUITY", "currency": "CNY", "exchange": "SH"},
+    {"windCode": "300098.SZ", "insShtDesc": "高新兴", "insLngDesc": "高新兴科技集团股份有限公司", "insFamily": "EQUITY", "currency": "CNY", "exchange": "SZ"},
     # === 港股 ===
     {"windCode": "0700.HK", "insShtDesc": "腾讯控股", "insLngDesc": "腾讯控股有限公司", "insFamily": "EQUITY", "currency": "HKD", "exchange": "HK"},
     {"windCode": "0941.HK", "insShtDesc": "中国移动", "insLngDesc": "中国移动有限公司", "insFamily": "EQUITY", "currency": "HKD", "exchange": "HK"},
@@ -725,7 +729,38 @@ _SECURITIES_DICT: list[dict] = [
     # === 期货（验证 YYMM/月份字母两种格式共存）===
     {"windCode": "CLN26.NYM", "insShtDesc": "WTI原油2607", "insLngDesc": "Light Sweet Crude Oil July 2026", "insFamily": "FUTURE", "currency": "USD", "exchange": "NYM"},
     {"windCode": "IF2607.CFE", "insShtDesc": "沪深300股指期货2607", "insLngDesc": "CSI 300 Index Futures July 2026", "insFamily": "FUTURE", "currency": "CNY", "exchange": "CFE"},
+    # 新增 A 股标的（2026-05-10）
+    {"windCode": "601318.SH", "insShtDesc": "中国平安", "insLngDesc": "中国平安保险(集团)股份有限公司", "insFamily": "EQUITY", "currency": "CNY", "exchange": "SH"},
+    {"windCode": "002594.SZ", "insShtDesc": "比亚迪", "insLngDesc": "比亚迪股份有限公司", "insFamily": "EQUITY", "currency": "CNY", "exchange": "SZ"},
+    {"windCode": "159984.SZ", "insShtDesc": "湾区ETF", "insLngDesc": "南方中证粤港澳大湾区ETF", "insFamily": "EQUITY", "currency": "CNY", "exchange": "SZ"},
+    {"windCode": "300760.SZ", "insShtDesc": "迈瑞医疗", "insLngDesc": "深圳迈瑞生物医疗电子股份有限公司", "insFamily": "EQUITY", "currency": "CNY", "exchange": "SZ"},
+    {"windCode": "300059.SZ", "insShtDesc": "东方财富", "insLngDesc": "东方财富信息股份有限公司", "insFamily": "EQUITY", "currency": "CNY", "exchange": "SZ"},
+    {"windCode": "601012.SH", "insShtDesc": "隆基绿能", "insLngDesc": "隆基绿能科技股份有限公司", "insFamily": "EQUITY", "currency": "CNY", "exchange": "SH"},
+    {"windCode": "603259.SH", "insShtDesc": "药明康德", "insLngDesc": "药明康德新药开发股份有限公司", "insFamily": "EQUITY", "currency": "CNY", "exchange": "SH"},
+    {"windCode": "000002.SZ", "insShtDesc": "万科A", "insLngDesc": "万科企业股份有限公司", "insFamily": "EQUITY", "currency": "CNY", "exchange": "SZ"},
+    {"windCode": "000001.SZ", "insShtDesc": "平安银行", "insLngDesc": "平安银行股份有限公司", "insFamily": "EQUITY", "currency": "CNY", "exchange": "SZ"},
+    {"windCode": "600887.SH", "insShtDesc": "伊利股份", "insLngDesc": "内蒙古伊利实业集团股份有限公司", "insFamily": "EQUITY", "currency": "CNY", "exchange": "SH"},
+    {"windCode": "600276.SH", "insShtDesc": "恒瑞医药", "insLngDesc": "江苏恒瑞医药股份有限公司", "insFamily": "EQUITY", "currency": "CNY", "exchange": "SH"},
+    {"windCode": "000568.SZ", "insShtDesc": "泸州老窖", "insLngDesc": "泸州老窖股份有限公司", "insFamily": "EQUITY", "currency": "CNY", "exchange": "SZ"},
+    {"windCode": "002714.SZ", "insShtDesc": "牧原股份", "insLngDesc": "牧原食品股份有限公司", "insFamily": "EQUITY", "currency": "CNY", "exchange": "SZ"},
+    # 多标测试用 A 股
+    {"windCode": "002597.SZ", "insShtDesc": "金禾实业", "insLngDesc": "安徽金禾实业股份有限公司", "insFamily": "EQUITY", "currency": "CNY", "exchange": "SZ"},
+    {"windCode": "002074.SZ", "insShtDesc": "国轩高科", "insLngDesc": "国轩高科股份有限公司", "insFamily": "EQUITY", "currency": "CNY", "exchange": "SZ"},
+    {"windCode": "002690.SZ", "insShtDesc": "美亚光电", "insLngDesc": "合肥美亚光电技术股份有限公司", "insFamily": "EQUITY", "currency": "CNY", "exchange": "SZ"},
+    {"windCode": "603308.SH", "insShtDesc": "应流股份", "insLngDesc": "安徽应流机电股份有限公司", "insFamily": "EQUITY", "currency": "CNY", "exchange": "SH"},
+    {"windCode": "603198.SH", "insShtDesc": "迎驾贡酒", "insLngDesc": "安徽迎驾贡酒股份有限公司", "insFamily": "EQUITY", "currency": "CNY", "exchange": "SH"},
+    # ETF / 指数标的
+    {"windCode": "510050.SH", "insShtDesc": "上证50ETF", "insLngDesc": "华夏上证50ETF", "insFamily": "EQUITY", "currency": "CNY", "exchange": "SH"},
+    {"windCode": "510300.SH", "insShtDesc": "沪深300ETF", "insLngDesc": "华泰柏瑞沪深300ETF", "insFamily": "EQUITY", "currency": "CNY", "exchange": "SH"},
+    {"windCode": "510500.SH", "insShtDesc": "中证500ETF", "insLngDesc": "南方中证500ETF", "insFamily": "EQUITY", "currency": "CNY", "exchange": "SH"},
+    {"windCode": "588000.SH", "insShtDesc": "科创50ETF", "insLngDesc": "华夏科创50ETF", "insFamily": "EQUITY", "currency": "CNY", "exchange": "SH"},
+    {"windCode": "159915.SZ", "insShtDesc": "创业板ETF", "insLngDesc": "易方达创业板ETF", "insFamily": "EQUITY", "currency": "CNY", "exchange": "SZ"},
+    {"windCode": "399006.SZ", "insShtDesc": "创业板指", "insLngDesc": "创业板指数", "insFamily": "EQUITY", "currency": "CNY", "exchange": "SZ"},
+    {"windCode": "000300.SH", "insShtDesc": "沪深300", "insLngDesc": "沪深300指数", "insFamily": "EQUITY", "currency": "CNY", "exchange": "SH"},
+    {"windCode": "000905.SH", "insShtDesc": "中证500", "insLngDesc": "中证500指数", "insFamily": "EQUITY", "currency": "CNY", "exchange": "SH"},
 ]
+
+_STOCK_NAME_MAP: dict[str, str] = {item["windCode"]: item["insShtDesc"] for item in _SECURITIES_DICT}
 
 
 def _match_securities(keyword: str, is_full: bool) -> list[dict]:

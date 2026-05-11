@@ -100,6 +100,34 @@ async def fast_query_api(state: AgentState) -> dict[str, Any]:
 # ==============================================================
 
 
+def _resolve_deterministic_intent(raw: str, quote: str) -> str | None:
+    """规则确定性意图判定：能 100% 确定时直接返回，不调 LLM。
+
+    返回 None 表示需要 LLM 判断。
+    """
+    # "-" 快捷确认
+    if raw.strip() == "-":
+        return "confirm"
+    # 撤单：带订单号 → cancel_order
+    import re as _re_opt
+    if "撤单" in raw or "取消" in raw:
+        if _re_opt.search(r"[CQH]-\d{8}-", raw) or _re_opt.search(r"[CQH]-\d{8}-", quote):
+            return "cancel_order"
+        if "撤单" in quote or "撤单请求" in quote:
+            return "cancel_order"
+    # 确认下单
+    if "确认下单" in raw:
+        return "confirm"
+    # quote 是询价回复 + 当前有下单关键词 → place_order
+    if ("询价详情" in quote or "如需下单" in quote or "名义本金" in quote):
+        if any(kw in raw for kw in ("下单", "市价", "限价", "POV", "TWAP")):
+            return "place_order"
+    # 纯 "确认" 且有 quote 上下文
+    if raw.strip() in ("确认", "确认下单", "好的", "可以", "行", "ok", "OK"):
+        return "confirm"
+    return None
+
+
 @safe_node
 async def extract_option(state: AgentState) -> dict[str, Any]:
     """期权意图识别 + 参数提取（最新 Dify 合并节点）。"""
@@ -122,6 +150,27 @@ async def extract_option(state: AgentState) -> dict[str, Any]:
 
     raw_content = wx.get("raw_content", "")
     quote_content = wx.get("quote_content", "") or ""
+
+    # 输入包含看似标的代码但没被解析 → 标的无效（通用规则：代码格式但不在池）
+    import re as _re_ticker
+    _has_code_like = bool(_re_ticker.search(
+        r"\d{5,6}[.\s]|[A-Z]{2,6}\d+|L\d{4,}", raw_content
+    ))
+    if not resolved and _has_code_like:
+        return {
+            "intent": "new_inquiry",
+            "order_list": [],
+            "operate": "inquiry",
+            "error": "抱歉！标的代码（或标的名称）不在标的池内，无法自动报价，请联系对口销售或交易员。",
+            "trace": [{"node": "extract_option", "decision": "invalid_ticker"}],
+        }
+
+    # 多轮上下文预判：quote 或 raw 中有询价特征 → 后续消息是下单/确认/改单
+    _combined_ctx = f"{raw_content} {quote_content}"
+    _from_inquiry = any(kw in _combined_ctx for kw in (
+        "询价详情", "如需下单", "名义本金", "期权费率", "标的代码", "标的名称",
+        "已收到您的下单指令", "请引用本消息",
+    ))
 
     # "-" 是多轮对话中的快捷确认信号
     if raw_content.strip() == "-":
@@ -157,6 +206,16 @@ bot_name_list: {bot_names}
 resolved_tickers:
 {resolved_str}{term_hint}"""
 
+    # 确定性快速路径：无需参数提取的意图直接返回（不调 LLM）
+    _fast = _resolve_deterministic_intent(raw_content, quote_content)
+    if _fast in ("confirm", "cancel_order"):
+        return {
+            "intent": _fast,
+            "order_list": [],
+            "operate": "确认" if _fast == "confirm" else "cancel_order",
+            "trace": [{"node": "extract_option", "decision": f"deterministic_{_fast}"}],
+        }
+
     llm = get_qwen_thinking().with_structured_output(OptionExtractOutput)
     try:
         result: OptionExtractOutput = await llm.ainvoke([
@@ -171,6 +230,26 @@ resolved_tickers:
 
     order_dicts = [leg.model_dump(exclude_none=True) for leg in result.order_list]
     normalized = _INTENT_TYPE_NORMALIZE.get(result.type, result.type)
+    # 规则修正：常见多轮关键词强制意图
+    _rl = raw_content.lower()
+    if "确认下单" in raw_content:
+        normalized = "confirm"
+    elif "撤单" in raw_content:
+        normalized = "cancel_order"
+    elif "改" in raw_content and ("单" in raw_content or "行权价" in raw_content or "期限" in raw_content):
+        normalized = "modify_order"
+    elif ("下单" in raw_content or "市价" in raw_content or "限价" in raw_content) and normalized == "new_inquiry":
+        normalized = "place_order"
+    # 多轮修正：上轮是询价/下单回复，本轮意图需要上下文修正
+    if _from_inquiry:
+        if normalized in ("new_inquiry", "unknown", ""):
+            if any(kw in raw_content for kw in ("确认", "好的", "可以", "行", "下单")):
+                normalized = "confirm"
+            elif any(kw in raw_content for kw in ("撤消", "取消", "不要", "算了")):
+                normalized = "cancel_order"
+            else:
+                # 上轮是询价回复，本轮任意非确认内容 → 大概率是下单参数
+                normalized = "place_order"
     return {
         "intent": normalized,
         "order_list": order_dicts,
@@ -194,7 +273,13 @@ async def check_param_completeness(state: AgentState) -> dict[str, Any]:
     """
     order_list = state.get("order_list", [])
     intent = state.get("intent", "")
-    if not order_list or intent not in ("new_inquiry", "modify_order"):
+    # new_inquiry 时允许空 order_list（LLM 未能解析时的兜底），
+    # 只对 modify_order / place_order 等需要明确参数的操作校验
+    if not order_list:
+        if intent == "new_inquiry":
+            return {"trace": [{"node": "check_param_completeness", "decision": "skip_empty_inquiry"}]}
+        return {"trace": [{"node": "check_param_completeness", "decision": "skip"}]}
+    if intent not in ("new_inquiry", "modify_order"):
         return {"trace": [{"node": "check_param_completeness", "decision": "skip"}]}
 
     missing_fields: list[str] = []
