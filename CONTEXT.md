@@ -16,8 +16,12 @@ _Avoid_: 混沌工程（Chaos Engineering，不同概念）、可观测性平台
 _Avoid_: 测试用例（太泛）、fixture（语义不准）
 
 **Shadow compare（双跑对照）**：
-同一条 case 同时打到 Dify 和 LangGraph，diff 输出找差异。是 Dify→LangGraph 迁移期的验证工具，不是 harness 的核心功能。
-_Avoid_: A/B test（语义不准，不涉及流量切分）
+同一条 case 同时打到 Dify 和 LangGraph，diff 输出找差异。是 Dify→LangGraph 迁移期的**辅助参考工具**，**不是合格性判定的标准**——Dify 自己有"标的不准 / 参数 bug / 评估缺失"三大已知缺陷（迁移动机），不能作为 ground truth。LangGraph 是否合格的判定标准是 **Golden case PASS 率**，不是 shadow diff 率。Shadow 的实际用途是 M4 金丝雀切流前给业务方提供"Dify 与 LangGraph 在生产真实流量上的输出对比"作为决策辅助。
+_Avoid_: A/B test（语义不准，不涉及流量切分）；ground truth 验证（Dify 不是 ground truth）
+
+**Ground truth（合格性判定标准）**：
+Golden case 的 expected 字段。LangGraph 输出与 expected 一致 = PASS；不一致 = FAIL。M3 退出门基于 PASS 率（≥ 阈值），不基于 shadow diff 率。
+_Avoid_: 拿 Dify 输出当 ground truth（Dify 是参考竞品而非真理）
 
 **节点（Node）**：
 LangGraph 图中一个 `@safe_node` 装饰的 async 函数。在本项目语境下，节点和 Dify 的 LLM 节点 1:1 对齐（仅 3 个"确认 X"合并为 1）。
