@@ -14,10 +14,10 @@ if _DOTENV.exists():
         line = line.strip()
         if not line or line.startswith("#") or "=" not in line: continue
         k, _, v = line.partition("="); k, v = k.strip(), v.strip()
-        if k and not os.environ.get(k): os.environ[k] = v
+        if k: os.environ[k] = v
 
 # 强制走 mock_api，Langfuse API 不走代理
-os.environ.setdefault("OTC_API_BASE_URL", "http://localhost:8099")
+os.environ["OTC_API_BASE_URL"] = os.environ.get("OTC_API_BASE_URL", "http://localhost:8099")
 os.environ["NO_PROXY"] = os.environ.get("NO_PROXY", "") + ",cloud.langfuse.com"
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
