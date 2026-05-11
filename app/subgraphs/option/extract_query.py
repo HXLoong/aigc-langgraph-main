@@ -14,6 +14,7 @@ from app.graph.safe_node import safe_node
 from app.graph.state import AgentState, Message, TraceEntry
 from app.llm.clients import get_qwen_structured
 from app.prompts import load_prompt
+from app.subgraphs.option.backend import call_option_backend
 from app.subgraphs.option.models import OptionExtractQueryParams
 
 
@@ -52,11 +53,18 @@ async def option_extract_query(state: AgentState) -> dict[str, Any]:
             ("user", user_message),
         ]
     )
+    order_list = [item.model_dump() for item in result.orderList]
+    backend = await call_option_backend(
+        state,
+        intent="query_order_status",
+        order_list=order_list,
+    )
 
     return {
         "query_filter": {
-            "orderList": [item.model_dump() for item in result.orderList],
+            "orderList": order_list,
         },
+        **backend,
         "trace": [
             TraceEntry(
                 node="option_extract_query",

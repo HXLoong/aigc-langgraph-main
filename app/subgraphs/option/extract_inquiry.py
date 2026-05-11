@@ -20,6 +20,7 @@ from app.graph.safe_node import safe_node
 from app.graph.state import AgentState, Message, TraceEntry
 from app.llm.clients import get_qwen_structured
 from app.prompts import load_prompt
+from app.subgraphs.option.backend import _with_resolved_ticker, call_option_backend
 from app.subgraphs.option.models import OptionInquiryParams
 from app.subgraphs.ticker.resolver import resolve_ticker
 
@@ -85,6 +86,11 @@ async def option_extract_inquiry(state: AgentState) -> dict[str, Any]:
 
     # 2. ticker resolver 识别标的（与 LLM 提取并行的独立通道）
     tickers = await resolve_ticker(raw_text)
+    order_list = [item.model_dump() for item in params.orderList]
+    backend_order_list = [
+        _with_resolved_ticker(dict(item), tickers, idx)
+        for idx, item in enumerate(order_list)
+    ]
 
     types = [item.optionType for item in params.orderList if item.optionType]
     decision = (
@@ -94,12 +100,19 @@ async def option_extract_inquiry(state: AgentState) -> dict[str, Any]:
         f" types={types}"
     )
 
+    backend = await call_option_backend(
+        state,
+        intent="new_inquiry",
+        order_list=backend_order_list,
+    )
+
     return {
         "place_params": {
             "expected_action": "inquiry",
-            "orderList": [item.model_dump() for item in params.orderList],
+            "orderList": order_list,
         },
         "tickers": tickers,
+        **backend,
         "trace": [
             TraceEntry(
                 node="option_extract_inquiry",

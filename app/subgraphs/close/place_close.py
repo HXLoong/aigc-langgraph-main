@@ -92,12 +92,14 @@ async def close_place_close(state: AgentState) -> dict[str, Any]:
     order_data: list[dict] = []
     try:
         settings = get_settings()
+        from app.tools.auth import get_goats_auth_headers
         async with httpx.AsyncClient(
             base_url=settings.otc_api_base_url, timeout=httpx.Timeout(10.0)
         ) as client:
             r = await client.post(
                 "/admin-api/financial-orders/query-close-orders",
                 json={"orderIds": _oids, "contractCodes": _ccs},
+                headers=get_goats_auth_headers(),
             )
             r.raise_for_status()
             resp = r.json()

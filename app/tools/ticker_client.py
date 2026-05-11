@@ -90,15 +90,18 @@ class TickerClientHttpx:
         token: str | None = None,
     ) -> None:
         from app.config import get_settings
-        self._base_url = (base_url or get_settings().otc_api_base_url).rstrip("/")
+        settings = get_settings()
+        self._base_url = (base_url or settings.otc_api_base_url).rstrip("/")
         self._timeout = timeout
-        self._token = token
+        self._token = token if token is not None else settings.otc_api_secret
 
     @property
     def _headers(self) -> dict[str, str]:
+        from app.tools.auth import get_goats_auth_headers
         h = {"Content-Type": "application/json"}
         if self._token:
             h["Authorization"] = f"Bearer {self._token}"
+        h.update(get_goats_auth_headers())
         return h
 
     async def search_securities_instrument(
