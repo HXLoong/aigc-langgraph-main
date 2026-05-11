@@ -331,3 +331,23 @@
 {"id": "g403", "category": "swap/place_order", "raw_content": "这个改成500手 @场外AI交易助手测试C", "quote_content": "做一笔茅台的TRS，买1000手，限价1800", "expected": {"product_type": "swap", "intent": "place_order_request"}, "source": "business_seed", "notes": "引用历史改单"}
 {"id": "g404", "category": "option/extract_inquiry", "raw_content": "同时询价茅台和腾讯的雪球，各1000万名义，3个月，敲出110%，敲入75% @场外AI交易助手测试C", "expected": {"product_type": "option", "intent": "new_inquiry"}, "source": "llm_paraphrase", "notes": "多标的期权询价"}
 {"id": "g405", "category": "swap/place_order", "raw_content": "纳斯达克指数 买入 500手 市价 @场外AI交易助手测试C", "expected": {"product_type": "swap", "intent": "place_order_request"}, "source": "llm_paraphrase", "notes": "指数型标的口语化"}
+{"id": "g406", "category": "swap/query", "raw_content": "帮我查一下 H-20260503-0001 这笔互换的状态", "expected": {"product_type": "swap", "intent": "query_order_status"}, "source": "business_seed"}
+{"id": "g407", "category": "swap/query", "raw_content": "H-20260401-0023 现在到哪了", "expected": {"product_type": "swap", "intent": "query_order_status"}, "source": "business_seed"}
+{"id": "g408", "category": "swap/query", "raw_content": "查询互换订单 H-20260502-0088 的成交进度", "expected": {"product_type": "swap", "intent": "query_order_status"}, "source": "business_seed"}
+{"id": "g409", "category": "swap/query", "raw_content": "H-20260415-0017 成交了吗，给我查一下", "expected": {"product_type": "swap", "intent": "query_order_status"}, "source": "business_seed"}
+{"id": "g410", "category": "close/confirm", "raw_content": "确认 CO-20260503-ABCD0001 平仓", "expected": {"product_type": "option_close", "intent": "close_order_confirm"}, "source": "business_seed"}
+{"id": "g411", "category": "close/confirm", "raw_content": "好的，确认平掉 CO-20260415-EFGH0002", "expected": {"product_type": "option_close", "intent": "close_order_confirm"}, "source": "business_seed"}
+{"id": "g412", "category": "close/confirm", "raw_content": "就按这个价格平仓，我确认 CO-20260418-IJKL0003", "expected": {"product_type": "option_close", "intent": "close_order_confirm"}, "source": "business_seed"}
+{"id": "g413", "category": "close/confirm", "raw_content": "CO-20260422-MNOP0004 这笔我确认下单", "expected": {"product_type": "option_close", "intent": "close_order_confirm"}, "source": "business_seed"}
+{"id": "g414", "category": "close/cancel", "raw_content": "撤销平仓 CO-20260503-ABCD0001", "expected": {"product_type": "option_close", "intent": "close_order_cancel_request"}, "source": "business_seed"}
+{"id": "g415", "category": "close/cancel", "raw_content": "取消 CO-20260415-EFGH0002 的平仓单", "expected": {"product_type": "option_close", "intent": "close_order_cancel_request"}, "source": "business_seed"}
+{"id": "g416", "category": "close/cancel", "raw_content": "CO-20260418-IJKL0003 不平了，撤掉", "expected": {"product_type": "option_close", "intent": "close_order_cancel_request"}, "source": "business_seed"}
+{"id": "g417", "category": "close/cancel", "raw_content": "帮我撤销平仓单 CO-20260422-MNOP0004", "expected": {"product_type": "option_close", "intent": "close_order_cancel_request"}, "source": "business_seed"}
+{"id": "g418", "category": "close/confirm_cancel", "raw_content": "确认撤销平仓 CO-20260503-ABCD0001", "expected": {"product_type": "option_close", "intent": "close_order_cancel_confirm"}, "source": "business_seed"}
+{"id": "g419", "category": "close/confirm_cancel", "raw_content": "我确认，CO-20260415-EFGH0002 撤单", "expected": {"product_type": "option_close", "intent": "close_order_cancel_confirm"}, "source": "business_seed"}
+{"id": "g420", "category": "close/confirm_cancel", "raw_content": "CO-20260418-IJKL0003 确认撤销", "expected": {"product_type": "option_close", "intent": "close_order_cancel_confirm"}, "source": "business_seed"}
+{"id": "g421", "category": "close/confirm_cancel", "raw_content": "好，就撤了，CO-20260422-MNOP0004 确认撤单", "expected": {"product_type": "option_close", "intent": "close_order_cancel_confirm"}, "source": "business_seed"}
+{"id": "g422", "category": "close/query", "raw_content": "帮我查一下现在有多少期权持仓", "expected": {"product_type": "option_close", "intent": "close_order_query"}, "source": "business_seed"}
+{"id": "g423", "category": "close/query", "raw_content": "列一下我的可平持仓，按品种分", "expected": {"product_type": "option_close", "intent": "close_order_query"}, "source": "business_seed"}
+{"id": "g424", "category": "option/modify_request", "raw_content": "改成限价，行权价调到 5.5", "quote_content": "机器人返回：贵州茅台欧式看涨期权报价，市价下单，名义本金 1000 万，请确认", "expected": {"product_type": "option", "intent": "request_modify_order"}, "source": "business_seed"}
+{"id": "g425", "category": "option/modify_request", "raw_content": "行权价改为 480，其他不变", "quote_content": "机器人返回：中国平安欧式看涨期权建仓指令，行权价 500，市价，名义本金 500 万", "expected": {"product_type": "option", "intent": "request_modify_order"}, "source": "business_seed"}
