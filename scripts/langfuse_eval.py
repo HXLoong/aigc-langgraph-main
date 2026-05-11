@@ -1,6 +1,7 @@
-"""期权链路评估。通过 mock_api (localhost:8099) 跑 LangGraph，DeepSeek Judge 打分。
+"""期权链路评估。跑 LangGraph，DeepSeek Judge 打分。
 
-前提: mock_api 必须先启动
+OTC_API_BASE_URL 从 .env 读取，可以是 mock_api (localhost:8099) 或真实 GOATS URL。
+前提: 对应的后端服务必须已启动
 用法: uv run python scripts/langfuse_eval.py --ids opt-001 --concurrency 1
 """
 from __future__ import annotations
@@ -16,8 +17,8 @@ if _DOTENV.exists():
         k, _, v = line.partition("="); k, v = k.strip(), v.strip()
         if k: os.environ[k] = v
 
-# 强制走 mock_api，Langfuse API 不走代理
-os.environ["OTC_API_BASE_URL"] = os.environ.get("OTC_API_BASE_URL", "http://localhost:8099")
+# OTC_API_BASE_URL 由上方 .env 加载提供（mock 或真实 GOATS），不再强制覆盖
+# Langfuse API 不走代理
 os.environ["NO_PROXY"] = os.environ.get("NO_PROXY", "") + ",cloud.langfuse.com"
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
