@@ -1,0 +1,84 @@
+"""ticker-only golden fixture 测试（#20 部分）。
+
+读 `tests/fixtures/golden_ticker_2026-05.jsonl`，验证：
+- tokenize 输出符合 expected.tokens
+- 单独可校验的 case 也校验对应字段（is_complete / winner / needs_hitl 等）
+
+注：ticker 子图当前未集成到主图（生产用 ticker_resolver 白名单），
+本 fixture 不被 harness CLI 消费，仅作为单元测试 + 设计契约文档。
+真 LLM ReAct E2E 留给 #M3 shadow 阶段。
+"""
+from __future__ import annotations
+
+import json
+from pathlib import Path
+
+import pytest
+
+from app.subgraphs.ticker.tools import tokenize
+
+GOLDEN_PATH = (
+    Path(__file__).parent.parent.parent
+    / "fixtures"
+    / "golden_ticker_2026-05.jsonl"
+)
+
+
+def _load_cases() -> list[dict]:
+    return [
+        json.loads(line)
+        for line in GOLDEN_PATH.read_text(encoding="utf-8").splitlines()
+        if line.strip()
+    ]
+
+
+def test_fixture_loads_and_has_minimum_15_cases() -> None:
+    """#20 验收：ticker-only golden ≥ 15 条。"""
+    cases = _load_cases()
+    assert len(cases) >= 15, f"实际 {len(cases)} 条，少于 #20 要求的 15 条"
+
+
+def test_fixture_unique_ids() -> None:
+    cases = _load_cases()
+    ids = [c["id"] for c in cases]
+    assert len(ids) == len(set(ids)), "case id 重复"
+
+
+def test_fixture_all_have_required_fields() -> None:
+    """每条 case 必须含 id / category / raw_content / expected / source。"""
+    cases = _load_cases()
+    for c in cases:
+        for field in ("id", "category", "raw_content", "expected", "source"):
+            assert field in c, f"{c.get('id')} 缺字段 {field}"
+        assert c["source"] == "ticker_unit"
+
+
+def test_fixture_categories_cover_core_scenarios() -> None:
+    """覆盖 6 个核心场景类别。"""
+    cases = _load_cases()
+    categories = {c["category"].split("/")[1] for c in cases}
+    expected_scenarios = {
+        "complete_code",       # 完整代码一步到位
+        "short_name",          # 简称推断
+        "multi_match_large_gap",  # 自动选
+        "multi_match_small_gap",  # HITL
+        "zero_match",          # fallback
+        "multi_input",         # 多 ticker
+    }
+    missing = expected_scenarios - categories
+    assert not missing, f"缺场景覆盖: {missing}"
+
+
+@pytest.mark.parametrize("case", _load_cases(), ids=lambda c: c["id"])
+def test_tokenize_matches_expected(case: dict) -> None:
+    """每条 case 的 tokenize 输出必须与 expected.tokens 完全一致。"""
+    expected_tokens = case["expected"].get("tokens")
+    if expected_tokens is None:
+        pytest.skip(f"{case['id']} 无 expected.tokens 字段")
+    actual = tokenize.invoke({"raw_text": case["raw_content"]})
+    assert actual == expected_tokens, (
+        f"{case['id']} tokenize 不匹配:\n"
+        f"  raw: {case['raw_content']!r}\n"
+        f"  expected: {expected_tokens}\n"
+        f"  actual:   {actual}"
+    )

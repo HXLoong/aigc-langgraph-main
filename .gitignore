@@ -123,3 +123,6 @@ secrets/
 .claude/scheduled_tasks.lock
 .claude/*.lock
 .claude/cache/
+
+.VSCodeCounter/
+.harness-runs/
