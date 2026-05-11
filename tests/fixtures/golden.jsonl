@@ -351,3 +351,8 @@
 {"id": "g423", "category": "close/query", "raw_content": "列一下我的可平持仓，按品种分", "expected": {"product_type": "option_close", "intent": "close_order_query"}, "source": "business_seed"}
 {"id": "g424", "category": "option/modify_request", "raw_content": "改成限价，行权价调到 5.5", "quote_content": "机器人返回：贵州茅台欧式看涨期权报价，市价下单，名义本金 1000 万，请确认", "expected": {"product_type": "option", "intent": "request_modify_order"}, "source": "business_seed"}
 {"id": "g425", "category": "option/modify_request", "raw_content": "行权价改为 480，其他不变", "quote_content": "机器人返回：中国平安欧式看涨期权建仓指令，行权价 500，市价，名义本金 500 万", "expected": {"product_type": "option", "intent": "request_modify_order"}, "source": "business_seed"}
+{"id": "g426", "category": "swap/place_order", "raw_content": "买 10 手招商银行 TRS，市价", "expected": {"product_type": "swap", "intent": "place_order_request"}, "source": "business_seed"}
+{"id": "g427", "category": "swap/place_order", "raw_content": "A组合 买入腾讯控股 20 手，TWAP", "expected": {"product_type": "swap", "intent": "place_order_request"}, "source": "business_seed"}
+{"id": "g428", "category": "swap/place_order", "raw_content": "互换 港股 00700.HK 5 手买入，POV 30%", "expected": {"product_type": "swap", "intent": "place_order_request"}, "source": "business_seed"}
+{"id": "g429", "category": "swap/place_order", "raw_content": "TRS 中国平安 A股 3 手，市价买", "expected": {"product_type": "swap", "intent": "place_order_request"}, "source": "business_seed"}
+{"id": "g430", "category": "swap/place_order", "raw_content": "B组合 招商银行 600036 买 50 手，限价 45.5", "expected": {"product_type": "swap", "intent": "place_order_request"}, "source": "business_seed"}
