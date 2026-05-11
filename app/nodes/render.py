@@ -13,8 +13,12 @@ from app.graph.state import AgentState
 
 @safe_node
 async def render(state: AgentState) -> dict[str, Any]:
-    """M1 占位：不修改 state；由 API 层从 final state 直接构造 Dify outputs。
-
-    M2 阶段：在此处加业务回复 LLM 生成。
-    """
+    """透传 reply_text（子图已生成）或 api_result（后端返回）。"""
+    reply = state.get("reply_text") or state.get("api_result") or ""
+    if reply:
+        return {"reply_text": reply}
+    if state.get("error"):
+        return {"reply_text": f"处理失败：{state['error']}"}
+    if state.get("product_type") == "unknown":
+        return {"reply_text": "未识别到有效指令，请明确指定产品（期权/互换）和操作（询价/下单/撤单等）。"}
     return {}

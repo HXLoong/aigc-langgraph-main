@@ -25,7 +25,8 @@ from app.graph.state import AgentState, TraceEntry
 from app.llm.clients import get_qwen_structured
 from app.prompts import load_prompt
 from app.subgraphs.close.models import ClosePlaceParams
-from app.tools.option_client import OptionClientHttpx
+import httpx
+from app.config import get_settings
 
 
 def _build_user_message(state: AgentState) -> str:
@@ -90,10 +91,17 @@ async def close_place_close(state: AgentState) -> dict[str, Any]:
     _ccs = _re.findall(r"OPTG?-[A-Z]{4,}\d{0,10}", combined)
     order_data: list[dict] = []
     try:
-        client = OptionClientHttpx()
-        order_data = await client.query_close_orders(
-            order_ids=_oids, contract_codes=_ccs,
-        )
+        settings = get_settings()
+        async with httpx.AsyncClient(
+            base_url=settings.otc_api_base_url, timeout=httpx.Timeout(10.0)
+        ) as client:
+            r = await client.post(
+                "/admin-api/financial-orders/query-close-orders",
+                json={"orderIds": _oids, "contractCodes": _ccs},
+            )
+            r.raise_for_status()
+            resp = r.json()
+            order_data = resp.get("data", []) if isinstance(resp, dict) else []
     except Exception:
         pass
 
