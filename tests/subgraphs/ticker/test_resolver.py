@@ -1,10 +1,20 @@
-"""ticker resolver 接口测试（骨架阶段：白名单实现）。"""
+"""ticker resolver 接口测试（白名单模式 — env TICKER_RESOLVER_MODE=whitelist）。
+
+ReAct 模式测试见 test_resolver_react.py。
+"""
 from __future__ import annotations
 
 import pytest
 
+from app.subgraphs.ticker import resolver as resolver_mod
 from app.subgraphs.ticker.resolver import resolve_ticker
 from app.subgraphs.ticker.whitelist import TICKER_WHITELIST
+
+
+@pytest.fixture(autouse=True)
+def _force_whitelist_mode(monkeypatch: pytest.MonkeyPatch) -> None:
+    """所有本文件测试强制走白名单（与原行为一致）。"""
+    monkeypatch.setattr(resolver_mod, "DEFAULT_MODE", "whitelist")
 
 
 # ============================================================
