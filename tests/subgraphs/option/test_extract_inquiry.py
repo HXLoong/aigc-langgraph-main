@@ -130,6 +130,8 @@ class TestOptionExtractInquiryNode:
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         """用户原话含多个白名单标的 → resolver 返回多条。"""
+        import app.subgraphs.ticker.resolver as _resolver
+        monkeypatch.setattr(_resolver, "DEFAULT_MODE", "whitelist")
         params = OptionInquiryParams(
             orderList=[
                 OptionInquiryItem(stockCode="茅台", optionType="雪球"),

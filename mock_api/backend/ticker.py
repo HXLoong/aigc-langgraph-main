@@ -30,12 +30,22 @@ router = APIRouter(tags=["mock-backend-ticker"])
 # ============================================================
 
 
+def _normalize_hk(code: str) -> str:
+    """港股代码补零归一化：00700.HK → 0700.HK，700 → 0700"""
+    if "." in code:
+        parts = code.split(".")
+        if parts[1].upper() == "HK":
+            num = parts[0].lstrip("0") or "0"
+            return f"{int(num):04d}.HK"
+    return code
+
+
 def _score(item: dict[str, Any], keyword: str, is_full: bool) -> int | None:
     """返回相关度分数（越小越相关），不匹配返回 None。"""
-    kw = keyword.strip()
+    kw = _normalize_hk(keyword.strip())
     if not kw:
         return None
-    wc = item["windCode"]
+    wc = _normalize_hk(item["windCode"])
     short_desc = item["insShtDesc"]
     long_desc = item["insLngDesc"]
 
