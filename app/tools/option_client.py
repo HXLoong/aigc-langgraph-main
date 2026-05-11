@@ -141,11 +141,12 @@ class OptionClientHttpx:
 
     def __init__(
         self,
-        base_url: str = "http://localhost:8099",
+        base_url: str = "",
         timeout: float = 30.0,
         token: str | None = None,
     ) -> None:
-        self._base_url = base_url.rstrip("/")
+        from app.config import get_settings
+        self._base_url = (base_url or get_settings().otc_api_base_url).rstrip("/")
         self._timeout = timeout
         self._token = token
 
