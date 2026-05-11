@@ -123,9 +123,12 @@ def tokenize(raw_text: Annotated[str, "用户原话"]) -> list[str]:
 
 
 def _make_client() -> TickerClientHttpx:
-    """构造 TickerClient，base_url 取 settings.otc_api_base_url。"""
+    """构造 TickerClient，base_url + token 取自 settings（对齐真实后端 @PlatformApiAuth）。"""
     settings = get_settings()
-    return TickerClientHttpx(base_url=settings.otc_api_base_url)
+    return TickerClientHttpx(
+        base_url=settings.otc_api_base_url,
+        token=settings.otc_api_secret or None,
+    )
 
 
 def _run_async(coro):  # pragma: no cover - utility for sync tool wrapper

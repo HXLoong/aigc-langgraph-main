@@ -21,7 +21,7 @@ from app.graph.state import AgentState, Message, TraceEntry
 from app.llm.clients import get_qwen_structured
 from app.prompts import load_prompt
 from app.subgraphs.option.models import OptionInquiryParams
-from app.subgraphs.ticker.resolver import resolve_ticker
+from app.subgraphs.ticker.resolver import resolve_ticker_full
 
 
 def _format_history(history: list[Message] | None) -> str:
@@ -68,18 +68,20 @@ async def option_extract_inquiry(state: AgentState) -> dict[str, Any]:
         ]
     )
 
-    # 2. ticker resolver 识别标的（与 LLM 提取并行的独立通道）
-    tickers = await resolve_ticker(raw_text)
+    # 2. ticker resolver 识别标的（与 LLM 提取并行的独立通道，含 HITL 信号）
+    resolution = await resolve_ticker_full(raw_text)
+    tickers = resolution.resolved
 
     types = [item.optionType for item in params.orderList if item.optionType]
     decision = (
         f"action=inquiry,"
         f" orders={len(params.orderList)},"
         f" tickers={len(tickers)},"
-        f" types={types}"
+        f" types={types},"
+        f" hitl={len(resolution.hitl_pending)}"
     )
 
-    return {
+    out: dict = {
         "place_params": {
             "expected_action": "inquiry",
             "orderList": [item.model_dump() for item in params.orderList],
@@ -92,10 +94,14 @@ async def option_extract_inquiry(state: AgentState) -> dict[str, Any]:
                 llm_output={
                     "params": params.model_dump(),
                     "tickers_count": len(tickers),
+                    "hitl_count": len(resolution.hitl_pending),
                 },
             )
         ],
     }
+    if resolution.hitl_pending:
+        out["ticker_hitl_candidates"] = resolution.hitl_pending
+    return out
 
 
 __all__ = ["option_extract_inquiry"]

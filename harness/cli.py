@@ -41,6 +41,16 @@ DEFAULT_GOLDEN_PATHS = [
 
 
 async def cmd_run(args: argparse.Namespace) -> int:
+    # --mock-ticker 强制走白名单（CI / 离线场景）
+    if getattr(args, "mock_ticker", False):
+        import os
+        os.environ["TICKER_RESOLVER_MODE"] = "whitelist"
+        # 重置已加载的模块状态
+        import importlib
+        import app.subgraphs.ticker.resolver as _res_mod
+        _res_mod.DEFAULT_MODE = "whitelist"
+        print("  [mock-ticker] TICKER_RESOLVER_MODE=whitelist")
+
     cases = []
     for p in DEFAULT_GOLDEN_PATHS:
         cases.extend(load_golden(p))
@@ -128,6 +138,12 @@ def build_parser() -> argparse.ArgumentParser:
         "--out",
         default=".harness-runs/latest",
         help="报告输出目录（默认 .harness-runs/latest）",
+    )
+    run.add_argument(
+        "--mock-ticker",
+        action="store_true",
+        default=False,
+        help="强制 ticker resolver 走白名单模式（CI / 离线 / --mock-ticker）",
     )
 
     sub.add_parser("eval", help="(M2) LangFuse Dataset 上跑评估")
