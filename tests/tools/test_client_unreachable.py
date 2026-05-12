@@ -142,6 +142,31 @@ async def test_option_operate_unreachable(
         (_500_handler, "http_503"),
     ],
 )
+async def test_option_query_close_orders_unreachable(
+    option_client: OptionClientHttpx,
+    monkeypatch: pytest.MonkeyPatch,
+    handler,
+    expected_reason: str,
+) -> None:
+    """query_close_orders 新签名（order_ids/contract_codes）也走 translate_httpx_errors。"""
+    _patch_async_client(monkeypatch, handler)
+    with pytest.raises(BackendUnreachableError) as exc_info:
+        await option_client.query_close_orders(
+            order_ids=["CO-20260301-ABC"], contract_codes=["OPTG-AAPL"]
+        )
+    assert exc_info.value.target == "option"
+    assert exc_info.value.reason == expected_reason
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "handler,expected_reason",
+    [
+        (_timeout_handler, "timeout"),
+        (_connect_handler, "connect_error"),
+        (_500_handler, "http_503"),
+    ],
+)
 async def test_swap_operate_unreachable(
     swap_client: SwapClientHttpx,
     monkeypatch: pytest.MonkeyPatch,

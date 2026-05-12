@@ -126,7 +126,9 @@ class OptionClient(Protocol):
     ) -> CommonResult: ...
 
     async def query_close_orders(
-        self, ctx: MachineContext
+        self,
+        order_ids: list[str] | None = None,
+        contract_codes: list[str] | None = None,
     ) -> CommonResult: ...
 
 
@@ -176,19 +178,27 @@ class OptionClientHttpx:
             return CommonResult.model_validate(r.json())
 
     async def query_close_orders(
-        self, ctx: MachineContext
+        self,
+        order_ids: list[str] | None = None,
+        contract_codes: list[str] | None = None,
     ) -> CommonResult:
+        """查可平仓订单数据（contracts §2.x）。
+
+        真后端按 orderIds + contractCodes 过滤；签名修正于 #80 follow-up，
+        旧 signature `(ctx: MachineContext)` 实际与真后端 endpoint 不兼容，
+        且无生产 caller。
+        """
         from app.tools.exceptions import translate_httpx_errors
 
         url = f"{self._base_url}/admin-api/financial-orders/query-close-orders"
+        payload = {
+            "orderIds": order_ids or [],
+            "contractCodes": contract_codes or [],
+        }
         async with (
             translate_httpx_errors("option"),
             httpx.AsyncClient(timeout=self._timeout, trust_env=False) as client,
         ):
-            r = await client.post(
-                url,
-                json=ctx.model_dump(mode="json", exclude_none=True),
-                headers=self._headers,
-            )
+            r = await client.post(url, json=payload, headers=self._headers)
             r.raise_for_status()
             return CommonResult.model_validate(r.json())

@@ -25,8 +25,8 @@ from app.graph.state import AgentState, TraceEntry
 from app.llm.clients import get_qwen_thinking
 from app.prompts import load_prompt
 from app.subgraphs.close.models import ClosePlaceParams
-import httpx
-from app.config import get_settings
+from app.tools.exceptions import BackendUnreachableError
+from app.tools.option_client import OptionClientHttpx
 
 
 def _build_user_message(state: AgentState) -> str:
@@ -114,26 +114,22 @@ async def close_place_close(state: AgentState) -> dict[str, Any]:
                     leg.closeOrderType = "POV"
                 leg.closeOrderPovRatio = _pov_val
 
-    # === 拉取真实持仓数据 + 覆盖 LLM 输出 ===
+    # === 拉取真实持仓数据 + 覆盖 LLM 输出（走标准 OptionClient，享受 D2.3 不可达降级）===
     import re as _re
     _oids = _re.findall(r"CO-\d{8}-[A-Z0-9]{4,16}", combined)
     _ccs = _re.findall(r"OPTG?-[A-Z]{4,}\d{0,10}", combined)
     order_data: list[dict] = []
     try:
-        settings = get_settings()
-        from app.tools.auth import get_goats_auth_headers
-        async with httpx.AsyncClient(
-            base_url=settings.otc_api_base_url, timeout=httpx.Timeout(10.0)
-        ) as client:
-            r = await client.post(
-                "/admin-api/financial-orders/query-close-orders",
-                json={"orderIds": _oids, "contractCodes": _ccs},
-                headers=get_goats_auth_headers(),
-            )
-            r.raise_for_status()
-            resp = r.json()
-            order_data = (resp.get("data") or []) if isinstance(resp, dict) else []
-    except Exception:
+        _result = await OptionClientHttpx().query_close_orders(
+            order_ids=_oids, contract_codes=_ccs
+        )
+        if _result.code == 0 and isinstance(_result.data, list):
+            order_data = _result.data
+    except BackendUnreachableError:
+        # D2.3：网络不可达保守降级（保留本地确认卡），不阻塞用户
+        pass
+    except Exception:  # noqa: BLE001
+        # 业务异常 / 解析失败：降级处理，不阻塞用户提交确认
         pass
 
     _order_lookup: dict[str, dict] = {}
