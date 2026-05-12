@@ -12,6 +12,7 @@ from typing import Any
 
 from app.graph.safe_node import safe_node
 from app.graph.state import AgentState
+from app.observability.metrics import emit_fallback, emit_hitl
 
 # ============================================================
 # 话术常量
@@ -78,12 +79,15 @@ async def render(state: AgentState) -> dict[str, Any]:
     # 2. HITL 消歧
     hitl = state.get("ticker_hitl_candidates")
     if hitl:
+        emit_hitl(node="render")
+        emit_fallback(reason="hitl_card")
         return {"reply_text": _format_hitl_card(hitl)}
 
     # 3. 0 命中（业务节点正常完成但标的为空）
     tickers = state.get("tickers")
     place_params = state.get("place_params")
     if tickers is not None and len(tickers) == 0 and place_params is not None:
+        emit_fallback(reason="zero_match")
         raw_text = (state.get("raw_text") or "")[:40]
         return {"reply_text": _ZERO_HIT_TMPL.format(raw_text=raw_text)}
 
@@ -93,10 +97,12 @@ async def render(state: AgentState) -> dict[str, Any]:
 
     # 5. error → 通用兜底
     if state.get("error") is not None:
+        emit_fallback(reason="cascade_fail")
         return {"reply_text": _ERROR_REPLY}
 
     # 6. product_type unknown
     if state.get("product_type") == "unknown":
+        emit_fallback(reason="unknown_product_type")
         return {"reply_text": "未识别到有效指令，请明确指定产品（期权/互换）和操作（询价/下单/撤单等）。"}
 
     # 7. 从结构化参数生成业务回复
