@@ -18,6 +18,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from app.graph.main import build_main_graph
 from harness.golden import GoldenCase
 from harness.langfuse_client import get_callback_handler
+from harness.token_tracker import TokenTracker, TokenUsage
 
 logger = logging.getLogger(__name__)
 
@@ -31,6 +32,7 @@ class RunResult(BaseModel):
     final_state: dict[str, Any] = Field(default_factory=dict)
     elapsed_ms: int = 0
     error: str | None = None
+    token_usage: TokenUsage = Field(default_factory=TokenUsage)
 
 
 def _case_to_initial_state(case: GoldenCase) -> dict[str, Any]:
@@ -52,8 +54,16 @@ def _case_to_initial_state(case: GoldenCase) -> dict[str, Any]:
 async def run_case(
     case: GoldenCase,
     graph: Any | None = None,
+    track_tokens: bool = True,
 ) -> RunResult:
-    """跑一条 case 的端到端。"""
+    """跑一条 case 的端到端。
+
+    Args:
+        case: golden case 实例
+        graph: 主图（默认重建）
+        track_tokens: F4.1 灰度成本观测 · 默认开（开销几乎为零；
+            无 usage_metadata 的 mock LLM 会得到 TokenUsage()=零）
+    """
     if graph is None:
         graph = build_main_graph()
 
@@ -63,9 +73,10 @@ async def run_case(
         "configurable": {"thread_id": initial["conversation_id"]},
     }
 
+    callbacks: list[Any] = []
     handler = get_callback_handler()
     if handler is not None:
-        config["callbacks"] = [handler]
+        callbacks.append(handler)
         # 给 LangFuse trace 加业务标签便于过滤
         config.setdefault("metadata", {}).update(
             {
@@ -74,6 +85,14 @@ async def run_case(
                 "harness_run_id": str(uuid.uuid4()),
             }
         )
+
+    token_tracker: TokenTracker | None = None
+    if track_tokens:
+        token_tracker = TokenTracker()
+        callbacks.append(token_tracker)
+
+    if callbacks:
+        config["callbacks"] = callbacks
 
     t0 = time.perf_counter()
     try:
@@ -94,6 +113,7 @@ async def run_case(
             final_state=_normalize_state(final_state),
             elapsed_ms=elapsed_ms,
             error=err_str,
+            token_usage=token_tracker.to_usage() if token_tracker else TokenUsage(),
         )
     except Exception as exc:  # noqa: BLE001
         elapsed_ms = int((time.perf_counter() - t0) * 1000)
@@ -103,6 +123,7 @@ async def run_case(
             final_state={},
             elapsed_ms=elapsed_ms,
             error=f"{type(exc).__name__}: {exc}",
+            token_usage=token_tracker.to_usage() if token_tracker else TokenUsage(),
         )
 
 

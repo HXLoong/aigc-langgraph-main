@@ -23,6 +23,7 @@ from typing import Any
 
 from harness.differ import FieldDiff, is_pass
 from harness.runner import RunResult
+from harness.token_tracker import TokenUsage, aggregate as aggregate_token_usage
 
 
 #: case source → PASS 阈值（grill-with-docs 2026-05-10 第 4 决策）
@@ -205,6 +206,11 @@ def summarize(
         if not is_pass(d):
             fail_by_category[r.case.category] += 1
 
+    # F4.1 灰度成本观测：聚合 token 使用
+    token_total = aggregate_token_usage(
+        [r.token_usage for r, _ in results if r.token_usage]
+    )
+
     return {
         "total": total,
         "passed": passed,
@@ -212,6 +218,7 @@ def summarize(
         "pass_rate": (passed / total) if total else 0.0,
         "by_category": dict(by_category),
         "fail_by_category": dict(fail_by_category),
+        "token_usage": token_total.model_dump(),
     }
 
 
@@ -336,6 +343,37 @@ def render_markdown(
     lines.append(f"- FAIL: {s['failed']}")
     lines.append(f"- 通过率: {s['pass_rate']:.1%}")
     lines.append("")
+
+    # F4.1 灰度成本观测：token 使用段（即使为 0 也输出，方便确认 tracker 工作）
+    tu = s.get("token_usage") or {}
+    if tu.get("call_count") or tu.get("total_tokens"):
+        lines.append("## LLM token 使用（F4.1 灰度成本观测）")
+        lines.append("")
+        lines.append(
+            f"- LLM 调用次数: {tu.get('call_count', 0)}"
+        )
+        lines.append(
+            f"- prompt tokens: {tu.get('prompt_tokens', 0):,}"
+        )
+        lines.append(
+            f"- completion tokens: {tu.get('completion_tokens', 0):,}"
+        )
+        lines.append(
+            f"- 合计: {tu.get('total_tokens', 0):,}"
+        )
+        by_model = tu.get("by_model") or {}
+        if by_model:
+            lines.append("")
+            lines.append("| 模型 | prompt | completion | 合计 |")
+            lines.append("|---|---|---|---|")
+            for model in sorted(by_model):
+                counts = by_model[model]
+                pt = counts.get("prompt", 0)
+                ct = counts.get("completion", 0)
+                lines.append(
+                    f"| `{model}` | {pt:,} | {ct:,} | {pt + ct:,} |"
+                )
+        lines.append("")
 
     if s["fail_by_category"]:
         lines.append("## 各 category 失败数（Top 5）")
