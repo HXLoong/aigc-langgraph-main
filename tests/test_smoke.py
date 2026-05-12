@@ -86,8 +86,10 @@ async def test_main_graph_e2e_swap_keyword(
     assert final.get("product_type") == "swap"
     assert final.get("intent") == "place_order_request"
     intent_route_entries = [e for e in final["trace"] if e.node == "intent_route"]
+    # E3.4 trace 增强：decision 格式从 "rule:keyword→swap" 改为 "rule:keyword[kw:互换]→swap"
     assert any(
-        e.decision == "rule:keyword→swap" for e in intent_route_entries
+        e.decision.startswith("rule:keyword[") and e.decision.endswith("→swap")
+        for e in intent_route_entries
     )
     # 验证 swap.place_order 真节点写入了 place_params
     assert final.get("place_params", {}).get("expected_action") == "place"
