@@ -147,21 +147,43 @@ scrape_configs:
 
 ---
 
-## 5. 告警接入（C1.6 #55 实施细节）
+## 5. 告警接入（C1.6 已实现）
 
-`/metrics` 暴露指标后，C1.6 任务负责接告警目标到客户企微告警群。
+`/metrics` 暴露指标后，C1.6（#55 / PR 待 merge）评估器按 ADR 0017 阈值周期评估并推企微告警群。
 
-**ADR 0017 量化退出门告警阈值**：
+**ADR 0017 量化退出门告警阈值（已实现 3 个，2 个 TODO）**：
 
-| 告警 | 触发条件 | 严重级 |
-|---|---|---|
-| HTTP 5xx 暴增 | 5xx 率 ≥ 1% 持续 5 分钟 | P0 |
-| Cascade fail 持续触发 | `fallback_total{reason="cascade_fail"}` 率 ≥ 5% 持续 10 分钟 | P1 |
-| LLM 失败率高 | `llm_total{status!="ok"}` 率 ≥ 10% 持续 5 分钟 | P1 |
-| HITL 长挂起 | 单会话 HITL 状态 ≥ 30 分钟未恢复 | P2 |
-| P95 延迟退化 | P95 ≥ M2 baseline × 1.5 持续 10 分钟 | P1 |
+| 告警 | 触发条件 | 严重级 | 实现状态 |
+|---|---|---|---|
+| HTTP 5xx 暴增 | 5xx 率 ≥ 1% 持续 5 分钟 | P0 | ⚠️ 阈值代码已写，5xx 计数依赖 nginx 日志或 HTTP 中间件接入（TODO） |
+| Cascade fail 持续触发 | `fallback_total{reason="cascade_fail"}` 率 ≥ 5% 持续 10 分钟 | P1 | ✅ 完整实现 |
+| LLM 失败率高 | `llm_total{status!="ok"}` 率 ≥ 10% 持续 5 分钟 | P1 | ✅ 完整实现 |
+| HITL 长挂起 | 单会话 HITL ≥ 30 分钟未恢复 | P2 | 🔲 TODO：需 LangFuse trace 查询能力，与本期 cron 模型不匹配 |
+| P95 延迟退化 | P95 ≥ M2 baseline × 1.5 持续 10 分钟 | P1 | 🔲 TODO：需 baseline 在线持久化 |
 
-告警实现路径详见 C1.6 (#55) 任务。
+### 5.1 部署方式
+
+cron 每分钟拉 `/metrics` → 评估 → 推企微：
+
+```cron
+# /etc/cron.d/otc-agent-alerts
+* * * * * otc-agent cd /opt/otc-agent && python scripts/run_alerts.py >> /var/log/otc-agent-alerts.log 2>&1
+```
+
+环境变量：
+
+- `OTC_AGENT_URL`：应用 base URL（默认 `http://localhost:8000`）
+- `WECHAT_ALERT_WEBHOOK_URL`：企微告警群 webhook（不配则只打印日志不推送）
+- `ALERT_STATE_FILE`：状态持久化路径（默认 `/tmp/otc_agent_alert_state.json`，跨调用记忆 firing 状态防轰炸）
+
+### 5.2 状态机设计
+
+每个告警是状态机：未触发 → (越线持续 N 分钟) → firing → (恢复) → 未触发。**只在状态转换时发消息**：
+
+- "fire" 信号：未触发 → firing 切换瞬间
+- "recover" 信号：firing → 未触发 切换瞬间
+
+避免连续越线时每分钟轰炸告警群。
 
 ---
 
