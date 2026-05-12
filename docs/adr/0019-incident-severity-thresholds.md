@@ -38,8 +38,11 @@
 | `cascade_fail_high` | P1 | fallback{reason=cascade_fail} 率 ≥ 5% | 10 分钟 | 15 分钟介入 |
 | `llm_failure_high` | P1 | llm_total{status≠ok} 率 ≥ 10% | 5 分钟 | 15 分钟介入 |
 | `non_canary_traffic` | P0 | is_canary=false 计数 ≥ 1 | 即时（0 秒） | 立即回切 Webhook |
+| `p95_latency_degraded` | P1 | P95 端到端延迟 ≥ 12600ms（M2 baseline 4200ms × 3） | 10 分钟 | 15 分钟介入 |
 
 `non_canary_traffic` 是 G5.1 金丝雀切流期特有——任何非白名单 roomId 进入 LangGraph 都视为企微管理员误操作，必须立即截断。
+
+`p95_latency_degraded` baseline 可通过 `M2_BASELINE_P95_MS` env 调整（PR #103）；M3 真后端测得新数据后由运维更新本表对应的 ms 值。
 
 ### 2. 人工升级判定（runbook 侧）
 
@@ -121,7 +124,7 @@ HITL 卡片渲染到企微但没收到回复，2 个解释：
 3. 改 `docs/on-call-runbook.md` §3 严重等级表
 4. 改 `docs/m3-f4.0-oncall-drill.md` Scene 2 故障注入预期（如阈值影响演练）
 
-四处不同步 = 上线事故。CI 应加 lint 检查（**FUTURE**）。
+四处不同步 = 上线事故。CI lint 已实现：`python scripts/check_alert_threshold_consistency.py`（PR #106），接入 `.github/workflows/ci.yml`，任一不一致 → CI fail。
 
 ## 替代方案
 
@@ -160,7 +163,9 @@ HITL 卡片渲染到企微但没收到回复，2 个解释：
 - `docs/on-call-runbook.md` §3/§4/§9 引用从 "ADR 0017" 改为 "ADR 0019"（本 PR 同步）
 - alerts.py 添加注释行引用本 ADR（**FUTURE**，下个 alerts 改动顺带）
 - M3 真后端跑稳后用真实数据重测 baseline，必要时 amendment 本 ADR
-- CI lint：检测 4 处文档同步（FUTURE，技术债跟进）
+- CI lint：检测 3 处阈值同步（alerts.py / ADR 0019 §1 / runbook §3）✅ PR #106
+  · `scripts/check_alert_threshold_consistency.py`（25 个测试 + CI workflow step）
+  · 第 4 处 m3-f4.0-oncall-drill.md Scene 2 演练阈值是文本叙述（"P95 ≥ baseline × 3"等），不在自动 lint 范围；人工修订即可
 
 ## 关联
 

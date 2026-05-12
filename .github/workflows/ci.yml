@@ -35,6 +35,11 @@ jobs:
         # M1 重写期允许有类型错误（旧代码已删，新代码逐步补）
         run: mypy app/ || echo "::warning::mypy issues (allowed during M1)"
 
+      - name: ADR 0019 阈值一致性 (alerts.py ↔ ADR 0019 ↔ runbook)
+        # PR #102 / #103 / #104 / #106：3 处阈值同步是 F4 切流硬约束，
+        # 任一不一致 → 此步骤 fail，详见 docs/adr/0019-incident-severity-thresholds.md §5
+        run: python scripts/check_alert_threshold_consistency.py
+
       - name: Run tests
         run: |
           if [ -d tests ] && [ -n "$(find tests -name 'test_*.py' -type f 2>/dev/null)" ]; then
