@@ -16,6 +16,7 @@ from app.graph.state import AgentState, TraceEntry
 from app.llm.clients import get_qwen_thinking
 from app.prompts import load_prompt
 from app.subgraphs.close.models import ConfirmCloseParams
+from app.subgraphs.option.backend import call_option_backend
 
 
 def _build_user_message(state: AgentState) -> str:
@@ -48,11 +49,22 @@ async def close_confirm_close(state: AgentState) -> dict[str, Any]:
         ]
     )
 
+    # 真后端调用：把 confirm 列表映射为 closeOrderReqVO，按 close_order_confirm 意图
+    order_list = [
+        {"orderId": oid} for oid in result.confirmOrderNoList
+    ]
+    backend = await call_option_backend(
+        state,
+        intent="close_order_confirm",
+        order_list=order_list,
+    )
+
     return {
         "confirm": {
             "action": "close",
             "confirmOrderNoList": result.confirmOrderNoList,
         },
+        **backend,
         "trace": [
             TraceEntry(
                 node="close_confirm_close",

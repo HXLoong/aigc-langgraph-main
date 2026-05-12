@@ -14,6 +14,7 @@ from app.graph.safe_node import safe_node
 from app.graph.state import AgentState, Message, TraceEntry
 from app.llm.clients import get_qwen_thinking
 from app.prompts import load_prompt
+from app.subgraphs.swap.backend import call_swap_backend
 from app.subgraphs.swap.models import SwapQueryParams
 
 
@@ -53,10 +54,18 @@ async def swap_query_order(state: AgentState) -> dict[str, Any]:
         ]
     )
 
+    order_list = [item.model_dump() for item in result.orderList]
+    backend = await call_swap_backend(
+        state,
+        intent="query_order_status",
+        order_list=order_list,
+    )
+
     return {
         "query_filter": {
-            "orderList": [item.model_dump() for item in result.orderList],
+            "orderList": order_list,
         },
+        **backend,
         "trace": [
             TraceEntry(
                 node="swap_query_order",

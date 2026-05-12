@@ -22,6 +22,7 @@ from app.graph.safe_node import safe_node
 from app.graph.state import AgentState, Message, TraceEntry
 from app.llm.clients import get_qwen_thinking
 from app.prompts import load_prompt
+from app.subgraphs.swap.backend import call_swap_backend
 from app.subgraphs.swap.models import SwapConfirmParams
 
 
@@ -77,12 +78,26 @@ async def swap_confirm(state: AgentState) -> dict[str, Any]:
 
     intent = state.get("intent")
     action = _expected_action(intent)
+    order_list = [item.model_dump() for item in result.orderList]
+
+    # action → SwapIntentionType 映射
+    _ACTION_INTENT = {
+        "place": "confirm_order",
+        "cancel": "confirm_cancel_order",
+        "modify": "confirm_modify_order",
+    }
+    backend = await call_swap_backend(
+        state,
+        intent=_ACTION_INTENT.get(action, "confirm_order"),
+        order_list=order_list,
+    )
 
     return {
         "confirm": {
             "action": action,
-            "orderList": [item.model_dump() for item in result.orderList],
+            "orderList": order_list,
         },
+        **backend,
         "trace": [
             TraceEntry(
                 node="swap_confirm",

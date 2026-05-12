@@ -15,6 +15,7 @@ from app.graph.state import AgentState, TraceEntry
 from app.llm.clients import get_qwen_thinking
 from app.prompts import load_prompt
 from app.subgraphs.close.models import ConfirmCancelParams
+from app.subgraphs.option.backend import call_option_backend
 
 
 def _build_user_message(state: AgentState) -> str:
@@ -40,11 +41,19 @@ async def close_confirm_cancel(state: AgentState) -> dict[str, Any]:
         ]
     )
 
+    order_list = [{"orderId": oid} for oid in result.confirmCancelOrderNoList]
+    backend = await call_option_backend(
+        state,
+        intent="close_order_cancel_confirm",
+        order_list=order_list,
+    )
+
     return {
         "confirm": {
             "action": "cancel_close",
             "confirmCancelOrderNoList": result.confirmCancelOrderNoList,
         },
+        **backend,
         "trace": [
             TraceEntry(
                 node="close_confirm_cancel",
