@@ -231,6 +231,7 @@ METRIC_INTENT_LATENCY = "otc_agent_intent_latency_ms"
 METRIC_FALLBACK_TOTAL = "otc_agent_fallback_total"
 METRIC_HITL_TOTAL = "otc_agent_hitl_total"
 METRIC_LLM_TOTAL = "otc_agent_llm_total"
+METRIC_LLM_TOKENS = "otc_agent_llm_tokens_total"  # C1.7 成本监控（按模型 + 方向 prompt/completion）
 
 
 def emit_node_completed(node: str, status: str = "ok", elapsed_ms: int | None = None) -> None:
@@ -269,6 +270,33 @@ def emit_llm_call(model: str, status: str) -> None:
     get_collector().inc_counter(METRIC_LLM_TOTAL, {"model": model, "status": status})
 
 
+def emit_llm_tokens(
+    model: str,
+    prompt_tokens: int,
+    completion_tokens: int,
+    node: str | None = None,
+) -> None:
+    """LLM 调用结束后记录消耗的 token 数（C1.7 成本监控）。
+
+    Args:
+        model: 模型名，如 deepseek-v4-pro / qwen3-30b-a3b
+        prompt_tokens: 输入消耗
+        completion_tokens: 输出消耗
+        node: 调用节点（可选，便于按节点拆成本）
+    """
+    if prompt_tokens < 0 or completion_tokens < 0:
+        logger.warning("emit_llm_tokens: negative token count ignored")
+        return
+    labels_prompt = {"model": model, "direction": "prompt"}
+    labels_completion = {"model": model, "direction": "completion"}
+    if node:
+        labels_prompt["node"] = node
+        labels_completion["node"] = node
+    coll = get_collector()
+    coll.inc_counter(METRIC_LLM_TOKENS, labels_prompt, value=prompt_tokens)
+    coll.inc_counter(METRIC_LLM_TOKENS, labels_completion, value=completion_tokens)
+
+
 # ============================================================
 # 计时上下文（用于细粒度延迟测量）
 # ============================================================
@@ -303,10 +331,12 @@ __all__ = [
     "emit_fallback",
     "emit_hitl",
     "emit_llm_call",
+    "emit_llm_tokens",
     "get_collector",
     "METRIC_NODE_TOTAL",
     "METRIC_INTENT_LATENCY",
     "METRIC_FALLBACK_TOTAL",
     "METRIC_HITL_TOTAL",
     "METRIC_LLM_TOTAL",
+    "METRIC_LLM_TOKENS",
 ]

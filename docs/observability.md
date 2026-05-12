@@ -83,6 +83,21 @@ LLM 调用计数。
 - LLM 失败率 = `status != "ok"` / 总数
 - **ADR 0017 阈值**：LLM 失败率 < 10% 持续 5 分钟 触发 P1
 
+### 2.6 `otc_agent_llm_tokens_total{model, direction, node?}` — Counter（C1.7 #56）
+
+LLM token 累计消耗。每次 LLM 调用结束后由业务代码 emit。
+
+| label | 取值 |
+|---|---|
+| `model` | 与 `otc_agent_llm_total` 同（模型名）|
+| `direction` | `prompt`（输入 token）/ `completion`（输出 token）|
+| `node` | 可选，调用节点名（如 `swap.intent`），便于成本按节点拆 |
+
+**衍生指标**：
+- 日 token 累计 = 该指标 24h 增量
+- 模型成本 = tokens × 单价（见 §6）
+- 节点成本占比 = 按 `node` 标签聚合
+
 ---
 
 ## 3. `/metrics` Endpoint
@@ -150,15 +165,67 @@ scrape_configs:
 
 ---
 
-## 6. 成本监控（C1.7 #56）
+## 6. 成本监控（C1.7 已实现）
 
-`otc_agent_llm_total{model,status}` 已记录每次 LLM 调用，C1.7 会补充：
+C1.7（#56 / PR 待 merge）通过两件事支持成本监控：
 
-- Token 累计（按 LangFuse trace 字段聚合，本地暂不记 token）
-- 按 model / 按 node 拆分（用 LangFuse trace 的 input/output token 字段）
-- 异常成本增长告警（日 token 增长 > 30%）
+1. **新增指标** `otc_agent_llm_tokens_total{model, direction, node?}` 见 §2.6
+2. **日报脚本** `scripts/llm_cost_report.py` cron 每日跑一次
 
-实现路径详见 C1.7 (#56) 任务。
+### 6.1 日报脚本流程
+
+```cron
+# /etc/cron.d/otc-agent-cost
+0 8 * * * otc-agent cd /opt/otc-agent && python scripts/llm_cost_report.py >> /var/log/otc-agent-cost.log 2>&1
+```
+
+工作流：
+1. 拉 `/metrics` 解析 token 数据
+2. 按 model / direction / node 聚合
+3. 估算成本（默认价格表 + `LLM_PRICE_PER_M_TOKENS_JSON` env 覆盖）
+4. 与昨天报表对比，**日同比 > 30% 推告警**
+5. 报表归档到 `LLM_COST_REPORT_DIR`（默认 `/var/lib/otc-agent/cost-reports/`）
+
+### 6.2 默认价格表（2026-05 公开定价，USD/百万 token）
+
+| 模型 | prompt | completion |
+|---|---|---|
+| `deepseek-v4-pro` | $0.50 | $1.50 |
+| `deepseek-chat` | $0.14 | $0.28 |
+| `qwen3-30b-a3b` | $0.30 | $0.90 |
+| `qwen-max-latest` | $2.00 | $6.00 |
+| `qwen-vl-max-latest` | $3.00 | $9.00 |
+
+**现场实际计费以客户合同为准**。通过 env 覆盖：
+
+```bash
+export LLM_PRICE_PER_M_TOKENS_JSON='{"deepseek-v4-pro":{"prompt":0.4,"completion":1.2}}'
+```
+
+### 6.3 异常告警
+
+日同比增长 > 30% 触发告警（推 `WECHAT_ALERT_WEBHOOK_URL`）。可能原因：
+- 业务量增长（OK 但需关注）
+- 调试漏关 trace
+- Cascade fail 循环 → 同一 prompt 反复触发 LLM
+
+### 6.4 token 数据采集（业务代码集成）
+
+业务节点调用 LLM 完成后需 emit：
+
+```python
+from app.observability.metrics import emit_llm_tokens
+
+# 示例：LangChain callback 中拿到 response.usage_metadata
+emit_llm_tokens(
+    model="deepseek-v4-pro",
+    prompt_tokens=usage.prompt_tokens,
+    completion_tokens=usage.completion_tokens,
+    node="swap.intent",  # 可选，便于按节点拆成本
+)
+```
+
+**TODO**：当前 emit 需业务代码手工调；后续可挂到 LangChain 全局 callback handler 自动采集。
 
 ---
 
