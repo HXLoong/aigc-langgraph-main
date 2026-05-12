@@ -1,4 +1,8 @@
-# 故障排查
+# 故障排查（开发期 Q&A）
+
+> **生产故障**请走结构化 SOP：[`docs/troubleshooting-sop.md`](./troubleshooting-sop.md)
+> **值班响应**请走：[`docs/on-call-runbook.md`](./on-call-runbook.md)
+> 本文档是**开发期通用 Q&A**——快速查"我遇到这个错误怎么办"，含历史经验沉淀。
 
 ## 启动类问题
 

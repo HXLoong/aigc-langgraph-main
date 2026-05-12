@@ -15,6 +15,7 @@ from collections.abc import Awaitable, Callable
 from typing import Any
 
 from app.graph.state import AgentState, ErrorInfo, TraceEntry
+from app.observability.metrics import emit_node_completed
 
 logger = logging.getLogger(__name__)
 
@@ -49,11 +50,17 @@ def safe_node(fn: NodeFn) -> NodeFn:
                     TraceEntry(node=node_name, elapsed_ms=elapsed_ms)
                 )
 
+            # C1.5 监控埋点：节点完成成功
+            emit_node_completed(node=node_name, status="ok", elapsed_ms=elapsed_ms)
+
             return update
 
         except Exception as exc:  # noqa: BLE001 - safe_node 本就是兜底
             elapsed_ms = int((time.perf_counter() - t0) * 1000)
             logger.exception("node=%s error=%s", node_name, exc)
+
+            # C1.5 监控埋点：节点抛异常（cascade fail 源头）
+            emit_node_completed(node=node_name, status="error", elapsed_ms=elapsed_ms)
 
             return {
                 "error": ErrorInfo(

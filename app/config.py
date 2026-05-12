@@ -42,6 +42,10 @@ class Settings(BaseSettings):
     securities_instrument_url: str = ""
     securities_instrument_key: str = ""
 
+    # === 真实环境测试账号（D2.* probe / 阶段 2 联调用，不进生产路径）===
+    eval_room_id: str = ""
+    eval_user_id: str = ""
+
     # 标的池 MySQL（直连查询）
     ticker_mysql_host: str = "172.16.8.27"
     ticker_mysql_port: int = 3306

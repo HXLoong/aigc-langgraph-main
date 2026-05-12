@@ -26,6 +26,7 @@ MANIFEST
 .env
 .env.*
 !.env.example
+!.env.customer.template
 .venv/
 venv/
 env/
@@ -123,6 +124,8 @@ secrets/
 .claude/scheduled_tasks.lock
 .claude/*.lock
 .claude/cache/
+.claude/settings.local.json
 
 .VSCodeCounter/
 .harness-runs/
+.mcp.json

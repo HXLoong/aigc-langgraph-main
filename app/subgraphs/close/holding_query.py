@@ -21,6 +21,7 @@ from app.graph.state import AgentState, TraceEntry
 from app.llm.clients import get_qwen_thinking
 from app.prompts import load_prompt
 from app.subgraphs.close.models import HoldingQueryParams
+from app.subgraphs.option.backend import call_option_backend
 
 
 def _build_user_message(state: AgentState) -> str:
@@ -59,8 +60,17 @@ async def close_holding_query(state: AgentState) -> dict[str, Any]:
         f" trades={len(result.internalTradeIdList)}"
     )
 
+    # close_order_query 是 read 类语义（持仓查询），用 LLM 提取的过滤条件作为 orderList
+    # 占位（真后端按 closeOrderReqVO 字段解析）。空列表也合法 —— 表示查询所有。
+    backend = await call_option_backend(
+        state,
+        intent="close_order_query",
+        order_list=[],
+    )
+
     return {
         "close_params": result.model_dump(),
+        **backend,
         "trace": [
             TraceEntry(
                 node="close_holding_query",

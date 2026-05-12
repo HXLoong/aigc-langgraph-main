@@ -105,11 +105,15 @@ async def call_endpoint(
 
 
 def _normalize_dify(dify_resp: dict) -> dict:
-    """从 Dify 工作流响应中提取 product_type / intent / api_code。
+    """从 Dify 工作流响应中提取完整 outputs（F4.1 字段级 diff）。
 
     Dify 标准响应：{data: {outputs: {...}, status: "succeeded"}}
-    工作流的 outputs 是字典，约定包含 product_type / intent 字段。
-    如果你的 Dify 工作流输出字段名不同，按需调整这里。
+
+    F4.1 增强：除 product_type / intent / api_code 外，也提取业务对象字段：
+    - tickers（标的解析结果）
+    - place_params / cancel_params / confirm / query_filter / close_params
+    - ticker_hitl_candidates（HITL 卡片）
+    - reply_text（最终回复）
     """
     body = dify_resp.get("body") or {}
     outputs = (body.get("data") or {}).get("outputs") or {}
@@ -122,26 +126,110 @@ def _normalize_dify(dify_resp: dict) -> dict:
         "product_type": outputs.get("product_type") or outputs.get("productType"),
         "intent": outputs.get("intent"),
         "api_code": outputs.get("api_code") or outputs.get("apiCode"),
+        "tickers": outputs.get("tickers") or [],
+        "place_params": outputs.get("place_params") or outputs.get("placeParams") or {},
+        "cancel_params": outputs.get("cancel_params") or outputs.get("cancelParams") or {},
+        "confirm": outputs.get("confirm") or {},
+        "query_filter": outputs.get("query_filter") or outputs.get("queryFilter") or {},
+        "close_params": outputs.get("close_params") or outputs.get("closeParams") or {},
+        "ticker_hitl_candidates": outputs.get("ticker_hitl_candidates")
+        or outputs.get("tickerHitlCandidates")
+        or [],
+        "reply_text": outputs.get("reply_text") or outputs.get("replyText"),
     }
 
 
 def _normalize_langgraph(lg_resp: dict) -> dict:
-    """LangGraph 响应是 Dify 协议（ADR 0001 D3 完全模拟 Dify Workflow Run API）。
-
-    与 `_normalize_dify` 解析逻辑一致，只是来源端不同。
-    """
+    """LangGraph 响应是 Dify 协议（ADR 0001 D3 完全模拟 Dify Workflow Run API）。"""
     return _normalize_dify(lg_resp)
 
 
-def compare(lg_resp: dict, dify_resp: dict) -> tuple[bool, dict]:
-    """对比两侧的归一化字段。"""
+# F4.1 字段级 diff 配置：随机字段默认忽略（订单号 / UUID / 时间戳 / 延迟敏感字段）
+DEFAULT_IGNORED_PATHS = frozenset(
+    {
+        # 订单号在两侧独立生成（H-/OPT-/CO- prefix 后是 timestamp + random）
+        "*.orderId",
+        "*.orderNo",
+        "*.workflow_run_id",
+        "*.task_id",
+        "*.id",
+        # 时间戳
+        "*.created_at",
+        "*.finished_at",
+        "*.timestamp",
+        # reply_text 是渲染层，按 ADR 0017 不强 diff（业务方按业务对象 review）
+        "reply_text",
+    }
+)
+
+
+def _flatten(obj, prefix: str = "") -> dict[str, object]:
+    """把嵌套 dict / list 摊平为 path → value 字典。
+
+    用于业务对象字段级 diff：
+    - {"orderList": [{"qty": 100}]} → {"orderList[0].qty": 100}
+    """
+    out: dict[str, object] = {}
+    if isinstance(obj, dict):
+        for k, v in obj.items():
+            path = f"{prefix}.{k}" if prefix else k
+            out.update(_flatten(v, path))
+    elif isinstance(obj, list):
+        for i, v in enumerate(obj):
+            out.update(_flatten(v, f"{prefix}[{i}]"))
+    else:
+        out[prefix] = obj
+    return out
+
+
+def _path_matches(path: str, ignore_patterns: set[str]) -> bool:
+    """检查 path 是否被忽略 pattern 匹配。`*.foo` 匹配任何后缀为 .foo 的 path。"""
+    for pat in ignore_patterns:
+        if pat == path:
+            return True
+        if pat.startswith("*."):
+            suffix = pat[1:]  # 包含开头的点
+            if path.endswith(suffix):
+                return True
+            # *.foo 也匹配纯 foo（无前缀）
+            if path == pat[2:]:
+                return True
+    return False
+
+
+def compare(
+    lg_resp: dict,
+    dify_resp: dict,
+    ignore_paths: set[str] | None = None,
+) -> tuple[bool, dict]:
+    """对比两侧归一化输出，按字段路径产出 diff。
+
+    Args:
+        lg_resp / dify_resp: HTTP 响应原始字典
+        ignore_paths: 忽略的字段 path 集合（支持 `*.foo` 通配后缀）。
+            None 表示用 DEFAULT_IGNORED_PATHS。
+
+    Returns:
+        (is_equal, diffs)：is_equal = True 表示无 diff；
+        diffs 是 path → {langgraph, dify} 字典。
+    """
+    ignore = ignore_paths if ignore_paths is not None else set(DEFAULT_IGNORED_PATHS)
+
     lg_norm = _normalize_langgraph(lg_resp)
     dify_norm = _normalize_dify(dify_resp)
 
+    lg_flat = _flatten(lg_norm)
+    dify_flat = _flatten(dify_norm)
+
     diffs: dict = {}
-    for key in ("product_type", "intent", "api_code"):
-        if lg_norm.get(key) != dify_norm.get(key):
-            diffs[key] = {"langgraph": lg_norm.get(key), "dify": dify_norm.get(key)}
+    all_paths = set(lg_flat.keys()) | set(dify_flat.keys())
+    for path in sorted(all_paths):
+        if _path_matches(path, ignore):
+            continue
+        lg_val = lg_flat.get(path)
+        dify_val = dify_flat.get(path)
+        if lg_val != dify_val:
+            diffs[path] = {"langgraph": lg_val, "dify": dify_val}
 
     return (not diffs, diffs)
 
@@ -205,6 +293,68 @@ def write_to_file(path: Path, results: list[CompareResult], summary: Summary) ->
         json.dump(data, f, ensure_ascii=False, indent=2)
 
 
+def write_markdown_report(
+    path: Path, results: list[CompareResult], summary: Summary
+) -> None:
+    """生成 F4.1 每日 diff 报告（业务方 review 用）。
+
+    格式：摘要 + 按字段 diff Top-K + 失败 case 列表（含 raw_content）。
+    """
+    diff_rate = summary.diff / max(summary.total, 1)
+    lines: list[str] = []
+    lines.append(f"# Shadow 对比报告 · {datetime.now().strftime('%Y-%m-%d %H:%M')}")
+    lines.append("")
+    lines.append("## 摘要")
+    lines.append("")
+    lines.append("| 指标 | 值 |")
+    lines.append("|---|---|")
+    lines.append(f"| 总 case | {summary.total} |")
+    lines.append(f"| 等价 (equal) | {summary.equal} |")
+    lines.append(f"| 差异 (diff) | {summary.diff} |")
+    lines.append(f"| 错误 (error) | {summary.error} |")
+    lines.append(f"| **差异率** | **{diff_rate:.1%}** |")
+    lines.append("")
+
+    if summary.by_field:
+        lines.append("## 差异字段分布（Top 10）")
+        lines.append("")
+        lines.append("| 字段路径 | 差异 case 数 |")
+        lines.append("|---|---|")
+        top = sorted(summary.by_field.items(), key=lambda kv: -kv[1])[:10]
+        for fld, n in top:
+            lines.append(f"| `{fld}` | {n} |")
+        lines.append("")
+
+    diffed = [r for r in results if not r.is_equal and not r.error]
+    if diffed:
+        lines.append(f"## 差异 case（共 {len(diffed)} 条，展示前 20）")
+        lines.append("")
+        for r in diffed[:20]:
+            lines.append(f"### `{r.case_id}` · {r.raw_content[:60]}")
+            lines.append("")
+            lines.append("| 字段 | LangGraph | Dify |")
+            lines.append("|---|---|---|")
+            for fld, vals in list(r.diffs.items())[:8]:
+                lg_v = str(vals.get("langgraph"))[:60]
+                df_v = str(vals.get("dify"))[:60]
+                lines.append(f"| `{fld}` | `{lg_v}` | `{df_v}` |")
+            lines.append("")
+        if len(diffed) > 20:
+            lines.append(f"_…还有 {len(diffed) - 20} 条差异 case 未展示，详见 JSON 报告_")
+            lines.append("")
+
+    errored = [r for r in results if r.error]
+    if errored:
+        lines.append(f"## 错误 case（共 {len(errored)} 条）")
+        lines.append("")
+        for r in errored[:10]:
+            lines.append(f"- `{r.case_id}` · {r.raw_content[:50]}: {r.error[:100]}")
+        lines.append("")
+
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text("\n".join(lines), encoding="utf-8")
+
+
 # ============================================================
 # 主流程
 # ============================================================
@@ -260,7 +410,8 @@ async def main(args: argparse.Namespace) -> int:
                 call_endpoint(client, args.dify, shared_payload, headers=dify_headers),
             )
 
-            is_equal, diffs = compare(lg_resp, dify_resp)
+            ignore_paths = set(DEFAULT_IGNORED_PATHS) | set(args.ignore_field or [])
+            is_equal, diffs = compare(lg_resp, dify_resp, ignore_paths=ignore_paths)
             err = ""
             if lg_resp.get("status", -1) < 0:
                 err = f"langgraph_unreachable: {lg_resp['body'].get('error', '')}"
@@ -313,6 +464,11 @@ async def main(args: argparse.Namespace) -> int:
         write_to_file(args.output, results, summary)
         print(f"\n详细结果已写入 {args.output}")
 
+    # F4.1 markdown 每日报告
+    if args.markdown_report and not args.dry_run:
+        write_markdown_report(args.markdown_report, results, summary)
+        print(f"Markdown 报告已写入 {args.markdown_report}")
+
     # 汇总
     print(f"\n{'='*60}")
     print(f"  Total: {summary.total}  Equal: {summary.equal}  Diff: {summary.diff}  Error: {summary.error}")
@@ -338,6 +494,10 @@ if __name__ == "__main__":
     parser.add_argument("--dify-api-key", default="", help="Dify App API Key（写入 Authorization 头）")
     parser.add_argument("--sample", required=True, type=Path, help="JSONL 样本文件路径")
     parser.add_argument("--output", type=Path, default=None, help="JSON 输出路径（明细 + 汇总）")
+    parser.add_argument("--markdown-report", type=Path, default=None,
+                        help="F4.1 每日 diff 报告 markdown 路径（业务方 review 用）")
+    parser.add_argument("--ignore-field", action="append", default=[],
+                        help="忽略字段 path（可多次指定，支持 *.foo 通配）")
     parser.add_argument("--max-cases", type=int, default=0, help="只跑前 N 条（0 = 全跑）")
     parser.add_argument("--dry-run", action="store_true", help="不写文件、不写 MySQL")
     parser.add_argument("--fail-threshold", type=float, default=None,

@@ -12,8 +12,14 @@
 _Avoid_: 混沌工程（Chaos Engineering，不同概念）、可观测性平台（trace 只是 harness 的副产品之一）、单元测试（粒度更粗，跑端到端）
 
 **Golden case**：
-一条 harness 输入：用户原话 + 期望输出（intent / product_type / 关键参数）。集合（golden set）是 harness 的回归基线。
-_Avoid_: 测试用例（太泛）、fixture（语义不准）
+一条 harness 输入：用户原话 + 期望输出（intent / product_type / 关键参数）。集合（golden set）是 harness 的回归基线。按来源分四个桶：
+- **B 桶**：业务方手写种子——主动构造、意图均衡的典型句式，expected 字段由业务方直接填写
+- **C 桶**：LLM paraphrase——以 B 桶为种子做对抗式改写（换说法 / 边界 case），业务方 review pass 后合入
+- **D 桶**：客户历史真实输入——从企微群抄录的原话，反映真实分布（含拼写错误、缩写、上下文依赖）；expected 字段**必须由业务方人工标注后才能合入** golden.jsonl，是持续增长的集合（M3 联调后持续补充，不是一次性交付物）
+- ~~A 桶~~：历史企微日志抽样（暂搁，M3 shadow 阶段的线上流量会自然替代）
+
+各桶退出门 PASS 率：B ≥ 90% / C ≥ 80% / D 无硬性阈值（样本量少，作为补充参考）。
+_Avoid_: 测试用例（太泛）、fixture（语义不准）、anchor case（请用"B 桶代表性 case"代替）
 
 **Shadow compare（双跑对照）**：
 同一条 case 同时打到 Dify 和 LangGraph，diff 输出找差异。是 Dify→LangGraph 迁移期的**辅助参考工具**，**不是合格性判定的标准**——Dify 自己有"标的不准 / 参数 bug / 评估缺失"三大已知缺陷（迁移动机），不能作为 ground truth。LangGraph 是否合格的判定标准是 **Golden case PASS 率**，不是 shadow diff 率。Shadow 的实际用途是 M4 金丝雀切流前给业务方提供"Dify 与 LangGraph 在生产真实流量上的输出对比"作为决策辅助。
@@ -57,6 +63,14 @@ _Avoid_: 三个独立的"确认下单 / 确认撤单 / 确认改单"节点（已
 golden case 中，正确的 product_type 或 intent 只有在已知多轮对话历史时才能确定的一类 case（如裸"撤单"/"确认下单"）。
 M2 阶段 harness runner 每条 case 独立跑，不注入 history_messages，这些 case 的失败属于**已知局限**，不作为 pass rate 的改进目标。M3 阶段靠真实流量 case 自然替代。
 _Avoid_: 把这类失败归因于"节点 bug"（根因是测试环境缺少对话历史，不是节点逻辑错误）
+
+**紧急回滚（Emergency Rollback）**：
+出现 P0 故障时，把企微群消息重新路由回 Dify 的操作。实现方式：企微管理员修改机器人的 Webhook 地址（LangGraph endpoint → Dify endpoint），约 1 分钟生效，无需 SSH 或重启服务。
+_Avoid_: "流量层切换"（暗示需要 Nginx/网关操作）、"应用层特性开关"（需要重启）、"客户 IT 操作"（企微管理员即可完成）
+
+**金丝雀切流（Canary Rollout）**：
+M4 阶段按**群组**逐步把企微机器人 Webhook 从 Dify 切到 LangGraph 的过程（选项 B：按群组分配）。分三阶段：测试群（1-2 个）→ 更多测试群（~30% 群组）→ 全量。每阶段由企微管理员改 Webhook，不需要代码部署。故障影响范围天然隔离到已切群组。
+_Avoid_: "按流量百分比分发"（企微不支持单群内流量分流）、"按会话 ID 哈希"（需要分流代理层，不必要）
 
 ## Flagged ambiguities
 

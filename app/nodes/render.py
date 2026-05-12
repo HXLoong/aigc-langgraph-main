@@ -12,6 +12,7 @@ from typing import Any
 
 from app.graph.safe_node import safe_node
 from app.graph.state import AgentState
+from app.observability.metrics import emit_fallback, emit_hitl
 
 # ============================================================
 # 话术常量
@@ -24,6 +25,7 @@ _ZERO_HIT_TMPL = (
     "（例如：证券代码如 600519.SH，或完整名称如 贵州茅台）"
 )
 _ERROR_REPLY = "我没完全理解你的意思，能换种说法重新告诉我吗？"
+_UNREACHABLE_REPLY = "系统暂时不可用，请稍后再试。若紧急需求请联系交易员或运营。"
 
 
 def _format_hitl_card(hitl_candidates: list[dict[str, Any]]) -> str:
@@ -78,8 +80,9 @@ async def render(state: AgentState) -> dict[str, Any]:
 
     # 2. HITL 消歧（互换下单/改单除外——此时已有 orderList，应优先展示订单参数）
     hitl = state.get("ticker_hitl_candidates")
-    place = state.get("place_params") or {}
-    if hitl and place.get("expected_action") not in ("place", "modify"):
+    if hitl:
+        emit_hitl(node="render")
+        emit_fallback(reason="hitl_card")
         return {"reply_text": _format_hitl_card(hitl)}
 
     # 3. 互换下单/改单（含 HITL 场景：orderList 已提取，优先展示参数）
@@ -119,7 +122,9 @@ async def render(state: AgentState) -> dict[str, Any]:
 
     # 4. 0 命中（标的为空且无有效订单参数）
     tickers = state.get("tickers")
-    if tickers is not None and len(tickers) == 0 and place:
+    place_params = state.get("place_params")
+    if tickers is not None and len(tickers) == 0 and place_params is not None:
+        emit_fallback(reason="zero_match")
         raw_text = (state.get("raw_text") or "")[:40]
         return {"reply_text": _ZERO_HIT_TMPL.format(raw_text=raw_text)}
 
@@ -127,12 +132,21 @@ async def render(state: AgentState) -> dict[str, Any]:
     if state.get("api_result"):
         return {"reply_text": str(state["api_result"])}
 
-    # 6. error → 通用兜底
-    if state.get("error") is not None:
+    # 5. error → 区分不可达 vs 一般 cascade fail
+    err = state.get("error")
+    if err is not None:
+        err_type = err.type if hasattr(err, "type") else (
+            err.get("type") if isinstance(err, dict) else None
+        )
+        if err_type == "BackendUnreachableError":
+            emit_fallback(reason="backend_unreachable")
+            return {"reply_text": _UNREACHABLE_REPLY}
+        emit_fallback(reason="cascade_fail")
         return {"reply_text": _ERROR_REPLY}
 
     # 7. product_type unknown
     if state.get("product_type") == "unknown":
+        emit_fallback(reason="unknown_product_type")
         return {"reply_text": "未识别到有效指令，请明确指定产品（期权/互换）和操作（询价/下单/撤单等）。"}
 
     # 8. 从结构化参数生成业务回复

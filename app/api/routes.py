@@ -190,7 +190,4 @@ def _state_to_outputs(state: AgentState) -> dict[str, Any]:
     return outputs
 
 
-@router.get("/health")
-async def health() -> dict[str, str]:
-    """健康检查。"""
-    return {"status": "ok", "service": "otc-agent-langgraph"}
+# /health 与 /ready 已迁至 app/api/health.py（D2.6 / Issue #72）

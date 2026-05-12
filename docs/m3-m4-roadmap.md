@@ -49,26 +49,28 @@
                                                       阶段6 二期持续优化
 ```
 
-**关键路径总长**：阶段 0 (1d) + 阶段 1 (2w) + 阶段 2 (1w) + 阶段 3 (1w) + 阶段 4 (2w) + 阶段 5 (4w 稳定观察) ≈ **6-7 周到全量上线**，再加 4 周稳定期。
+**关键路径总长**：阶段 0 ✅ + 阶段 1 (2-3w) + 阶段 2 (1w) + 阶段 3 (1w) + 阶段 4 (3.5-4.5w) + 阶段 5 (4w 稳定观察) ≈ **8.5-10 周到全量上线**，再加 4 周稳定期。
 
 ---
 
-## 3. 阶段 0 · 立即解阻塞（0.5–1 天，串行，最高优先级）
+## 3. 阶段 0 · 立即解阻塞 ✅ 已完成（2026-05-12）
 
-| 任务 ID | 内容 | Owner | 依赖 | 估时 |
-|---|---|---|---|---|
-| **A0.1** | 诊断 PR #41 CI failure，拉 GitHub Actions log，定位是 pytest / ruff / mypy 哪条挂；修绿 | 资深开发（#25） | 无 | 0.5d |
-| **A0.2** | PR #41 review + merge → main | Tony + #25 | A0.1 | 0.5d |
+| 任务 ID | 内容 | Owner | 状态 |
+|---|---|---|---|
+| **A0.1** | PR #41 冲突解决（render.py + extract_inquiry.py） | Tony | ✅ 完成 |
+| **A0.2** | PR #41 merge → main | Tony | ✅ 完成（merged 2026-05-12T00:39:45Z） |
 
-**理由**：M2 还没合入 main。所有后续工作都基于 ticker 子图 + 92.5% pass rate 的 golden 集。不合则后续开发分散在 feature/m2-ticker-subgraph 上，merge 越来越难。
+**退出门**：✅ PR #41 merged，main 已包含完整 M2（24 节点 + 92.5% PASS）。
 
-**退出门**：PR #41 全绿 + merged + main 标签 v0.2.0-m2-complete。
+**阶段 1 从 2026-05-12 正式开始。**
 
 ---
 
-## 4. 阶段 1 · 数据集与代码补全（1–2 周，5 条子线并行）
+## 4. 阶段 1 · 数据集与代码补全（**2-3 周**，5 条子线并行）
 
 阶段 0 完成后立即铺开。子线之间无依赖。
+
+> **2026-05-12 修订**：原估时 1-2 周低估了 #25 的串行工作量。经 grill 复盘，C1.5-C1.8 可观测性 + C1.13/C1.14 部署脚本下放给 #26（#25 带教 review），让 #25 专注高门槛任务（C1.3 intent v2 / C1.4 prompt 瘦身 / 子线 1D/1E 中需深度业务理解的任务 + 阶段 2 真后端联调）。整体估时调整为 2-3 周更现实。
 
 ### 4.1 子线 1A · 数据集体系建设
 
@@ -86,45 +88,48 @@
 | 任务 ID | 内容 | Owner | 估时 |
 |---|---|---|---|
 | **C1.1** | **#29 swap.hand_to_share** P2 节点 + 5 条 golden | #26 | 2-3d |
-| **C1.2** | swap 其余 P2：`place_order_image` / `place_order_excel` / `image_recognize` / `cancel_extract` | #26 | 4-5d |
-| **C1.3** | swap.intent v2 prompt 调优 — 修 g008 短指令路由（M2 known limitation，PASS 22%） | #25 | 1-2d |
-| **C1.4** | swap.place_order 133K token prompt 瘦身（响应延迟治理） | #25 | 2d |
+| ~~**C1.2**~~ | ~~swap 其余 P2：`place_order_image` / `place_order_excel` / `image_recognize`~~ → **延后到 G5.4**（理由：图片/Excel 输入是边角场景，企微真实流量以文字为主；M2 骨架已建好，延后不影响主链路上线） | #26（推迟） | — |
+| ~~**C1.3**~~ | ~~swap.intent v2 prompt 调优~~ → **跳过**（2026-05-12 Tony 决定）：intent_v2.md + 5% 灰度已实现；真 LLM 验证 PASS 率留 M4 shadow 承接，不阻塞阶段 2。Issue #48 closed | — | — |
+| ~~**C1.4**~~ | ~~swap.place_order 瘦身~~ → **跳过**（2026-05-12 Tony 决定）：DeepSeek-v4-pro 128K context 已大幅缓解 40K prompt 截断风险，延迟非联调硬阻塞。Issue #49 closed | — | — |
+| ~~**C1.19**~~ | ~~DeepSeek-v4-pro smoke 验证~~ → **跳过**（2026-05-12 Tony 决定）：Qwen 全套测试已通过，且 DeepSeek-v4-pro 与 Qwen 都走 OpenAI 兼容接口，行为差异风险评估为低；若现场发现差异，进入阶段 4 灰度期由 F4.6 错例修复承接 | — | — |
 
 ### 4.3 子线 1C · 可观测性 + 监控基础设施（上线前必须）
 
 | 任务 ID | 内容 | Owner | 估时 |
 |---|---|---|---|
-| **C1.5** | 业务指标埋点：每意图响应延迟 / PASS 率 / 节点错误 / fallback 触发率 / HITL 触发率 | #25 | 2d |
-| **C1.6** | 告警：5xx crash / cascade fail / HITL 长时间未恢复 / LLM 失败率阈值 | #25 | 1-2d |
-| **C1.7** | LLM 成本监控：tokens 累计 / 按模型 / 按节点拆分 | #25 | 1d |
-| **C1.8** | trace 完整性：节点级 trace 写 MySQL `node_trace` 表 + LangFuse 双写 | #25 | 1d |
+| **C1.5** | 业务指标埋点：每意图响应延迟 / PASS 率 / 节点错误 / fallback 触发率 / HITL 触发率 | #26（#25 review） | 2d |
+| **C1.6** | 告警：5xx crash / cascade fail / HITL 长时间未恢复 / LLM 失败率阈值 | #26（#25 review） | 1-2d |
+| **C1.7** | LLM 成本监控：tokens 累计 / 按模型 / 按节点拆分 | #26（#25 review） | 1d |
+| **C1.8** | trace 完整性：节点级 trace 写 MySQL `node_trace` 表 + LangFuse 双写 | #26（#25 review） | 1d |
 
 ### 4.4 子线 1D · 客户现场部署能力
 
 | 任务 ID | 内容 | Owner | 估时 |
 |---|---|---|---|
-| **C1.9** | 客户环境调研报告 `docs/customer-env-assessment.md`（含 MySQL 版本、Java 后端可达性、模型 API 网络）| Tony + #25 | 1d |
-| **C1.10** | 大模型方案确认：客户能否访问云 Qwen / 是否走本地化模型 | Tony | 已确认（按 Tony 同步） |
+| **C1.9** | ✅ 客户环境调研报告**模板** `docs/customer-env-assessment.md` 已交付（2026-05-12，14 节 + 风险登记 + 联系人通讯录）→ Tony 在客户现场填实际值；阶段 2 D2.1 启动前必须完成填写 | Tony + #25 | 1d 模板 + 0.5d 现场填写 |
+| **C1.10** | 大模型方案（**已确认**，2026-05-12）：<br>· 开发测试：Qwen（`qwen3-30B-A3B` standard / `qwen-max-latest` thinking / `qwen-vl-max-latest` VL，沿用 ADR 0010）<br>· 客户现场：**外部云 DeepSeek-v4-pro**（OpenAI 兼容接口，可访问公网）<br>· **开发期 API key 我方提供，现场 key 由 Tony 与客户对齐**（在 C1.9 客户环境调研中收集）<br>· 上下文窗口：DeepSeek-v4-pro 假设 ≥ 128K（Tony 待最终确认）<br>· 见 ADR 0018 | Tony | ✅ 主要决策已落 |
 | **C1.11** | LangFuse self-hosted 客户内网部署：docker-compose + image 拉取 + 数据持久化 | #25 | 1-2d |
 | **C1.12** | `.env.customer.template` + 私有化部署文档 `docs/deploy/customer-private.md` | #25 | 1d |
-| **C1.13** | 一键部署脚本 `scripts/deploy-customer.sh`（含 smoke 自检） | #25 | 1-2d |
-| **C1.14** | 离线依赖包：pip wheel 全集 + 必要 docker image 离线包（应对客户网段封禁） | #25 | 1d |
+| **C1.13** | 一键部署脚本 `scripts/deploy-customer.sh`（含 smoke 自检） | #26（#25 review） | 1-2d |
+| **C1.14** | 离线依赖包：pip wheel 全集 + 必要 docker image 离线包（应对客户网段封禁） | #26（#25 review） | 1d |
 
 ### 4.5 子线 1E · 流程与文档（与 1C 配套）
 
 | 任务 ID | 内容 | Owner | 估时 |
 |---|---|---|---|
 | **C1.15** | 故障 SOP：cascade fail / LLM 超时 / 后端 5xx / Checkpointer 失败 各自诊断步骤 | #25 | 1d |
-| **C1.16** | on-call runbook：值班流程 / 回滚步骤 / 紧急切回 Dify 开关（流量层）| Tony + 客户 IT | 1d |
+| **C1.16** | ✅ on-call runbook **草稿** v0.1 已交付（`docs/on-call-runbook.md`，2026-05-12）：含严重等级 / 监控告警源 / 5 类故障 playbook / 紧急回滚 5 分钟流程 / F4.0 演练计划 / 联系人模板（**真实演练**在 F4.0） | Tony | 1d |
 | **C1.17** | 业务方培训资料补完：以 `docs/training/` 为底，加客户场景示例 | Tony + PM | 1-2d |
-| **C1.18** | 安全审计：API key 轮转流程 / secret 不入 git 校验 / 接入审计日志 | #25 | 1d |
+| ~~**C1.18**~~ | ~~安全审计草稿~~ → **跳过**（2026-05-12 Tony 决定）：安全审计放到后续独立加强阶段（非 M3 主路径），D2.7 同步跳过 | — | — |
 
 **阶段 1 退出门**：
 
-- 数据集 B+C 桶按桶达标 + 集成集 ≥ 10 条 + D 桶初版 ≥ 30 条
-- swap P2 节点至少 hand_to_share 完成（其余可推到上线后）
-- 监控 + 告警 + on-call runbook 联通跑通一次 dry run
-- 客户私有化部署包能在客户测试环境一键起来 + smoke 自检通过
+- 数据集 B+C 桶按桶达标 + 集成集 ≥ 10 条 + D 桶初版 ≥ 30 条 — **B1.* 由 PM 承接（仍在跟踪）**
+- swap P2 节点至少 hand_to_share 完成（其余可推到上线后） — ✅ **C1.1 完成**（commit `efe3082`）
+- 监控 + 告警 + on-call runbook 联通跑通一次 dry run — ✅ **C1.5/C1.6/C1.7/C1.8 完成**（PR #67/#68/#69/#70）；on-call runbook 草稿 v0.1 已交付
+- 客户私有化部署包能在客户测试环境一键起来 + smoke 自检通过 — **C1.13/C1.14 已跳过**（按 Tony 2026-05-12 决定快速进入阶段 2 真后端联调）
+
+**阶段 1 状态（2026-05-12）**：核心代码侧任务（C1.1 + C1.5-8）已完成；C1.3/C1.4 跳过；C1.13-18 全部跳过让位给阶段 2 真后端联调。B1.* 数据集任务由 PM + 实习生 #27 并行推进，不阻塞阶段 2 启动。
 
 ---
 
@@ -135,13 +140,19 @@
 | 任务 ID | 内容 | Owner | 依赖 | 估时 |
 |---|---|---|---|---|
 | **D2.1** | 三个 client（Option/Swap/Ticker）切真后端 endpoint，按 ADR 0016 灰度：**read endpoints 先 → write endpoints sandbox 后** | #25 | C1.9 | 1d |
-| **D2.2** | 真后端字段对齐验证：用 1 条 anchor case 跑通，对照 `docs/api-contracts/java-backend.md` 校验每字段 | #25 | D2.1 | 1-2d |
+| **D2.2** | 真后端字段对齐验证：用 B 桶中 1 条代表性 golden case 跑通，对照 `docs/api-contracts/java-backend.md` 校验每字段 | #25 | D2.1 | 1-2d |
 | **D2.3** | 不可达降级：真后端 timeout / 5xx → 自动退到 mock 或友好 fallback | #25 | D2.1 | 1d |
 | **D2.4** | ticker 真 GOATS 联调：`securities-instrument/select` 真接 + 多命中分差 / HITL 信号真实回路 | #25 | D2.1 | 1-2d |
 | **D2.5** | InferCode 动态 prompt 片段（ADR 0013）真后端拉取：`counterparty/info/instrument-inference-prompt` + 5 分钟 LRU 缓存 + 不可达降级 | #25 | D2.1 | 1d |
 | **D2.6** | 健康检查端点 `/health` + `/ready`（依赖 MySQL / LangFuse / Qwen / Java 后端 4 个上游） | #25 | C1.5 | 0.5d |
+| ~~**D2.7**~~ | ~~完整安全审计~~ → **跳过**（2026-05-12 Tony 决定，与 C1.18 同步取消） | — | — | — |
 
-**阶段 2 退出门**：anchor 全集真后端跑通无 5xx；不可达降级路径单测 + 演练通过；健康检查在客户测试环境绿。
+**阶段 2 退出门**：B 桶代表性 case 真后端跑通后——
+- HTTP 5xx（服务端崩溃）= 0
+- HTTP 4xx（框架层拒绝，如认证/参数解析失败）= 0
+- HTTP 200 + `CommonResult.code != 0`（业务拒绝，如标的不在池、风控拦截）→ 必须有对应 fallback 回复，不 cascade fail
+- 不可达降级路径单测 + 演练通过
+- 健康检查 `/health` `/ready` 在客户测试环境绿
 
 ---
 
@@ -151,10 +162,10 @@
 
 | 任务 ID | 内容 | Owner | 依赖 | 估时 |
 |---|---|---|---|---|
-| **E3.1** | 真后端跑 anchor 全集（B 桶）→ PASS ≥ M3.1 mock baseline | #25 | D2.* | 0.5d |
+| **E3.1** | 真后端跑 B 桶全集 → PASS ≥ M2 mock baseline（92.5%） | #25 | D2.* | 0.5d |
 | **E3.2** | 真后端跑 business_seed 全集 → 按桶达标（B ≥ 90% / C ≥ 80%） | #25 | D2.* | 0.5d |
 | **E3.3** | 真后端跑客户真实输入样本（D 桶初版） | #25 | B1.5 | 0.5d |
-| **E3.4** | 错例聚类 + 根因分析：按 `suspected_node` 归类，找共性 bug → 修补迭代 | #25 + #26 | E3.1-3 | 2-3d |
+| **E3.4** | 错例聚类 + 根因分析：按 `suspected_node` 归类，找共性 bug → **只修 P0/P1**（cascade fail / 5xx / 严重参数错 / 标的错），**P2 错例**（个别意图识别错、低频边界 case）延后到 F4.6 金丝雀期修 | #25 + #26 | E3.1-3 | 2-3d |
 | **E3.5** | 现场 smoke checklist `docs/customer-smoke-checklist.md` 落地 + 与客户 Java 后端联调（真实下单/撤单/查询） | Tony + #25 | E3.4 | 1-2d |
 | **E3.6** | 业务方培训 + 业务方现场 sign-off | Tony + PM | E3.5 | 1d |
 
@@ -166,7 +177,9 @@
 
 ---
 
-## 7. 阶段 4 · M4 金丝雀 + Shadow 双跑（2 周）
+## 7. 阶段 4 · M4 金丝雀 + Shadow 双跑（**3.5-4.5 周**）
+
+> **2026-05-12 修订**：原估时 2 周低估。Shadow 1-2 周（串行先跑）+ 切流三阶段（1+1+3+7 ≈ 2.4 周）= 17-22 个工作日 ≈ 3.5-4.5 周。
 
 依赖：阶段 3 sign-off。
 
@@ -174,25 +187,44 @@
 
 | 任务 ID | 内容 | Owner | 估时 |
 |---|---|---|---|
-| **F4.1** | Shadow 双跑：生产真实流量同时投 LangGraph + Dify，按 LangFuse trace 字段级 diff | #25 | 持续 |
-| **F4.2** | 流量切流 10%：观察 24h，监控指标对比 Dify baseline | Tony + #25 | 1d 准备 + 1d 观察 |
-| **F4.3** | 流量切流 30%：观察 2-3 天 | Tony + #25 | 3d |
-| **F4.4** | 流量切流 100%：观察 1 周，记录回归 | Tony + #25 | 7d |
-| **F4.5** | 回滚预案：业务参数差异 > 阈值 → 自动切回 Dify 开关 + on-call 流程 | #25 + 客户 IT | 1-2d 准备 |
-| **F4.6** | 灰度期错例修复 + 提示词热更（用 LangFuse Prompt 在线版本切换） | #25 | 持续 |
+| **F4.0** | **on-call runbook 演练**（先于 F4.1）：与企微管理员真实执行一次紧急回切（生产环境，5 分钟内完成），根据演练中的实际失败模式更新 runbook（**C1.16 草稿落地**） | Tony + 企微管理员 | 0.5d |
+| **F4.1** | **Shadow 双跑**（F4.0 完成后立即开始，**先于** F4.2 金丝雀）：生产真实流量同时投 LangGraph + Dify，按 LangFuse trace 字段级 diff。基础窗口 **5 个工作日**，硬性上限 **10 个工作日**；每日 diff 报告业务方 review；第 5 天若出现新分歧模式延期 2-3 天，连续 2 天无新模式 = 结束；退出标准：业务方书面确认"无阻塞性分歧"（阻塞性定义同 ADR 0017 严重错例）。LLM 成本透明告知客户（5 天约 $200，10 天约 $400） | #25 + 业务方 reviewer | 5-10d |
+| **F4.2** | 金丝雀第一阶段：指定 1-2 个测试群改用 LangGraph Webhook，观察 24h，监控指标对比 Dify baseline | Tony（企微管理员） | 1d 准备 + 1d 观察 |
+| **F4.3** | 金丝雀第二阶段：扩大到更多测试群（约 30% 群组），观察 2-3 天 | Tony（企微管理员） | 3d |
+| **F4.4** | 全量切换：所有群改用 LangGraph Webhook，观察 1 周，记录回归 | Tony（企微管理员） | 7d |
+| **F4.5** | 回滚预案：业务参数差异 > 阈值 → 企微管理员改 Webhook 地址切回 Dify（~1 分钟），on-call 同步通知 | Tony + 企微管理员 | 1-2d 准备 |
+| **F4.6** | 灰度期错例修复 + 提示词热更（用 LangFuse Prompt 在线版本切换）；**承接 E3.4 延后的 P2 错例** | #25 | 持续 |
 | **F4.7** | 业务方最终验收 + Dify 下线决策 | Tony + PM | 1-2d |
 
-**阶段 4 退出门**：100% 流量稳定 7 天无 P0；业务方书面同意 Dify 下线。
+**阶段 4 退出门（量化版，2026-05-12 grill 落定，详见 ADR 0017）**：
+
+100% 流量稳定 **7 天观察期**内，全部满足：
+
+| 指标 | 阈值 | 测量方式 |
+|---|---|---|
+| HTTP 5xx 率 | < 0.1% | 7 天总请求数中 5xx 响应占比 |
+| Cascade fail 率（用户看到 "我没完全理解..." 兜底） | < 1% | LangFuse trace 中 fallback render 节点触发次数 / 总请求数 |
+| P95 回复延迟 | ≤ M2 baseline × 1.5 | 监控埋点上报的 P95 值（**不用平均，chat UX 看尾部延迟**） |
+| 业务方人工标注的"严重错例" | ≤ 5 次 | 业务方在企微群直接反馈或周报反馈的标的错/参数错/意图大类错 |
+
+**业务方书面同意 Dify 下线**：邮件回复"收到 LangGraph 上线运行 7 天报告，同意 Dify 工作流下线" + 业务方负责人姓名/职位；不接受口头/电话/微信文字（无法追溯），不需要走合同 amendment（太重）。
 
 ---
 
 ## 8. 阶段 5 · 全量上线后稳定期（4 周观察）
 
-| 任务 ID | 内容 | Owner |
-|---|---|---|
-| **G5.1** | 持续监控 + 月度回归报告（金融场景必须） | #25 |
-| **G5.2** | Dify 工作流停用 + 资产归档（保留 `dify/yaml/` 作为历史） | Tony |
-| **G5.3** | 客户最终验收报告 + 项目阶段性总结 | Tony + PM |
+| 任务 ID | 内容 | Owner | 触发时机 |
+|---|---|---|---|
+| **G5.1** | 持续监控 + 月度回归报告（金融场景必须） | #25 | 持续 |
+| **G5.2a** | **Dify 半下线**：企微管理员禁用（不删除）Dify Webhook，运行最终 `python dify/sync.py`，`git tag dify-final-snapshot` 标记 yaml/ 末态；通知业务方书面知会（回切 SLA = 1 分钟） | Tony + #25 | **全量上线后第 2 周** |
+| **G5.2b** | **Dify 完全下线**：企微管理员删除 Webhook 配置，关停 Dify 实例（客户 IT 配合），`git tag dify-retired-{date}` | Tony + 客户 IT | **全量上线后第 4 周（观察期满后）** |
+| **G5.3** | 客户最终验收报告 + 项目阶段性总结 | Tony + PM | G5.2b 完成后 |
+| **G5.4** | 补齐 P2 节点：`swap.place_order_image` / `swap.image_recognize` / `swap.place_order_excel`（**从 C1.2 延后承接**，每节点 ≥ 2 条 golden） | #26 | 全量上线稳定后启动，不阻塞 G5.2/G5.3 |
+
+**G5.2a 与 G5.2b 分两步走理由**：
+- 第 2 周：系统已稳定 2 周，业务方有信心；但观察期还有 2 周，保留回切能力作"保险"
+- 第 4 周：观察期满，可断后路；避免"同意下线 → 立刻关停 → 第二天出问题没法回切"的尴尬
+- `dify-final-snapshot` git tag 永久留存 Dify 最后状态，保证未来对比/审计可追溯
 
 ---
 
@@ -231,7 +263,7 @@ A0.1 PR#41 修绿  →  A0.2 merge
                     H6.* 二期持续优化
 ```
 
-**关键路径**：A0 (1d) → 阶段 1 (10d) → 阶段 2 (5d) → 阶段 3 (5d) → 阶段 4 (10d) ≈ **31 个工作日 ≈ 6-7 周**到全量上线。
+**关键路径**：阶段 0 ✅ → 阶段 1 (10-15d) → 阶段 2 (5d) → 阶段 3 (5d) → 阶段 4 (17-22d) ≈ **40-50 个工作日 ≈ 8.5-10 周**到全量上线。
 
 ---
 
@@ -240,10 +272,10 @@ A0.1 PR#41 修绿  →  A0.2 merge
 | 角色 | 主要任务 | GitHub Issue |
 |---|---|---|
 | **Tony**（主导 + 商务） | 客户协调 / #33 Epic / 现场 smoke / sign-off / 灰度决策 | #33 / #34 |
-| **资深开发 #25** | PR #41 修绿 / 真后端联调 / 部署能力 / 可观测性 / 阶段 2-4 主推手 | #25 + #29 #30 reviewer |
-| **一年经验 #26** | swap P2 节点（hand_to_share 等）+ ticker fixture 扩充 | #29 |
+| **资深开发 #25** | ~~C1.3 intent v2~~ / ~~C1.4 prompt 瘦身~~ → 跳过 / C1.9-12/15-18 深度业务任务 / 阶段 2 真后端联调主推手 / 阶段 3-4 主推手 / 带教 review #26 的可观测性 + 部署脚本 | #25 + #29 #30 reviewer |
+| **一年经验 #26** | swap P2 节点（hand_to_share + image/excel/recognize）+ ticker fixture 扩充 + 可观测性埋点 C1.5-8 + 部署脚本 C1.13-14（在 #25 带教下完成） | #29 |
 | **实习生 #27** | B/C 桶 golden 扩充 + 数据质量审计脚本 + cascade 单测 | #31 #32 |
-| **PM** | 业务方 case 收集 / D 桶真实样本协调 / 业务方培训组织 | — |
+| **PM** | 业务方 case 收集 / D 桶真实样本协调 / 业务方培训组织 / sign-off 流程协调 | **#PM-1**（数据集协调）+ **#PM-2**（培训 + sign-off） · Tony 代为开 issue 并在每周同步会上代为更新状态 |
 
 ---
 
@@ -260,13 +292,15 @@ A0.1 PR#41 修绿  →  A0.2 merge
 | ~~LangFuse 数据合规上云~~ | self-hosted 现场部署，按 C1.11 推进 |
 | ~~AI 数据标注员角色~~ | 二期 #37 启动前对齐，不阻塞一期 |
 
-**当前唯一活跃 P0 阻塞**：PR #41 CI failure（阶段 0 A0.1）。
+**当前活跃 P0 阻塞**：无。阶段 0 已完成，阶段 1 五条子线从 2026-05-12 并行铺开。
 
 ---
 
 ## 13. 关联资源
 
 - **ADR 0016** · M3 范围重定义（工程联调闭环，非 Shadow 双跑）
+- **ADR 0017** · M4 金丝雀退出门量化指标
+- **ADR 0018** · 开发期 Qwen / 客户现场 DeepSeek-v4-pro 双模型分立
 - **ADR 0001 D9** · 原 M3 阶段定义（被 ADR 0016 修订）
 - **ADR 0008 / 0013 / 0014** · ticker / 动态 prompt / LangFuse 后端
 - **`docs/m2-real-llm-final-report.md`** · M2 92.5% pass rate baseline
@@ -275,12 +309,48 @@ A0.1 PR#41 修绿  →  A0.2 merge
 
 ---
 
-## 14. 下一步行动
+## 14. 下一步行动（2026-05-12 更新）
 
-讨论本路线图后请明确：
+阶段 0 ✅ 已完成（PR #41 已合入 main，含 M2 完整 24 节点 + 92.5% PASS）。
 
-1. **认领**：每个任务 ID 旁 Owner 列若不准，团队 review 时改
-2. **排期**：阶段 1 五条子线建议从同一天起跑；估时若不准，团队对齐后改
-3. **review 节奏**：建议每周一同步会，按本文档表格逐条过状态
+阶段 1 ✅ 核心任务完成：C1.1（hand_to_share）+ C1.5-8（可观测性 4 件套）已合入 main；C1.3/C1.4/C1.13-18 跳过；剩余 B1.* 数据集任务由 PM + #27 并行承接，不阻塞阶段 2。
 
-立即可启动：**A0.1 PR #41 CI failure 修绿**（不需要等讨论结果）。
+**本周（5/12-5/16）· 阶段 2 启动 · 真后端联调：**
+
+依赖客户现场访问到位，**D2.* 任务全部进入 GitHub Issue 跟踪**：
+
+1. 优先执行不依赖真后端的子任务（可在 mock 环境完成代码侧）：
+   - **D2.6** 健康检查端点 `/health` + `/ready`（仅依赖 C1.5 已完成 → 可立即起）
+   - **D2.3** 不可达降级单测 + 友好 fallback（可用 mock 触发 timeout/5xx 验证）
+2. 等客户现场环境到位后启动：
+   - **D2.1** 三个 client 切真后端 endpoint（依赖 C1.9 调研报告填写完成）
+   - **D2.2** 真后端字段对齐验证（依赖 D2.1）
+   - **D2.4** ticker 真 GOATS 联调（依赖 D2.1）
+   - **D2.5** InferCode 动态 prompt 真后端拉取（依赖 D2.1）
+
+**下周（5/19-5/23）· 阶段 2 中段同步：**
+- 阶段 2 退出门 dry-run：HTTP 5xx = 0 / 4xx = 0 / `CommonResult.code != 0` 有 fallback / 不可达降级演练通过
+- B1.* 数据集进度同步（PM owner）
+
+**两周后（约 5/26）· 阶段 2 退出门 + 阶段 3 真后端 Golden 回归启动**
+
+**长期 review 节奏**：每周一同步会，按本文档表格逐条过状态。所有任务 ID 加进 GitHub Project（按阶段分列）。
+
+**已落地的 grill 决策清单**（2026-05-12）：
+- 阶段 0 完成（PR #41 合入），无活跃 P0 阻塞
+- `cancel_extract` M2 已内联实现，从 C1.2 删除
+- "anchor case" 词汇废弃，统一用"B 桶代表性 case"
+- B/C/D 桶定义写入 CONTEXT.md
+- 紧急回滚 = 改企微 Webhook 地址（选项 C，写入 CONTEXT.md）
+- 金丝雀切流 = 按群组分配（选项 B，写入 CONTEXT.md）
+- swap.place_order prompt 瘦身授权写入 ADR 0001 D5
+- 阶段 2 退出门按 Java `CommonResult` envelope 三层精准化
+- 阶段 1 估时调整 2-3 周，#26 接可观测性 + 部署脚本带教任务
+- 阶段 3 E3.4 错例只修 P0/P1，P2 延后到 F4.6
+- 阶段 4 退出门量化（ADR 0017）
+- 阶段 5 G5.2 拆分为半下线 + 完全下线两步走
+- Shadow F4.1 窗口 5-10 天硬性上限
+- C1.16 拆分为草稿 + 真实演练（新增 F4.0）
+- ~~C1.18 / C1.19 / D2.7~~ → **跳过**（Tony 2026-05-12 决定，快速联调优先；安全审计 + DeepSeek smoke 放到后续独立加强阶段）
+- ~~C1.3 / C1.4 / C1.13 / C1.14 / C1.15 / C1.16 / C1.17~~ → **跳过**（Tony 2026-05-12 决定）：核心代码侧 C1.1 + C1.5-8 完成后直接进入阶段 2 真后端联调；on-call runbook 草稿 v0.1 + 客户调研模板已交付，剩余流程文档与部署脚本细化推后到真后端联调过程中按需补
+- PM 角色开 #PM-1 / #PM-2 进入统一跟踪

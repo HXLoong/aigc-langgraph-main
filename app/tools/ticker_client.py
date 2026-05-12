@@ -12,7 +12,6 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from app.tools.models import CommonResult
 
-
 # ============================================================
 # Pydantic 模型
 # ============================================================
@@ -108,20 +107,28 @@ class TickerClientHttpx:
         self, req: SecuritiesInstrumentReqVO
     ) -> list[SecuritiesInstrumentRespVO]:
         """⚠️ Java 端是 GET + RequestBody（不规范但合法），要用 client.request("GET", ...) 写法。"""
+        from app.tools.exceptions import translate_httpx_errors
+
         url = f"{self._base_url}/admin-api/integration/securities-instrument/select"
         payload = req.model_dump(mode="json", exclude_none=True)
-        async with httpx.AsyncClient(timeout=self._timeout, trust_env=False) as client:
-            r = await client.request(
-                "GET", url, json=payload, headers=self._headers
-            )
+        async with (
+            translate_httpx_errors("ticker"),
+            httpx.AsyncClient(timeout=self._timeout, trust_env=False) as client,
+        ):
+            r = await client.request("GET", url, json=payload, headers=self._headers)
             r.raise_for_status()
             result = CommonResult.model_validate(r.json())
             data: Any = result.data or []
             return [SecuritiesInstrumentRespVO.model_validate(item) for item in data]
 
     async def get_inference_prompt(self) -> str:
+        from app.tools.exceptions import translate_httpx_errors
+
         url = f"{self._base_url}/admin-api/counterparty/info/instrument-inference-prompt"
-        async with httpx.AsyncClient(timeout=self._timeout, trust_env=False) as client:
+        async with (
+            translate_httpx_errors("ticker"),
+            httpx.AsyncClient(timeout=self._timeout, trust_env=False) as client,
+        ):
             r = await client.get(url, headers=self._headers)
             r.raise_for_status()
             result = CommonResult.model_validate(r.json())
@@ -130,9 +137,14 @@ class TickerClientHttpx:
     async def list_counterparty(
         self, room_id: str | None = None
     ) -> list[CounterpartyVO]:
+        from app.tools.exceptions import translate_httpx_errors
+
         url = f"{self._base_url}/admin-api/counterparty/info/list"
         params = {"roomId": room_id} if room_id else None
-        async with httpx.AsyncClient(timeout=self._timeout, trust_env=False) as client:
+        async with (
+            translate_httpx_errors("ticker"),
+            httpx.AsyncClient(timeout=self._timeout, trust_env=False) as client,
+        ):
             r = await client.get(url, params=params, headers=self._headers)
             r.raise_for_status()
             result = CommonResult.model_validate(r.json())

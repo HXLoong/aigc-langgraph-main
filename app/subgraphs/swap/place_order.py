@@ -21,6 +21,7 @@ from app.graph.safe_node import safe_node
 from app.graph.state import AgentState, Message, TraceEntry
 from app.llm.clients import get_qwen_structured
 from app.prompts import load_prompt
+from app.subgraphs.swap.backend import _with_resolved_ticker, call_swap_backend
 from app.subgraphs.swap.models import SwapPlaceOrderParams
 from app.subgraphs.ticker.resolver import resolve_ticker_full
 
@@ -89,6 +90,12 @@ async def swap_place_order(state: AgentState) -> dict[str, Any]:
     tickers = resolution.resolved
 
     action = _expected_action(params)
+    order_list = [item.model_dump() for item in params.orderList]
+    backend_order_list = [
+        _with_resolved_ticker(dict(item), tickers, idx)
+        for idx, item in enumerate(order_list)
+    ]
+
     decision = (
         f"action={action},"
         f" orders={len(params.orderList)},"
@@ -96,12 +103,20 @@ async def swap_place_order(state: AgentState) -> dict[str, Any]:
         f" hitl={len(resolution.hitl_pending)}"
     )
 
+    # 3. 调真后端 POST /admin-api/swap-order/operate
+    backend = await call_swap_backend(
+        state,
+        intent="place_order_request",
+        order_list=backend_order_list,
+    )
+
     out: dict = {
         "place_params": {
             "expected_action": action,
-            "orderList": [item.model_dump() for item in params.orderList],
+            "orderList": order_list,
         },
         "tickers": tickers,
+        **backend,
         "trace": [
             TraceEntry(
                 node="swap_place_order",

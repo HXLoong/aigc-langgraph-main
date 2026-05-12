@@ -86,6 +86,33 @@ class TestKeywordMatching:
         """g020 '我有哪些期权持仓' 必须判 option_close 不是 option（持仓优先）。"""
         assert _match_keywords("我有哪些期权持仓") == "option_close"
 
+    # ============================================================
+    # E3.4 簇 B · 裸"确认下单/撤单/平仓"歧义文档化（当前行为，业务方决策）
+    # ============================================================
+
+    def test_route_ambiguity_bare_confirm_order_to_option(self) -> None:
+        """裸"确认下单"（无订单号、无上下文）→ option（keywords.yaml 现状）。
+
+        E3.4 簇 B 76% 失败的根因：keywords.yaml option 块含"确认下单"，
+        swap 块没有这个关键词；遍历优先级遇到 option 即 break。
+
+        fixture 期望 swap 但实际命中 option，业务方待决策：
+        1. 真实客户语料中裸"确认下单"是否常见？
+        2. 若常见，路由规则需扩（如要求上下文或在 LLM 层处理歧义）
+        3. 若不常见，fixture 应改"swap 确认下单"等显式形式
+        """
+        assert _match_keywords("确认下单") == "option"
+        # "确认改单"不在 keywords.yaml 中 → 走 LLM 兜底（路由层无确定行为）
+        assert _match_keywords("确认改单") is None
+
+    def test_route_ambiguity_bare_cancel_confirm_to_option_close(self) -> None:
+        """裸"确认撤单" → option_close（keywords.yaml 现状）。
+
+        option_close 块（最高优先级）含"确认撤单"，覆盖 swap 与 option 的撤单意图。
+        与上面同样属于 E3.4 簇 B 待决策项。
+        """
+        assert _match_keywords("确认撤单") == "option_close"
+
 
 # ============================================================
 # 节点级（含第 3 层 LLM 兜底，monkeypatch 替身）
@@ -103,7 +130,11 @@ class TestIntentRouteNode:
     async def test_node_layer_2_keyword(self) -> None:
         result = await intent_route({"raw_text": "做一笔互换"})
         assert result["product_type"] == "swap"
-        assert result["trace"][0].decision == "rule:keyword→swap"
+        # E3.4 trace 增强：decision 含 hit_token (kw:互换 / re:pattern 等)
+        decision = result["trace"][0].decision
+        assert decision.startswith("rule:keyword[")
+        assert decision.endswith("→swap")
+        assert "互换" in decision
 
     @pytest.mark.asyncio
     async def test_node_layer_3_llm_fallback(
