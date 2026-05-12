@@ -7,7 +7,8 @@
 - **状态机式触发**：只在"未触发 → 触发"或"触发 → 恢复"的状态转换时发消息，
   避免每次评估都重复告警轰炸
 - **持续时长约束**：阈值需要"持续 X 分钟"才触发（不被瞬时抖动误报）
-- **HITL 长挂起特殊处理**：基于 LangFuse trace 查询（本期不实现，留 TODO）
+- **基于 delta 计算率（self-review #69 修复）**：counters 是累积值，必须取
+  与上次评估的差值，才能检测短期突发（不被历史数据稀释）
 - **降级**：webhook 推送失败 log.warn，不抛
 - 配置全部来自环境变量，便于运维调整
 
@@ -81,12 +82,20 @@ THRESHOLDS: dict[str, AlertThreshold] = {
 
 @dataclass
 class AlertState:
-    """单条告警的运行时状态。"""
+    """单条告警的运行时状态。
+
+    last_metrics + last_timestamp 用于 delta 计算（self-review #69 修复）：
+    counter 是累积值，必须与上次评估求差才能反映"最近窗口"的率，否则历史
+    数据会稀释短期突发（如长时间运行后突发 30 cascade fail 被历史数据淹没）。
+    """
 
     name: str
     is_firing: bool = False
     first_breach_at: float = 0.0  # epoch seconds；首次越线时间
     fired_at: float = 0.0  # 已发告警的时间（防短期重发）
+    # 上次评估的 metrics 累积值快照（仅用于 delta 计算）
+    last_metrics: dict[str, float] = field(default_factory=dict)
+    last_timestamp: float = 0.0  # 上次评估时刻；首次评估时为 0
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -94,6 +103,8 @@ class AlertState:
             "is_firing": self.is_firing,
             "first_breach_at": self.first_breach_at,
             "fired_at": self.fired_at,
+            "last_metrics": self.last_metrics,
+            "last_timestamp": self.last_timestamp,
         }
 
     @classmethod
@@ -103,6 +114,8 @@ class AlertState:
             is_firing=data.get("is_firing", False),
             first_breach_at=data.get("first_breach_at", 0.0),
             fired_at=data.get("fired_at", 0.0),
+            last_metrics=dict(data.get("last_metrics", {})),
+            last_timestamp=data.get("last_timestamp", 0.0),
         )
 
 
@@ -172,6 +185,12 @@ def evaluate(
 ) -> list[tuple[AlertThreshold, AlertState, str]]:
     """评估全部告警，返回需要发送的告警列表。
 
+    采用 **delta-based rate**：用当前 counter - 上次 counter 算"最近窗口"的率，
+    避免累积值被历史数据稀释。
+
+    **首次评估**（state.last_timestamp == 0）只记 snapshot，不评估告警——
+    避免冷启动时立刻拿累积值算率误报。
+
     Returns:
         list of (threshold, state, transition) tuples
         transition: "fire"（新触发）或 "recover"（已恢复）
@@ -183,7 +202,14 @@ def evaluate(
 
     for name, threshold in THRESHOLDS.items():
         state = states.setdefault(name, AlertState(name=name))
-        current_pct = _current_ratio_pct(name, ctx)
+
+        # 首次评估（or 状态文件被清空）：只记 snapshot 不评估
+        if state.last_timestamp == 0.0:
+            state.last_metrics = dict(ctx.metrics)
+            state.last_timestamp = now
+            continue
+
+        current_pct = _delta_ratio_pct(name, ctx, state)
         breach = current_pct >= threshold.threshold_pct
 
         if breach:
@@ -201,28 +227,36 @@ def evaluate(
                 out.append((threshold, state, "recover"))
             state.first_breach_at = 0.0
 
+        # 更新 snapshot 供下次评估
+        state.last_metrics = dict(ctx.metrics)
+        state.last_timestamp = now
+
     return out
 
 
-def _current_ratio_pct(name: str, ctx: AlertContext) -> float:
-    """从 metrics 计算当前告警的"率"百分比。"""
-    metrics = ctx.metrics
-    total = ctx.requests_total
+def _delta_ratio_pct(name: str, ctx: AlertContext, state: AlertState) -> float:
+    """计算当前告警在"上次评估 → 本次评估"窗口内的率（百分比）。
+
+    用 delta 而非累积值——避免历史数据稀释短期突发。
+    """
+    current = ctx.metrics
+    previous = state.last_metrics
+
+    def delta(key: str) -> float:
+        """counter 单调递增；理论上 current >= previous，应用重启会 reset
+        让 previous > current。重启场景 delta 视为 0（避免负数当 burst）。"""
+        d = current.get(key, 0) - previous.get(key, 0)
+        return max(d, 0.0)
 
     if name == "http_5xx_spike":
-        # 来自反向代理日志或 fastapi 中间件；本期暂用 cascade_fail 作为代理信号
-        # 真实部署应接 nginx access log 5xx 计数
-        # TODO: 接 nginx exporter 或自实现 HTTP 状态中间件
-        return _calc_ratio_pct(metrics.get("http_5xx", 0), total)
+        # TODO: 接 nginx exporter 或 FastAPI HTTP 中间件计数（C1.6 后续 PR）
+        return _calc_ratio_pct(delta("http_5xx"), delta("node_total"))
 
     if name == "cascade_fail_high":
-        cascade = metrics.get("fallback_cascade_fail", 0)
-        return _calc_ratio_pct(cascade, total)
+        return _calc_ratio_pct(delta("fallback_cascade_fail"), delta("node_total"))
 
     if name == "llm_failure_high":
-        llm_error = metrics.get("llm_error", 0)
-        llm_total = metrics.get("llm_total", 0)
-        return _calc_ratio_pct(llm_error, llm_total)
+        return _calc_ratio_pct(delta("llm_error"), delta("llm_total"))
 
     return 0.0
 
@@ -284,7 +318,12 @@ def format_alert_message(threshold: AlertThreshold, transition: str, ctx: AlertC
 
 
 def send_wechat_webhook(message: str, webhook_url: str) -> bool:
-    """发企微 webhook。失败返回 False 不抛。"""
+    """发企微 webhook。失败返回 False 不抛。
+
+    **安全**：异常处理只 log exception 类型，不 log exc 全文——企微 webhook
+    URL 含 secret key（`?key=SECRET`），httpx exc 默认会把完整请求 URL
+    放入 message/traceback，写入日志可能被监控/审计系统采集泄漏。
+    """
     try:
         import httpx
 
@@ -294,11 +333,16 @@ def send_wechat_webhook(message: str, webhook_url: str) -> bool:
             data = resp.json()
             if data.get("errcode") == 0:
                 return True
-            logger.warning("alerts: webhook errcode=%s msg=%s", data.get("errcode"), data.get("errmsg"))
+            # 业务错误码不含 URL，可安全 log
+            logger.warning(
+                "alerts: webhook errcode=%s msg=%s",
+                data.get("errcode"), data.get("errmsg"),
+            )
         else:
             logger.warning("alerts: webhook HTTP %s", resp.status_code)
     except Exception as exc:  # noqa: BLE001
-        logger.warning("alerts: webhook send failed: %s", exc)
+        # 只 log 异常类型，不 log exc 全文（防 URL secret 泄漏到日志）
+        logger.warning("alerts: webhook send failed: %s", type(exc).__name__)
     return False
 
 

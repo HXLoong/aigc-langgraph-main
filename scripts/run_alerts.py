@@ -47,14 +47,32 @@ logger = logging.getLogger("run_alerts")
 
 
 def fetch_metrics(url: str) -> str:
-    """拉应用 /metrics endpoint。"""
+    """拉应用 /metrics endpoint。失败返回空串（不抛）。"""
     try:
         resp = httpx.get(url, timeout=5.0)
         resp.raise_for_status()
         return resp.text
     except Exception as exc:  # noqa: BLE001
-        logger.error("fetch_metrics failed: %s", exc)
+        # 只 log 异常类型 + URL host，避免 traceback 泄漏完整 URL（与 webhook 同理）
+        logger.error("fetch_metrics failed: %s", type(exc).__name__)
         return ""
+
+
+def _send_watchdog_alert(webhook_url: str) -> None:
+    """metrics 拉取失败时发 watchdog 告警（监控失联本身也是告警事件）。
+
+    避免一直静默——/metrics 不通可能意味着应用 down 或网络问题。
+    """
+    msg = (
+        "🚨 **otc-agent 监控失联** [P1]\n\n"
+        "无法拉取应用 /metrics endpoint。\n"
+        f"时间：{time.strftime('%Y-%m-%d %H:%M:%S')}\n\n"
+        "可能原因：应用 down / 网络不通 / 健康检查未启用。\n"
+        "处置：见 on-call runbook §5.1（5xx 崩溃）。\n"
+    )
+    logger.warning("watchdog: metrics 失联")
+    if webhook_url:
+        send_wechat_webhook(msg, webhook_url)
 
 
 def main() -> int:
@@ -63,10 +81,17 @@ def main() -> int:
 
     metrics_text = fetch_metrics(f"{app_url}/metrics")
     if not metrics_text:
-        logger.warning("metrics empty, skipping alert evaluation")
+        # self-review #69 必修 #2：metrics 拉空时**不**调 evaluate
+        # 避免全 0 metrics 被误判为"业务恢复"触发虚假 recover 信号；
+        # 改为发 watchdog 告警（监控失联也是告警事件）。
+        logger.warning("metrics empty, skipping evaluation; sending watchdog alert")
+        _send_watchdog_alert(webhook_url)
         return 0
 
     metrics = parse_prometheus_metrics(metrics_text)
+
+    # node_total == 0 意味着应用刚启动还无请求（合法场景）。
+    # delta 计算下首次评估只记 snapshot，第二次评估时 delta=0 不会误触发。
     ctx = AlertContext(
         timestamp=time.time(),
         requests_total=int(metrics.get("node_total", 0)),
