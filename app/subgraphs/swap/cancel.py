@@ -18,6 +18,7 @@ from app.graph.safe_node import safe_node
 from app.graph.state import AgentState, Message, TraceEntry
 from app.llm.clients import get_qwen_thinking
 from app.prompts import load_prompt
+from app.subgraphs.swap.backend import call_swap_backend
 from app.subgraphs.swap.models import SwapCancelParams
 
 
@@ -57,10 +58,18 @@ async def swap_cancel(state: AgentState) -> dict[str, Any]:
         ]
     )
 
+    order_list = [item.model_dump() for item in result.orderList]
+    backend = await call_swap_backend(
+        state,
+        intent="cancel_order_request",
+        order_list=order_list,
+    )
+
     return {
         "cancel_params": {
-            "orderList": [item.model_dump() for item in result.orderList],
+            "orderList": order_list,
         },
+        **backend,
         "trace": [
             TraceEntry(
                 node="swap_cancel",
