@@ -25,7 +25,7 @@
 
 ### 1.1 识别信号
 
-- LangFuse 仪表盘：fallback render 节点触发率 ≥ 5% 持续 10 分钟（对齐 ADR 0017 P1 阈值）
+- LangFuse 仪表盘：fallback render 节点触发率 ≥ 5% 持续 10 分钟（对齐 ADR 0019 P1 阈值）
 - 应用日志：`safe_node` 装饰器批量记录 `state['error']` 写入
 - 业务方反馈："AI 总说听不懂"、"对话经常被打断"
 - 严重程度：P1（参考 on-call runbook §3）
@@ -93,7 +93,7 @@
 
 ### 2.1 识别信号
 
-- LangFuse 仪表盘：LLM 调用失败率 ≥ 10% 持续 5 分钟（对齐 ADR 0017 P1 阈值）
+- LangFuse 仪表盘：LLM 调用失败率 ≥ 10% 持续 5 分钟（对齐 ADR 0019 P1 阈值）
 - 应用日志：批量 `httpx.TimeoutException` / `httpx.ReadTimeout`
 - 业务方反馈："AI 半天不回我"、"消息发了没反应"
 - 严重程度：P1
@@ -316,6 +316,7 @@ mysql -e "SELECT VERSION();"  # 必须 8.0.19 ≤ v < 9.6.0
 - `docs/on-call-runbook.md` · 值班手册（决策导向）
 - `docs/TROUBLESHOOTING.md` · 开发期 Q&A
 - ADR 0009 · MySQL 版本兼容性硬约束
-- ADR 0017 · M4 量化退出门（识别信号阈值依据）
+- ADR 0019 · 故障升级阈值（识别信号阈值依据）
+- ADR 0017 · M4 量化退出门（互补：稳定结束判定）
 - `docs/api-contracts/java-backend.md` · Java 后端契约
 - `docs/deploy/customer-private.md` · 部署手册

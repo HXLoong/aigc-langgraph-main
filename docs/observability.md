@@ -1,7 +1,7 @@
 # 可观测性指标手册
 
 > **版本**：v1.0（2026-05-12）
-> **关联**：ADR 0004（trace 粒度）/ ADR 0014（LangFuse 后端）/ ADR 0017（M4 量化退出门）
+> **关联**：ADR 0004（trace 粒度）/ ADR 0014（LangFuse 后端）/ ADR 0017（M4 量化退出门）/ ADR 0019（故障升级阈值）
 > **代码**：`app/observability/metrics.py` / `app/observability/tracing.py`
 
 本文档定义 otc-agent 在生产期对外暴露的所有指标 + 查询方式 + 告警阈值依据。
@@ -81,7 +81,7 @@ LLM 调用计数。
 
 **衍生指标**：
 - LLM 失败率 = `status != "ok"` / 总数
-- **ADR 0017 阈值**：LLM 失败率 < 10% 持续 5 分钟 触发 P1
+- **ADR 0019 阈值**：LLM 失败率 ≥ 10% 持续 5 分钟 触发 P1（故障升级）
 
 ### 2.6 `otc_agent_llm_tokens_total{model, direction, node?}` — Counter（C1.7 #56）
 
@@ -149,17 +149,17 @@ scrape_configs:
 
 ## 5. 告警接入（C1.6 已实现）
 
-`/metrics` 暴露指标后，C1.6（#55 / PR 待 merge）评估器按 ADR 0017 阈值周期评估并推企微告警群。
+`/metrics` 暴露指标后，C1.6（#55 / PR 待 merge）评估器按 ADR 0019 阈值周期评估并推企微告警群。
 
-**ADR 0017 量化退出门告警阈值（已实现 3 个，2 个 TODO）**：
+**ADR 0019 故障升级告警阈值（已实现 3 个，2 个 TODO）**：
 
 | 告警 | 触发条件 | 严重级 | 实现状态 |
 |---|---|---|---|
 | HTTP 5xx 暴增 | 5xx 率 ≥ 1% 持续 5 分钟 | P0 | ⚠️ 阈值代码已写，5xx 计数依赖 nginx 日志或 HTTP 中间件接入（TODO） |
 | Cascade fail 持续触发 | `fallback_total{reason="cascade_fail"}` 率 ≥ 5% 持续 10 分钟 | P1 | ✅ 完整实现 |
 | LLM 失败率高 | `llm_total{status!="ok"}` 率 ≥ 10% 持续 5 分钟 | P1 | ✅ 完整实现 |
-| HITL 长挂起 | 单会话 HITL ≥ 30 分钟未恢复 | P2 | 🔲 TODO：需 LangFuse trace 查询能力，与本期 cron 模型不匹配 |
-| P95 延迟退化 | P95 ≥ M2 baseline × 1.5 持续 10 分钟 | P1 | 🔲 TODO：需 baseline 在线持久化 |
+| HITL 长挂起 | 单会话 HITL ≥ 30 分钟未恢复 | P1 | 🔲 TODO：需 LangFuse trace 查询能力，与本期 cron 模型不匹配 |
+| P95 延迟退化 | P95 ≥ M2 baseline × 3 持续 10 分钟 | P1 | 🔲 TODO：需 baseline 在线持久化 |
 
 ### 5.1 部署方式
 
@@ -297,7 +297,8 @@ DDL 已在 `sql/schema.sql:34`，写入路径在 `app/nodes/persist.py`（M1 占
 
 ## 关联资源
 
-- ADR 0017 · M4 量化退出门
+- ADR 0019 · 故障升级阈值（本文档告警阈值的依据）
+- ADR 0017 · M4 量化退出门（互补：稳定结束判定）
 - `app/observability/metrics.py` 实现源码
 - `app/observability/tracing.py` LangFuse 接入
 - `docs/on-call-runbook.md` §3 严重等级判定（用本文档指标）

@@ -1,7 +1,7 @@
 """业务指标埋点（C1.5 / Issue #50）。
 
 提供轻量级的内存 MetricsCollector + Prometheus 兼容输出，承载 ADR 0017
-量化退出门所需的全部核心指标：
+（M4 退出门）+ ADR 0019（故障升级）双量化阈值所需的全部核心指标：
 
 - 每意图响应延迟（P50/P95/P99）—— Histogram
 - 节点级 PASS/FAIL 率 —— Counter（labels: node, status）
@@ -15,7 +15,7 @@
 - **可观测降级**：metrics 模块自身故障不能影响业务主流程（all-try-except）
 - **Prometheus 兼容**：`/metrics` endpoint 输出标准 exposition 格式
 
-字段命名约定（与 ADR 0017 量化指标对齐）：
+字段命名约定（与 ADR 0017 + 0019 量化指标对齐）：
 - `otc_agent_node_total{node,status}` —— 节点级 counter
 - `otc_agent_intent_latency_ms{product_type,intent}` —— 延迟 histogram
 - `otc_agent_fallback_total{reason}` —— fallback render counter

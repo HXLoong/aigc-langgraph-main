@@ -34,7 +34,7 @@
 
 ## 3. 严重等级（Severity）
 
-对齐 ADR 0017 量化指标。值班工程师按下表定级，决定响应速度。
+对齐 [ADR 0019](./adr/0019-incident-severity-thresholds.md) 量化指标。值班工程师按下表定级，决定响应速度。
 
 | 级别 | 判定标准（满足任一） | 响应时间 | 处置动作 |
 |---|---|---|---|
@@ -48,7 +48,7 @@
 
 ## 4. 监控告警来源
 
-| 来源 | 监控对象 | 阈值（对齐 ADR 0017） |
+| 来源 | 监控对象 | 阈值（对齐 [ADR 0019](./adr/0019-incident-severity-thresholds.md)） |
 |---|---|---|
 | LangFuse trace 仪表盘 | 5xx 率 / cascade fail 率 / P95 延迟 / fallback render 触发率 | 见 §3 P0/P1 判定标准 |
 | 业务监控埋点（C1.5 产出） | 每意图 PASS 率 / 节点错误 / HITL 触发率 | 见 §3 P0/P1 判定标准 |
@@ -237,7 +237,8 @@
 
 ## 关联资源
 
-- **ADR 0017** · M4 金丝雀退出门量化指标（5xx/cascade/P95/严重错例阈值，本手册 §3 严重等级的依据）
+- **[ADR 0019](./adr/0019-incident-severity-thresholds.md)** · 故障升级阈值（本手册 §3-§4 严重等级 + alerts.py 阈值的依据）
+- **[ADR 0017](./adr/0017-m4-canary-quantitative-exit-gate.md)** · M4 金丝雀退出门量化指标（互补：金丝雀结束判定，不是故障升级）
 - **CONTEXT.md** · "紧急回滚"术语定义（本手册 §7 的语义来源）
 - **`docs/m3-m4-roadmap.md`** · C1.16（本草稿任务卡）/ F4.0（演练任务卡）
 - **`docs/SHADOW_COMPARE_GUIDE.md`** · Shadow 双跑工具（F4.1，与本手册无直接依赖）
