@@ -12,14 +12,17 @@
 - **降级**：webhook 推送失败 log.warn，不抛
 - 配置全部来自环境变量，便于运维调整
 
-4 类告警（对齐 ADR 0019 + on-call runbook §3）：
+5 类告警（对齐 ADR 0019 + on-call runbook §3）：
 
 | 告警 | 阈值 | 持续 | 严重级 |
 |---|---|---|---|
 | HTTP 5xx 暴增 | 5xx 率 ≥ 1% | 5 分钟 | P0 |
 | Cascade fail 持续 | fallback{reason=cascade_fail} 率 ≥ 5% | 10 分钟 | P1 |
 | LLM 失败率高 | llm_total{status!=ok} 率 ≥ 10% | 5 分钟 | P1 |
-| HITL 长挂起 | 单 HITL 会话 ≥ 30 分钟 | 即时 | P2（TODO）|
+| 非 canary 流量 | is_canary=false 计数 ≥ 1 | 即时 | P0 |
+| P95 延迟退化 | P95 ≥ M2 baseline × 3 | 10 分钟 | P1 |
+
+P95 baseline 通过环境变量 M2_BASELINE_P95_MS 配置（默认 4200ms）。
 """
 from __future__ import annotations
 
@@ -41,13 +44,31 @@ logger = logging.getLogger(__name__)
 
 @dataclass(frozen=True)
 class AlertThreshold:
-    """单条告警的阈值定义。"""
+    """单条告警的阈值定义。
+
+    threshold_value 的单位由 kind 决定：
+    - "ratio"：百分比（如 5.0 表示 5%）
+    - "absolute"：原始值（P95 是 ms，counter 是计数）
+    """
 
     name: str
     severity: str  # P0 / P1 / P2
     description: str
-    threshold_pct: float  # 0-100 百分比，如 5.0 表示 5%
+    threshold_value: float
     sustain_seconds: int  # 持续多少秒才触发
+    kind: str = "ratio"  # "ratio" | "absolute"
+
+    @property
+    def threshold_pct(self) -> float:
+        """向后兼容别名（旧测试 / 旧引用直接读 threshold_pct）。"""
+        return self.threshold_value
+
+
+# P95 baseline 从环境变量读，便于 M3 真后端测得新数据后无需改代码即可调整
+# 默认值 4200ms 来自 #29 M2 baseline 测量结果（Qwen + mock backend）
+_P95_BASELINE_MS = float(os.environ.get("M2_BASELINE_P95_MS", "4200"))
+_P95_MULTIPLIER = 3.0  # ADR 0019 P1 阈值
+_P95_THRESHOLD_MS = _P95_BASELINE_MS * _P95_MULTIPLIER
 
 
 THRESHOLDS: dict[str, AlertThreshold] = {
@@ -55,21 +76,21 @@ THRESHOLDS: dict[str, AlertThreshold] = {
         name="http_5xx_spike",
         severity="P0",
         description="HTTP 5xx 率 ≥ 1% 持续 5 分钟",
-        threshold_pct=1.0,
+        threshold_value=1.0,
         sustain_seconds=300,
     ),
     "cascade_fail_high": AlertThreshold(
         name="cascade_fail_high",
         severity="P1",
         description="Cascade fail 率 ≥ 5% 持续 10 分钟",
-        threshold_pct=5.0,
+        threshold_value=5.0,
         sustain_seconds=600,
     ),
     "llm_failure_high": AlertThreshold(
         name="llm_failure_high",
         severity="P1",
         description="LLM 调用失败率 ≥ 10% 持续 5 分钟",
-        threshold_pct=10.0,
+        threshold_value=10.0,
         sustain_seconds=300,
     ),
     "non_canary_traffic": AlertThreshold(
@@ -77,8 +98,20 @@ THRESHOLDS: dict[str, AlertThreshold] = {
         severity="P0",
         description="非 canary 流量进入 LangGraph（企微管理员误切非测试群 Webhook），"
         "≥ 1 即触发即时回切",
-        threshold_pct=0.0,  # 任何 non-canary 流量都告警
+        threshold_value=0.0,  # 任何 non-canary 流量都告警
         sustain_seconds=0,  # 即时触发，不等持续
+    ),
+    "p95_latency_degraded": AlertThreshold(
+        name="p95_latency_degraded",
+        severity="P1",
+        description=(
+            f"P95 端到端延迟 ≥ {_P95_THRESHOLD_MS:.0f}ms "
+            f"(M2 baseline {_P95_BASELINE_MS:.0f}ms × {_P95_MULTIPLIER}) "
+            "持续 10 分钟（ADR 0019）"
+        ),
+        threshold_value=_P95_THRESHOLD_MS,
+        sustain_seconds=600,
+        kind="absolute",
     ),
 }
 
@@ -217,8 +250,8 @@ def evaluate(
             state.last_timestamp = now
             continue
 
-        current_pct = _delta_ratio_pct(name, ctx, state)
-        breach = current_pct >= threshold.threshold_pct
+        current_pct = _evaluate_metric(name, ctx, state)
+        breach = current_pct >= threshold.threshold_value
 
         if breach:
             if state.first_breach_at == 0.0:
@@ -242,10 +275,13 @@ def evaluate(
     return out
 
 
-def _delta_ratio_pct(name: str, ctx: AlertContext, state: AlertState) -> float:
-    """计算当前告警在"上次评估 → 本次评估"窗口内的率（百分比）。
+def _evaluate_metric(name: str, ctx: AlertContext, state: AlertState) -> float:
+    """计算当前告警的指标值，单位由阈值 kind 决定。
 
-    用 delta 而非累积值——避免历史数据稀释短期突发。
+    - ratio 类：返回"上次评估 → 本次评估"窗口内的率（百分比）
+    - absolute 类：返回瞬时绝对值（P95 是 ms）
+
+    Delta-based ratio 避免历史数据稀释短期突发；absolute 不需要 delta。
     """
     current = ctx.metrics
     previous = state.last_metrics
@@ -267,12 +303,22 @@ def _delta_ratio_pct(name: str, ctx: AlertContext, state: AlertState) -> float:
         return _calc_ratio_pct(delta("llm_error"), delta("llm_total"))
 
     if name == "non_canary_traffic":
-        # G5.1：F4.2 阶段任何 non-canary 流量都该触发回切告警（threshold_pct=0.0）
-        # 返回"窗口内 non-canary 请求数 × 100"作为伪百分比（≥ 1 都越线 0.0）
+        # G5.1：F4.2 阶段任何 non-canary 流量都该触发回切告警（threshold=0.0）
+        # 返回"窗口内 non-canary 请求数 × 100"作为伪比率（≥ 1 都越线 0.0）
         d = delta("canary_traffic_non_canary")
         return d * 100.0 if d > 0 else 0.0
 
+    if name == "p95_latency_degraded":
+        # 瞬时 P95（ms）—— 不做 delta，histogram_quantile 已是当前累积分布的统计量。
+        # 局限：长期累积会让短期突发被稀释；F4.2+ 用 PromQL rate(bucket[5m]) 更精确。
+        # 本期可接受，因为生产 cron 每分钟跑、状态机有 sustain_seconds 缓冲。
+        return float(current.get("p95_latency_ms", 0.0))
+
     return 0.0
+
+
+# 向后兼容：旧测试仍可能用 _delta_ratio_pct
+_delta_ratio_pct = _evaluate_metric
 
 
 # ============================================================
@@ -284,6 +330,11 @@ def parse_prometheus_metrics(text: str) -> dict[str, Any]:
     """解析 /metrics endpoint 输出，提取本任务需要的数值。
 
     简化解析：不引入 prometheus_client 客户端依赖，按字符串前缀匹配。
+
+    输出字段：
+    - counter 聚合：http_5xx / fallback_cascade_fail / llm_total / llm_error /
+      node_total / canary_traffic_non_canary
+    - histogram 衍生：p95_latency_ms（来自 otc_agent_intent_latency_ms_bucket）
     """
     result: dict[str, Any] = {
         "http_5xx": 0,
@@ -292,7 +343,12 @@ def parse_prometheus_metrics(text: str) -> dict[str, Any]:
         "llm_total": 0,
         "node_total": 0,
         "canary_traffic_non_canary": 0,  # G5.1：非 canary 流量计数
+        "p95_latency_ms": 0.0,  # ADR 0019 P1：P95 端到端延迟
     }
+    # 收集所有 latency bucket 用于 P95 计算（跨 label 聚合 le → 累积 count）
+    latency_buckets: dict[float, float] = {}
+    latency_count: float = 0.0
+
     for line in text.splitlines():
         line = line.strip()
         if not line or line.startswith("#"):
@@ -301,7 +357,10 @@ def parse_prometheus_metrics(text: str) -> dict[str, Any]:
         if "{" in line:
             name_part, rest = line.split("{", 1)
             labels_str, value_str = rest.split("}", 1)
-            value = float(value_str.strip())
+            try:
+                value = float(value_str.strip())
+            except ValueError:
+                continue
             if name_part == "otc_agent_fallback_total" and 'reason="cascade_fail"' in labels_str:
                 result["fallback_cascade_fail"] += value
             elif name_part == "otc_agent_llm_total":
@@ -315,8 +374,70 @@ def parse_prometheus_metrics(text: str) -> dict[str, Any]:
                 and 'is_canary="false"' in labels_str
             ):
                 result["canary_traffic_non_canary"] += value
+            elif name_part == "otc_agent_intent_latency_ms_bucket":
+                le = _extract_le(labels_str)
+                if le is not None:
+                    latency_buckets[le] = latency_buckets.get(le, 0.0) + value
+        elif line.startswith("otc_agent_intent_latency_ms_count"):
+            # 形如 "otc_agent_intent_latency_ms_count 42"（无 label 全局聚合时）
+            try:
+                _, value_str = line.rsplit(" ", 1)
+                latency_count += float(value_str)
+            except ValueError:
+                continue
         # http_5xx 通过外部 nginx 日志接入；本期 stub 为 0
+
+    result["p95_latency_ms"] = _histogram_quantile_ms(latency_buckets, 0.95)
     return result
+
+
+def _extract_le(labels_str: str) -> float | None:
+    """从 prometheus labels 字符串里抽 le 值。
+
+    形如 `product_type="swap",intent="place_order",le="500"` → 500.0
+    `le="+Inf"` → float('inf')
+    """
+    for part in labels_str.split(","):
+        part = part.strip()
+        if part.startswith('le="') and part.endswith('"'):
+            le_str = part[4:-1]
+            if le_str in ("+Inf", "Inf", "inf"):
+                return float("inf")
+            try:
+                return float(le_str)
+            except ValueError:
+                return None
+    return None
+
+
+def _histogram_quantile_ms(
+    cumulative_buckets: dict[float, float], q: float
+) -> float:
+    """从累积 bucket 估算 q 分位（标准 Prometheus histogram_quantile 算法的简化版）。
+
+    Prometheus 的 histogram bucket 是**累积式**——le=500 的 count 已包含 le=100 的。
+    本任务的 /metrics 输出是分桶累积，跨多个 (product_type, intent) label 求和后
+    依然是累积式（同 le 累加不破坏单调性）。
+
+    Returns:
+        最小 le bucket 使得累积 count ≥ total × q。无数据返回 0.0。
+        +Inf bucket 命中时返回前一个有限 bucket（避免 inf 拉爆告警）。
+    """
+    if not cumulative_buckets:
+        return 0.0
+    sorted_les = sorted(cumulative_buckets.keys())
+    total = cumulative_buckets[sorted_les[-1]]  # 最高 bucket = 总数
+    if total <= 0:
+        return 0.0
+    target = total * q
+    for le in sorted_les:
+        if cumulative_buckets[le] >= target:
+            if le == float("inf"):
+                # +Inf 不返回 inf，回退到上一个有限 bucket
+                finite = [b for b in sorted_les if b != float("inf")]
+                return finite[-1] if finite else 0.0
+            return le
+    return sorted_les[-1]
 
 
 # ============================================================

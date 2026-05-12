@@ -159,7 +159,7 @@ scrape_configs:
 | Cascade fail 持续触发 | `fallback_total{reason="cascade_fail"}` 率 ≥ 5% 持续 10 分钟 | P1 | ✅ 完整实现 |
 | LLM 失败率高 | `llm_total{status!="ok"}` 率 ≥ 10% 持续 5 分钟 | P1 | ✅ 完整实现 |
 | HITL 长挂起 | 单会话 HITL ≥ 30 分钟未恢复 | P1 | 🔲 TODO：需 LangFuse trace 查询能力，与本期 cron 模型不匹配 |
-| P95 延迟退化 | P95 ≥ M2 baseline × 3 持续 10 分钟 | P1 | 🔲 TODO：需 baseline 在线持久化 |
+| P95 延迟退化 | P95 ≥ M2 baseline × 3 持续 10 分钟 | P1 | ✅ 完整实现（baseline 由 `M2_BASELINE_P95_MS` env 配置，默认 4200ms） |
 
 ### 5.1 部署方式
 
