@@ -67,10 +67,10 @@
 
 | 根因 | 修复 |
 |---|---|
-| LLM 输出格式偏差 | LangFuse Prompt 在线版本切回上版本（ADR 0014 热更）；同步排查 prompt 漂移源头 |
+| LLM 输出格式偏差 | LangFuse Prompt 在线版本切回上版本（ADR 0014 热更，**前提：`.env` 中 `USE_LANGFUSE_PROMPTS=true`，且 prompt 已在 LangFuse 控制台创建过版本**）；同步排查 prompt 漂移源头。若 USE_LANGFUSE_PROMPTS=false（M3 阶段默认），只能走 git revert + 应用重启的传统路径 |
 | 后端 5xx 引发 | 见 §3 后端 5xx playbook；本节点的 fallback 路径应已写好降级 |
 | Prompt 漂移 | 检查最近 PR 是否改了相关 prompt；按 ADR 0001 D5 处置表 review；必要时回滚 |
-| 上游字段缺失 | 看 `ingest` 节点是否正常解析；补充防御代码（节点入口判 `if not state.get("xxx"): return fallback`）|
+| 上游字段缺失 | 看 `ingest` 节点是否正常解析；节点入口加防御代码（`if not state.get("xxx"): return fallback`），属于**业务防御性编程**改动，不涉及 ADR |
 | 路由 bug | 检查 `app/prompts/router/keywords.yaml`；补关键词；提 PR |
 | MySQL 拖慢 | 见 §4 Checkpointer playbook |
 
@@ -212,7 +212,7 @@ journalctl -u otc-agent --since "10 minutes ago" | grep -E "OtcApiException|HTTP
 | Java 依赖不通 | 客户 IT 排查 Java 后端的下游（DB / GOATS） |
 | Token 过期 | 客户 IT 提供新 token；改 .env；不重启（应用 lru_cache 5 分钟自动刷新）|
 | 网络隔离 | 客户 IT 排查防火墙规则；可能企业网络变动 |
-| 业务参数非法 | 看具体 case 用了什么参数；按 ADR 0001 D5 加入 input 验证；不是回滚理由 |
+| 业务参数非法 | 看具体 case 用了什么参数；在对应节点（如 swap.cancel）入口加 input 验证（Pydantic 模型字段约束或显式守卫），属于业务防御性编程改动，无对应 ADR；不是回滚理由 |
 | 版本不兼容 | 对照 `docs/api-contracts/java-backend.md` 看字段变化；走 hotfix 升级应用代码 |
 
 ### 3.5 禁忌
