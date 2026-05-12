@@ -91,7 +91,7 @@
 | ~~**C1.2**~~ | ~~swap 其余 P2：`place_order_image` / `place_order_excel` / `image_recognize`~~ → **延后到 G5.4**（理由：图片/Excel 输入是边角场景，企微真实流量以文字为主；M2 骨架已建好，延后不影响主链路上线） | #26（推迟） | — |
 | **C1.3** | swap.intent v2 prompt 调优 — 修 g008 短指令路由（M2 known limitation，PASS 22%） | #25 | 1-2d |
 | **C1.4** | swap.place_order 133K token prompt 瘦身（响应延迟治理） | #25 | 2d |
-| **C1.19** | **DeepSeek-v4-pro smoke 验证**（先于阶段 2 D2.1）：用 DeepSeek API key 跑 B 桶 ≥ 20 条代表性 case，对比 Qwen baseline 的 PASS 率和输出字段差异；红线 = PASS 率 < Qwen × 0.9，否则需按节点跑回归并适配 prompt | #25 | 1-2d |
+| ~~**C1.19**~~ | ~~DeepSeek-v4-pro smoke 验证~~ → **跳过**（2026-05-12 Tony 决定）：Qwen 全套测试已通过，且 DeepSeek-v4-pro 与 Qwen 都走 OpenAI 兼容接口，行为差异风险评估为低；若现场发现差异，进入阶段 4 灰度期由 F4.6 错例修复承接 | — | — |
 
 ### 4.3 子线 1C · 可观测性 + 监控基础设施（上线前必须）
 
@@ -106,8 +106,8 @@
 
 | 任务 ID | 内容 | Owner | 估时 |
 |---|---|---|---|
-| **C1.9** | 客户环境调研报告 `docs/customer-env-assessment.md`（含 MySQL 版本、Java 后端可达性、模型 API 网络）| Tony + #25 | 1d |
-| **C1.10** | 大模型方案（**已确认**，2026-05-12）：<br>· 开发测试：Qwen（`qwen3-30B-A3B` standard / `qwen-max-latest` thinking / `qwen-vl-max-latest` VL，沿用 ADR 0010）<br>· 客户现场：**外部云 DeepSeek-v4-pro**（OpenAI 兼容接口，可访问公网）<br>· **开发期 API key 我方提供，现场 key 由 Tony 与客户对齐，C1.19 完成后落实**<br>· 上下文窗口：DeepSeek-v4-pro 假设 ≥ 128K（Tony 待最终确认）<br>· 见 ADR 0018 | Tony | ✅ 主要决策已落 |
+| **C1.9** | ✅ 客户环境调研报告**模板** `docs/customer-env-assessment.md` 已交付（2026-05-12，14 节 + 风险登记 + 联系人通讯录）→ Tony 在客户现场填实际值；阶段 2 D2.1 启动前必须完成填写 | Tony + #25 | 1d 模板 + 0.5d 现场填写 |
+| **C1.10** | 大模型方案（**已确认**，2026-05-12）：<br>· 开发测试：Qwen（`qwen3-30B-A3B` standard / `qwen-max-latest` thinking / `qwen-vl-max-latest` VL，沿用 ADR 0010）<br>· 客户现场：**外部云 DeepSeek-v4-pro**（OpenAI 兼容接口，可访问公网）<br>· **开发期 API key 我方提供，现场 key 由 Tony 与客户对齐**（在 C1.9 客户环境调研中收集）<br>· 上下文窗口：DeepSeek-v4-pro 假设 ≥ 128K（Tony 待最终确认）<br>· 见 ADR 0018 | Tony | ✅ 主要决策已落 |
 | **C1.11** | LangFuse self-hosted 客户内网部署：docker-compose + image 拉取 + 数据持久化 | #25 | 1-2d |
 | **C1.12** | `.env.customer.template` + 私有化部署文档 `docs/deploy/customer-private.md` | #25 | 1d |
 | **C1.13** | 一键部署脚本 `scripts/deploy-customer.sh`（含 smoke 自检） | #26（#25 review） | 1-2d |
@@ -120,7 +120,7 @@
 | **C1.15** | 故障 SOP：cascade fail / LLM 超时 / 后端 5xx / Checkpointer 失败 各自诊断步骤 | #25 | 1d |
 | **C1.16** | ✅ on-call runbook **草稿** v0.1 已交付（`docs/on-call-runbook.md`，2026-05-12）：含严重等级 / 监控告警源 / 5 类故障 playbook / 紧急回滚 5 分钟流程 / F4.0 演练计划 / 联系人模板（**真实演练**在 F4.0） | Tony | 1d |
 | **C1.17** | 业务方培训资料补完：以 `docs/training/` 为底，加客户场景示例 | Tony + PM | 1-2d |
-| **C1.18** | 安全审计**草稿**：API key 轮转流程文档 + secret 不入 git 校验（pre-commit hook）（**完整审计**在 D2.7） | #25 | 1d |
+| ~~**C1.18**~~ | ~~安全审计草稿~~ → **跳过**（2026-05-12 Tony 决定）：安全审计放到后续独立加强阶段（非 M3 主路径），D2.7 同步跳过 | — | — |
 
 **阶段 1 退出门**：
 
@@ -143,7 +143,7 @@
 | **D2.4** | ticker 真 GOATS 联调：`securities-instrument/select` 真接 + 多命中分差 / HITL 信号真实回路 | #25 | D2.1 | 1-2d |
 | **D2.5** | InferCode 动态 prompt 片段（ADR 0013）真后端拉取：`counterparty/info/instrument-inference-prompt` + 5 分钟 LRU 缓存 + 不可达降级 | #25 | D2.1 | 1d |
 | **D2.6** | 健康检查端点 `/health` + `/ready`（依赖 MySQL / LangFuse / Qwen / Java 后端 4 个上游） | #25 | C1.5 | 0.5d |
-| **D2.7** | 完整安全审计：实际执行一次 API key 轮转 + 审计日志接入验证 + 生产 secret 与代码隔离审查（**C1.18 草稿落地**） | #25 | D2.1-2 + C1.18 | 1d |
+| ~~**D2.7**~~ | ~~完整安全审计~~ → **跳过**（2026-05-12 Tony 决定，与 C1.18 同步取消） | — | — | — |
 
 **阶段 2 退出门**：B 桶代表性 case 真后端跑通后——
 - HTTP 5xx（服务端崩溃）= 0
@@ -343,5 +343,6 @@ A0.1 PR#41 修绿  →  A0.2 merge
 - 阶段 4 退出门量化（ADR 0017）
 - 阶段 5 G5.2 拆分为半下线 + 完全下线两步走
 - Shadow F4.1 窗口 5-10 天硬性上限
-- C1.16/C1.18 拆分为草稿 + 真实演练（新增 F4.0、D2.7）
+- C1.16 拆分为草稿 + 真实演练（新增 F4.0）
+- ~~C1.18 / C1.19 / D2.7~~ → **跳过**（Tony 2026-05-12 决定，快速联调优先；安全审计 + DeepSeek smoke 放到后续独立加强阶段）
 - PM 角色开 #PM-1 / #PM-2 进入统一跟踪
