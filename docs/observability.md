@@ -55,9 +55,12 @@
 
 Fallback render 触发计数。用户看到"我没完全理解..."或"抱歉无法识别..."时 +1。
 
-| label | 取值 |
-|---|---|
-| `reason` | `cascade_fail`（节点抛异常引发）/ `zero_match`（标的 0 命中）/ `hitl_card`（多命中消歧）/ `unknown_product_type`（产品类型识别失败）|
+| label | 取值 | 触发条件 |
+|---|---|---|
+| `reason` | `cascade_fail` | 节点抛异常被 `safe_node` 兜底，`state["error"]` 非空 |
+| `reason` | `zero_match` | 业务节点正常完成但 `tickers == []`（标的 0 命中）|
+| `reason` | `hitl_card` | ticker 多命中触发消歧卡片，`ticker_hitl_candidates` 非空 |
+| `reason` | `unknown_product_type` | 一级路由未识别出 swap/option/close 任一 |
 
 **衍生指标**：
 - Cascade fail 率 = `reason="cascade_fail"` / 总请求数

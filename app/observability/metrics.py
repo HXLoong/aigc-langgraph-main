@@ -49,9 +49,10 @@ class _Histogram:
     内部结构：bucket 计数 + 总和 + 总次数。可计算 P50/P95/P99 估算（基于 bucket 边界）。
     """
 
-    def __init__(self, buckets: list[float] = None) -> None:
+    def __init__(self, buckets: list[float] | None = None) -> None:
         self._buckets = buckets or _LATENCY_BUCKETS_MS
-        self._counts: dict[float, int] = defaultdict(int)
+        # 普通 dict + .get(b, 0)：读时不创建键，避免 defaultdict 读时副作用
+        self._counts: dict[float, int] = {}
         self._sum: float = 0.0
         self._total: int = 0
         self._lock = threading.Lock()
@@ -62,7 +63,7 @@ class _Histogram:
             self._total += 1
             for b in self._buckets:
                 if value <= b:
-                    self._counts[b] += 1
+                    self._counts[b] = self._counts.get(b, 0) + 1
 
     def quantile(self, q: float) -> float | None:
         """估算 q 分位（如 q=0.95 -> P95）。基于 bucket 边界，返回上界。"""
@@ -70,9 +71,8 @@ class _Histogram:
             if self._total == 0:
                 return None
             target = self._total * q
-            cumulative = 0
             for b in self._buckets:
-                cumulative = self._counts[b]
+                cumulative = self._counts.get(b, 0)
                 if cumulative >= target:
                     return b
             return self._buckets[-1]
@@ -82,7 +82,7 @@ class _Histogram:
             return {
                 "count": self._total,
                 "sum": self._sum,
-                "buckets": {str(b): self._counts[b] for b in self._buckets},
+                "buckets": {str(b): self._counts.get(b, 0) for b in self._buckets},
             }
 
 
