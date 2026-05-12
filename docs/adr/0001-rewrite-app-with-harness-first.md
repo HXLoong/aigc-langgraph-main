@@ -88,6 +88,7 @@ await client.request("GET", url, json=payload)  # 不是 client.get()
 |------|------|------|
 | **合并** | 互换-节点-确认下单 (129) + 互换-节点-确认撤单 (128) + 互换-节点-确认改单 (128) → 1 个 `swap.confirm(expected_action)`，新写统一 confirm 提示词 | 本 ADR |
 | **拆分** | 期权-意图识别、参数提取（2870 行单节点）→ 1 个 intent 节点 + 5 个 extract 节点（按 Java 真实 10 个 option 基础意图按职责合并；6 个 close_order_* 归 close 子图） | 沿用 ADR 0011（二次修订）|
+| **瘦身** | `app/prompts/swap/place_order.md`（约 133K 字符 / 40K tokens）M3 期间允许结构化精简（删冗余示例、压缩重复规则），保留语义；理由：超过 Qwen3-30B 上下文的 50%，存在截断正确性风险，不能等 shadow PASS 再动 | 2026-05-12 grill |
 | **保持** | 其他 Dify LLM 节点 | 1:1 复刻，提示词照搬 |
 
 option 5 个 extract 按职责合并：`extract_inquiry` / `extract_place_or_modify` / `extract_cancel` / `extract_confirm` / `extract_query`。
