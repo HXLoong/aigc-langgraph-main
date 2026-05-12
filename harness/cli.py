@@ -110,6 +110,21 @@ def cmd_stub(name: str) -> int:
     return 64
 
 
+def _delegate_to_promote_prompt(args) -> int:  # type: ignore[no-untyped-def]
+    """委托给 scripts/promote_langfuse_prompt.py（ADR 0014 D3）。"""
+    # Lazy import 避免 langfuse SDK 在 harness 启动时强加载
+    import subprocess
+    script = Path(__file__).resolve().parents[1] / "scripts" / "promote_langfuse_prompt.py"
+    cmd = [sys.executable, str(script), args.name]
+    if args.version is not None:
+        cmd += ["--version", str(args.version)]
+    if args.force:
+        cmd.append("--force")
+    if args.dry_run:
+        cmd.append("--dry-run")
+    return subprocess.call(cmd)
+
+
 # ============================================================
 # entry
 # ============================================================
@@ -151,7 +166,23 @@ def build_parser() -> argparse.ArgumentParser:
     diff.add_argument("run_b")
     sub.add_parser("sync-golden", help="(M2) golden ↔ LangFuse Dataset")
     pp = sub.add_parser("promote-prompt", help="(ADR 0014 D3) 从 LangFuse 晋升到 git")
-    pp.add_argument("name")
+    pp.add_argument("name", help="格式 category.name，如 swap.intent")
+    pp.add_argument(
+        "--version",
+        type=int,
+        default=None,
+        help="强制指定输出版本号（默认 = 现有最大版本 + 1）",
+    )
+    pp.add_argument(
+        "--force",
+        action="store_true",
+        help="目标文件已存在时覆盖（默认拒绝）",
+    )
+    pp.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="不写文件，仅打印目标路径 + 内容前 500 字符",
+    )
 
     return p
 
@@ -170,7 +201,7 @@ def main(argv: list[str] | None = None) -> int:
     if args.cmd == "diff":
         return cmd_stub("diff")
     if args.cmd == "promote-prompt":
-        return cmd_stub("promote-prompt")
+        return _delegate_to_promote_prompt(args)
     parser.print_help()
     return 2
 
