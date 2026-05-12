@@ -75,6 +75,59 @@ TICKER_WHITELIST: Final[dict[str, tuple[str, str]]] = {
     "恒指": ("HSI.HI", "恒生指数"),
     "恒生指数": ("HSI.HI", "恒生指数"),
     "国债期货": ("T.CFE", "10年国债期货"),
+    "000001.SH": ("000001.SH", "上证指数"),  # auto: code→code
+    "000016.SH": ("000016.SH", "上证50"),  # auto: code→code
+    "00005.HK": ("00005.HK", "汇丰控股"),  # auto: code→code
+    "000300.SH": ("000300.SH", "沪深300"),  # auto: code→code
+    "000333.SZ": ("000333.SZ", "美的集团"),  # auto: code→code
+    "0005.HK": ("00005.HK", "汇丰控股"),  # auto: 4-digit HK normalize
+    "000688.SH": ("000688.SH", "科创50"),  # auto: code→code
+    "000852.SH": ("000852.SH", "中证1000"),  # auto: code→code
+    "000858.SZ": ("000858.SZ", "五粮液"),  # auto: code→code
+    "000905.SH": ("000905.SH", "中证500"),  # auto: code→code
+    "002415.SZ": ("002415.SZ", "海康威视"),  # auto: code→code
+    "002594.SZ": ("002594.SZ", "比亚迪"),  # auto: code→code
+    "00700.HK": ("00700.HK", "腾讯控股"),  # auto: code→code
+    "00941.HK": ("00941.HK", "中国移动"),  # auto: code→code
+    "01810.HK": ("01810.HK", "小米集团-W"),  # auto: code→code
+    "03690.HK": ("03690.HK", "美团-W"),  # auto: code→code
+    "0700.HK": ("00700.HK", "腾讯控股"),  # auto: 4-digit HK normalize
+    "0941.HK": ("00941.HK", "中国移动"),  # auto: 4-digit HK normalize
+    "09618.HK": ("09618.HK", "京东集团-SW"),  # auto: code→code
+    "09988.HK": ("09988.HK", "阿里巴巴-W"),  # auto: code→code
+    "159915.SZ": ("159915.SZ", "创业板ETF"),  # auto: code→code
+    "1810.HK": ("01810.HK", "小米集团-W"),  # auto: 4-digit HK normalize
+    "300750.SZ": ("300750.SZ", "宁德时代"),  # auto: code→code
+    "3690.HK": ("03690.HK", "美团-W"),  # auto: 4-digit HK normalize
+    "399006.SZ": ("399006.SZ", "创业板指"),  # auto: code→code
+    "510050.SH": ("510050.SH", "上证50ETF"),  # auto: code→code
+    "510300.SH": ("510300.SH", "沪深300ETF"),  # auto: code→code
+    "510500.SH": ("510500.SH", "中证500ETF"),  # auto: code→code
+    "588000.SH": ("588000.SH", "科创板50ETF"),  # auto: code→code
+    "600036.SH": ("600036.SH", "招商银行"),  # auto: code→code
+    "600519.SH": ("600519.SH", "贵州茅台"),  # auto: code→code
+    "601318.SH": ("601318.SH", "中国平安"),  # auto: code→code
+    "601398.SH": ("601398.SH", "工商银行"),  # auto: code→code
+    "601939.SH": ("601939.SH", "建设银行"),  # auto: code→code
+    "9618.HK": ("09618.HK", "京东集团-SW"),  # auto: 4-digit HK normalize
+    "9988.HK": ("09988.HK", "阿里巴巴-W"),  # auto: 4-digit HK normalize
+    "AAPL.O": ("AAPL.O", "苹果"),  # auto: code→code
+    "AG.SHF": ("AG.SHF", "上海白银"),  # auto: code→code
+    "AH.LME": ("AH.LME", "LME 铝"),  # auto: code→code
+    "AU.SHF": ("AU.SHF", "上海黄金"),  # auto: code→code
+    "BRENT.IPE": ("BRENT.IPE", "布伦特原油"),  # auto: code→code
+    "CA.LME": ("CA.LME", "LME 铜"),  # auto: code→code
+    "CU.SHF": ("CU.SHF", "上海铜"),  # auto: code→code
+    "DJI.GI": ("DJI.GI", "道琼斯工业指数"),  # auto: code→code
+    "GC.CMX": ("GC.CMX", "COMEX 黄金"),  # auto: code→code
+    "HSI.HI": ("HSI.HI", "恒生指数"),  # auto: code→code
+    "MSFT.O": ("MSFT.O", "微软"),  # auto: code→code
+    "NDX.GI": ("NDX.GI", "纳斯达克100指数"),  # auto: code→code
+    "NVDA.O": ("NVDA.O", "英伟达"),  # auto: code→code
+    "SPX.GI": ("SPX.GI", "标准普尔500指数"),  # auto: code→code
+    "T.CFE": ("T.CFE", "10年国债期货"),  # auto: code→code
+    "TSLA.O": ("TSLA.O", "特斯拉"),  # auto: code→code
+    "WTI.NYM": ("WTI.NYM", "WTI 原油"),  # auto: code→code
 }
 
 

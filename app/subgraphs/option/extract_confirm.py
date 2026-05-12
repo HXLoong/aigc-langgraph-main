@@ -24,6 +24,7 @@ from app.graph.safe_node import safe_node
 from app.graph.state import AgentState, Message, TraceEntry
 from app.llm.clients import get_qwen_structured
 from app.prompts import load_prompt
+from app.subgraphs.option.backend import call_option_backend
 from app.subgraphs.option.models import OptionExtractConfirmParams
 
 
@@ -76,12 +77,19 @@ async def option_extract_confirm(state: AgentState) -> dict[str, Any]:
 
     intent = state.get("intent")
     action = _expected_action(intent)
+    order_list = [item.model_dump() for item in result.orderList]
+    backend = await call_option_backend(
+        state,
+        intent=intent or "confirm_order",
+        order_list=order_list,
+    )
 
     return {
         "confirm": {
             "action": action,
-            "orderList": [item.model_dump() for item in result.orderList],
+            "orderList": order_list,
         },
+        **backend,
         "trace": [
             TraceEntry(
                 node="option_extract_confirm",

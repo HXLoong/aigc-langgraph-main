@@ -1,6 +1,7 @@
-"""期权链路评估。通过 mock_api (localhost:8099) 跑 LangGraph，DeepSeek Judge 打分。
+"""期权链路评估。跑 LangGraph，DeepSeek Judge 打分。
 
-前提: mock_api 必须先启动
+OTC_API_BASE_URL 从 .env 读取，可以是 mock_api (localhost:8099) 或真实 GOATS URL。
+前提: 对应的后端服务必须已启动
 用法: uv run python scripts/langfuse_eval.py --ids opt-001 --concurrency 1
 """
 from __future__ import annotations
@@ -10,14 +11,20 @@ from pathlib import Path
 
 _DOTENV = Path(__file__).resolve().parent.parent / ".env"
 if _DOTENV.exists():
-    for line in _DOTENV.read_text().splitlines():
+    for line in _DOTENV.read_text(encoding="utf-8").splitlines():
         line = line.strip()
         if not line or line.startswith("#") or "=" not in line: continue
         k, _, v = line.partition("="); k, v = k.strip(), v.strip()
-        if k and not os.environ.get(k): os.environ[k] = v
+        # 去掉行内注释（如 "true  # 注释" → "true"）
+        v = v.split("#")[0].strip()
+        if k: os.environ[k] = v
 
-# 强制走 mock_api，Langfuse API 不走代理
-os.environ.setdefault("OTC_API_BASE_URL", "http://localhost:8099")
+# 清除 shell 中可能干扰 .env 配置的变量（如 Claude Code 设置的 ANTHROPIC_AUTH_TOKEN）
+for _k in ("ANTHROPIC_AUTH_TOKEN",):
+    os.environ.pop(_k, None)
+
+# OTC_API_BASE_URL 由上方 .env 加载提供（mock 或真实 GOATS），不再强制覆盖
+# Langfuse API 不走代理
 os.environ["NO_PROXY"] = os.environ.get("NO_PROXY", "") + ",cloud.langfuse.com"
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
@@ -34,7 +41,9 @@ async def _run_graph_once(graph, config, raw_content, has_mention=True, turn=1, 
     wx = WechatInput(
         conversation_id=config["configurable"]["thread_id"],
         message_id=f"m-{config['configurable']['thread_id']}-t{turn}",
-        room_id="eval-room", user_id="eval-user", guid="",
+        room_id=os.environ.get("EVAL_ROOM_ID", "eval-room"),
+        user_id=os.environ.get("EVAL_USER_ID", "eval-user"),
+        guid="",
         raw_content=raw_content, quote_content=quote_content,
     )
     state = make_initial_state(wx)

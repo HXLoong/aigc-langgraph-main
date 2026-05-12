@@ -268,6 +268,16 @@ _DISPATCH: dict[StockOptionIntentionType, Any] = {
 @router.post("/operate")
 async def financial_operate(req: FinancialOperateReqVO) -> dict[str, Any]:
     """期权 / 平仓操作聚合接口（POST /admin-api/financial-orders/operate）。"""
+    # 通用业务规则：询价时标的不在池→拒绝
+    if req.type == StockOptionIntentionType.NEW_INQUIRY:
+        item = req.orderList[0] if req.orderList else None
+        if item and item.stockCode:
+            known = {s["windCode"] for s in SECURITIES_DICT}
+            if item.stockCode not in known:
+                return {
+                    "code": 400, "data": None,
+                    "msg": f"抱歉！标的代码（或标的名称）{item.stockCode} 不在标的池内，无法自动报价，请联系对口销售或交易员。",
+                }
     handler = _DISPATCH.get(req.type)
     if handler is None:
         return common_ok(_format_unknown(req))

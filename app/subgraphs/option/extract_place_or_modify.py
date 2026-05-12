@@ -20,6 +20,7 @@ from app.graph.safe_node import safe_node
 from app.graph.state import AgentState, Message, TraceEntry
 from app.llm.clients import get_qwen_structured
 from app.prompts import load_prompt
+from app.subgraphs.option.backend import call_option_backend
 from app.subgraphs.option.models import OptionPlaceOrModifyParams
 
 
@@ -80,17 +81,24 @@ async def option_extract_place_or_modify(state: AgentState) -> dict[str, Any]:
     expected_action = _expected_action_from_intent(intent)
 
     types = [item.orderType for item in result.orderList if item.orderType]
+    order_list = [item.model_dump() for item in result.orderList]
     decision = (
         f"action={expected_action},"
         f" orders={len(result.orderList)},"
         f" types={types}"
     )
+    backend = await call_option_backend(
+        state,
+        intent=intent or "place_order_from_quote",
+        order_list=order_list,
+    )
 
     return {
         "place_params": {
             "expected_action": expected_action,
-            "orderList": [item.model_dump() for item in result.orderList],
+            "orderList": order_list,
         },
+        **backend,
         "trace": [
             TraceEntry(
                 node="option_extract_place_or_modify",

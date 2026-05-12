@@ -20,8 +20,9 @@ from app.graph.safe_node import safe_node
 from app.graph.state import AgentState, Message, TraceEntry
 from app.llm.clients import get_qwen_structured
 from app.prompts import load_prompt
+from app.subgraphs.option.backend import _with_resolved_ticker, call_option_backend
 from app.subgraphs.option.models import OptionInquiryParams
-from app.subgraphs.ticker.resolver import resolve_ticker_full
+from app.subgraphs.ticker.resolver import resolve_ticker, resolve_ticker_full
 
 
 def _format_history(history: list[Message] | None) -> str:
@@ -57,6 +58,21 @@ async def option_extract_inquiry(state: AgentState) -> dict[str, Any]:
     """
     raw_text = state.get("raw_text", "") or ""
 
+    # 0. 无效标的预检（代码格式但不在池→直接拒绝，不调 LLM）
+    import re as _re_ticker
+    _has_code_like = bool(_re_ticker.search(
+        r"\d{5,6}[.\s]|[A-Z]{2,6}\d+|L\d{4,}", raw_text
+    ))
+    if _has_code_like:
+        _tickers = await resolve_ticker(raw_text)
+        if not _tickers:
+            return {
+                "place_params": {"expected_action": "inquiry", "orderList": []},
+                "tickers": [],
+                "error": "抱歉！标的代码（或标的名称）不在标的池内，无法自动报价，请联系对口销售或交易员。",
+                "trace": [TraceEntry(node="option_extract_inquiry", decision="invalid_ticker")],
+            }
+
     # 1. LLM 提取询价参数（standard 模型 + structured output）
     prompt = load_prompt("option", "extract_inquiry")
     llm = get_qwen_structured().with_structured_output(OptionInquiryParams)
@@ -68,9 +84,14 @@ async def option_extract_inquiry(state: AgentState) -> dict[str, Any]:
         ]
     )
 
-    # 2. ticker resolver 识别标的（与 LLM 提取并行的独立通道，含 HITL 信号）
+    # 2. ticker resolver 识别标的（含 HITL 信号）
     resolution = await resolve_ticker_full(raw_text)
     tickers = resolution.resolved
+    order_list = [item.model_dump() for item in params.orderList]
+    backend_order_list = [
+        _with_resolved_ticker(dict(item), tickers, idx)
+        for idx, item in enumerate(order_list)
+    ]
 
     types = [item.optionType for item in params.orderList if item.optionType]
     decision = (
@@ -81,12 +102,19 @@ async def option_extract_inquiry(state: AgentState) -> dict[str, Any]:
         f" hitl={len(resolution.hitl_pending)}"
     )
 
+    backend = await call_option_backend(
+        state,
+        intent="new_inquiry",
+        order_list=backend_order_list,
+    )
+
     out: dict = {
         "place_params": {
             "expected_action": "inquiry",
-            "orderList": [item.model_dump() for item in params.orderList],
+            "orderList": order_list,
         },
         "tickers": tickers,
+        **backend,
         "trace": [
             TraceEntry(
                 node="option_extract_inquiry",

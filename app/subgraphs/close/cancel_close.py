@@ -45,15 +45,40 @@ async def close_cancel_close(state: AgentState) -> dict[str, Any]:
         ]
     )
 
+    order_nos = list(result.cancelOrderNoList)
+
+    # 正则兜底：LLM 未提取到时从消息中搜订单号
+    if not order_nos:
+        import re as _re
+        _combined = f"{state.get('raw_text','')} {state.get('quote_content','')}"
+        _patterns = [
+            r"CO-\d{8}-[A-Z0-9]{4,16}",
+            r"Q-\d{8}-\d{8,12}",
+            r"OPTG?-[A-Z]{4,}\d{0,10}",
+        ]
+        for _pat in _patterns:
+            for _m in _re.findall(_pat, _combined):
+                if _m not in order_nos:
+                    order_nos.append(_m)
+
+    # 会话订单兜底：取最近订单号
+    if not order_nos:
+        _conv_orders = state.get("conversation_orders", []) or []
+        if _conv_orders:
+            _last = _conv_orders[-1]
+            _last_oid = _last.get("orderId") or _last.get("orderCode") or ""
+            if _last_oid:
+                order_nos = [_last_oid]
+
     return {
         "cancel_params": {
-            "cancelOrderNoList": result.cancelOrderNoList,
+            "cancelOrderNoList": order_nos,
         },
         "trace": [
             TraceEntry(
                 node="close_cancel_close",
-                decision=f"orders={len(result.cancelOrderNoList)}",
-                llm_output=result.model_dump(),
+                decision=f"orders={len(order_nos)}",
+                llm_output={"cancelOrderNoList": order_nos},
             )
         ],
     }

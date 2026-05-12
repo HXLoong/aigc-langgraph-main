@@ -24,8 +24,8 @@ def _force_whitelist_mode(monkeypatch: pytest.MonkeyPatch) -> None:
 
 class TestWhitelistData:
     def test_whitelist_size_around_50(self) -> None:
-        """grill 第 3 决策：白名单 50 个固定代码应答，规模在 40-60。"""
-        assert 40 <= len(TICKER_WHITELIST) <= 60
+        """白名单含原始条目 + 自动生成的 code→code 反向映射，规模 40-120。"""
+        assert 40 <= len(TICKER_WHITELIST) <= 120
 
     def test_all_wind_codes_have_suffix(self) -> None:
         """所有 wind 代码必须含交易所后缀（.HK / .SH / .SZ / .O / .GI 等）。"""

@@ -22,8 +22,8 @@ class Settings(BaseSettings):
     # === LLM ===
     qwen_api_base: str
     qwen_api_key: str
-    qwen_model_standard: str = "qwen3.5-32b"
-    qwen_model_thinking: str = "qwen3.5-32b"
+    qwen_model_standard: str = "qwen3.5-35b-a3b"
+    qwen_model_thinking: str = "qwen3.5-35b-a3b"
     qwen_model_vl: str = "qwen-vl-max-latest"
 
     anthropic_api_key: str | None = None
