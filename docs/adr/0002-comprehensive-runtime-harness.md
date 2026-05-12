@@ -1,8 +1,13 @@
 ---
-status: proposed
+status: accepted
+date: 2026-05-10
 ---
 
 # 建设综合运行时 Harness（开发期 + 运行期 + 提示词调优期三位一体）
+
+> **Status update (2026-05-13)**：状态从 proposed → accepted。M1 + M2 已落地 harness 工程
+> （`harness/` 含 runner / differ / golden / reporter / cli / langfuse_client / token_tracker），
+> 被 ADR 0001 D7-D9 + ADR 0014 作 Accepted 基础引用；本 ADR 状态滞后修正。
 
 ADR-0001 列出了 Dify 留下的四个痛点（业务逻辑藏在提示词、无法监测、无法回归、无法评估）。我们决定把"评估 Harness"目标定义为 **综合运行时 Harness**，而不只是单一的"评测脚本"或"CI 测试金字塔"。
 

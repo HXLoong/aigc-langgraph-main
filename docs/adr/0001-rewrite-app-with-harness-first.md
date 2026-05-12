@@ -271,12 +271,14 @@ Markdown 配套报告：汇总统计 + 失败列表 + 各节点失败率 top 5�
 
 ### D8 · 上线节奏（4 里程碑）
 
+> **Status update (2026-05-11，由 ADR 0016 修订)**：M3 含义重定义为"工程联调闭环（真后端 + 真 LLM）"，**不再是 shadow 双跑**。Shadow 双跑改名为 **F4.1**，作为 M4 阶段 4 的第一步，详见 ADR 0016 + `docs/m3-m4-roadmap.md`。下表 M3 行的"Shadow 双跑（2 周）"已过期，以 ADR 0016 为准。
+
 | 里程碑 | 内容 | 退出条件 |
 |--------|------|----------|
 | **M1 · 骨架（1-2 周）** | 新 `app/graph` + `state.py` + 4 个 `tools/` Protocol（mock_api 实现）+ harness MVP（runner / differ / golden loader / cli） | 30 条现 golden 跑通，全 PASS |
 | **M2 · 子图实现（3-4 周）** | 24 个 LangGraph 节点逐个实现（swap 10 + option 6 + option_close 7 + ticker 1）；每节点 5-15 条 golden；按 D9.1 半串行 schedule | D9.2 退出门表（P0 golden ≥ 80，ticker PASS ≥ 90%，三链路 PASS ≥ 85%）|
-| **M3 · Shadow 双跑（2 周）** | LangGraph 暴露 `/v1/workflows/run`；shadow 工具同时打 Dify + LangGraph diff | 主要意图 diff 率 < 5%；下单/平仓 < 1% |
-| **M4 · 金丝雀切换（持续）** | Java 配 `agentUrl` 5% → 25% → 50% → 100%；harness 在线持续监控 | 100% 流量 + 7 天无重大事故 |
+| **M3 · ~~Shadow 双跑（2 周）~~ 工程联调闭环**（ADR 0016 修订）| ~~LangGraph 暴露 `/v1/workflows/run`；shadow 工具同时打 Dify + LangGraph diff~~ → 真后端 D2.* 联调 + harness E3.* 真 LLM 评测 + F4 灰度工具链就绪 | ~~主要意图 diff 率 < 5%；下单/平仓 < 1%~~ → 见 ADR 0016 + roadmap 阶段 3 退出门 |
+| **M4 · 金丝雀切换（持续）** | Java 配 `agentUrl` 5% → 25% → 50% → 100%；harness 在线持续监控 + F4.1 shadow 双跑（M3 转过来的） | 100% 流量 + 7 天无重大事故（ADR 0017 量化退出门 + ADR 0019 故障升级阈值）|
 
 每里程碑后开 review，不达标停在原阶段补窟窿。
 
@@ -325,7 +327,7 @@ P0 跑通即可进 M3；P1 P2 可与 M3 并行。
 | 总 P0 golden 数量 | ≥ 80 条（每节点至少 10-15 条） |
 | `python -m harness run` 全集 | 无 crash，全部能产出 trace |
 
-shadow 阶段（M3）的"主要意图 diff < 5% / 下单平仓 < 1%"是更严的退出门，不在 P0 范围。
+~~shadow 阶段（M3）~~ **shadow 阶段（F4.1，已被 ADR 0016 从 M3 移到 M4）**的"主要意图 diff < 5% / 下单平仓 < 1%"是更严的退出门，不在 P0 范围。
 
 ### D3 · LangGraph 暴露给 Java Worker 的协议
 
