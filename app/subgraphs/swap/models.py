@@ -30,7 +30,7 @@ SwapIntentType = Literal[
 class SwapIntentOutput(BaseModel):
     """swap.intent 节点的 LLM 输出 schema。"""
 
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="ignore")
 
     type: SwapIntentType
 

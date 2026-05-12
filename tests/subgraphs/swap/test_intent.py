@@ -75,7 +75,7 @@ def _patch_llm(
     )
 
     monkeypatch.setattr(
-        intent_module, "get_qwen_structured", lambda: fake_base_llm
+        intent_module, "get_qwen_thinking", lambda: fake_base_llm
     )
     return fake_llm_with_schema.ainvoke
 
@@ -128,7 +128,7 @@ class TestSwapIntentNode:
             )
         )
         monkeypatch.setattr(
-            intent_module, "get_qwen_structured", lambda: fake_llm
+            intent_module, "get_qwen_thinking", lambda: fake_llm
         )
         result = await swap_intent({"raw_text": "x"})
         assert result.get("error") is not None

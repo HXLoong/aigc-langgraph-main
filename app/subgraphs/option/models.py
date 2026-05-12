@@ -34,7 +34,7 @@ class OptionIntentOutput(BaseModel):
     输出契约一致（字段名 `type`）。
     """
 
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="ignore")
 
     type: OptionIntentType
 
@@ -55,10 +55,10 @@ class OptionOrderItem(BaseModel):
     未提供字段保持 null（与 close.place_close 同模式）。
     """
 
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="ignore")
 
-    #: Q- 开头的询价单号（必需）
-    orderId: str
+    #: Q- 开头的询价单号
+    orderId: str | None = None
     orderType: OptionOrderType | None = None
     limitPrice: float | int | None = None
     povRatio: float | int | None = None
@@ -78,7 +78,7 @@ class OptionPlaceOrModifyParams(BaseModel):
     靠 expected_action 区分；本骨架版 expected_action 由调用方根据 intent 推导）。
     """
 
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="ignore")
 
     orderList: list[OptionOrderItem] = Field(default_factory=list)
 
@@ -105,7 +105,7 @@ class OptionInquiryItem(BaseModel):
     标准 wind 代码由调用方通过 ticker resolver 写入 state['tickers']。
     """
 
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="ignore")
 
     stockCode: str | None = None
     optionType: OptionContractType | None = None
@@ -118,7 +118,7 @@ class OptionInquiryItem(BaseModel):
 class OptionInquiryParams(BaseModel):
     """option.extract_inquiry 节点 LLM 输出。"""
 
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="ignore")
 
     orderList: list[OptionInquiryItem] = Field(default_factory=list)
 

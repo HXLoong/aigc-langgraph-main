@@ -33,12 +33,14 @@ async def test_main_graph_e2e_swap_keyword(
         SwapPlaceOrderParams,
     )
 
-    def _patch(module: object, value: object) -> None:
+    def _patch(
+        module: object, value: object, fn: str = "get_qwen_thinking"
+    ) -> None:
         fake_llm = MagicMock()
         fake_llm.ainvoke = AsyncMock(return_value=value)
         fake_base = MagicMock()
         fake_base.with_structured_output = MagicMock(return_value=fake_llm)
-        monkeypatch.setattr(module, "get_qwen_structured", lambda: fake_base)
+        monkeypatch.setattr(module, fn, lambda: fake_base)
 
     _patch(swap_intent_module, SwapIntentOutput(type="place_order_request"))
     _patch(
@@ -51,6 +53,7 @@ async def test_main_graph_e2e_swap_keyword(
                 )
             ]
         ),
+        fn="get_qwen_structured",
     )
 
     graph = build_main_graph()
@@ -138,12 +141,12 @@ async def test_main_graph_e2e_option_close_order_no(
         ClosePlaceParams,
     )
 
-    def _patch(module: object, value: object) -> None:
+    def _patch(module: object, value: object, fn: str = "get_qwen_thinking") -> None:
         fake_llm = MagicMock()
         fake_llm.ainvoke = AsyncMock(return_value=value)
         fake_base = MagicMock()
         fake_base.with_structured_output = MagicMock(return_value=fake_llm)
-        monkeypatch.setattr(module, "get_qwen_structured", lambda: fake_base)
+        monkeypatch.setattr(module, fn, lambda: fake_base)
 
     _patch(close_intent_module, CloseIntentOutput(type="close_order_request"))
     _patch(
@@ -156,6 +159,7 @@ async def test_main_graph_e2e_option_close_order_no(
                 )
             ]
         ),
+        fn="get_qwen_thinking",
     )
 
     graph = build_main_graph()

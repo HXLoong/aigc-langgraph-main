@@ -16,7 +16,7 @@ from typing import Any
 
 from app.graph.safe_node import safe_node
 from app.graph.state import AgentState, Message, TraceEntry
-from app.llm.clients import get_qwen_structured
+from app.llm.clients import get_qwen_thinking
 from app.prompts import load_prompt, resolve_prompt_version
 from app.subgraphs.swap.models import SwapIntentOutput
 
@@ -66,7 +66,7 @@ async def swap_intent(state: AgentState) -> dict[str, Any]:
     conversation_id = state.get("conversation_id")
     prompt_name = resolve_prompt_version("swap", "intent", conversation_id)
     prompt = load_prompt("swap", prompt_name)
-    llm = get_qwen_structured().with_structured_output(SwapIntentOutput)
+    llm = get_qwen_thinking().with_structured_output(SwapIntentOutput)
 
     user_message = _build_user_message(state)
     result: Any = await llm.ainvoke(

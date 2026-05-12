@@ -21,7 +21,7 @@ def _patch_llm(
     fake_llm.ainvoke = AsyncMock(return_value=params)
     fake_base = MagicMock()
     fake_base.with_structured_output = MagicMock(return_value=fake_llm)
-    monkeypatch.setattr(pc_module, "get_qwen_structured", lambda: fake_base)
+    monkeypatch.setattr(pc_module, "get_qwen_thinking", lambda: fake_base)
     return fake_llm.ainvoke
 
 
@@ -78,11 +78,11 @@ class TestCloseOrderItem:
         with pytest.raises(ValidationError):
             CloseOrderItem(closeOrderType="冰山单")  # type: ignore[arg-type]
 
-    def test_extra_field_forbidden(self) -> None:
-        with pytest.raises(ValidationError):
-            CloseOrderItem.model_validate(
-                {"orderId": "CO-1", "garbage": "x"}
-            )
+    def test_extra_field_ignored(self) -> None:
+        item = CloseOrderItem.model_validate(
+            {"orderId": "CO-1", "garbage": "x"}
+        )
+        assert item.orderId == "CO-1"
 
 
 # ============================================================
@@ -105,11 +105,11 @@ class TestClosePlaceParams:
         )
         assert len(p.closeOrderList) == 2
 
-    def test_extra_field_forbidden(self) -> None:
-        with pytest.raises(ValidationError):
-            ClosePlaceParams.model_validate(
-                {"closeOrderList": [], "garbage": "x"}
-            )
+    def test_extra_field_ignored(self) -> None:
+        params = ClosePlaceParams.model_validate(
+            {"closeOrderList": [], "garbage": "x"}
+        )
+        assert params.closeOrderList == []
 
 
 # ============================================================
@@ -211,7 +211,7 @@ class TestClosePlaceCloseNode:
             )
         )
         monkeypatch.setattr(
-            pc_module, "get_qwen_structured", lambda: fake_llm
+            pc_module, "get_qwen_thinking", lambda: fake_llm
         )
         result = await close_place_close({"raw_text": "x"})
         assert result.get("error") is not None

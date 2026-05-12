@@ -16,7 +16,7 @@ from typing import Any
 
 from app.graph.safe_node import safe_node
 from app.graph.state import AgentState, Message, TraceEntry
-from app.llm.clients import get_qwen_structured
+from app.llm.clients import get_qwen_thinking
 from app.prompts import load_prompt
 from app.subgraphs.option.backend import call_option_backend
 from app.subgraphs.option.models import OptionExtractCancelParams
@@ -59,7 +59,7 @@ def _expected_action(intent: str | None) -> str:
 async def option_extract_cancel(state: AgentState) -> dict[str, Any]:
     """option.extract_cancel 节点。"""
     prompt = load_prompt("option", "extract_cancel")
-    llm = get_qwen_structured().with_structured_output(OptionExtractCancelParams)
+    llm = get_qwen_thinking().with_structured_output(OptionExtractCancelParams)
 
     user_message = _build_user_message(state)
     result: Any = await llm.ainvoke(

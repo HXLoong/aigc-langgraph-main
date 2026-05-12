@@ -42,6 +42,15 @@
 输入: "做 纳指 一笔互换"
 输出: {"product_type": "swap"}
 
+输入: "茅台，80%，1M"
+输出: {"product_type": "option"}
+
+输入: "平安 100call 3M"
+输出: {"product_type": "option"}
+
+输入: "序号1平300万"
+输出: {"product_type": "option_close"}
+
 只输出符合 JSON schema 的对象，不要任何额外解释。
 ```
 

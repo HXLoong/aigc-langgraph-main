@@ -16,7 +16,7 @@ import pytest
 
 from app.subgraphs.ticker import resolver as resolver_mod
 from app.subgraphs.ticker import tools as tools_mod
-from app.subgraphs.ticker.resolver import resolve_ticker
+from app.subgraphs.ticker.resolver import resolve_ticker, resolve_ticker_full
 from app.tools.ticker_client import SecuritiesInstrumentRespVO
 
 
@@ -102,21 +102,23 @@ async def test_multi_match_large_gap_picks_top1(
 
 
 @pytest.mark.asyncio
-async def test_multi_match_small_gap_skipped_for_hitl(
+async def test_multi_match_picks_best(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """分差 < 10 跳过该 keyword，但不应阻塞其他 keyword 的成功命中。"""
+    """多命中分差 < GAP → HITL pending；分差 ≥ GAP → 自动选 top1。"""
     _mock_client_by_kw(
         monkeypatch,
         {
-            "ambig": [_resp("A.HK", "A", 5), _resp("B.HK", "B", 8)],  # 分差=3 < 10
-            "腾讯": [_resp("00700.HK", "腾讯控股", 0)],  # 单命中
+            "ambig": [_resp("A.HK", "A", 5), _resp("B.HK", "B", 8)],
+            "腾讯": [_resp("00700.HK", "腾讯控股", 0)],
         },
     )
-    result = await resolve_ticker("ambig 腾讯")
-    # 仅 "腾讯" 命中，"ambig" HITL 跳过
-    winners = {r.windCode for r in result}
-    assert winners == {"00700.HK"}
+    resolution = await resolve_ticker_full("ambig 腾讯")
+    # "腾讯" → resolved；"ambig" gap=3 < 10 → HITL pending
+    winners = {r.windCode for r in resolution.resolved}
+    assert "00700.HK" in winners
+    assert len(resolution.hitl_pending) == 1
+    assert resolution.hitl_pending[0]["keyword"] == "ambig"
 
 
 # ============================================================

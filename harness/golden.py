@@ -24,23 +24,34 @@ from pydantic import BaseModel, ConfigDict, Field
 CaseSource = Literal["business_seed", "llm_paraphrase", "production_log"]
 
 
+class ConversationTurn(BaseModel):
+    """单轮对话。"""
+
+    model_config = ConfigDict(extra="allow")
+
+    raw_content: str = ""
+    quote_desc: str = ""
+
+
 class GoldenCase(BaseModel):
-    """主 golden schema。"""
+    """主 golden schema（unified 格式）。"""
 
     model_config = ConfigDict(extra="allow")
 
     id: str
     category: str
-    raw_content: str
     expected: dict[str, Any] = Field(default_factory=dict)
+    type: str = "正案例"
+    source: CaseSource = "business_seed"
+    conversation: list[ConversationTurn] = Field(default_factory=list)
+    # 兼容旧格式
+    raw_content: str = ""
     quote_content: str | None = None
     notes: str | None = None
-    #: case 来源（默认 business_seed 以兼容现有 30 条）
-    source: CaseSource = "business_seed"
 
 
 def load_golden(path: str | Path) -> list[GoldenCase]:
-    """加载主 golden.jsonl（每行一条 JSON）。"""
+    """加载 golden.jsonl（支持 unified 和旧两种格式）。"""
     p = Path(path)
     if not p.exists():
         return []
@@ -54,6 +65,11 @@ def load_golden(path: str | Path) -> list[GoldenCase]:
                 obj = json.loads(line)
             except json.JSONDecodeError as e:
                 raise ValueError(f"{p}:{lineno} invalid JSON: {e}") from e
+            # unified 格式：raw_content 从 conversation 提取
+            if obj.get("conversation") and not obj.get("raw_content"):
+                obj["raw_content"] = obj["conversation"][0].get("raw_content", "")
+            if obj.get("conversation") and not obj.get("quote_content"):
+                obj["quote_content"] = obj["conversation"][0].get("quote_desc", "") or None
             cases.append(GoldenCase.model_validate(obj))
     return cases
 

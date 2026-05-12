@@ -34,12 +34,12 @@ def test_invalid_intent_type_rejected() -> None:
         SwapIntentOutput(type="not_a_real_intent")  # type: ignore[arg-type]
 
 
-def test_extra_fields_forbidden() -> None:
-    """ADR 严格契约：LLM 输出若多字段 → ValidationError 触发 cascade 防御。"""
-    with pytest.raises(ValidationError):
-        SwapIntentOutput.model_validate(
-            {"type": "place_order_request", "extra_garbage": "x"}
-        )
+def test_extra_fields_ignored() -> None:
+    """LLM 输出多字段时静默忽略（qwen-max 经常输出额外字段）。"""
+    params = SwapIntentOutput.model_validate(
+        {"type": "place_order_request", "extra_garbage": "x"}
+    )
+    assert params.type == "place_order_request"
 
 
 def test_missing_type_field_raises() -> None:

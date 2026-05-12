@@ -54,11 +54,11 @@ def test_invalid_intent_type_rejected() -> None:
         OptionIntentOutput(type="not_a_real_intent")  # type: ignore[arg-type]
 
 
-def test_extra_fields_forbidden() -> None:
-    with pytest.raises(ValidationError):
-        OptionIntentOutput.model_validate(
-            {"type": "new_inquiry", "extra_garbage": "x"}
-        )
+def test_extra_fields_ignored() -> None:
+    params = OptionIntentOutput.model_validate(
+        {"type": "new_inquiry", "extra_garbage": "x"}
+    )
+    assert params.type == "new_inquiry"
 
 
 def test_missing_type_field_raises() -> None:

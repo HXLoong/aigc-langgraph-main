@@ -24,7 +24,7 @@ def _patch_llm(
     fake_llm.ainvoke = AsyncMock(return_value=value)
     fake_base = MagicMock()
     fake_base.with_structured_output = MagicMock(return_value=fake_llm)
-    monkeypatch.setattr(module, "get_qwen_structured", lambda: fake_base)
+    monkeypatch.setattr(module, "get_qwen_thinking", lambda: fake_base)
     return fake_llm.ainvoke
 
 
@@ -44,11 +44,11 @@ class TestConfirmCancelParams:
         )
         assert len(params.confirmCancelOrderNoList) == 2
 
-    def test_extra_fields_forbidden(self) -> None:
-        with pytest.raises(ValidationError):
-            ConfirmCancelParams.model_validate(
-                {"confirmCancelOrderNoList": [], "garbage": "x"}
-            )
+    def test_extra_fields_ignored(self) -> None:
+        params = ConfirmCancelParams.model_validate(
+            {"confirmCancelOrderNoList": [], "garbage": "x"}
+        )
+        assert params.confirmCancelOrderNoList == []
 
 
 class TestQueryStatusParams:
@@ -62,11 +62,11 @@ class TestQueryStatusParams:
         )
         assert params.queryOrderNoList == ["CO-20260305-59772C14"]
 
-    def test_extra_fields_forbidden(self) -> None:
-        with pytest.raises(ValidationError):
-            QueryStatusParams.model_validate(
-                {"queryOrderNoList": [], "garbage": "x"}
-            )
+    def test_extra_fields_ignored(self) -> None:
+        params = QueryStatusParams.model_validate(
+            {"queryOrderNoList": [], "garbage": "x"}
+        )
+        assert params.queryOrderNoList == []
 
 
 # ============================================================
@@ -123,7 +123,7 @@ class TestCloseConfirmCancelNode:
             )
         )
         monkeypatch.setattr(
-            cc_module, "get_qwen_structured", lambda: fake_llm
+            cc_module, "get_qwen_thinking", lambda: fake_llm
         )
         result = await close_confirm_cancel(
             {"raw_text": "x", "quote_content": ""}
@@ -185,7 +185,7 @@ class TestCloseQueryStatusNode:
             )
         )
         monkeypatch.setattr(
-            qs_module, "get_qwen_structured", lambda: fake_llm
+            qs_module, "get_qwen_thinking", lambda: fake_llm
         )
         result = await close_query_status({"raw_text": "x"})
         assert result.get("error") is not None

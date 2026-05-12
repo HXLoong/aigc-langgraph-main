@@ -41,7 +41,7 @@ def _patch(
     fake_llm.ainvoke = AsyncMock(return_value=value)
     fake_base = MagicMock()
     fake_base.with_structured_output = MagicMock(return_value=fake_llm)
-    monkeypatch.setattr(module, "get_qwen_structured", lambda: fake_base)
+    monkeypatch.setattr(module, "get_qwen_thinking", lambda: fake_base)
     return fake_llm.ainvoke
 
 
@@ -127,7 +127,7 @@ class TestExtractCancelNode:
             )
         )
         monkeypatch.setattr(
-            cancel_module, "get_qwen_structured", lambda: fake_llm
+            cancel_module, "get_qwen_thinking", lambda: fake_llm
         )
         result = await option_extract_cancel(
             {"raw_text": "x", "intent": "cancel_order_request"}

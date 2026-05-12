@@ -23,7 +23,7 @@ def _patch_llm(monkeypatch: pytest.MonkeyPatch, return_type: str) -> AsyncMock:
         return_value=fake_llm_with_schema
     )
     monkeypatch.setattr(
-        intent_module, "get_qwen_structured", lambda: fake_base_llm
+        intent_module, "get_qwen_thinking", lambda: fake_base_llm
     )
     return fake_llm_with_schema.ainvoke
 
@@ -130,7 +130,7 @@ class TestCloseIntentNode:
             )
         )
         monkeypatch.setattr(
-            intent_module, "get_qwen_structured", lambda: fake_llm
+            intent_module, "get_qwen_thinking", lambda: fake_llm
         )
         result = await close_intent({"raw_text": "x"})
         assert result.get("error") is not None

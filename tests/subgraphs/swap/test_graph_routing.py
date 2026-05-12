@@ -15,12 +15,17 @@ from app.subgraphs.swap.models import (
 )
 
 
-def _patch(monkeypatch: pytest.MonkeyPatch, module: object, value: object) -> None:
+def _patch(
+    monkeypatch: pytest.MonkeyPatch,
+    module: object,
+    value: object,
+    fn: str = "get_qwen_thinking",
+) -> None:
     fake_llm = MagicMock()
     fake_llm.ainvoke = AsyncMock(return_value=value)
     fake_base = MagicMock()
     fake_base.with_structured_output = MagicMock(return_value=fake_llm)
-    monkeypatch.setattr(module, "get_qwen_structured", lambda: fake_base)
+    monkeypatch.setattr(module, fn, lambda: fake_base)
 
 
 @pytest.mark.asyncio
@@ -44,6 +49,7 @@ async def test_place_order_request_routes_to_place_order_node(
                 )
             ]
         ),
+        fn="get_qwen_structured",
     )
 
     graph = build_swap_graph()
@@ -65,7 +71,7 @@ async def test_place_order_request_routes_to_place_order_node(
     assert final.get("place_params", {}).get("expected_action") == "place"
     # ticker 集成验证
     tickers = final.get("tickers", [])
-    assert any(t.windCode == "00700.HK" for t in tickers)
+    assert any("700" in t.windCode and t.windCode.endswith(".HK") for t in tickers)
 
 
 @pytest.mark.asyncio

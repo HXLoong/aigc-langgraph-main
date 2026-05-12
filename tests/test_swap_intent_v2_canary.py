@@ -89,7 +89,7 @@ async def test_swap_intent_records_prompt_name_in_trace(
     )
     fake_base = MagicMock()
     fake_base.with_structured_output = MagicMock(return_value=fake_llm)
-    monkeypatch.setattr(intent_module, "get_qwen_structured", lambda: fake_base)
+    monkeypatch.setattr(intent_module, "get_qwen_thinking", lambda: fake_base)
 
     # 强制 env override 走 v2
     monkeypatch.setenv("OTC_PROMPT_SWAP_INTENT_VERSION", "v2")
@@ -126,7 +126,7 @@ async def test_swap_intent_v1_also_records_prompt_name(
     )
     fake_base = MagicMock()
     fake_base.with_structured_output = MagicMock(return_value=fake_llm)
-    monkeypatch.setattr(intent_module, "get_qwen_structured", lambda: fake_base)
+    monkeypatch.setattr(intent_module, "get_qwen_thinking", lambda: fake_base)
 
     monkeypatch.setenv("OTC_PROMPT_SWAP_INTENT_VERSION", "v1")
     clear_cache()

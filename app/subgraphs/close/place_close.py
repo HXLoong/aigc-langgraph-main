@@ -70,9 +70,27 @@ async def close_place_close(state: AgentState) -> dict[str, Any]:
     combined = f"{raw} {quote}"
     close_list = result.closeOrderList
 
-    # "不用跟量"/"不跟量" → 跳过 POV，设市价单
+    # 空列表 → 返回错误（避免 render 无回复）
+    if not close_list:
+        return {
+            "close_params": result.model_dump(),
+            "error": "未能识别平仓参数，请提供订单号或持仓序号。",
+            "intent": "close_order_request",
+            "trace": [
+                TraceEntry(
+                    node="close_place_close",
+                    decision="empty_close_order_list",
+                    llm_output=result.model_dump(),
+                )
+            ],
+        }
+
+    # "不用跟量"/"不跟量" → 市价单（用户明确不要跟量算法）
     _no_tracking = any(kw in combined for kw in ("不用跟量", "不跟量", "不要跟量"))
-    _has_explicit_type = any(kw in combined for kw in ("限价", "市价", "POV", "pov", "TWAP"))
+    import re as _re_type
+    _has_explicit_type = bool(_re_type.search(
+        r"限价|市价|pov\d*|twap", combined, _re_type.IGNORECASE
+    ))
     if "正常挂单" in combined and not _has_explicit_type:
         for leg in close_list:
             leg.closeOrderType = "市价单" if _no_tracking else "POV"
@@ -84,6 +102,17 @@ async def close_place_close(state: AgentState) -> dict[str, Any]:
             if not leg.closeOrderType:
                 leg.closeOrderType = "POV"
             leg.closeOrderPovRatio = 25
+
+    # "pov25"/"POV25" 等 → 提取数字作为 POV 比例
+    import re as _re_pov
+    _pov_match = _re_pov.search(r"pov\s*(\d{1,3})", combined, _re_pov.IGNORECASE)
+    if _pov_match:
+        _pov_val = int(_pov_match.group(1))
+        if 1 <= _pov_val <= 100:
+            for leg in close_list:
+                if not leg.closeOrderType:
+                    leg.closeOrderType = "POV"
+                leg.closeOrderPovRatio = _pov_val
 
     # === 拉取真实持仓数据 + 覆盖 LLM 输出 ===
     import re as _re
@@ -103,7 +132,7 @@ async def close_place_close(state: AgentState) -> dict[str, Any]:
             )
             r.raise_for_status()
             resp = r.json()
-            order_data = resp.get("data", []) if isinstance(resp, dict) else []
+            order_data = (resp.get("data") or []) if isinstance(resp, dict) else []
     except Exception:
         pass
 
@@ -119,6 +148,43 @@ async def close_place_close(state: AgentState) -> dict[str, Any]:
         if _matched and _matched.get("orderId"):
             _leg.orderId = _matched["orderId"]
             _leg.internalTradeId = _matched["orderId"]
+
+    # === 客户端预校验 ===
+    _validation_errors: list[str] = []
+    for _leg in close_list:
+        _amt = _leg.closeOrderNotionalDelta
+        if _amt is not None:
+            try:
+                _amt_val = float(_amt)
+                if _amt_val <= 0:
+                    _validation_errors.append("平仓名义本金必须大于0")
+                elif _amt_val < 1_000_000:
+                    _validation_errors.append("平仓名义本金不能低于100万")
+            except (ValueError, TypeError):
+                pass
+
+        if _leg.closeOrderType == "限价单" and _leg.closeOrderPrice is None:
+            _validation_errors.append("限价单必须填写限定价格")
+
+        if _leg.closeOrderType == "POV" and _leg.closeOrderPovRatio is not None:
+            _pov = _leg.closeOrderPovRatio
+            if not (1 <= _pov <= 100):
+                _validation_errors.append(f"POV比例{_pov}%超出合法范围(1-100%)")
+
+    if _validation_errors:
+        _err_msg = "参数校验不通过：" + "；".join(set(_validation_errors))
+        return {
+            "close_params": result.model_dump(),
+            "reply_text": _err_msg,
+            "intent": "close_order_request",
+            "trace": [
+                TraceEntry(
+                    node="close_place_close",
+                    decision=f"validation_failed: {_err_msg}",
+                    llm_output=result.model_dump(),
+                )
+            ],
+        }
 
     # === 生成确认卡 ===
     _card_lines = ["以下平仓申请，请核对详情后确认：\n"]

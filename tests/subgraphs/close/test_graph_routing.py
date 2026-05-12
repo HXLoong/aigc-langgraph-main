@@ -17,7 +17,7 @@ def _patch_intent(monkeypatch: pytest.MonkeyPatch, intent_type: str) -> None:
     fake_llm.ainvoke = AsyncMock(return_value=fake_output)
     fake_base = MagicMock()
     fake_base.with_structured_output = MagicMock(return_value=fake_llm)
-    monkeypatch.setattr(intent_module, "get_qwen_structured", lambda: fake_base)
+    monkeypatch.setattr(intent_module, "get_qwen_thinking", lambda: fake_base)
 
 
 def _patch_holding_query(
@@ -27,7 +27,7 @@ def _patch_holding_query(
     fake_llm.ainvoke = AsyncMock(return_value=params)
     fake_base = MagicMock()
     fake_base.with_structured_output = MagicMock(return_value=fake_llm)
-    monkeypatch.setattr(hq_module, "get_qwen_structured", lambda: fake_base)
+    monkeypatch.setattr(hq_module, "get_qwen_thinking", lambda: fake_base)
 
 
 @pytest.mark.asyncio
@@ -95,7 +95,7 @@ async def test_close_intent_error_routes_to_todo_not_holding_query(
         )
     )
     monkeypatch.setattr(
-        intent_module, "get_qwen_structured", lambda: fake_llm
+        intent_module, "get_qwen_thinking", lambda: fake_llm
     )
     graph = build_close_graph()
     final = await graph.ainvoke(

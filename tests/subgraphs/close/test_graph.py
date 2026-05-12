@@ -19,7 +19,7 @@ def _patch_llm(monkeypatch: pytest.MonkeyPatch, return_type: str) -> None:
         return_value=fake_llm_with_schema
     )
     monkeypatch.setattr(
-        intent_module, "get_qwen_structured", lambda: fake_base_llm
+        intent_module, "get_qwen_thinking", lambda: fake_base_llm
     )
 
 

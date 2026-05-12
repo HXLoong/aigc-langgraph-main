@@ -26,7 +26,7 @@ CloseIntentType = Literal[
 class CloseIntentOutput(BaseModel):
     """close.intent 节点的 LLM 输出 schema。"""
 
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="ignore")
 
     type: CloseIntentType
 
@@ -54,7 +54,7 @@ class HoldingQueryParams(BaseModel):
     驼峰命名匹配 Java DTO；`closeable_only` 是 snake_case 例外（与 prompt 一致）。
     """
 
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="ignore")
 
     closeable_only: bool
     internalTradeIdList: list[str] = Field(default_factory=list)
@@ -77,7 +77,7 @@ class ConfirmCloseParams(BaseModel):
     CO- 订单号 或 用户指定订单未匹配"。
     """
 
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="ignore")
 
     confirmOrderNoList: list[str] = Field(default_factory=list)
 
@@ -93,7 +93,7 @@ class CancelCloseParams(BaseModel):
     字段名 cancelOrderNoList 驼峰对齐 Java DTO。
     """
 
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="ignore")
 
     cancelOrderNoList: list[str] = Field(default_factory=list)
 
@@ -114,7 +114,7 @@ class CloseOrderItem(BaseModel):
     （Dify prompt 明确允许 null 表示"用户未提供"）。
     """
 
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="ignore")
 
     orderId: str | None = None
     internalTradeId: str | None = None
@@ -136,7 +136,7 @@ class ClosePlaceParams(BaseModel):
     空列表表示"无可绑定订单"或"输入语义为空"。
     """
 
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="ignore")
 
     closeOrderList: list[CloseOrderItem] = Field(default_factory=list)
 
@@ -149,7 +149,7 @@ class ClosePlaceParams(BaseModel):
 class ConfirmCancelParams(BaseModel):
     """close.confirm_cancel 节点 LLM 输出。"""
 
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="ignore")
 
     confirmCancelOrderNoList: list[str] = Field(default_factory=list)
 
@@ -162,7 +162,7 @@ class ConfirmCancelParams(BaseModel):
 class QueryStatusParams(BaseModel):
     """close.query_status 节点 LLM 输出。"""
 
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="ignore")
 
     queryOrderNoList: list[str] = Field(default_factory=list)
 

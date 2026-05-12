@@ -134,6 +134,63 @@ def _resolve_via_whitelist(raw_text: str) -> list[TickerCandidate]:
 # ============================================================
 
 
+def _pick_best(keyword: str, results: list) -> object:
+    """多命中启发式选择（作为 HITL 的 fallback 工具）。
+
+    优先级：
+    1. insShtDesc 精确匹配关键词 → 直接选
+    2. insShtDesc 以关键词开头（如"科创50ETF"匹配"科创50ETF华夏"）
+    3. A 股优先（SSE/SZSE）> 港股/美股
+    4. 以上都相同 → 选第一个
+    """
+    exact = [
+        r for r in results
+        if (getattr(r, "insShtDesc", "") or "") == keyword
+    ]
+    if exact:
+        a_shares_exact = [
+            r for r in exact
+            if (getattr(r, "windCode", "") or "").endswith((".SH", ".SZ"))
+        ]
+        if a_shares_exact:
+            return min(
+                a_shares_exact,
+                key=lambda r: 0 if (getattr(r, "windCode", "") or "").endswith(".SH") else 1,
+            )
+        return exact[0]
+
+    prefix_matches = [
+        r for r in results
+        if (getattr(r, "insShtDesc", "") or "").startswith(keyword)
+    ]
+    if prefix_matches:
+        min_len = min(len(getattr(r, "insShtDesc", "") or "") for r in prefix_matches)
+        same_len = [
+            r for r in prefix_matches
+            if len(getattr(r, "insShtDesc", "") or "") == min_len
+        ]
+        if len(same_len) > 1:
+            _hk = [r for r in same_len if (getattr(r, "windCode", "") or "").endswith(".HK")]
+            if _hk:
+                return _hk[0]
+        return min(
+            prefix_matches,
+            key=lambda r: (
+                len(getattr(r, "insShtDesc", "") or ""),
+                0 if getattr(r, "exchange", "") == "SSE" else 1,
+            ),
+        )
+
+    a_shares = [
+        r for r in results
+        if (getattr(r, "windCode", "") or "").endswith((".SH", ".SZ"))
+    ]
+    if a_shares:
+        return a_shares[0]
+
+    return results[0]
+
+
 async def _resolve_via_react_full(raw_text: str) -> TickerResolution:
     """tokenize 拆词 → 每个 keyword 查 securities-instrument/select → 分差判定。
 
@@ -146,6 +203,15 @@ async def _resolve_via_react_full(raw_text: str) -> TickerResolution:
     6. 0 命中 → 跳过该 keyword
     """
     keywords = tokenize.invoke({"raw_text": raw_text})
+    if not keywords:
+        return TickerResolution(resolved=[], hitl_pending=[])
+
+    # 过滤噪音关键词：单字符、纯数字非股票代码格式（4-6位数字是股票代码，保留）
+    keywords = [
+        kw for kw in keywords
+        if len(kw) > 1
+        and not (kw.isdigit() and not (4 <= len(kw) <= 6))
+    ]
     if not keywords:
         return TickerResolution(resolved=[], hitl_pending=[])
 
