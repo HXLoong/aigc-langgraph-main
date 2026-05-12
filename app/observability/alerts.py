@@ -72,6 +72,14 @@ THRESHOLDS: dict[str, AlertThreshold] = {
         threshold_pct=10.0,
         sustain_seconds=300,
     ),
+    "non_canary_traffic": AlertThreshold(
+        name="non_canary_traffic",
+        severity="P0",
+        description="非 canary 流量进入 LangGraph（企微管理员误切非测试群 Webhook），"
+        "≥ 1 即触发即时回切",
+        threshold_pct=0.0,  # 任何 non-canary 流量都告警
+        sustain_seconds=0,  # 即时触发，不等持续
+    ),
 }
 
 
@@ -258,6 +266,12 @@ def _delta_ratio_pct(name: str, ctx: AlertContext, state: AlertState) -> float:
     if name == "llm_failure_high":
         return _calc_ratio_pct(delta("llm_error"), delta("llm_total"))
 
+    if name == "non_canary_traffic":
+        # G5.1：F4.2 阶段任何 non-canary 流量都该触发回切告警（threshold_pct=0.0）
+        # 返回"窗口内 non-canary 请求数 × 100"作为伪百分比（≥ 1 都越线 0.0）
+        d = delta("canary_traffic_non_canary")
+        return d * 100.0 if d > 0 else 0.0
+
     return 0.0
 
 
@@ -277,6 +291,7 @@ def parse_prometheus_metrics(text: str) -> dict[str, Any]:
         "llm_error": 0,
         "llm_total": 0,
         "node_total": 0,
+        "canary_traffic_non_canary": 0,  # G5.1：非 canary 流量计数
     }
     for line in text.splitlines():
         line = line.strip()
@@ -295,6 +310,11 @@ def parse_prometheus_metrics(text: str) -> dict[str, Any]:
                     result["llm_error"] += value
             elif name_part == "otc_agent_node_total":
                 result["node_total"] += value
+            elif (
+                name_part == "otc_agent_canary_traffic_total"
+                and 'is_canary="false"' in labels_str
+            ):
+                result["canary_traffic_non_canary"] += value
         # http_5xx 通过外部 nginx 日志接入；本期 stub 为 0
     return result
 

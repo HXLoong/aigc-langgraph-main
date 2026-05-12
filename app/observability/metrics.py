@@ -233,6 +233,7 @@ METRIC_HITL_TOTAL = "otc_agent_hitl_total"
 METRIC_LLM_TOTAL = "otc_agent_llm_total"
 METRIC_LLM_TOKENS = "otc_agent_llm_tokens_total"  # C1.7 成本监控（按模型 + 方向 prompt/completion）
 METRIC_DYNAMIC_PROMPT_TOTAL = "otc_agent_dynamic_prompt_total"  # D2.5 / ADR 0013：cache_hit / cache_miss_ok / fallback
+METRIC_CANARY_TRAFFIC_TOTAL = "otc_agent_canary_traffic_total"  # G5.1 / F4.2：按 is_canary 区分进入的请求
 
 
 def emit_node_completed(node: str, status: str = "ok", elapsed_ms: int | None = None) -> None:
@@ -269,6 +270,22 @@ def emit_hitl(node: str) -> None:
 def emit_llm_call(model: str, status: str) -> None:
     """LLM 调用结束。status: ok / error / timeout"""
     get_collector().inc_counter(METRIC_LLM_TOTAL, {"model": model, "status": status})
+
+
+def emit_canary_traffic(is_canary: bool) -> None:
+    """金丝雀流量计数（G5.1 / F4.2）。
+
+    F4.2 期间企微管理员只切了部分群的 Webhook 到 LangGraph。LangGraph 收到
+    的每条请求都该按 roomId 判定是否在 canary allowlist 内：
+    - is_canary=True：合规进入，正常处理
+    - is_canary=False：可能是企微管理员误切非测试群 → 告警 + Tony 回切
+
+    F4.4 全量上线后 allowlist 含 ALL，所有流量都计为 canary（指标可继续保留）。
+    """
+    get_collector().inc_counter(
+        METRIC_CANARY_TRAFFIC_TOTAL,
+        {"is_canary": "true" if is_canary else "false"},
+    )
 
 
 def emit_dynamic_prompt(status: str) -> None:
@@ -345,6 +362,7 @@ __all__ = [
     "emit_llm_call",
     "emit_llm_tokens",
     "emit_dynamic_prompt",
+    "emit_canary_traffic",
     "get_collector",
     "METRIC_NODE_TOTAL",
     "METRIC_INTENT_LATENCY",
