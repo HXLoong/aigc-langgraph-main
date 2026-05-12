@@ -232,6 +232,7 @@ METRIC_FALLBACK_TOTAL = "otc_agent_fallback_total"
 METRIC_HITL_TOTAL = "otc_agent_hitl_total"
 METRIC_LLM_TOTAL = "otc_agent_llm_total"
 METRIC_LLM_TOKENS = "otc_agent_llm_tokens_total"  # C1.7 成本监控（按模型 + 方向 prompt/completion）
+METRIC_DYNAMIC_PROMPT_TOTAL = "otc_agent_dynamic_prompt_total"  # D2.5 / ADR 0013：cache_hit / cache_miss_ok / fallback
 
 
 def emit_node_completed(node: str, status: str = "ok", elapsed_ms: int | None = None) -> None:
@@ -268,6 +269,17 @@ def emit_hitl(node: str) -> None:
 def emit_llm_call(model: str, status: str) -> None:
     """LLM 调用结束。status: ok / error / timeout"""
     get_collector().inc_counter(METRIC_LLM_TOTAL, {"model": model, "status": status})
+
+
+def emit_dynamic_prompt(status: str) -> None:
+    """ADR 0013 动态 prompt 拉取计数（D2.5）。
+
+    status:
+        cache_hit       命中缓存（5min TTL 内）
+        cache_miss_ok   miss 后真后端成功拉取
+        fallback        真后端不可达，降级走静态 prompt
+    """
+    get_collector().inc_counter(METRIC_DYNAMIC_PROMPT_TOTAL, {"status": status})
 
 
 def emit_llm_tokens(
@@ -315,7 +327,7 @@ class Timer:
         self._start: float = 0.0
         self.elapsed_ms: int = 0
 
-    def __enter__(self) -> "Timer":
+    def __enter__(self) -> Timer:
         self._start = perf_counter()
         return self
 
@@ -332,6 +344,7 @@ __all__ = [
     "emit_hitl",
     "emit_llm_call",
     "emit_llm_tokens",
+    "emit_dynamic_prompt",
     "get_collector",
     "METRIC_NODE_TOTAL",
     "METRIC_INTENT_LATENCY",

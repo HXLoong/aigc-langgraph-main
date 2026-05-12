@@ -21,7 +21,6 @@ from langchain_core.tools import tool
 
 from app.config import get_settings
 from app.llm.clients import get_qwen_thinking
-from app.subgraphs.ticker.whitelist import TICKER_WHITELIST
 from app.tools.ticker_client import (
     KeywordItem,
     SecuritiesInstrumentReqVO,
@@ -321,19 +320,28 @@ def _sanitize_dynamic_prompt(text: str) -> str:
 
 
 def _get_dynamic_prompt_cached() -> str:
-    """5 分钟 LRU 拉 inference-prompt 动态片段。失败返回空串（降级走静态 prompt）。"""
+    """5 分钟 LRU 拉 inference-prompt 动态片段。失败返回空串（降级走静态 prompt）。
+
+    指标埋点（D2.5 / ADR 0013）：每次调用 emit otc_agent_dynamic_prompt_total
+    {status=cache_hit | cache_miss_ok | fallback}
+    """
+    from app.observability.metrics import emit_dynamic_prompt
+
     now = time.time()
     cached = _INFER_PROMPT_CACHE.get("global")
     if cached and (now - cached[0]) < _INFER_PROMPT_TTL_SEC:
+        emit_dynamic_prompt("cache_hit")
         return cached[1]
     try:
         client = _make_client()
         raw = _run_async(client.get_inference_prompt())
         sanitized = _sanitize_dynamic_prompt(raw)
         _INFER_PROMPT_CACHE["global"] = (now, sanitized)
+        emit_dynamic_prompt("cache_miss_ok")
         return sanitized
     except Exception as exc:  # noqa: BLE001
         logger.warning("get_inference_prompt 失败，降级走静态 prompt: %s", exc)
+        emit_dynamic_prompt("fallback")
         return ""
 
 
