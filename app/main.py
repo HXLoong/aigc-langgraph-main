@@ -14,6 +14,7 @@ from typing import AsyncGenerator
 from fastapi import FastAPI
 from fastapi.responses import PlainTextResponse
 
+from app.api.health import router as health_router
 from app.api.routes import router as api_router
 from app.graph.main import build_main_graph
 from app.observability.metrics import get_collector
@@ -63,6 +64,7 @@ app = FastAPI(
 )
 
 app.include_router(api_router)
+app.include_router(health_router)
 
 
 @app.get("/metrics", response_class=PlainTextResponse, include_in_schema=False)
