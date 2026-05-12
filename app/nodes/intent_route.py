@@ -67,15 +67,27 @@ _KEYWORD_RULES: list[dict[str, Any]] = _load_keyword_rules()
 
 
 def _match_keywords(text: str) -> ProductType | None:
-    """第 2 层：按 YAML 优先级表遍历，命中即 break。"""
+    """第 2 层：按 YAML 优先级表遍历，命中即 break（向后兼容接口）。"""
+    detail = _match_keywords_with_token(text)
+    return detail[0] if detail is not None else None
+
+
+def _match_keywords_with_token(text: str) -> tuple[ProductType, str] | None:
+    """第 2 层带 trace token 版本（E3.4 错例追溯用）。
+
+    Returns:
+        (product_type, hit_token) 命中时；hit_token 是触发匹配的 keyword 或 regex pattern。
+        如裸"确认下单"被路由到 option 时返回 ('option', 'kw:确认下单')，
+        便于 trace 中明示路由决策依据。
+    """
     for rule in _KEYWORD_RULES:
         pt: ProductType = rule["product_type"]
         for kw in rule.get("keywords", []) or []:
             if kw in text:
-                return pt
+                return pt, f"kw:{kw}"
         for pat in rule.get("regex_patterns", []) or []:
             if re.search(pat, text):
-                return pt
+                return pt, f"re:{pat}"
     return None
 
 
@@ -141,12 +153,16 @@ async def intent_route(state: AgentState) -> dict[str, Any]:
         }
 
     # 第 2 层
-    pt = _match_keywords(text)
-    if pt is not None:
+    match = _match_keywords_with_token(text)
+    if match is not None:
+        pt, hit_token = match
         return {
             "product_type": pt,
             "trace": [
-                TraceEntry(node="intent_route", decision=f"rule:keyword→{pt}")
+                TraceEntry(
+                    node="intent_route",
+                    decision=f"rule:keyword[{hit_token}]→{pt}",
+                )
             ],
         }
 
