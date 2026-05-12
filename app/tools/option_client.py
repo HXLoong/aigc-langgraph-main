@@ -18,7 +18,6 @@ from app.tools.models import (
     MachineContext,
 )
 
-
 # ============================================================
 # 期权意图枚举（StockEnum.java:42-79，16 值）
 # ============================================================
@@ -163,10 +162,15 @@ class OptionClientHttpx:
     async def operate(
         self, req: FinancialOrderOpenApiSaveReqVO
     ) -> CommonResult:
+        from app.tools.exceptions import translate_httpx_errors
+
         url = f"{self._base_url}/admin-api/financial-orders/operate"
         # 金额精度：向 Goats 发送前 truncate 至 2 位
         payload = req.model_dump(mode="json", exclude_none=True)
-        async with httpx.AsyncClient(timeout=self._timeout, trust_env=False) as client:
+        async with (
+            translate_httpx_errors("option"),
+            httpx.AsyncClient(timeout=self._timeout, trust_env=False) as client,
+        ):
             r = await client.post(url, json=payload, headers=self._headers)
             r.raise_for_status()
             return CommonResult.model_validate(r.json())
@@ -174,8 +178,13 @@ class OptionClientHttpx:
     async def query_close_orders(
         self, ctx: MachineContext
     ) -> CommonResult:
+        from app.tools.exceptions import translate_httpx_errors
+
         url = f"{self._base_url}/admin-api/financial-orders/query-close-orders"
-        async with httpx.AsyncClient(timeout=self._timeout, trust_env=False) as client:
+        async with (
+            translate_httpx_errors("option"),
+            httpx.AsyncClient(timeout=self._timeout, trust_env=False) as client,
+        ):
             r = await client.post(
                 url,
                 json=ctx.model_dump(mode="json", exclude_none=True),

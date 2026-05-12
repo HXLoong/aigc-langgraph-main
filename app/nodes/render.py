@@ -25,6 +25,7 @@ _ZERO_HIT_TMPL = (
     "（例如：证券代码如 600519.SH，或完整名称如 贵州茅台）"
 )
 _ERROR_REPLY = "我没完全理解你的意思，能换种说法重新告诉我吗？"
+_UNREACHABLE_REPLY = "系统暂时不可用，请稍后再试。若紧急需求请联系交易员或运营。"
 
 
 def _format_hitl_card(hitl_candidates: list[dict[str, Any]]) -> str:
@@ -95,8 +96,15 @@ async def render(state: AgentState) -> dict[str, Any]:
     if state.get("api_result"):
         return {"reply_text": str(state["api_result"])}
 
-    # 5. error → 通用兜底
-    if state.get("error") is not None:
+    # 5. error → 区分不可达 vs 一般 cascade fail
+    err = state.get("error")
+    if err is not None:
+        err_type = err.type if hasattr(err, "type") else (
+            err.get("type") if isinstance(err, dict) else None
+        )
+        if err_type == "BackendUnreachableError":
+            emit_fallback(reason="backend_unreachable")
+            return {"reply_text": _UNREACHABLE_REPLY}
         emit_fallback(reason="cascade_fail")
         return {"reply_text": _ERROR_REPLY}
 
