@@ -43,6 +43,26 @@ prompt(close): 更新平仓意图识别提示词到 Dify v2.3
 test(e2e): 新增 2 条雪球询价的 golden case
 ```
 
+## PR 标题与内容语言
+
+**强制中文**：
+
+- PR 标题必须用中文（仍保留 `<type>(<scope>): ...` 前缀约定）
+- PR 描述（body）必须用中文，含中文小节标题（如 ## 概述 / ## 变更内容 / ## 验证 / ## 关联）
+- 不要混用英文小节（如 `## Summary` / `## Test plan`）—— 统一中文
+- 代码块、链接、ADR 编号、技术词（`workflow_dispatch` / `golden case` 等）保持英文原样
+- Commit message 沿用现有 type 约定，正文 OK 用中文（已有先例）
+
+理由：团队 review 主语种为中文，PR 是业务方与开发的协作界面，混语种会拖慢理解。
+
+**示例**：
+
+```
+✅ docs(roadmap): M3/M4 路线图 + 分工 SOP
+✅ feat(swap): 支持按名义本金下单的参数提取
+❌ docs: Add M3/M4 roadmap and team assignment SOP
+```
+
 ## PR 检查清单
 
 提交 PR 前（让 Claude Code 帮你逐条检查）：

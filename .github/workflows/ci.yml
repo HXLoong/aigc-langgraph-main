@@ -1,10 +1,9 @@
 name: CI
 
 on:
-  push:
-    branches: [main, "feature/**"]
-  pull_request:
-    branches: [main]
+  # 2026-05-12 暂停自动 CI（M3 数据集 + 文档密集期，CI 临时关闭）
+  # 恢复方法：取消下方 workflow_dispatch，恢复 push + pull_request 触发即可
+  workflow_dispatch:
 
 jobs:
   test:
