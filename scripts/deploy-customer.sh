@@ -181,7 +181,8 @@ step2_env_check() {
     for key in "${required[@]}"; do
         local val
         val=$(env_get "$key")
-        if [ -z "$val" ] || [[ "$val" == *FILL_*">"* ]] || [[ "$val" == *"<FILL"* ]]; then
+        # 检查空 或 含未替换的 <FILL_*> 占位符
+        if [ -z "$val" ] || [[ "$val" == *"<FILL"* ]]; then
             missing+=("$key")
         fi
     done
@@ -210,21 +211,47 @@ step3_mysql_check() {
 
     local cp_uri
     cp_uri=$(env_get "CHECKPOINT_MYSQL_URI")
-    # 简化提取（mysql://user:pass@host:port/db）
-    local host port user pass db
-    host=$(echo "$cp_uri" | sed -E 's|.+@([^:]+):.+|\1|')
-    port=$(echo "$cp_uri" | sed -E 's|.+:([0-9]+)/.+|\1|')
-    user=$(echo "$cp_uri" | sed -E 's|.+://([^:]+):.+|\1|')
-    pass=$(echo "$cp_uri" | sed -E 's|.+://[^:]+:([^@]+)@.+|\1|')
-    db=$(echo "$cp_uri" | sed -E 's|.+/([^?]+).*|\1|')
 
-    info "测试连接: $host:$port db=$db"
-    if ! MYSQL_PWD="$pass" mysql -h "$host" -P "$port" -u "$user" -e "SELECT 1" >/dev/null 2>&1; then
+    # 用 Python urllib 正确解析（sed 处理含 @ 的密码会贪婪匹配出错；
+    # 同时支持 URL-encoded 特殊字符如 %40 = @）
+    local parsed
+    parsed=$(python3 -c "
+from urllib.parse import urlparse, unquote
+u = urlparse('$cp_uri')
+print(u.hostname or '')
+print(u.port or 3306)
+print(unquote(u.username or ''))
+print(unquote(u.password or ''))
+print((u.path or '').lstrip('/').split('?', 1)[0])
+" 2>/dev/null) || abort "URI 解析失败（CHECKPOINT_MYSQL_URI 格式错？）" "docs/deploy/customer-private.md#4"
+
+    local host port user pass db
+    host=$(echo "$parsed" | sed -n '1p')
+    port=$(echo "$parsed" | sed -n '2p')
+    user=$(echo "$parsed" | sed -n '3p')
+    pass=$(echo "$parsed" | sed -n '4p')
+    db=$(echo "$parsed" | sed -n '5p')
+
+    info "测试连接: $host:$port db=$db user=$user"
+
+    # 用 --defaults-extra-file 避免 MYSQL_PWD 经 ps 泄漏到 /proc/<pid>/environ
+    local creds_file
+    creds_file=$(mktemp)
+    chmod 600 "$creds_file"
+    cat > "$creds_file" <<EOF
+[client]
+password=$pass
+EOF
+    trap 'rm -f "$creds_file"' RETURN
+
+    if ! mysql --defaults-extra-file="$creds_file" -h "$host" -P "$port" -u "$user" -e "SELECT 1" >/dev/null 2>&1; then
+        rm -f "$creds_file"
         abort "MySQL 连不通，检查 .env 中 CHECKPOINT_MYSQL_URI" "docs/troubleshooting-sop.md#4"
     fi
 
     local ver
-    ver=$(MYSQL_PWD="$pass" mysql -h "$host" -P "$port" -u "$user" -N -e "SELECT VERSION()")
+    ver=$(mysql --defaults-extra-file="$creds_file" -h "$host" -P "$port" -u "$user" -N -e "SELECT VERSION()")
+    rm -f "$creds_file"
     info "MySQL 版本: $ver"
     # ADR 0009: 8.0.19 ≤ v < 9.6.0
     if ! echo "$ver" | grep -qE '^(8\.0\.(19|[2-9][0-9])|9\.[0-5]\.)'; then
@@ -293,16 +320,31 @@ step5_langfuse_up() {
         || abort "docker compose up 失败" "docs/deploy/langfuse-self-hosted.md#8"
 
     # 等所有容器 healthy（最多 120 秒）
+    # 注意：旧 docker compose 输出 JSON array、新版输出 JSONL；用 docker ps
+    # 的 health 状态过滤更稳定，避开 compose 输出格式差异
     info "等待容器健康检查..."
     local waited=0
     while [ "$waited" -lt 120 ]; do
-        local unhealthy
-        unhealthy=$(docker compose -f "${LANGFUSE_DIR}/docker-compose.yml" --env-file "${LANGFUSE_DIR}/.env" ps --format json 2>/dev/null \
-            | grep -c '"Health":"unhealthy"' || echo 0)
-        local starting
-        starting=$(docker compose -f "${LANGFUSE_DIR}/docker-compose.yml" --env-file "${LANGFUSE_DIR}/.env" ps --format json 2>/dev/null \
-            | grep -c '"Health":"starting"' || echo 0)
-        if [ "$unhealthy" = "0" ] && [ "$starting" = "0" ]; then
+        # 直接列容器，按 "name like langfuse-*" 过滤 + 查 health 状态
+        # 用 inspect 拿每个容器的 .State.Health.Status（无 health 配置则返回 'none'）
+        local compose_project
+        compose_project=$(basename "$(dirname "${LANGFUSE_DIR}")")
+        local containers
+        containers=$(docker ps --filter "label=com.docker.compose.project=${compose_project}" --format '{{.Names}}')
+
+        local all_ok=1
+        local has_starting=0
+        for c in $containers; do
+            local hs
+            hs=$(docker inspect --format='{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' "$c" 2>/dev/null)
+            case "$hs" in
+                healthy|none) ;;  # OK（无 healthcheck 的容器算 OK）
+                starting)    has_starting=1; all_ok=0 ;;
+                unhealthy|*) all_ok=0 ;;
+            esac
+        done
+
+        if [ "$all_ok" = "1" ]; then
             ok "LangFuse 容器全部 healthy"
             return
         fi
@@ -410,9 +452,9 @@ step8_app_start() {
     echo "$pid" > "${PROJECT_DIR}/app.pid"
     info "PID: $pid → ${PROJECT_DIR}/app.pid（日志：app.log）"
 
-    # 等 15 秒让应用启动
+    # 短等待让 uvicorn 完成绑定；Step 9 健康检查会再轮询 30 秒
     sleep 5
-    ok "应用已后台启动"
+    ok "应用已后台启动（PID $pid，Step 9 健康检查继续验证）"
 }
 
 # ============================================================
@@ -450,37 +492,54 @@ step10_smoke() {
 
     [ "$DRY_RUN" = "1" ] && { warn "dry-run 跳过"; return; }
 
+    # 用 -s（silent）但不用 -f（让 4xx/5xx 也返回 body）；
+    # 单独拿 HTTP 状态码 + body，区分"应用 5xx"vs"业务回复偏差"
+    _run_smoke() {
+        local payload="$1"
+        local body status tmp
+        tmp=$(mktemp)
+        status=$(curl -s -m 30 -o "$tmp" -w '%{http_code}' \
+            -X POST http://localhost:8000/v1/workflows/run \
+            -H "Content-Type: application/json" -d "$payload" 2>/dev/null)
+        body=$(cat "$tmp" 2>/dev/null)
+        rm -f "$tmp"
+        echo "${status}|${body}"
+    }
+
     info "Case 1: 完整代码询价"
-    local r1
-    r1=$(curl -sf -m 30 -X POST http://localhost:8000/v1/workflows/run \
-        -H "Content-Type: application/json" \
-        -d '{"inputs":{"raw_text":"600519.SH 询价 3 个月平值看涨","conversation_id":"smoke-001"},"response_mode":"blocking","user":"smoke-test"}' 2>&1)
-    if echo "$r1" | grep -q "600519"; then
+    local r1 status1 body1
+    r1=$(_run_smoke '{"inputs":{"raw_text":"600519.SH 询价 3 个月平值看涨","conversation_id":"smoke-001"},"response_mode":"blocking","user":"smoke-test"}')
+    status1=${r1%%|*}; body1=${r1#*|}
+    if [ "$status1" != "200" ]; then
+        warn "Case 1 HTTP $status1（应用层错而非业务回复偏差）：$body1"
+    elif echo "$body1" | grep -q "600519"; then
         ok "Case 1 包含 600519"
     else
-        warn "Case 1 响应未含 600519: $r1"
+        warn "Case 1 响应未含 600519: $body1"
     fi
 
     info "Case 2: 中文简称"
-    local r2
-    r2=$(curl -sf -m 30 -X POST http://localhost:8000/v1/workflows/run \
-        -H "Content-Type: application/json" \
-        -d '{"inputs":{"raw_text":"贵州茅台 询价","conversation_id":"smoke-002"},"response_mode":"blocking","user":"smoke-test"}' 2>&1)
-    if echo "$r2" | grep -qE "600519|茅台"; then
+    local r2 status2 body2
+    r2=$(_run_smoke '{"inputs":{"raw_text":"贵州茅台 询价","conversation_id":"smoke-002"},"response_mode":"blocking","user":"smoke-test"}')
+    status2=${r2%%|*}; body2=${r2#*|}
+    if [ "$status2" != "200" ]; then
+        warn "Case 2 HTTP $status2（应用层错）：$body2"
+    elif echo "$body2" | grep -qE "600519|茅台"; then
         ok "Case 2 包含 600519 或茅台"
     else
-        warn "Case 2 响应可能异常: $r2"
+        warn "Case 2 响应可能异常: $body2"
     fi
 
     info "Case 3: 未知标的（fallback）"
-    local r3
-    r3=$(curl -sf -m 30 -X POST http://localhost:8000/v1/workflows/run \
-        -H "Content-Type: application/json" \
-        -d '{"inputs":{"raw_text":"完全不存在的标的xyz 询价","conversation_id":"smoke-003"},"response_mode":"blocking","user":"smoke-test"}' 2>&1)
-    if echo "$r3" | grep -qE "无法识别|抱歉"; then
+    local r3 status3 body3
+    r3=$(_run_smoke '{"inputs":{"raw_text":"完全不存在的标的xyz 询价","conversation_id":"smoke-003"},"response_mode":"blocking","user":"smoke-test"}')
+    status3=${r3%%|*}; body3=${r3#*|}
+    if [ "$status3" != "200" ]; then
+        warn "Case 3 HTTP $status3（应用层错）：$body3"
+    elif echo "$body3" | grep -qE "无法识别|抱歉"; then
         ok "Case 3 fallback 触发"
     else
-        warn "Case 3 fallback 未触发: $r3"
+        warn "Case 3 fallback 未触发: $body3"
     fi
 }
 
