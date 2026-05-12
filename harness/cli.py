@@ -18,7 +18,7 @@ from pathlib import Path
 from typing import Any
 
 from harness.differ import diff_fields, is_pass
-from harness.golden import filter_by_category, load_golden
+from harness.golden import filter_by_category, filter_by_ids, load_golden
 from harness.reporter import (
     render_markdown,
     summarize,
@@ -41,6 +41,16 @@ DEFAULT_GOLDEN_PATHS = [
 
 
 async def cmd_run(args: argparse.Namespace) -> int:
+    # --mock-ticker 强制走白名单（CI / 离线场景）
+    if getattr(args, "mock_ticker", False):
+        import os
+        os.environ["TICKER_RESOLVER_MODE"] = "whitelist"
+        # 重置已加载的模块状态
+        import importlib
+        import app.subgraphs.ticker.resolver as _res_mod
+        _res_mod.DEFAULT_MODE = "whitelist"
+        print("  [mock-ticker] TICKER_RESOLVER_MODE=whitelist")
+
     cases = []
     for p in DEFAULT_GOLDEN_PATHS:
         cases.extend(load_golden(p))
@@ -48,9 +58,12 @@ async def cmd_run(args: argparse.Namespace) -> int:
         print("ERROR: no golden cases found", file=sys.stderr)
         return 2
 
+    case_ids: list[str] | None = args.case if args.case else None
+    cases = filter_by_ids(cases, case_ids)
     cases = filter_by_category(cases, args.category)
     if not cases:
-        print(f"ERROR: no cases match category prefix {args.category!r}", file=sys.stderr)
+        filter_desc = f"case={case_ids!r}" if case_ids else f"category={args.category!r}"
+        print(f"ERROR: no cases match {filter_desc}", file=sys.stderr)
         return 2
 
     print(f"running {len(cases)} cases ...")
@@ -112,12 +125,25 @@ def build_parser() -> argparse.ArgumentParser:
         "--all", action="store_true", help="跑所有 case（与 --category 互斥）"
     )
     run.add_argument(
+        "--case",
+        action="append",
+        metavar="ID",
+        default=None,
+        help="按 case ID 精确过滤，可多次指定（如 --case g042 --case g001）",
+    )
+    run.add_argument(
         "--category", default=None, help="按 category 前缀过滤（如 swap/place_order）"
     )
     run.add_argument(
         "--out",
         default=".harness-runs/latest",
         help="报告输出目录（默认 .harness-runs/latest）",
+    )
+    run.add_argument(
+        "--mock-ticker",
+        action="store_true",
+        default=False,
+        help="强制 ticker resolver 走白名单模式（CI / 离线 / --mock-ticker）",
     )
 
     sub.add_parser("eval", help="(M2) LangFuse Dataset 上跑评估")

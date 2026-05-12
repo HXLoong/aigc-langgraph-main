@@ -59,7 +59,7 @@ class Settings(BaseSettings):
     enable_langfuse: bool = False
     langfuse_public_key: str = ""
     langfuse_secret_key: str = ""
-    langfuse_host: str = "https://cloud.langfuse.com"
+    langfuse_base_url: str = "https://cloud.langfuse.com"
     langfuse_project: str = "otc-agent"
 
     # === 灰度切换 ===

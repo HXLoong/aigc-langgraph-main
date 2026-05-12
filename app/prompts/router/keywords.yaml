@@ -5,13 +5,17 @@
 
 priority_rules:
   # 平仓优先（覆盖 g020 "我有哪些期权持仓" / g022 "平 CO-... 全部"）
+  # 也覆盖 "平一半"（g342）和 "平300万" 类短命令（g354）
   - product_type: option_close
     keywords:
       - 平仓
       - 持仓
       - 平掉
+      - 平一半
     regex_patterns:
       - 平.*全部
+      - 平\d+万
+      - 序号\d+平
 
   # 期权（覆盖 g012 "参与型看涨" / g015 "询价" / g016 "雪球"）
   - product_type: option

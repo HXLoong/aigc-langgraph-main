@@ -1,28 +1,18 @@
 """LangFuse SDK 单例封装（ADR 0014 D8）。
 
-读 ENABLE_LANGFUSE / LANGFUSE_HOST / LANGFUSE_PUBLIC_KEY / LANGFUSE_SECRET_KEY。
-- ENABLE_LANGFUSE 未启用时：返回 None，所有调用走 no-op
+读 app.config.Settings：enable_langfuse / langfuse_base_url / langfuse_public_key / langfuse_secret_key。
+- enable_langfuse=False 时：返回 None，所有调用走 no-op
 - 真实启用时：返回 langfuse.langchain.CallbackHandler 单例
 """
 from __future__ import annotations
 
 import logging
-import os
 from typing import Any
 
 logger = logging.getLogger(__name__)
 
 _callback_handler: Any | None = None
 _initialized: bool = False
-
-
-def _is_enabled() -> bool:
-    return os.environ.get("ENABLE_LANGFUSE", "").strip().lower() in {
-        "1",
-        "true",
-        "yes",
-        "on",
-    }
 
 
 def get_callback_handler() -> Any | None:
@@ -37,30 +27,32 @@ def get_callback_handler() -> Any | None:
 
     _initialized = True
 
-    if not _is_enabled():
-        logger.info("LangFuse disabled (ENABLE_LANGFUSE != 'true')")
+    from app.config import get_settings
+    settings = get_settings()
+
+    if not settings.enable_langfuse:
+        logger.info("LangFuse disabled (enable_langfuse=false)")
+        return None
+
+    if not (settings.langfuse_public_key and settings.langfuse_secret_key):
+        logger.warning(
+            "LangFuse keys not set (langfuse_public_key / langfuse_secret_key); "
+            "running without trace upload"
+        )
         return None
 
     try:
+        import os
+
         from langfuse.langchain import CallbackHandler  # type: ignore[import-not-found]
 
-        host = os.environ.get("LANGFUSE_HOST", "http://localhost:3000")
-        public_key = os.environ.get("LANGFUSE_PUBLIC_KEY")
-        secret_key = os.environ.get("LANGFUSE_SECRET_KEY")
+        # langfuse v4 CallbackHandler 只读 os.environ；把 Settings 值回填进去
+        os.environ.setdefault("LANGFUSE_PUBLIC_KEY", settings.langfuse_public_key)
+        os.environ.setdefault("LANGFUSE_SECRET_KEY", settings.langfuse_secret_key)
+        os.environ.setdefault("LANGFUSE_BASE_URL", settings.langfuse_base_url)
 
-        if not (public_key and secret_key):
-            logger.warning(
-                "LangFuse keys not set (LANGFUSE_PUBLIC_KEY / LANGFUSE_SECRET_KEY); "
-                "running without trace upload"
-            )
-            return None
-
-        _callback_handler = CallbackHandler(
-            host=host,
-            public_key=public_key,
-            secret_key=secret_key,
-        )
-        logger.info("LangFuse callback handler initialized host=%s", host)
+        _callback_handler = CallbackHandler()
+        logger.info("LangFuse callback handler initialized base_url=%s", settings.langfuse_base_url)
         return _callback_handler
 
     except Exception as exc:  # noqa: BLE001

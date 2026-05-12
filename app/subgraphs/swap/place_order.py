@@ -22,7 +22,7 @@ from app.graph.state import AgentState, Message, TraceEntry
 from app.llm.clients import get_qwen_structured
 from app.prompts import load_prompt
 from app.subgraphs.swap.models import SwapPlaceOrderParams
-from app.subgraphs.ticker.resolver import resolve_ticker
+from app.subgraphs.ticker.resolver import resolve_ticker_full
 
 
 def _format_history(history: list[Message] | None) -> str:
@@ -84,17 +84,19 @@ async def swap_place_order(state: AgentState) -> dict[str, Any]:
         ]
     )
 
-    # 2. ticker resolver 识别标的（独立通道，与 LLM 提取的 placeOrderWindCode 互补）
-    tickers = await resolve_ticker(raw_text)
+    # 2. ticker resolver 识别标的（独立通道，含 HITL 信号）
+    resolution = await resolve_ticker_full(raw_text)
+    tickers = resolution.resolved
 
     action = _expected_action(params)
     decision = (
         f"action={action},"
         f" orders={len(params.orderList)},"
-        f" tickers={len(tickers)}"
+        f" tickers={len(tickers)},"
+        f" hitl={len(resolution.hitl_pending)}"
     )
 
-    return {
+    out: dict = {
         "place_params": {
             "expected_action": action,
             "orderList": [item.model_dump() for item in params.orderList],
@@ -107,10 +109,14 @@ async def swap_place_order(state: AgentState) -> dict[str, Any]:
                 llm_output={
                     "params": params.model_dump(),
                     "tickers_count": len(tickers),
+                    "hitl_count": len(resolution.hitl_pending),
                 },
             )
         ],
     }
+    if resolution.hitl_pending:
+        out["ticker_hitl_candidates"] = resolution.hitl_pending
+    return out
 
 
 __all__ = ["swap_place_order"]

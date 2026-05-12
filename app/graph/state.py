@@ -112,6 +112,13 @@ class AgentState(TypedDict, total=False):
     query_filter: dict[str, Any] | None
     close_params: dict[str, Any] | None
 
+    # -------- ticker 消歧 --------
+    # 多命中分差不足时收集到此处，render 节点生成消歧卡片（Issue #20）
+    ticker_hitl_candidates: list[dict[str, Any]] | None
+
+    # -------- 回复渲染 --------
+    reply_text: str | None  # render 节点写入；API 层透传给企微
+
     # -------- 工程层 --------
     trace: Annotated[list[TraceEntry], add]
     error: ErrorInfo | None

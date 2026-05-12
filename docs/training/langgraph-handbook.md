@@ -2634,10 +2634,22 @@ ADR 0014：LangFuse 作为 harness 后端 + 提示词运行时来源。
 2. **Prompt 热更**：在 LangFuse UI 改 prompt → 下次 `load_prompt` 自动拉新版（lru_cache 失效需重启或 clear_cache）
 3. **Dataset 评测**：`python -m harness sync-golden` 把 golden case 同步到 LangFuse Dataset，UI 可视化跑
 
+**两种部署模式**（按环境选）：
+
+| 模式 | 何时用 | LANGFUSE_HOST |
+|---|---|---|
+| **Cloud · SaaS（团队开发期默认）** | 本地开发、团队共享 trace、无客户合规约束 | `https://cloud.langfuse.com` |
+| **Self-hosted（客户私有化部署）** | 客户内网、合规要求 trace 不出网 | `http://<内部地址>:3000` 或客户自部署的实例地址 |
+
+> 团队当前开发期约定：默认用 **LangFuse Cloud**，所有人共享 workspace、trace 互相可见，避免本地起 docker。客户私有化阶段（#33 Epic）才切回 self-hosted。
+
 启用方式（`.env`）：
 ```
 ENABLE_LANGFUSE=true
-LANGFUSE_HOST=http://localhost:3000
+# Cloud 模式（开发期默认）
+LANGFUSE_HOST=https://cloud.langfuse.com
+# Self-hosted 模式（客户私有化）
+# LANGFUSE_HOST=http://localhost:3000
 LANGFUSE_PUBLIC_KEY=pk-lf-xxxxx
 LANGFUSE_SECRET_KEY=sk-lf-xxxxx
 USE_LANGFUSE_PROMPTS=true   # 是否优先从 LangFuse 拉 prompt

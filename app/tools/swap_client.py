@@ -136,14 +136,14 @@ class SwapClientHttpx:
     ) -> CommonResult:
         url = f"{self._base_url}/admin-api/swap-order/operate"
         payload = req.model_dump(mode="json", exclude_none=True)
-        async with httpx.AsyncClient(timeout=self._timeout) as client:
+        async with httpx.AsyncClient(timeout=self._timeout, trust_env=False) as client:
             r = await client.post(url, json=payload, headers=self._headers)
             r.raise_for_status()
             return CommonResult.model_validate(r.json())
 
     async def get(self, order_id: str) -> CommonResult:
         url = f"{self._base_url}/admin-api/swap-order/get"
-        async with httpx.AsyncClient(timeout=self._timeout) as client:
+        async with httpx.AsyncClient(timeout=self._timeout, trust_env=False) as client:
             r = await client.get(
                 url, params={"orderId": order_id}, headers=self._headers
             )
@@ -154,7 +154,7 @@ class SwapClientHttpx:
         self, conversation_id: str
     ) -> CommonResult:
         url = f"{self._base_url}/admin-api/swap-order/get-conversation-orders"
-        async with httpx.AsyncClient(timeout=self._timeout) as client:
+        async with httpx.AsyncClient(timeout=self._timeout, trust_env=False) as client:
             r = await client.post(
                 url,
                 json={"conversationId": conversation_id},
