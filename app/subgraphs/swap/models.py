@@ -147,6 +147,25 @@ class SwapQueryParams(BaseModel):
     orderList: list[SwapOrderRefItem] = Field(default_factory=list)
 
 
+# ============================================================
+# 手转为股（hand_to_share）单条输出 schema
+# ============================================================
+
+
+class SwapHandToShareItemOutput(BaseModel):
+    """swap.hand_to_share 节点 LLM 输出：单条订单的手→股换算结果。
+
+    Dify 原节点（node_id 1776947381378）一次处理 1 条 item，
+    LangGraph 版在 batch 函数里循环调用。
+    """
+
+    model_config = ConfigDict(extra="ignore")
+
+    uniqueId: str
+    placeOrderQuantityHand: float | int | None = None
+    placeOrderQuantity: float | int | None = None
+
+
 __all__ = [
     "SwapIntentType",
     "SwapIntentOutput",
@@ -160,4 +179,5 @@ __all__ = [
     "SwapConfirmParams",
     "SwapCancelParams",
     "SwapQueryParams",
+    "SwapHandToShareItemOutput",
 ]

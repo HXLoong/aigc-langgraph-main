@@ -181,6 +181,8 @@ def _state_to_outputs(state: AgentState) -> dict[str, Any]:
         "confirm",
         "query_filter",
         "close_params",
+        "ticker_hitl_candidates",
+        "reply_text",
     ):
         v = state.get(key)
         if v is not None:

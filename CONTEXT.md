@@ -16,8 +16,12 @@ _Avoid_: 混沌工程（Chaos Engineering，不同概念）、可观测性平台
 _Avoid_: 测试用例（太泛）、fixture（语义不准）
 
 **Shadow compare（双跑对照）**：
-同一条 case 同时打到 Dify 和 LangGraph，diff 输出找差异。是 Dify→LangGraph 迁移期的验证工具，不是 harness 的核心功能。
-_Avoid_: A/B test（语义不准，不涉及流量切分）
+同一条 case 同时打到 Dify 和 LangGraph，diff 输出找差异。是 Dify→LangGraph 迁移期的**辅助参考工具**，**不是合格性判定的标准**——Dify 自己有"标的不准 / 参数 bug / 评估缺失"三大已知缺陷（迁移动机），不能作为 ground truth。LangGraph 是否合格的判定标准是 **Golden case PASS 率**，不是 shadow diff 率。Shadow 的实际用途是 M4 金丝雀切流前给业务方提供"Dify 与 LangGraph 在生产真实流量上的输出对比"作为决策辅助。
+_Avoid_: A/B test（语义不准，不涉及流量切分）；ground truth 验证（Dify 不是 ground truth）
+
+**Ground truth（合格性判定标准）**：
+Golden case 的 expected 字段。LangGraph 输出与 expected 一致 = PASS；不一致 = FAIL。M3 退出门基于 PASS 率（≥ 阈值），不基于 shadow diff 率。
+_Avoid_: 拿 Dify 输出当 ground truth（Dify 是参考竞品而非真理）
 
 **节点（Node）**：
 LangGraph 图中一个 `@safe_node` 装饰的 async 函数。在本项目语境下，节点和 Dify 的 LLM 节点 1:1 对齐（仅 3 个"确认 X"合并为 1）。
@@ -48,6 +52,11 @@ _Avoid_: 三个独立的"确认下单 / 确认撤单 / 确认改单"节点（已
 - 一条用户原话先经一级路由到 **product_type**（swap / option / close），再由该子图内识别 **意图（Intent）**
 - 任何 **标的** 出现在 LangGraph 输出前，必须经过 ticker 子图（ReAct Agent，4 个工具：tokenize / completeness / rank / infer_code）校验，最终输出 `from_goats=True`
 - LangGraph 通过 4 个 **Protocol**（QuoteClient / OrderClient / PositionClient / TickerClient）调用 Java 后端业务 API，契约定义见 `docs/api-contracts/java-backend.md`
+
+**Context-dependent case（上下文依赖 case）**：
+golden case 中，正确的 product_type 或 intent 只有在已知多轮对话历史时才能确定的一类 case（如裸"撤单"/"确认下单"）。
+M2 阶段 harness runner 每条 case 独立跑，不注入 history_messages，这些 case 的失败属于**已知局限**，不作为 pass rate 的改进目标。M3 阶段靠真实流量 case 自然替代。
+_Avoid_: 把这类失败归因于"节点 bug"（根因是测试环境缺少对话历史，不是节点逻辑错误）
 
 ## Flagged ambiguities
 

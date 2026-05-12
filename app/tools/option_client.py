@@ -166,7 +166,7 @@ class OptionClientHttpx:
         url = f"{self._base_url}/admin-api/financial-orders/operate"
         # 金额精度：向 Goats 发送前 truncate 至 2 位
         payload = req.model_dump(mode="json", exclude_none=True)
-        async with httpx.AsyncClient(timeout=self._timeout) as client:
+        async with httpx.AsyncClient(timeout=self._timeout, trust_env=False) as client:
             r = await client.post(url, json=payload, headers=self._headers)
             r.raise_for_status()
             return CommonResult.model_validate(r.json())
@@ -175,7 +175,7 @@ class OptionClientHttpx:
         self, ctx: MachineContext
     ) -> CommonResult:
         url = f"{self._base_url}/admin-api/financial-orders/query-close-orders"
-        async with httpx.AsyncClient(timeout=self._timeout) as client:
+        async with httpx.AsyncClient(timeout=self._timeout, trust_env=False) as client:
             r = await client.post(
                 url,
                 json=ctx.model_dump(mode="json", exclude_none=True),

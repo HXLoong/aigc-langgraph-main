@@ -112,14 +112,24 @@ P1（参数 bug 关键）：swap.cancel + cancel_extract / swap.confirm 合并�
 P2（边角）：swap.place_order_image / place_order_excel / image_recognize / hand_to_share / close.query_status
 ```
 
-每个节点的实施模板：`@safe_node` + `with_structured_output(<NodePydanticOutput>)` + `load_prompt()` + 5-10 条 golden case。
+每个节点的实施模板：`@safe_node` + `with_structured_output(<NodePydanticOutput>)` + `load_prompt()` + golden case（数量见下方分级退出门）。
 
 ### M2 PR 颗粒度（grill-with-docs 2026-05-10）
 
 **工作单元 = 节点为单位**，一节点一 PR。两条约束：
 
 1. **同子图首个 PR 含骨架** —— 该子图第一个被实施的节点 PR 必须同时建立 `app/subgraphs/<name>/graph.py` + `models.py` 骨架；后续节点 PR 只挂自己的 `<node>.py` + 在 graph.py 加边
-2. **golden 同枝合入** —— 节点 PR 的"绿"标准 = 该节点至少 5 条 golden 全 PASS（PASS 率，不是行覆盖率）。禁止"先合代码、稍后补 case"
+2. **golden 同枝合入** —— 节点 PR 的"绿"标准按优先级分级（见下），禁止"先合代码、稍后补 case"
+
+**分级退出门（grill-with-docs 2026-05-11 修订）**：
+
+| 优先级 | 节点 | golden 最低要求 |
+|---|---|---|
+| P0 | swap.place_order / option.intent_extract / close.place_close / ticker 子图 | ≥ 5 条全 PASS |
+| P1 | swap.cancel / swap.confirm / swap.query_order / close.confirm_* | ≥ 5 条全 PASS |
+| P2 | swap.place_order_image / place_order_excel / image_recognize / hand_to_share / close.query_status | ≥ 2 条全 PASS |
+
+理由：P2 节点生产流量占比极低，过度投入 golden case 效益递减；M3 真实流量会自然补充稀疏节点的 case 集。
 
 理由：M1 已建好 graph 骨架 + safe_node + tools 层 + harness CLI；M2 真正工作量在节点函数 + Pydantic + 提示词 + golden，正好对应一节点一 PR 的天然单元。shadow 双跑（M3）的"节点级 diff"机制天然要求节点级 PR 颗粒度，可一一定位回归来源。
 

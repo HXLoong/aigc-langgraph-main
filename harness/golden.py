@@ -73,3 +73,11 @@ def filter_by_category(
     if not category_prefix:
         return list(cases)
     return [c for c in cases if c.category.startswith(category_prefix)]
+
+
+def filter_by_ids(cases: Iterable[GoldenCase], ids: list[str] | None) -> list[GoldenCase]:
+    """按 case ID 精确过滤（如 ['g042', 'g001']）。"""
+    if not ids:
+        return list(cases)
+    id_set = set(ids)
+    return [c for c in cases if c.id in id_set]

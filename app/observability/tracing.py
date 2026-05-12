@@ -30,12 +30,12 @@ def setup_observability(app) -> None:
             Langfuse(
                 public_key=settings.langfuse_public_key,
                 secret_key=settings.langfuse_secret_key,
-                host=settings.langfuse_host,
+                host=settings.langfuse_base_url,
             )
             _langfuse_handler = CallbackHandler()
             logger.info(
                 "Langfuse 已启用，host=%s project=%s",
-                settings.langfuse_host, settings.langfuse_project,
+                settings.langfuse_base_url, settings.langfuse_project,
             )
         except ImportError as e:
             logger.warning("langfuse 未安装或版本不兼容：%s", e)
