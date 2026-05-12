@@ -9,6 +9,8 @@ from typing import Any
 
 from app.graph.safe_node import safe_node
 from app.graph.state import AgentState
+from app.observability.canary import is_canary_room
+from app.observability.metrics import emit_canary_traffic
 
 
 @safe_node
@@ -18,5 +20,10 @@ async def ingest(state: AgentState) -> dict[str, Any]:
     上游已由 `app/api/routes.py` 把 Dify inputs 解构成 9 个机器人上下文字段
     （contracts §2.1 §3.1）放进 state。本节点不做任何业务决策，
     product_type 路由完全交给 `intent_route`。
+
+    G5.1 金丝雀监控：每条请求按 roomId 判定 is_canary，emit metric。
+    F4.2 期间非 canary 流量计数 ≥ 1 触发告警（误切 Webhook 兜底）。
     """
+    room_id = state.get("room_id")
+    emit_canary_traffic(is_canary=is_canary_room(room_id))
     return {}
