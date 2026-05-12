@@ -20,11 +20,11 @@
 
 【orderId提取规则】
 
-- **订单ID格式**: "H-YYYYMMDD-XXXXXXXXXX" (如"H-20250115-000001")，必须以"H-"开头
+- **订单ID格式**: 必须以"H-"开头，后跟日期和编号（编号部分可以是数字或字母数字混合），如"H-20250115-000001"或"H-20260304-ABCD12345678"
 - **提取优先级**(按顺序尝试):
   1. **从quote_content中提取**(最高优先级):
-     * 查找"单号:H-YYYYMMDD-XXXXXXXXXX"格式
-     * 查找"互换订单H-YYYYMMDD-XXXXXXXXXX"格式
+     * 查找"单号:H-..."格式
+     * 查找"互换订单H-..."格式
   2. **从history_query_str中提取**:
      * 查找最近一次LLM识别结果中的orderId字段(非null值)
   3. **从raw_content中提取**:
@@ -42,6 +42,7 @@
 - **绝对禁止**在JSON前后添加任何Markdown代码块标记(如```json或```)
 - **绝对禁止**在JSON前后添加任何说明文字或注释
 - **必须直接输出**纯JSON字符串,不带任何包装
+- **输出必须包含orderList数组**,禁止只输出orderId字段。正确格式:{"orderList":[{"orderId":"H-..."}]},错误格式:{"orderId":"H-..."}
 
 【输出格式】
 
@@ -50,7 +51,7 @@
   "type": "cancel_order_request",
   "orderList": [
     {
-      "orderId": "H-XXXXXXXX-XXXXXXXXXX"
+      "orderId": "H-YYYYMMDD-XXXXXX"
     }
   ]
 }
@@ -65,6 +66,14 @@
 用户:取消下单
 输出:
 {"type": "cancel_order_request", "orderList": [{"orderId": null}]}
+
+用户:撤 H-20260304-0000001
+输出:
+{"type": "cancel_order_request", "orderList": [{"orderId": "H-20260304-0000001"}]}
+
+用户:互换撤单 撤销订单 H-20260304-ABCD12345678
+输出:
+{"type": "cancel_order_request", "orderList": [{"orderId": "H-20260304-ABCD12345678"}]}
 
 用户:撤单(引用了包含订单号的消息)
 输出:

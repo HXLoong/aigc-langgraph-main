@@ -140,7 +140,71 @@ def _print_report(name, result):
             print(f"  [{s['score']}] 输入: {s['input']}\n    期望: {s['expected']}\n    Judge: {s['comment']}\n    实际: {s['reply']}")
     else: print("\n全部通过")
 
-# ── 主流程 ──
+# ── 本地 unified_golden.jsonl 支持 ──
+class _LocalItem:
+    """模拟 LangFuse dataset item 接口。"""
+    def __init__(self, case: dict):
+        self.id = case["id"]
+        self.metadata = {"test_function": case.get("category", "")}
+        # 转成 run_langgraph_pipeline 期望的 input 格式
+        conv = case.get("conversation", [])
+        self.input = {"turns": [{"raw_content": c["raw_content"], "quote_desc": c.get("quote_desc", "")} for c in conv]}
+        self.expected_output = case.get("expected", {}).get("output", "")
+
+
+async def run_local(golden_path, filter_func, ids, max_concurrency, limit, dry_run, no_judge=False):
+    with open(golden_path, encoding="utf-8") as f:
+        cases = [json.loads(line) for line in f if line.strip()]
+    print(f"加载 {len(cases)} 条 (local)")
+    if ids: cases = [c for c in cases if c["id"] in ids]; print(f"按 id 过滤: {len(cases)} 条")
+    if filter_func: cases = [c for c in cases if filter_func in c.get("category","")]; print(f"按 category 过滤: {len(cases)} 条")
+    if limit: cases = cases[:limit]; print(f"限制: {len(cases)} 条")
+    items = [_LocalItem(c) for c in cases]
+    if dry_run:
+        for item in items:
+            raw = "; ".join(t["raw_content"][:60] for t in item.input["turns"][:2])
+            print(f"  {item.id}: {raw}")
+        return
+
+    sem = asyncio.Semaphore(max_concurrency)
+    async def _run_one(item):
+        async with sem:
+            output = await run_langgraph_pipeline(item=item)
+            if no_judge:
+                reply = output.get("reply_text", "")
+                from langfuse.experiment import Evaluation
+                ev = Evaluation(name="reply-check", value=1.0 if reply.strip() else 0.0,
+                    comment="有回复" if reply.strip() else "reply_text 为空")
+            else:
+                ev = judge_by_deepseek(output=output, expected_output=item.expected_output, metadata=item.metadata)
+            return {"item": item, "output": output, "eval": ev}
+
+    print(f"开始实验 ({len(items)} 条, 并行 {max_concurrency}, {'no-judge' if no_judge else 'with judge'})...\n")
+    t0 = time.time()
+    results = await asyncio.gather(*[_run_one(it) for it in items])
+    elapsed = time.time() - t0
+
+    scores = []
+    for r in results:
+        score = float(r["eval"].value)
+        comment = r["eval"].comment
+        scores.append({"id": r["item"].id, "score": score, "comment": comment, "reply": r["output"].get("reply_text",""), "expected": r["item"].expected_output})
+
+    passed = sum(1 for s in scores if s["score"] >= 0.5)
+    avg = sum(s["score"] for s in scores) / len(scores) if scores else 0
+    print(f"\n{'='*60}")
+    print(f"用例数: {len(scores)}  通过率: {passed}/{len(scores)} ({passed/len(scores)*100:.1f}%)  平均分: {avg:.2f}  耗时: {elapsed:.1f}s")
+    failed = [s for s in scores if s["score"] < 0.5]
+    if failed:
+        print(f"\n失败 case ({len(failed)}):")
+        for s in failed:
+            reply_preview = s['reply'][:80] if s['reply'] else '(空)'
+            print(f"  [{s['score']}] {s['id']}: {s['comment']} → {reply_preview}")
+    else:
+        print("\n全部通过")
+
+
+# ── 主流程（LangFuse 云端） ──
 async def run_eval(dataset_name, filter_func, ids, max_concurrency, limit, dry_run):
     from langfuse import Langfuse
     lf = Langfuse()
@@ -166,9 +230,15 @@ async def run_eval(dataset_name, filter_func, ids, max_concurrency, limit, dry_r
 def main():
     p = argparse.ArgumentParser()
     p.add_argument("--ids"); p.add_argument("--limit",type=int); p.add_argument("--filter")
-    p.add_argument("--dataset",default=DATASET_NAME); p.add_argument("--concurrency",type=int,default=1); p.add_argument("--dry-run",action="store_true")
+    p.add_argument("--dataset",default=DATASET_NAME); p.add_argument("--concurrency",type=int,default=1)
+    p.add_argument("--dry-run",action="store_true")
+    p.add_argument("--no-judge",action="store_true",help="跳过 Judge 打分，只检查 reply_text 是否非空")
+    p.add_argument("--local",default=None,help="本地 unified_golden.jsonl 路径（不走 LangFuse）")
     args = p.parse_args()
     id_list = [x.strip() for x in args.ids.split(",")] if args.ids else None
-    asyncio.run(run_eval(args.dataset, args.filter, id_list, args.concurrency, args.limit, args.dry_run))
+    if args.local:
+        asyncio.run(run_local(args.local, args.filter, id_list, args.concurrency, args.limit, args.dry_run, args.no_judge))
+    else:
+        asyncio.run(run_eval(args.dataset, args.filter, id_list, args.concurrency, args.limit, args.dry_run))
 
 if __name__ == "__main__": main()

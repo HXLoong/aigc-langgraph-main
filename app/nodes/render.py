@@ -63,47 +63,103 @@ async def render(state: AgentState) -> dict[str, Any]:
 
     优先级：
     1. 子图已生成 reply_text → 透传
-    2. ticker_hitl_candidates → 多命中消歧卡片
-    3. tickers == [] 且 place_params 存在 → 0 命中友好提示
-    4. api_result → 后端返回透传
-    5. error → 通用兜底提示
-    6. product_type == unknown → 引导提示
-    7. 结构化参数 → 询价/平仓/撤单业务回复
-    8. 兜底 → {}（API 层从业务字段构造）
+    2. ticker_hitl_candidates → 多命中消歧卡片（互换下单/改单除外）
+    3. 互换下单/改单 → 订单参数（含 HITL 场景，orderList 已提取）
+    4. 0 命中（期权询价） → 0 命中友好提示
+    5. api_result → 后端返回透传
+    6. error → 通用兜底提示
+    7. product_type == unknown → 引导提示
+    8. 结构化参数 → 互换确认/撤单/查询、期权询价/平仓/撤单
+    9. 兜底 → {}（API 层从业务字段构造）
     """
     # 1. 子图已生成 reply_text → 透传
     if state.get("reply_text"):
         return {}
 
-    # 2. HITL 消歧
+    # 2. HITL 消歧（互换下单/改单除外——此时已有 orderList，应优先展示订单参数）
     hitl = state.get("ticker_hitl_candidates")
-    if hitl:
+    place = state.get("place_params") or {}
+    if hitl and place.get("expected_action") not in ("place", "modify"):
         return {"reply_text": _format_hitl_card(hitl)}
 
-    # 3. 0 命中（业务节点正常完成但标的为空）
+    # 3. 互换下单/改单（含 HITL 场景：orderList 已提取，优先展示参数）
+    if place.get("orderList") and place.get("expected_action") in ("place", "modify"):
+        orders = place["orderList"]
+        if orders:
+            o = orders[0]
+            stock_code = _resolve_stock_display(o.get("placeOrderWindCode") or "N/A", state)
+            direction = "买入" if o.get("placeOrderOrderDirection") == "BUY" else "卖出"
+            lines = [
+                "-----互换订单参数-----",
+                f"标的: {stock_code}",
+                f"方向: {direction}",
+            ]
+            qty = o.get("placeOrderQuantity") or o.get("placeOrderQuantityHand")
+            if qty:
+                unit = "手" if o.get("placeOrderQuantityHand") else "股"
+                lines.append(f"数量: {qty}{unit}")
+            if o.get("placeOrderPriceType"):
+                lines.append(f"价格类型: {o['placeOrderPriceType']}")
+            if o.get("placeOrderAlgorithmType"):
+                algo = o["placeOrderAlgorithmType"]
+                if o.get("placeOrderPovPercent"):
+                    algo += f" {o['placeOrderPovPercent']}%"
+                lines.append(f"算法: {algo}")
+            start = o.get("placeOrderStartTime")
+            end = o.get("placeOrderEndTime")
+            if start or end:
+                s = start.replace(" ", "") if start else "N/A"
+                e = end.replace(" ", "") if end else "N/A"
+                lines.append(f"时间: {s} - {e}")
+            if place["expected_action"] == "place":
+                lines.append("\n请指定交易对手以完成下单。")
+            else:
+                lines.append("\n请确认改单参数。")
+            return {"reply_text": "\n".join(lines)}
+
+    # 4. 0 命中（标的为空且无有效订单参数）
     tickers = state.get("tickers")
-    place_params = state.get("place_params")
-    if tickers is not None and len(tickers) == 0 and place_params is not None:
+    if tickers is not None and len(tickers) == 0 and place:
         raw_text = (state.get("raw_text") or "")[:40]
         return {"reply_text": _ZERO_HIT_TMPL.format(raw_text=raw_text)}
 
-    # 4. api_result 来自后端
+    # 5. api_result 来自后端
     if state.get("api_result"):
         return {"reply_text": str(state["api_result"])}
 
-    # 5. error → 通用兜底
+    # 6. error → 通用兜底
     if state.get("error") is not None:
         return {"reply_text": _ERROR_REPLY}
 
-    # 6. product_type unknown
+    # 7. product_type unknown
     if state.get("product_type") == "unknown":
         return {"reply_text": "未识别到有效指令，请明确指定产品（期权/互换）和操作（询价/下单/撤单等）。"}
 
-    # 7. 从结构化参数生成业务回复
-    place = state.get("place_params") or {}
+    # 8. 从结构化参数生成业务回复
     close = state.get("close_params") or {}
     cancel = state.get("cancel_params") or {}
+    confirm = state.get("confirm") or {}
+    query = state.get("query_filter") or {}
 
+    # 8a. 互换确认
+    if confirm.get("orderList"):
+        return {"reply_text": "互换订单已确认提交，订单已接收、等待交易员审核。"}
+
+    # 8b. 互换撤单
+    if cancel.get("orderList"):
+        ids = [o.get("orderId", "") for o in cancel["orderList"] if o.get("orderId")]
+        if ids:
+            return {"reply_text": f"已收到撤单请求，订单号: {', '.join(ids)}"}
+        return {"reply_text": "已收到撤单请求，请确认。"}
+
+    # 8c. 互换查询
+    if query.get("orderList"):
+        ids = [o.get("orderId", "") for o in query["orderList"] if o.get("orderId")]
+        if ids:
+            return {"reply_text": f"已收到查询请求，订单号: {', '.join(ids)}"}
+        return {"reply_text": "已收到查询请求。"}
+
+    # 8d. 期权询价
     if place.get("expected_action") == "inquiry":
         orders = place.get("orderList", [])
         if orders:
