@@ -194,6 +194,23 @@ step2_env_check() {
     fi
 
     ok ".env 必填字段全部就绪"
+
+    # F4 灰度切流 advisory（非必填，仅提示状态）· §10 + §12
+    local canary_val eval_user_val
+    canary_val=$(env_get "CANARY_ROOM_IDS")
+    eval_user_val=$(env_get "EVAL_USER_ID")
+    if [ -z "$canary_val" ]; then
+        info "F4 金丝雀未启用（CANARY_ROOM_IDS 空 → 任何 roomId 都视为非 canary）"
+    elif [ "$canary_val" = "ALL" ]; then
+        info "F4 金丝雀=ALL（全量已切流，所有 roomId 都视为 canary）"
+    else
+        local n_rooms
+        n_rooms=$(echo "$canary_val" | awk -F, '{print NF}')
+        info "F4 金丝雀启用，白名单群数 = $n_rooms"
+    fi
+    if [ -z "$eval_user_val" ] || [[ "$eval_user_val" == *"<FILL"* ]]; then
+        info "EVAL_USER_ID 未配置（如不跑 scripts/probe_*_e2e.py 或 harness 真后端模式可忽略）"
+    fi
 }
 
 # ============================================================
@@ -482,6 +499,27 @@ step9_health_check() {
     else
         warn "/metrics 不可用（C1.5 可能未生效）"
     fi
+
+    # /ready（D2.6 #72）· 4 个上游探测：mysql / langfuse / llm / java_backend
+    # 200 = 全绿；503 = 至少一个 fail（degraded）
+    local ready_status ready_tmp
+    ready_tmp=$(mktemp)
+    ready_status=$(curl -s -m 10 -o "$ready_tmp" -w '%{http_code}' \
+        http://localhost:8000/ready 2>/dev/null)
+    case "$ready_status" in
+        200)
+            ok "GET /ready 200（4 个上游全绿）"
+            ;;
+        503)
+            warn "GET /ready 503（degraded，详见 checks）："
+            cat "$ready_tmp" 2>/dev/null | head -3
+            warn "  → 上线前请先排查失败的上游（python scripts/metrics_snapshot.py 查健康检查段）"
+            ;;
+        *)
+            warn "GET /ready HTTP $ready_status（D2.6 路由可能未注册）"
+            ;;
+    esac
+    rm -f "$ready_tmp"
 }
 
 # ============================================================
@@ -506,9 +544,11 @@ step10_smoke() {
         echo "${status}|${body}"
     }
 
+    # 注：inputs 字段名按 app/api/routes.py _INPUT_FIELD_MAP 约定
+    # （rawContent/raw_content → raw_text；roomId → room_id 等）
     info "Case 1: 完整代码询价"
     local r1 status1 body1
-    r1=$(_run_smoke '{"inputs":{"raw_text":"600519.SH 询价 3 个月平值看涨","conversation_id":"smoke-001"},"response_mode":"blocking","user":"smoke-test"}')
+    r1=$(_run_smoke '{"inputs":{"raw_content":"600519.SH 询价 3 个月平值看涨","conversationId":"smoke-001","roomId":"smoke-room","userId":"smoke-user","messageId":1},"response_mode":"blocking","user":"smoke-test"}')
     status1=${r1%%|*}; body1=${r1#*|}
     if [ "$status1" != "200" ]; then
         warn "Case 1 HTTP $status1（应用层错而非业务回复偏差）：$body1"
@@ -520,7 +560,7 @@ step10_smoke() {
 
     info "Case 2: 中文简称"
     local r2 status2 body2
-    r2=$(_run_smoke '{"inputs":{"raw_text":"贵州茅台 询价","conversation_id":"smoke-002"},"response_mode":"blocking","user":"smoke-test"}')
+    r2=$(_run_smoke '{"inputs":{"raw_content":"贵州茅台 询价","conversationId":"smoke-002","roomId":"smoke-room","userId":"smoke-user","messageId":2},"response_mode":"blocking","user":"smoke-test"}')
     status2=${r2%%|*}; body2=${r2#*|}
     if [ "$status2" != "200" ]; then
         warn "Case 2 HTTP $status2（应用层错）：$body2"
@@ -532,11 +572,11 @@ step10_smoke() {
 
     info "Case 3: 未知标的（fallback）"
     local r3 status3 body3
-    r3=$(_run_smoke '{"inputs":{"raw_text":"完全不存在的标的xyz 询价","conversation_id":"smoke-003"},"response_mode":"blocking","user":"smoke-test"}')
+    r3=$(_run_smoke '{"inputs":{"raw_content":"完全不存在的标的xyz 询价","conversationId":"smoke-003","roomId":"smoke-room","userId":"smoke-user","messageId":3},"response_mode":"blocking","user":"smoke-test"}')
     status3=${r3%%|*}; body3=${r3#*|}
     if [ "$status3" != "200" ]; then
         warn "Case 3 HTTP $status3（应用层错）：$body3"
-    elif echo "$body3" | grep -qE "无法识别|抱歉"; then
+    elif echo "$body3" | grep -qE "无法识别|抱歉|没完全理解"; then
         ok "Case 3 fallback 触发"
     else
         warn "Case 3 fallback 未触发: $body3"
