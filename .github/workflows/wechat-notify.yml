@@ -1,0 +1,41 @@
+name: WeChat Work Notify
+
+# 把 PR / Issue 活动推送到企微群机器人
+# 触发事件：
+#   - pull_request:        opened / closed（含 merged）/ reopened / ready_for_review
+#   - issues:              opened / closed / reopened
+#   - pull_request_review: submitted（仅 approved / changes_requested，commented 跳过）
+#   - issue_comment:       created（Issue 与 PR 评论都走这个事件）
+#
+# 配置：在仓库 Settings → Secrets and variables → Actions 新建 secret
+#   WECHAT_WEBHOOK_URL = https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=xxx
+# 缺 secret 时 step 会自动跳过，不会让 workflow 失败。
+
+on:
+  pull_request:
+    types: [opened, closed, reopened, ready_for_review]
+  issues:
+    types: [opened, closed, reopened]
+  pull_request_review:
+    types: [submitted]
+  issue_comment:
+    types: [created]
+
+permissions:
+  contents: read
+
+jobs:
+  notify:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          sparse-checkout: |
+            .github/scripts
+          sparse-checkout-cone-mode: false
+
+      - name: Send WeChat Work notification
+        env:
+          WECHAT_WEBHOOK_URL: ${{ secrets.WECHAT_WEBHOOK_URL }}
+        run: python3 .github/scripts/wechat_notify.py
