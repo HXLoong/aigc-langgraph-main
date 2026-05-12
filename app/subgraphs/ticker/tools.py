@@ -46,6 +46,18 @@ _CODE_SUFFIXES = (
 #: 名称中嵌入的 4-6 位数字（如 "贵州茅台600519" → 600519）
 _EMBEDDED_DIGIT_RE = re.compile(r"(\d{4,6})")
 
+#: 业务/时间词黑名单（D2.4 真后端联调发现：tokenize 把"1个月"误识别为 ticker keyword
+#: → GOATS 命中 ETF（嘉实1个月理财 等），render 输出错误 HITL 卡片）
+_NON_TICKER_PATTERNS = (
+    re.compile(r"^\d+\s*(个)?\s*(月|年|周|日|天)$"),  # 1个月 / 3年 / 6周 / 2天
+    re.compile(r"^(行权价|执行价|敲入|敲出|期限|名义本金|本金|期权费|参与率|价格)$"),
+)
+
+
+def _is_non_ticker_token(token: str) -> bool:
+    """业务术语 / 时间词 → 不进 GOATS 查询。仅 tokenize 阶段过滤，不影响 LLM 推断。"""
+    return any(p.match(token) for p in _NON_TICKER_PATTERNS)
+
 
 def _split_token_with_suffix(token: str) -> list[str]:
     """`代码.后缀` 格式 → 同时输出完整代码 + 无后缀片段。例：`0700.HK` → `[0700.HK, 0700]`"""
@@ -101,16 +113,19 @@ def tokenize(raw_text: Annotated[str, "用户原话"]) -> list[str]:
     out: list[str] = []
     seen: set[str] = set()
     for tok in raw_tokens:
+        # D2.4 真后端联调发现：业务术语 / 时间词不进 GOATS 查询
+        if _is_non_ticker_token(tok):
+            continue
         with_suffix = _split_token_with_suffix(tok)
         if len(with_suffix) > 1:
             # 完整代码（含后缀）→ 不再做嵌入数字拆分
             for piece in with_suffix:
-                if piece and piece not in seen:
+                if piece and piece not in seen and not _is_non_ticker_token(piece):
                     out.append(piece)
                     seen.add(piece)
             continue
         for piece in _extract_embedded_codes(tok):
-            if piece and piece not in seen:
+            if piece and piece not in seen and not _is_non_ticker_token(piece):
                 out.append(piece)
                 seen.add(piece)
     return out
