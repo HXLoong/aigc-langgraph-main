@@ -54,7 +54,7 @@
 
 | 文件 | 覆盖率 | 缺失行 | 性质 | 行动建议 |
 |---|---|---|---|---|
-| `app/observability/health_probes.py` | **32%** | 71/104 | **D2.6 4 个上游 probe 实际逻辑未测**（mysql / langfuse / llm / java_backend），只测了协议 / 默认值。F4 灰度切流时 `/ready` 不准会误判 | ⚠️ **生产风险**：F4.0 演练时如 /ready 突然 fail 但 metrics 看不到原因，原因可能就是这里。建议 M3 末用 mock 后端补 4 probe 单测 |
+| ~~`app/observability/health_probes.py`~~ | ~~32%~~ → **100%** ✅ | ~~71/104~~ → 0 | **PR #108 已修**：4 probe 内部 _check 全 mock（aiomysql / httpx），18 个新测试覆盖 ok/fail/timeout/disabled/total_timeout 路径 |
 | `harness/cli.py` | 37% | 67/106 | `python -m harness run` 入口逻辑（参数解析 / cases 过滤 / 报告写盘），实际跑过几十次但没单测 | 中风险：harness CLI 改坏不会立即被发现。CLI 行为相对稳定，价值中等 |
 | `app/subgraphs/option/intent.py` | 67% | 16/49 | option 意图识别节点的错误分支（LLM 调用失败 / Pydantic 解析失败） | 低风险：safe_node 装饰器兜底 + golden case 覆盖正常路径 |
 
@@ -88,7 +88,7 @@ close/intent.py           72%  close/place_close.py      70%  close/cancel_close
 | # | 项 | 优先级 | 负责人 |
 |---|---|---|---|
 | 1 | PM 补 14 条 ticker case 的 `expected.winner` 字段 | 低 | PM |
-| 2 | M3 末：health_probes 4 个 probe 用 mock 补单测（降低 F4.0 演练 /ready 误报风险） | **中** | 工程 |
+| 2 | ~~M3 末：health_probes 4 个 probe 用 mock 补单测~~ ✅ PR #108（32% → 100%） | ~~**中**~~ 完成 | 工程 |
 | 3 | 删 `app/observability/tracing.py`（确认无调用方）或 M4 接入 OpenTelemetry 后再测 | 低 | 工程 |
 | 4 | M3 真后端联调时为 `checkpointer/factory.py` 加 integration test | 中 | 工程 |
 | 5 | harness CLI 加 smoke test（解析 + 报告生成端到端） | 低 | 工程 |
