@@ -12,7 +12,7 @@ from typing import Any
 
 from app.graph.safe_node import safe_node
 from app.graph.state import AgentState, Message, TraceEntry
-from app.llm.clients import get_qwen_structured
+from app.llm.clients import get_qwen_thinking
 from app.prompts import load_prompt
 from app.subgraphs.close.models import CloseIntentOutput
 
@@ -56,7 +56,7 @@ async def close_intent(state: AgentState) -> dict[str, Any]:
     prompt = load_prompt("option_close", "intent")
     augmented_system = prompt.system + _JSON_OUTPUT_INSTRUCTION
 
-    llm = get_qwen_structured().with_structured_output(CloseIntentOutput)
+    llm = get_qwen_thinking().with_structured_output(CloseIntentOutput)
     user_message = _build_user_message(state)
     result: Any = await llm.ainvoke(
         [
@@ -77,6 +77,14 @@ async def close_intent(state: AgentState) -> dict[str, Any]:
         close_actions = ("平掉","平仓","平剩","平留","市价平","部分平","我想平","我要平")
         if has_contract and any(a in text for a in close_actions):
             intent = "close_order_request"
+    # "撤单" 关键词 → close_order_cancel_request（覆盖 LLM 误判）
+    if "撤单" in raw and intent not in (
+        "close_order_confirm_cancel", "close_order_cancel_request"
+    ):
+        intent = "close_order_cancel_request"
+    # "查可平持仓"/"查询持仓" → close_order_query
+    if any(kw in raw for kw in ("查可平持仓", "查询持仓", "我有哪些")):
+        intent = "close_order_query"
     # "确认撤单" → close_order_confirm_cancel
     if "确认撤单" in raw:
         intent = "close_order_confirm_cancel"
@@ -84,6 +92,16 @@ async def close_intent(state: AgentState) -> dict[str, Any]:
     if "取消" in raw:
         if "撤单" in quote or "撤单请求" in quote:
             intent = "close_order_confirm_cancel"
+    # "序号N" + 平仓动作词 → close_order_request
+    import re as _re2
+    if _re2.search(r"序号\s*\d", raw):
+        close_kw = ("平", "留", "全平", "拉满", "跟量", "pov", "POV")
+        if any(kw in raw.lower() for kw in close_kw):
+            intent = "close_order_request"
+    # "拉满跟量"/"全部最大" + 金额 → close_order_request
+    if any(kw in raw for kw in ("拉满跟量", "全部最大", "全跟量")):
+        if _re2.search(r"\d+\s*万", raw):
+            intent = "close_order_request"
 
     return {
         "intent": intent,

@@ -38,11 +38,11 @@ def test_non_close_intents_rejected(non_close_intent: str) -> None:
         CloseIntentOutput(type=non_close_intent)  # type: ignore[arg-type]
 
 
-def test_extra_fields_forbidden() -> None:
-    with pytest.raises(ValidationError):
-        CloseIntentOutput.model_validate(
-            {"type": "close_order_query", "extra": "x"}
-        )
+def test_extra_fields_ignored() -> None:
+    params = CloseIntentOutput.model_validate(
+        {"type": "close_order_query", "extra": "x"}
+    )
+    assert params.type == "close_order_query"
 
 
 def test_missing_type_raises() -> None:

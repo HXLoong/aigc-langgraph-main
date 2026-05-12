@@ -22,7 +22,7 @@ from typing import Any
 
 from app.graph.safe_node import safe_node
 from app.graph.state import AgentState, Message, TraceEntry
-from app.llm.clients import get_qwen_structured
+from app.llm.clients import get_qwen_thinking
 from app.prompts import load_prompt
 from app.subgraphs.option.backend import call_option_backend
 from app.subgraphs.option.models import OptionExtractConfirmParams
@@ -63,7 +63,7 @@ def _expected_action(intent: str | None) -> str:
 async def option_extract_confirm(state: AgentState) -> dict[str, Any]:
     """option.extract_confirm 节点（合并版）。"""
     prompt = load_prompt("option", "extract_confirm")
-    llm = get_qwen_structured().with_structured_output(
+    llm = get_qwen_thinking().with_structured_output(
         OptionExtractConfirmParams
     )
 

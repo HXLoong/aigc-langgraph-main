@@ -12,7 +12,7 @@ from typing import Any
 
 from app.graph.safe_node import safe_node
 from app.graph.state import AgentState, Message, TraceEntry
-from app.llm.clients import get_qwen_structured
+from app.llm.clients import get_qwen_thinking
 from app.prompts import load_prompt
 from app.subgraphs.option.backend import call_option_backend
 from app.subgraphs.option.models import OptionExtractQueryParams
@@ -44,7 +44,7 @@ def _build_user_message(state: AgentState) -> str:
 async def option_extract_query(state: AgentState) -> dict[str, Any]:
     """option.extract_query 节点。"""
     prompt = load_prompt("option", "extract_query")
-    llm = get_qwen_structured().with_structured_output(OptionExtractQueryParams)
+    llm = get_qwen_thinking().with_structured_output(OptionExtractQueryParams)
 
     user_message = _build_user_message(state)
     result: Any = await llm.ainvoke(

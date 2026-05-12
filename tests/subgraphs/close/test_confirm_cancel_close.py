@@ -17,13 +17,14 @@ from app.subgraphs.close.models import CancelCloseParams, ConfirmCloseParams
 
 
 def _patch_llm(
-    monkeypatch: pytest.MonkeyPatch, module: object, return_value: object
+    monkeypatch: pytest.MonkeyPatch, module: object, return_value: object,
+    fn: str = "get_qwen_thinking",
 ) -> AsyncMock:
     fake_llm = MagicMock()
     fake_llm.ainvoke = AsyncMock(return_value=return_value)
     fake_base = MagicMock()
     fake_base.with_structured_output = MagicMock(return_value=fake_llm)
-    monkeypatch.setattr(module, "get_qwen_structured", lambda: fake_base)
+    monkeypatch.setattr(module, fn, lambda: fake_base)
     return fake_llm.ainvoke
 
 
@@ -53,17 +54,17 @@ class TestParamsModels:
         )
         assert params.cancelOrderNoList == ["CO-20260304-759125AD"]
 
-    def test_confirm_close_extra_fields_forbidden(self) -> None:
-        with pytest.raises(ValidationError):
-            ConfirmCloseParams.model_validate(
-                {"confirmOrderNoList": [], "garbage": "x"}
-            )
+    def test_confirm_close_extra_fields_ignored(self) -> None:
+        params = ConfirmCloseParams.model_validate(
+            {"confirmOrderNoList": [], "garbage": "x"}
+        )
+        assert params.confirmOrderNoList == []
 
-    def test_cancel_close_extra_fields_forbidden(self) -> None:
-        with pytest.raises(ValidationError):
-            CancelCloseParams.model_validate(
-                {"cancelOrderNoList": [], "garbage": "x"}
-            )
+    def test_cancel_close_extra_fields_ignored(self) -> None:
+        params = CancelCloseParams.model_validate(
+            {"cancelOrderNoList": [], "garbage": "x"}
+        )
+        assert params.cancelOrderNoList == []
 
 
 # ============================================================
@@ -79,7 +80,7 @@ class TestCloseConfirmCloseNode:
         params = ConfirmCloseParams(
             confirmOrderNoList=["CO-20260304-E2BA7501"]
         )
-        _patch_llm(monkeypatch, confirm_module, params)
+        _patch_llm(monkeypatch, confirm_module, params, fn="get_qwen_thinking")
         result = await close_confirm_close(
             {
                 "raw_text": "确认平仓第二笔",
@@ -96,7 +97,7 @@ class TestCloseConfirmCloseNode:
     async def test_empty_orders_list(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        _patch_llm(monkeypatch, confirm_module, ConfirmCloseParams())
+        _patch_llm(monkeypatch, confirm_module, ConfirmCloseParams(), fn="get_qwen_thinking")
         result = await close_confirm_close(
             {"raw_text": "确认", "quote_content": ""}
         )
@@ -108,7 +109,7 @@ class TestCloseConfirmCloseNode:
         params = ConfirmCloseParams(
             confirmOrderNoList=["CO-1", "CO-2", "CO-3"]
         )
-        _patch_llm(monkeypatch, confirm_module, params)
+        _patch_llm(monkeypatch, confirm_module, params, fn="get_qwen_thinking")
         result = await close_confirm_close({"raw_text": "确认平仓全部"})
         trace = result.get("trace", [])
         assert len(trace) == 1
@@ -119,7 +120,7 @@ class TestCloseConfirmCloseNode:
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         ainvoke = _patch_llm(
-            monkeypatch, confirm_module, ConfirmCloseParams()
+            monkeypatch, confirm_module, ConfirmCloseParams(), fn="get_qwen_thinking"
         )
         await close_confirm_close(
             {
@@ -187,7 +188,7 @@ class TestCloseCancelCloseNode:
             )
         )
         monkeypatch.setattr(
-            cancel_module, "get_qwen_structured", lambda: fake_llm
+            cancel_module, "get_qwen_thinking", lambda: fake_llm
         )
         result = await close_cancel_close(
             {"raw_text": "撤", "quote_content": ""}

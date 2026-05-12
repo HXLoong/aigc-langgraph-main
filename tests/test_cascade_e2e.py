@@ -34,7 +34,7 @@ def _patch_llm_to_raise(
     monkeypatch: pytest.MonkeyPatch,
     module: object,
     exc: Exception,
-    factory_name: str = "get_qwen_structured",
+    factory_name: str = "get_qwen_thinking",
 ) -> None:
     """让目标模块里的 LLM 调用抛指定异常。
 
@@ -102,7 +102,8 @@ async def test_option_intent_error_routes_to_option_unknown(
 ) -> None:
     """option.intent LLM 异常 → 路由到 option_unknown。"""
     _patch_llm_to_raise(
-        monkeypatch, option_intent_module, RuntimeError("Qwen timeout")
+        monkeypatch, option_intent_module, RuntimeError("Qwen timeout"),
+        factory_name="get_qwen_structured",
     )
 
     graph = build_option_graph()
@@ -170,7 +171,7 @@ async def test_main_graph_intent_route_error_routes_to_fallback(
 
     _patch_llm_to_raise(
         monkeypatch, ir_module, RuntimeError("intent llm dead"),
-        factory_name="get_qwen_structured",
+        factory_name="get_qwen_thinking",
     )
 
     graph = build_main_graph()

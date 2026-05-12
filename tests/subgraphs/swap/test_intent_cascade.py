@@ -33,7 +33,7 @@ def _patch_llm_error(
     fake_llm.with_structured_output = MagicMock(
         return_value=MagicMock(ainvoke=AsyncMock(side_effect=exc))
     )
-    monkeypatch.setattr(intent_module, "get_qwen_structured", lambda: fake_llm)
+    monkeypatch.setattr(intent_module, "get_qwen_thinking", lambda: fake_llm)
 
 
 @pytest.mark.asyncio
@@ -69,7 +69,7 @@ async def test_swap_intent_pydantic_validation_error_writes_error_to_state(
     fake_llm.with_structured_output = MagicMock(
         return_value=MagicMock(ainvoke=AsyncMock(side_effect=_raise))
     )
-    monkeypatch.setattr(intent_module, "get_qwen_structured", lambda: fake_llm)
+    monkeypatch.setattr(intent_module, "get_qwen_thinking", lambda: fake_llm)
 
     result = await swap_intent({"raw_text": "帮我下单"})
 

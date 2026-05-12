@@ -18,7 +18,7 @@ from typing import Any
 
 from app.graph.safe_node import safe_node
 from app.graph.state import AgentState, Message, TraceEntry
-from app.llm.clients import get_qwen_structured
+from app.llm.clients import get_qwen_thinking
 from app.prompts import load_prompt
 from app.subgraphs.option.backend import call_option_backend
 from app.subgraphs.option.models import OptionPlaceOrModifyParams
@@ -67,7 +67,7 @@ async def option_extract_place_or_modify(state: AgentState) -> dict[str, Any]:
     - trace: 单条 TraceEntry，记录订单数 + orderType 分布
     """
     prompt = load_prompt("option", "extract_place_or_modify")
-    llm = get_qwen_structured().with_structured_output(OptionPlaceOrModifyParams)
+    llm = get_qwen_thinking().with_structured_output(OptionPlaceOrModifyParams)
 
     user_message = _build_user_message(state)
     result: Any = await llm.ainvoke(

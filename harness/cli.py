@@ -30,9 +30,8 @@ logger = logging.getLogger(__name__)
 
 
 DEFAULT_GOLDEN_PATHS = [
-    Path("tests/fixtures/golden.jsonl"),
+    Path("tests/fixtures/unified_golden.jsonl"),
 ]
-# option_golden.jsonl 是业务 QA schema（含 conversation 数组），M1 不直接消费
 
 
 # ============================================================

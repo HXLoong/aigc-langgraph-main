@@ -12,7 +12,7 @@ from typing import Any
 
 from app.graph.safe_node import safe_node
 from app.graph.state import AgentState, TraceEntry
-from app.llm.clients import get_qwen_structured
+from app.llm.clients import get_qwen_thinking
 from app.prompts import load_prompt
 from app.subgraphs.close.models import ConfirmCancelParams
 
@@ -30,7 +30,7 @@ def _build_user_message(state: AgentState) -> str:
 async def close_confirm_cancel(state: AgentState) -> dict[str, Any]:
     """close.confirm_cancel 节点。"""
     prompt = load_prompt("option_close", "confirm_cancel")
-    llm = get_qwen_structured().with_structured_output(ConfirmCancelParams)
+    llm = get_qwen_thinking().with_structured_output(ConfirmCancelParams)
 
     user_message = _build_user_message(state)
     result: Any = await llm.ainvoke(

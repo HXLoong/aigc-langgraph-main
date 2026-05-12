@@ -18,7 +18,7 @@ from typing import Any
 
 from app.graph.safe_node import safe_node
 from app.graph.state import AgentState, TraceEntry
-from app.llm.clients import get_qwen_structured
+from app.llm.clients import get_qwen_thinking
 from app.prompts import load_prompt
 from app.subgraphs.close.models import HoldingQueryParams
 
@@ -43,7 +43,7 @@ async def close_holding_query(state: AgentState) -> dict[str, Any]:
     - trace: 单条 TraceEntry，记录 closeable_only + 提取到的关键字段计数
     """
     prompt = load_prompt("option_close", "holding_query")
-    llm = get_qwen_structured().with_structured_output(HoldingQueryParams)
+    llm = get_qwen_thinking().with_structured_output(HoldingQueryParams)
 
     user_message = _build_user_message(state)
     result: Any = await llm.ainvoke(

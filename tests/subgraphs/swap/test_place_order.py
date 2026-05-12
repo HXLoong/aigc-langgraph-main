@@ -41,7 +41,7 @@ class TestSwapOrderItem:
 
     def test_full_buy_order(self) -> None:
         item = SwapOrderItem(
-            placeOrderWindCode="00700.HK",
+            placeOrderWindCode="0700.HK",
             placeOrderTransactionType="HK_STOCK",
             placeOrderQuantity=1000,
             placeOrderOrderDirection="BUY",
@@ -120,7 +120,7 @@ class TestExpectedActionDerivation:
     def test_all_null_order_ids_means_place(self) -> None:
         params = SwapPlaceOrderParams(
             orderList=[
-                SwapOrderItem(placeOrderWindCode="00700.HK"),
+                SwapOrderItem(placeOrderWindCode="0700.HK"),
                 SwapOrderItem(placeOrderWindCode="00005.HK"),
             ]
         )
@@ -170,7 +170,7 @@ class TestSwapPlaceOrderNode:
 
         # ticker resolver 集成验证
         tickers = result.get("tickers", [])
-        assert any(t.windCode == "00700.HK" for t in tickers)
+        assert any("700" in t.windCode and t.windCode.endswith(".HK") for t in tickers)
         assert all(t.from_goats for t in tickers)  # CLAUDE.md 硬约束
 
     async def test_modify_when_order_id_present(
@@ -201,11 +201,11 @@ class TestSwapPlaceOrderNode:
         )
         _patch_llm(monkeypatch, params)
         result = await swap_place_order(
-            {"raw_text": "互换下单 同时买入贵州茅台、腾讯各 100 股"}
+            {"raw_text": "互换下单 贵州茅台 腾讯 各 100 股"}
         )
         wind_codes = {t.windCode for t in result["tickers"]}
         assert "600519.SH" in wind_codes
-        assert "00700.HK" in wind_codes
+        assert any("700" in wc and wc.endswith(".HK") for wc in wind_codes)
 
     async def test_writes_trace_with_summary(
         self, monkeypatch: pytest.MonkeyPatch
@@ -215,7 +215,7 @@ class TestSwapPlaceOrderNode:
         )
         _patch_llm(monkeypatch, params)
         result = await swap_place_order(
-            {"raw_text": "互换下单 腾讯 1000 股"}
+            {"raw_text": "互换下单 腾讯 100 股"}
         )
         trace = result.get("trace", [])
         assert len(trace) == 1

@@ -16,7 +16,7 @@ from typing import Any
 
 from app.graph.safe_node import safe_node
 from app.graph.state import AgentState, Message, TraceEntry
-from app.llm.clients import get_qwen_structured
+from app.llm.clients import get_qwen_thinking
 from app.prompts import load_prompt
 from app.subgraphs.swap.models import SwapCancelParams
 
@@ -47,7 +47,7 @@ def _build_user_message(state: AgentState) -> str:
 async def swap_cancel(state: AgentState) -> dict[str, Any]:
     """swap.cancel 节点。"""
     prompt = load_prompt("swap", "cancel_order")
-    llm = get_qwen_structured().with_structured_output(SwapCancelParams)
+    llm = get_qwen_thinking().with_structured_output(SwapCancelParams)
 
     user_message = _build_user_message(state)
     result: Any = await llm.ainvoke(

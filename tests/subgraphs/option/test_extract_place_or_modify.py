@@ -26,7 +26,7 @@ def _patch_llm(
     fake_llm.ainvoke = AsyncMock(return_value=params)
     fake_base = MagicMock()
     fake_base.with_structured_output = MagicMock(return_value=fake_llm)
-    monkeypatch.setattr(epm_module, "get_qwen_structured", lambda: fake_base)
+    monkeypatch.setattr(epm_module, "get_qwen_thinking", lambda: fake_base)
     return fake_llm.ainvoke
 
 
@@ -71,15 +71,16 @@ class TestOptionOrderItem:
         with pytest.raises(ValidationError):
             OptionOrderItem(orderId="Q-1", orderType="冰山单")  # type: ignore[arg-type]
 
-    def test_order_id_required(self) -> None:
-        with pytest.raises(ValidationError):
-            OptionOrderItem.model_validate({})
+    def test_order_id_optional(self) -> None:
+        """orderId 可选（qwen-max 经常输出 null）。"""
+        item = OptionOrderItem.model_validate({})
+        assert item.orderId is None
 
-    def test_extra_fields_forbidden(self) -> None:
-        with pytest.raises(ValidationError):
-            OptionOrderItem.model_validate(
-                {"orderId": "Q-1", "garbage": "x"}
-            )
+    def test_extra_fields_ignored(self) -> None:
+        params = OptionOrderItem.model_validate(
+            {"orderId": "Q-1", "garbage": "x"}
+        )
+        assert params.orderId == "Q-1"
 
 
 # ============================================================
@@ -101,11 +102,11 @@ class TestOptionPlaceOrModifyParams:
         )
         assert len(p.orderList) == 2
 
-    def test_extra_fields_forbidden(self) -> None:
-        with pytest.raises(ValidationError):
-            OptionPlaceOrModifyParams.model_validate(
-                {"orderList": [], "garbage": "x"}
-            )
+    def test_extra_fields_ignored(self) -> None:
+        params = OptionPlaceOrModifyParams.model_validate(
+            {"orderList": [], "garbage": "x"}
+        )
+        assert params.orderList == []
 
 
 # ============================================================
@@ -252,7 +253,7 @@ class TestOptionExtractPlaceOrModifyNode:
             )
         )
         monkeypatch.setattr(
-            epm_module, "get_qwen_structured", lambda: fake_llm
+            epm_module, "get_qwen_thinking", lambda: fake_llm
         )
         result = await option_extract_place_or_modify(
             {"raw_text": "x", "intent": "place_order_from_quote"}

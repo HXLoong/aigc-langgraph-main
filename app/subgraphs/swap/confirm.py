@@ -20,7 +20,7 @@ from typing import Any
 
 from app.graph.safe_node import safe_node
 from app.graph.state import AgentState, Message, TraceEntry
-from app.llm.clients import get_qwen_structured
+from app.llm.clients import get_qwen_thinking
 from app.prompts import load_prompt
 from app.subgraphs.swap.models import SwapConfirmParams
 
@@ -65,7 +65,7 @@ def _expected_action(intent: str | None) -> str:
 async def swap_confirm(state: AgentState) -> dict[str, Any]:
     """swap.confirm 节点（合并版）。"""
     prompt = load_prompt("swap", "confirm")
-    llm = get_qwen_structured().with_structured_output(SwapConfirmParams)
+    llm = get_qwen_thinking().with_structured_output(SwapConfirmParams)
 
     user_message = _build_user_message(state)
     result: Any = await llm.ainvoke(

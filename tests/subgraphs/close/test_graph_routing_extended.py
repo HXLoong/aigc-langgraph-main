@@ -16,12 +16,17 @@ from app.subgraphs.close.models import (
 )
 
 
-def _patch(monkeypatch: pytest.MonkeyPatch, module: object, value: object) -> None:
+def _patch(
+    monkeypatch: pytest.MonkeyPatch,
+    module: object,
+    value: object,
+    fn: str = "get_qwen_thinking",
+) -> None:
     fake_llm = MagicMock()
     fake_llm.ainvoke = AsyncMock(return_value=value)
     fake_base = MagicMock()
     fake_base.with_structured_output = MagicMock(return_value=fake_llm)
-    monkeypatch.setattr(module, "get_qwen_structured", lambda: fake_base)
+    monkeypatch.setattr(module, fn, lambda: fake_base)
 
 
 @pytest.mark.asyncio
@@ -34,6 +39,7 @@ async def test_close_order_confirm_routes_to_confirm_close(
         monkeypatch,
         confirm_module,
         ConfirmCloseParams(confirmOrderNoList=["CO-20260304-ABCD"]),
+        fn="get_qwen_thinking",
     )
 
     graph = build_close_graph()

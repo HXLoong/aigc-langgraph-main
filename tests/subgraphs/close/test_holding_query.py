@@ -20,7 +20,7 @@ def _patch_llm(
     fake_base_llm.with_structured_output = MagicMock(
         return_value=fake_llm_with_schema
     )
-    monkeypatch.setattr(hq_module, "get_qwen_structured", lambda: fake_base_llm)
+    monkeypatch.setattr(hq_module, "get_qwen_thinking", lambda: fake_base_llm)
     return fake_llm_with_schema.ainvoke
 
 
@@ -61,11 +61,11 @@ class TestHoldingQueryParams:
                 closeable_only=False, contractTypeList=["NOT_A_CONTRACT"]
             )  # type: ignore[list-item]
 
-    def test_extra_fields_forbidden(self) -> None:
-        with pytest.raises(ValidationError):
-            HoldingQueryParams.model_validate(
-                {"closeable_only": False, "garbage": "x"}
-            )
+    def test_extra_fields_ignored(self) -> None:
+        params = HoldingQueryParams.model_validate(
+            {"closeable_only": False, "garbage": "x"}
+        )
+        assert params.closeable_only is False
 
     def test_missing_required_closeable_only(self) -> None:
         with pytest.raises(ValidationError):
@@ -131,7 +131,7 @@ class TestCloseHoldingQueryNode:
             )
         )
         monkeypatch.setattr(
-            hq_module, "get_qwen_structured", lambda: fake_llm
+            hq_module, "get_qwen_thinking", lambda: fake_llm
         )
         result = await close_holding_query({"raw_text": "x"})
         assert result.get("error") is not None

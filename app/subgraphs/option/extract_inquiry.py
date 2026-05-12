@@ -18,7 +18,7 @@ from typing import Any
 
 from app.graph.safe_node import safe_node
 from app.graph.state import AgentState, Message, TraceEntry
-from app.llm.clients import get_qwen_structured
+from app.llm.clients import get_qwen_thinking
 from app.prompts import load_prompt
 from app.subgraphs.option.backend import _with_resolved_ticker, call_option_backend
 from app.subgraphs.option.models import OptionInquiryParams
@@ -75,7 +75,7 @@ async def option_extract_inquiry(state: AgentState) -> dict[str, Any]:
 
     # 1. LLM 提取询价参数（standard 模型 + structured output）
     prompt = load_prompt("option", "extract_inquiry")
-    llm = get_qwen_structured().with_structured_output(OptionInquiryParams)
+    llm = get_qwen_thinking().with_structured_output(OptionInquiryParams)
     user_message = _build_user_message(state)
     params: Any = await llm.ainvoke(
         [

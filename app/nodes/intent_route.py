@@ -19,7 +19,7 @@ from pydantic import BaseModel
 
 from app.graph.safe_node import safe_node
 from app.graph.state import AgentState, ProductType, TraceEntry
-from app.llm.clients import get_qwen_structured
+from app.llm.clients import get_qwen_thinking
 from app.prompts import load_prompt
 
 logger = logging.getLogger(__name__)
@@ -35,6 +35,7 @@ _ORDER_NO_PATTERNS: list[tuple[re.Pattern[str], ProductType]] = [
     (re.compile(r"OPT-\d{8}-[A-Z0-9]+"), "option"),
     (re.compile(r"CO-\d{8}-[A-Z0-9]+"), "option_close"),
     (re.compile(r"OPTG-[A-Z0-9]+"), "option_close"),
+    (re.compile(r"Q-\d{8}-[A-Z0-9]+"), "option_close"),
 ]
 
 
@@ -98,7 +99,7 @@ async def _classify_with_llm(
     含期权报价 → option）。
     """
     prompt = load_prompt("router", "product_type")
-    llm = get_qwen_structured().with_structured_output(ProductTypeOutput)
+    llm = get_qwen_thinking().with_structured_output(ProductTypeOutput)
     user_text = prompt.render_user(raw_text=text)
     if quote_content:
         user_text += f"\n\n引用消息（上下文）：\n{quote_content}"
