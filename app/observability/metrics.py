@@ -234,6 +234,7 @@ METRIC_LLM_TOTAL = "otc_agent_llm_total"
 METRIC_LLM_TOKENS = "otc_agent_llm_tokens_total"  # C1.7 成本监控（按模型 + 方向 prompt/completion）
 METRIC_DYNAMIC_PROMPT_TOTAL = "otc_agent_dynamic_prompt_total"  # D2.5 / ADR 0013：cache_hit / cache_miss_ok / fallback
 METRIC_CANARY_TRAFFIC_TOTAL = "otc_agent_canary_traffic_total"  # G5.1 / F4.2：按 is_canary 区分进入的请求
+METRIC_HTTP_RESPONSE_TOTAL = "otc_agent_http_total"  # ADR 0019 P0：HTTP 5xx 暴增告警依赖
 
 
 def emit_node_completed(node: str, status: str = "ok", elapsed_ms: int | None = None) -> None:
@@ -285,6 +286,22 @@ def emit_canary_traffic(is_canary: bool) -> None:
     get_collector().inc_counter(
         METRIC_CANARY_TRAFFIC_TOTAL,
         {"is_canary": "true" if is_canary else "false"},
+    )
+
+
+def emit_http_response(path: str, status_class: str) -> None:
+    """HTTP 响应计数（ADR 0019 P0 5xx 暴增告警的数据源）。
+
+    Args:
+        path: 请求路径（按 FastAPI route pattern，**不带查询参数**）。
+            上层 middleware 应排除高频探测路径（/health / /ready / /metrics）
+            避免 cardinality 爆炸 + 分母被探测流量稀释。
+        status_class: "2xx" / "3xx" / "4xx" / "5xx"。**只用 class 不用具体 code**
+            以控制 cardinality（5xx 率告警 / 4xx 用户错误观察足够，无需逐 code 区分）。
+    """
+    get_collector().inc_counter(
+        METRIC_HTTP_RESPONSE_TOTAL,
+        {"path": path, "status_class": status_class},
     )
 
 
@@ -363,6 +380,7 @@ __all__ = [
     "emit_llm_tokens",
     "emit_dynamic_prompt",
     "emit_canary_traffic",
+    "emit_http_response",
     "get_collector",
     "METRIC_NODE_TOTAL",
     "METRIC_INTENT_LATENCY",
@@ -370,4 +388,5 @@ __all__ = [
     "METRIC_HITL_TOTAL",
     "METRIC_LLM_TOTAL",
     "METRIC_LLM_TOKENS",
+    "METRIC_HTTP_RESPONSE_TOTAL",
 ]

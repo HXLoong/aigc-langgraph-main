@@ -98,6 +98,21 @@ LLM token 累计消耗。每次 LLM 调用结束后由业务代码 emit。
 - 模型成本 = tokens × 单价（见 §6）
 - 节点成本占比 = 按 `node` 标签聚合
 
+### 2.7 `otc_agent_http_total{path, status_class}` — Counter（PR #104 / ADR 0019 P0）
+
+HTTP 响应计数。由 `HTTPMetricsMiddleware` 在每次请求结束时 emit。
+
+| label | 取值 |
+|---|---|
+| `path` | FastAPI 路由路径（如 `/v1/workflows/run`）|
+| `status_class` | `2xx` / `3xx` / `4xx` / `5xx`（只用 class 不用具体 code，控制 cardinality）|
+
+**排除路径**：`/health`、`/ready`、`/metrics` 不计入（探测频次极高，会稀释 5xx 率分母 + 增 cardinality）。
+
+**衍生指标**：
+- 5xx 率 = `sum(rate(otc_agent_http_total{status_class="5xx"}[5m])) / sum(rate(otc_agent_http_total[5m]))`
+- ADR 0019 P0 阈值：≥ 1% 持续 5 分钟 → 立即介入
+
 ---
 
 ## 3. `/metrics` Endpoint
@@ -155,7 +170,7 @@ scrape_configs:
 
 | 告警 | 触发条件 | 严重级 | 实现状态 |
 |---|---|---|---|
-| HTTP 5xx 暴增 | 5xx 率 ≥ 1% 持续 5 分钟 | P0 | ⚠️ 阈值代码已写，5xx 计数依赖 nginx 日志或 HTTP 中间件接入（TODO） |
+| HTTP 5xx 暴增 | 5xx 率 ≥ 1% 持续 5 分钟 | P0 | ✅ 完整实现（HTTPMetricsMiddleware 计数，排除 /health /ready /metrics 探测路径） |
 | Cascade fail 持续触发 | `fallback_total{reason="cascade_fail"}` 率 ≥ 5% 持续 10 分钟 | P1 | ✅ 完整实现 |
 | LLM 失败率高 | `llm_total{status!="ok"}` 率 ≥ 10% 持续 5 分钟 | P1 | ✅ 完整实现 |
 | HITL 长挂起 | 单会话 HITL ≥ 30 分钟未恢复 | P1 | 🔲 TODO：需 LangFuse trace 查询能力，与本期 cron 模型不匹配 |

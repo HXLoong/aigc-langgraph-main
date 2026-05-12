@@ -293,8 +293,10 @@ def _evaluate_metric(name: str, ctx: AlertContext, state: AlertState) -> float:
         return max(d, 0.0)
 
     if name == "http_5xx_spike":
-        # TODO: 接 nginx exporter 或 FastAPI HTTP 中间件计数（C1.6 后续 PR）
-        return _calc_ratio_pct(delta("http_5xx"), delta("node_total"))
+        # 接 HTTPMetricsMiddleware 计数（PR #104）
+        # 分母是 http_total 而非 node_total —— middleware 排除了 /health /ready /metrics
+        # 探测路径，分子分母同源避免分母被探测流量稀释
+        return _calc_ratio_pct(delta("http_5xx"), delta("http_total"))
 
     if name == "cascade_fail_high":
         return _calc_ratio_pct(delta("fallback_cascade_fail"), delta("node_total"))
@@ -338,6 +340,7 @@ def parse_prometheus_metrics(text: str) -> dict[str, Any]:
     """
     result: dict[str, Any] = {
         "http_5xx": 0,
+        "http_total": 0,  # HTTPMetricsMiddleware 计数（排除探测路径）
         "fallback_cascade_fail": 0,
         "llm_error": 0,
         "llm_total": 0,
@@ -378,6 +381,11 @@ def parse_prometheus_metrics(text: str) -> dict[str, Any]:
                 le = _extract_le(labels_str)
                 if le is not None:
                     latency_buckets[le] = latency_buckets.get(le, 0.0) + value
+            elif name_part == "otc_agent_http_total":
+                # HTTPMetricsMiddleware emit 的总响应数 + 5xx 子集
+                result["http_total"] += value
+                if 'status_class="5xx"' in labels_str:
+                    result["http_5xx"] += value
         elif line.startswith("otc_agent_intent_latency_ms_count"):
             # 形如 "otc_agent_intent_latency_ms_count 42"（无 label 全局聚合时）
             try:
@@ -385,7 +393,6 @@ def parse_prometheus_metrics(text: str) -> dict[str, Any]:
                 latency_count += float(value_str)
             except ValueError:
                 continue
-        # http_5xx 通过外部 nginx 日志接入；本期 stub 为 0
 
     result["p95_latency_ms"] = _histogram_quantile_ms(latency_buckets, 0.95)
     return result
