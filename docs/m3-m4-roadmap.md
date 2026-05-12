@@ -118,7 +118,7 @@
 | 任务 ID | 内容 | Owner | 估时 |
 |---|---|---|---|
 | **C1.15** | 故障 SOP：cascade fail / LLM 超时 / 后端 5xx / Checkpointer 失败 各自诊断步骤 | #25 | 1d |
-| **C1.16** | on-call runbook **草稿**：值班流程 / 回滚步骤 / 紧急切回 Dify Webhook 操作指引 / 客户企微管理员联系人模板（**真实演练**在 F4.0） | Tony | 1d |
+| **C1.16** | ✅ on-call runbook **草稿** v0.1 已交付（`docs/on-call-runbook.md`，2026-05-12）：含严重等级 / 监控告警源 / 5 类故障 playbook / 紧急回滚 5 分钟流程 / F4.0 演练计划 / 联系人模板（**真实演练**在 F4.0） | Tony | 1d |
 | **C1.17** | 业务方培训资料补完：以 `docs/training/` 为底，加客户场景示例 | Tony + PM | 1-2d |
 | **C1.18** | 安全审计**草稿**：API key 轮转流程文档 + secret 不入 git 校验（pre-commit hook）（**完整审计**在 D2.7） | #25 | 1d |
 
