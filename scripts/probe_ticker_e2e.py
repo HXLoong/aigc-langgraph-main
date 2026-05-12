@@ -27,14 +27,14 @@ import time
 async def _run_one(raw_text: str) -> None:
     from app.subgraphs.ticker.resolver import resolve_ticker_full
 
-    t0 = time.time()
+    t0 = time.monotonic()
     try:
         resolution = await resolve_ticker_full(raw_text)
     except Exception as exc:  # noqa: BLE001
-        latency = int((time.time() - t0) * 1000)
+        latency = int((time.monotonic() - t0) * 1000)
         print(f"[{latency:>5}ms] raw={raw_text!r:<30} → ERROR: {type(exc).__name__}: {exc}")
         return
-    latency = int((time.time() - t0) * 1000)
+    latency = int((time.monotonic() - t0) * 1000)
     resolved_summary = ", ".join(
         f"{c.windCode}({c.insShtDesc})" for c in resolution.resolved[:3]
     )
@@ -57,7 +57,7 @@ async def main() -> int:
         "工商银行 看涨期权",
         "asdf随便一个串zxcv",
     ]
-    print(f"=== ticker 子图真后端端到端探测 ===")
+    print("=== ticker 子图真后端端到端探测 ===")
     for raw in cases:
         await _run_one(raw)
     return 0

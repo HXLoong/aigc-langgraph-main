@@ -26,7 +26,7 @@ import argparse
 import asyncio
 import json
 import sys
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict, dataclass
 from typing import Any
 from urllib.parse import urlparse
 
@@ -63,7 +63,7 @@ async def _probe_one(
 
     result = ProbeResult(name=name, method=method, path=path)
     url = f"{base_url}{path}"
-    t0 = time.time()
+    t0 = time.monotonic()
     try:
         if method == "GET":
             if body is not None:
@@ -72,7 +72,7 @@ async def _probe_one(
                 r = await client.get(url, params=params, headers=headers)
         else:
             r = await client.post(url, json=body, headers=headers)
-        result.latency_ms = int((time.time() - t0) * 1000)
+        result.latency_ms = int((time.monotonic() - t0) * 1000)
         result.http_status = r.status_code
 
         try:
@@ -82,10 +82,9 @@ async def _probe_one(
             result.error = f"response not JSON (first 80 chars): {r.text[:80]!r}"
             return result
 
-        if isinstance(payload, dict) and {"code", "msg"}.issubset(payload.keys()) | {
-            "code",
-            "message",
-        }.issubset(payload.keys()):
+        # CommonResult envelope 合法判定：有 code 字段 + 有 msg 或 message 任一
+        keys = set(payload.keys()) if isinstance(payload, dict) else set()
+        if "code" in keys and ("msg" in keys or "message" in keys):
             result.envelope_ok = True
             result.code = payload.get("code")
             result.message = payload.get("msg") or payload.get("message")
@@ -101,7 +100,8 @@ async def _probe_one(
             else:
                 result.data_type = type(data).__name__
         else:
-            result.error = f"envelope missing code/msg keys; keys: {list(payload.keys())[:5] if isinstance(payload, dict) else type(payload).__name__}"
+            preview = list(keys)[:5] if keys else type(payload).__name__
+            result.error = f"envelope missing code/msg keys; keys: {preview}"
     except httpx.TimeoutException:
         result.error = "TIMEOUT"
     except httpx.ConnectError as exc:

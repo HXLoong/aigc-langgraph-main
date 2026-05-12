@@ -29,14 +29,14 @@ class ProbeResult:
 async def _timed(target: str, coro) -> tuple[ProbeStatus, str | None, int]:
     import time
 
-    t0 = time.time()
+    t0 = time.monotonic()
     try:
         await asyncio.wait_for(coro, timeout=PROBE_TIMEOUT_SECONDS)
-        return "ok", None, int((time.time() - t0) * 1000)
+        return "ok", None, int((time.monotonic() - t0) * 1000)
     except TimeoutError:
-        return "fail", "timeout", int((time.time() - t0) * 1000)
+        return "fail", "timeout", int((time.monotonic() - t0) * 1000)
     except Exception as exc:  # noqa: BLE001
-        return "fail", type(exc).__name__, int((time.time() - t0) * 1000)
+        return "fail", type(exc).__name__, int((time.monotonic() - t0) * 1000)
 
 
 async def probe_mysql() -> ProbeResult:
@@ -103,11 +103,17 @@ async def probe_llm() -> ProbeResult:
     async def _check() -> None:
         import httpx
 
+        # 探测 /models（OpenAI 兼容端点标准路径），需要鉴权头，能区分 key 失效 vs endpoint 不可达
+        url = f"{base}/models"
+        headers = (
+            {"Authorization": f"Bearer {settings.qwen_api_key}"}
+            if settings.qwen_api_key
+            else None
+        )
         async with httpx.AsyncClient(timeout=PROBE_TIMEOUT_SECONDS, trust_env=False) as c:
-            r = await c.get(
-                base,
-                headers={"Authorization": f"Bearer {settings.qwen_api_key}"} if settings.qwen_api_key else None,
-            )
+            r = await c.get(url, headers=headers)
+            if r.status_code == 401:
+                raise RuntimeError("unauthorized")
             if r.status_code >= 500:
                 raise RuntimeError(f"http_{r.status_code}")
 
