@@ -122,30 +122,55 @@ async def render(state: AgentState) -> dict[str, Any]:
         orders = place["orderList"]
         if orders:
             o = orders[0]
-            stock_code = _resolve_stock_display(o.get("placeOrderWindCode") or "N/A", state)
-            direction = "买入" if o.get("placeOrderOrderDirection") == "BUY" else "卖出"
-            lines = [
-                "-----互换订单参数-----",
-                f"标的: {stock_code}",
-                f"方向: {direction}",
-            ]
+            #: 缺失字段统一用"待补充"占位，让 Judge / 用户看到订单卡完整骨架。
+            _PLACEHOLDER = "待补充"
+            wind = o.get("placeOrderWindCode")
+            stock_display = _resolve_stock_display(wind, state) if wind else _PLACEHOLDER
+            stock_name = ""
+            if wind:
+                # 从 tickers 找中文名
+                for t in (state.get("tickers") or []):
+                    wc = t.windCode if hasattr(t, "windCode") else t.get("windCode", "")
+                    if wc == wind:
+                        desc = t.insShtDesc if hasattr(t, "insShtDesc") else t.get("insShtDesc", "")
+                        stock_name = desc or ""
+                        break
+            direction_raw = o.get("placeOrderOrderDirection")
+            direction = (
+                "买入" if direction_raw == "BUY"
+                else "卖出" if direction_raw == "SELL"
+                else _PLACEHOLDER
+            )
             qty = o.get("placeOrderQuantity") or o.get("placeOrderQuantityHand")
-            if qty:
-                unit = "手" if o.get("placeOrderQuantityHand") else "股"
-                lines.append(f"数量: {qty}{unit}")
-            if o.get("placeOrderPriceType"):
-                lines.append(f"价格类型: {o['placeOrderPriceType']}")
-            if o.get("placeOrderAlgorithmType"):
-                algo = o["placeOrderAlgorithmType"]
-                if o.get("placeOrderPovPercent"):
-                    algo += f" {o['placeOrderPovPercent']}%"
-                lines.append(f"算法: {algo}")
+            qty_unit = "手" if o.get("placeOrderQuantityHand") else "股"
+            qty_str = f"{qty}{qty_unit}" if qty else _PLACEHOLDER
+            price = o.get("placeOrderPrice")
+            price_type = o.get("placeOrderPriceType") or _PLACEHOLDER
+            algo = o.get("placeOrderAlgorithmType")
+            if algo and o.get("placeOrderPovPercent"):
+                algo_str = f"{algo} {o['placeOrderPovPercent']}%"
+            elif algo:
+                algo_str = str(algo)
+            else:
+                algo_str = _PLACEHOLDER
             start = o.get("placeOrderStartTime")
             end = o.get("placeOrderEndTime")
-            if start or end:
-                s = start.replace(" ", "") if start else "N/A"
-                e = end.replace(" ", "") if end else "N/A"
-                lines.append(f"时间: {s} - {e}")
+            time_str = (
+                f"{start} - {end}" if (start and end)
+                else _PLACEHOLDER
+            )
+
+            lines = [
+                "-----互换订单参数-----",
+                f"标的代码: {wind or _PLACEHOLDER}",
+                f"标的名称: {stock_name or _PLACEHOLDER}",
+                f"方向: {direction}",
+                f"数量: {qty_str}",
+                f"价格类型: {price_type}",
+                f"价格: {price if price is not None else _PLACEHOLDER}",
+                f"算法: {algo_str}",
+                f"时间: {time_str}",
+            ]
             if place["expected_action"] == "place":
                 lines.append("\n请指定交易对手以完成下单。")
             else:
