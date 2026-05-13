@@ -38,16 +38,37 @@ def _format_history(history: list[Message] | None) -> str:
 
 
 def _build_user_message(state: AgentState) -> str:
-    """组装 user message（4 个 Dify 输入变量）。"""
+    """组装 user message（对齐 Dify swap.place_order.md 的 user 模板）。
+
+    Dify 模板（参见 app/prompts/swap/place_order.md 末尾）需要 5 个变量：
+        swap_query / raw_content / quote_content / bot_name_list / shortname_list
+
+    历史问题：旧版只塞 raw_content/quote_content/history_query_str/bot_name_list，
+    LLM 看不到 swap_query 字段就拒绝提取 placeOrderShortname（交易对手）等需"逐字符
+    在 swap_query 中找"的字段——表现为用户已明确写"交易对手：XXX"，模型仍输出 null。
+
+    修复：swap_query 用 raw_content 兜底；shortname_list 暂传空字符串（后续 PR 可接
+    TickerClient.list_counterparty 拉取真值）。
+    """
     raw_content = state.get("raw_text", "") or ""
     quote_content = state.get("quote_content") or ""
-    history_str = _format_history(state.get("history_messages"))
-    bot_name_list: list[str] = []
+    bot_name_list: list[str] = state.get("bot_name_list", []) or []
+    counterparty_list = state.get("counterparty_list", []) or []
+    shortname_list_str = ", ".join(
+        c.get("shortName", "") if isinstance(c, dict) else str(c)
+        for c in counterparty_list
+    ) if counterparty_list else ""
     return (
-        f"raw_content: {raw_content}\n\n"
-        f"quote_content: {quote_content}\n\n"
-        f"history_query_str:\n{history_str}\n\n"
-        f"bot_name_list: {bot_name_list}"
+        f"swap_query：{raw_content}\n"
+        f"-------\n"
+        f"raw_content：{raw_content}\n"
+        f"-------\n"
+        f"quote_content：{quote_content}\n"
+        f"-------\n"
+        f"bot_name_list：{bot_name_list}\n"
+        f"-------\n"
+        f"shortname_list: {shortname_list_str}\n"
+        f"-------"
     )
 
 
