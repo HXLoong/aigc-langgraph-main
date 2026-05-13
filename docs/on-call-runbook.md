@@ -128,6 +128,32 @@
 | 3 | 客户 IT 排查 MySQL 状态、连接数、磁盘 |
 | 4 | 短期可重启应用清理连接池；长期需扩 MySQL 资源 |
 
+### 5.7 DRY_RUN_BACKEND 误配（F4.1 ↔ F4.2 切换时）
+
+**误配场景 A**：F4.2 切流后忘记把 `DRY_RUN_BACKEND` 改回 false → 用户下单全部被拦截 → 业务方反馈"下单没反应/订单查不到"
+
+| 步骤 | 动作 |
+|---|---|
+| 1 | 现象判定：`curl /metrics | grep dry_run_intercept` 看是否在涨；业务方反馈"下单按了但 GOATS 没记录" |
+| 2 | 立即查 `.env::DRY_RUN_BACKEND`：F4.2+ 必须 `false`（F4.1 shadow 期才 `true`）|
+| 3 | 修 .env 后**必须重启** otc-agent 让 settings 重新加载（lru_cache 单例）|
+| 4 | 验证：跑一条业务 case，看 GOATS 是否真创建订单；`/metrics` 上 `dry_run_intercept` 计数不应再涨 |
+
+**误配场景 B**：F4.1 shadow 期忘开 `DRY_RUN_BACKEND=true` → LangGraph 真下单 → **严重事故** + 业务方信任损失
+
+| 步骤 | 动作 |
+|---|---|
+| 1 | 立即通知 Tony + 业务方负责人 |
+| 2 | 立即停 shadow 双跑（停 LangGraph 实例 / 把 Webhook 切回 Dify）|
+| 3 | 拉取 LangGraph trace + GOATS 订单日志，列出"误下单"清单 |
+| 4 | 业务方协调撤单（如还能撤）+ 客户书面致歉 |
+| 5 | 事后必须 postmortem：为什么 deploy 时 step2 advisory 没拦住 |
+
+**预防机制**（已实现）：
+- `scripts/deploy-customer.sh` step2 加 advisory（待落地，#113）
+- `scripts/canary_status.py` 检测 `CANARY_ROOM_IDS=ALL` + `dry_run_intercept > 0` 时 P0 即时告警
+- `docs/m3-shadow-compare-dry-run-design.md` §3 安全护栏
+
 ---
 
 ## 6. 不要做的事

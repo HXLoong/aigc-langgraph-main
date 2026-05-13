@@ -1,6 +1,7 @@
-# Shadow Compare Dry-Run 模式设计（F4.1 阻塞性需求 · follow-up）
+# Shadow Compare Dry-Run 模式设计（F4.1 阻塞性需求）
 
-> 本 PR (#111) 完成 P0 全做的前两件（probe runner + deploy 集成），第三件 "shadow_compare 真后端 dry-run" 因涉及业务 client 改造留作下个 PR。本文档作为设计稿。
+> **状态**：✅ 已实施（PR #112）。本文档保留为设计参考 + 后续维护依据。
+> 历史：PR #111 完成 probe runner + deploy step11，本文档作为 follow-up 设计稿；PR #112 按本设计稿落地。
 
 ## 1. 问题
 

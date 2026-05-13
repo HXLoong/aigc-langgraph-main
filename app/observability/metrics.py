@@ -235,6 +235,7 @@ METRIC_LLM_TOKENS = "otc_agent_llm_tokens_total"  # C1.7 成本监控（按模�
 METRIC_DYNAMIC_PROMPT_TOTAL = "otc_agent_dynamic_prompt_total"  # D2.5 / ADR 0013：cache_hit / cache_miss_ok / fallback
 METRIC_CANARY_TRAFFIC_TOTAL = "otc_agent_canary_traffic_total"  # G5.1 / F4.2：按 is_canary 区分进入的请求
 METRIC_HTTP_RESPONSE_TOTAL = "otc_agent_http_total"  # ADR 0019 P0：HTTP 5xx 暴增告警依赖
+METRIC_DRY_RUN_INTERCEPT_TOTAL = "otc_agent_dry_run_intercept_total"  # F4.1 shadow：写类调用被 dry-run 拦截
 
 
 def emit_node_completed(node: str, status: str = "ok", elapsed_ms: int | None = None) -> None:
@@ -286,6 +287,23 @@ def emit_canary_traffic(is_canary: bool) -> None:
     get_collector().inc_counter(
         METRIC_CANARY_TRAFFIC_TOTAL,
         {"is_canary": "true" if is_canary else "false"},
+    )
+
+
+def emit_dry_run_intercept(client: str, operation: str) -> None:
+    """F4.1 shadow 双跑：dry-run 拦截了一次写类客户端调用。
+
+    Args:
+        client: "option" / "swap" / "ticker"
+        operation: 实际操作（如 "operate:place_order_request" / "operate:cancel_order_request"）
+
+    用途：
+    - shadow_compare 检查 LangGraph 实例 /metrics 含 dry_run_intercept > 0 → 配置正确
+    - 误配警报：dry_run=true 且 is_canary=ALL（金丝雀全量）→ on-call 立即检查
+    """
+    get_collector().inc_counter(
+        METRIC_DRY_RUN_INTERCEPT_TOTAL,
+        {"client": client, "operation": operation},
     )
 
 
@@ -381,6 +399,7 @@ __all__ = [
     "emit_dynamic_prompt",
     "emit_canary_traffic",
     "emit_http_response",
+    "emit_dry_run_intercept",
     "get_collector",
     "METRIC_NODE_TOTAL",
     "METRIC_INTENT_LATENCY",
@@ -389,4 +408,5 @@ __all__ = [
     "METRIC_LLM_TOTAL",
     "METRIC_LLM_TOKENS",
     "METRIC_HTTP_RESPONSE_TOTAL",
+    "METRIC_DRY_RUN_INTERCEPT_TOTAL",
 ]

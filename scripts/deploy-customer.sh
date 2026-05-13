@@ -211,6 +211,19 @@ step2_env_check() {
     if [ -z "$eval_user_val" ] || [[ "$eval_user_val" == *"<FILL"* ]]; then
         info "EVAL_USER_ID 未配置（如不跑 scripts/probe_*_e2e.py 或 harness 真后端模式可忽略）"
     fi
+
+    # F4.1 dry-run 模式 advisory（PR #112）
+    local dry_run_val
+    dry_run_val=$(env_get "DRY_RUN_BACKEND")
+    if [ "$dry_run_val" = "true" ] || [ "$dry_run_val" = "1" ]; then
+        warn "DRY_RUN_BACKEND=true（F4.1 shadow 期生效，写类调用被拦截）"
+        warn "  → F4.2 切流前**务必**改回 false，否则用户下单会被拦截！"
+        warn "  → 详见 docs/on-call-runbook.md §5.7"
+    elif [ -n "$dry_run_val" ] && [ "$dry_run_val" != "false" ] && [ "$dry_run_val" != "0" ]; then
+        warn "DRY_RUN_BACKEND 值未识别 ($dry_run_val)，按 false 处理"
+    else
+        info "DRY_RUN_BACKEND=false（生产路径，真后端真下单）"
+    fi
 }
 
 # ============================================================

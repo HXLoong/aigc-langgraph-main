@@ -140,18 +140,32 @@ class OptionClient(Protocol):
 class OptionClientHttpx:
     """走 httpx 的 OptionClient 实现。base_url 指向 mock_api 或真实 Java backend。"""
 
+    #: F4.1 shadow 期写类拦截白名单的"反向集合"——出现在此集合的 intent 视为 read，
+    #: 即使调 operate endpoint 也不拦截。详见 docs/m3-shadow-compare-dry-run-design.md
+    _READ_INTENTS: frozenset[str] = frozenset({
+        "new_inquiry",           # 询价不下单
+        "query_order_status",    # 查订单状态
+        "close_order_query",     # 查持仓/可平仓
+        "close_order_order_query",  # 查平仓订单
+        "unknown_intent",        # 兜底
+    })
+
     def __init__(
         self,
         base_url: str = "",
         timeout: float = 30.0,
         token: str | None = None,
         transport: httpx.AsyncBaseTransport | None = None,
+        dry_run: bool | None = None,
     ) -> None:
         """
         Args:
             transport: 仅测试用。注入 httpx.ASGITransport(mock_api.app) 即可
                 把 client 切到 mock_api 的内存 FastAPI 实例上跑（无端口）。
                 生产环境**不传**此参数，保持 None。
+            dry_run: F4.1 shadow 双跑用。True → 写类 intent 调用被拦截，返回
+                fake CommonResult；read 类 intent 仍真调。None → 从
+                Settings.dry_run_backend 读取（生产环境通常 False）。
         """
         from app.config import get_settings
         settings = get_settings()
@@ -159,6 +173,9 @@ class OptionClientHttpx:
         self._timeout = timeout
         self._token = token if token is not None else settings.otc_api_secret
         self._transport = transport
+        self._dry_run = (
+            settings.dry_run_backend if dry_run is None else dry_run
+        )
 
     @property
     def _headers(self) -> dict[str, str]:
@@ -179,6 +196,17 @@ class OptionClientHttpx:
     async def operate(
         self, req: FinancialOrderOpenApiSaveReqVO
     ) -> CommonResult:
+        intent_value = req.type.value if hasattr(req.type, "value") else str(req.type)
+        if self._dry_run and intent_value not in self._READ_INTENTS:
+            from app.observability.metrics import emit_dry_run_intercept
+
+            emit_dry_run_intercept("option", f"operate:{intent_value}")
+            return CommonResult(
+                code=0,
+                msg="dry-run intercepted",
+                data={"orderId": f"DRY-RUN-{intent_value}"},
+            )
+
         from app.tools.exceptions import translate_httpx_errors
 
         url = f"{self._base_url}/admin-api/financial-orders/operate"

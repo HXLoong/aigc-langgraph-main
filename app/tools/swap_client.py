@@ -109,20 +109,30 @@ class SwapClient(Protocol):
 class SwapClientHttpx:
     """走 httpx 的 SwapClient 实现。"""
 
+    #: F4.1 shadow 期 read 类 intent 白名单（即使调 operate 也不 dry-run 拦截）
+    _READ_INTENTS: frozenset[str] = frozenset({
+        "query_order_status",  # 查订单状态
+        "unknown_intent",      # 兜底
+    })
+
     def __init__(
         self,
         base_url: str = "",
         timeout: float = 30.0,
         token: str | None = None,
         transport: httpx.AsyncBaseTransport | None = None,
+        dry_run: bool | None = None,
     ) -> None:
-        """transport 仅测试用，注入 ASGITransport(mock_api.app) 走内存调用。"""
+        """transport 仅测试用；dry_run 为 F4.1 shadow 期写类拦截开关（None=读 settings）。"""
         from app.config import get_settings
         settings = get_settings()
         self._base_url = (base_url or settings.otc_api_base_url).rstrip("/")
         self._timeout = timeout
         self._token = token if token is not None else settings.otc_api_secret
         self._transport = transport
+        self._dry_run = (
+            settings.dry_run_backend if dry_run is None else dry_run
+        )
 
     @property
     def _headers(self) -> dict[str, str]:
@@ -143,6 +153,17 @@ class SwapClientHttpx:
     async def operate(
         self, req: SwapOrderOpenApiSaveReqVO
     ) -> CommonResult:
+        intent_value = req.type.value if hasattr(req.type, "value") else str(req.type)
+        if self._dry_run and intent_value not in self._READ_INTENTS:
+            from app.observability.metrics import emit_dry_run_intercept
+
+            emit_dry_run_intercept("swap", f"operate:{intent_value}")
+            return CommonResult(
+                code=0,
+                msg="dry-run intercepted",
+                data={"orderId": f"DRY-RUN-{intent_value}"},
+            )
+
         from app.tools.exceptions import translate_httpx_errors
 
         url = f"{self._base_url}/admin-api/swap-order/operate"
