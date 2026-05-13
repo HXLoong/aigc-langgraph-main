@@ -75,12 +75,22 @@ def _extract_embedded_codes(token: str) -> list[str]:
         `贵州茅台600519` → `[600519, 贵州茅台]`
         `2月WTI原油` → `[WTI原油]`（2 位数字不算代码）
         `腾讯` → `[腾讯]`
+        `中证1000` → `[中证1000, 1000, 中证]`（4 位数字 + 中文余 → 大概率命名指数，保留复合）
     """
     digits = _EMBEDDED_DIGIT_RE.findall(token)
     if not digits:
         return [token]
-    out: list[str] = list(digits)
     remainder = _EMBEDDED_DIGIT_RE.sub("", token).strip()
+    # 4 位数字 + 中文余 → 命名指数复合 keyword（中证1000/中证2000），保留原 token 在最前。
+    # 5-6 位数字（如 600519/02513）是股票代码，仍按"代码+名称"分离。
+    has_chinese_remainder = bool(re.search(r"[一-鿿]", remainder))
+    is_chinese_index_pattern = has_chinese_remainder and any(
+        len(d) == 4 for d in digits
+    )
+    out: list[str] = []
+    if is_chinese_index_pattern:
+        out.append(token)
+    out.extend(digits)
     if remainder and remainder not in out:
         out.append(remainder)
     return out
