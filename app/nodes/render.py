@@ -227,6 +227,13 @@ def _render_swap_order(o: dict[str, Any], state: AgentState, place: dict[str, An
         missing.append("委托方向")
     if price is None and (price_type or "").startswith("Limit"):
         missing.append("限定价格")
+    # POV/TWAP/VWAP 算法必须指定时间窗口（算法委托 vs 市价委托区分）
+    if algo and (algo in ("POV", "TWAP", "VWAP")) and (start is None or end is None):
+        missing.append("算法时间")
+    # 限价委托但价格缺失（即使 LLM 没填 priceType="LimitOrder"）
+    if "限价" in raw_text and price is None:
+        if "限定价格" not in missing:
+            missing.append("限定价格")
 
     # 不支持的币种检测（OTC 场外业务只受理 CNY/USD/HKD 三种，其他需人工询价）。
     # 这是**业务约束规则**，非映射字典——不同于硬编码"名→代码"映射，符合 P0 红线
