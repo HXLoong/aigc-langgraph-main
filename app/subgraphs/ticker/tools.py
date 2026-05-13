@@ -20,7 +20,7 @@ from typing import Annotated
 from langchain_core.tools import tool
 
 from app.config import get_settings
-from app.llm.clients import get_qwen_thinking
+from app.llm.clients import get_qwen_thinking, make_qwen_thinking
 from app.tools.ticker_client import (
     KeywordItem,
     SecuritiesInstrumentReqVO,
@@ -437,7 +437,7 @@ def _llm_infer(keyword: str, dynamic_prompt: str) -> str:
     ]
 
     async def _ainvoke() -> str:
-        resp = await get_qwen_thinking().ainvoke(messages)
+        resp = await make_qwen_thinking().ainvoke(messages)
         content = (resp.content or "") if hasattr(resp, "content") else str(resp)
 
         # 优先解析 <result>...</result> 标签（thinking 模型格式）

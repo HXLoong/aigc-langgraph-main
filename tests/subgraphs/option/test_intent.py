@@ -90,6 +90,23 @@ class TestOptionIntentNode:
         assert trace[0].node == "option_intent"
         assert "intent=confirm_order" in trace[0].decision
 
+    # ── 路由表对齐（opt-019 根因）────────────────────────────
+    async def test_deterministic_confirm_intent_is_routable(self) -> None:
+        """'确认下单' → intent 必须在 _INTENT_TO_NODE，否则跳 option_unknown。"""
+        from app.subgraphs.option.graph import _INTENT_TO_NODE
+        result = await option_intent({"raw_text": "确认下单", "quote_content": ""})
+        assert result["intent"] in _INTENT_TO_NODE, (
+            f"intent={result['intent']!r} 不在路由表"
+        )
+
+    async def test_deterministic_dash_intent_is_routable(self) -> None:
+        """`-` → intent 必须在 _INTENT_TO_NODE。"""
+        from app.subgraphs.option.graph import _INTENT_TO_NODE
+        result = await option_intent({"raw_text": "-", "quote_content": ""})
+        assert result["intent"] in _INTENT_TO_NODE, (
+            f"intent={result['intent']!r} 不在路由表"
+        )
+
     async def test_safe_node_catches_llm_error(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
