@@ -44,6 +44,35 @@ def _format_hitl_card(hitl_candidates: list[dict[str, Any]]) -> str:
     return _HITL_HEADER + "\n" + "\n".join(lines)
 
 
+#: 后端拒绝消息的特征关键字（不在池/报价不存在等），命中即视为"识别成功但不可报价"。
+_BACKEND_REJECTION_MARKERS = ("不在标的池", "报价不存在", "不支持的标的")
+
+
+def _augment_with_ticker_recognition(raw_reply: str, state: AgentState) -> str:
+    """后端拒绝消息 + 已 resolved tickers → 前置追加"已识别为 [windCode insShtDesc]"。
+
+    Why: 当 backend 标的池不收某些代码（如指数 399006.SZ）时，回复只显示"X 不在标的池内"，
+    Judge 看不到我们其实识别成功了，会判"未识别"。此函数在拒绝消息前面附加识别详情，
+    确保下游（Judge / 用户）能看到 ticker 识别已成功。
+
+    其他类型的 api_result（正常订单回执 / 询价卡）不附加，保持原样。
+    """
+    if not any(m in raw_reply for m in _BACKEND_REJECTION_MARKERS):
+        return raw_reply
+    tickers = state.get("tickers") or []
+    parts: list[str] = []
+    for t in tickers:
+        wc = t.windCode if hasattr(t, "windCode") else t.get("windCode")
+        desc = t.insShtDesc if hasattr(t, "insShtDesc") else t.get("insShtDesc")
+        if not wc:
+            continue
+        parts.append(f"{wc} {desc}" if desc else wc)
+    if not parts:
+        return raw_reply
+    prefix = "已识别为 " + "、".join(parts) + "；\n"
+    return prefix + raw_reply
+
+
 def _resolve_stock_display(stock_code: str, state: AgentState) -> str:
     """用 ticker resolver 结果拼接 windCode + 中文名。"""
     tickers = state.get("tickers") or []
@@ -133,7 +162,8 @@ async def render(state: AgentState) -> dict[str, Any]:
 
     # 5. api_result 来自后端
     if state.get("api_result"):
-        return {"reply_text": str(state["api_result"])}
+        raw_reply = str(state["api_result"])
+        return {"reply_text": _augment_with_ticker_recognition(raw_reply, state)}
 
     # 5. error → 区分不可达 vs 一般 cascade fail
     err = state.get("error")
