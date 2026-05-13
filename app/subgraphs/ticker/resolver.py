@@ -164,43 +164,17 @@ def _pick_within_a_share(keyword: str, a_results: list) -> object | None:
     return a_results[0]
 
 
-#: 命名指数 → 可交易 ETF 代码（场外期权 backend 标的池只收 ETF，不收指数）。
-#: 在 tokenize 之后把对应 ETF 代码**前置**到 keywords 队列首位，让 GOATS 先查 ETF
-#: → resolved[0] = ETF → option/swap 子图的 order[0].stockCode 取 tickers[0].windCode
-#: → 通过后端校验。
-_NAMED_INDEX_TO_ETF: dict[str, str] = {
-    "创业板指": "159915.SZ",       # 创业板 ETF
-    "上证50": "510050.SH",          # 上证50 ETF
-    "中证500": "510500.SH",         # 中证500 ETF
-    "中证1000": "512100.SH",        # 中证1000 ETF
-    "沪深300": "510300.SH",         # 沪深300 ETF
-    "科创50": "588000.SH",          # 科创50 ETF
-    "深证成指": "159901.SZ",        # 深证成指 ETF
-}
-
-
 async def _resolve_via_react_full(raw_text: str) -> TickerResolution:
     """tokenize 拆词 → 每个 keyword 查 securities-instrument/select → pick_best 选优。
 
     流程：
     1. tokenize(raw_text) → list[str] keywords
-    2. 命名指数前置：raw_text 含已知指数名（创业板指/上证50/中证500/中证1000/沪深300/...） →
-       把对应 ETF 代码插入 keywords 首位（绕过 GOATS 对指数关键词的"返回指数代码"行为）
-    3. 对每个 keyword 调 client.search_securities_instrument()（async HTTP）
-    4. 单命中 → 直接选入 resolved
-    5. 多命中 → pick_best 启发式选优（精确匹配 > 前缀最短 > A 股优先）
-    6. 0 命中 → 跳过该 keyword
+    2. 对每个 keyword 调 client.search_securities_instrument()（async HTTP）
+    3. 单命中 → 直接选入 resolved
+    4. 多命中 → pick_best 启发式选优（精确匹配 > 前缀最短 > A 股优先）
+    5. 0 命中 → 跳过该 keyword
     """
     keywords = tokenize.invoke({"raw_text": raw_text})
-
-    # 命名指数 → ETF 代码前置（保留原 keywords 但去重）
-    _extra_etfs: list[str] = []
-    for _index_name, _etf in _NAMED_INDEX_TO_ETF.items():
-        if _index_name in raw_text and _etf not in _extra_etfs:
-            _extra_etfs.append(_etf)
-    if _extra_etfs:
-        keywords = _extra_etfs + [k for k in keywords if k not in _extra_etfs]
-
     if not keywords:
         return TickerResolution(resolved=[], hitl_pending=[])
 
