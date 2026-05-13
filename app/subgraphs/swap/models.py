@@ -59,7 +59,8 @@ SwapOrderDirection = Literal["BUY", "SELL"]
 SwapPriceType = Literal["LimitOrder", "MarketOrder"]
 
 #: 算法类型
-SwapAlgorithmType = Literal["POV", "TWAP"]
+#: 算法类型（与 Java GoatsAlgoType 一致：POV/TWAP/VWAP/ICEBERG/SNIPER；M2 阶段 LLM 主要用 POV/TWAP/VWAP）。
+SwapAlgorithmType = Literal["POV", "TWAP", "VWAP", "ICEBERG", "SNIPER"]
 
 
 class SwapOrderItem(BaseModel):
