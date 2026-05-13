@@ -87,8 +87,9 @@ async def render(state: AgentState) -> dict[str, Any]:
         emit_fallback(reason="hitl_card")
         return {"reply_text": _format_hitl_card(hitl)}
 
-    # 3. 互换下单/改单（含 HITL 场景：orderList 已提取，优先展示参数）
-    if place.get("orderList") and place.get("expected_action") in ("place", "modify"):
+    # 3. 互换下单/改单（仅 swap；option place_order 走下方 8d/option 分支）
+    if (state.get("product_type") == "swap"
+            and place.get("orderList") and place.get("expected_action") in ("place", "modify")):
         orders = place["orderList"]
         if orders:
             o = orders[0]
@@ -125,7 +126,7 @@ async def render(state: AgentState) -> dict[str, Any]:
     # 4. 0 命中（标的为空且无有效订单参数）
     tickers = state.get("tickers")
     place_params = state.get("place_params")
-    if tickers is not None and len(tickers) == 0 and place_params is not None:
+    if tickers is not None and len(tickers) == 0 and bool(place_params):
         emit_fallback(reason="zero_match")
         raw_text = (state.get("raw_text") or "")[:40]
         return {"reply_text": _ZERO_HIT_TMPL.format(raw_text=raw_text)}

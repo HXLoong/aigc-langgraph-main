@@ -134,10 +134,13 @@ async def _resolve_via_react_full(raw_text: str) -> TickerResolution:
         return TickerResolution(resolved=[], hitl_pending=[])
 
     # 过滤噪音关键词：单字符、纯数字非股票代码格式（4-6位数字是股票代码，保留）
+    # 同时过滤订单号前缀（OPT-/CO-/H-/OPTG-/Q-），这些是业务单号不是标的代码
+    _ORDER_PREFIXES = ("OPT-", "CO-", "H-", "OPTG-", "Q-")
     keywords = [
         kw for kw in keywords
         if len(kw) > 1
         and not (kw.isdigit() and not (4 <= len(kw) <= 6))
+        and not any(kw.upper().startswith(p) for p in _ORDER_PREFIXES)
     ]
     if not keywords:
         return TickerResolution(resolved=[], hitl_pending=[])

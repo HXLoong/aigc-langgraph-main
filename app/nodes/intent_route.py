@@ -92,6 +92,32 @@ def _match_keywords_with_token(text: str) -> tuple[ProductType, str] | None:
 
 
 # ============================================================
+# 第 2.5 层：quote_content 产品标记快速路径
+# ============================================================
+
+#: 机器人回复中唯一标识产品的标记 → product_type
+_QUOTE_MARKERS: list[tuple[str, ProductType]] = [
+    ("-----场外期权询价详情-----", "option"),
+    ("-----场外期权持仓详情-----", "option_close"),
+    ("平仓申请已生成", "option_close"),
+    ("-----互换订单参数-----", "swap"),
+]
+
+
+def _match_quote_marker(quote_content: str | None) -> ProductType | None:
+    """第 2.5 层：quote_content 含机器人回复产品标记时直接路由，不走 LLM。
+
+    只匹配 render 输出的唯一性标记，不做宽泛关键词匹配（避免误触发）。
+    """
+    if not quote_content:
+        return None
+    for marker, pt in _QUOTE_MARKERS:
+        if marker in quote_content:
+            return pt
+    return None
+
+
+# ============================================================
 # 第 3 层：LLM 兜底（standard 模型 + structured output）
 # ============================================================
 
@@ -166,8 +192,18 @@ async def intent_route(state: AgentState) -> dict[str, Any]:
             ],
         }
 
-    # 第 3 层
+    # 第 2.5 层：quote_content 产品标记
     quote = state.get("quote_content")
+    pt = _match_quote_marker(quote)
+    if pt is not None:
+        return {
+            "product_type": pt,
+            "trace": [
+                TraceEntry(node="intent_route", decision=f"rule:quote_marker→{pt}")
+            ],
+        }
+
+    # 第 3 层
     pt = await _classify_with_llm(text, quote_content=quote)
     return {
         "product_type": pt,
