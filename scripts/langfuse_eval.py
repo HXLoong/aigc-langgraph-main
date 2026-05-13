@@ -36,6 +36,25 @@ from app.state import WechatInput, make_initial_state
 
 DATASET_NAME = "otc-option-golden"
 
+
+def _fmt_trace(trace_entries) -> str:
+    """把 TraceEntry list 格式化成 node[decision] → ... 字符串。"""
+    parts = []
+    for e in (trace_entries or []):
+        if hasattr(e, "node"):
+            s = e.node
+            if getattr(e, "decision", None):
+                s += f"[{e.decision}]"
+        elif isinstance(e, dict):
+            s = e.get("node", "?")
+            if e.get("decision"):
+                s += f"[{e['decision']}]"
+        else:
+            s = str(e)
+        parts.append(s)
+    return " → ".join(parts) if parts else "(无 trace)"
+
+
 # ── Task ──
 async def _run_graph_once(graph, config, raw_content, has_mention=True, turn=1, quote_content=None):
     wx = WechatInput(
@@ -66,18 +85,39 @@ async def run_langgraph_pipeline(*, item, **kwargs):
                 raw_content=t.get("raw_content",""),
                 has_mention=True,  # 期权测试全部需要 bot 响应
                 turn=len(results)+1, quote_content=quote)
-            tr = {"product_type": rs.get("product_type","unknown"),
-                  "intent": rs.get("intent"), "reply_text": rs.get("reply_text",""),
-                  "error": rs.get("error")}
+            tr = {
+                "product_type": rs.get("product_type", "unknown"),
+                "intent": rs.get("intent"),
+                "reply_text": rs.get("reply_text", ""),
+                "error": rs.get("error"),
+                "trace": _fmt_trace(rs.get("trace")),
+                "quote_passed": (quote or "")[:120],  # 实际传入的引用内容预览
+            }
         except Exception as e:
-            tr = {"product_type":"error","intent":None,"reply_text":"","error":str(e)}
-        tr["turn"] = len(results)+1; results.append(tr); prev = tr.get("reply_text") or ""
+            tr = {"product_type": "error", "intent": None, "reply_text": "", "error": str(e),
+                  "trace": "", "quote_passed": (quote or "")[:120]}
+        tr["turn"] = len(results)+1
+        tr["raw_content"] = t.get("raw_content", "")
+        results.append(tr)
+        prev = tr.get("reply_text") or ""
     lines = []
     for r in results:
         l = f"[第{r['turn']}轮] 机器人回复: {r['reply_text'] or '(无回复)'}"
         if r.get("error"): l += f" [错误: {r['error']}]"
         lines.append(l)
-    return {"reply_text": "\n".join(lines), "turns": results}
+    # trace_log 单独存储，方便 LangFuse 查看（不影响 Judge 评分的 reply_text）
+    trace_log_lines = []
+    for r in results:
+        qlen = len(r.get("quote_passed") or "")
+        qprev = (r.get("quote_passed") or "")[:60]
+        tl = (f"[第{r['turn']}轮] input={r.get('raw_content','')[:40]!r}"
+              f" | route={r['product_type']}/{r['intent'] or '?'}"
+              f" | quote={qlen}c({qprev!r})"
+              f" | trace: {r.get('trace','')}")
+        if r.get("error"):
+            tl += f" | ERROR: {r['error']}"
+        trace_log_lines.append(tl)
+    return {"reply_text": "\n".join(lines), "turns": results, "trace_log": "\n".join(trace_log_lines)}
 
 # ── Judge ──
 JUDGE = """你是场外衍生品AI指令助手的测试审查员。
@@ -127,8 +167,11 @@ def _print_report(name, result):
             inp_data = getattr(r.item,"input",{}); exp = getattr(r.item,"expected_output","") or ""
         else: inp_data = {}
         if isinstance(inp_data,dict):
-            turns = inp_data.get("turns",[]); inp = "; ".join(t.get("raw_content","") for t in turns[:3])
-        scores.append({"score":score,"comment":comment,"reply":reply,"input":inp,"expected":exp})
+            turns_data = inp_data.get("turns",[]); inp = "; ".join(t.get("raw_content","") for t in turns_data[:3])
+        out_turns = (r.output or {}).get("turns", []) if isinstance(r.output, dict) else []
+        trace_log = (r.output or {}).get("trace_log", "") if isinstance(r.output, dict) else ""
+        scores.append({"score":score,"comment":comment,"reply":reply,"input":inp,"expected":exp,
+                        "turns": out_turns, "trace_log": trace_log})
     t = len(scores); p = sum(1 for s in scores if s["score"]>=0.99); a = sum(s["score"] for s in scores)/t
     print(f"\n{'='*60}\n评估报告：{name}\n{'='*60}")
     print(f"用例数: {t}  通过率: {p}/{t} ({p/t*100:.1f}%)  平均分: {a:.2f}")
@@ -137,7 +180,18 @@ def _print_report(name, result):
     if failed:
         print(f"\n失败 case ({len(failed)}):")
         for s in failed:
-            print(f"  [{s['score']}] 输入: {s['input']}\n    期望: {s['expected']}\n    Judge: {s['comment']}\n    实际: {s['reply']}")
+            print(f"  [{s['score']}] 输入: {s['input']}")
+            print(f"    期望: {s['expected'][:100]}  Judge: {s['comment']}")
+            for tr in s.get("turns", []):
+                n = tr.get("turn", "?"); pt = tr.get("product_type", "?"); intent = tr.get("intent") or "?"
+                reply_s = (tr.get("reply_text") or "")[:80]
+                trace = tr.get("trace") or "(无 trace)"
+                qpassed = tr.get("quote_passed") or ""
+                quote_info = f" | quote={len(qpassed)}c {qpassed[:50]!r}" if qpassed else " | quote=无"
+                err_info = f" | ERROR: {tr['error']}" if tr.get("error") else ""
+                print(f"    第{n}轮 [{pt}/{intent}]{quote_info}{err_info}")
+                print(f"      trace : {trace}")
+                print(f"      reply : {reply_s or '(无回复)'}")
     else: print("\n全部通过")
 
 # ── 本地 unified_golden.jsonl 支持 ──
@@ -220,7 +274,13 @@ async def run_local(golden_path, filter_func, ids, max_concurrency, limit, dry_r
     for r in results:
         score = float(r["eval"].value)
         comment = r["eval"].comment
-        scores.append({"id": r["item"].id, "score": score, "comment": comment, "reply": r["output"].get("reply_text",""), "expected": r["item"].expected_output})
+        scores.append({
+            "id": r["item"].id, "score": score, "comment": comment,
+            "reply": r["output"].get("reply_text", ""),
+            "expected": r["item"].expected_output,
+            "turns": r["output"].get("turns", []),
+            "trace_log": r["output"].get("trace_log", ""),
+        })
 
     passed = sum(1 for s in scores if s["score"] >= 0.99)
     avg = sum(s["score"] for s in scores) / len(scores) if scores else 0
@@ -230,8 +290,20 @@ async def run_local(golden_path, filter_func, ids, max_concurrency, limit, dry_r
     if failed:
         print(f"\n失败 case ({len(failed)}):")
         for s in failed:
-            reply_preview = s['reply'][:80] if s['reply'] else '(空)'
-            print(f"  [{s['score']}] {s['id']}: {s['comment']} → {reply_preview}")
+            print(f"  [{s['score']}] {s['id']}: {s['comment']}")
+            print(f"    期望: {s['expected'][:100]}")
+            for tr in s.get("turns", []):
+                n = tr.get("turn", "?")
+                pt = tr.get("product_type", "?")
+                intent = tr.get("intent") or "?"
+                reply = (tr.get("reply_text") or "")[:80]
+                trace = tr.get("trace") or "(无 trace)"
+                qpassed = tr.get("quote_passed") or ""
+                quote_info = f" | quote={len(qpassed)}c {qpassed[:50]!r}" if qpassed else " | quote=无"
+                err_info = f" | ERROR: {tr['error']}" if tr.get("error") else ""
+                print(f"    第{n}轮 [{pt}/{intent}]{quote_info}{err_info}")
+                print(f"      trace : {trace}")
+                print(f"      reply : {reply or '(无回复)'}")
     else:
         print("\n全部通过")
 
