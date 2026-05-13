@@ -129,11 +129,11 @@ def _print_report(name, result):
         if isinstance(inp_data,dict):
             turns = inp_data.get("turns",[]); inp = "; ".join(t.get("raw_content","") for t in turns[:3])
         scores.append({"score":score,"comment":comment,"reply":reply,"input":inp,"expected":exp})
-    t = len(scores); p = sum(1 for s in scores if s["score"]>=0.5); a = sum(s["score"] for s in scores)/t
+    t = len(scores); p = sum(1 for s in scores if s["score"]>=0.99); a = sum(s["score"] for s in scores)/t
     print(f"\n{'='*60}\n评估报告：{name}\n{'='*60}")
     print(f"用例数: {t}  通过率: {p}/{t} ({p/t*100:.1f}%)  平均分: {a:.2f}")
     print(f"满分: {sum(1 for s in scores if s['score']>=0.99)}  零分: {sum(1 for s in scores if s['score']==0.0)}")
-    failed = [s for s in scores if s["score"]<0.5]
+    failed = [s for s in scores if s["score"]<0.99]
     if failed:
         print(f"\n失败 case ({len(failed)}):")
         for s in failed:
@@ -222,11 +222,11 @@ async def run_local(golden_path, filter_func, ids, max_concurrency, limit, dry_r
         comment = r["eval"].comment
         scores.append({"id": r["item"].id, "score": score, "comment": comment, "reply": r["output"].get("reply_text",""), "expected": r["item"].expected_output})
 
-    passed = sum(1 for s in scores if s["score"] >= 0.5)
+    passed = sum(1 for s in scores if s["score"] >= 0.99)
     avg = sum(s["score"] for s in scores) / len(scores) if scores else 0
     print(f"\n{'='*60}")
     print(f"用例数: {len(scores)}  通过率: {passed}/{len(scores)} ({passed/len(scores)*100:.1f}%)  平均分: {avg:.2f}  耗时: {elapsed:.1f}s")
-    failed = [s for s in scores if s["score"] < 0.5]
+    failed = [s for s in scores if s["score"] < 0.99]
     if failed:
         print(f"\n失败 case ({len(failed)}):")
         for s in failed:
