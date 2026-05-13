@@ -146,6 +146,32 @@ class TestSeqHoldingResolution:
         reply = result.get("reply_text") or ""
         assert "CO-20260506-XXXX0001" in reply
 
+    async def test_placeholder_blanked_when_no_holding_data(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """无可用持仓数据时 → LLM placeholder 必须被清空，避免污染回复。"""
+        _patch_query_close_orders(monkeypatch, [])  # 后端返回空持仓
+
+        params = ClosePlaceParams(
+            closeOrderList=[
+                CloseOrderItem(
+                    orderId="ORDER_ID_FROM_HOLDING_MAP_WITH_PLACEHOLDER",
+                    closeOrderNotionalDelta="3000000",
+                    closeOrderType="POV",
+                    closeOrderPovRatio=25,
+                ),
+            ]
+        )
+        _patch_llm(monkeypatch, params)
+
+        result = await close_place_close({"raw_text": "序号1平300万pov25"})
+        reply = result.get("reply_text") or ""
+        assert "ORDER_ID_FROM_HOLDING_MAP" not in reply, (
+            f"无持仓数据时 placeholder 必须被清空，实际 reply:\n{reply}"
+        )
+        assert "<resolved_order_id" not in reply
+        assert "的orderId" not in reply
+
     async def test_multi_seq_legs_resolved_independently(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
