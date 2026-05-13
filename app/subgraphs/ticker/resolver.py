@@ -16,6 +16,7 @@
 from __future__ import annotations
 
 import logging
+import re
 from typing import NamedTuple
 
 from app.graph.state import TickerCandidate
@@ -164,15 +165,96 @@ def _pick_within_a_share(keyword: str, a_results: list) -> object | None:
     return a_results[0]
 
 
+#: 完整 windCode 模式（已带交易所后缀，无需 LLM 再推断）
+_FULL_WIND_CODE_RE = re.compile(
+    r"^\S+\.(SH|SZ|BJ|HK|HKEX|SHF|SHFE|DCE|CZC|CZCE|CFE|CFFEX|INE|"
+    r"O|N|NYM|CME|COMEX|LME|CBOT|SGX|T|AX|DF|DY|P|OF|BO|SG)$",
+    re.IGNORECASE,
+)
+
+
+def _should_consult_llm(kw: str, primary_count: int) -> bool:
+    """判定是否值得调用 LLM 二次推断（**结构化判定，非业务字典**）。
+
+    True 条件：
+    - 含中文字符（infer_code 训练数据通常能覆盖中文名 → 标准 windCode 翻译）
+    - 4-6 位裸数字代码 AND primary 非唯一命中（如 "000858" 同名 SH/SZ 两市，需 LLM 选）
+
+    False 条件：
+    - 已是完整 windCode（如 "600519.SH" 不必再问）
+    - 数字代码且 primary 唯一命中（无需消歧）
+    """
+    if not kw or _FULL_WIND_CODE_RE.match(kw):
+        return False
+    has_chinese = bool(re.search(r"[一-鿿]", kw))
+    if has_chinese:
+        return True
+    is_digit_code = kw.isdigit() and 4 <= len(kw) <= 6
+    return is_digit_code and primary_count != 1
+
+
+async def _search_goats(client, keyword: str) -> list:
+    """单次 GOATS 查询，封装异常。"""
+    try:
+        req = SecuritiesInstrumentReqVO(
+            keywordItems=[KeywordItem(keyword=keyword, isFull=False)]
+        )
+        return await client.search_securities_instrument(req)
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("securities-instrument/select keyword=%r 失败: %s", keyword, exc)
+        return []
+
+
+async def _resolve_one_keyword(client, keyword: str) -> object | None:
+    """单 keyword 解析：GOATS 主查询 + LLM 推断 + GOATS 二次校验。
+
+    流程：
+    1. GOATS 主查询 → primary_winner
+    2. 名称类 keyword（中文 / 裸数字代码）→ 调 infer_code LLM 推断 windCode
+    3. LLM 推断的 windCode：
+       - 已在 primary 结果里 → 直接用该候选
+       - 不在 primary 结果里 → GOATS 二次校验存在性 → 用校验结果
+       - 不存在 → 回退 primary_winner
+    """
+    primary = await _search_goats(client, keyword)
+    primary_winner = _pick_winner(keyword, primary) if primary else None
+
+    if not _should_consult_llm(keyword, len(primary)):
+        return primary_winner
+
+    try:
+        llm_code_raw = infer_code.invoke({"keyword": keyword})
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("infer_code 失败 keyword=%r: %s", keyword, exc)
+        return primary_winner
+
+    llm_code = (llm_code_raw or "").strip()
+    if not llm_code or llm_code.upper() == keyword.upper():
+        return primary_winner
+
+    # LLM 答案已在 primary 结果里 → 直接用该候选
+    for r in primary:
+        if (r.windCode or "").upper() == llm_code.upper():
+            return r
+
+    # LLM 答案不在 primary → 二次 GOATS 校验
+    retry_results = await _search_goats(client, llm_code)
+    for r in retry_results:
+        if (r.windCode or "").upper() == llm_code.upper():
+            return r
+
+    # LLM 答案 GOATS 也找不到 → 回退 primary
+    return primary_winner
+
+
 async def _resolve_via_react_full(raw_text: str) -> TickerResolution:
     """tokenize 拆词 → 每个 keyword 查 securities-instrument/select → pick_best 选优。
 
     流程：
     1. tokenize(raw_text) → list[str] keywords
-    2. 对每个 keyword 调 client.search_securities_instrument()（async HTTP）
+    2. 对每个 keyword 调 _resolve_one_keyword（GOATS 主查询 + LLM 二次校验）
     3. 单命中 → 直接选入 resolved
-    4. 多命中 → pick_best 启发式选优（精确匹配 > 前缀最短 > A 股优先）
-    5. 0 命中 → 跳过该 keyword
+    4. 0 命中 → 跳过该 keyword
     """
     keywords = tokenize.invoke({"raw_text": raw_text})
     if not keywords:
@@ -195,24 +277,9 @@ async def _resolve_via_react_full(raw_text: str) -> TickerResolution:
     seen: set[str] = set()
 
     for kw in keywords:
-        try:
-            req = SecuritiesInstrumentReqVO(
-                keywordItems=[KeywordItem(keyword=kw, isFull=False)]
-            )
-            results = await client.search_securities_instrument(req)
-        except Exception as exc:  # noqa: BLE001
-            logger.debug(
-                "securities-instrument/select keyword=%r 失败: %s", kw, exc
-            )
-            continue
-
-        if not results:
-            continue
-
-        winner = _pick_winner(kw, results)
+        winner = await _resolve_one_keyword(client, kw)
         if winner is None:
             continue
-
         if winner.windCode in seen:
             continue
 
