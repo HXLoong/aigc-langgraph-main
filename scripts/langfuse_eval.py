@@ -307,6 +307,34 @@ async def run_local(golden_path, filter_func, ids, max_concurrency, limit, dry_r
     else:
         print("\n全部通过")
 
+    # LangFuse 写回（与云端模式对齐，本地跑完也能在 UI 看到 trace + 评分）
+    try:
+        from langfuse import Langfuse
+        lf = Langfuse()
+        run_name = f"local-{time.strftime('%Y%m%d-%H%M%S')}"
+        for r in results:
+            trace = lf.trace(
+                name=r["item"].id,
+                input=r["item"].input,
+                output={
+                    "reply_text": r["output"].get("reply_text", ""),
+                    "trace_log": r["output"].get("trace_log", ""),
+                },
+                metadata={**r["item"].metadata, "run_name": run_name},
+                tags=r["item"].metadata.get("tags", []),
+            )
+            lf.score(
+                trace_id=trace.id,
+                name="otc-option-judge",
+                value=float(r["eval"].value),
+                comment=r["eval"].comment,
+            )
+        lf.flush()
+        host = os.environ.get("LANGFUSE_HOST", "https://cloud.langfuse.com")
+        print(f"\nLangFuse 写入成功  run={run_name}  host={host}")
+    except Exception as e:
+        print(f"\nLangFuse 写入失败（不影响本地结果）: {e}")
+
 
 # ── 主流程（LangFuse 云端） ──
 async def run_eval(dataset_name, filter_func, ids, max_concurrency, limit, dry_run):
