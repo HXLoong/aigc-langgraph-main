@@ -243,15 +243,15 @@ def _render_swap_order(o: dict[str, Any], state: AgentState, place: dict[str, An
         if "限定价格" not in missing:
             missing.append("限定价格")
 
-    # 不支持的币种检测（OTC 场外业务只受理 CNY/USD/HKD 三种，其他需人工询价）。
+    # 不支持的币种检测（OTC 场外业务只受理 CNY/USD/HKD 三种）→ 直接拒绝，不展示订单卡。
     # 这是**业务约束规则**，非映射字典——不同于硬编码"名→代码"映射，符合 P0 红线
     # （规则可枚举且稳定，不随新发行 ETF 等业务对象增加而变化）。
     currency = (extras.get("currency") or "").upper()
     if currency and currency not in ("CNY", "USD", "HKD", ""):
-        lines.append(
-            f"\n注意：币种 {currency} 暂不支持，本系统仅受理 CNY / USD / HKD；如需此币种请联系交易员人工处理。"
+        return (
+            f"该订单使用了不支持的币种 {currency}。本系统仅受理 CNY / USD / HKD 三种"
+            f"币种的场外业务。请使用支持的币种重新提交订单，或联系交易员处理特殊币种业务。"
         )
-        return "\n".join(lines)
 
     if place["expected_action"] == "place":
         if not missing:
