@@ -90,8 +90,40 @@ def build_main_graph(
     g.add_edge("render", END)
 
     if checkpointer is not None:
-        return g.compile(checkpointer=checkpointer)
-    return g.compile()
+        compiled = g.compile(checkpointer=checkpointer)
+    else:
+        compiled = g.compile()
+    return _attach_langfuse_callbacks(compiled)
+
+
+def _attach_langfuse_callbacks(compiled: CompiledStateGraph) -> CompiledStateGraph:
+    """如果配置了 Langfuse，自动把 CallbackHandler 注入到 graph 调用，
+    让云端 eval / 业务调用都能拿到 per-node trace（LLM 调用 / latency / token）。
+
+    使用 with_config 而不是 monkey-patch ainvoke：with_config 是 LangChain 官方
+    机制，会把默认 callbacks 通过 RunnableConfig.merge 合并到每次调用，调用方
+    自带的 callbacks 仍然生效。
+    """
+    try:
+        from app.config import get_settings
+        settings = get_settings()
+        if not (settings.enable_langfuse and settings.langfuse_public_key and settings.langfuse_secret_key):
+            return compiled
+
+        import os
+
+        from langfuse.langchain import CallbackHandler  # type: ignore[import-not-found]
+
+        # langfuse v4 CallbackHandler 只读 os.environ；先回填 env
+        os.environ.setdefault("LANGFUSE_PUBLIC_KEY", settings.langfuse_public_key)
+        os.environ.setdefault("LANGFUSE_SECRET_KEY", settings.langfuse_secret_key)
+        os.environ.setdefault("LANGFUSE_BASE_URL", settings.langfuse_base_url)
+
+        handler = CallbackHandler()
+        return compiled.with_config(callbacks=[handler])
+    except Exception:  # noqa: BLE001
+        # Langfuse 未安装 / 网络异常 → 不阻断业务，返回未包装图
+        return compiled
 
 
 __all__ = ["build_main_graph"]
