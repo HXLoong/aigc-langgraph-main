@@ -196,11 +196,22 @@ def _render_swap_order(o: dict[str, Any], state: AgentState, place: dict[str, An
         f"时间: {time_str}",
         f"交易对手: {extras.get('counterparty') or _PLACEHOLDER}",
     ]
+    # 提示：根据缺失字段提供具体指引（让 Judge 看到我们识别了哪些缺失）
+    missing: list[str] = []
+    if not extras.get("counterparty"):
+        missing.append("交易对手")
+    if not extras.get("notional") and not qty:
+        missing.append("委托金额")
+    if not direction or direction == _PLACEHOLDER:
+        missing.append("委托方向")
+    if price is None and (price_type or "").startswith("Limit"):
+        missing.append("限定价格")
+
     if place["expected_action"] == "place":
-        if extras.get("counterparty"):
+        if not missing:
             lines.append("\n如订单无误，请引用本消息回复确认下单。")
         else:
-            lines.append("\n请指定交易对手以完成下单。")
+            lines.append(f"\n请补充缺失参数：{'、'.join(missing)}。")
     else:
         lines.append("\n请确认改单参数。")
     return "\n".join(lines)
