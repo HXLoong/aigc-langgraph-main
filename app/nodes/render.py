@@ -186,6 +186,14 @@ def _render_swap_order(o: dict[str, Any], state: AgentState, place: dict[str, An
                 price_type = "LimitOrder" if price_type == _PLACEHOLDER else price_type
         except (ValueError, TypeError, ZeroDivisionError):
             pass
+    # qty 缺失但 notional + price 可用 → 计算 qty = notional / price
+    elif qty is None and price is not None and extras.get("notional"):
+        try:
+            notional_val = float((extras["notional"] or "0").replace(",", ""))
+            if notional_val > 0 and float(price) > 0:
+                qty = int(notional_val / float(price))
+        except (ValueError, TypeError, ZeroDivisionError):
+            pass
     qty_str = f"{qty}{qty_unit}" if qty else _PLACEHOLDER
     algo = o.get("placeOrderAlgorithmType")
     if algo and o.get("placeOrderPovPercent"):
