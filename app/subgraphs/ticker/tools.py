@@ -415,13 +415,14 @@ def _llm_infer(keyword: str, dynamic_prompt: str) -> str:
     """thinking 模型推断 keyword → 标准 windCode（ADR 0010）。
 
     拼接策略（ADR 0013）：静态 system + dynamic_prompt 追加在末尾。
-    """
-    from langchain_core.messages import HumanMessage, SystemMessage
-    from pydantic import BaseModel, ConfigDict
 
-    class _CodeOut(BaseModel):
-        model_config = ConfigDict(extra="ignore")
-        windCode: str
+    thinking 模型可能输出 <analysis>...</analysis><result>{"k": ["windCode"]}</result>
+    格式，不能直接用 with_structured_output；改为 raw 调用 + 手动提取。
+    """
+    import json
+    import re
+
+    from langchain_core.messages import HumanMessage, SystemMessage
 
     static_system = _load_static_infer_prompt()
     full_system = (
@@ -430,16 +431,37 @@ def _llm_infer(keyword: str, dynamic_prompt: str) -> str:
         else static_system
     )
 
-    llm = get_qwen_thinking().with_structured_output(_CodeOut)
+    messages = [
+        SystemMessage(content=full_system),
+        HumanMessage(content=f"标的：{keyword}"),
+    ]
 
-    async def _ainvoke():
-        result = await llm.ainvoke(
-            [
-                SystemMessage(content=full_system),
-                HumanMessage(content=f"标的：{keyword}"),
-            ]
-        )
-        return result.windCode
+    async def _ainvoke() -> str:
+        resp = await get_qwen_thinking().ainvoke(messages)
+        content = (resp.content or "") if hasattr(resp, "content") else str(resp)
+
+        # 优先解析 <result>...</result> 标签（thinking 模型格式）
+        m = re.search(r"<result>\s*(.*?)\s*</result>", content, re.DOTALL)
+        if m:
+            try:
+                data = json.loads(m.group(1))
+                if isinstance(data, dict):
+                    if "windCode" in data:
+                        return str(data["windCode"])
+                    for v in data.values():
+                        if isinstance(v, list) and v:
+                            return str(v[0])
+                        if isinstance(v, str) and v:
+                            return v
+            except (json.JSONDecodeError, ValueError):
+                pass
+
+        # fallback：从内容中提取 windCode 格式字符串（如 159915.SZ）
+        m2 = re.search(r'\b\d{5,6}\.[A-Z]{2,4}\b', content)
+        if m2:
+            return m2.group(0)
+
+        return keyword
 
     return _run_async(_ainvoke())
 
