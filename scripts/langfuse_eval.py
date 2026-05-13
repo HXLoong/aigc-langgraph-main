@@ -141,11 +141,43 @@ def _print_report(name, result):
     else: print("\n全部通过")
 
 # ── 本地 unified_golden.jsonl 支持 ──
+def _build_local_overview(case: dict) -> str:
+    if case.get("overview"):
+        return case["overview"]
+
+    expected = case.get("expected", {})
+    lines = [
+        f"ID: {case.get('id', '')}",
+        f"类别: {case.get('category', '')}",
+        f"用例类型: {case.get('type', '')}",
+        f"来源: {case.get('source', '')}",
+        f"期望路由: product_type={expected.get('product_type', '')}, intent={expected.get('intent', '')}",
+        "对话:",
+    ]
+    for i, turn in enumerate(case.get("conversation", []), 1):
+        raw = turn.get("raw_content", "")
+        quote = turn.get("quote_desc", "")
+        if quote:
+            lines.append(f"  第{i}轮: raw_content={raw}; 引用上一轮机器人回复")
+        else:
+            lines.append(f"  第{i}轮: raw_content={raw}; 无引用")
+    return "\n".join(lines)
+
+
 class _LocalItem:
     """模拟 LangFuse dataset item 接口。"""
     def __init__(self, case: dict):
         self.id = case["id"]
-        self.metadata = {"test_function": case.get("category", "")}
+        self.metadata = {
+            "id": case.get("id", ""),
+            "type": case.get("type", ""),
+            "category": case.get("category", ""),
+            "test_function": case.get("category", ""),
+            "overview": _build_local_overview(case),
+            "source": case.get("source", ""),
+            "tags": [case.get("category", ""), case.get("source", "")],
+            "turns": len(case.get("conversation", [])),
+        }
         # 转成 run_langgraph_pipeline 期望的 input 格式
         conv = case.get("conversation", [])
         self.input = {"turns": [{"raw_content": c["raw_content"], "quote_desc": c.get("quote_desc", "")} for c in conv]}
