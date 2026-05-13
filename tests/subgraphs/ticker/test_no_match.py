@@ -70,14 +70,20 @@ async def test_zero_match_trace_records_zero_tickers(
 async def test_resolve_ticker_full_returns_empty_not_raises(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """resolve_ticker_full 在白名单无命中时返回 empty resolution，不抛异常。"""
-    import app.subgraphs.ticker.resolver as res_mod
+    """resolve_ticker_full 后端 0 命中时返回 empty resolution，不抛异常。"""
+    from unittest.mock import AsyncMock, MagicMock
 
-    monkeypatch.setattr(res_mod, "DEFAULT_MODE", "whitelist")
+    import app.subgraphs.ticker.resolver as res_mod
+    import app.subgraphs.ticker.tools as tools_mod
+
+    client = MagicMock()
+    client.search_securities_instrument = AsyncMock(return_value=[])
+    monkeypatch.setattr(tools_mod, "_make_client", lambda: client)
+    monkeypatch.setattr(res_mod, "_make_client", lambda: client)
 
     from app.subgraphs.ticker.resolver import resolve_ticker_full
 
     resolution = await resolve_ticker_full("这是一个肯定不存在的乱码标的XYZNOMATCH9999")
 
-    assert resolution.resolved == [] or isinstance(resolution.resolved, list)
+    assert resolution.resolved == []
     assert resolution.hitl_pending == []

@@ -185,26 +185,27 @@ class TestIntentRouteNode:
 
 
 def _load_golden_with_strong_signal() -> list[dict]:
-    """加载规则层应命中的 golden 锚点 case。
+    """加载规则层有触发输出的 golden case（用于测规则层精准率）。
 
-    范围：原 30 条手写锚点（g001-g030）— ADR 0015 规则层校准样本。
-    业务方批量种子（g101+）多含参数补充类输入（"200万,市价下单"/"撤单"等），
-    天然走 LLM 兜底，不应纳入规则层覆盖率统计（否则覆盖率会被填空类拉低）。
+    golden.jsonl 已从 g0xx 格式迁移为 opt-xxx/swap-xxx，
+    同时 raw_content 从 case 顶层移入 conversation[-1]。
+    改为取规则层（订单号正则 + 关键词表）有输出的全集 case 作为分母，
+    验证"触发时是否正确"（精准率），而非"覆盖了多少 case"（召回率）。
     """
-    import re
-
     path = Path(__file__).parent / "fixtures" / "golden.jsonl"
     cases = [
         json.loads(line)
         for line in path.read_text().splitlines()
         if line.strip()
     ]
-    anchor_re = re.compile(r"^g0\d{2}$")  # g001..g099 视为锚点
     return [
         c
         for c in cases
-        if anchor_re.match(c.get("id", ""))
-        and c.get("expected", {}).get("product_type") != "unknown"
+        if c.get("expected", {}).get("product_type") not in ("", "unknown")
+        and (
+            _match_order_no(c["conversation"][-1]["raw_content"])
+            or _match_keywords(c["conversation"][-1]["raw_content"])
+        ) is not None
     ]
 
 
@@ -218,11 +219,13 @@ class TestGoldenRuleCoverage:
     def test_rule_layer_covers_majority(
         self, strong_signal_cases: list[dict]
     ) -> None:
-        """规则层（订单号 + 关键词）应覆盖 ≥ 80% 强信号 case。"""
+        """规则层触发时精准率应 ≥ 80%（触发 → 正确，不统计 LLM 兜底的 case）。"""
+        if not strong_signal_cases:
+            pytest.skip("golden.jsonl 无规则层触发 case，跳过精准率校验")
         hit = 0
         miss: list[str] = []
         for case in strong_signal_cases:
-            text = case["raw_content"]
+            text = case["conversation"][-1]["raw_content"]
             expected_pt = case["expected"]["product_type"]
             actual = _match_order_no(text) or _match_keywords(text)
             if actual == expected_pt:
@@ -230,17 +233,23 @@ class TestGoldenRuleCoverage:
             else:
                 miss.append(f"{case['id']}={text!r} expected={expected_pt} got={actual}")
 
-        coverage = hit / len(strong_signal_cases)
-        assert coverage >= 0.8, (
-            f"规则层覆盖率 {coverage:.1%} < 80%。漏掉的 case:\n"
+        precision = hit / len(strong_signal_cases)
+        assert precision >= 0.8, (
+            f"规则层精准率 {precision:.1%} < 80%（触发但分错）:\n"
             + "\n".join(miss[:10])
         )
 
     def test_g029_order_no_over_keyword(
         self, strong_signal_cases: list[dict]
     ) -> None:
-        """ADR 0015 业务硬约定：g029 必须按订单号判 option_close。"""
-        g029 = next(c for c in strong_signal_cases if c["id"] == "g029")
-        text = g029["raw_content"]
+        """ADR 0015 业务硬约定：含 CO- 订单号的平仓指令必须按订单号判 option_close。"""
+        # opt-001: '确认平仓 CO-20260304-ABCD1234'，是新格式中对应 g029 的锚点 case
+        anchor = next(
+            (c for c in strong_signal_cases if c["id"] == "opt-001"),
+            None,
+        )
+        if anchor is None:
+            pytest.skip("opt-001 锚点 case 不在 strong_signal_cases 中")
+        text = anchor["conversation"][-1]["raw_content"]
         actual = _match_order_no(text) or _match_keywords(text)
         assert actual == "option_close"

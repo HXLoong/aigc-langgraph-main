@@ -1,11 +1,11 @@
-"""ticker resolver HITL 行为测试（Issue #20）。
+"""ticker resolver pick_best 行为测试。
 
 覆盖：
-- resolve_ticker_full 返回 TickerResolution（resolved + hitl_pending）
-- 多命中分差 < GAP → hitl_pending 收集候选，resolved 为空（此 keyword）
-- 多命中分差 ≥ GAP → 自动选 top1，hitl_pending 无此 keyword
-- 0 命中 → hitl_pending 为空，resolved 也为空（无兜底时返回 []）
-- 混合 keyword：部分可解析、部分 HITL → 分别归类
+- resolve_ticker_full 返回 TickerResolution（resolved + hitl_pending 永远为空）
+- 单命中 → resolved 有值
+- 多命中 → pick_best 自动选优（精确匹配 > 前缀最短 > A股优先）
+- 0 命中 → resolved 为空
+- 混合 keyword：各自独立选优后合并到 resolved
 """
 from __future__ import annotations
 
@@ -19,9 +19,6 @@ from app.subgraphs.ticker.resolver import TickerResolution, resolve_ticker_full
 from app.tools.ticker_client import SecuritiesInstrumentRespVO
 
 
-@pytest.fixture(autouse=True)
-def _force_react_mode(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(resolver_mod, "DEFAULT_MODE", "react")
 
 
 def _resp(wind: str, sht: str | None = None, score: int = 0) -> SecuritiesInstrumentRespVO:
@@ -79,18 +76,18 @@ async def test_single_match_goes_to_resolved(monkeypatch: pytest.MonkeyPatch) ->
 
 
 # ============================================================
-# 多命中 gap ≥ 10 → 自动选 top1，不进 hitl_pending
+# 多命中 → pick_best A股优先选出最优
 # ============================================================
 
 
 @pytest.mark.asyncio
-async def test_multi_match_large_gap_auto_pick(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_multi_match_a_share_preferred(monkeypatch: pytest.MonkeyPatch) -> None:
     _mock_client(
         monkeypatch,
         {
             "茅台": [
-                _resp("600519.SH", "贵州茅台", 0),   # top1 score=0
-                _resp("600079.SH", "华润医药", 15),   # gap=15 ≥ 10
+                _resp("600519.SH", "贵州茅台", 0),
+                _resp("600079.SH", "华润医药", 15),
             ]
         },
     )
@@ -100,76 +97,9 @@ async def test_multi_match_large_gap_auto_pick(monkeypatch: pytest.MonkeyPatch) 
     assert result.hitl_pending == []
 
 
-# ============================================================
-# 多命中 gap < 10 → 进 hitl_pending，不进 resolved
-# ============================================================
-
-
 @pytest.mark.asyncio
-async def test_multi_match_small_gap_triggers_hitl(monkeypatch: pytest.MonkeyPatch) -> None:
-    _mock_client(
-        monkeypatch,
-        {
-            "腾讯": [
-                _resp("00700.HK", "腾讯控股", 0),
-                _resp("TME.N", "腾讯音乐", 5),  # gap=5 < 10
-            ]
-        },
-    )
-    result = await resolve_ticker_full("腾讯")
-    assert result.resolved == []
-    assert len(result.hitl_pending) == 1
-    pending = result.hitl_pending[0]
-    assert pending["keyword"] == "腾讯"
-    assert len(pending["candidates"]) == 2
-    assert pending["candidates"][0]["windCode"] == "00700.HK"
-    assert pending["candidates"][1]["windCode"] == "TME.N"
-
-
-# ============================================================
-# 0 命中 → resolved 和 hitl_pending 均为空
-# ============================================================
-
-
-@pytest.mark.asyncio
-async def test_zero_match_no_resolved_no_hitl(monkeypatch: pytest.MonkeyPatch) -> None:
-    _mock_client(monkeypatch, {})  # 任何 keyword 都返回 []
-    result = await resolve_ticker_full("XYZ不存在的标的")
-    assert result.resolved == []
-    assert result.hitl_pending == []
-
-
-# ============================================================
-# 混合场景：一个 keyword 可解析 + 一个触发 HITL
-# ============================================================
-
-
-@pytest.mark.asyncio
-async def test_mixed_resolved_and_hitl(monkeypatch: pytest.MonkeyPatch) -> None:
-    _mock_client(
-        monkeypatch,
-        {
-            "600519": [_resp("600519.SH", "贵州茅台", 0)],  # 单命中 → resolved
-            "腾讯": [
-                _resp("00700.HK", "腾讯控股", 0),
-                _resp("TME.N", "腾讯音乐", 3),  # gap=3 < 10 → HITL
-            ],
-        },
-    )
-    result = await resolve_ticker_full("600519 腾讯")
-    assert len(result.resolved) == 1
-    assert result.resolved[0].windCode == "600519.SH"
-    assert len(result.hitl_pending) == 1
-    assert result.hitl_pending[0]["keyword"] == "腾讯"
-
-
-# ============================================================
-# hitl_pending 候选字段结构
-# ============================================================
-
-
-@pytest.mark.asyncio
-async def test_hitl_pending_candidate_structure(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_multi_match_prefix_hk_preferred(monkeypatch: pytest.MonkeyPatch) -> None:
+    """前缀匹配同长度时 .HK 优先（港股 ETF 场景）。"""
     _mock_client(
         monkeypatch,
         {
@@ -180,10 +110,68 @@ async def test_hitl_pending_candidate_structure(monkeypatch: pytest.MonkeyPatch)
         },
     )
     result = await resolve_ticker_full("腾讯")
-    assert result.hitl_pending
-    c0 = result.hitl_pending[0]["candidates"][0]
-    assert "windCode" in c0
-    assert "insShtDesc" in c0
+    assert len(result.resolved) == 1
+    assert result.resolved[0].windCode == "00700.HK"
+    assert result.hitl_pending == []
+
+
+# ============================================================
+# 0 命中 → resolved 和 hitl_pending 均为空
+# ============================================================
+
+
+@pytest.mark.asyncio
+async def test_zero_match_no_resolved_no_hitl(monkeypatch: pytest.MonkeyPatch) -> None:
+    _mock_client(monkeypatch, {})
+    result = await resolve_ticker_full("XYZ不存在的标的")
+    assert result.resolved == []
+    assert result.hitl_pending == []
+
+
+# ============================================================
+# 混合场景：多个 keyword 各自选优后合并
+# ============================================================
+
+
+@pytest.mark.asyncio
+async def test_mixed_multi_keyword_all_resolved(monkeypatch: pytest.MonkeyPatch) -> None:
+    _mock_client(
+        monkeypatch,
+        {
+            "600519": [_resp("600519.SH", "贵州茅台", 0)],
+            "腾讯": [
+                _resp("00700.HK", "腾讯控股", 0),
+                _resp("TME.N", "腾讯音乐", 3),
+            ],
+        },
+    )
+    result = await resolve_ticker_full("600519 腾讯")
+    wind_codes = {r.windCode for r in result.resolved}
+    assert "600519.SH" in wind_codes
+    assert "00700.HK" in wind_codes
+    assert result.hitl_pending == []
+
+
+# ============================================================
+# pick_best 选优：resolved 中的候选字段完整
+# ============================================================
+
+
+@pytest.mark.asyncio
+async def test_resolved_candidate_fields(monkeypatch: pytest.MonkeyPatch) -> None:
+    _mock_client(
+        monkeypatch,
+        {
+            "腾讯": [
+                _resp("00700.HK", "腾讯控股", 0),
+                _resp("TME.N", "腾讯音乐", 5),
+            ]
+        },
+    )
+    result = await resolve_ticker_full("腾讯")
+    assert len(result.resolved) == 1
+    assert result.resolved[0].windCode == "00700.HK"
+    assert result.resolved[0].from_goats is True
 
 
 # ============================================================

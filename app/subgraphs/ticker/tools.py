@@ -219,6 +219,60 @@ def completeness(
 RANK_AUTO_PICK_GAP = 10
 
 
+def pick_best(keyword: str, results: list) -> object:
+    """多命中启发式选优（无 LLM、无 HTTP）。
+
+    优先级：
+    1. insShtDesc 精确匹配关键词 → A 股优先（SH > SZ），否则取第一个
+    2. insShtDesc 前缀匹配 → 名称最短者；同长度优先 A 股
+    3. A 股（.SH / .SZ）> 其他市场
+    4. 兜底取 results[0]
+    """
+    exact = [r for r in results if (getattr(r, "insShtDesc", "") or "") == keyword]
+    if exact:
+        a_shares_exact = [
+            r for r in exact
+            if (getattr(r, "windCode", "") or "").endswith((".SH", ".SZ"))
+        ]
+        if a_shares_exact:
+            return min(
+                a_shares_exact,
+                key=lambda r: 0 if (getattr(r, "windCode", "") or "").endswith(".SH") else 1,
+            )
+        return exact[0]
+
+    prefix_matches = [
+        r for r in results
+        if (getattr(r, "insShtDesc", "") or "").startswith(keyword)
+    ]
+    if prefix_matches:
+        min_len = min(len(getattr(r, "insShtDesc", "") or "") for r in prefix_matches)
+        same_len = [
+            r for r in prefix_matches
+            if len(getattr(r, "insShtDesc", "") or "") == min_len
+        ]
+        if len(same_len) > 1:
+            _hk = [r for r in same_len if (getattr(r, "windCode", "") or "").endswith(".HK")]
+            if _hk:
+                return _hk[0]
+        return min(
+            prefix_matches,
+            key=lambda r: (
+                len(getattr(r, "insShtDesc", "") or ""),
+                0 if (getattr(r, "windCode", "") or "").endswith(".SH") else 1,
+            ),
+        )
+
+    a_shares = [
+        r for r in results
+        if (getattr(r, "windCode", "") or "").endswith((".SH", ".SZ"))
+    ]
+    if a_shares:
+        return a_shares[0]
+
+    return results[0]
+
+
 @tool
 def rank(
     keyword: Annotated[str, "标的关键词（用于查询候选）"],
@@ -291,22 +345,12 @@ def rank(
             "reason": "single_match",
         }
 
-    top1, top2 = candidates[0], candidates[1]
-    gap = (top2["relevanceScore"] or 0) - (top1["relevanceScore"] or 0)
-    if gap >= RANK_AUTO_PICK_GAP:
-        return {
-            "keyword": keyword,
-            "winner": top1["windCode"],
-            "candidates": candidates,
-            "needs_hitl": False,
-            "reason": f"auto_pick_gap={gap}",
-        }
     return {
         "keyword": keyword,
-        "winner": None,
+        "winner": candidates[0]["windCode"],
         "candidates": candidates,
-        "needs_hitl": True,
-        "reason": f"hitl_gap={gap}<{RANK_AUTO_PICK_GAP}",
+        "needs_hitl": False,
+        "reason": "goats_top1",
     }
 
 

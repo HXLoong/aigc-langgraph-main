@@ -6,12 +6,24 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 from pydantic import ValidationError
 
+from app.graph.state import TickerCandidate
 from app.subgraphs.option import extract_inquiry as ei_module
 from app.subgraphs.option.extract_inquiry import option_extract_inquiry
 from app.subgraphs.option.models import (
     OptionInquiryItem,
     OptionInquiryParams,
 )
+from app.subgraphs.ticker.resolver import TickerResolution
+
+
+def _patch_resolver(
+    monkeypatch: pytest.MonkeyPatch,
+    candidates: list[TickerCandidate],
+) -> None:
+    """让 resolve_ticker_full 和 resolve_ticker 都返回指定候选，不调真后端。"""
+    resolution = TickerResolution(resolved=candidates, hitl_pending=[])
+    monkeypatch.setattr(ei_module, "resolve_ticker_full", AsyncMock(return_value=resolution))
+    monkeypatch.setattr(ei_module, "resolve_ticker", AsyncMock(return_value=candidates))
 
 
 def _patch_llm(
@@ -76,7 +88,10 @@ class TestOptionExtractInquiryNode:
     async def test_inquiry_with_known_ticker(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """白名单内的标的（"腾讯"）→ resolver 写 state['tickers']。"""
+        """resolver 命中标的 → resolver 写 state['tickers']。"""
+        _patch_resolver(monkeypatch, [
+            TickerCandidate(windCode="00700.HK", insShtDesc="腾讯控股", from_goats=True),
+        ])
         params = OptionInquiryParams(
             orderList=[
                 OptionInquiryItem(
@@ -92,18 +107,11 @@ class TestOptionExtractInquiryNode:
             {"raw_text": "期权询价 腾讯 欧式看涨 行权价100% 1个月"}
         )
 
-        # LLM 提取的参数
         assert result["place_params"]["expected_action"] == "inquiry"
-        assert (
-            result["place_params"]["orderList"][0]["stockCode"] == "腾讯"
-        )
-
-        # ticker resolver 集成：react 模式下"腾讯"应被识别为港股腾讯控股（0700.HK 或 00700.HK）
+        assert result["place_params"]["orderList"][0]["stockCode"] == "腾讯"
         tickers = result.get("tickers", [])
         assert len(tickers) >= 1
-        wind_codes = [t.windCode for t in tickers]
-        assert any("700" in wc and wc.endswith(".HK") for wc in wind_codes)
-        # CLAUDE.md 硬约束：所有 ticker 必须 from_goats=True
+        assert any("700" in t.windCode and t.windCode.endswith(".HK") for t in tickers)
         assert all(t.from_goats for t in tickers)
 
     async def test_inquiry_with_unknown_ticker(
@@ -130,9 +138,21 @@ class TestOptionExtractInquiryNode:
     async def test_inquiry_multi_distinct_tickers(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """用户原话含多个白名单标的 → resolver 返回多条。"""
-        import app.subgraphs.ticker.resolver as _resolver
-        monkeypatch.setattr(_resolver, "DEFAULT_MODE", "whitelist")
+        """用户原话含多个标的 → resolver 返回多条。"""
+        from app.graph.state import TickerCandidate
+        from app.subgraphs.ticker.resolver import TickerResolution
+
+        monkeypatch.setattr(
+            ei_module,
+            "resolve_ticker_full",
+            AsyncMock(return_value=TickerResolution(
+                resolved=[
+                    TickerCandidate(windCode="600519.SH", insShtDesc="贵州茅台", from_goats=True),
+                    TickerCandidate(windCode="00700.HK", insShtDesc="腾讯控股", from_goats=True),
+                ],
+                hitl_pending=[],
+            )),
+        )
         params = OptionInquiryParams(
             orderList=[
                 OptionInquiryItem(stockCode="茅台", optionType="雪球"),
@@ -150,6 +170,9 @@ class TestOptionExtractInquiryNode:
     async def test_writes_trace_with_ticker_count(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
+        _patch_resolver(monkeypatch, [
+            TickerCandidate(windCode="00700.HK", insShtDesc="腾讯控股", from_goats=True),
+        ])
         params = OptionInquiryParams(
             orderList=[
                 OptionInquiryItem(stockCode="腾讯", optionType="雪球"),
