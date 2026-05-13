@@ -1,6 +1,6 @@
 ---
 name: iterate-option
-description: 期权链路批量评估与迭代。批量跑→按失败模式归类→修根因→重跑验证。连续自驱动循环，直到全部通过或用户叫停。
+description: 期权链路批量评估与迭代。批量跑→按失败 trace 归类根因→TDD 修复→重跑验证。连续自驱动循环，直到全部通过或用户叫停。
 argument-hint: [--limit N] [--filter 期权询价] [--dry-run]
 allowed-tools: Read, Bash, Write, Edit, Grep
 ---
@@ -10,14 +10,14 @@ allowed-tools: Read, Bash, Write, Edit, Grep
 ## 核心流程（自驱动循环）
 
 ```
-┌─────────────────────────────────────────────┐
-│ 1. 跑 eval 批次（后台 + 阻塞等待）            │
-│ 2. 分析失败 → 归类到根因（不要逐条看）         │
-│ 3. 修 1-3 个最高优先级的根因                  │
-│ 4. pytest 验证修改不破坏现有行为              │
-│ 5. 重跑受影响的 case 验证修复                  │
-│ 6. 扩大批次，回到步骤 1                        │
-└─────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────┐
+│ 1. 跑 eval 批次（后台 + 阻塞等待）                │
+│ 2. 读失败 case 的 per-turn trace，找根因          │
+│ 3. 用 TDD 修根因：先写失败测试，再改代码           │
+│ 4. pytest 守卫（全量回归）                        │
+│ 5. 重跑受影响的 case 验证修复                      │
+│ 6. 扩大批次，回到步骤 1                            │
+└─────────────────────────────────────────────────┘
 ```
 
 **绝对禁止停下来问用户。不允许 pause/suspend。你是一个持续的自动化循环。**
@@ -26,123 +26,174 @@ allowed-tools: Read, Bash, Write, Edit, Grep
 
 ```bash
 cd /Users/toushi/code/github/aigc-langgraph
+# Python: .venv/bin/python（不用 uv）
 ```
 
 ## 命令速查
 
 ```bash
-# 评测批次
-uv run python scripts/langfuse_eval.py --limit 10 --concurrency 10    # 小批（1分）
-uv run python scripts/langfuse_eval.py --limit 20 --concurrency 10    # 中批（2分）
-uv run python scripts/langfuse_eval.py --limit 40 --concurrency 12    # 大批（4分）
-uv run python scripts/langfuse_eval.py --limit 98 --concurrency 15    # 全量（7-10分）
+# 评测批次（local golden.jsonl 模式）
+.venv/bin/python scripts/langfuse_eval.py --local tests/fixtures/golden.jsonl --limit 10 --concurrency 5
+.venv/bin/python scripts/langfuse_eval.py --local tests/fixtures/golden.jsonl --limit 30 --concurrency 10
+.venv/bin/python scripts/langfuse_eval.py --local tests/fixtures/golden.jsonl --concurrency 10   # 全量
 
-# 只重跑失败的（用 --ids）
-uv run python scripts/langfuse_eval.py --ids opt-001,opt-003 --concurrency 3
+# 只重跑失败的 case
+.venv/bin/python scripts/langfuse_eval.py --local tests/fixtures/golden.jsonl --ids opt-018,opt-019 --concurrency 2
 
 # 按意图类型聚焦
-uv run python scripts/langfuse_eval.py --limit 20 --filter 期权询价 --concurrency 5
+.venv/bin/python scripts/langfuse_eval.py --local tests/fixtures/golden.jsonl --filter option/place_order --concurrency 5
+
+# 跳过 Judge（只检查 reply_text 非空，跑得快）
+.venv/bin/python scripts/langfuse_eval.py --local tests/fixtures/golden.jsonl --ids opt-001 --no-judge
+
+# pytest 守卫
+.venv/bin/python -m pytest tests/ -q --tb=line 2>&1 | tail -5
 ```
 
 ## 跑 eval 的正确方式
 
 ```python
 # 1. 后台启动 eval
-Bash(command="uv run python scripts/langfuse_eval.py --limit 20 --concurrency 10 2>&1",
+Bash(command=".venv/bin/python scripts/langfuse_eval.py --local tests/fixtures/golden.jsonl --limit 20 --concurrency 10 2>&1",
      run_in_background=True, timeout=600000, description="Run eval batch N")
 
-# 2. 阻塞等待完成
-TaskOutput(task_id="<id>", block=True, timeout=600000)
-
+# 2. 等待完成（background task 完成时自动通知，不需要 Monitor/Poll）
 # 3. 从输出中提取分析数据
 ```
 
-**不要用 Monitor**。用 run_in_background + TaskOutput 组合等待结果。
+## 读 Trace：定位死在哪个节点
 
-## 分析模板
+eval 失败报告每条 case 输出 per-turn 详情：
 
-跑完后，按以下步骤分析：
+```
+[0.7] opt-018: 第2轮路由错误，返回了互换参数而非期权下单确认
+  期望: 机器人返回期权下单确认信息...
+  第1轮 [option/new_inquiry] | quote=无
+    trace : ingest → intent_route[rule:keyword[kw:看涨]→option] → option_intent[intent=new_inquiry] → ...
+    reply : -----场外期权询价详情-----...
+  第2轮 [option/place_order_from_quote] | quote=120c '-----场外期权询价详情-----...'
+    trace : ... → intent_route[rule:quote_marker→option] → option_extract_place_or_modify → render
+    reply : -----互换订单参数-----  ← 这里出错
+```
+
+**关键字段说明：**
+
+| 字段 | 含义 | 看什么 |
+|---|---|---|
+| `[product_type/intent]` | 本轮路由结果 | 是否路由正确 |
+| `quote=Nc 'preview'` | 传入的引用内容（N 字符） | quote_content 是否正确传入 |
+| `trace: node[decision] → ...` | 节点决策链（累积，本轮在末尾） | 哪个节点做了什么决策 |
+| `reply` | 机器人实际回复 | 和期望对比 |
+
+> **注意**：`trace` 是累积的（LangGraph reducer add），多轮 case 的 trace 包含所有历史轮。  
+> 本轮节点决策在 trace 末尾，往前找分界点（第一个 `ingest` 是新一轮的开始）。
+
+## 根因归类模板
 
 ### Step 1: 提取统计
 ```
-用例数: N | 通过率: X/N (Y%) | 满分: Z | 零分: W
+用例数: N | 通过率: X/N (Y%) | 平均分: Z
 ```
 
-### Step 2: 失败归类（按 Judge comment 关键词）
-| 失败模式 | Judge 关键词 | 高频文件 | 优先级 |
+### Step 2: 失败归类（看 trace 和 Judge comment）
+
+| 失败模式 | trace/reply 特征 | 高频文件 | 优先级 |
 |---|---|---|---|
-| 撤单未识别订单号 | "未能从输入中识别出订单号" | close/cancel_close.py | P0 |
-| POV 比例误判 | "POV.*超出\|POV.*25%" | close/place_close.py | P0 |
-| 参数校验缺失 | "未提示.*参数不完整\|未拦截\|应拒绝" | close/place_close.py | P1 |
-| 意图识别错误 | "未识别.*意图\|意图.*错误" | 提示词 | P1 |
-| 持仓查询返回错误 | "持仓.*错误\|应返回持仓" | close/holding_query.py | P1 |
-| 反案例穿透 | "不应.*但\|未拒绝\|错误执行" | nodes/intent_route.py | P2 |
-| LLM 超时 | "超时" | LLM 配置 | P2 |
-| Judge JSON 解析失败 | "JSON解析失败" | 非代码 bug，忽略 | - |
+| 路由到错误 product_type | `intent_route[llm→swap]` 但期望 option | `app/nodes/intent_route.py` | P0 |
+| quote_content 未触发 quote_marker | 第2轮 `intent_route[llm→swap]` 而非 `rule:quote_marker→option` | `app/nodes/intent_route.py` | P0 |
+| 零命中误触发 | reply 含"无法识别" 但未经历 ticker 解析 | `app/nodes/render.py`, `app/state.py` | P0 |
+| 期权走互换渲染 | reply 含"-----互换订单参数-----" 但 product_type=option | `app/nodes/render.py` | P0 |
+| 意图识别错误 | `option_intent[intent=wrong_intent]` | `app/prompts/option/intent.md` | P1 |
+| 参数提取缺字段 | Judge 说"参数遗漏" | `app/subgraphs/option/extract_*.py` + 提示词 | P1 |
+| 后端返回错误 | reply 含"请求失败：" | 后端集成 / 参数传递 | P1 |
+| 多轮 tickers 丢失 | 第2轮 `tickers=[]` 但 turn1 已解析 | `app/state.py` make_initial_state | P0 |
+| 反案例穿透 | Judge 说"不应执行但执行了" | `app/subgraphs/option/` | P2 |
+| Judge JSON 解析失败 | comment="JSON解析失败" | 非代码 bug，重跑 | - |
 
-### Step 3: 按优先级修根因
-P0 先修 → 每个 P0 修完通常能救 3-10 条 case
+### Step 3: TDD 修根因（必须遵守）
 
-## 改 close 子图时注意
+每个根因的修复流程（参见 `/test-driven-development` skill）：
 
-close 子图节点顺序（`app/subgraphs/close/graph.py`）：
 ```
-intent → holding_query / place_close / cancel_close / confirm_close / confirm_cancel / query_status → END
+1. 写失败测试（体现 bug 的最小复现）
+2. 运行测试 → 确认 RED（失败信息要和 bug 一致）
+3. 写最小修复代码
+4. 运行测试 → 确认 GREEN
+5. 全量 pytest 守卫
 ```
 
-- `place_close.py`：平仓参数提取 + POV 校验
-- `cancel_close.py`：撤单，含订单号识别
-- `confirm_close.py` / `confirm_cancel.py`：二次确认节点
-- regex fallback 加在 LLM 返回空结果之后
+**禁止直接改代码再补测试。没有 RED 就没有 GREEN。**
+
+## 常见根因与修法（本项目经验）
+
+### 路由类
+- `intent_route` quote_marker 层失效 → 检查 `_QUOTE_MARKERS` 列表，确认标记字符串精确匹配
+- 订单号前缀关键词（OPT-/CO-/H-）被送到 GOATS → `app/subgraphs/ticker/resolver.py` 过滤
+- LLM 兜底误判 → 在 `app/prompts/router/keywords.yaml` 加关键词，或加 quote_marker
+
+### render 类
+- 期权 place_order 走互换渲染 → `render.py` 第3分支必须加 `product_type == "swap"` 条件
+- 零命中误触发 → render 依赖 `tickers is not None` 语义，`make_initial_state` 不能设 `tickers=[]`
+
+### state 传递类
+- 多轮 tickers 丢失 → `make_initial_state` 里 `tickers` 字段不应设默认值（会覆盖 checkpoint）
+- 多轮 place_params 丢失 → 同理，只在子图节点里设，不在 make_initial_state 里初始化
+
+### 提示词类
+- 意图误分类 → 改 `app/prompts/option/intent.md`（先建 _v2 副本，A/B 验证）
+- 参数漏提取 → 改对应 extract_*.md
 
 ## pytest 守卫
 
-修改 `app/` 下任何代码后，跑一次快速 pytest 确认没破坏现有行为：
+修改 `app/` 下任何代码后必须先通过：
 
 ```bash
-pytest tests/subgraphs/option/ tests/subgraphs/close/ tests/test_intent_route.py -v --tb=line 2>&1 | tail -10
+.venv/bin/python -m pytest tests/ -q --tb=line 2>&1 | tail -5
 ```
 
-必须全部通过再继续 eval。
+全部通过才能继续 eval。
 
 ## 迭代节奏
 
 ```
-Round 1: --limit 20 --concurrency 10   (4分钟)
-  → 分析失败归类，修 P0 根因
-  → pytest 验证
-  → 重跑失败的 --ids (1分钟)
+Round 1: --limit 20 --concurrency 10
+  → 读 trace 归类，用 TDD 修 P0 根因
+  → pytest 守卫
+  → --ids 重跑受影响 case
 
-Round 2: --limit 40 --concurrency 10   (8分钟)
-  → 同上
+Round 2: --limit 40 --concurrency 10
+  → 修剩余 P0 + P1 根因
 
-Round 3-5: --limit 98 --concurrency 15  (15-20分钟)
-  → 全量迭代直到 98/98 pass
+Round 3+: --concurrency 10（全量）
+  → 直到全部通过或用户叫停
 ```
 
-**不要手动逐条 debug**。批量归类 → 修根因 → 验证。
+**不要手动逐条 debug**。批量归类 → trace 定位 → TDD 修根因 → 验证。
 
 ## 禁止事项
 
+- **禁止先改代码再写测试**：必须先 RED 再 GREEN
 - **禁止硬编码期望值**：不能在 `app/` 里针对特定 case 返回特定结果
 - **禁止加模式开关**：不能在业务代码里加 `if TEST_MODE` 或环境变量切换逻辑路径
-- **禁止改测试用例**：Langfuse Dataset 里的 case 不能动，通过率低只能修代码或提示词
+- **禁止改测试用例**：`tests/fixtures/golden.jsonl` 的 case 不能动
 - 合法的修法只有两种：**修 bug**（代码逻辑错误）或**改提示词**（LLM 理解偏差）
 
 ## 关键文件
 
 | 文件 | 用途 | 可改？ |
 |---|---|---|
-| `scripts/langfuse_eval.py` | 评估脚本 | ❌ 绝对不准 |
-| `app/subgraphs/close/` | 平仓子图（7个节点文件）| ✅ |
+| `scripts/langfuse_eval.py` | 评估脚本（含 per-turn trace 输出）| ✅ 只改 trace/report 展示，不改评分逻辑 |
+| `tests/fixtures/golden.jsonl` | golden case 集 | ❌ 不准改 case，可新增 |
+| `app/state.py` `make_initial_state` | 每轮初始 state | ⚠️ 慎改：字段默认值影响多轮 checkpoint 传递 |
+| `app/nodes/intent_route.py` | 产品路由（4层）| ✅ |
+| `app/nodes/render.py` | 最终回复生成 | ✅ 改分支时必须带 product_type 条件 |
 | `app/subgraphs/option/` | 期权子图（8个节点文件）| ✅ |
-| `app/nodes/intent_route.py` | 产品路由 | ✅ |
-| `app/prompts/option/intent.md` | 期权意图提示词 | ✅ 可改（创 _v2 副本） |
-| `app/prompts/option/extract_*.md` | 期权参数提取提示词 | ✅ 可改（创 _v2 副本） |
-| `app/prompts/option_close/*.md` | 平仓提示词 | ✅ 可改（创 _v2 副本） |
-| 测试用例 Dataset | Langfuse 云端 | ❌ 不准改 |
+| `app/subgraphs/close/` | 平仓子图（7个节点文件）| ✅ |
+| `app/prompts/option/intent.md` | 期权意图提示词 | ✅ 改前建 _v2 副本 |
+| `app/prompts/option/extract_*.md` | 期权参数提取提示词 | ✅ 改前建 _v2 副本 |
+| `app/prompts/option_close/*.md` | 平仓提示词 | ✅ 改前建 _v2 副本 |
 
-**提示词改法**：不直接改原始 .md，而是：
+**提示词改法**：
 1. 复制 `xxx.md` → `xxx_v2.md`
 2. 在节点代码中 `load_prompt("option", "intent_v2")` 加载新版
-3. A/B 对比验证后，满意了再把 _v2 覆盖回原文件
+3. eval 对比验证后，确认优于原版再覆盖
