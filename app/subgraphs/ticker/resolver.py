@@ -77,7 +77,19 @@ async def resolve_ticker(raw_text: str) -> list[TickerCandidate]:
 # ============================================================
 
 
-_CN_EXCHANGES = {".SH", ".SZ", ".BJ", ".HK", ".CFE", ".DCE", ".SHFE", ".CZCE", ".INE"}
+#: A 股交易所（沪/深/京）
+_A_SHARE_EXCHANGES = (".SH", ".SZ", ".BJ")
+#: 港股交易所
+_HK_EXCHANGES = (".HK",)
+#: 期货交易所（仅作为兜底，避免误把期货当作 cash market 标的）
+_FUTURES_EXCHANGES = (".CFE", ".DCE", ".SHFE", ".CZCE", ".INE", ".SHF", ".CZC")
+#: 兼容旧引用（其他模块可能 import 此符号）
+_CN_EXCHANGES = set(_A_SHARE_EXCHANGES + _HK_EXCHANGES + _FUTURES_EXCHANGES)
+
+
+def _ends_with_any(wind: str, suffixes: tuple[str, ...]) -> bool:
+    upper = (wind or "").upper()
+    return any(upper.endswith(s) for s in suffixes)
 
 
 def _pick_winner(
@@ -87,21 +99,54 @@ def _pick_winner(
     """从 GOATS 返回列表中选出最优标的，返回 None 表示无可用结果。
 
     GOATS 按 windCode 字典序返回，但最优标的未必排第一（例如同主题的 SZ 联接基金代码
-    小于 SH 主 ETF）。选优规则：
-    1. 过滤掉非 A 股市场（非 .SH/.SZ/.BJ）的结果，避免误入外股（如 3M0.DF）。
-    2. 单条 A 股结果直接返回。
-    3. 混合 SH+SZ：SH 交易所优先（主要指数 ETF 通常为 SH 上市），取最小 SH windCode。
-    4. 全为同一交易所（多只同主题 ETF）：调用 infer_code LLM 推断最匹配的 windCode，
-       在结果列表中查找；找不到则退化为 a_results[0]。
+    小于 SH 主 ETF）。选优规则（分层）：
+
+    1. A 股交易所（.SH/.SZ/.BJ）优先：若存在 A 股候选则只在 A 股内选优；
+    2. 港股交易所（.HK）次之：若无 A 股候选则在港股内选优；
+    3. 期货交易所（.CFE/.DCE/...）保守返回 None：避免在 typo / 关键词
+       匹配失败时把期货代码当作 cash market 标的（会触发后端"不在标的池内"）。
+
+    同层多候选选优：
+       a. 单条 → 直接返回；
+       b. A 股层混合 SH+其他 → 取最小 SH windCode；
+       c. 全为同一交易所 → 调用 infer_code LLM 推断最匹配的 windCode；
+       d. 兜底取第一个。
     """
-    a_results = [r for r in results if any(r.windCode.upper().endswith(e) for e in _CN_EXCHANGES)]
-    if not a_results:
+    if not results:
         return None
 
+    # 优先 A 股
+    a_results = [r for r in results if _ends_with_any(r.windCode, _A_SHARE_EXCHANGES)]
+    if a_results:
+        return _pick_within_a_share(keyword, a_results)
+
+    # 退而求其次：港股
+    hk_results = [r for r in results if _ends_with_any(r.windCode, _HK_EXCHANGES)]
+    if hk_results:
+        if len(hk_results) == 1:
+            return hk_results[0]
+        # 同港股多个 → LLM 推断 / 兜底
+        try:
+            inferred = infer_code.invoke({"keyword": keyword})
+            inferred = (inferred or "").strip().upper()
+            if inferred:
+                for r in hk_results:
+                    if (r.windCode or "").upper() == inferred:
+                        return r
+        except Exception:  # noqa: BLE001
+            pass
+        return hk_results[0]
+
+    # 仅命中期货 → 保守不选（避免误用期货代码触发后端"不在标的池内"）
+    return None
+
+
+def _pick_within_a_share(keyword: str, a_results: list) -> object | None:
+    """A 股候选内部选优（原 _pick_winner 主逻辑剥离）。"""
     if len(a_results) == 1:
         return a_results[0]
 
-    sh = [r for r in a_results if r.windCode.upper().endswith(".SH")]
+    sh = [r for r in a_results if (r.windCode or "").upper().endswith(".SH")]
     if sh and len(sh) < len(a_results):
         return min(sh, key=lambda r: r.windCode)
 
@@ -111,7 +156,7 @@ def _pick_winner(
         inferred = (inferred or "").strip().upper()
         if inferred:
             for r in a_results:
-                if r.windCode.upper() == inferred:
+                if (r.windCode or "").upper() == inferred:
                     return r
     except Exception:  # noqa: BLE001
         pass

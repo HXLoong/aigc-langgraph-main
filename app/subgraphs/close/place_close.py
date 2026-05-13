@@ -145,6 +145,38 @@ async def close_place_close(state: AgentState) -> dict[str, Any]:
             _leg.orderId = _matched["orderId"]
             _leg.internalTradeId = _matched["orderId"]
 
+    # === 序号 X / 第 X 笔 → 持仓位置映射（覆盖 LLM 凭空生成的 placeholder orderId）===
+    # Round 3 eval 暴露：raw_text 用 "序号1平300万" 引用持仓时，LLM 没有 holdingMap 数据，
+    # 会输出 placeholder（"ORDER_ID_FROM_HOLDING_MAP_..."、"<resolved_order_id...>"、"序号X的orderId"）。
+    # 这里按 1-indexed seq 从已查到的 order_data 中按位置取真单号覆盖。
+    _seq_iter = _re.finditer(r"序号\s*[:：]?\s*(\d+)|第\s*(\d+)\s*笔", combined)
+    _seq_list = [int(m.group(1) or m.group(2)) for m in _seq_iter]
+
+    def _is_placeholder_oid(oid: str | None) -> bool:
+        if not oid:
+            return True
+        s = oid.upper().strip()
+        if _re.fullmatch(r"CO-\d{8}-[A-Z0-9]{4,16}", s):
+            return False
+        if _re.fullmatch(r"OPTG?-[A-Z]+\d{0,10}", s):
+            return False
+        return True
+
+    if order_data:
+        for _i, _leg in enumerate(close_list):
+            if not _is_placeholder_oid(_leg.orderId):
+                continue
+            _seq = _seq_list[_i] if _i < len(_seq_list) else (_i + 1)
+            _idx = _seq - 1
+            if 0 <= _idx < len(order_data):
+                _real = order_data[_idx]
+                _real_oid = _real.get("orderId")
+                if _real_oid:
+                    _leg.orderId = _real_oid
+                    _leg.internalTradeId = _real_oid
+                    # 同步进 _order_lookup 以便后续渲染读取 contractCode/underlying
+                    _order_lookup[_real_oid] = _real
+
     # === 客户端预校验 ===
     _validation_errors: list[str] = []
     for _leg in close_list:
