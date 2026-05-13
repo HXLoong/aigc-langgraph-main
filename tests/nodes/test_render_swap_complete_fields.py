@@ -69,8 +69,8 @@ class TestSwapRenderCompleteFields:
         assert "POV" in reply
         assert "14:00" in reply
         # 完整订单（带 tickers + counterparty）不该有大量待补充
-        # （新增的 交易品种/委托金额/币种/交易对手 字段从 raw_text/state 抽取；缺失时仍占位待补充，正常）
-        assert reply.count("待补充") <= 4, (
+        # （新增的 单号/交易品种/委托金额/币种/交易对手 字段从 raw_text/state 抽取；缺失时仍占位待补充，正常）
+        assert reply.count("待补充") <= 5, (
             f"完整订单待补充字段过多，实际:\n{reply}"
         )
 

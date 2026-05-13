@@ -177,17 +177,21 @@ def _render_swap_order(o: dict[str, Any], state: AgentState, place: dict[str, An
     end = o.get("placeOrderEndTime")
     time_str = f"{start} - {end}" if (start and end) else _PLACEHOLDER
 
+    # 单号：优先从 state.api_result（后端生成）抽取，否则 placeholder
+    single_no = o.get("orderId") or _PLACEHOLDER
+
     lines = [
         "-----互换订单参数-----",
+        f"单号: {single_no}",
         f"标的代码: {wind or _PLACEHOLDER}",
         f"标的名称: {stock_name or _PLACEHOLDER}",
         f"交易品种: {extras.get('trading_kind') or _PLACEHOLDER}",
-        f"方向: {direction}",
+        f"委托方向: {direction}",
         f"数量: {qty_str}",
         f"委托金额: {extras.get('notional') or _PLACEHOLDER}",
         f"币种: {extras.get('currency') or _PLACEHOLDER}",
         f"价格类型: {price_type}",
-        f"价格: {price if price is not None else _PLACEHOLDER}",
+        f"限定价格: {price if price is not None else _PLACEHOLDER}",
         f"算法: {algo_str}",
         f"时间: {time_str}",
         f"交易对手: {extras.get('counterparty') or _PLACEHOLDER}",
