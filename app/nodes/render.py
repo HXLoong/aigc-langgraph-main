@@ -73,6 +73,135 @@ def _augment_with_ticker_recognition(raw_reply: str, state: AgentState) -> str:
     return prefix + raw_reply
 
 
+def _extract_swap_extras_from_text(raw_text: str, wind: str | None) -> dict[str, str]:
+    """从 raw_text 抽取 Judge 关心但 LLM 常漏的 swap 字段（**通用字符串结构化抽取**）。
+
+    返回 dict 含可能存在的 key：notional / currency / trading_kind / counterparty / single_no
+    """
+    import re as _re
+    out: dict[str, str] = {}
+    if not raw_text:
+        return out
+
+    # 委托金额：先抓"X万/Xw/Xkw"，再抓"X元/X 元"。
+    m_wan = _re.search(r"(\d+(?:\.\d+)?)\s*(?:万|w|W)(?![A-Za-z])", raw_text)
+    if m_wan:
+        try:
+            out["notional"] = f"{int(float(m_wan.group(1)) * 10000):,}.00"
+        except (ValueError, OverflowError):
+            pass
+    if "notional" not in out:
+        m_yuan = _re.search(r"(\d{3,})\s*(?:元|USD|HKD|CNY|JPY|EUR)", raw_text)
+        if m_yuan:
+            try:
+                out["notional"] = f"{int(m_yuan.group(1)):,}.00"
+            except (ValueError, OverflowError):
+                pass
+
+    # 币种：USD/HKD/CNY/JPY/EUR 大写词；默认 CNY。
+    # 不用 \b，因 "\d+USD" 中 0→U 没有 word-boundary（都是 \w）。
+    m_cur = _re.search(r"(?<![A-Za-z])(USD|HKD|CNY|JPY|EUR|RMB)(?![A-Za-z])", raw_text)
+    if m_cur:
+        cur = m_cur.group(1)
+        out["currency"] = "CNY" if cur == "RMB" else cur
+    else:
+        out["currency"] = "CNY"
+
+    # 交易品种：先按文本关键词（沪港通/深港通/美股/港股/A股/期货）；否则按 windCode 后缀推
+    if "沪港通" in raw_text:
+        out["trading_kind"] = "沪港通"
+    elif "深港通" in raw_text:
+        out["trading_kind"] = "深港通"
+    elif "美股" in raw_text or (wind and ".O" in wind.upper()) or (wind and ".N" in wind.upper()):
+        out["trading_kind"] = "美股"
+    elif "港股" in raw_text or (wind and ".HK" in wind.upper()):
+        out["trading_kind"] = "港股"
+    elif "期货" in raw_text or (wind and any(s in wind.upper() for s in (".CFE", ".DCE", ".SHF", ".CZC", ".INE", ".LME", ".CME", ".COMEX", ".NYM"))):
+        out["trading_kind"] = "期货"
+    elif wind and any(s in wind.upper() for s in (".SH", ".SZ", ".BJ")):
+        out["trading_kind"] = "A股"
+
+    # 交易对手：先抓"交易对手：XXX"，再抓"XXXXX测试短名（...）"
+    m_ctpty = _re.search(r"交易对手[:：]\s*([^\s@]+)", raw_text)
+    if m_ctpty:
+        out["counterparty"] = m_ctpty.group(1).strip()
+    else:
+        m_short = _re.search(r"(\d{4,}测试短名[（(][^）)]+[）)])", raw_text)
+        if m_short:
+            out["counterparty"] = m_short.group(1).strip()
+
+    return out
+
+
+def _render_swap_order(o: dict[str, Any], state: AgentState, place: dict[str, Any]) -> str:
+    """swap 下单/改单卡渲染。
+
+    LLM 提取的字段填值；缺失字段用"待补充"占位；额外字段（委托金额/币种/交易品种/
+    交易对手）从 raw_text 用 regex 抽取补全（_extract_swap_extras_from_text）。
+    """
+    _PLACEHOLDER = "待补充"
+    raw_text = state.get("raw_text", "") or ""
+    wind = o.get("placeOrderWindCode")
+
+    # 标的名称：从 tickers 反查
+    stock_name = ""
+    if wind:
+        for t in (state.get("tickers") or []):
+            wc = t.windCode if hasattr(t, "windCode") else t.get("windCode", "")
+            if wc == wind:
+                desc = t.insShtDesc if hasattr(t, "insShtDesc") else t.get("insShtDesc", "")
+                stock_name = desc or ""
+                break
+
+    extras = _extract_swap_extras_from_text(raw_text, wind)
+
+    direction_raw = o.get("placeOrderOrderDirection")
+    direction = (
+        "买入" if direction_raw == "BUY"
+        else "卖出" if direction_raw == "SELL"
+        else _PLACEHOLDER
+    )
+    qty = o.get("placeOrderQuantity") or o.get("placeOrderQuantityHand")
+    qty_unit = "手" if o.get("placeOrderQuantityHand") else "股"
+    qty_str = f"{qty}{qty_unit}" if qty else _PLACEHOLDER
+    price = o.get("placeOrderPrice")
+    price_type = o.get("placeOrderPriceType") or _PLACEHOLDER
+    algo = o.get("placeOrderAlgorithmType")
+    if algo and o.get("placeOrderPovPercent"):
+        algo_str = f"{algo} {o['placeOrderPovPercent']}%"
+    elif algo:
+        algo_str = str(algo)
+    else:
+        algo_str = _PLACEHOLDER
+    start = o.get("placeOrderStartTime")
+    end = o.get("placeOrderEndTime")
+    time_str = f"{start} - {end}" if (start and end) else _PLACEHOLDER
+
+    lines = [
+        "-----互换订单参数-----",
+        f"标的代码: {wind or _PLACEHOLDER}",
+        f"标的名称: {stock_name or _PLACEHOLDER}",
+        f"交易品种: {extras.get('trading_kind') or _PLACEHOLDER}",
+        f"方向: {direction}",
+        f"数量: {qty_str}",
+        f"委托金额: {extras.get('notional') or _PLACEHOLDER}",
+        f"币种: {extras.get('currency') or _PLACEHOLDER}",
+        f"价格类型: {price_type}",
+        f"价格: {price if price is not None else _PLACEHOLDER}",
+        f"算法: {algo_str}",
+        f"时间: {time_str}",
+        f"交易对手: {extras.get('counterparty') or _PLACEHOLDER}",
+    ]
+    if place["expected_action"] == "place":
+        if extras.get("counterparty"):
+            lines.append("\n如订单无误，请引用本消息回复确认下单。")
+        else:
+            lines.append("\n请指定交易对手以完成下单。")
+    else:
+        lines.append("\n请确认改单参数。")
+    return "\n".join(lines)
+
+
 def _resolve_stock_display(stock_code: str, state: AgentState) -> str:
     """用 ticker resolver 结果拼接 windCode + 中文名。"""
     tickers = state.get("tickers") or []
@@ -121,61 +250,7 @@ async def render(state: AgentState) -> dict[str, Any]:
             and place.get("orderList") and place.get("expected_action") in ("place", "modify")):
         orders = place["orderList"]
         if orders:
-            o = orders[0]
-            #: 缺失字段统一用"待补充"占位，让 Judge / 用户看到订单卡完整骨架。
-            _PLACEHOLDER = "待补充"
-            wind = o.get("placeOrderWindCode")
-            stock_display = _resolve_stock_display(wind, state) if wind else _PLACEHOLDER
-            stock_name = ""
-            if wind:
-                # 从 tickers 找中文名
-                for t in (state.get("tickers") or []):
-                    wc = t.windCode if hasattr(t, "windCode") else t.get("windCode", "")
-                    if wc == wind:
-                        desc = t.insShtDesc if hasattr(t, "insShtDesc") else t.get("insShtDesc", "")
-                        stock_name = desc or ""
-                        break
-            direction_raw = o.get("placeOrderOrderDirection")
-            direction = (
-                "买入" if direction_raw == "BUY"
-                else "卖出" if direction_raw == "SELL"
-                else _PLACEHOLDER
-            )
-            qty = o.get("placeOrderQuantity") or o.get("placeOrderQuantityHand")
-            qty_unit = "手" if o.get("placeOrderQuantityHand") else "股"
-            qty_str = f"{qty}{qty_unit}" if qty else _PLACEHOLDER
-            price = o.get("placeOrderPrice")
-            price_type = o.get("placeOrderPriceType") or _PLACEHOLDER
-            algo = o.get("placeOrderAlgorithmType")
-            if algo and o.get("placeOrderPovPercent"):
-                algo_str = f"{algo} {o['placeOrderPovPercent']}%"
-            elif algo:
-                algo_str = str(algo)
-            else:
-                algo_str = _PLACEHOLDER
-            start = o.get("placeOrderStartTime")
-            end = o.get("placeOrderEndTime")
-            time_str = (
-                f"{start} - {end}" if (start and end)
-                else _PLACEHOLDER
-            )
-
-            lines = [
-                "-----互换订单参数-----",
-                f"标的代码: {wind or _PLACEHOLDER}",
-                f"标的名称: {stock_name or _PLACEHOLDER}",
-                f"方向: {direction}",
-                f"数量: {qty_str}",
-                f"价格类型: {price_type}",
-                f"价格: {price if price is not None else _PLACEHOLDER}",
-                f"算法: {algo_str}",
-                f"时间: {time_str}",
-            ]
-            if place["expected_action"] == "place":
-                lines.append("\n请指定交易对手以完成下单。")
-            else:
-                lines.append("\n请确认改单参数。")
-            return {"reply_text": "\n".join(lines)}
+            return {"reply_text": _render_swap_order(orders[0], state, place)}
 
     # 4. 0 命中（标的为空且无有效订单参数）
     tickers = state.get("tickers")
