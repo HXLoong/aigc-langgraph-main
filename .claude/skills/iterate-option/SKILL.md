@@ -112,17 +112,7 @@ eval 失败报告每条 case 输出 per-turn 详情：
 
 ### Step 3: TDD 修根因（必须遵守）
 
-每个根因的修复流程（参见 `/test-driven-development` skill）：
-
-```
-1. 写失败测试（体现 bug 的最小复现）
-2. 运行测试 → 确认 RED（失败信息要和 bug 一致）
-3. 写最小修复代码
-4. 运行测试 → 确认 GREEN
-5. 全量 pytest 守卫
-```
-
-**禁止直接改代码再补测试。没有 RED 就没有 GREEN。**
+调用 `/test-driven-development` skill，按其 workflow 执行。**禁止跳过。**
 
 ## 常见根因与修法（本项目经验）
 
