@@ -205,8 +205,40 @@ async def _search_goats(client, keyword: str) -> list:
         return []
 
 
+#: A 股指数代码模式（000xxx.SH = SSE 指数；399xxx.SZ = SZSE 指数）。
+#: 场外期权后端标的池**只接受可交易 ETF**，不收指数代码（指数不可买卖）。
+_INDEX_CODE_PATTERN = re.compile(r"^(000|399)\d{3}\.(SH|SZ)$", re.IGNORECASE)
+
+
+async def _try_etf_fallback(client, keyword: str, winner) -> object:
+    """winner 是指数代码 + keyword 含中文 → 触发 ETF 后备搜索。
+
+    流程（结构化规则，非业务字典）：
+    1. 检查 winner.windCode 是否匹配指数代码 numeric 范围
+    2. 去掉常见指数后缀（"指数"/"指"），拼上 "ETF" 重查 GOATS
+    3. GOATS 命中 → 用 ETF 替换；未命中 → 保留原指数代码
+    """
+    if winner is None:
+        return winner
+    wc = (getattr(winner, "windCode", "") or "").upper()
+    if not _INDEX_CODE_PATTERN.match(wc):
+        return winner
+    if not re.search(r"[一-鿿]", keyword):
+        return winner
+
+    # 关键词去掉"指数"/"指"，拼 "ETF"。如 创业板指 → 创业板ETF；上证50 → 上证50ETF
+    base = keyword.replace("指数", "").rstrip("指").strip()
+    if not base:
+        return winner
+    etf_query = f"{base}ETF"
+    etf_results = await _search_goats(client, etf_query)
+    if not etf_results:
+        return winner
+    return etf_results[0]
+
+
 async def _resolve_one_keyword(client, keyword: str) -> object | None:
-    """单 keyword 解析：GOATS 主查询 + LLM 推断 + GOATS 二次校验。
+    """单 keyword 解析：GOATS 主查询 + LLM 推断 + GOATS 二次校验 + 指数→ETF 后备。
 
     流程：
     1. GOATS 主查询 → primary_winner
@@ -215,36 +247,42 @@ async def _resolve_one_keyword(client, keyword: str) -> object | None:
        - 已在 primary 结果里 → 直接用该候选
        - 不在 primary 结果里 → GOATS 二次校验存在性 → 用校验结果
        - 不存在 → 回退 primary_winner
+    4. winner 落在指数代码范围（000xxx.SH/399xxx.SZ）且 keyword 含中文 →
+       追加 "ETF" 后备搜索（场外期权后端不收指数代码）
     """
     primary = await _search_goats(client, keyword)
     primary_winner = _pick_winner(keyword, primary) if primary else None
 
     if not _should_consult_llm(keyword, len(primary)):
-        return primary_winner
+        return await _try_etf_fallback(client, keyword, primary_winner)
 
     try:
         llm_code_raw = infer_code.invoke({"keyword": keyword})
     except Exception as exc:  # noqa: BLE001
         logger.debug("infer_code 失败 keyword=%r: %s", keyword, exc)
-        return primary_winner
+        return await _try_etf_fallback(client, keyword, primary_winner)
 
     llm_code = (llm_code_raw or "").strip()
     if not llm_code or llm_code.upper() == keyword.upper():
-        return primary_winner
+        return await _try_etf_fallback(client, keyword, primary_winner)
+
+    final_winner: object | None = primary_winner
 
     # LLM 答案已在 primary 结果里 → 直接用该候选
     for r in primary:
         if (r.windCode or "").upper() == llm_code.upper():
-            return r
+            final_winner = r
+            return await _try_etf_fallback(client, keyword, final_winner)
 
     # LLM 答案不在 primary → 二次 GOATS 校验
     retry_results = await _search_goats(client, llm_code)
     for r in retry_results:
         if (r.windCode or "").upper() == llm_code.upper():
-            return r
+            final_winner = r
+            return await _try_etf_fallback(client, keyword, final_winner)
 
     # LLM 答案 GOATS 也找不到 → 回退 primary
-    return primary_winner
+    return await _try_etf_fallback(client, keyword, primary_winner)
 
 
 async def _resolve_via_react_full(raw_text: str) -> TickerResolution:
