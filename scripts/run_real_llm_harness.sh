@@ -29,17 +29,15 @@ preflight() {
     fi
     echo "    .env OK"
 
-    # mock_api 健康检查（端口 8099）
-    local mock_url="http://localhost:8099/admin-api/integration/securities-instrument/select?keyword=test"
-    if ! curl -fs --max-time 3 "$mock_url" > /dev/null 2>&1; then
-        echo "ERROR: mock_api 未启动（http://localhost:8099 不通）" >&2
-        echo "       请在另一终端运行：" >&2
-        echo "         uvicorn mock_api.server:app --port 8099" >&2
-        echo "       或后台：" >&2
-        echo "         nohup uvicorn mock_api.server:app --port 8099 > /tmp/mock_api.log 2>&1 &" >&2
-        exit 1
+    # 后端连通性检查
+    local backend_url="${OTC_API_BASE_URL:-}"
+    if [ -n "$backend_url" ]; then
+        if ! curl -fs --max-time 5 "$backend_url" > /dev/null 2>&1; then
+            echo "WARN: 后端 $backend_url 不可达，harness 中涉及后端调用的 case 可能失败" >&2
+        else
+            echo "    后端 OK ($backend_url)"
+        fi
     fi
-    echo "    mock_api OK (http://localhost:8099)"
 
     # LLM 连通性
     echo "    LLM 连通性测试 ..."

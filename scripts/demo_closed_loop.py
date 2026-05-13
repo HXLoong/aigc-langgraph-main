@@ -12,7 +12,6 @@
   类型，返回符合该 case expected 的输出。这只是验证**管道连通性**，
   不验证 LLM 准确率（那是 eval_golden.py 的职责）。
 - OtcBackendClient 用 mock 替换：所有调用返回 code=0
-- mock_api 不需要启动（因为 backend 也 mock 了）
 
 输出：
 - 每条 case 的 PASS/FAIL（基于 product_type + intent 是否符合 expected）
@@ -45,7 +44,7 @@ def _setup_env() -> None:
         "BUSINESS_MYSQL_URI": "mysql+aiomysql://mock:mock@localhost:3306/mock",
         "QWEN_API_BASE": "http://mock/v1",
         "QWEN_API_KEY": "mock-qwen-key",
-        "OTC_API_BASE_URL": "http://mock-backend:8099",
+        "OTC_API_BASE_URL": "http://localhost/admin-api",
         "OTC_API_SECRET": "mock-secret",
     }
     for k, v in defaults.items():
@@ -264,7 +263,7 @@ def _synthesize_output(output_cls, text: str) -> Any:
 
 
 # ============================================================
-# 3. 构造 mock backend
+# 3. 构造测试用 backend（仅用于本地管道连通性验证，不替代真实后端）
 # ============================================================
 def _make_mock_backend():
     mock_client = AsyncMock()
@@ -283,7 +282,7 @@ def _make_mock_backend():
 
 
 # ============================================================
-# 4. 标的查询 mock（替代 mock_api 调用）
+# 4. 标的查询（本地词典，仅用于管道连通性验证）
 # ============================================================
 TICKER_DICT = {
     "茅台": ("600519.SH", "贵州茅台"),

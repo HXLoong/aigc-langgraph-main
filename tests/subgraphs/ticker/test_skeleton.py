@@ -63,7 +63,7 @@ def test_tokenize_basic_invocation() -> None:
 
 def test_completeness_signature() -> None:
     """completeness 接收 keyword + 返回 dict（含 is_complete / candidates）。"""
-    # 后端不可达时退化后缀规则（不触发 mock_api）
+    # 后端不可达时退化后缀规则
     result = completeness.invoke({"keyword": "00700.HK"})
     assert "is_complete" in result
     assert "keyword" in result

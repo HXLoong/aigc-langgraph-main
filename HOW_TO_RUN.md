@@ -11,8 +11,6 @@
                                                           ↓
                                                 LangFuse (3000) — trace / dataset / eval / annotation
                                                           ↓
-                                          mock_api (8099) — 模拟全部后端接口
-                                                          ↓
                                          MySQL (3306) — checkpoint + 业务库
 ```
 
@@ -21,10 +19,10 @@
 | 依赖 | 用途 |
 |------|------|
 | Docker Desktop | MySQL + LangFuse stack 容器 |
-| Python 3.11+ | LangGraph FastAPI + harness CLI + mock_api |
+| Python 3.11+ | LangGraph FastAPI + harness CLI |
 | 公网 | LLM 调用 dashscope.aliyuncs.com |
 
-不再需要 Java 后端 / Spring Boot——`mock_api` 已覆盖全部后端接口；ADR 0001 D4 已撤销 Java 团队配合需求。
+不再需要 Java 后端 / Spring Boot，直接对接真实后端。
 
 ## 三、启动流程
 
@@ -33,13 +31,6 @@
 ```bash
 cp .env.example .env
 # 编辑 .env 填入 QWEN_API_KEY
-```
-
-关键默认值（本地开发无需改动）：
-
-```ini
-OTC_API_BASE_URL=http://localhost:8099    # mock_api 地址
-GOATS_BASE_URL=http://localhost:8099      # 同端口，mock 同时提供
 ```
 
 ### 2. 启动 MySQL
@@ -75,21 +66,7 @@ LANGFUSE_PUBLIC_KEY=pk-lf-...
 LANGFUSE_SECRET_KEY=sk-lf-...
 ```
 
-### 4. 启动 mock_api（端口 8099）
-
-模拟 GOATS + 业务后端接口：
-
-```bash
-uvicorn mock_api.server:app --host 0.0.0.0 --port 8099 &
-```
-
-验证：
-
-```bash
-curl http://localhost:8099/
-```
-
-### 5. 启动 LangGraph（端口 8000）
+### 4. 启动 LangGraph（端口 8000）
 
 ```bash
 uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload &
@@ -107,7 +84,6 @@ curl http://localhost:8000/health
 
 ```bash
 curl http://localhost:8000/health        # LangGraph
-curl http://localhost:8099/              # Mock API
 curl http://localhost:3000/              # LangFuse UI
 docker ps --filter "name=otc-agent" --filter "name=langfuse"
 ```
@@ -156,7 +132,6 @@ curl -X POST http://localhost:8000/v1/workflows/run \
 | MySQL 8.0.36 | 3306 | `docker compose up -d mysql` |
 | LangFuse Web | 3000 | `docker compose -f infra/langfuse/docker-compose.yml ... up -d` |
 | LangFuse Worker | 3030 | 同上（一并启动） |
-| Mock API | 8099 | `uvicorn mock_api.server:app --port 8099` |
 | LangGraph FastAPI | 8000 | `uvicorn app.main:app --port 8000 --reload` |
 
 ## 六、目录结构
@@ -176,7 +151,6 @@ aigc-langgraph/
 ├── infra/langfuse/               # LangFuse self-hosted compose
 ├── docs/adr/                     # 15 个架构决定（ADR 0000-0014）
 ├── docs/api-contracts/           # Java 后端真实契约
-├── mock_api/                     # 业务后端 mock
 ├── tests/                        # smoke + tools + api + harness + tests/api（GOATS 连通性）
 ├── docker-compose.yml            # MySQL + LangGraph app
 └── .env.example                  # 环境变量模板
@@ -188,7 +162,6 @@ aigc-langgraph/
 |------|------|
 | `app.main:app` 启动失败 | 检查 `pip install -e ".[dev]"` 是否完成 |
 | LangFuse Web 起不来 | 看 `docker compose logs langfuse-web` 是否缺密钥（SALT/ENCRYPTION_KEY/NEXTAUTH_SECRET） |
-| mock_api 端口冲突 | 改 `--port 8099` 为其他端口 + 同步改 `.env` 的 `OTC_API_BASE_URL` |
 | 测试 collect error | tests/api 默认已 ignore；如要跑需真实后端 + VPN |
 | harness 报 LangFuse 未连接 | 确认 `.env` 的 `ENABLE_LANGFUSE=true` + API Key 已配 |
 

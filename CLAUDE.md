@@ -69,7 +69,6 @@ harness/                     # 评测台（与 app/ 解耦，仅 import build_ma
 infra/langfuse/              # LangFuse self-hosted Docker Compose（PG + ClickHouse + Redis + MinIO + Web + Worker）
 docs/adr/                    # 16 个架构决定（ADR 0000-0015）
 docs/api-contracts/          # Java 后端真实业务 API 契约
-mock_api/server.py           # 业务后端 mock（M3 联调前用）
 tests/                       # test_smoke + test_api + test_harness + test_tools + tests/api（GOATS 连通性）
 ```
 

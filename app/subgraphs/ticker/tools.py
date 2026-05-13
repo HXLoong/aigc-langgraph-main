@@ -5,7 +5,7 @@
 - LLM 调用集中在 `infer_code`（推断需要 LLM 兜底）+ ReAct Agent 自身的 think 层
 - tokenize / completeness / rank 不调 LLM，避免 token 浪费 + 死循环
 
-后端依赖（mock_api 已实现端点）：
+后端依赖：
 - securities-instrument/select  — completeness + rank（ADR 0001 D4）
 - counterparty/info/instrument-inference-prompt  — infer_code 动态片段（ADR 0013）
 """
@@ -225,8 +225,8 @@ def rank(
 ) -> dict[str, object]:
     """查 securities-instrument/select 候选 → 按 relevanceScore 排序 → 自动选/HITL。
 
-    mock_api 行为：score 越小越相关（0 = 精确匹配，10 = 弱包含）。
-    业务约定（ADR 0008 c）：top1 与 top2 分差 ≥ 10 → 自动选 top1；< 10 → 触发 HITL。
+    业务约定（ADR 0008 c）：score 越小越相关（0 = 精确匹配，10 = 弱包含）。
+    top1 与 top2 分差 ≥ 10 → 自动选 top1；< 10 → 触发 HITL。
 
     返回：
         {
@@ -272,7 +272,7 @@ def rank(
             "reason": "no_match",
         }
 
-    # mock_api 已经按 relevanceScore 升序返回（小分数 = 强相关）
+    # 后端按 relevanceScore 升序返回（小分数 = 强相关）
     candidates = [
         {
             "windCode": r.windCode,

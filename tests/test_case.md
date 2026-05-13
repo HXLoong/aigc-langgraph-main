@@ -46,7 +46,7 @@ uv run pytest -s tests/test_option.py -v        # option 子图 40 条
 python tests/run_integration_test.py
 ```
 
-**前置条件**：mock_api (8099) + LangGraph (8000) 都在运行。
+**前置条件**：真实后端 + LangGraph (8000) 都在运行。
 
 ---
 
@@ -155,13 +155,10 @@ python tests/run_integration_test.py
 ### 运行方式
 
 ```bash
-# 终端 A：Mock API
-uv run uvicorn mock_api.server:app --host 0.0.0.0 --port 8099
-
-# 终端 B：LangGraph
+# 终端 A：LangGraph
 uv run uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
 
-# 终端 C：跑集成测试
+# 终端 B：跑集成测试
 python tests/run_integration_test.py
 ```
 
@@ -186,15 +183,15 @@ python tests/run_integration_test.py
 
 **判定规则**：
 - **PASS** = 路由 + 意图 + 子图链路 + 后端 API 全部正确
-- 预期 `api_code=0`（mock 模拟成功返回）
+- 预期 `api_code=0`（后端成功返回）
 - Unknown 兜底场景 `api_code=None`（不调后端）
 
 ---
 
 ## 五、环境依赖对照
 
-| 测试类型 | 命令 | 需要 Docker | 需要 mock_api | 需要 LangGraph | 需要 VPN |
-|----------|------|:-----------:|:-------------:|:--------------:|:--------:|
+| 测试类型 | 命令 | 需要 Docker | 需要真实后端 | 需要 LangGraph | 需要 VPN |
+|----------|------|:-----------:|:------------:|:--------------:|:--------:|
 | 全部单测 | `pytest tests/ -v` | 否 | 否 | 否 | 否 |
 | ticker 专项 | `pytest -s tests/test_ticker.py -v` | 否 | 否 | 否 | 否 |
 | option 专项 | `pytest -s tests/test_option.py -v` | 否 | 否 | 否 | 否 |
@@ -213,7 +210,6 @@ uv run pytest tests/ -v
 uv run ruff check app/ tests/
 
 # 3. 集成测试（需先启动服务栈）
-# 终端 A: uv run uvicorn mock_api.server:app --port 8099
-# 终端 B: uv run uvicorn app.main:app --port 8000 --reload
+# 终端 A: uv run uvicorn app.main:app --port 8000 --reload
 python tests/run_integration_test.py
 ```
