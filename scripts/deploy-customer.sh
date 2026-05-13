@@ -584,6 +584,37 @@ step10_smoke() {
 }
 
 # ============================================================
+# Step 11 · 真后端 E2E probe（可选 · 仅 EVAL_USER_ID 配置时跑）
+# ============================================================
+step11_real_backend_probe() {
+    section "Step 11/11 · 真后端 E2E probe（PR #111）"
+
+    [ "$DRY_RUN" = "1" ] && { warn "dry-run 跳过"; return; }
+
+    # 前置：EVAL_USER_ID + EVAL_ROOM_ID 必填，否则跳过（不阻塞 deploy）
+    local eval_user eval_room
+    eval_user=$(env_get "EVAL_USER_ID")
+    eval_room=$(env_get "EVAL_ROOM_ID")
+    if [ -z "$eval_user" ] || [[ "$eval_user" == *"<FILL"* ]] \
+        || [ -z "$eval_room" ] || [[ "$eval_room" == *"<FILL"* ]]; then
+        warn "EVAL_USER_ID / EVAL_ROOM_ID 未配置 → 跳过真后端 probe"
+        warn "  → 客户授权后填 .env §12，再 bash scripts/deploy-customer.sh --only 11 单跑"
+        return
+    fi
+
+    info "EVAL 账号已配置，跑真后端 E2E probe（4 target × 13 cases）..."
+    info "（任一 exception/unreachable → warn，不阻塞 deploy）"
+
+    if python3 "${PROJECT_DIR}/scripts/probe_real_backend_e2e.py" \
+            --target all --stop-on-fail 2>&1 | tee -a "$LOG_FILE"; then
+        ok "真后端 probe 全通"
+    else
+        warn "真后端 probe 失败（详见 .harness-runs/probe-*/report.md）"
+        warn "  → 处置：检查 OTC_API_BASE_URL / GOATS 凭证 / 客户后端状态"
+    fi
+}
+
+# ============================================================
 # Main
 # ============================================================
 main() {
@@ -602,6 +633,7 @@ main() {
     should_run_step 8  && step8_app_start
     should_run_step 9  && step9_health_check
     should_run_step 10 && step10_smoke
+    should_run_step 11 && step11_real_backend_probe
 
     section "${GREEN}部署完成${RESET}"
     echo
