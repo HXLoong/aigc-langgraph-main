@@ -163,9 +163,30 @@ def _render_swap_order(o: dict[str, Any], state: AgentState, place: dict[str, An
     )
     qty = o.get("placeOrderQuantity") or o.get("placeOrderQuantityHand")
     qty_unit = "手" if o.get("placeOrderQuantityHand") else "股"
-    qty_str = f"{qty}{qty_unit}" if qty else _PLACEHOLDER
     price = o.get("placeOrderPrice")
     price_type = o.get("placeOrderPriceType") or _PLACEHOLDER
+
+    # 数量/价格混淆纠正（Round 14 eval 暴露）：raw_text 有"X元/万"委托金额 +
+    # 一个独立小数字，LLM 容易把那个小数字当数量。如"买入100000元 18.12" → LLM 数量=18,
+    # 真实意图是 限价=18.12 + 数量=100000/18.12≈5519。启发式：
+    # - extras.notional > 0 且 price 为 None 且 qty < 10000（明显比 notional 小数量级）
+    # - 则 swap：price = qty；qty 改为 notional / price（取整）
+    # 这是**结构化数值大小关系判断**，不依赖具体业务字典；和 close place_close
+    # "X万vs Y元 magnitude 比较"同样思路（参 prompt: Ex26）。
+    import re as _re_qp
+    if (qty and price is None
+            and extras.get("notional")
+            and not o.get("placeOrderQuantityHand")
+            and qty < 10000):
+        try:
+            notional_val = float((extras["notional"] or "0").replace(",", ""))
+            if notional_val > qty * 100:  # 委托金额至少比 LLM 数量大两个数量级 → 强信号 LLM 混淆
+                price = qty  # 原 LLM 数量实际是价格
+                qty = int(notional_val / price) if price > 0 else None
+                price_type = "LimitOrder" if price_type == _PLACEHOLDER else price_type
+        except (ValueError, TypeError, ZeroDivisionError):
+            pass
+    qty_str = f"{qty}{qty_unit}" if qty else _PLACEHOLDER
     algo = o.get("placeOrderAlgorithmType")
     if algo and o.get("placeOrderPovPercent"):
         algo_str = f"{algo} {o['placeOrderPovPercent']}%"
