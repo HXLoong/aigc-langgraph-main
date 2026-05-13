@@ -78,6 +78,8 @@ async def render(state: AgentState) -> dict[str, Any]:
     if state.get("reply_text"):
         return {}
 
+    place = state.get("place_params") or {}
+
     # 2. HITL 消歧（互换下单/改单除外——此时已有 orderList，应优先展示订单参数）
     hitl = state.get("ticker_hitl_candidates")
     if hitl:

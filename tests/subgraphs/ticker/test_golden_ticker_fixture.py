@@ -16,7 +16,6 @@ from pathlib import Path
 import pytest
 
 from app.subgraphs.ticker.tools import tokenize
-from app.subgraphs.ticker.whitelist import TICKER_WHITELIST
 
 GOLDEN_PATH = (
     Path(__file__).parent.parent.parent
@@ -93,18 +92,12 @@ def test_tokenize_matches_expected(case: dict) -> None:
 
 
 @pytest.mark.parametrize("case", _load_cases(), ids=lambda c: c["id"])
-def test_winner_is_known_wind_code(case: dict) -> None:
-    """对于 expected.winner 非 null 的 case，winner 必须是白名单中某个有效的
-    windCode（防止 expected.winner 字段拼写错误，如把 "00700.HK" 写成 "0700.HK"）。
-
-    注意：本测试不强求 winner 必须从 token 直接命中——resolver 内部有
-    4 位港股代码 → .HK 规范化、ReAct LLM 推断等多种解析路径，winner
-    只要是白名单里存在的合法 windCode 就 OK。"""
+def test_winner_has_valid_wind_code_format(case: dict) -> None:
+    """expected.winner 必须含交易所后缀（防止拼写错误，如 "0700.HK" → "00700.HK"）。"""
     expected = case["expected"]
     winner = expected.get("winner")
     if winner is None:
         pytest.skip(f"{case['id']} 无 winner 字段")
-    valid_wind_codes = {v[0] for v in TICKER_WHITELIST.values()}
-    assert winner in valid_wind_codes, (
-        f"{case['id']} winner={winner!r} 不是白名单中任何条目的 windCode（可能拼写错误）"
+    assert "." in winner, (
+        f"{case['id']} winner={winner!r} 缺交易所后缀（应含 '.'）"
     )

@@ -6,6 +6,7 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 from pydantic import ValidationError
 
+from app.graph.state import TickerCandidate
 from app.subgraphs.swap import place_order as po_module
 from app.subgraphs.swap.models import (
     SwapOrderItem,
@@ -15,6 +16,15 @@ from app.subgraphs.swap.place_order import (
     _expected_action,
     swap_place_order,
 )
+from app.subgraphs.ticker.resolver import TickerResolution
+
+
+def _patch_resolver(
+    monkeypatch: pytest.MonkeyPatch,
+    candidates: list[TickerCandidate],
+) -> None:
+    resolution = TickerResolution(resolved=candidates, hitl_pending=[])
+    monkeypatch.setattr(po_module, "resolve_ticker_full", AsyncMock(return_value=resolution))
 
 
 def _patch_llm(
@@ -146,7 +156,10 @@ class TestSwapPlaceOrderNode:
     async def test_place_with_known_ticker(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """白名单标的（"腾讯"）→ resolver 写 state['tickers']。"""
+        """resolver 命中标的 → resolver 写 state['tickers']。"""
+        _patch_resolver(monkeypatch, [
+            TickerCandidate(windCode="00700.HK", insShtDesc="腾讯控股", from_goats=True),
+        ])
         params = SwapPlaceOrderParams(
             orderList=[
                 SwapOrderItem(
@@ -163,15 +176,10 @@ class TestSwapPlaceOrderNode:
         )
 
         assert result["place_params"]["expected_action"] == "place"
-        assert (
-            result["place_params"]["orderList"][0]["placeOrderQuantity"]
-            == 1000
-        )
-
-        # ticker resolver 集成验证
+        assert result["place_params"]["orderList"][0]["placeOrderQuantity"] == 1000
         tickers = result.get("tickers", [])
         assert any("700" in t.windCode and t.windCode.endswith(".HK") for t in tickers)
-        assert all(t.from_goats for t in tickers)  # CLAUDE.md 硬约束
+        assert all(t.from_goats for t in tickers)
 
     async def test_modify_when_order_id_present(
         self, monkeypatch: pytest.MonkeyPatch
@@ -193,6 +201,10 @@ class TestSwapPlaceOrderNode:
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         """多标的下单 → resolver 返回多条。"""
+        _patch_resolver(monkeypatch, [
+            TickerCandidate(windCode="600519.SH", insShtDesc="贵州茅台", from_goats=True),
+            TickerCandidate(windCode="00700.HK", insShtDesc="腾讯控股", from_goats=True),
+        ])
         params = SwapPlaceOrderParams(
             orderList=[
                 SwapOrderItem(placeOrderWindCode="贵州茅台"),
@@ -210,6 +222,9 @@ class TestSwapPlaceOrderNode:
     async def test_writes_trace_with_summary(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
+        _patch_resolver(monkeypatch, [
+            TickerCandidate(windCode="00700.HK", insShtDesc="腾讯控股", from_goats=True),
+        ])
         params = SwapPlaceOrderParams(
             orderList=[SwapOrderItem(placeOrderWindCode="腾讯")]
         )

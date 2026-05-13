@@ -5,6 +5,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
+from app.graph.state import TickerCandidate
 from app.subgraphs.swap import build_swap_graph
 from app.subgraphs.swap import intent as intent_module
 from app.subgraphs.swap import place_order as po_module
@@ -13,6 +14,15 @@ from app.subgraphs.swap.models import (
     SwapOrderItem,
     SwapPlaceOrderParams,
 )
+from app.subgraphs.ticker.resolver import TickerResolution
+
+
+def _patch_resolver(
+    monkeypatch: pytest.MonkeyPatch,
+    candidates: list[TickerCandidate],
+) -> None:
+    resolution = TickerResolution(resolved=candidates, hitl_pending=[])
+    monkeypatch.setattr(po_module, "resolve_ticker_full", AsyncMock(return_value=resolution))
 
 
 def _patch(
@@ -33,6 +43,9 @@ async def test_place_order_request_routes_to_place_order_node(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """place_order_request → swap_place_order 真节点（不再走 todo）。"""
+    _patch_resolver(monkeypatch, [
+        TickerCandidate(windCode="00700.HK", insShtDesc="腾讯控股", from_goats=True),
+    ])
     _patch(
         monkeypatch,
         intent_module,
