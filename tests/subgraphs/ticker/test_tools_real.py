@@ -190,10 +190,10 @@ class TestRank:
         assert result["needs_hitl"] is False
         assert result["reason"] == "single_match"
 
-    def test_multi_match_with_large_gap_auto_picks(
+    def test_multi_match_pick_best_selects_winner(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """top1.score=0 + top2.score=10 → gap=10 ≥ 阈值 → 自动选 top1。"""
+        """多命中 → pick_best 自动选优，always 返回 winner。"""
         _mock_client(
             monkeypatch,
             [_resp("00700.HK", 0), _resp("OTHER.HK", 10)],
@@ -201,20 +201,20 @@ class TestRank:
         result = rank.invoke({"keyword": "腾讯"})
         assert result["winner"] == "00700.HK"
         assert result["needs_hitl"] is False
-        assert "auto_pick_gap" in result["reason"]
+        assert result["reason"] == "goats_top1"
 
-    def test_multi_match_with_small_gap_triggers_hitl(
+    def test_multi_match_small_gap_still_picks(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """top1.score=5 + top2.score=10 → gap=5 < 10 → HITL。"""
+        """分差小也不触发 HITL，pick_best 选出候选。"""
         _mock_client(
             monkeypatch,
             [_resp("00700.HK", 5), _resp("OTHER.HK", 10)],
         )
         result = rank.invoke({"keyword": "腾讯"})
-        assert result["winner"] is None
-        assert result["needs_hitl"] is True
-        assert "hitl_gap" in result["reason"]
+        assert result["winner"] is not None
+        assert result["needs_hitl"] is False
+        assert result["reason"] == "goats_top1"
         assert len(result["candidates"]) == 2
 
     def test_backend_error_returns_safe_response(

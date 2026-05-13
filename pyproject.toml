@@ -45,6 +45,7 @@ dev = [
     "ruff>=0.7.0",
     "mypy>=1.11.0",
     "ipython>=8.26.0",
+    "anthropic>=0.40.0",  # langfuse_eval.py Judge 打分
 ]
 
 [tool.ruff]

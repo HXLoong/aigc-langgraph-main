@@ -4,33 +4,25 @@
 
 - 业务子图节点（swap.place_order / option.extract_inquiry / close.place_close）
   通过 `await resolve_ticker_full(raw_text)` 拿 TickerResolution，对底层实现无感
-- **双轨**：env `TICKER_RESOLVER_MODE` 切换
-  - `react`（默认）：tokenize → 真 GOATS via Java 后端 securities-instrument/select 编排
-  - `whitelist`：50 条白名单（harness `--mock-ticker` / 紧急回滚 / 网络不通 fallback）
-- ReAct 0 命中或异常 → 自动降级白名单（保证业务不挂）
+- tokenize → 真 GOATS via Java 后端 securities-instrument/select 编排
+- ReAct 0 命中或异常 → resolved=[]; hitl_pending=[]
 
 接口契约：
 - 输入 raw_text
-- 命中关键词 → 构造 TickerCandidate（from_goats=True）进入 resolved
-- 多命中分差 < GAP → 进 hitl_pending（待用户消歧），不进 resolved
+- 命中关键词 → pick_best 选优 → 构造 TickerCandidate（from_goats=True）进入 resolved
 - 0 命中 → resolved=[]; hitl_pending=[]
 - 旧接口 resolve_ticker() 保持向后兼容（返回 list[TickerCandidate]）
 """
 from __future__ import annotations
 
 import logging
-import os
-from typing import Any, NamedTuple
+from typing import NamedTuple
 
 from app.graph.state import TickerCandidate
-from app.subgraphs.ticker.tools import RANK_AUTO_PICK_GAP, _make_client, tokenize
-from app.subgraphs.ticker.whitelist import TICKER_WHITELIST
+from app.subgraphs.ticker.tools import _make_client, infer_code, tokenize
 from app.tools.ticker_client import KeywordItem, SecuritiesInstrumentReqVO
 
 logger = logging.getLogger(__name__)
-
-#: 模式选择（env 覆盖；测试可 monkeypatch 此模块属性）
-DEFAULT_MODE = os.environ.get("TICKER_RESOLVER_MODE", "react").lower()
 
 
 # ============================================================
@@ -47,7 +39,7 @@ class TickerResolution(NamedTuple):
     """
 
     resolved: list[TickerCandidate]
-    hitl_pending: list[dict[str, Any]]
+    hitl_pending: list[dict]
 
 
 # ============================================================
@@ -56,7 +48,7 @@ class TickerResolution(NamedTuple):
 
 
 async def resolve_ticker_full(raw_text: str) -> TickerResolution:
-    """标的识别（双轨入口，含 HITL 信号，Issue #20）。
+    """标的识别（ReAct 入口，含 HITL 信号，Issue #20）。
 
     Returns:
         TickerResolution(resolved, hitl_pending)
@@ -64,35 +56,11 @@ async def resolve_ticker_full(raw_text: str) -> TickerResolution:
     if not raw_text:
         return TickerResolution(resolved=[], hitl_pending=[])
 
-    if DEFAULT_MODE == "whitelist":
-        return TickerResolution(
-            resolved=_resolve_via_whitelist(raw_text),
-            hitl_pending=[],
-        )
-
     try:
-        resolution = await _resolve_via_react_full(raw_text)
+        return await _resolve_via_react_full(raw_text)
     except Exception as exc:  # noqa: BLE001
-        logger.warning(
-            "ticker react resolver 异常，降级白名单: %s (raw=%r)", exc, raw_text[:60]
-        )
-        return TickerResolution(
-            resolved=_resolve_via_whitelist(raw_text),
-            hitl_pending=[],
-        )
-
-    if resolution.resolved:
-        return resolution
-
-    # 有 HITL pending → 保留 pending 信号，不用白名单覆盖消歧候选
-    if resolution.hitl_pending:
-        return resolution
-
-    # ReAct 0 命中且无 HITL → 白名单兜底（覆盖未在 GOATS 但在白名单的常用标的）
-    fallback = _resolve_via_whitelist(raw_text)
-    if fallback:
-        logger.info("ticker react 0 命中 → 白名单兜底命中 %d 条", len(fallback))
-    return TickerResolution(resolved=fallback, hitl_pending=[])
+        logger.warning("ticker react resolver 异常: %s (raw=%r)", exc, raw_text[:60])
+        return TickerResolution(resolved=[], hitl_pending=[])
 
 
 async def resolve_ticker(raw_text: str) -> list[TickerCandidate]:
@@ -105,102 +73,61 @@ async def resolve_ticker(raw_text: str) -> list[TickerCandidate]:
 
 
 # ============================================================
-# 实现 1：白名单（旧版保留 · harness mock / 紧急回滚 / 兜底）
+# 实现：ReAct 编排（tokenize → securities-instrument/select 真后端）
 # ============================================================
 
 
-def _resolve_via_whitelist(raw_text: str) -> list[TickerCandidate]:
-    """50 条白名单关键词匹配。无 LLM、无 HTTP。"""
-    if not raw_text:
-        return []
-    seen: set[str] = set()
-    candidates: list[TickerCandidate] = []
-    for keyword, (wind_code, sht_desc) in TICKER_WHITELIST.items():
-        if keyword in raw_text and wind_code not in seen:
-            candidates.append(
-                TickerCandidate(
-                    windCode=wind_code,
-                    insShtDesc=sht_desc,
-                    relevanceScore=100,
-                    from_goats=True,
-                )
-            )
-            seen.add(wind_code)
-    return candidates
+_CN_EXCHANGES = {".SH", ".SZ", ".BJ", ".HK", ".CFE", ".DCE", ".SHFE", ".CZCE", ".INE"}
 
 
-# ============================================================
-# 实现 2：ReAct 编排（tokenize → securities-instrument/select 真后端）
-# ============================================================
+def _pick_winner(
+    keyword: str,
+    results: list,
+) -> object | None:
+    """从 GOATS 返回列表中选出最优标的，返回 None 表示无可用结果。
 
-
-def _pick_best(keyword: str, results: list) -> object:
-    """多命中启发式选择（作为 HITL 的 fallback 工具）。
-
-    优先级：
-    1. insShtDesc 精确匹配关键词 → 直接选
-    2. insShtDesc 以关键词开头（如"科创50ETF"匹配"科创50ETF华夏"）
-    3. A 股优先（SSE/SZSE）> 港股/美股
-    4. 以上都相同 → 选第一个
+    GOATS 按 windCode 字典序返回，但最优标的未必排第一（例如同主题的 SZ 联接基金代码
+    小于 SH 主 ETF）。选优规则：
+    1. 过滤掉非 A 股市场（非 .SH/.SZ/.BJ）的结果，避免误入外股（如 3M0.DF）。
+    2. 单条 A 股结果直接返回。
+    3. 混合 SH+SZ：SH 交易所优先（主要指数 ETF 通常为 SH 上市），取最小 SH windCode。
+    4. 全为同一交易所（多只同主题 ETF）：调用 infer_code LLM 推断最匹配的 windCode，
+       在结果列表中查找；找不到则退化为 a_results[0]。
     """
-    exact = [
-        r for r in results
-        if (getattr(r, "insShtDesc", "") or "") == keyword
-    ]
-    if exact:
-        a_shares_exact = [
-            r for r in exact
-            if (getattr(r, "windCode", "") or "").endswith((".SH", ".SZ"))
-        ]
-        if a_shares_exact:
-            return min(
-                a_shares_exact,
-                key=lambda r: 0 if (getattr(r, "windCode", "") or "").endswith(".SH") else 1,
-            )
-        return exact[0]
+    a_results = [r for r in results if any(r.windCode.upper().endswith(e) for e in _CN_EXCHANGES)]
+    if not a_results:
+        return None
 
-    prefix_matches = [
-        r for r in results
-        if (getattr(r, "insShtDesc", "") or "").startswith(keyword)
-    ]
-    if prefix_matches:
-        min_len = min(len(getattr(r, "insShtDesc", "") or "") for r in prefix_matches)
-        same_len = [
-            r for r in prefix_matches
-            if len(getattr(r, "insShtDesc", "") or "") == min_len
-        ]
-        if len(same_len) > 1:
-            _hk = [r for r in same_len if (getattr(r, "windCode", "") or "").endswith(".HK")]
-            if _hk:
-                return _hk[0]
-        return min(
-            prefix_matches,
-            key=lambda r: (
-                len(getattr(r, "insShtDesc", "") or ""),
-                0 if getattr(r, "exchange", "") == "SSE" else 1,
-            ),
-        )
+    if len(a_results) == 1:
+        return a_results[0]
 
-    a_shares = [
-        r for r in results
-        if (getattr(r, "windCode", "") or "").endswith((".SH", ".SZ"))
-    ]
-    if a_shares:
-        return a_shares[0]
+    sh = [r for r in a_results if r.windCode.upper().endswith(".SH")]
+    if sh and len(sh) < len(a_results):
+        return min(sh, key=lambda r: r.windCode)
 
-    return results[0]
+    # 全为同一交易所（多只同主题 ETF）→ LLM 推断
+    try:
+        inferred = infer_code.invoke({"keyword": keyword})
+        inferred = (inferred or "").strip().upper()
+        if inferred:
+            for r in a_results:
+                if r.windCode.upper() == inferred:
+                    return r
+    except Exception:  # noqa: BLE001
+        pass
+
+    return a_results[0]
 
 
 async def _resolve_via_react_full(raw_text: str) -> TickerResolution:
-    """tokenize 拆词 → 每个 keyword 查 securities-instrument/select → 分差判定。
+    """tokenize 拆词 → 每个 keyword 查 securities-instrument/select → pick_best 选优。
 
     流程：
     1. tokenize(raw_text) → list[str] keywords
     2. 对每个 keyword 调 client.search_securities_instrument()（async HTTP）
     3. 单命中 → 直接选入 resolved
-    4. 多命中分差 ≥ RANK_AUTO_PICK_GAP → 选 top1 入 resolved
-    5. 多命中分差 < RANK_AUTO_PICK_GAP → 收集候选入 hitl_pending（Issue #20）
-    6. 0 命中 → 跳过该 keyword
+    4. 多命中 → pick_best 启发式选优（精确匹配 > 前缀最短 > A 股优先）
+    5. 0 命中 → 跳过该 keyword
     """
     keywords = tokenize.invoke({"raw_text": raw_text})
     if not keywords:
@@ -217,7 +144,6 @@ async def _resolve_via_react_full(raw_text: str) -> TickerResolution:
 
     client = _make_client()
     resolved: list[TickerCandidate] = []
-    hitl_pending: list[dict[str, Any]] = []
     seen: set[str] = set()
 
     for kw in keywords:
@@ -235,31 +161,9 @@ async def _resolve_via_react_full(raw_text: str) -> TickerResolution:
         if not results:
             continue
 
-        if len(results) == 1:
-            winner = results[0]
-        else:
-            # 多命中：按 relevanceScore 升序（小分数 = 强相关）
-            top1, top2 = results[0], results[1]
-            gap = (top2.relevanceScore or 0) - (top1.relevanceScore or 0)
-            if gap < RANK_AUTO_PICK_GAP:
-                # 分差不足 → 收集到 HITL 候选（不静默跳过，Issue #20）
-                hitl_pending.append({
-                    "keyword": kw,
-                    "candidates": [
-                        {
-                            "windCode": r.windCode,
-                            "insShtDesc": r.insShtDesc,
-                            "relevanceScore": r.relevanceScore,
-                        }
-                        for r in results
-                    ],
-                })
-                logger.info(
-                    "ticker keyword=%r 多命中分差 %d < %d，进入 HITL pending",
-                    kw, gap, RANK_AUTO_PICK_GAP,
-                )
-                continue
-            winner = top1
+        winner = _pick_winner(kw, results)
+        if winner is None:
+            continue
 
         if winner.windCode in seen:
             continue
@@ -276,7 +180,7 @@ async def _resolve_via_react_full(raw_text: str) -> TickerResolution:
         )
         seen.add(winner.windCode)
 
-    return TickerResolution(resolved=resolved, hitl_pending=hitl_pending)
+    return TickerResolution(resolved=resolved, hitl_pending=[])
 
 
 __all__ = ["TickerResolution", "resolve_ticker", "resolve_ticker_full"]

@@ -5,14 +5,13 @@ import hashlib
 import hmac
 import time
 
-from app.config import get_settings
-
 
 def get_goats_auth_headers() -> dict[str, str]:
     """生成 GOATS 签名鉴权头。
 
     签名算法：HMAC-SHA256(client_id + timestamp + client_secret + extapp_salt)
     """
+    from app.config import get_settings
     settings = get_settings()
     client_id = settings.goats_client_id
     client_secret = settings.goats_client_secret

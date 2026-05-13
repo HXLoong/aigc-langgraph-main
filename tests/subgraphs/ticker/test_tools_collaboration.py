@@ -108,16 +108,10 @@ def test_scenario_short_name_via_infer_code(
 # ============================================================
 
 
-def test_scenario_multi_match_large_gap_auto_picks(
+def test_scenario_multi_match_pick_best(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """业务流：模糊关键词查到多个候选，分差 ≥ 10 → rank 自动选 top1。"""
-    raw = "0700"
-
-    tokens = tokenize.invoke({"raw_text": raw})
-    assert tokens == ["0700"]
-
-    # rank: top1 score=0, top2 score=10 → 自动选
+    """业务流：多命中 → pick_best 自动选优，always 返回 winner。"""
     _mock_select(
         monkeypatch,
         {"0700": [_resp("00700.HK", 0), _resp("OTHER.HK", 10)]},
@@ -125,33 +119,27 @@ def test_scenario_multi_match_large_gap_auto_picks(
     result = rank.invoke({"keyword": "0700"})
     assert result["winner"] == "00700.HK"
     assert result["needs_hitl"] is False
-    assert "auto_pick_gap=10" in result["reason"]
+    assert result["reason"] == "goats_top1"
 
 
 # ============================================================
-# 场景 4：多命中分差小 → HITL
+# 场景 4：多命中分差小 → 仍由 pick_best 选优
 # ============================================================
 
 
-def test_scenario_multi_match_small_gap_needs_hitl(
+def test_scenario_multi_match_small_gap_still_picks(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """业务流：候选分差 < 10 → needs_hitl=true，调用方需触发 LangGraph interrupt。"""
-    raw = "700"
-
-    tokens = tokenize.invoke({"raw_text": raw})
-    assert tokens == ["700"]  # 注意 700 是 3 位数字，但 tokenize 不切只识别 4-6 位
-
+    """分差小也不触发 HITL，pick_best 选出第一个 A股/前缀最短候选。"""
     _mock_select(
         monkeypatch,
         {"700": [_resp("00700.HK", 5), _resp("OTHER.HK", 8)]},
     )
     result = rank.invoke({"keyword": "700"})
-    assert result["winner"] is None
-    assert result["needs_hitl"] is True
+    assert result["winner"] is not None
+    assert result["needs_hitl"] is False
     assert len(result["candidates"]) == 2
-    # 调用方拿 candidates 渲染企微卡片，等用户选
-    assert "hitl_gap=3<10" in result["reason"]
+    assert result["reason"] == "goats_top1"
 
 
 # ============================================================

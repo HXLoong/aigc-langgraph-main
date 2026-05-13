@@ -43,7 +43,7 @@ for target in (
   mock_intent_llm.ainvoke = AsyncMock(return_value=CloseIntentOutput(type="..."))
   mock_std.return_value.with_structured_output.return_value = mock_intent_llm
   ```
-- **Mock 后端通过 `mock_backend` fixture**：它已经处理了所有 patch 点
+- **后端调用通过真实后端或集成测试环境**：E2E 测试直接对接真实后端（需真实后端 + VPN），单元测试 Mock 掉 Client Protocol
 
 ## Golden Set
 

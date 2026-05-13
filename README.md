@@ -69,7 +69,6 @@ infra/langfuse/     # LangFuse self-hosted Docker Compose
 docs/adr/           # 15 个架构决定
 docs/api-contracts/ # Java 后端契约清单
 dify/               # Dify 同步工具（保留资产）
-mock_api/           # 业务后端 mock（M3 联调前用）
 tests/              # 单元 + smoke + GOATS 连通性
 ```
 

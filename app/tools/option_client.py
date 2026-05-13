@@ -138,7 +138,7 @@ class OptionClient(Protocol):
 
 
 class OptionClientHttpx:
-    """走 httpx 的 OptionClient 实现。base_url 指向 mock_api 或真实 Java backend。"""
+    """走 httpx 的 OptionClient 实现。"""
 
     #: F4.1 shadow 期写类拦截白名单的"反向集合"——出现在此集合的 intent 视为 read，
     #: 即使调 operate endpoint 也不拦截。详见 docs/m3-shadow-compare-dry-run-design.md
@@ -160,12 +160,9 @@ class OptionClientHttpx:
     ) -> None:
         """
         Args:
-            transport: 仅测试用。注入 httpx.ASGITransport(mock_api.app) 即可
-                把 client 切到 mock_api 的内存 FastAPI 实例上跑（无端口）。
-                生产环境**不传**此参数，保持 None。
-            dry_run: F4.1 shadow 双跑用。True → 写类 intent 调用被拦截，返回
-                fake CommonResult；read 类 intent 仍真调。None → 从
-                Settings.dry_run_backend 读取（生产环境通常 False）。
+            transport: 仅测试用，可注入自定义 transport。生产环境不传，保持 None。
+            dry_run: shadow 双跑用。True → 写类 intent 调用被拦截；None → 从
+                Settings.dry_run_backend 读取。
         """
         from app.config import get_settings
         settings = get_settings()

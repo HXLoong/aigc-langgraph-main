@@ -63,7 +63,7 @@ async def test_<node_name>_<scenario>():
 #### E2E 测试模板（抄 test_e2e.py 的 fixture）
 ```python
 @pytest.mark.asyncio
-async def test_e2e_<scenario>(mock_settings, mock_backend):
+async def test_e2e_<scenario>(mock_settings):
     with patch("app.llm.clients.get_qwen_standard") as mock_std:
         mock_std.return_value.with_structured_output.return_value.ainvoke = \
             AsyncMock(return_value=ExpectedPydanticOutput(...))
@@ -75,7 +75,6 @@ async def test_e2e_<scenario>(mock_settings, mock_backend):
         result = await graph.ainvoke(state, config=...)
 
         assert result["product_type"] == ...
-        mock_backend.<expected_method>.assert_awaited_once()
 ```
 
 ### Step 4：避坑

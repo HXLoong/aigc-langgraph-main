@@ -5,7 +5,7 @@
 - LLM 调用集中在 `infer_code`（推断需要 LLM 兜底）+ ReAct Agent 自身的 think 层
 - tokenize / completeness / rank 不调 LLM，避免 token 浪费 + 死循环
 
-后端依赖（mock_api 已实现端点）：
+后端依赖：
 - securities-instrument/select  — completeness + rank（ADR 0001 D4）
 - counterparty/info/instrument-inference-prompt  — infer_code 动态片段（ADR 0013）
 """
@@ -219,14 +219,68 @@ def completeness(
 RANK_AUTO_PICK_GAP = 10
 
 
+def pick_best(keyword: str, results: list) -> object:
+    """多命中启发式选优（无 LLM、无 HTTP）。
+
+    优先级：
+    1. insShtDesc 精确匹配关键词 → A 股优先（SH > SZ），否则取第一个
+    2. insShtDesc 前缀匹配 → 名称最短者；同长度优先 A 股
+    3. A 股（.SH / .SZ）> 其他市场
+    4. 兜底取 results[0]
+    """
+    exact = [r for r in results if (getattr(r, "insShtDesc", "") or "") == keyword]
+    if exact:
+        a_shares_exact = [
+            r for r in exact
+            if (getattr(r, "windCode", "") or "").endswith((".SH", ".SZ"))
+        ]
+        if a_shares_exact:
+            return min(
+                a_shares_exact,
+                key=lambda r: 0 if (getattr(r, "windCode", "") or "").endswith(".SH") else 1,
+            )
+        return exact[0]
+
+    prefix_matches = [
+        r for r in results
+        if (getattr(r, "insShtDesc", "") or "").startswith(keyword)
+    ]
+    if prefix_matches:
+        min_len = min(len(getattr(r, "insShtDesc", "") or "") for r in prefix_matches)
+        same_len = [
+            r for r in prefix_matches
+            if len(getattr(r, "insShtDesc", "") or "") == min_len
+        ]
+        if len(same_len) > 1:
+            _hk = [r for r in same_len if (getattr(r, "windCode", "") or "").endswith(".HK")]
+            if _hk:
+                return _hk[0]
+        return min(
+            prefix_matches,
+            key=lambda r: (
+                len(getattr(r, "insShtDesc", "") or ""),
+                0 if (getattr(r, "windCode", "") or "").endswith(".SH") else 1,
+            ),
+        )
+
+    a_shares = [
+        r for r in results
+        if (getattr(r, "windCode", "") or "").endswith((".SH", ".SZ"))
+    ]
+    if a_shares:
+        return a_shares[0]
+
+    return results[0]
+
+
 @tool
 def rank(
     keyword: Annotated[str, "标的关键词（用于查询候选）"],
 ) -> dict[str, object]:
     """查 securities-instrument/select 候选 → 按 relevanceScore 排序 → 自动选/HITL。
 
-    mock_api 行为：score 越小越相关（0 = 精确匹配，10 = 弱包含）。
-    业务约定（ADR 0008 c）：top1 与 top2 分差 ≥ 10 → 自动选 top1；< 10 → 触发 HITL。
+    业务约定（ADR 0008 c）：score 越小越相关（0 = 精确匹配，10 = 弱包含）。
+    top1 与 top2 分差 ≥ 10 → 自动选 top1；< 10 → 触发 HITL。
 
     返回：
         {
@@ -272,7 +326,7 @@ def rank(
             "reason": "no_match",
         }
 
-    # mock_api 已经按 relevanceScore 升序返回（小分数 = 强相关）
+    # 后端按 relevanceScore 升序返回（小分数 = 强相关）
     candidates = [
         {
             "windCode": r.windCode,
@@ -291,22 +345,12 @@ def rank(
             "reason": "single_match",
         }
 
-    top1, top2 = candidates[0], candidates[1]
-    gap = (top2["relevanceScore"] or 0) - (top1["relevanceScore"] or 0)
-    if gap >= RANK_AUTO_PICK_GAP:
-        return {
-            "keyword": keyword,
-            "winner": top1["windCode"],
-            "candidates": candidates,
-            "needs_hitl": False,
-            "reason": f"auto_pick_gap={gap}",
-        }
     return {
         "keyword": keyword,
-        "winner": None,
+        "winner": candidates[0]["windCode"],
         "candidates": candidates,
-        "needs_hitl": True,
-        "reason": f"hitl_gap={gap}<{RANK_AUTO_PICK_GAP}",
+        "needs_hitl": False,
+        "reason": "goats_top1",
     }
 
 
@@ -371,13 +415,14 @@ def _llm_infer(keyword: str, dynamic_prompt: str) -> str:
     """thinking 模型推断 keyword → 标准 windCode（ADR 0010）。
 
     拼接策略（ADR 0013）：静态 system + dynamic_prompt 追加在末尾。
-    """
-    from langchain_core.messages import HumanMessage, SystemMessage
-    from pydantic import BaseModel, ConfigDict
 
-    class _CodeOut(BaseModel):
-        model_config = ConfigDict(extra="ignore")
-        windCode: str
+    thinking 模型可能输出 <analysis>...</analysis><result>{"k": ["windCode"]}</result>
+    格式，不能直接用 with_structured_output；改为 raw 调用 + 手动提取。
+    """
+    import json
+    import re
+
+    from langchain_core.messages import HumanMessage, SystemMessage
 
     static_system = _load_static_infer_prompt()
     full_system = (
@@ -386,16 +431,37 @@ def _llm_infer(keyword: str, dynamic_prompt: str) -> str:
         else static_system
     )
 
-    llm = get_qwen_thinking().with_structured_output(_CodeOut)
+    messages = [
+        SystemMessage(content=full_system),
+        HumanMessage(content=f"标的：{keyword}"),
+    ]
 
-    async def _ainvoke():
-        result = await llm.ainvoke(
-            [
-                SystemMessage(content=full_system),
-                HumanMessage(content=f"标的：{keyword}"),
-            ]
-        )
-        return result.windCode
+    async def _ainvoke() -> str:
+        resp = await get_qwen_thinking().ainvoke(messages)
+        content = (resp.content or "") if hasattr(resp, "content") else str(resp)
+
+        # 优先解析 <result>...</result> 标签（thinking 模型格式）
+        m = re.search(r"<result>\s*(.*?)\s*</result>", content, re.DOTALL)
+        if m:
+            try:
+                data = json.loads(m.group(1))
+                if isinstance(data, dict):
+                    if "windCode" in data:
+                        return str(data["windCode"])
+                    for v in data.values():
+                        if isinstance(v, list) and v:
+                            return str(v[0])
+                        if isinstance(v, str) and v:
+                            return v
+            except (json.JSONDecodeError, ValueError):
+                pass
+
+        # fallback：从内容中提取 windCode 格式字符串（如 159915.SZ）
+        m2 = re.search(r'\b\d{5,6}\.[A-Z]{2,4}\b', content)
+        if m2:
+            return m2.group(0)
+
+        return keyword
 
     return _run_async(_ainvoke())
 

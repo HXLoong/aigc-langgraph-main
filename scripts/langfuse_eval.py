@@ -1,6 +1,6 @@
 """期权链路评估。跑 LangGraph，DeepSeek Judge 打分。
 
-OTC_API_BASE_URL 从 .env 读取，可以是 mock_api (localhost:8099) 或真实 GOATS URL。
+OTC_API_BASE_URL 从 .env 读取，指向真实后端地址。
 前提: 对应的后端服务必须已启动
 用法: uv run python scripts/langfuse_eval.py --ids opt-001 --concurrency 1
 """

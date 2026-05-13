@@ -89,7 +89,7 @@ class TickerClientHttpx:
         token: str | None = None,
         transport: httpx.AsyncBaseTransport | None = None,
     ) -> None:
-        """transport 仅测试用，注入 ASGITransport(mock_api.app) 走内存调用。"""
+        """transport 仅测试用，可注入自定义 transport。生产环境不传，保持 None。"""
         from app.config import get_settings
         settings = get_settings()
         self._base_url = (base_url or settings.otc_api_base_url).rstrip("/")
