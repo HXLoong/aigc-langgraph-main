@@ -87,12 +87,15 @@ class TickerClientHttpx:
         base_url: str = "",
         timeout: float = 30.0,
         token: str | None = None,
+        transport: httpx.AsyncBaseTransport | None = None,
     ) -> None:
+        """transport 仅测试用，注入 ASGITransport(mock_api.app) 走内存调用。"""
         from app.config import get_settings
         settings = get_settings()
         self._base_url = (base_url or settings.otc_api_base_url).rstrip("/")
         self._timeout = timeout
         self._token = token if token is not None else settings.otc_api_secret
+        self._transport = transport
 
     @property
     def _headers(self) -> dict[str, str]:
@@ -102,6 +105,13 @@ class TickerClientHttpx:
             h["Authorization"] = f"Bearer {self._token}"
         h.update(get_goats_auth_headers())
         return h
+
+    def _client_kwargs(self) -> dict:
+        """httpx.AsyncClient 构造参数（测试期可注入 transport）。"""
+        kw = {"timeout": self._timeout, "trust_env": False}
+        if self._transport is not None:
+            kw["transport"] = self._transport
+        return kw
 
     async def search_securities_instrument(
         self, req: SecuritiesInstrumentReqVO
@@ -113,7 +123,7 @@ class TickerClientHttpx:
         payload = req.model_dump(mode="json", exclude_none=True)
         async with (
             translate_httpx_errors("ticker"),
-            httpx.AsyncClient(timeout=self._timeout, trust_env=False) as client,
+            httpx.AsyncClient(**self._client_kwargs()) as client,
         ):
             r = await client.request("GET", url, json=payload, headers=self._headers)
             r.raise_for_status()
@@ -127,7 +137,7 @@ class TickerClientHttpx:
         url = f"{self._base_url}/admin-api/counterparty/info/instrument-inference-prompt"
         async with (
             translate_httpx_errors("ticker"),
-            httpx.AsyncClient(timeout=self._timeout, trust_env=False) as client,
+            httpx.AsyncClient(**self._client_kwargs()) as client,
         ):
             r = await client.get(url, headers=self._headers)
             r.raise_for_status()
@@ -143,7 +153,7 @@ class TickerClientHttpx:
         params = {"roomId": room_id} if room_id else None
         async with (
             translate_httpx_errors("ticker"),
-            httpx.AsyncClient(timeout=self._timeout, trust_env=False) as client,
+            httpx.AsyncClient(**self._client_kwargs()) as client,
         ):
             r = await client.get(url, params=params, headers=self._headers)
             r.raise_for_status()

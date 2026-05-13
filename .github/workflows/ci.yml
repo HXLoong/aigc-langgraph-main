@@ -40,6 +40,11 @@ jobs:
         # 任一不一致 → 此步骤 fail，详见 docs/adr/0019-incident-severity-thresholds.md §5
         run: python scripts/check_alert_threshold_consistency.py
 
+      - name: tests/fixtures 一致性（unified ⊇ golden + ADR 0015 锚点）
+        # PR #109：M2/M3 基线数据集职责矩阵 + 不变量
+        # 详见 tests/fixtures/README.md §3
+        run: python scripts/check_fixture_consistency.py
+
       - name: Run tests
         run: |
           if [ -d tests ] && [ -n "$(find tests -name 'test_*.py' -type f 2>/dev/null)" ]; then
