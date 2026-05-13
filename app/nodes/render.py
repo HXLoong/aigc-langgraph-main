@@ -233,9 +233,11 @@ async def render(state: AgentState) -> dict[str, Any]:
             )
         }
 
-    # 8b. 互换确认
+    # 8b. 确认下单（按 product_type 区分期权/互换文案）
     if confirm.get("orderList"):
-        return {"reply_text": "互换订单已确认提交，订单已接收、等待交易员审核。"}
+        product = state.get("product_type") or ""
+        product_label = "期权" if product in ("option", "option_close") else "互换"
+        return {"reply_text": f"{product_label}订单已确认提交，订单已接收、等待交易员审核。"}
 
     # 8b. 互换撤单
     if cancel.get("orderList"):
