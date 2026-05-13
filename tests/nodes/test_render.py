@@ -64,6 +64,33 @@ async def test_render_option_place_order_does_not_show_swap_params() -> None:
     )
 
 
+# ============================================================
+# Bug9: close confirm (opt-001) render 无 confirmOrderNoList 处理 → reply 空
+# ============================================================
+
+
+@pytest.mark.asyncio
+async def test_render_close_confirm_returns_reply() -> None:
+    """close_confirm_close 写入 confirm.confirmOrderNoList 后，
+    render 应生成包含"平仓"和订单号的回复，不得返回空。
+    """
+    state: dict = {
+        "product_type": "option_close",
+        "intent": "close_order_confirm",
+        "confirm": {
+            "action": "close",
+            "confirmOrderNoList": ["CO-20260304-ABCD1234"],
+        },
+        "raw_text": "确认平仓 CO-20260304-ABCD1234",
+    }
+    update = await render(state)  # type: ignore[arg-type]
+    reply = update.get("reply_text") or ""
+    assert reply, "close confirm render 不得返回空 reply"
+    assert "平仓" in reply or "确认" in reply, (
+        f"回复应含'平仓'或'确认'，实际: {reply!r}"
+    )
+
+
 @pytest.mark.asyncio
 async def test_render_swap_place_order_still_shows_swap_params() -> None:
     """swap place：product_type=swap + place_params.expected_action=place → 仍应走互换渲染。"""

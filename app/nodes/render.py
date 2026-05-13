@@ -158,7 +158,17 @@ async def render(state: AgentState) -> dict[str, Any]:
     confirm = state.get("confirm") or {}
     query = state.get("query_filter") or {}
 
-    # 8a. 互换确认
+    # 8a. 期权平仓确认
+    if confirm.get("action") == "close" and confirm.get("confirmOrderNoList") is not None:
+        ids: list[str] = confirm["confirmOrderNoList"]
+        order_str = "、".join(ids) if ids else "全部"
+        return {
+            "reply_text": (
+                f"已收到期权平仓确认请求，平仓订单（{order_str}）已提交，等待交易员审核。"
+            )
+        }
+
+    # 8b. 互换确认
     if confirm.get("orderList"):
         return {"reply_text": "互换订单已确认提交，订单已接收、等待交易员审核。"}
 
