@@ -207,6 +207,16 @@ async def render(state: AgentState) -> dict[str, Any]:
         emit_fallback(reason="unknown_product_type")
         return {"reply_text": "未识别到有效指令，请明确指定产品（期权/互换）和操作（询价/下单/撤单等）。"}
 
+    # 7b. known product + unknown_intent（option/swap/option_close 都用同一兜底）
+    # Round 11 eval 暴露：option_unknown 节点只写 trace 不写 reply，render 也没分支
+    # → "(无回复)" 让 Judge 直接判 0。这里统一引导，引用前序询价卡时建议照模板补参数。
+    if state.get("intent") == "unknown_intent":
+        emit_fallback(reason="unknown_intent")
+        quote = state.get("quote_content") or ""
+        if "请引用本消息" in quote or "-----" in quote:
+            return {"reply_text": "未能识别您的指令，请按引用消息中提示的格式补充缺失参数（如交易对手、名义本金、建仓指令等）。"}
+        return {"reply_text": "未能识别您的指令，请重新描述（例如：询价、下单、撤单、平仓等）。"}
+
     # 8. 从结构化参数生成业务回复
     close = state.get("close_params") or {}
     cancel = state.get("cancel_params") or {}
