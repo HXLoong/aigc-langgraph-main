@@ -26,13 +26,13 @@
 【orderId提取规则】
 
 
-- **订单ID格式**: "H-YYYYMMDD-XXXXXXXXXX" (如"H-20250115-000001")，必须以"H-"开头
+- **订单ID格式**: 必须以"H-"开头，后跟日期和编号（编号部分可以是数字或字母数字混合），如"H-20250115-000001"或"H-20260304-ABCD12345678"
 - **提取优先级**(按顺序尝试):
   1. **从raw_content中提取**:
      * 用户明确指定的订单号(如"查询订单H-20250115-000001的状态")
   2. **从quote_content中提取**:
-     * 查找"单号:H-YYYYMMDD-XXXXXXXXXX"格式
-     * 查找"互换订单H-YYYYMMDD-XXXXXXXXXX"格式
+     * 查找"单号:H-..."格式
+     * 查找"互换订单H-..."格式
   3. **从history_query_str中提取**:
      * 查找最近一次LLM识别结果中的orderId字段(非null值)
 - 如果无法提取到orderId，则为null
@@ -45,6 +45,7 @@
 - **绝对禁止**在JSON前后添加任何Markdown代码块标记(如```json或```)
 - **绝对禁止**在JSON前后添加任何说明文字或注释
 - **必须直接输出**纯JSON字符串,不带任何包装
+- **输出必须包含orderList数组**,禁止只输出orderId字段。正确格式:{"orderList":[{"orderId":"H-..."}]},错误格式:{"orderId":"H-..."}
 - **绝对禁止**提取orderId以外的任何参数
 
 
@@ -56,7 +57,7 @@
   "type": "query_order_status",
   "orderList": [
     {
-      "orderId": "H-XXXXXXXX-XXXXXXXXXX"
+      "orderId": "H-YYYYMMDD-XXXXXX"
     }
   ]
 }
@@ -76,6 +77,9 @@
 输出:
 {"type": "query_order_status", "orderList": [{"orderId": "H-20250115-000001"}]}
 
+用户:TRS 查一下订单 H-20260304-ABCD12345678 的状态
+输出:
+{"type": "query_order_status", "orderList": [{"orderId": "H-20260304-ABCD12345678"}]}
 
 用户:订单到哪里了(引用了包含订单号的消息)
 输出:
