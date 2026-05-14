@@ -19,7 +19,8 @@ priority_rules:
       - 查询持仓
       - 我有哪些
       - 序号
-      - 跟量
+      # Removed: 跟量 — swap 单也用此算法关键词，造成误路由（"标的:1357.HK 买入 跟量比例20%" → option_close）。
+      # option_close 真正需要的"跟量"上下文一定伴随 "序号" / "平" / "留" 触发，已被本规则前面的关键词覆盖。
     regex_patterns:
       - 平.*全部
       - 平\s*\d+\s*万

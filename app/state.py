@@ -30,7 +30,6 @@ def make_initial_state(wechat_input: dict) -> dict[str, Any]:
         "intent": None,
         "fast_query": False,
         "at_bot": False,
-        "tickers": [],
         "place_params": {},
         "cancel_params": {},
         "close_params": {},

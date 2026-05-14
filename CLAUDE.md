@@ -78,10 +78,62 @@ tests/                       # test_smoke + test_api + test_harness + test_tools
 2. **LLM 输出用 `with_structured_output(PydanticModel)`** —— 绝不手工解析 JSON
 3. **每个节点用 `@safe_node` 装饰** —— 异常降级到 `state['error']`，不让图崩
 4. **State 字段只通过 TypedDict 约定** —— 新增字段必须先在 `app/graph/state.py` 中声明
-5. **测试优先** —— 改代码前先改/加测试。商业逻辑必须有单元测试，链路必须有 E2E
+5. **TDD 强制**（/test-driven-development skill）—— 任何 bug fix / 新功能必须先写失败测试：
+   - 写测试 → 跑到 RED（测试失败） → 写最小修复代码 → 跑到 GREEN → 全量回归
+   - 禁止先改代码再补测试，也禁止跳过 RED 验证
+   - `/test-driven-development` skill 包含完整 workflow，修改代码前调用
 6. **Dify 原始提示词在重构期内可改写** —— ADR 0001 D5：仅合并 3 个"确认 X"节点 + option 拆 1 intent + 5 extract（不含 close）；其他保持 1:1。重构完成（shadow PASS）后恢复"只读"纪律
 7. **标的代码必须 from_goats=True** —— Ticker Agent 的绝对约束（ADR 0008）
 8. **节点失败必须 cascade 防御** —— 任一节点写入 `state['error']` 后，下游 conditional 路由必须检查并跳到 fallback render，禁止 cascade 失败。具体：主图 `_route_by_product` 与每子图首节点后的 conditional 都加 `if state.get('error'): return 'fallback'`。fallback 节点输出友好回复（"我没完全理解你的意思，能换种说法重新告诉我吗"）+ trace 记录原 fail 节点名。LLM 解析失败由 `with_structured_output` 自带 1 次重试 + `@safe_node` 兜底捕获 ValidationError 写入 error；不走 HITL（HITL 仅用于 ADR 0006 的业务参数二次确认场景）
+
+## 排查与修复流程（Bug Debug Workflow）
+
+### 1. 从 eval trace 定位根因
+
+运行 eval 时失败报告会输出 per-turn 详情（`scripts/langfuse_eval.py` 内建）：
+
+```
+第N轮 [product_type/intent] | quote=Xc 'preview' | ERROR: ...
+  trace : ingest → intent_route[rule:...→option] → option_intent[...] → render
+  reply : 实际回复内容
+```
+
+**读法**：
+- `[product_type/intent]`：路由是否正确
+- `quote=Xc`：quote_content 是否传入（0c = 未传）
+- `trace`：节点决策链，找第一个"错"的节点
+- `trace` 是累积的（LangGraph add reducer）；多轮 case 的本轮节点在 **末尾**
+
+**常见根因模式**：
+
+| 现象 | 根因 | 文件 |
+|---|---|---|
+| 第2轮路由走了 LLM 而非 quote_marker | `_QUOTE_MARKERS` 未覆盖实际标记 | `app/nodes/intent_route.py` |
+| reply 含"无法识别"但未问标的 | `make_initial_state` 设了 `tickers=[]` 覆盖 checkpoint | `app/state.py` |
+| option place_order 显示"互换订单参数" | render 第3分支缺 `product_type=="swap"` 条件 | `app/nodes/render.py` |
+| 多轮 tickers/params 丢失 | `make_initial_state` 不应对业务字段设默认值 | `app/state.py` |
+| 后端返回"订单不存在" | 参数中 orderId/Q- 单号提取错误 | 子图 extract 节点 + 提示词 |
+
+### 2. TDD 修复（强制）
+
+找到根因后，**必须先写失败测试再改代码**（`/test-driven-development` skill）：
+
+```bash
+# 1. 写 tests/xxx/test_yyy.py，体现 bug 的最小复现
+# 2. 确认 RED
+.venv/bin/python -m pytest tests/xxx/test_yyy.py -v
+# 3. 写最小修复
+# 4. 确认 GREEN + 全量回归
+.venv/bin/python -m pytest tests/ -q --tb=line 2>&1 | tail -5
+```
+
+### 3. eval 回归
+
+修完跑对应 case 确认：
+
+```bash
+.venv/bin/python scripts/langfuse_eval.py --local tests/fixtures/golden.jsonl --ids opt-001,opt-018 --concurrency 2
+```
 
 ## 绝对禁止
 
@@ -91,6 +143,7 @@ tests/                       # test_smoke + test_api + test_harness + test_tools
 - **直接 `httpx.AsyncClient` 调后端** —— 走 `OptionClient` / `SwapClient` / `TickerClient` 三个 Protocol（ADR 0001 D2 修订版）
 - **在 main 分支直接改业务子图** —— 走 feature branch + PR
 - **面向测试编程** —— 禁止为提高通过率硬编码白名单标的，禁止在 `app/` 业务代码里内置"备用实现"开关（如 `DEFAULT_MODE` 环境变量切换查询路径），禁止在 `conftest.py` 用 `autouse` fixture 全局绕过真实业务路径。测试慢应 mock HTTP 层（`_make_client`），不改业务代码路径
+- **P0 · 硬编码业务数据字典** —— 严禁在代码或本仓 YAML/JSON 配置里维护**业务数据映射清单**（如"命名指数 → ETF 代码"、"中文名 → windCode"、"产品名 → 行业代码"等）。理由：业务数据规模会快速膨胀到 100+ 条且持续变化（新 ETF/新指数/新产品每月发行），代码侧维护必然过期、漂移、出错。正确做法是 **LLM 通用知识推断 + 后端权威源校验**：用 `infer_code` / 类似 LLM 工具把模糊关键词翻译成候选 windCode，再用 GOATS / 后端接口反向校验存在性。把"业务清单"留给后端或业务方维护的数据库，代码侧只负责调用与校验
 
 ## 代码风格
 

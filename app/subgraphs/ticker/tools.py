@@ -20,7 +20,7 @@ from typing import Annotated
 from langchain_core.tools import tool
 
 from app.config import get_settings
-from app.llm.clients import get_qwen_thinking
+from app.llm.clients import get_qwen_thinking, make_qwen_thinking
 from app.tools.ticker_client import (
     KeywordItem,
     SecuritiesInstrumentReqVO,
@@ -75,12 +75,22 @@ def _extract_embedded_codes(token: str) -> list[str]:
         `贵州茅台600519` → `[600519, 贵州茅台]`
         `2月WTI原油` → `[WTI原油]`（2 位数字不算代码）
         `腾讯` → `[腾讯]`
+        `中证1000` → `[中证1000, 1000, 中证]`（4 位数字 + 中文余 → 大概率命名指数，保留复合）
     """
     digits = _EMBEDDED_DIGIT_RE.findall(token)
     if not digits:
         return [token]
-    out: list[str] = list(digits)
     remainder = _EMBEDDED_DIGIT_RE.sub("", token).strip()
+    # 4 位数字 + 中文余 → 命名指数复合 keyword（中证1000/中证2000），保留原 token 在最前。
+    # 5-6 位数字（如 600519/02513）是股票代码，仍按"代码+名称"分离。
+    has_chinese_remainder = bool(re.search(r"[一-鿿]", remainder))
+    is_chinese_index_pattern = has_chinese_remainder and any(
+        len(d) == 4 for d in digits
+    )
+    out: list[str] = []
+    if is_chinese_index_pattern:
+        out.append(token)
+    out.extend(digits)
     if remainder and remainder not in out:
         out.append(remainder)
     return out
@@ -418,9 +428,13 @@ def _llm_infer(keyword: str, dynamic_prompt: str) -> str:
 
     thinking 模型可能输出 <analysis>...</analysis><result>{"k": ["windCode"]}</result>
     格式，不能直接用 with_structured_output；改为 raw 调用 + 手动提取。
+
+    使用同步 llm.invoke()（httpx.Client）避免跨 event-loop 污染：
+    anyio 在主 loop 初始化时绑定 asyncio 原语，子线程 asyncio.run() 复用会失败。
     """
     import json
     import re
+    import threading
 
     from langchain_core.messages import HumanMessage, SystemMessage
 
@@ -436,34 +450,49 @@ def _llm_infer(keyword: str, dynamic_prompt: str) -> str:
         HumanMessage(content=f"标的：{keyword}"),
     ]
 
-    async def _ainvoke() -> str:
-        resp = await get_qwen_thinking().ainvoke(messages)
-        content = (resp.content or "") if hasattr(resp, "content") else str(resp)
+    result_box: dict[str, str] = {}
+    exc_box: dict[str, BaseException] = {}
 
-        # 优先解析 <result>...</result> 标签（thinking 模型格式）
-        m = re.search(r"<result>\s*(.*?)\s*</result>", content, re.DOTALL)
-        if m:
-            try:
-                data = json.loads(m.group(1))
-                if isinstance(data, dict):
-                    if "windCode" in data:
-                        return str(data["windCode"])
-                    for v in data.values():
-                        if isinstance(v, list) and v:
-                            return str(v[0])
-                        if isinstance(v, str) and v:
-                            return v
-            except (json.JSONDecodeError, ValueError):
-                pass
+    def _sync_call() -> None:
+        try:
+            resp = make_qwen_thinking().invoke(messages)
+            content = (resp.content or "") if hasattr(resp, "content") else str(resp)
 
-        # fallback：从内容中提取 windCode 格式字符串（如 159915.SZ）
-        m2 = re.search(r'\b\d{5,6}\.[A-Z]{2,4}\b', content)
-        if m2:
-            return m2.group(0)
+            # 优先解析 <result>...</result> 标签（thinking 模型格式）
+            m = re.search(r"<result>\s*(.*?)\s*</result>", content, re.DOTALL)
+            if m:
+                try:
+                    data = json.loads(m.group(1))
+                    if isinstance(data, dict):
+                        if "windCode" in data:
+                            result_box["v"] = str(data["windCode"])
+                            return
+                        for v in data.values():
+                            if isinstance(v, list) and v:
+                                result_box["v"] = str(v[0])
+                                return
+                            if isinstance(v, str) and v:
+                                result_box["v"] = v
+                                return
+                except (json.JSONDecodeError, ValueError):
+                    pass
 
-        return keyword
+            # fallback：从内容中提取 windCode 格式字符串（如 159915.SZ）
+            m2 = re.search(r'\b\d{5,6}\.[A-Z]{2,4}\b', content)
+            if m2:
+                result_box["v"] = m2.group(0)
+                return
 
-    return _run_async(_ainvoke())
+            result_box["v"] = keyword
+        except Exception as exc:  # noqa: BLE001
+            exc_box["e"] = exc
+
+    t = threading.Thread(target=_sync_call, daemon=True)
+    t.start()
+    t.join(timeout=100)
+    if exc_box.get("e"):
+        raise exc_box["e"]
+    return result_box.get("v", keyword)
 
 
 @tool

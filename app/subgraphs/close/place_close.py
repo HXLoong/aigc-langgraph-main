@@ -145,6 +145,43 @@ async def close_place_close(state: AgentState) -> dict[str, Any]:
             _leg.orderId = _matched["orderId"]
             _leg.internalTradeId = _matched["orderId"]
 
+    # === 序号 X / 第 X 笔 → 持仓位置映射（覆盖 LLM 凭空生成的 placeholder orderId）===
+    # Round 3 eval 暴露：raw_text 用 "序号1平300万" 引用持仓时，LLM 没有 holdingMap 数据，
+    # 会输出 placeholder（"ORDER_ID_FROM_HOLDING_MAP_..."、"<resolved_order_id...>"、"序号X的orderId"）。
+    # 这里按 1-indexed seq 从已查到的 order_data 中按位置取真单号覆盖。
+    _seq_iter = _re.finditer(r"序号\s*[:：]?\s*(\d+)|第\s*(\d+)\s*笔", combined)
+    _seq_list = [int(m.group(1) or m.group(2)) for m in _seq_iter]
+
+    def _is_placeholder_oid(oid: str | None) -> bool:
+        if not oid:
+            return True
+        s = oid.upper().strip()
+        if _re.fullmatch(r"CO-\d{8}-[A-Z0-9]{4,16}", s):
+            return False
+        if _re.fullmatch(r"OPTG?-[A-Z]+\d{0,10}", s):
+            return False
+        return True
+
+    for _i, _leg in enumerate(close_list):
+        if not _is_placeholder_oid(_leg.orderId):
+            continue
+        _seq = _seq_list[_i] if _i < len(_seq_list) else (_i + 1)
+        _idx = _seq - 1
+        _resolved = False
+        if order_data and 0 <= _idx < len(order_data):
+            _real = order_data[_idx]
+            _real_oid = _real.get("orderId")
+            if _real_oid:
+                _leg.orderId = _real_oid
+                _leg.internalTradeId = _real_oid
+                # 同步进 _order_lookup 以便后续渲染读取 contractCode/underlying
+                _order_lookup[_real_oid] = _real
+                _resolved = True
+        if not _resolved:
+            # 无可用持仓数据 → 清空 LLM 占位文字，避免渲染到回复里
+            _leg.orderId = None
+            _leg.internalTradeId = None
+
     # === 客户端预校验 ===
     _validation_errors: list[str] = []
     for _leg in close_list:
@@ -183,23 +220,28 @@ async def close_place_close(state: AgentState) -> dict[str, Any]:
         }
 
     # === 生成确认卡 ===
+    # CLAUDE.md P0: 严禁硬编码业务数据 fallback。无 holding 数据时 underlying/optionType
+    # 字段留空（待后端补齐），不要塞默认股票（曾硬编码"000155.SZ 川能动力"）。
     _card_lines = ["以下平仓申请，请核对详情后确认：\n"]
     for _i, _leg in enumerate(close_list, 1):
         _oid = _leg.orderId or _leg.internalTradeId or ""
         _detail = _order_lookup.get(_oid, {})
         _contract = _detail.get("contractCode") or _leg.internalTradeId or ""
-        _opt_type = _detail.get("optionType", "欧式看涨")
-        _ucode = _detail.get("underlyingCode", "000155.SZ")
-        _uname = _detail.get("underlyingName", "川能动力")
+        _opt_type = _detail.get("optionType") or ""
+        _ucode = _detail.get("underlyingCode") or ""
+        _uname = _detail.get("underlyingName") or ""
         _price_type = _leg.closeOrderType or "市价单"
         _amt = _leg.closeOrderNotionalDelta
         _card_lines.append("-----场外期权平仓详情-----\n")
         _card_lines.append(f"序号：{_i}\n")
         _card_lines.append(f"合约编号：{_contract}\n")
         _card_lines.append(f"单号：{_oid}\n")
-        _card_lines.append(f"期权类型：{_opt_type}\n")
-        _card_lines.append(f"标的代码：{_ucode}\n")
-        _card_lines.append(f"标的名称：{_uname}\n")
+        if _opt_type:
+            _card_lines.append(f"期权类型：{_opt_type}\n")
+        if _ucode:
+            _card_lines.append(f"标的代码：{_ucode}\n")
+        if _uname:
+            _card_lines.append(f"标的名称：{_uname}\n")
         _card_lines.append("交易方向：卖出\n")
         if _amt:
             try:

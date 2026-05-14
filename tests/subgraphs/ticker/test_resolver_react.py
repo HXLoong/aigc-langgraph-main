@@ -208,3 +208,59 @@ async def test_no_tokens_returns_empty(
     # 全是分隔符 → tokenize 输出 []
     result = await resolve_ticker(" ,,，；； ")
     assert result == []
+
+
+# ============================================================
+# 11. Bug3: 订单号格式（OPT-/CO-/H-）不应当作 ticker 查 GOATS
+# ============================================================
+
+
+@pytest.mark.asyncio
+async def test_order_number_keyword_is_filtered_from_goats(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """'OPT-NOTEXIST,200w，市价' 中的 OPT-NOTEXIST 是订单号，不是 ticker。
+    resolver 不应把它送到 GOATS 查询，最终 resolved 应为空。
+    """
+    searched_keywords: list[str] = []
+    client = MagicMock()
+
+    async def _search(req):
+        kw = req.keywordItems[0].keyword if req.keywordItems else ""
+        searched_keywords.append(kw)
+        return []
+
+    client.search_securities_instrument = AsyncMock(side_effect=_search)
+    monkeypatch.setattr(tools_mod, "_make_client", lambda: client)
+    monkeypatch.setattr(resolver_mod, "_make_client", lambda: client)
+
+    result = await resolve_ticker("OPT-NOTEXIST,200w，市价")
+    assert result == [], f"订单号输入应返回空，实际: {result}"
+    # 订单号 keyword 不应被发送到 GOATS
+    assert not any(kw.startswith("OPT-") for kw in searched_keywords), (
+        f"OPT- 前缀 keyword 不应查 GOATS，实际查了: {searched_keywords}"
+    )
+
+
+@pytest.mark.asyncio
+async def test_co_order_number_is_filtered(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """CO-20260304-ABCD1234 是平仓订单号，不应查 GOATS。"""
+    searched_keywords: list[str] = []
+    client = MagicMock()
+
+    async def _search(req):
+        kw = req.keywordItems[0].keyword if req.keywordItems else ""
+        searched_keywords.append(kw)
+        return []
+
+    client.search_securities_instrument = AsyncMock(side_effect=_search)
+    monkeypatch.setattr(tools_mod, "_make_client", lambda: client)
+    monkeypatch.setattr(resolver_mod, "_make_client", lambda: client)
+
+    result = await resolve_ticker("确认平仓 CO-20260304-ABCD1234")
+    assert result == []
+    assert not any(kw.startswith("CO-") for kw in searched_keywords), (
+        f"CO- 前缀 keyword 不应查 GOATS，实际查了: {searched_keywords}"
+    )

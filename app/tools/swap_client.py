@@ -11,7 +11,7 @@ from enum import Enum
 from typing import Protocol
 
 import httpx
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from app.tools.models import (
     CommonResult,
@@ -59,6 +59,29 @@ class SwapOrderOpenApiBaseSaveReqVO(BaseModel):
     placeOrderStartTime: datetime | None = None
     placeOrderEndTime: datetime | None = None
     orderId: str | None = None  # 改单时填
+
+    @field_validator("placeOrderStartTime", "placeOrderEndTime", mode="before")
+    @classmethod
+    def _coerce_short_time(cls, v):  # type: ignore[no-untyped-def]
+        """LLM 常输出"HH:MM"/"HH:MM:SS"短时间（算法窗口） → 补今天日期为 datetime。
+
+        完整 ISO 字符串 / datetime 对象 / None 不动，交给 pydantic 默认逻辑。
+        """
+        if not isinstance(v, str):
+            return v
+        s = v.strip()
+        # "HH:MM" 或 "HH:MM:SS"，且不含日期（无 "-" / "T" / 空格分隔）
+        if len(s) <= 8 and ":" in s and "-" not in s and "T" not in s:
+            from datetime import date, time
+            try:
+                parts = [int(x) for x in s.split(":")]
+                while len(parts) < 3:
+                    parts.append(0)
+                t = time(parts[0], parts[1], parts[2])
+                return datetime.combine(date.today(), t)
+            except (ValueError, IndexError):
+                pass
+        return v
 
 
 class SwapOrderOpenApiSaveReqVO(BaseModel):

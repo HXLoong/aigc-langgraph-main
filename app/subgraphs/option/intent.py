@@ -61,17 +61,17 @@ async def option_intent(state: AgentState) -> dict[str, Any]:
     # === 确定性快速路径（调 LLM 前） ===
     if raw.strip() == "-":
         return {
-            "intent": "confirm",
+            "intent": "confirm_order",
             "trace": [TraceEntry(node="option_intent", decision="deterministic_dash")],
         }
     if "确认下单" in raw:
         return {
-            "intent": "confirm",
+            "intent": "confirm_order",
             "trace": [TraceEntry(node="option_intent", decision="deterministic_confirm")],
         }
     if "撤单" in raw and ("撤单" in quote or "撤单请求" in quote):
         return {
-            "intent": "cancel_order",
+            "intent": "cancel_order_request",
             "trace": [TraceEntry(node="option_intent", decision="deterministic_cancel")],
         }
 
@@ -95,13 +95,13 @@ async def option_intent(state: AgentState) -> dict[str, Any]:
     ))
     if _from_inquiry and intent in ("new_inquiry", "unknown", ""):
         if any(kw in raw for kw in ("确认", "好的", "可以", "行", "下单")):
-            intent = "confirm"
+            intent = "confirm_order"
         elif any(kw in raw for kw in ("撤消", "取消", "不要", "算了")):
-            intent = "cancel_order"
+            intent = "cancel_order_request"
         elif any(kw in raw for kw in ("下单", "市价", "限价", "POV", "TWAP", "改")):
-            intent = "place_order"
+            intent = "place_order_from_quote"
         else:
-            intent = "place_order"
+            intent = "place_order_from_quote"
 
     return {
         "intent": intent,

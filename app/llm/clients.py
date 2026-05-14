@@ -45,6 +45,24 @@ def get_qwen_thinking() -> ChatOpenAI:
     )
 
 
+def make_qwen_thinking() -> ChatOpenAI:
+    """非缓存工厂：每次返回新实例，供跨 event loop 场景使用（如 infer_code 线程）。
+
+    不加 @lru_cache：lru_cache 单例在主 loop 创建后，若在子线程 asyncio.run()
+    里复用，httpx 连接池绑定旧 loop，污染主 loop 客户端导致 Connection error。
+    """
+    settings = get_settings()
+    return ChatOpenAI(
+        model=settings.qwen_model_thinking,
+        base_url=settings.qwen_api_base,
+        api_key=settings.qwen_api_key,
+        temperature=0.0,
+        timeout=90,
+        max_retries=2,
+        extra_body={"enable_thinking": True},
+    )
+
+
 @lru_cache(maxsize=1)
 def get_qwen_structured() -> ChatOpenAI:
     """Qwen 模型专用于 with_structured_output（json_mode + thinking 测试）。"""
