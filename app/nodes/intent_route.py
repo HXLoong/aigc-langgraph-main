@@ -168,7 +168,7 @@ async def intent_route(state: AgentState) -> dict[str, Any]:
     """
     text = state.get("raw_text", "") or ""
 
-    # 第 1 层
+    # 第 1 层：订单号正则（最可靠）
     pt = _match_order_no(text)
     if pt is not None:
         return {
@@ -178,7 +178,20 @@ async def intent_route(state: AgentState) -> dict[str, Any]:
             ],
         }
 
-    # 第 2 层
+    # 第 1.5 层：quote_content 产品标记（比 keyword 更可靠：引用消息含产品卡片就是
+    # 该产品的多轮场景。提前到 keyword 之前修 swap-001 等"确认下单"被路由到 option
+    # 的 bug——上轮 swap 卡 + 本轮"确认下单"必须保持 swap 上下文）
+    quote = state.get("quote_content")
+    pt = _match_quote_marker(quote)
+    if pt is not None:
+        return {
+            "product_type": pt,
+            "trace": [
+                TraceEntry(node="intent_route", decision=f"rule:quote_marker→{pt}")
+            ],
+        }
+
+    # 第 2 层：关键词
     match = _match_keywords_with_token(text)
     if match is not None:
         pt, hit_token = match
@@ -189,17 +202,6 @@ async def intent_route(state: AgentState) -> dict[str, Any]:
                     node="intent_route",
                     decision=f"rule:keyword[{hit_token}]→{pt}",
                 )
-            ],
-        }
-
-    # 第 2.5 层：quote_content 产品标记
-    quote = state.get("quote_content")
-    pt = _match_quote_marker(quote)
-    if pt is not None:
-        return {
-            "product_type": pt,
-            "trace": [
-                TraceEntry(node="intent_route", decision=f"rule:quote_marker→{pt}")
             ],
         }
 

@@ -131,6 +131,17 @@ async def swap_place_order(state: AgentState) -> dict[str, Any]:
         order_list=backend_order_list,
     )
 
+    # 4. backend 成功时把真订单号 merge 回 order_list[i].orderId
+    # （让 render 渲染卡显示真单号 H-XXX，turn N+1 confirm 才能从 quote 抠到）
+    if backend.get("api_code") == 0:
+        data = backend.get("api_result")
+        if isinstance(data, dict) and data.get("orderId") and order_list:
+            order_list[0]["orderId"] = data["orderId"]
+        elif isinstance(data, list):
+            for i, item in enumerate(data):
+                if i < len(order_list) and isinstance(item, dict) and item.get("orderId"):
+                    order_list[i]["orderId"] = item["orderId"]
+
     out: dict = {
         "place_params": {
             "expected_action": action,
