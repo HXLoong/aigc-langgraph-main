@@ -85,16 +85,63 @@ async def run_langgraph_pipeline(*, item, **kwargs):
                 raw_content=t.get("raw_content",""),
                 has_mention=True,  # 期权测试全部需要 bot 响应
                 turn=len(results)+1, quote_content=quote)
+            # tickers 简化（保留 windCode + 中文名 + from_goats）
+            tickers_raw = rs.get("tickers") or []
+            tickers_simple = []
+            for tk in tickers_raw:
+                if hasattr(tk, "windCode"):
+                    tickers_simple.append({
+                        "wind": tk.windCode,
+                        "desc": getattr(tk, "insShtDesc", None),
+                        "goats": getattr(tk, "from_goats", None),
+                    })
+                elif isinstance(tk, dict):
+                    tickers_simple.append({"wind": tk.get("windCode"),
+                                          "desc": tk.get("insShtDesc"),
+                                          "goats": tk.get("from_goats")})
+
+            # place_params 简化（保留 expected_action + orderList 字段，去掉 None 减少噪音）
+            pp = rs.get("place_params") or {}
+            orders_raw = pp.get("orderList", [])
+            orders_simple = [
+                {k: v for k, v in (o if isinstance(o, dict) else (o.model_dump() if hasattr(o, "model_dump") else {})).items() if v is not None}
+                for o in orders_raw
+            ]
+            place_simple = {
+                "action": pp.get("expected_action"),
+                "orderList": orders_simple,
+            } if pp else None
+
+            err = rs.get("error")
+            err_simple = None
+            if err is not None:
+                if hasattr(err, "model_dump"):
+                    err_dict = err.model_dump()
+                    err_simple = {"node": err_dict.get("node"),
+                                 "type": err_dict.get("type"),
+                                 "message": (err_dict.get("message") or "")[:200]}
+                elif isinstance(err, dict):
+                    err_simple = {"node": err.get("node"), "type": err.get("type"),
+                                 "message": (err.get("message") or "")[:200]}
+                else:
+                    err_simple = {"message": str(err)[:200]}
+
             tr = {
                 "product_type": rs.get("product_type", "unknown"),
                 "intent": rs.get("intent"),
                 "reply_text": rs.get("reply_text", ""),
-                "error": rs.get("error"),
+                "api_result": rs.get("api_result"),
+                "api_code": rs.get("api_code"),
+                "tickers": tickers_simple,
+                "place_params": place_simple,
+                "error": err_simple,
                 "trace": _fmt_trace(rs.get("trace")),
                 "quote_passed": (quote or "")[:120],  # 实际传入的引用内容预览
             }
         except Exception as e:
-            tr = {"product_type": "error", "intent": None, "reply_text": "", "error": str(e),
+            tr = {"product_type": "error", "intent": None, "reply_text": "",
+                  "api_result": None, "api_code": None, "tickers": [],
+                  "place_params": None, "error": {"message": str(e)[:200]},
                   "trace": "", "quote_passed": (quote or "")[:120]}
         tr["turn"] = len(results)+1
         tr["raw_content"] = t.get("raw_content", "")
@@ -299,19 +346,49 @@ async def run_local(golden_path, filter_func, ids, max_concurrency, limit, dry_r
                 ) as span:
                     trace_id = span.trace_id
                     output = await run_langgraph_pipeline(item=item)
-                    span.update(output={
-                        "reply_text": output.get("reply_text", ""),
-                        "trace_log": output.get("trace_log", ""),
-                    })
+                    # 在 span 内完成 judge，把分数 / 期望 / 评价理由也写到 output，AI 一处可读全部
+                    if no_judge:
+                        reply = output.get("reply_text", "")
+                        from langfuse.experiment import Evaluation
+                        ev = Evaluation(name="reply-check", value=1.0 if reply.strip() else 0.0,
+                            comment="有回复" if reply.strip() else "reply_text 为空")
+                    else:
+                        ev = judge_by_deepseek(output=output, expected_output=item.expected_output, metadata=item.metadata)
+                    # 富 output：顶层 expected/score/comment + 每轮 turn/raw/reply/trace + 抽取详情
+                    turns_out = [
+                        {"turn": t.get("turn"),
+                         "raw": t.get("raw_content", ""),
+                         "reply": t.get("reply_text", ""),
+                         "product_type": t.get("product_type"),
+                         "intent": t.get("intent"),
+                         "tickers": t.get("tickers"),
+                         "place_params": t.get("place_params"),
+                         "api_result": t.get("api_result"),
+                         "api_code": t.get("api_code"),
+                         "error": t.get("error"),
+                         "trace": t.get("trace", ""),
+                         "quote_passed": t.get("quote_passed", "")}
+                        for t in output.get("turns", [])
+                    ]
+                    span_output = {
+                        "expected": item.expected_output,
+                        "score": float(ev.value),
+                        "judge_comment": ev.comment,
+                        "turns": turns_out,
+                    } if turns_out else {"reply": output.get("reply_text", ""),
+                                          "expected": item.expected_output,
+                                          "score": float(ev.value),
+                                          "judge_comment": ev.comment}
+                    span.update(output=span_output)
             else:
                 output = await run_langgraph_pipeline(item=item)
-            if no_judge:
-                reply = output.get("reply_text", "")
-                from langfuse.experiment import Evaluation
-                ev = Evaluation(name="reply-check", value=1.0 if reply.strip() else 0.0,
-                    comment="有回复" if reply.strip() else "reply_text 为空")
-            else:
-                ev = judge_by_deepseek(output=output, expected_output=item.expected_output, metadata=item.metadata)
+                if no_judge:
+                    reply = output.get("reply_text", "")
+                    from langfuse.experiment import Evaluation
+                    ev = Evaluation(name="reply-check", value=1.0 if reply.strip() else 0.0,
+                        comment="有回复" if reply.strip() else "reply_text 为空")
+                else:
+                    ev = judge_by_deepseek(output=output, expected_output=item.expected_output, metadata=item.metadata)
             return {"item": item, "output": output, "eval": ev, "trace_id": trace_id}
 
     print(f"开始实验 ({len(items)} 条, 并行 {max_concurrency}, {'no-judge' if no_judge else 'with judge'})...\n")
