@@ -40,11 +40,17 @@ class SwapIntentOutput(BaseModel):
 # ============================================================
 
 
-#: 交易类型（对齐 Java placeOrderTransactionType 枚举）
+#: 交易类型（对齐 Java GoatsTransactionType 枚举，见 docs/api-contracts/java-backend.md:210）
+#: Dify prompt 中"深港通"→SZ_HK_CONNECT，"沪港通"→SH_HK_CONNECT，"境内期货"→CHN_FUTURE，"跨境期货"→CROSS_FUTURE
+#: FUTURES/FUND/INDEX/BOND/OTHERS 是历史兼容值，新值是 Java 后端真正接受的字面量
 SwapTransactionType = Literal[
     "A_SHARE",
     "HK_STOCK",
     "US_STOCK",
+    "SZ_HK_CONNECT",
+    "SH_HK_CONNECT",
+    "CHN_FUTURE",
+    "CROSS_FUTURE",
     "FUTURES",
     "FUND",
     "INDEX",
