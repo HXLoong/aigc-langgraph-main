@@ -44,7 +44,7 @@ def _patch_place_order_llm(monkeypatch: pytest.MonkeyPatch) -> None:
     fake_llm.with_structured_output = MagicMock(
         return_value=MagicMock(ainvoke=AsyncMock(return_value=fake_params))
     )
-    monkeypatch.setattr(place_order_mod, "get_qwen_structured", lambda: fake_llm)
+    monkeypatch.setattr(place_order_mod, "get_qwen_complex", lambda: fake_llm)
 
 
 @pytest.mark.asyncio

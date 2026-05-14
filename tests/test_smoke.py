@@ -53,7 +53,7 @@ async def test_main_graph_e2e_swap_keyword(
                 )
             ]
         ),
-        fn="get_qwen_structured",
+        fn="get_qwen_complex",
     )
 
     graph = build_main_graph()

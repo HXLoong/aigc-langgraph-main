@@ -49,12 +49,12 @@ class Settings(BaseSettings):
     eval_room_id: str = ""
     eval_user_id: str = ""
 
-    # 标的池 MySQL（直连查询）
-    ticker_mysql_host: str = "172.16.8.27"
+    # 标的池 MySQL（直连查询）—— 凭据走 .env，源码里只留空默认值
+    ticker_mysql_host: str = ""
     ticker_mysql_port: int = 3306
-    ticker_mysql_user: str = "dev-user"
-    ticker_mysql_password: str = "xyWss45^772"
-    ticker_mysql_db: str = "aigc-test"
+    ticker_mysql_user: str = ""
+    ticker_mysql_password: str = ""
+    ticker_mysql_db: str = ""
 
     # === 外部搜索 ===
     bocha_api_key: str = ""
