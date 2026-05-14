@@ -21,7 +21,7 @@ def _patch(
     monkeypatch: pytest.MonkeyPatch,
     module: object,
     value: object,
-    fn: str = "get_qwen_structured",
+    fn: str = "get_qwen_thinking",
 ) -> None:
     fake_llm = MagicMock()
     fake_llm.ainvoke = AsyncMock(return_value=value)
@@ -39,6 +39,7 @@ async def test_place_order_from_quote_routes_to_extract_place(
         monkeypatch,
         intent_module,
         OptionIntentOutput(type="place_order_from_quote"),
+        fn="get_qwen_structured",
     )
     _patch(
         monkeypatch,
@@ -77,6 +78,7 @@ async def test_request_modify_routes_to_extract_place(
         monkeypatch,
         intent_module,
         OptionIntentOutput(type="request_modify_order"),
+        fn="get_qwen_structured",
     )
     _patch(
         monkeypatch,
@@ -112,6 +114,7 @@ async def test_unknown_intent_routes_to_option_unknown(
         monkeypatch,
         intent_module,
         OptionIntentOutput(type="unknown_intent"),
+        fn="get_qwen_structured",
     )
     graph = build_option_graph()
     final = await graph.ainvoke(

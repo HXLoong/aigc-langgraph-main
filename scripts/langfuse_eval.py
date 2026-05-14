@@ -1,4 +1,4 @@
-"""期权链路评估。跑 LangGraph，DeepSeek Judge 打分。
+"""期权链路评估。跑 LangGraph，DeepSeek v4 flash Judge 打分。
 
 OTC_API_BASE_URL 从 .env 读取，指向真实后端地址。
 前提: 对应的后端服务必须已启动
@@ -85,16 +85,63 @@ async def run_langgraph_pipeline(*, item, **kwargs):
                 raw_content=t.get("raw_content",""),
                 has_mention=True,  # 期权测试全部需要 bot 响应
                 turn=len(results)+1, quote_content=quote)
+            # tickers 简化（保留 windCode + 中文名 + from_goats）
+            tickers_raw = rs.get("tickers") or []
+            tickers_simple = []
+            for tk in tickers_raw:
+                if hasattr(tk, "windCode"):
+                    tickers_simple.append({
+                        "wind": tk.windCode,
+                        "desc": getattr(tk, "insShtDesc", None),
+                        "goats": getattr(tk, "from_goats", None),
+                    })
+                elif isinstance(tk, dict):
+                    tickers_simple.append({"wind": tk.get("windCode"),
+                                          "desc": tk.get("insShtDesc"),
+                                          "goats": tk.get("from_goats")})
+
+            # place_params 简化（保留 expected_action + orderList 字段，去掉 None 减少噪音）
+            pp = rs.get("place_params") or {}
+            orders_raw = pp.get("orderList", [])
+            orders_simple = [
+                {k: v for k, v in (o if isinstance(o, dict) else (o.model_dump() if hasattr(o, "model_dump") else {})).items() if v is not None}
+                for o in orders_raw
+            ]
+            place_simple = {
+                "action": pp.get("expected_action"),
+                "orderList": orders_simple,
+            } if pp else None
+
+            err = rs.get("error")
+            err_simple = None
+            if err is not None:
+                if hasattr(err, "model_dump"):
+                    err_dict = err.model_dump()
+                    err_simple = {"node": err_dict.get("node"),
+                                 "type": err_dict.get("type"),
+                                 "message": (err_dict.get("message") or "")[:200]}
+                elif isinstance(err, dict):
+                    err_simple = {"node": err.get("node"), "type": err.get("type"),
+                                 "message": (err.get("message") or "")[:200]}
+                else:
+                    err_simple = {"message": str(err)[:200]}
+
             tr = {
                 "product_type": rs.get("product_type", "unknown"),
                 "intent": rs.get("intent"),
                 "reply_text": rs.get("reply_text", ""),
-                "error": rs.get("error"),
+                "api_result": rs.get("api_result"),
+                "api_code": rs.get("api_code"),
+                "tickers": tickers_simple,
+                "place_params": place_simple,
+                "error": err_simple,
                 "trace": _fmt_trace(rs.get("trace")),
                 "quote_passed": (quote or "")[:120],  # 实际传入的引用内容预览
             }
         except Exception as e:
-            tr = {"product_type": "error", "intent": None, "reply_text": "", "error": str(e),
+            tr = {"product_type": "error", "intent": None, "reply_text": "",
+                  "api_result": None, "api_code": None, "tickers": [],
+                  "place_params": None, "error": {"message": str(e)[:200]},
                   "trace": "", "quote_passed": (quote or "")[:120]}
         tr["turn"] = len(results)+1
         tr["raw_content"] = t.get("raw_content", "")
@@ -125,6 +172,33 @@ JUDGE = """你是场外衍生品AI指令助手的测试审查员。
 正案例完全正确=1.0,参数遗漏=0.7~0.9;反案例正确拒绝=1.0,错误执行=0
 必须只输出JSON: {"pass":true/false,"score":0.0~1.0,"reason":"一句话"}"""
 
+_JSON_OBJ_RE = re.compile(r'\{[^{}]*"pass"[^{}]*"score"[^{}]*\}', re.DOTALL)
+
+
+def _parse_judge_json(text: str) -> dict | None:
+    """从 Judge 输出里抠 JSON：优先整体 loads，失败用 regex 抓含 pass+score 的对象。"""
+    text = (text or "").strip()
+    if not text:
+        return None
+    try:
+        return json.loads(text)
+    except Exception:
+        pass
+    m = _JSON_OBJ_RE.search(text)
+    if m:
+        try:
+            return json.loads(m.group(0))
+        except Exception:
+            pass
+    s, e = text.find("{"), text.rfind("}")
+    if 0 <= s < e:
+        try:
+            return json.loads(text[s:e+1])
+        except Exception:
+            pass
+    return None
+
+
 def judge_by_deepseek(*, output, expected_output, metadata=None, **kwargs):
     from anthropic import Anthropic
     actual = output.get("reply_text","")
@@ -132,21 +206,19 @@ def judge_by_deepseek(*, output, expected_output, metadata=None, **kwargs):
     user = f"## 测试用例\n{overview}\n\n## 实际回复\n{actual}\n\n## 期望回复\n{expected_output}\n\n请评分："
     client = Anthropic()
     resp = client.messages.create(
-        model=os.environ.get("ANTHROPIC_MODEL","deepseek-v4-pro[1m]"), max_tokens=1024,
-        system=JUDGE, messages=[{"role":"user","content":user},
-            {"role":"assistant","content":"{"}],
-        thinking={"type":"enabled","budget_tokens":4096})
+        model=os.environ.get("ANTHROPIC_MODEL","deepseek-v4-flash"),
+        max_tokens=2048,
+        system=JUDGE,
+        messages=[{"role":"user","content":user}],
+    )
     texts = []
     for block in resp.content:
-        if hasattr(block,"text"): texts.append(block.text)
+        if getattr(block, "type", "") == "text":
+            texts.append(block.text)
     text = "".join(texts).strip()
-    if text and not text.startswith("{"): text = "{" + text
-    try: result = json.loads(text)
-    except:
-        s = text.find("{"); e = text.rfind("}")
-        try: result = json.loads(text[s:e+1]) if s>=0 and e>s else None
-        except: result = None
-    if not result: result = {"pass":False,"score":0.0,"reason":f"JSON解析失败:{text[:100]}"}
+    result = _parse_judge_json(text)
+    if not result:
+        result = {"pass":False,"score":0.0,"reason":f"JSON解析失败:{text[:100]}"}
     from langfuse.experiment import Evaluation
     return Evaluation(name="otc-option-judge", value=float(result.get("score",0)),
         comment=result.get("reason",""), metadata={"pass":result.get("pass",False)})
@@ -252,18 +324,72 @@ async def run_local(golden_path, filter_func, ids, max_concurrency, limit, dry_r
             print(f"  {item.id}: {raw}")
         return
 
+    # 启用 Langfuse 时，把 pipeline 调用包到 outer span 里，使 CallbackHandler 的
+    # per-node trace 自动嵌套（OTel context propagation），并能拿到稳定 trace_id 挂 score。
+    try:
+        from langfuse import Langfuse  # type: ignore[import-not-found]
+        lf: object | None = Langfuse()
+    except Exception:
+        lf = None
+    run_name = f"local-{time.strftime('%Y%m%d-%H%M%S')}"
+
     sem = asyncio.Semaphore(max_concurrency)
     async def _run_one(item):
         async with sem:
-            output = await run_langgraph_pipeline(item=item)
-            if no_judge:
-                reply = output.get("reply_text", "")
-                from langfuse.experiment import Evaluation
-                ev = Evaluation(name="reply-check", value=1.0 if reply.strip() else 0.0,
-                    comment="有回复" if reply.strip() else "reply_text 为空")
+            trace_id: str | None = None
+            if lf is not None:
+                with lf.start_as_current_observation(  # type: ignore[union-attr]
+                    name=item.id,
+                    as_type="chain",
+                    input=item.input,
+                    metadata={**item.metadata, "run_name": run_name},
+                ) as span:
+                    trace_id = span.trace_id
+                    output = await run_langgraph_pipeline(item=item)
+                    # 在 span 内完成 judge，把分数 / 期望 / 评价理由也写到 output，AI 一处可读全部
+                    if no_judge:
+                        reply = output.get("reply_text", "")
+                        from langfuse.experiment import Evaluation
+                        ev = Evaluation(name="reply-check", value=1.0 if reply.strip() else 0.0,
+                            comment="有回复" if reply.strip() else "reply_text 为空")
+                    else:
+                        ev = judge_by_deepseek(output=output, expected_output=item.expected_output, metadata=item.metadata)
+                    # 富 output：顶层 expected/score/comment + 每轮 turn/raw/reply/trace + 抽取详情
+                    turns_out = [
+                        {"turn": t.get("turn"),
+                         "raw": t.get("raw_content", ""),
+                         "reply": t.get("reply_text", ""),
+                         "product_type": t.get("product_type"),
+                         "intent": t.get("intent"),
+                         "tickers": t.get("tickers"),
+                         "place_params": t.get("place_params"),
+                         "api_result": t.get("api_result"),
+                         "api_code": t.get("api_code"),
+                         "error": t.get("error"),
+                         "trace": t.get("trace", ""),
+                         "quote_passed": t.get("quote_passed", "")}
+                        for t in output.get("turns", [])
+                    ]
+                    span_output = {
+                        "expected": item.expected_output,
+                        "score": float(ev.value),
+                        "judge_comment": ev.comment,
+                        "turns": turns_out,
+                    } if turns_out else {"reply": output.get("reply_text", ""),
+                                          "expected": item.expected_output,
+                                          "score": float(ev.value),
+                                          "judge_comment": ev.comment}
+                    span.update(output=span_output)
             else:
-                ev = judge_by_deepseek(output=output, expected_output=item.expected_output, metadata=item.metadata)
-            return {"item": item, "output": output, "eval": ev}
+                output = await run_langgraph_pipeline(item=item)
+                if no_judge:
+                    reply = output.get("reply_text", "")
+                    from langfuse.experiment import Evaluation
+                    ev = Evaluation(name="reply-check", value=1.0 if reply.strip() else 0.0,
+                        comment="有回复" if reply.strip() else "reply_text 为空")
+                else:
+                    ev = judge_by_deepseek(output=output, expected_output=item.expected_output, metadata=item.metadata)
+            return {"item": item, "output": output, "eval": ev, "trace_id": trace_id}
 
     print(f"开始实验 ({len(items)} 条, 并行 {max_concurrency}, {'no-judge' if no_judge else 'with judge'})...\n")
     t0 = time.time()
@@ -307,33 +433,24 @@ async def run_local(golden_path, filter_func, ids, max_concurrency, limit, dry_r
     else:
         print("\n全部通过")
 
-    # LangFuse 写回（与云端模式对齐，本地跑完也能在 UI 看到 trace + 评分）
-    try:
-        from langfuse import Langfuse
-        lf = Langfuse()
-        run_name = f"local-{time.strftime('%Y%m%d-%H%M%S')}"
-        for r in results:
-            trace = lf.trace(
-                name=r["item"].id,
-                input=r["item"].input,
-                output={
-                    "reply_text": r["output"].get("reply_text", ""),
-                    "trace_log": r["output"].get("trace_log", ""),
-                },
-                metadata={**r["item"].metadata, "run_name": run_name},
-                tags=r["item"].metadata.get("tags", []),
-            )
-            lf.score(
-                trace_id=trace.id,
-                name="otc-option-judge",
-                value=float(r["eval"].value),
-                comment=r["eval"].comment,
-            )
-        lf.flush()
-        host = os.environ.get("LANGFUSE_HOST", "https://cloud.langfuse.com")
-        print(f"\nLangFuse 写入成功  run={run_name}  host={host}")
-    except Exception as e:
-        print(f"\nLangFuse 写入失败（不影响本地结果）: {e}")
+    # LangFuse 评分写回：直接把 score 挂到 _run_one 里 outer span 的 trace_id 上。
+    # 这样 per-node trace（CallbackHandler 写的）和 score 在同一个 trace 里。
+    if lf is not None:
+        try:
+            for r in results:
+                if not r.get("trace_id"):
+                    continue
+                lf.create_score(  # type: ignore[union-attr]
+                    trace_id=r["trace_id"],
+                    name="otc-option-judge",
+                    value=float(r["eval"].value),
+                    comment=r["eval"].comment,
+                )
+            lf.flush()  # type: ignore[union-attr]
+            host = os.environ.get("LANGFUSE_HOST", "https://cloud.langfuse.com")
+            print(f"\nLangFuse 写入成功  run={run_name}  host={host}")
+        except Exception as e:
+            print(f"\nLangFuse 写入失败（不影响本地结果）: {e}")
 
 
 # ── 主流程（LangFuse 云端） ──

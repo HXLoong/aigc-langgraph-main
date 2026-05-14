@@ -20,7 +20,7 @@ from typing import Annotated
 from langchain_core.tools import tool
 
 from app.config import get_settings
-from app.llm.clients import get_qwen_thinking, make_qwen_thinking
+from app.llm.clients import make_qwen_thinking
 from app.tools.ticker_client import (
     KeywordItem,
     SecuritiesInstrumentReqVO,

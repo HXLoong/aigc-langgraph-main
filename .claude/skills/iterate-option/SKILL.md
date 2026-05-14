@@ -63,7 +63,7 @@ Bash(command=".venv/bin/python scripts/langfuse_eval.py --local tests/fixtures/g
 
 ## 读 Trace：定位死在哪个节点
 
-eval 失败报告每条 case 输出 per-turn 详情：
+eval 失败报告每条 case 输出 per-turn 详情（**stdout 文本格式**）：
 
 ```
 [0.7] opt-018: 第2轮路由错误，返回了互换参数而非期权下单确认
@@ -87,6 +87,59 @@ eval 失败报告每条 case 输出 per-turn 详情：
 
 > **注意**：`trace` 是累积的（LangGraph reducer add），多轮 case 的 trace 包含所有历史轮。  
 > 本轮节点决策在 trace 末尾，往前找分界点（第一个 `ingest` 是新一轮的开始）。
+
+## Langfuse 富 output（AI 查错的最高效路径）
+
+每个 eval case 都同步写到 Langfuse Cloud（https://us.cloud.langfuse.com），outer span
+的 `output` 字段是**结构化富集 JSON**，比 stdout 文本格式信息更全：
+
+```jsonc
+{
+  "expected": "机器人返回期权订单已确认提交，并提示订单已接收、等待交易员审核。",
+  "score": 0.0,
+  "judge_comment": "第三轮确认意图未被识别，未执行确认下单操作",
+  "turns": [
+    {
+      "turn": 1, "raw": "600519.SH，欧式看涨,1M,80%", "reply": "-----场外期权询价详情-----...",
+      "product_type": "option", "intent": "new_inquiry",
+      "tickers": [{"wind": "600519.SH", "desc": "贵州茅台", "goats": true}],
+      "place_params": {"action": "inquiry", "orderList": [{"stockCode": "...", "optionType": "欧式看涨", ...}]},
+      "api_result": null, "api_code": null,
+      "error": null,
+      "trace": "ingest → intent_route[rule:keyword[kw:看涨]→option] → option_intent[...] → ...",
+      "quote_passed": ""
+    },
+    {"turn": 2, ..., "api_result": "正在处理，请勿重复提交", ...},
+    {"turn": 3, ..., "error": {"node": "option_extract_confirm", "type": "...", "message": "..."}}
+  ]
+}
+```
+
+**AI 查错 SOP**（用 Langfuse trace URL 比读 stdout 快得多）：
+
+1. **eval 跑完看 stdout**：`LangFuse 写入成功  run=local-YYYYMMDD-HHMMSS  host=...` 这行带 run name
+2. **打开 Langfuse Cloud**：按 run name 过滤，找到失败 case
+3. **点开 case trace**：
+   - 顶层 output：`expected` / `score` / `judge_comment` 一眼锁定差异
+   - `turns[i]` 数组：每轮的路由 / 抽取参数 / 后端响应 / 错误 / 节点路径
+   - 左侧子 span 树：每个 LLM 调用的 prompt / completion / token / latency（CallbackHandler 自动嵌套）
+4. **快速判断错误层**：
+   - `product_type` 错 → router 问题（[app/nodes/intent_route.py](app/nodes/intent_route.py)）
+   - `intent` 错 → 子图 intent.py 提示词或 LLM 漂移
+   - `tickers` 缺失或错 → ticker 子图（[app/subgraphs/ticker/](app/subgraphs/ticker/)）
+   - `place_params.orderList` 字段漏 → 子图 extract_*.py 提示词
+   - `api_result` 含"正在处理"/"请勿重复" → 后端 dedup，看 [app/nodes/render.py](app/nodes/render.py) 软错误回退是否触发
+   - `error` 非空 → 节点抛异常，看 `error.node` + `error.message`
+5. **写 TDD 测试**：直接复用 Langfuse 上看到的 `turns[i].raw` + 期望行为，写最小复现
+
+**这套富 output 怎么生成的**（[scripts/langfuse_eval.py:289-340](scripts/langfuse_eval.py#L289-L340)）：
+- `run_langgraph_pipeline` 每轮收集 product_type/intent/tickers/place_params/api_result/error 简化版
+- `_run_one` 在 `lf.start_as_current_observation(as_type="chain")` 上下文里：
+  1. 调 graph.ainvoke 跑业务流（CallbackHandler 自动嵌套子 span）
+  2. 调 judge_by_deepseek 评分
+  3. `span.update(output={...富集 dict...})` 一次写完
+  4. `lf.create_score(trace_id=span.trace_id, ...)` 挂分到同一 trace
+- 全程不再要看 stdout，Langfuse UI 一处看全部
 
 ## 根因归类模板
 

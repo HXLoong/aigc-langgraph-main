@@ -1234,6 +1234,114 @@ JSON:
   ]
 }
 
+5.1)请求下单(相对时间窗-TWAP十分钟):
+用户:@机器人 000560.SZ 买入 1000股 市价 TWAP十分钟
+解析说明:
+
+- "TWAP十分钟"是相对时间表达式,需要转换为分钟数
+- "十分钟"10分钟
+- placeOrderRelativeTimeMinutes=10
+- placeOrderStartTime和placeOrderEndTime为null(由后处理脚本根据当前时间计算)
+  JSON:
+  {
+  "type": "place_order_request",
+  "orderList": [
+    {
+      "orderId": null,
+      "placeOrderUltraContractCode": null,
+      "placeOrderWindCode": "000560.SZ",
+      "placeOrderTransactionType": null,
+      "placeOrderQuantity": 1000,
+      "placeOrderQuantityHand": null,
+      "placeOrderOrderDirection": "BUY",
+      "placeOrderPriceType": "MarketOrder",
+      "placeOrderAlgorithmType": "TWAP",
+      "placeOrderPrice": null,
+      "placeOrderPovPercent": null,
+      "placeOrderDisplayQty": null,
+      "placeOrderMaxVol": null,
+      "placeOrderStartTime": null,
+      "placeOrderEndTime": null,
+      "placeOrderShortname": null,
+      "placeOrderQuantityTotal": null,
+      "placeOrderRelativeTimeMinutes": 10,
+      "placeOrderPremarket": null
+    }
+  ]
+  }
+
+5.2)请求下单(相对时间窗-TWAP两小时):
+用户:@机器人 港股 0700.HK 卖出 2000股 限价15 TWAP两小时
+解析说明:
+
+- "TWAP两小时"是相对时间表达式
+- "两小时"2小时2×60=120分钟
+- placeOrderRelativeTimeMinutes=120
+- placeOrderStartTime和placeOrderEndTime为null
+- "港股 0700.HK" → placeOrderTransactionType: "HK_STOCK", placeOrderWindCode: "港股 0700.HK" (保留完整原始串)
+  JSON:
+  {
+  "type": "place_order_request",
+  "orderList": [
+    {
+      "orderId": null,
+      "placeOrderUltraContractCode": null,
+      "placeOrderWindCode": "港股 0700.HK",
+      "placeOrderTransactionType": "HK_STOCK",
+      "placeOrderQuantity": 2000,
+      "placeOrderQuantityHand": null,
+      "placeOrderOrderDirection": "SELL",
+      "placeOrderPriceType": "LimitOrder",
+      "placeOrderAlgorithmType": "TWAP",
+      "placeOrderPrice": 15,
+      "placeOrderPovPercent": null,
+      "placeOrderDisplayQty": null,
+      "placeOrderMaxVol": null,
+      "placeOrderStartTime": null,
+      "placeOrderEndTime": null,
+      "placeOrderShortname": null,
+      "placeOrderQuantityTotal": null,
+      "placeOrderRelativeTimeMinutes": 120,
+      "placeOrderPremarket": null
+    }
+  ]
+  }
+
+5.3)请求下单(相对时间窗-半小时):
+用户:@机器人 A股 茅台 买入 500股 市价 TWAP半小时
+解析说明:
+
+- "TWAP半小时"是相对时间表达式
+- "半小时"0.5小时0.5×60=30分钟
+- placeOrderRelativeTimeMinutes=30
+  JSON:
+  {
+  "type": "place_order_request",
+  "orderList": [
+    {
+      "orderId": null,
+      "placeOrderUltraContractCode": null,
+      "placeOrderWindCode": "茅台",
+      "placeOrderTransactionType": "A_SHARE",
+      "placeOrderQuantity": 500,
+      "placeOrderQuantityHand": null,
+      "placeOrderOrderDirection": "BUY",
+      "placeOrderPriceType": "MarketOrder",
+      "placeOrderAlgorithmType": "TWAP",
+      "placeOrderPrice": null,
+      "placeOrderPovPercent": null,
+      "placeOrderDisplayQty": null,
+      "placeOrderMaxVol": null,
+      "placeOrderStartTime": null,
+      "placeOrderEndTime": null,
+      "placeOrderShortname": null,
+      "placeOrderQuantityTotal": null,
+      "placeOrderRelativeTimeMinutes": 30,
+      "placeOrderPremarket": null
+    }
+  ]
+  }
+
 6)请求下单(用户示例:默认将独立代码解析为placeOrderWindCode,且"占XX%"POV):
 用户:@机器人 HTIF2504 空 1657股 市价 占35%  14:00-15:00
 解析说明:
@@ -1356,6 +1464,74 @@ JSON:
 - **错误示例1**: "iShares安硕MSC🇮🇹中国指数ETF"（严重错误!将"I"替换为意大利国旗emoji）
 - **错误示例2**: "iShares安硕摩根斯坦利中国指数ETF"（严重错误!将"MSCI"替换为中文全称）
 
+6.1)请求下单(交易品种类型前缀+标的代码组合格式):
+用户:@机器人 跨境期货NQZ25E.CME,买入,4手,市价,POV,25%,ACCOUNT_J,SZZSCF-SWAP-南下期货-0004
+解析说明:
+
+- "跨境期货NQZ25E.CME" → placeOrderTransactionType: "CROSS_FUTURE", placeOrderWindCode: "跨境期货NQZ25E.CME" (保留完整原始串)
+- "4手" → placeOrderQuantityHand: 4, placeOrderQuantity: null
+- "SZZSCF-SWAP-南下期货-0004"符合大合约编号模式(多段连字符+中文)  placeOrderUltraContractCode
+  JSON:
+  {
+  "type": "place_order_request",
+  "orderList": [
+    {
+      "orderId": null,
+      "placeOrderUltraContractCode": "SZZSCF-SWAP-南下期货-0004",
+      "placeOrderWindCode": "跨境期货NQZ25E.CME",
+      "placeOrderTransactionType": "CROSS_FUTURE",
+      "placeOrderQuantity": null,
+      "placeOrderQuantityHand": 4,
+      "placeOrderOrderDirection": "BUY",
+      "placeOrderPriceType": "MarketOrder",
+      "placeOrderAlgorithmType": "POV",
+      "placeOrderPrice": null,
+      "placeOrderPovPercent": 25,
+      "placeOrderDisplayQty": null,
+      "placeOrderMaxVol": null,
+      "placeOrderStartTime": null,
+      "placeOrderEndTime": null,
+      "placeOrderShortname": "ACCOUNT_J",
+      "placeOrderQuantityTotal": null,
+      "placeOrderRelativeTimeMinutes": null,
+      "placeOrderPremarket": null
+    }
+  ]
+  }
+
+6.2)请求下单(其他交易品种类型前缀示例):
+用户:@机器人 A股600519.SH 买入 100股 限价120
+解析说明:
+
+- "A股600519.SH" → placeOrderTransactionType: "A_SHARE", placeOrderWindCode: "A股600519.SH" (保留完整原始串)
+  JSON:
+  {
+  "type": "place_order_request",
+  "orderList": [
+    {
+      "orderId": null,
+      "placeOrderUltraContractCode": null,
+      "placeOrderWindCode": "A股600519.SH",
+      "placeOrderTransactionType": "A_SHARE",
+      "placeOrderQuantity": 100,
+      "placeOrderQuantityHand": null,
+      "placeOrderOrderDirection": "BUY",
+      "placeOrderPriceType": "LimitOrder",
+      "placeOrderAlgorithmType": null,
+      "placeOrderPrice": 120,
+      "placeOrderPovPercent": null,
+      "placeOrderDisplayQty": null,
+      "placeOrderMaxVol": null,
+      "placeOrderStartTime": null,
+      "placeOrderEndTime": null,
+      "placeOrderShortname": null,
+      "placeOrderQuantityTotal": null,
+      "placeOrderRelativeTimeMinutes": null,
+      "placeOrderPremarket": null
+    }
+  ]
+  }
+
 6.3)请求下单(交易品种类型与标的代码之间有空格):
 用户:@机器人 賣出 美股 QD 200k股 限价4.88 pov50 22:30-05:00
 解析说明:
@@ -1385,6 +1561,40 @@ JSON:
       "placeOrderMaxVol": null,
       "placeOrderStartTime": "22:30",
       "placeOrderEndTime": "05:00",
+      "placeOrderShortname": null,
+      "placeOrderQuantityTotal": null,
+      "placeOrderRelativeTimeMinutes": null,
+      "placeOrderPremarket": null
+    }
+  ]
+  }
+
+6.4)请求下单(另一个有空格的交易品种类型示例):
+用户:@机器人 港股 0700.HK 买入 1000股 限价350
+解析说明:
+
+- "港股 0700.HK" → placeOrderTransactionType: "HK_STOCK", placeOrderWindCode: "港股 0700.HK" (保留完整原始串)
+- **错误做法**: placeOrderWindCode: "0700.HK" (严重错误!剥离了市场前缀)
+  JSON:
+  {
+  "type": "place_order_request",
+  "orderList": [
+    {
+      "orderId": null,
+      "placeOrderUltraContractCode": null,
+      "placeOrderWindCode": "港股 0700.HK",
+      "placeOrderTransactionType": "HK_STOCK",
+      "placeOrderQuantity": 1000,
+      "placeOrderQuantityHand": null,
+      "placeOrderOrderDirection": "BUY",
+      "placeOrderPriceType": "LimitOrder",
+      "placeOrderAlgorithmType": null,
+      "placeOrderPrice": 350,
+      "placeOrderPovPercent": null,
+      "placeOrderDisplayQty": null,
+      "placeOrderMaxVol": null,
+      "placeOrderStartTime": null,
+      "placeOrderEndTime": null,
       "placeOrderShortname": null,
       "placeOrderQuantityTotal": null,
       "placeOrderRelativeTimeMinutes": null,
@@ -1423,6 +1633,76 @@ JSON:
   ]
 }
 
+7.1)请求下单(标的排除法提取 - 严禁将交易参数吞入标的名称):
+
+**案例A:**
+用户:中国平安 买入 3000股 限价50 @智能交易机器人
+bot_name_list: ["智能交易机器人"]
+解析:排除"买入"(方向)、"3000股"(数量)、"限价50"(价格)、"@智能交易机器人"(机器人名称过滤)后,剩余"中国平安"即为标的
+JSON:
+{
+  "type": "place_order_request",
+  "orderList": [
+    {
+      "orderId": null,
+      "placeOrderUltraContractCode": null,
+      "placeOrderWindCode": "中国平安",
+      "placeOrderTransactionType": null,
+      "placeOrderQuantity": 3000,
+      "placeOrderQuantityHand": null,
+      "placeOrderOrderDirection": "BUY",
+      "placeOrderPriceType": "LimitOrder",
+      "placeOrderAlgorithmType": null,
+      "placeOrderPrice": 50,
+      "placeOrderPovPercent": null,
+      "placeOrderDisplayQty": null,
+      "placeOrderMaxVol": null,
+      "placeOrderStartTime": null,
+      "placeOrderEndTime": null,
+      "placeOrderShortname": null,
+      "placeOrderQuantityTotal": null,
+      "placeOrderRelativeTimeMinutes": null,
+      "placeOrderPremarket": null
+    }
+  ]
+}
+ 错误:placeOrderWindCode: "中国平安 买入 3000股 限价50 @智能交易"(严重错误!将整段文本当作标的!)
+ 正确:placeOrderWindCode: "中国平安"(排除所有已知字段后的剩余)
+
+**案例B:**
+用户:宁德时代卖出600股，市价跟量20%鸿运二号 09:30-11:00 @OTC交易助手
+bot_name_list: ["OTC交易助手"]
+解析:排除"卖出"(方向)、"600股"(数量)、"市价"(价格类型)、"跟量20%"(POV比例)、"09:30-11:00"(时间窗)、"鸿运二号"(交易对手)、"@OTC交易助手"(机器人名称过滤)后,剩余"宁德时代"即为标的
+JSON:
+{
+  "type": "place_order_request",
+  "orderList": [
+    {
+      "orderId": null,
+      "placeOrderUltraContractCode": null,
+      "placeOrderWindCode": "宁德时代",
+      "placeOrderTransactionType": null,
+      "placeOrderQuantity": 600,
+      "placeOrderQuantityHand": null,
+      "placeOrderOrderDirection": "SELL",
+      "placeOrderPriceType": "MarketOrder",
+      "placeOrderAlgorithmType": "POV",
+      "placeOrderPrice": null,
+      "placeOrderPovPercent": 20,
+      "placeOrderDisplayQty": null,
+      "placeOrderMaxVol": null,
+      "placeOrderStartTime": "09:30",
+      "placeOrderEndTime": "11:00",
+      "placeOrderShortname": "鸿运二号",
+      "placeOrderQuantityTotal": null,
+      "placeOrderRelativeTimeMinutes": null,
+      "placeOrderPremarket": null
+    }
+  ]
+}
+ 错误:placeOrderWindCode: "宁德时代卖出600股，市价跟量20%鸿运二号"(严重错误!将交易参数和交易对手都吞入标的!)
+ 正确:placeOrderWindCode: "宁德时代"(排除所有已知字段后的剩余)
+
 8)请求下单(POV算法但未指定比例,时间窗不应误识别为比例):
 用户:000560.SZ 买入 100股 限价1 pov 11:25-11:30 @场外AI交易助手测试C
 解析:pov后紧跟的是时间窗"11:25-11:30",不是POV比例,因此placeOrderPovPercent=null
@@ -1453,6 +1733,536 @@ JSON:
     }
   ]
 }
+
+8.1)请求下单(时间窗结束时间较早时,必须原样提取并仅补零):
+用户:ICC.N 限价10，100，买入，TWAP，9:00-5:00，11125测试短名（张天琪专用） @场外AI交易助手测试C ）
+解析说明:
+
+- "ICC.N" → placeOrderWindCode: "ICC.N"
+- "限价10" → placeOrderPriceType: "LimitOrder", placeOrderPrice: 10
+- "100" → placeOrderQuantity: 100
+- "买入" → placeOrderOrderDirection: "BUY"
+- "TWAP" → placeOrderAlgorithmType: "TWAP"
+- "9:00-5:00"必须按原文左右两侧分别提取,只补零,不得把"5:00"改写成"17:00"
+- "11125测试短名（张天琪专用）" → placeOrderShortname: "11125测试短名（张天琪专用）"
+- "@场外AI交易助手测试C"是机器人提及,必须过滤,不属于任何交易参数
+JSON:
+{
+  "type": "place_order_request",
+  "orderList": [
+    {
+      "orderId": null,
+      "placeOrderUltraContractCode": null,
+      "placeOrderWindCode": "ICC.N",
+      "placeOrderTransactionType": null,
+      "placeOrderQuantity": 100,
+      "placeOrderQuantityHand": null,
+      "placeOrderOrderDirection": "BUY",
+      "placeOrderPriceType": "LimitOrder",
+      "placeOrderAlgorithmType": "TWAP",
+      "placeOrderPrice": 10,
+      "placeOrderPovPercent": null,
+      "placeOrderDisplayQty": null,
+      "placeOrderMaxVol": null,
+      "placeOrderStartTime": "09:00",
+      "placeOrderEndTime": "05:00",
+      "placeOrderShortname": "11125测试短名（张天琪专用）",
+      "placeOrderQuantityTotal": null,
+      "placeOrderRelativeTimeMinutes": null,
+      "placeOrderPremarket": null
+    }
+  ]
+}
+
+8.2)请求下单(卖空方向,无算法关键词,算法类型必须为 null):
+用户:0700 限价510 卖空100股 11125测试短名（张天琪专用）
+解析说明:
+- "0700" → placeOrderWindCode: "0700"
+- "限价510" → placeOrderPriceType: "LimitOrder", placeOrderPrice: 510
+- "卖空" → placeOrderOrderDirection: "SHORT_OPEN"
+- "100股" → placeOrderQuantity: 100
+- "11125测试短名（张天琪专用）" → placeOrderShortname: "11125测试短名（张天琪专用）"
+- **无任何算法关键词（无POV/TWAP/VWAP/占/跟量/均价等）** → placeOrderAlgorithmType: null（绝对禁止因方向为卖空而推断为POV或任何算法类型）
+JSON:
+{
+  "type": "place_order_request",
+  "orderList": [
+    {
+      "orderId": null,
+      "placeOrderUltraContractCode": null,
+      "placeOrderWindCode": "0700",
+      "placeOrderTransactionType": null,
+      "placeOrderQuantity": 100,
+      "placeOrderQuantityHand": null,
+      "placeOrderOrderDirection": "SHORT_OPEN",
+      "placeOrderPriceType": "LimitOrder",
+      "placeOrderAlgorithmType": null,
+      "placeOrderPrice": 510,
+      "placeOrderPovPercent": null,
+      "placeOrderDisplayQty": null,
+      "placeOrderMaxVol": null,
+      "placeOrderStartTime": null,
+      "placeOrderEndTime": null,
+      "placeOrderShortname": "11125测试短名（张天琪专用）",
+      "placeOrderQuantityTotal": null,
+      "placeOrderTotalPovPercent": null,
+      "placeOrderRelativeTimeMinutes": null,
+      "placeOrderPremarket": null
+    }
+  ]
+}
+
+9.1)请求下单(多个订单,用户补充单个订单的参数):
+quote_content(机器人消息):
+
+```
+A场外交易助手:
+订单1:
+标的代码:000560.SZ
+数量:1200股
+价格:限价10
+算法:TWAP 13:30-14:30
+交易对手:产品1
+委托方向:待补充
+
+订单2:
+标的代码:603529.SH
+数量:200股
+价格:限价10
+算法:TWAP 13:30-14:30
+交易对手:产品2
+委托方向:买入
+```
+
+用户当前输入:`ACCOUNT_K 平空`
+
+解析说明:
+
+- 用户提供了"ACCOUNT_K"(交易对手)和"平空"(委托方向)
+- "ACCOUNT_K"是特定订单的特征信息
+- 应该识别为针对**缺失委托方向的订单1**的补充
+- **绝对禁止**将这些参数应用到订单2
+
+JSON:
+{
+  "type": "place_order_request",
+  "orderList": [
+    {
+      "orderId": null,
+      "placeOrderUltraContractCode": null,
+      "placeOrderWindCode": "000560.SZ",
+      "placeOrderTransactionType": null,
+      "placeOrderQuantity": 1200,
+      "placeOrderQuantityHand": null,
+      "placeOrderOrderDirection": "SHORT_CLOSE",
+      "placeOrderPriceType": "LimitOrder",
+      "placeOrderAlgorithmType": "TWAP",
+      "placeOrderPrice": 10,
+      "placeOrderPovPercent": null,
+      "placeOrderDisplayQty": null,
+      "placeOrderMaxVol": null,
+      "placeOrderStartTime": "13:30",
+      "placeOrderEndTime": "14:30",
+      "placeOrderShortname": "ACCOUNT_K",
+      "placeOrderQuantityTotal": null,
+      "placeOrderTotalPovPercent": null,
+      "placeOrderPremarket": null
+    },
+    {
+      "orderId": null,
+      "placeOrderUltraContractCode": null,
+      "placeOrderWindCode": "603529.SH",
+      "placeOrderTransactionType": null,
+      "placeOrderQuantity": 200,
+      "placeOrderQuantityHand": null,
+      "placeOrderOrderDirection": "BUY",
+      "placeOrderPriceType": "LimitOrder",
+      "placeOrderAlgorithmType": "TWAP",
+      "placeOrderPrice": 10,
+      "placeOrderPovPercent": null,
+      "placeOrderDisplayQty": null,
+      "placeOrderMaxVol": null,
+      "placeOrderStartTime": "13:30",
+      "placeOrderEndTime": "14:30",
+      "placeOrderShortname": "产品2",
+      "placeOrderQuantityTotal": null,
+      "placeOrderTotalPovPercent": null,
+      "placeOrderPremarket": null
+    }
+  ]
+}
+
+说明:
+
+- 订单1:更新了placeOrderOrderDirection和placeOrderShortname
+- 订单2:保持原样,不受影响
+- **关键**:用户提供的交易对手名称"ACCOUNT_K"是新信息,表明这是针对特定订单的补充
+- **判断逻辑**:用户补充的信息包含订单特征(交易对手),且只匹配到订单1缺失的字段,因此仅更新订单1
+
+9.2)请求下单(多个订单,用户补充第一个订单的方向和交易对手):
+quote_content(机器人消息中的原始订单详情):
+
+```json
+{
+  "type": "place_order_request",
+  "orderList": [
+    {
+      "placeOrderWindCode": "000560.SZ",
+      "placeOrderQuantity": 1200,
+      "placeOrderQuantityHand": null,
+      "placeOrderOrderDirection": null,
+      "placeOrderPriceType": "LimitOrder",
+      "placeOrderAlgorithmType": "TWAP",
+      "placeOrderPrice": 10,
+      "placeOrderStartTime": "13:30",
+      "placeOrderEndTime": "14:30",
+      "placeOrderShortname": null
+    },
+    {
+      "placeOrderWindCode": "603529.SH",
+      "placeOrderQuantity": 200,
+      "placeOrderQuantityHand": null,
+      "placeOrderOrderDirection": "BUY",
+      "placeOrderPriceType": "LimitOrder",
+      "placeOrderAlgorithmType": "TWAP",
+      "placeOrderPrice": 10,
+      "placeOrderStartTime": "13:30",
+      "placeOrderEndTime": "14:30",
+      "placeOrderShortname": null
+    },
+    {
+      "placeOrderWindCode": "603529.SH",
+      "placeOrderQuantity": 200,
+      "placeOrderQuantityHand": null,
+      "placeOrderOrderDirection": "SHORT_CLOSE",
+      "placeOrderPriceType": "LimitOrder",
+      "placeOrderAlgorithmType": "TWAP",
+      "placeOrderPrice": 10,
+      "placeOrderStartTime": "13:30",
+      "placeOrderEndTime": "14:30",
+      "placeOrderShortname": null
+    },
+    {
+      "placeOrderWindCode": "0700.HK",
+      "placeOrderQuantity": 600,
+      "placeOrderQuantityHand": null,
+      "placeOrderOrderDirection": "SELL",
+      "placeOrderPriceType": "MarketOrder",
+      "placeOrderShortname": null
+    }
+  ]
+}
+```
+
+机器人消息:
+
+```
+订单1: 000560.SZ,数量1200股,限价10,TWAP 13:30-14:30,委托方向:待补充
+订单2: 603529.SH,数量200股,买入,限价10,TWAP 13:30-14:30
+订单3: 603529.SH,数量200股,平空,限价10,TWAP 13:30-14:30
+订单4: 0700.HK,数量600股,卖出,市价
+```
+
+用户当前输入:`买入 ACCOUNT_F`
+
+**【关键判断】**:
+
+- quote_content中有4个订单
+- 当前输入仅包含2个参数:方向("买入")+ 交易对手("ACCOUNT_F")
+- 第1个订单的placeOrderOrderDirection=null(缺失方向)
+- 用户补充的"ACCOUNT_F"是新的交易对手信息
+- **判断结论**:这是对第1个订单的参数补充,不是新订单
+
+JSON输出:
+
+```json
+{
+  "type": "place_order_request",
+  "orderList": [
+    {
+      "orderId": null,
+      "placeOrderUltraContractCode": null,
+      "placeOrderWindCode": "000560.SZ",
+      "placeOrderTransactionType": null,
+      "placeOrderQuantity": 1200,
+      "placeOrderQuantityHand": null,
+      "placeOrderOrderDirection": "BUY",
+      "placeOrderPriceType": "LimitOrder",
+      "placeOrderAlgorithmType": "TWAP",
+      "placeOrderPrice": 10,
+      "placeOrderPovPercent": null,
+      "placeOrderDisplayQty": null,
+      "placeOrderMaxVol": null,
+      "placeOrderStartTime": "13:30",
+      "placeOrderEndTime": "14:30",
+      "placeOrderShortname": "ACCOUNT_F",
+      "placeOrderQuantityTotal": null,
+      "placeOrderTotalPovPercent": null,
+      "placeOrderPremarket": null
+    },
+    {
+      "orderId": null,
+      "placeOrderUltraContractCode": null,
+      "placeOrderWindCode": "603529.SH",
+      "placeOrderTransactionType": null,
+      "placeOrderQuantity": 200,
+      "placeOrderQuantityHand": null,
+      "placeOrderOrderDirection": "BUY",
+      "placeOrderPriceType": "LimitOrder",
+      "placeOrderAlgorithmType": "TWAP",
+      "placeOrderPrice": 10,
+      "placeOrderPovPercent": null,
+      "placeOrderDisplayQty": null,
+      "placeOrderMaxVol": null,
+      "placeOrderStartTime": "13:30",
+      "placeOrderEndTime": "14:30",
+      "placeOrderShortname": null,
+      "placeOrderQuantityTotal": null,
+      "placeOrderTotalPovPercent": null,
+      "placeOrderPremarket": null
+    },
+    {
+      "orderId": null,
+      "placeOrderUltraContractCode": null,
+      "placeOrderWindCode": "603529.SH",
+      "placeOrderTransactionType": null,
+      "placeOrderQuantity": 200,
+      "placeOrderQuantityHand": null,
+      "placeOrderOrderDirection": "SHORT_CLOSE",
+      "placeOrderPriceType": "LimitOrder",
+      "placeOrderAlgorithmType": "TWAP",
+      "placeOrderPrice": 10,
+      "placeOrderPovPercent": null,
+      "placeOrderDisplayQty": null,
+      "placeOrderMaxVol": null,
+      "placeOrderStartTime": "13:30",
+      "placeOrderEndTime": "14:30",
+      "placeOrderShortname": null,
+      "placeOrderQuantityTotal": null,
+      "placeOrderTotalPovPercent": null,
+      "placeOrderPremarket": null
+    },
+    {
+      "orderId": null,
+      "placeOrderUltraContractCode": null,
+      "placeOrderWindCode": "0700.HK",
+      "placeOrderTransactionType": null,
+      "placeOrderQuantity": 600,
+      "placeOrderQuantityHand": null,
+      "placeOrderOrderDirection": "SELL",
+      "placeOrderPriceType": "MarketOrder",
+      "placeOrderAlgorithmType": null,
+      "placeOrderPrice": null,
+      "placeOrderPovPercent": null,
+      "placeOrderDisplayQty": null,
+      "placeOrderMaxVol": null,
+      "placeOrderStartTime": null,
+      "placeOrderEndTime": null,
+      "placeOrderShortname": null,
+      "placeOrderQuantityTotal": null,
+      "placeOrderTotalPovPercent": null,
+      "placeOrderPremarket": null
+    }
+  ]
+}
+```
+
+**说明**:
+
+- 订单1:补充了placeOrderOrderDirection="BUY"和placeOrderShortname="ACCOUNT_F"
+- 订单2、3、4:保持不变,从quote_content中原样提取
+- **关键**:识别为参数补充而非新订单,保留了所有4个订单的完整信息
+- **避免错误**:绝对不能只输出1个新订单而丢失其他3个原始订单
+
+9.3)请求下单(选项格式补充交易对手参数):
+quote_content(机器人消息):
+
+```
+您的互换订单参数需要完善:
+【参数值错误】
+·交易对手:"B.11125测试短名(张天琪专用)"交易对手不存在
+请从以下选项中选择
+【必填项:请指定交易对手】
+普通交易对手:
+A.临沂阿凡提
+B.11125测试短名(张天琪专用)
+C.测试111
+总单交易对手:
+D.23
+请引用本消息,补充您的订单参数。
+```
+
+quote_content中包含的原始订单详情(从机器人消息中解析):
+
+```
+订单详情: 标的=000560.SZ, 数量=1000股, 方向=买入, 限价=10
+```
+
+用户当前输入:`D` 或 `d` 或 `第4个`
+
+**【关键识别步骤】**:
+
+1. 检查quote_content:包含选项格式"D.23"
+2. 检查raw_content:用户回复了单个字母"D"或"d",或序号表达"第4个"
+3. **触发选项格式识别规则**
+4. 如果用户回复"D"或"d",直接匹配到"D.23";如果用户回复"第4个",按顺序映射到第4个选项"D.23"
+5. 提取选项"D"后面的真实值"23"
+6. **绝对禁止**输出"D"或"D.23"
+
+JSON输出:
+
+```json
+{
+  "type": "place_order_request",
+  "orderList": [
+    {
+      "orderId": null,
+      "placeOrderUltraContractCode": null,
+      "placeOrderWindCode": "000560.SZ",
+      "placeOrderTransactionType": null,
+      "placeOrderQuantity": 1000,
+      "placeOrderQuantityHand": null,
+      "placeOrderOrderDirection": "BUY",
+      "placeOrderPriceType": "LimitOrder",
+      "placeOrderAlgorithmType": null,
+      "placeOrderPrice": 10,
+      "placeOrderPovPercent": null,
+      "placeOrderDisplayQty": null,
+      "placeOrderMaxVol": null,
+      "placeOrderStartTime": null,
+      "placeOrderEndTime": null,
+      "placeOrderShortname": "23",
+      "placeOrderQuantityTotal": null,
+      "placeOrderTotalPovPercent": null,
+      "placeOrderPremarket": null
+    }
+  ]
+}
+```
+
+**说明**:
+
+- 用户回复"D"、"d"或"第4个",都应识别为选择选项D
+- 从quote_content中找到"D.23",提取真实值"23"
+- placeOrderShortname: "23"(正确)
+- **错误做法**:placeOrderShortname: "D"、"D.23"或"第4个"(严重错误!)
+- **关键原则**:选项字母只是用户的选择标识,真正的交易对手是选项后面的值
+
+9.3.1)请求下单(选项格式补充交易对手-普通选项):
+quote_content(机器人消息):
+
+```
+您的互换订单参数需要完善:
+【必填项:请指定交易对手】
+普通交易对手:
+A.临沂阿凡提
+B.11125测试短名(张天琪专用)
+C.测试111
+请引用本消息,补充您的订单参数。
+```
+
+用户当前输入:`A` 或 `a` 或 `第一个` 或 `第1个`
+
+JSON输出:
+
+```json
+{
+  "type": "place_order_request",
+  "orderList": [
+    {
+      "orderId": null,
+      "placeOrderUltraContractCode": null,
+      "placeOrderWindCode": "000560.SZ",
+      "placeOrderTransactionType": null,
+      "placeOrderQuantity": 1000,
+      "placeOrderQuantityHand": null,
+      "placeOrderOrderDirection": "BUY",
+      "placeOrderPriceType": "LimitOrder",
+      "placeOrderAlgorithmType": null,
+      "placeOrderPrice": 10,
+      "placeOrderPovPercent": null,
+      "placeOrderDisplayQty": null,
+      "placeOrderMaxVol": null,
+      "placeOrderStartTime": null,
+      "placeOrderEndTime": null,
+      "placeOrderShortname": "临沂阿凡提",
+      "placeOrderQuantityTotal": null,
+      "placeOrderTotalPovPercent": null,
+      "placeOrderPremarket": null
+    }
+  ]
+}
+```
+
+**说明**:
+
+- 用户回复"A"或"a",从quote_content找到"A.临沂阿凡提"
+- 用户回复"第一个"或"第1个",按顺序映射到第1个选项"A.临沂阿凡提"
+- 提取选项A后面的真实值"临沂阿凡提"
+- placeOrderShortname: "临沂阿凡提"(正确)
+- **错误做法**:placeOrderShortname: "A"、"A.临沂阿凡提"或"第一个"(严重错误!)
+
+**补充说明**:
+- 用户回复"a"时,也必须按选项A处理,提取为"临沂阿凡提"
+- 用户回复"c"时,也必须按选项C处理,提取为"测试111"
+- 用户回复"第一个"或"第1个"时,也必须按选项A处理,提取为"临沂阿凡提"
+- 用户回复"第3个"时,也必须按选项C处理,提取为"测试111"
+
+9.3.2)请求下单(选项格式补充交易对手-序号越界):
+quote_content(机器人消息):
+
+```
+您的互换订单参数需要完善:
+【必填项:请指定交易对手】
+普通交易对手:
+A.临沂阿凡提
+B.11125测试短名(张天琪专用)
+C.测试111
+总单交易对手:
+D.23
+E.账户E
+请引用本消息,补充您的订单参数。
+```
+
+用户当前输入:`第6个`
+
+JSON输出:
+
+```json
+{
+  "type": "place_order_request",
+  "orderList": [
+    {
+      "orderId": null,
+      "placeOrderUltraContractCode": null,
+      "placeOrderWindCode": "000560.SZ",
+      "placeOrderTransactionType": null,
+      "placeOrderQuantity": 1000,
+      "placeOrderQuantityHand": null,
+      "placeOrderOrderDirection": "BUY",
+      "placeOrderPriceType": "LimitOrder",
+      "placeOrderAlgorithmType": null,
+      "placeOrderPrice": 10,
+      "placeOrderPovPercent": null,
+      "placeOrderDisplayQty": null,
+      "placeOrderMaxVol": null,
+      "placeOrderStartTime": null,
+      "placeOrderEndTime": null,
+      "placeOrderShortname": null,
+      "placeOrderQuantityTotal": null,
+      "placeOrderTotalPovPercent": null,
+      "placeOrderPremarket": null
+    }
+  ]
+}
+```
+
+**说明**:
+
+- 当前quote_content只有5个真实选项(A到E)
+- 用户回复"第6个"属于序号越界,不是任何有效交易对手选项
+- `placeOrderShortname`必须保持`null`,表示用户这次没有成功指定交易对手
+- **错误做法**:把"第6个"向前回退映射为第5个选项`E.账户E`
 
 10)请求下单(盘前单-placeOrderPremarket识别):
 用户:@机器人 盘前单 000560.SZ 买入 1000股 限价10

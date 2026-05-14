@@ -62,7 +62,7 @@ async def test_place_order_request_routes_to_place_order_node(
                 )
             ]
         ),
-        fn="get_qwen_structured",
+        fn="get_qwen_complex",
     )
 
     graph = build_swap_graph()

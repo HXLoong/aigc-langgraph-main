@@ -22,8 +22,11 @@ class Settings(BaseSettings):
     # === LLM ===
     qwen_api_base: str
     qwen_api_key: str
+    # 全部统一 qwen3.5-35b-a3b + enable_thinking=False（见 clients.py），
+    # 保留 3 个变量名是为了未来按节点切回不同模型时只改 .env
     qwen_model_standard: str = "qwen3.5-35b-a3b"
     qwen_model_thinking: str = "qwen3.5-35b-a3b"
+    qwen_model_complex: str = "qwen3.5-35b-a3b"
     qwen_model_vl: str = "qwen-vl-max-latest"
 
     anthropic_api_key: str | None = None
