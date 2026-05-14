@@ -47,9 +47,6 @@ def _format_hitl_card(hitl_candidates: list[dict[str, Any]]) -> str:
 #: 后端拒绝消息的特征关键字（不在池/报价不存在等），命中即视为"识别成功但不可报价"。
 _BACKEND_REJECTION_MARKERS = ("不在标的池", "报价不存在", "不支持的标的")
 
-#: 后端"软错误"特征关键字（dedup / 限流 / 处理中），不透传给用户，回退本地渲染。
-_BACKEND_SOFT_ERROR_MARKERS = ("正在处理", "请勿重复")
-
 
 def _augment_with_ticker_recognition(raw_reply: str, state: AgentState) -> str:
     """后端拒绝消息 + 已 resolved tickers → 前置追加"已识别为 [windCode insShtDesc]"。
@@ -327,11 +324,7 @@ async def render(state: AgentState) -> dict[str, Any]:
     # 5. api_result 来自后端
     if state.get("api_result"):
         raw_reply = str(state["api_result"])
-        # 软错误（dedup / 限流）不透传给用户，跳到下方本地渲染路径
-        if any(m in raw_reply for m in _BACKEND_SOFT_ERROR_MARKERS):
-            pass  # 跳过 return，继续走 8 之后的结构化渲染
-        else:
-            return {"reply_text": _augment_with_ticker_recognition(raw_reply, state)}
+        return {"reply_text": _augment_with_ticker_recognition(raw_reply, state)}
 
     # 5. error → 区分不可达 vs 一般 cascade fail
     err = state.get("error")
@@ -412,34 +405,6 @@ async def render(state: AgentState) -> dict[str, Any]:
                 f"如需下单，请引用本消息补充【交易对手】【名义本金】【建仓指令】。"
             )}
 
-    # 8e. 期权下单/改单（place_order_from_quote / request_modify_order）
-    # 后端软错误回退时也走这里：渲染本地订单卡而非透传"正在处理"
-    if (state.get("product_type") in ("option", "option_close")
-            and place.get("expected_action") in ("place", "modify")
-            and place.get("orderList")):
-        o = place["orderList"][0]
-        stock_code = _resolve_stock_display(o.get("stockCode") or "N/A", state)
-        action_word = "下单" if place["expected_action"] == "place" else "改单"
-        lines = [
-            f"-----场外期权{action_word}详情-----",
-            f"单号: {o.get('orderId') or '待生成'}",
-            f"标的代码: {stock_code}",
-            f"期权类型: {o.get('optionType') or '待补充'}",
-            f"名义本金: {o.get('notionalAmount') or '待补充'}",
-            f"建仓指令: {o.get('orderType') or '待补充'}",
-            f"限价: {o.get('limitPrice') or '待补充'}",
-            f"交易对手: {o.get('counterparty') or '待补充'}",
-        ]
-        missing = [k for k, v in (
-            ("交易对手", o.get("counterparty")),
-            ("名义本金", o.get("notionalAmount")),
-            ("建仓指令", o.get("orderType")),
-        ) if not v]
-        if missing:
-            lines.append(f"\n请补充缺失参数：{'、'.join(missing)}。")
-        else:
-            lines.append("\n如订单无误，请引用本消息回复确认下单。")
-        return {"reply_text": "\n".join(lines)}
     if close.get("closeOrderList"):
         return {"reply_text": "平仓申请已生成，请确认后回复【确认平仓】"}
     if cancel.get("cancelOrderNoList"):

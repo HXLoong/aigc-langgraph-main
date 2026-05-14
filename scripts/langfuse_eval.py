@@ -70,6 +70,11 @@ async def _run_graph_once(graph, config, raw_content, has_mention=True, turn=1, 
     result = await graph.ainvoke(state, config=config)
     return result
 
+#: 多轮 case 同 conversationId 紧密调用后端会触发 dedup（返回"正在处理,请勿重复提交"）。
+#: 生产场景真人输入间隔大，eval 这里加 sleep 模拟真实节奏避开 dedup（仅 eval 行为，不动业务代码）。
+_TURN_INTERVAL_SECONDS = float(os.environ.get("EVAL_TURN_INTERVAL", "1.0"))
+
+
 async def run_langgraph_pipeline(*, item, **kwargs):
     inp = item.input if isinstance(item.input, dict) else json.loads(item.input)
     turns_data = inp.get("turns", [])
@@ -78,6 +83,9 @@ async def run_langgraph_pipeline(*, item, **kwargs):
     config = {"configurable": {"thread_id": f"eval-{item.id}"}}
     results, prev = [], None
     for t in turns_data:
+        # 多轮之间加 sleep 避开后端 dedup（仅对第 2 轮起生效）
+        if results and _TURN_INTERVAL_SECONDS > 0:
+            await asyncio.sleep(_TURN_INTERVAL_SECONDS)
         quote = None
         if t.get("quote_desc") and prev: quote = prev
         try:
