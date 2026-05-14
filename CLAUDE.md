@@ -88,9 +88,43 @@ tests/                       # test_smoke + test_api + test_harness + test_tools
 
 ## 排查与修复流程（Bug Debug Workflow）
 
-### 1. 从 eval trace 定位根因
+### 1. 从 Langfuse 富 output 定位根因（首选）
 
-运行 eval 时失败报告会输出 per-turn 详情（`scripts/langfuse_eval.py` 内建）：
+`scripts/langfuse_eval.py` 每跑完一条 case 会把**结构化富集 JSON** 写到 Langfuse Cloud
+（https://us.cloud.langfuse.com），outer span output 包含：
+
+```jsonc
+{
+  "expected": "Judge 期望输出",
+  "score": 0.0,
+  "judge_comment": "Judge 一句话评语",
+  "turns": [
+    {"turn": 1, "raw": "用户原始输入", "reply": "机器人回复",
+     "product_type": "option", "intent": "new_inquiry",
+     "tickers": [{"wind": "...", "desc": "...", "goats": true}],
+     "place_params": {"action": "...", "orderList": [...]},
+     "api_result": null, "api_code": null,
+     "error": null,
+     "trace": "ingest → intent_route → ...",
+     "quote_passed": ""}
+  ]
+}
+```
+
+**AI 查错 SOP**：
+1. eval stdout 找 `LangFuse 写入成功  run=local-YYYYMMDD-HHMMSS` 这行
+2. Langfuse UI 按 run name 过滤 → 点开失败 case
+3. 顶层 `score` + `judge_comment` 锁定差异
+4. `turns[i]` 数组按字段定位错误层：
+   - `product_type` 错 → [app/nodes/intent_route.py](app/nodes/intent_route.py)
+   - `intent` 错 → 子图 `intent.py` 提示词
+   - `tickers` 缺失或错 → [app/subgraphs/ticker/](app/subgraphs/ticker/)
+   - `place_params` 字段漏 → 子图 `extract_*.py` 提示词
+   - `api_result` 含"正在处理"/"请勿重复" → 后端 dedup
+   - `error` 非空 → 看 `error.node` + `error.message`
+5. 左侧子 span 树（CallbackHandler 自动嵌套）看每个 LLM 调用的 prompt / completion / token
+
+### 1b. 备用：stdout per-turn 文本（无 Langfuse 时）
 
 ```
 第N轮 [product_type/intent] | quote=Xc 'preview' | ERROR: ...
