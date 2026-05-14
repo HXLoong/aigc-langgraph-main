@@ -3,7 +3,7 @@
 场外衍生品 AI 指令助手。**FastAPI + LangGraph + MySQL + LangFuse self-hosted**，从 Dify 工作流迁移而来。
 企微群客户消息 → 意图解析 → 后端业务/交易系统。
 
-> 当前阶段：**M1 / M2 已完成**（M2 PR #41 已合 main，主干 24 节点蓝图实际落地 20 节点：swap 6 + option 6 + option_close 7 + ticker 1，整体 PASS ≥ 92.5%）→ **M3 工程联调 + 评估迭代进行中**（参见 [ADR 0016](./docs/adr/0016-m3-scope-engineering-loop-not-shadow.md) 与 [docs/m3-m4-roadmap.md](./docs/m3-m4-roadmap.md)）
+> 当前阶段：**M1 / M2 / M3.1 / M3.2 已完成**（M2 PR #41 已合 main，主干 24 节点蓝图实际落地 20 节点：swap 6 + option 6 + option_close 7 + ticker 1；mock_api baseline PASS ≥ 92.5%，真 LLM baseline 84.6%）→ **M3.3 真后端 golden 回归 + 错例修 P0/P1 + 业务方现场 sign-off 进行中**（open issues #82–#87，参见 [ADR 0016](./docs/adr/0016-m3-scope-engineering-loop-not-shadow.md) 与 [docs/m3-m4-roadmap.md](./docs/m3-m4-roadmap.md)）；**M4 灰度工具链已就绪**（rollback_canary / drill_smoke / shadow_compare / deploy-customer / Grafana 模板 / Prompt 晋升 + on-call runbook，详见 README "M4 准备就绪的工具链"）
 
 ## 关键命令
 
@@ -212,16 +212,37 @@ tests/fixtures/              # golden.jsonl（350+ 条）+ golden_ticker_2026-05
 - 中文注释 OK，docstring 简洁清晰
 - 不加 emoji（生产代码）
 
-## 下一步：M3 工程联调闭环（进行中）
+## 下一步：M3.3 真后端 golden 回归 + 业务方 sign-off（进行中）
 
-ADR 0016 把"M3 = shadow 双跑"重新定义为"M3 = 工程联调闭环 + 评估迭代"。范围：
+ADR 0016 把"M3 = shadow 双跑"重新定义为"M3 = 工程联调闭环 + 评估迭代"，分 M3.1 / M3.2 / M3.3 三段：
 
-1. **代码完整性**：24 节点蓝图 → 主干 20 节点已落地；P2 辅助节点（place_order_image / place_order_excel / image_recognize 等）按线上流量增量补，不强求 M3 前完成
-2. **数据集完整性**：golden.jsonl 已扩到 350+；按 B / C / D 桶分别维护，CI lint 校验不变量
-3. **客户现场部署能力**：infra/langfuse self-hosted、`scripts/deploy-customer.sh`、`.env.customer.template`
-4. **联调与回归**：真后端 e2e 探针（`scripts/probe_*_e2e.py`）+ DeepSeek Judge 评估（`scripts/langfuse_eval.py`）+ 现场 smoke
-5. **可观测 + 运维**：`/metrics` Prometheus 端点 + `scripts/run_alerts.py` 干跑 + on-call SOP + `scripts/rollback_canary.sh`
-6. **上线策略**：Shadow 双跑（M4 第二意见）+ 按群组金丝雀（测试群 → ~30% → 全量）
+**已完成（六大交付面）**：
+
+1. **代码完整性** ✅：24 节点蓝图 → 主干 20 节点已落地；P2 辅助节点（place_order_image / place_order_excel / image_recognize）按线上流量增量补
+2. **数据集完整性** ✅：golden.jsonl 已扩到 350+；fixture 职责矩阵 + 一致性 lint 已就位（PR #109）；按 B / C / D 桶分别维护
+3. **客户现场部署能力** ✅：infra/langfuse self-hosted、`scripts/deploy-customer.sh`（C1.13 / Issue #58）、`.env.customer.template`（C1.12 / Issue #52）、私有化部署文档（C1.11 / Issue #51）
+4. **联调与回归** ✅：真后端 e2e 探针（`scripts/probe_*_e2e.py`，D2.1–D2.6 + Dx.1–Dx.2 已 closed）+ DeepSeek Judge 评估（`scripts/langfuse_eval.py`）+ business 子图 → 真 client → mock_api 全链路（PR #110，27 测试）
+5. **可观测 + 运维** ✅：`/metrics` Prometheus 端点（C1.5 / Issue #50） + 5xx 计数闭环（PR #104） + P95 延迟告警（PR #103） + LLM 成本监控（C1.7 / Issue #56） + 阈值一致性 CI lint（PR #106） + on-call 应急回切剧本（PR #99） + `scripts/rollback_canary.sh`（PR #98）
+6. **上线策略** ✅工具链就绪：Shadow 双跑（M4 第二意见，含 `DRY_RUN_BACKEND` 模式 PR #112）+ 按群组金丝雀（`scripts/canary_status.py` PR #92 / `scripts/metrics_snapshot.py` PR #94）+ Grafana 灰度面板 JSON 模板（PR #97）+ LangFuse Prompt 晋升工具（F4.6 / PR #95）
+
+**进行中（M3.3）**：
+
+| Issue | 任务 | 退出门 |
+|---|---|---|
+| #82 E3.1 | 真后端跑 B 桶全集 → PASS rate | 总 PASS ≥ 92.5%（与 M2 mock baseline 同口径）|
+| #83 E3.2 | business_seed 全集按桶分别评估 | B 桶 ≥ 90% / C 桶 ≥ 80% |
+| #84 E3.3 | 真后端跑 D 桶（客户真实输入）| 依赖 B1.5 PM 收集 30+ 条 |
+| #85 E3.4 | 错例聚类 + 根因分析，**只修 P0/P1** | cascade fail / 5xx / 严重参数错 / 标的错全部修复 |
+| #86 E3.5 | 现场 smoke checklist + 客户 Java 后端真实联调 | ≥ 5 条真实业务流走通 |
+| #87 E3.6 | 业务方培训 + 现场 sign-off | 业务方盲测 ≥ 5 条 case PASS sign-off |
+| #59 C1.14 | 离线依赖包（pip wheel + docker save）| 离线环境完整跑通客户部署 |
+| #113 | fixture 数据集质量修复（执行价格缺失 / 反案例标错）| 业务方 review pass |
+
+**二期持续优化（全量上线后启动，不阻塞 M3/M4）**：
+
+- Issue #35 · 评估→优化→更新→再评估自动闭环
+- Issue #36 · 智能体异常干预 + 沉淀记忆机制（agentic memory）
+- Issue #37 · 回流集自动化打通（D 桶 · 生产真实流量 → golden）
 
 参见 [docs/m3-m4-roadmap.md](./docs/m3-m4-roadmap.md) 获取分阶段任务图与 owner 表。
 

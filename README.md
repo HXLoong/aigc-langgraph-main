@@ -9,11 +9,33 @@
 | 里程碑 | 状态 | 内容 | 退出门 |
 |--------|------|------|--------|
 | **M1 · 骨架** | ✅ 完成 | LangFuse 部署 + 主图骨架 + 公共节点 + Client Protocol + Harness MVP | smoke + tools + api + harness 测试 PASS |
-| **M2 · 子图实现** | ✅ 完成（PR #41 已合入 main） | 20 个 LangGraph 节点：swap 6 + option 6 + option_close 7 + ticker 1；golden 扩到 350+ | 整体 PASS 率 ≥ 92.5%（实际） |
-| **M3 · 工程联调闭环** | 🔄 进行中 | 真后端联调（GOATS 直连）+ DeepSeek Judge 评估 + per-turn trace 富集（Langfuse Cloud 写回）+ on-call / 监控 / 告警 / 灰度回滚脚本 | 三链路 PASS ≥ 阈值 + alert 干跑通 + 现场 smoke 通过 |
-| **M4 · 金丝雀切流** | ⏸ 待启动 | 测试群 → ~30% 群组 → 全量；企微管理员改 Webhook 实现 | 100% 切流 + 7 天无重大事故 |
+| **M2 · 子图实现** | ✅ 完成（PR #41 已合入 main） | 20 个 LangGraph 节点：swap 6 + option 6 + option_close 7 + ticker 1；golden 扩到 350+ | mock_api baseline PASS ≥ 92.5%；真 LLM baseline 84.6%（`docs/m2-real-llm-final-report.md`）|
+| **M3.1 · Mock 跑通** | ✅ 完成 | LangGraph 全链路 → mock_api 8099 → 业务流端到端 | harness anchor 全集 PASS ≥ 85% |
+| **M3.2 · 真后端联调** | ✅ 完成 | D2.1–D2.6（三 client 切真后端 + 字段对齐 + ticker GOATS 联调 + 不可达降级 + InferCode 动态片段 + 健康检查）；Dx.1/Dx.2 swap/close 真 write 接入 | HTTP 5xx = 0 / 4xx = 0 |
+| **M3.3 · 真后端 Golden 回归** | 🔄 进行中 | E3.1 B 桶真后端 PASS（小样本完成）+ E3.2 桶分别评估 + E3.3 D 桶（依赖 PM）+ E3.4 错例聚类只修 P0/P1 + E3.5 现场 smoke + E3.6 业务方 sign-off | PASS ≥ M3.1 mock baseline，无链路回归 |
+| **M4 · 金丝雀切流** | ⏸ 工具链就绪，待启动 | 测试群 → ~30% 群组 → 全量；shadow 双跑作 M4 第二意见（ADR 0016）| 100% 切流 + 7 天无重大事故 |
 
-参见 [docs/m3-m4-roadmap.md](./docs/m3-m4-roadmap.md) 获取分阶段任务图与分工。
+**M4 准备就绪的工具链**（可直接复用）：
+
+- `scripts/deploy-customer.sh` · 客户现场一键部署 + smoke 自检（C1.13）
+- `scripts/rollback_canary.sh` · F4 灰度应急回切（PR #98）
+- `scripts/drill_smoke.sh` · 演练 smoke（PR #100）
+- `scripts/shadow_compare.py` · LangGraph vs Dify 字段级 diff（PR #90 / #112，含 `DRY_RUN_BACKEND` 模式）
+- `scripts/canary_status.py` / `scripts/metrics_snapshot.py` · 灰度状态 + F4 全指标快照（PR #92 / #94）
+- `scripts/promote_langfuse_prompt.py` · LangFuse Prompt 晋升（F4.6 / PR #95）
+- `scripts/run_alerts.py` · 阈值告警干跑（5xx / cascade / P95 延迟 / LLM 失败率）
+- Grafana 灰度观测面板 JSON 模板（`infra/`，F4.2-F4.5 / PR #97）
+- `docs/on-call-runbook.md` · on-call 应急回切剧本（F4.0 / PR #99）
+
+参见 [docs/m3-m4-roadmap.md](./docs/m3-m4-roadmap.md) 获取分阶段任务图与分工，[ADR 0016](./docs/adr/0016-m3-scope-engineering-loop-not-shadow.md) 获取 M3 范围重定义，[ADR 0017](./docs/adr/0017-m4-canary-quantitative-exit-gate.md) 获取 M4 量化退出门。
+
+## 二期持续优化（全量上线后）
+
+来自客户内部汇报方案（2026-05-11）的三件套，**不在 T+3~4 全量上线范围内**，全量上线后启动：
+
+- **Issue #35** · 评估→优化→更新→再评估自动闭环（错例聚类 / A/B 自动评估 / 自动 PR 生成）
+- **Issue #36** · 智能体异常干预 + 沉淀记忆机制（agentic memory，跨会话经验记忆）
+- **Issue #37** · 回流集自动化打通（D 桶 · 生产真实流量 → golden，需脱敏 + 业务方人工标注）
 
 ## 快速开始
 

@@ -2,7 +2,28 @@
 
 > Judge：DeepSeek V4（Anthropic 兼容端点，thinking=4096 tokens）
 > 范围：全链路（swap / option / option_close / ticker），golden.jsonl 当前 350+ 条
-> 状态：基础设施完成 ✅，主基线已跑通；M3 阶段持续按子链路迭代
+> 状态：基础设施完成 ✅；M3.1 mock 跑通 ✅；M3.2 真后端联调 ✅；当前推进 **M3.3 真后端 golden 回归 + 错例修 P0/P1 + 业务方现场 sign-off**（issues #82–#87）
+
+## M3 阶段三段定义（来自 ADR 0016）
+
+| 阶段 | 状态 | 退出门 | 关联 |
+|---|---|---|---|
+| **M3.1 · Mock 跑通** | ✅ 完成 | harness anchor 全集 PASS ≥ 85%（达成 84.6%）| `docs/m2-real-llm-final-report.md` |
+| **M3.2 · 真后端联调** | ✅ 完成 | D2.1–D2.6 + Dx.1/Dx.2 全 closed；HTTP 5xx = 0 / 4xx = 0 | issues #72–#80 |
+| **M3.3 · 真后端 Golden 回归** | 🔄 进行中 | PASS ≥ M3.1 mock baseline + 错例 P0/P1 全修 + 现场 sign-off | issues #82–#87 |
+
+## M3.3 具体子任务（open）
+
+| Issue | 任务 | 退出门 |
+|---|---|---|
+| #82 E3.1 | 真后端跑 B 桶全集 → PASS rate 报告 | 总 PASS ≥ 92.5%（mock baseline 同口径）|
+| #83 E3.2 | business_seed 全集按桶分别评估 | B 桶 ≥ 90% / C 桶 ≥ 80% |
+| #84 E3.3 | 真后端跑 D 桶（客户真实输入）| 依赖 PM 收集 30+ 条 |
+| #85 E3.4 | 错例聚类 + 根因分析，**只修 P0/P1**（cascade fail / 5xx / 严重参数错 / 标的错），P2 延后到 F4.6 | 修完回归 PASS rate |
+| #86 E3.5 | 现场 smoke checklist + 客户 Java 后端真实联调 | ≥ 5 条真实业务流走通 |
+| #87 E3.6 | 业务方培训 + 现场 sign-off | 业务方盲测 ≥ 5 条 case PASS sign-off |
+| #59 C1.14 | 离线依赖包（pip wheel + docker save）| 离线环境完整跑通客户部署 |
+| #113 | fixture 数据集质量修复（执行价格缺失 / 反案例标错 / 重复指令）| 业务方 review pass |
 
 ---
 
@@ -118,3 +139,12 @@ python scripts/llm_cost_report.py                  # LLM 成本日报
 - Judge 不用 Qwen（自评不可信，会高估）
 - 标的池不切回 HTTP API（ADR 0012：securities-instrument MySQL 直查更稳）
 - 不为提高 PASS 率硬编码业务数据字典（CLAUDE.md "绝对禁止 · P0"）
+- M3.3 错例修复**只修 P0/P1**（cascade fail / 5xx / 严重参数错 / 标的错），P2 错例（个别意图识别错 / 低频边界 case）延后到 F4.6 金丝雀期再修
+
+## 五、二期持续优化（全量上线后启动）
+
+来自客户内部汇报方案（2026-05-11）的三件套，**不在 T+3~4 全量上线范围内**：
+
+- **Issue #35** · 评估→优化→更新→再评估自动闭环（错例聚类 / A/B 自动评估 / 自动 PR 生成 / 3-6 周）
+- **Issue #36** · 智能体异常干预 + 沉淀记忆机制（跨会话 agentic memory / 4-8 周）
+- **Issue #37** · 回流集自动化打通（生产真实流量 → D 桶 golden，含脱敏 + 业务方人工标注 / 6-10 周）

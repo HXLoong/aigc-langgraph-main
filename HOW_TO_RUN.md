@@ -2,7 +2,7 @@
 
 本目录 `aigc-langgraph`（LangGraph 智能代理）。
 
-> 当前阶段：M1 / M2 已完成 → M3 工程联调 + 评估迭代进行中。本文档反映当前 main 分支状态。
+> 当前阶段：M1 / M2 / M3.1 / M3.2 完成 → M3.3 真后端 golden 回归 + 现场 sign-off 进行中（issues #82–#87）；M4 灰度工具链已就绪。本文档反映当前 main 分支状态。
 
 ## 一、架构概览
 
@@ -151,6 +151,34 @@ python scripts/probe_swap_write_e2e.py      # swap 写路径
 python scripts/probe_option_write_e2e.py    # option 写路径
 python scripts/probe_close_write_e2e.py     # close 写路径
 python scripts/probe_ticker_e2e.py          # ticker 子图
+```
+
+### M4 灰度上线工具链（已就绪，可直接复用）
+
+```bash
+# 一键部署 + smoke 自检（客户现场）
+bash scripts/deploy-customer.sh
+
+# 演练 smoke（F4.0）
+bash scripts/drill_smoke.sh
+
+# Shadow 双跑：LangGraph vs Dify 字段级 diff（M4 第二意见）
+python scripts/shadow_compare.py            # 含 DRY_RUN_BACKEND 模式（PR #112）
+
+# 金丝雀状态 + F4 全指标快照
+python scripts/canary_status.py
+python scripts/metrics_snapshot.py
+
+# LangFuse Prompt 晋升（staging → production，F4.6）
+python scripts/promote_langfuse_prompt.py
+
+# 告警阈值干跑（5xx / cascade / P95 延迟 / LLM 失败率）
+python scripts/run_alerts.py
+
+# 紧急回切（企微管理员改 Webhook + 应用层兜底）
+bash scripts/rollback_canary.sh
+
+# Grafana 灰度观测面板 JSON 模板：见 infra/ 目录（F4.2-F4.5）
 ```
 
 ### 手动发消息（兼容 Dify Workflow Run API）
