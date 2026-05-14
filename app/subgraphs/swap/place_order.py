@@ -135,12 +135,22 @@ async def swap_place_order(state: AgentState) -> dict[str, Any]:
     # （让 render 渲染卡显示真单号 H-XXX，turn N+1 confirm 才能从 quote 抠到）
     if backend.get("api_code") == 0:
         data = backend.get("api_result")
-        if isinstance(data, dict) and data.get("orderId") and order_list:
-            order_list[0]["orderId"] = data["orderId"]
+        oids: list[str] = []
+        if isinstance(data, dict) and data.get("orderId"):
+            oids = [data["orderId"]]
         elif isinstance(data, list):
-            for i, item in enumerate(data):
-                if i < len(order_list) and isinstance(item, dict) and item.get("orderId"):
-                    order_list[i]["orderId"] = item["orderId"]
+            oids = [
+                item["orderId"]
+                for item in data
+                if isinstance(item, dict) and item.get("orderId")
+            ]
+        elif isinstance(data, str):
+            # backend 返回文本如 "下单成功 H-20260514-XXX" → regex 抓 H-YYYYMMDD-NNNN
+            import re as _re_oid
+            oids = _re_oid.findall(r"H-\d{8}-\d+", data)
+        for i, oid in enumerate(oids):
+            if i < len(order_list) and oid:
+                order_list[i]["orderId"] = oid
 
     out: dict = {
         "place_params": {
