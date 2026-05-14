@@ -34,7 +34,7 @@ def _patch_llm(
     fake_llm.ainvoke = AsyncMock(return_value=params)
     fake_base = MagicMock()
     fake_base.with_structured_output = MagicMock(return_value=fake_llm)
-    monkeypatch.setattr(po_module, "get_qwen_structured", lambda: fake_base)
+    monkeypatch.setattr(po_module, "get_qwen_complex", lambda: fake_base)
     return fake_llm.ainvoke
 
 
@@ -262,7 +262,7 @@ class TestSwapPlaceOrderNode:
             )
         )
         monkeypatch.setattr(
-            po_module, "get_qwen_structured", lambda: fake_llm
+            po_module, "get_qwen_complex", lambda: fake_llm
         )
         result = await swap_place_order({"raw_text": "x"})
         assert result.get("error") is not None
