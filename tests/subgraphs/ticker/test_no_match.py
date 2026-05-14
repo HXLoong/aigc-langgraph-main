@@ -15,7 +15,6 @@ from app.subgraphs.swap import place_order as place_order_mod
 from app.subgraphs.swap.models import SwapOrderItem, SwapPlaceOrderParams
 from app.subgraphs.ticker.resolver import TickerResolution
 
-
 _ZERO_MATCH_RESOLUTION = TickerResolution(resolved=[], hitl_pending=[])
 
 
