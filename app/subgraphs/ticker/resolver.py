@@ -333,8 +333,23 @@ async def _resolve_via_react_full(raw_text: str) -> TickerResolution:
     resolved: list[TickerCandidate] = []
     seen: set[str] = set()
 
+    # 收集本批 keyword 里"完整 wind code 但 resolver 拒绝"的数字前缀，
+    # 后续相同前缀的裸数字 keyword 不再走模糊匹配（避免 999999.SH→None 但 999999→002001.SZ 这种回退）
+    rejected_digit_prefixes: set[str] = set()
+
     for kw in keywords:
+        # 裸数字 keyword + 同前缀已被完整 wind code 形式拒绝 → 跳过，不模糊匹配
+        if kw.isdigit() and kw in rejected_digit_prefixes:
+            continue
+
         winner = await _resolve_one_keyword(client, kw)
+
+        # 完整 wind code 拒绝 → 记录数字前缀供后续裸数字 keyword 检查
+        if winner is None and _is_explicit_wind_code(kw):
+            digit_prefix = kw.split(".")[0]
+            rejected_digit_prefixes.add(digit_prefix.lstrip("0") or digit_prefix)
+            rejected_digit_prefixes.add(digit_prefix)
+
         if winner is None:
             continue
         if winner.windCode in seen:
