@@ -3,7 +3,7 @@
 场外衍生品 AI 指令助手。**FastAPI + LangGraph + MySQL + LangFuse self-hosted**，从 Dify 工作流迁移而来。
 企微群客户消息 → 意图解析 → 后端业务/交易系统。
 
-> 当前阶段：**M1 已完成**（issues #9-#13 全 closed）→ M2 待启动（24 个 LangGraph 节点逐一实现：swap 10 + option 6 + option_close 7 + ticker 1）
+> 当前阶段：**M1 / M2 已完成**（M2 PR #41 已合 main，主干 24 节点蓝图实际落地 20 节点：swap 6 + option 6 + option_close 7 + ticker 1，整体 PASS ≥ 92.5%）→ **M3 工程联调 + 评估迭代进行中**（参见 [ADR 0016](./docs/adr/0016-m3-scope-engineering-loop-not-shadow.md) 与 [docs/m3-m4-roadmap.md](./docs/m3-m4-roadmap.md)）
 
 ## 关键命令
 
@@ -18,58 +18,83 @@ docker compose -f infra/langfuse/docker-compose.yml --env-file infra/langfuse/.e
 # 启动应用
 uvicorn app.main:app --reload                # FastAPI（POST /v1/workflows/run，兼容 Dify）
 
-# 测试
-pytest tests/ -v                             # 全套测试（smoke / tools / api / harness）
-pytest tests/test_smoke.py -v                # 仅 M1 smoke
+# 测试（841 passed + 14 skipped，约 2 分钟，行覆盖率 82%）
+pytest tests/ -v                             # 全套
+pytest tests/test_smoke.py -v                # 仅 smoke
+pytest -k "not e2e"                          # 跳过 e2e
 
-# Harness（评测台）
+# 评估（M3 主用入口：DeepSeek Judge + per-turn 富集 JSON 写到 Langfuse Cloud）
+python scripts/langfuse_eval.py --local tests/fixtures/golden.jsonl --concurrency 4   # 全量 350+
+python scripts/langfuse_eval.py --local tests/fixtures/golden.jsonl --ids opt-001,opt-018 --concurrency 2
+
+# Harness CLI（备用 / 本地快速 smoke，无 Judge）
 python -m harness run                        # 跑 golden 全集
-python -m harness run --case g042            # 单 case
 python -m harness diff <run-a> <run-b>       # 比对两次 run
 python -m harness sync-golden                # tests/fixtures/*.jsonl ↔ LangFuse dataset
+
+# 真后端探针（M3 联调）
+python scripts/probe_real_backend_e2e.py
+python scripts/probe_swap_write_e2e.py
+python scripts/probe_option_write_e2e.py
+python scripts/probe_close_write_e2e.py
+python scripts/probe_ticker_e2e.py
 
 # Dify 同步（保留资产）
 export DIFY_EMAIL="..." DIFY_PASSWORD="..."
 python dify/sync.py                          # 拉最新 YAML → dify/yaml/
 ```
 
-## 项目结构（M1 完成后）
+## 项目结构（M2 完成、M3 进行中）
 
 ```
 app/
-├── main.py                  # FastAPI 入口（POST /v1/workflows/run）
-├── config.py                # 配置加载
-├── api/routes.py            # 兼容 Dify Workflow Run API
+├── main.py                  # FastAPI 入口 + lifespan + HTTPMetricsMiddleware + /metrics
+├── config.py                # pydantic-settings 配置加载
+├── api/                     # routes.py（POST /v1/workflows/run）+ health.py（/health, /ready）
 ├── graph/
 │   ├── state.py             # AgentState（按业务对象聚合）
 │   ├── safe_node.py         # @safe_node 装饰器
-│   └── main.py              # 主图组装 + 一级路由
-├── nodes/                   # 顶层节点：ingest / persist / render
+│   ├── cascade.py           # cascade fallback（error → 友好降级）
+│   └── main.py              # 主图组装入口（也见 graphs/main_graph.py）
+├── graphs/main_graph.py     # 主图组装 + 一级路由（route_product_condition）
+├── nodes/                   # ingest / intent_route / persist / render / fallback
+├── subgraphs/
+│   ├── swap/                # intent / place_order / cancel / confirm / query_order / hand_to_share（+ backend / graph / models）
+│   ├── option/              # intent + 5 extract（inquiry / place_or_modify / cancel / confirm / query）
+│   ├── close/               # intent / place_close / cancel_close / confirm_close / confirm_cancel / holding_query / query_status
+│   └── ticker/              # ReAct Agent（react_agent / resolver / tools / graph）
 ├── tools/
 │   ├── models.py            # Java DTO 对应 Pydantic
 │   ├── option_client.py     # OptionClient Protocol（POST /financial-orders/operate）
 │   ├── swap_client.py       # SwapClient Protocol（POST /swap-order/operate）
-│   └── ticker_client.py     # TickerClient Protocol（GET /securities-instrument/select）
-├── llm/clients.py           # Qwen standard / thinking / VL（保留）
-├── checkpointer/factory.py  # AIOMySQLSaver（保留）
-├── observability/tracing.py # OpenTelemetry（与 LangFuse 互补）
-└── prompts/                 # 23 个 Dify 提示词资产（重构期内可改写，见原则 6）
-
-# 子图（M2 阶段重建）
-app/subgraphs/               # swap / option / close / ticker（M2 P0/P1/P2 优先级）
+│   ├── ticker_client.py     # TickerClient Protocol（GET /securities-instrument/select）
+│   ├── auth.py / exceptions.py
+├── llm/clients.py           # Qwen 工厂：standard / thinking / VL / qwen3.5-35b-a3b 非 thinking（get_qwen_complex）
+├── checkpointer/factory.py  # AIOMySQLSaver
+├── observability/           # tracing.py + metrics.py（Prometheus 兼容 /metrics）
+└── prompts/                 # Dify 提示词资产（router / swap / option / option_close / ticker）
 
 harness/                     # 评测台（与 app/ 解耦，仅 import build_main_graph）
 ├── golden.py                # golden.jsonl 加载
 ├── runner.py                # 跑 case + dump trace 到 LangFuse
 ├── differ.py                # 字段级 diff（按业务对象路径）
-├── reporter.py              # JSON + markdown 报告
-├── langfuse_client.py       # LangFuse SDK 封装
+├── reporter.py              # JSON + markdown 报告（按 source 桶分别统计）
+├── langfuse_client.py       # LangFuse SDK 封装（v4 OTel-based）
+├── token_tracker.py         # LLM token / 成本估算
+├── case_generator/          # LLM 对抗式 paraphrase 生成 C 桶
 └── cli.py                   # python -m harness <run|diff|sync-golden|...>
 
+scripts/                     # langfuse_eval.py（Judge 评估，M3 主用） / eval_golden.py / probe_*_e2e.py
+                             # upload_golden_to_langfuse.py / promote_langfuse_prompt.py / canary_status.py
+                             # rollback_canary.sh / run_alerts.py / llm_cost_report.py / shadow_compare.py 等
+
 infra/langfuse/              # LangFuse self-hosted Docker Compose（PG + ClickHouse + Redis + MinIO + Web + Worker）
-docs/adr/                    # 16 个架构决定（ADR 0000-0015）
+docs/adr/                    # 20 个架构决定（ADR 0000-0019 + AUDIT-2026-05-13）
 docs/api-contracts/          # Java 后端真实业务 API 契约
-tests/                       # test_smoke + test_api + test_harness + test_tools + tests/api（GOATS 连通性）
+docs/m3-m4-roadmap.md        # M3/M4 端到端任务图（6 个交付面，2026-05-11 修订）
+docs/on-call-runbook.md      # 上线 on-call SOP
+tests/                       # 841 passed + 14 skipped；行覆盖率 82%
+tests/fixtures/              # golden.jsonl（350+ 条）+ golden_ticker_2026-05.jsonl（34 条）
 ```
 
 ## 核心原则（永远有效）
@@ -82,7 +107,7 @@ tests/                       # test_smoke + test_api + test_harness + test_tools
    - 写测试 → 跑到 RED（测试失败） → 写最小修复代码 → 跑到 GREEN → 全量回归
    - 禁止先改代码再补测试，也禁止跳过 RED 验证
    - `/test-driven-development` skill 包含完整 workflow，修改代码前调用
-6. **Dify 原始提示词在重构期内可改写** —— ADR 0001 D5：仅合并 3 个"确认 X"节点 + option 拆 1 intent + 5 extract（不含 close）；其他保持 1:1。重构完成（shadow PASS）后恢复"只读"纪律
+6. **Dify 原始提示词在重构期内可改写** —— ADR 0001 D5：合并 3 个"确认 X"节点 + option 拆 1 intent + 5 extract（不含 close）；M2 阶段已按需对 swap/render 等做参数对齐与提示词瘦身。M3 工程联调期间仍可改写，但每次改写须在 ADR 0001 D5 的"处置表"中登记；M4 全量上线后恢复"只读资产"纪律
 7. **标的代码必须 from_goats=True** —— Ticker Agent 的绝对约束（ADR 0008）
 8. **节点失败必须 cascade 防御** —— 任一节点写入 `state['error']` 后，下游 conditional 路由必须检查并跳到 fallback render，禁止 cascade 失败。具体：主图 `_route_by_product` 与每子图首节点后的 conditional 都加 `if state.get('error'): return 'fallback'`。fallback 节点输出友好回复（"我没完全理解你的意思，能换种说法重新告诉我吗"）+ trace 记录原 fail 节点名。LLM 解析失败由 `with_structured_output` 自带 1 次重试 + `@safe_node` 兜底捕获 ValidationError 写入 error；不走 HITL（HITL 仅用于 ADR 0006 的业务参数二次确认场景）
 
@@ -187,60 +212,43 @@ tests/                       # test_smoke + test_api + test_harness + test_tools
 - 中文注释 OK，docstring 简洁清晰
 - 不加 emoji（生产代码）
 
-## 下一步：M2
+## 下一步：M3 工程联调闭环（进行中）
 
-按 ADR 0001 D9 P0/P1/P2 优先级实施 **24 个 LangGraph 节点**（23 常规 LLM 节点 + 1 个 ticker ReAct 子图）：
+ADR 0016 把"M3 = shadow 双跑"重新定义为"M3 = 工程联调闭环 + 评估迭代"。范围：
 
-> 节点分布（grill-with-docs 2026-05-10 修订）：swap 10 + option 6（1 intent + 5 extract）+ option_close 7 + ticker 1 = 24
+1. **代码完整性**：24 节点蓝图 → 主干 20 节点已落地；P2 辅助节点（place_order_image / place_order_excel / image_recognize 等）按线上流量增量补，不强求 M3 前完成
+2. **数据集完整性**：golden.jsonl 已扩到 350+；按 B / C / D 桶分别维护，CI lint 校验不变量
+3. **客户现场部署能力**：infra/langfuse self-hosted、`scripts/deploy-customer.sh`、`.env.customer.template`
+4. **联调与回归**：真后端 e2e 探针（`scripts/probe_*_e2e.py`）+ DeepSeek Judge 评估（`scripts/langfuse_eval.py`）+ 现场 smoke
+5. **可观测 + 运维**：`/metrics` Prometheus 端点 + `scripts/run_alerts.py` 干跑 + on-call SOP + `scripts/rollback_canary.sh`
+6. **上线策略**：Shadow 双跑（M4 第二意见）+ 按群组金丝雀（测试群 → ~30% → 全量）
 
-```
-P0（最先做）：swap.place_order / option.intent_extract / close.place_close / ticker 子图
-P1（参数 bug 关键）：swap.cancel + cancel_extract / swap.confirm 合并版 / swap.query_order / close.confirm_*
-P2（边角）：swap.place_order_image / place_order_excel / image_recognize / hand_to_share / close.query_status
-```
+参见 [docs/m3-m4-roadmap.md](./docs/m3-m4-roadmap.md) 获取分阶段任务图与 owner 表。
 
-每个节点的实施模板：`@safe_node` + `with_structured_output(<NodePydanticOutput>)` + `load_prompt()` + golden case（数量见下方分级退出门）。
+### 节点工作模板（不变）
 
-### M2 PR 颗粒度（grill-with-docs 2026-05-10）
+每个节点：`@safe_node` + `with_structured_output(<NodePydanticOutput>)` + `load_prompt()` + golden case。
 
-**工作单元 = 节点为单位**，一节点一 PR。两条约束：
+### golden case 来源策略
 
-1. **同子图首个 PR 含骨架** —— 该子图第一个被实施的节点 PR 必须同时建立 `app/subgraphs/<name>/graph.py` + `models.py` 骨架；后续节点 PR 只挂自己的 `<node>.py` + 在 graph.py 加边
-2. **golden 同枝合入** —— 节点 PR 的"绿"标准按优先级分级（见下），禁止"先合代码、稍后补 case"
+**B + C + D 三桶**：
 
-**分级退出门（grill-with-docs 2026-05-11 修订）**：
-
-| 优先级 | 节点 | golden 最低要求 |
+| 来源 | 角色 | 退出门 PASS 率 |
 |---|---|---|
-| P0 | swap.place_order / option.intent_extract / close.place_close / ticker 子图 | ≥ 5 条全 PASS |
-| P1 | swap.cancel / swap.confirm / swap.query_order / close.confirm_* | ≥ 5 条全 PASS |
-| P2 | swap.place_order_image / place_order_excel / image_recognize / hand_to_share / close.query_status | ≥ 2 条全 PASS |
+| **B · 业务方手写种子** | 主基线，意图均衡覆盖 | ≥ 90% |
+| **C · LLM 对抗式 paraphrase**（`harness/case_generator/`） | 边界 case / 同义改写 | ≥ 80%（容忍 LLM 同质化抖动）|
+| **D · 客户历史真实输入** | 反映真实分布；必须业务方人工标注 expected 后才能合入 | 无硬性阈值（M3 持续累积，作补充参考）|
+| ~~A · 历史企微日志抽样~~ | 暂搁，被 D 桶替代 | — |
 
-理由：P2 节点生产流量占比极低，过度投入 golden case 效益递减；M3 真实流量会自然补充稀疏节点的 case 集。
-
-理由：M1 已建好 graph 骨架 + safe_node + tools 层 + harness CLI；M2 真正工作量在节点函数 + Pydantic + 提示词 + golden，正好对应一节点一 PR 的天然单元。shadow 双跑（M3）的"节点级 diff"机制天然要求节点级 PR 颗粒度，可一一定位回归来源。
-
-### M2 golden case 来源策略（grill-with-docs 2026-05-10）
-
-**B + C 组合，A 暂搁**：
-
-| 来源 | 配比 | 执行约定 |
-|---|---|---|
-| **B · 业务方手写种子** | P0 ≥ 50 条（每节点 6-8 条）；M2 全程 ≥ 130 条 | 用 `golden.jsonl` schema 填模板；只标 `product_type` + `intent`，不标参数细节（参数 expected 跑出 actual 后业务方再 review）|
-| **C · LLM 对抗式生成**（基于种子 paraphrase + 边界 case）| P0 ≥ 30 条；M2 全程 ≥ 70 条 | 工具放 `harness/case_generator/`，用 thinking 模型；生成的 case **必须** 经业务方 review pass 才合入 |
-| ~~A · 历史企微日志抽样~~ | 暂搁 | 留给 M3 shadow 阶段——线上真实输入 + Dify 输出会自然累积成 case 集 |
-
-**退出门按 case 来源分桶**（避免 LLM 生成 case 拉低真门槛）：
-- B 桶 PASS 率必须 ≥ 90%
-- C 桶 PASS 率 ≥ 80%（容忍 LLM 生成的同质化抖动）
-- harness reporter 输出按桶分别统计
+harness reporter 输出按桶分别统计；CI 维护一致性 lint（详见 `scripts/check_fixture_consistency.py`）。
 
 详见：
 
 - 领域语言：`@CONTEXT.md`
-- 架构决定：`@docs/adr/`（16 个 ADR）
+- 架构决定：`@docs/adr/`（20 个 ADR：0000-0019 + AUDIT-2026-05-13）
 - Java 契约：`@docs/api-contracts/java-backend.md`
-- M1 退出门验证：`@tests/test_smoke.py` + `test_api.py` + `test_harness.py` + `test_tools.py`
+- M3/M4 路线图：`@docs/m3-m4-roadmap.md`
+- on-call SOP：`@docs/on-call-runbook.md` + `@docs/troubleshooting-sop.md`
 
 ## Agent skills
 

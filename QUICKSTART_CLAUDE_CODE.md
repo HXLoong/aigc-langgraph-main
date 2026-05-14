@@ -27,9 +27,9 @@ claude              # 启动交互式 session
 
 启动时 Claude Code 会自动加载：
 - `CLAUDE.md` （项目 memory）
-- `.claude/rules/*.md` （规则文件）
+- `.claude/rules/*.md` （规则文件：testing / python-style / langgraph-patterns / prompt-management / git-workflow）
 - `.claude/agents/*.md` （4 个专家 agent）
-- `.claude/skills/**/SKILL.md` （4 个工作流 skill）
+- `.claude/skills/**/SKILL.md` （7 个工作流 skill）
 - `.claude/settings.json` （权限配置）
 
 **确认加载成功**：在 Claude Code 里输入 `/memory`，应该看到 CLAUDE.md 被列出。
@@ -49,18 +49,21 @@ claude              # 启动交互式 session
 
 **也可以用 `/agents` 命令交互式查看和调用。**
 
-### 4 个 Slash Commands / Skills
+### 7 个 Slash Commands / Skills
 
 | 命令 | 场景 |
 |---|---|
+| `/test-driven-development`（或说"使用 tdd"）| **强制 TDD workflow**：bug fix / 新功能先写 RED 测试，再写最小修复，全量回归 |
+| `/run-eval` | 通用评估：跑 `scripts/langfuse_eval.py` 在 golden set 上端到端评估，输出 JSON + markdown 报告 |
+| `/iterate-option` | 期权链路批量评估迭代：批量跑→按失败 trace 归类根因→TDD 修→重跑，连续自驱动循环 |
+| `/shadow-test` | 跑 LangGraph vs Dify 双跑对比（M4 切流前的第二意见，非 M3 退出门）|
 | `/migrate-prompt <yaml> <node-title>` | 单个提示词迁移 |
-| `/add-intent <product> <intent>` | 新增一个意图 |
-| `/shadow-test` | 跑 LangGraph vs Dify 双跑对比 |
 | `/sync-dify-prompts <dir>` | 批量同步 Dify 提示词变更 |
+| `/add-intent <product> <intent>` | 新增一个意图（同步加枚举 / 路由 / 提示词 / 测试）|
 
 ---
 
-## 第四步：5 个常用实战场景
+## 第四步：6 个常用实战场景
 
 ### 场景 1 · 业务给了新 Dify YAML，要迁移一个新节点
 
@@ -124,6 +127,22 @@ Claude Code：
 - 让 test-generator 补一个 None quote_content 的测试
 - 跑 pytest 确认
 ```
+
+### 场景 6 · M3 迭代：跑 eval 找失败 → TDD 修 → 复跑
+
+```
+你：/iterate-option --limit 20
+
+Claude Code：
+- 跑 scripts/langfuse_eval.py 子集
+- 读 Langfuse outer span output 的 turns[i] 字段定位错误层
+  （product_type / intent / tickers / place_params / api_result / error）
+- 用 /test-driven-development 写 RED 测试 → 改代码 → GREEN
+- 跑对应 ids 重跑确认
+- 扩大批次循环
+```
+
+详细 SOP：CLAUDE.md "排查与修复流程"小节。
 
 ---
 
@@ -244,6 +263,9 @@ Claude Code 有能力执行 bash 命令。即使有 `settings.json` 的白名单
   - [开发指南](docs/DEVELOPMENT.md)
   - [Dify 迁移](docs/DIFY_MIGRATION.md)
   - [常见问题](docs/TROUBLESHOOTING.md)
+  - [M3/M4 路线图](docs/m3-m4-roadmap.md)
+  - [on-call SOP](docs/on-call-runbook.md)
+  - [ADR 0000-0019](docs/adr/)
 
 ---
 
