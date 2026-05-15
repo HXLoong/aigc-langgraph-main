@@ -426,7 +426,10 @@ async def render(state: AgentState) -> dict[str, Any]:
         }
 
     # 8b. 确认下单（按 product_type 区分期权/互换文案）
-    if confirm.get("orderList"):
+    # intent 守卫：仅 confirm_* 意图本轮才走此分支，避免 multi-turn state 泄漏
+    # （turn N 的 confirm 留在 state，turn N+1 cancel/query 错走 confirm 文案）
+    intent = state.get("intent") or ""
+    if confirm.get("orderList") and "confirm" in intent:
         product = state.get("product_type") or ""
         product_label = "期权" if product in ("option", "option_close") else "互换"
         return {"reply_text": f"{product_label}订单已确认提交，订单已接收、等待交易员审核。"}
