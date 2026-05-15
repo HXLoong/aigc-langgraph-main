@@ -25,6 +25,17 @@ from app.subgraphs.option.models import OptionInquiryParams
 from app.subgraphs.ticker.resolver import resolve_ticker, resolve_ticker_full
 
 
+#: 快速询价 / 雪球 / 参与型识别关键词（命中则不走 LLM，直传 GOATS instrument parser）
+_FAST_INQUIRY_MARKERS = ("快速询价", "雪球", "参与型", "敲入", "敲出")
+
+
+def _is_fast_inquiry(text: str) -> bool:
+    """检测 raw_text 是否是快速询价 / 雪球类强信号场景。"""
+    if not text:
+        return False
+    return any(m in text for m in _FAST_INQUIRY_MARKERS)
+
+
 def _format_history(history: list[Message] | None) -> str:
     if not history:
         return ""
@@ -57,6 +68,47 @@ async def option_extract_inquiry(state: AgentState) -> dict[str, Any]:
     - trace: 单条 TraceEntry，记录订单数 + 标的数
     """
     raw_text = state.get("raw_text", "") or ""
+
+    # 0a. 快速询价 / 雪球 / 参与型 → 直接转发给 GOATS instrument parser，跳过 LLM 抽取
+    # 与 Dify 工作流"判断快速询价"分支对齐：用户输入这类强信号关键词时，原文直传
+    # GOATS endpoint 拿 parsed 字段（productType/tenor/knockInPrice/...），再带着这些
+    # 字段调现有 option/operate backend 拿正式询价回复
+    if _is_fast_inquiry(raw_text):
+        from app.tools.goats_rfq import parse_rfq_instrument
+
+        rfq_data = await parse_rfq_instrument(raw_text)
+        if rfq_data:
+            # 把 GOATS parser 返回的字段填到 optionRfq 调后端
+            # 把 GOATS parser 字段透传给 backend (含 fuzzyCodeList / productSubtypeList 等扩展字段)
+            option_rfq = {
+                "chatType": rfq_data.get("chatType"),
+                "chatInstrument": rfq_data.get("chatInstrument") or raw_text,
+                "productType": rfq_data.get("productType"),
+                "tenor": rfq_data.get("tenor"),
+                "strike": [str(s) for s in (rfq_data.get("strike") or [])],
+                "knockInPrice": [str(p) for p in (rfq_data.get("knockInPrice") or [])],
+                "knockOutPrice": [str(p) for p in (rfq_data.get("knockOutPrice") or [])],
+                "estimateMargin": [str(m) for m in (rfq_data.get("estimateMargin") or [])],
+                "fuzzyCodeList": rfq_data.get("fuzzyCodeList") or [],
+                "productSubtypeList": rfq_data.get("productSubtypeList") or [],
+                "participateRate": [str(p) for p in (rfq_data.get("participateRate") or [])],
+            }
+            backend = await call_option_backend(
+                state,
+                intent="new_inquiry",
+                option_rfq=option_rfq,
+            )
+            # 不写 place_params/tickers，让 render 走 step 5 直接透传 backend api_result
+            return {
+                **backend,
+                "trace": [
+                    TraceEntry(
+                        node="option_extract_inquiry",
+                        decision=f"fast_inquiry product={rfq_data.get('productType')}",
+                        llm_output={"rfq_data": rfq_data},
+                    )
+                ],
+            }
 
     # 0. 无效标的预检（代码格式但不在池→直接拒绝，不调 LLM）
     import re as _re_ticker
