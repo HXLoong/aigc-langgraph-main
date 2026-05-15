@@ -469,4 +469,11 @@ async def render(state: AgentState) -> dict[str, Any]:
     if cancel.get("cancelOrderNoList"):
         return {"reply_text": f"已收到撤单请求，订单号: {', '.join(cancel['cancelOrderNoList'])}"}
 
+    # 撤单 intent 但未抽到订单号（quote_content 不是订单卡）→ 引导用户引用
+    if "cancel" in intent:
+        return {"reply_text": "未识别到要撤销的订单号，请引用上次询价/下单的消息卡后回复【撤单】。"}
+    # 确认意图但未抽到订单号 → 同样引导
+    if "confirm" in intent:
+        return {"reply_text": "未识别到要确认的订单号，请引用上次报价/订单卡后回复【确认下单】或【确认撤单】。"}
+
     return {}
