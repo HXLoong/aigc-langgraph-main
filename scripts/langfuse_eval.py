@@ -74,6 +74,17 @@ async def _run_graph_once(graph, config, raw_content, has_mention=True, turn=1, 
 #: 生产场景真人输入间隔大，eval 这里加 sleep 模拟真实节奏避开 dedup（仅 eval 行为，不动业务代码）。
 _TURN_INTERVAL_SECONDS = float(os.environ.get("EVAL_TURN_INTERVAL", "1.0"))
 
+#: 后端短错误消息特征（dedup / 限流 / 授权失败等），出现时该轮 reply 不能作为下轮 quote
+#: 否则 multi-turn case 后续 turn 会因 quote 是错误消息而 router 判 unknown
+_BACKEND_ERROR_MARKERS = ("正在处理", "请勿重复", "未授权", "失败：未补充")
+
+
+def _is_unusable_quote(text: str) -> bool:
+    """判断 prev reply 是否是后端短错误消息，不能作为下轮 quote 用。"""
+    if not text or len(text) > 200:
+        return False
+    return any(m in text for m in _BACKEND_ERROR_MARKERS)
+
 
 async def run_langgraph_pipeline(*, item, **kwargs):
     inp = item.input if isinstance(item.input, dict) else json.loads(item.input)
@@ -87,7 +98,16 @@ async def run_langgraph_pipeline(*, item, **kwargs):
         if results and _TURN_INTERVAL_SECONDS > 0:
             await asyncio.sleep(_TURN_INTERVAL_SECONDS)
         quote = None
-        if t.get("quote_desc") and prev: quote = prev
+        if t.get("quote_desc"):
+            # 优先用 prev，但 prev 是后端短错误时回溯到更早的"有意义" reply
+            if prev and not _is_unusable_quote(prev):
+                quote = prev
+            else:
+                for r in reversed(results):
+                    candidate = r.get("reply_text") or ""
+                    if candidate and not _is_unusable_quote(candidate):
+                        quote = candidate
+                        break
         try:
             rs = await _run_graph_once(graph, config,
                 raw_content=t.get("raw_content",""),
