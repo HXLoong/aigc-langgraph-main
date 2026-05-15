@@ -385,6 +385,9 @@ async def render(state: AgentState) -> dict[str, Any]:
     # 5. error → 区分不可达 vs 一般 cascade fail
     err = state.get("error")
     if err is not None:
+        # 节点直接写字符串 error（如 option_extract_inquiry invalid_ticker）→ 当 reply 用
+        if isinstance(err, str):
+            return {"reply_text": err}
         err_type = err.type if hasattr(err, "type") else (
             err.get("type") if isinstance(err, dict) else None
         )
