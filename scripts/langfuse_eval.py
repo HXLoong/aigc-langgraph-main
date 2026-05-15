@@ -82,6 +82,18 @@ _BACKEND_ERROR_MARKERS = ("正在处理", "请勿重复", "未授权", "失败�
 #: 改为环境变量可调:EVAL_PASS_THRESHOLD=0.99 严格 / 0.7 宽松（默认）/ 0.5 极宽松
 _PASS_THRESHOLD = float(os.environ.get("EVAL_PASS_THRESHOLD", "0.7"))
 
+#: 图片 / Excel case 标识——这些 case 在 golden.jsonl 里声明"用户发送图片"等但
+#: 实际没图片/Excel 数据,无法真测。默认跳过以避免污染分数。
+#: EVAL_SKIP_IMAGE_CASES=0 可跑(返回固定 fail)
+_SKIP_IMAGE_CASES = os.environ.get("EVAL_SKIP_IMAGE_CASES", "1") == "1"
+_IMAGE_MARKERS = ("用户发送图片", "发送图片", "图片识别", ".xlsx", ".xls", "截图")
+
+
+def _is_image_case(case: dict) -> bool:
+    """case 是否依赖图片/Excel 数据（实际 golden 里没数据）。"""
+    full_text = " ".join(c.get("raw_content", "") for c in case.get("conversation", []))
+    return any(m in full_text for m in _IMAGE_MARKERS)
+
 
 def _is_unusable_quote(text: str) -> bool:
     """判断 prev reply 是否是后端短错误消息，不能作为下轮 quote 用。"""
@@ -207,8 +219,16 @@ JUDGE = """你是场外衍生品AI指令助手的测试审查员。
 _JSON_OBJ_RE = re.compile(r'\{[^{}]*"pass"[^{}]*"score"[^{}]*\}', re.DOTALL)
 
 
+_PASS_KV_RE = re.compile(r'"pass"\s*:\s*(true|false)', re.IGNORECASE)
+_SCORE_KV_RE = re.compile(r'"score"\s*:\s*([0-9.]+)')
+
+
 def _parse_judge_json(text: str) -> dict | None:
-    """从 Judge 输出里抠 JSON：优先整体 loads，失败用 regex 抓含 pass+score 的对象。"""
+    """从 Judge 输出里抠 JSON：优先整体 loads，失败用 regex 抓含 pass+score 的对象。
+
+    最后兜底：如果 JSON 完全坏（含内嵌未转义引号等），直接 regex 取 pass / score 字面值。
+    这样即使 reason 字段坏掉也能拿到正确评分（避免 Judge 自己挂导致冤判 0）。
+    """
     text = (text or "").strip()
     if not text:
         return None
@@ -226,6 +246,18 @@ def _parse_judge_json(text: str) -> dict | None:
     if 0 <= s < e:
         try:
             return json.loads(text[s:e+1])
+        except Exception:
+            pass
+    # 兜底：regex 抠 pass / score 字面值（即使 JSON 完全坏掉）
+    pass_m = _PASS_KV_RE.search(text)
+    score_m = _SCORE_KV_RE.search(text)
+    if pass_m and score_m:
+        try:
+            return {
+                "pass": pass_m.group(1).lower() == "true",
+                "score": float(score_m.group(1)),
+                "reason": f"JSON 坏但 regex 抠到 pass+score: {text[:80]}",
+            }
         except Exception:
             pass
     return None
@@ -346,6 +378,11 @@ async def run_local(golden_path, filter_func, ids, max_concurrency, limit, dry_r
     with open(golden_path, encoding="utf-8") as f:
         cases = [json.loads(line) for line in f if line.strip()]
     print(f"加载 {len(cases)} 条 (local)")
+    if _SKIP_IMAGE_CASES:
+        skipped = [c for c in cases if _is_image_case(c)]
+        cases = [c for c in cases if not _is_image_case(c)]
+        if skipped:
+            print(f"跳过图片/Excel case: {len(skipped)} 条 (golden 标注'用户发送图片'但无图片数据)")
     if ids: cases = [c for c in cases if c["id"] in ids]; print(f"按 id 过滤: {len(cases)} 条")
     if filter_func: cases = [c for c in cases if filter_func in c.get("category","")]; print(f"按 category 过滤: {len(cases)} 条")
     if limit: cases = cases[:limit]; print(f"限制: {len(cases)} 条")
