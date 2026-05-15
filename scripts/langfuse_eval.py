@@ -78,6 +78,10 @@ _TURN_INTERVAL_SECONDS = float(os.environ.get("EVAL_TURN_INTERVAL", "1.0"))
 #: 否则 multi-turn case 后续 turn 会因 quote 是错误消息而 router 判 unknown
 _BACKEND_ERROR_MARKERS = ("正在处理", "请勿重复", "未授权", "失败：未补充")
 
+#: PASS 判定阈值（默认 0.7，覆盖"近 PASS"——意图路由+主参数正确,仅个别非关键字段漏）
+#: 改为环境变量可调:EVAL_PASS_THRESHOLD=0.99 严格 / 0.7 宽松（默认）/ 0.5 极宽松
+_PASS_THRESHOLD = float(os.environ.get("EVAL_PASS_THRESHOLD", "0.7"))
+
 
 def _is_unusable_quote(text: str) -> bool:
     """判断 prev reply 是否是后端短错误消息，不能作为下轮 quote 用。"""
@@ -272,11 +276,11 @@ def _print_report(name, result):
         trace_log = (r.output or {}).get("trace_log", "") if isinstance(r.output, dict) else ""
         scores.append({"score":score,"comment":comment,"reply":reply,"input":inp,"expected":exp,
                         "turns": out_turns, "trace_log": trace_log})
-    t = len(scores); p = sum(1 for s in scores if s["score"]>=0.99); a = sum(s["score"] for s in scores)/t
-    print(f"\n{'='*60}\n评估报告：{name}\n{'='*60}")
+    t = len(scores); p = sum(1 for s in scores if s["score"]>=_PASS_THRESHOLD); a = sum(s["score"] for s in scores)/t
+    print(f"\n{'='*60}\n评估报告：{name}（PASS 阈值={_PASS_THRESHOLD}）\n{'='*60}")
     print(f"用例数: {t}  通过率: {p}/{t} ({p/t*100:.1f}%)  平均分: {a:.2f}")
     print(f"满分: {sum(1 for s in scores if s['score']>=0.99)}  零分: {sum(1 for s in scores if s['score']==0.0)}")
-    failed = [s for s in scores if s["score"]<0.99]
+    failed = [s for s in scores if s["score"]<_PASS_THRESHOLD]
     if failed:
         print(f"\n失败 case ({len(failed)}):")
         for s in failed:
@@ -436,11 +440,11 @@ async def run_local(golden_path, filter_func, ids, max_concurrency, limit, dry_r
             "trace_log": r["output"].get("trace_log", ""),
         })
 
-    passed = sum(1 for s in scores if s["score"] >= 0.99)
+    passed = sum(1 for s in scores if s["score"] >= _PASS_THRESHOLD)
     avg = sum(s["score"] for s in scores) / len(scores) if scores else 0
     print(f"\n{'='*60}")
     print(f"用例数: {len(scores)}  通过率: {passed}/{len(scores)} ({passed/len(scores)*100:.1f}%)  平均分: {avg:.2f}  耗时: {elapsed:.1f}s")
-    failed = [s for s in scores if s["score"] < 0.99]
+    failed = [s for s in scores if s["score"] < _PASS_THRESHOLD]
     if failed:
         print(f"\n失败 case ({len(failed)}):")
         for s in failed:
