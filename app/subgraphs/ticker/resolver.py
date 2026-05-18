@@ -93,6 +93,16 @@ def _ends_with_any(wind: str, suffixes: tuple[str, ...]) -> bool:
     return any(upper.endswith(s) for s in suffixes)
 
 
+#: 完整 wind code 模式：纯数字代码 + 已知交易所后缀
+import re as _re_wc
+_EXPLICIT_WIND_CODE_RE = _re_wc.compile(r"^\d{4,6}\.(SH|SZ|BJ|HK|CFE|DCE|SHF|CZC|INE)$", _re_wc.IGNORECASE)
+
+
+def _is_explicit_wind_code(keyword: str) -> bool:
+    """判断 keyword 是否是完整 wind code 格式（用户输入了明确代码）。"""
+    return bool(_EXPLICIT_WIND_CODE_RE.match((keyword or "").strip()))
+
+
 def _pick_winner(
     keyword: str,
     results: list,
@@ -114,6 +124,15 @@ def _pick_winner(
        d. 兜底取第一个。
     """
     if not results:
+        return None
+
+    # 用户输入是完整 wind code（如 999999.SH / 99999.HK）→ 要求 GOATS 精确匹配
+    # 否则不模糊回退到 GOATS 自动返回的近似结果，让上层走拒绝路径
+    if _is_explicit_wind_code(keyword):
+        kw_up = keyword.strip().upper()
+        for r in results:
+            if (r.windCode or "").upper() == kw_up:
+                return r
         return None
 
     # 优先 A 股
@@ -314,8 +333,23 @@ async def _resolve_via_react_full(raw_text: str) -> TickerResolution:
     resolved: list[TickerCandidate] = []
     seen: set[str] = set()
 
+    # 收集本批 keyword 里"完整 wind code 但 resolver 拒绝"的数字前缀，
+    # 后续相同前缀的裸数字 keyword 不再走模糊匹配（避免 999999.SH→None 但 999999→002001.SZ 这种回退）
+    rejected_digit_prefixes: set[str] = set()
+
     for kw in keywords:
+        # 裸数字 keyword + 同前缀已被完整 wind code 形式拒绝 → 跳过，不模糊匹配
+        if kw.isdigit() and kw in rejected_digit_prefixes:
+            continue
+
         winner = await _resolve_one_keyword(client, kw)
+
+        # 完整 wind code 拒绝 → 记录数字前缀供后续裸数字 keyword 检查
+        if winner is None and _is_explicit_wind_code(kw):
+            digit_prefix = kw.split(".")[0]
+            rejected_digit_prefixes.add(digit_prefix.lstrip("0") or digit_prefix)
+            rejected_digit_prefixes.add(digit_prefix)
+
         if winner is None:
             continue
         if winner.windCode in seen:

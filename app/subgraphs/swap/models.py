@@ -58,8 +58,10 @@ SwapTransactionType = Literal[
     "OTHERS",
 ]
 
-#: 买卖方向
-SwapOrderDirection = Literal["BUY", "SELL"]
+#: 买卖方向（对齐 Java GoatsOrderDirection，4 个值；swap-023 等"SHORT_OPEN"被 LLM 抽
+#: 出后撞 Pydantic ValidationError 的回归保护）
+#: BUY 买入 / SELL 卖出 / SHORT_OPEN 卖空 / SHORT_CLOSE 平空
+SwapOrderDirection = Literal["BUY", "SELL", "SHORT_OPEN", "SHORT_CLOSE"]
 
 #: 价格类型
 SwapPriceType = Literal["LimitOrder", "MarketOrder"]
