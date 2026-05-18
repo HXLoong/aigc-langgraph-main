@@ -57,11 +57,11 @@ _Avoid_: 三个独立的"确认下单 / 确认撤单 / 确认改单"节点（已
 - **Harness** 的失败报告会指向具体的 **节点（Node）**，让 AI 工具知道改哪里
 - 一条用户原话先经一级路由到 **product_type**（swap / option / close），再由该子图内识别 **意图（Intent）**
 - 任何 **标的** 出现在 LangGraph 输出前，必须经过 ticker 子图（ReAct Agent，4 个工具：tokenize / completeness / rank / infer_code）校验，最终输出 `from_goats=True`
-- LangGraph 通过 4 个 **Protocol**（QuoteClient / OrderClient / PositionClient / TickerClient）调用 Java 后端业务 API，契约定义见 `docs/api-contracts/java-backend.md`
+- LangGraph 通过 3 个 **Protocol**（OptionClient / SwapClient / TickerClient）调用 Java 后端业务 API，契约定义见 `docs/api-contracts/java-backend.md`
 
 **Context-dependent case（上下文依赖 case）**：
 golden case 中，正确的 product_type 或 intent 只有在已知多轮对话历史时才能确定的一类 case（如裸"撤单"/"确认下单"）。
-M2 阶段 harness runner 每条 case 独立跑，不注入 history_messages，这些 case 的失败属于**已知局限**，不作为 pass rate 的改进目标。M3 阶段靠真实流量 case 自然替代。
+M2 / M3 阶段 harness runner 每条 case 独立跑，不注入 history_messages，这些 case 的失败属于**已知局限**，不作为 pass rate 的改进目标。M3 阶段靠真实流量 case（D 桶）自然补充。
 _Avoid_: 把这类失败归因于"节点 bug"（根因是测试环境缺少对话历史，不是节点逻辑错误）
 
 **紧急回滚（Emergency Rollback）**：
