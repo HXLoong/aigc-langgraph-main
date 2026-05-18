@@ -97,6 +97,14 @@ tests/                       # 841 passed + 14 skipped；行覆盖率 82%
 tests/fixtures/              # golden.jsonl（350+ 条）+ golden_ticker_2026-05.jsonl（34 条）
 ```
 
+## 子目录陷阱页（按需加载）
+
+只在三个目录下有 `CLAUDE.md`，承载**根文件不便展开的局部陷阱**，不是必读层级：
+
+- `app/prompts/CLAUDE.md` — 提示词加载器 + ADR 0001 D5 改写纪律
+- `tests/CLAUDE.md` — Mock "patch where it's looked up" 陷阱 + TDD 红线
+- `scripts/CLAUDE.md` — 25+ 脚本分类目录页
+
 ## 核心原则（永远有效）
 
 1. **提示词不硬编码在代码里** —— 从 `app/prompts/**/*.md` 用 `load_prompt()` 加载
