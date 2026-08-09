@@ -5,12 +5,11 @@ option.extract_inquiry）正确将候选写入 state['ticker_hitl_candidates']�
 """
 from __future__ import annotations
 
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
 from app.subgraphs.swap import place_order as place_order_mod
-from app.subgraphs.swap.intent import swap_intent
 from app.subgraphs.swap.models import SwapOrderItem, SwapPlaceOrderParams
 from app.subgraphs.ticker.resolver import TickerResolution
 
