@@ -8,19 +8,16 @@ dependencies = [
     "fastapi>=0.115.0",
     "uvicorn[standard]>=0.32.0",
     "httpx>=0.27.0",
-
     # LangGraph + LangChain
-    "langgraph>=0.6.0",
+    "langgraph>=1.2.10",
     "langgraph-checkpoint>=2.0.0",
     "langgraph-checkpoint-mysql[aiomysql]>=3.0.0",  # 关键：MySQL checkpointer
     "langchain>=0.3.0",
     "langchain-openai>=0.2.0",  # 兼容 Qwen OpenAI API
-
     # 数据库
     "aiomysql>=0.2.0",
     "sqlalchemy[asyncio]>=2.0.0",
     "alembic>=1.13.0",
-
     # 配置 & 工具
     "pydantic>=2.8.0",
     "pydantic-settings>=2.4.0",
@@ -29,7 +26,6 @@ dependencies = [
     "structlog>=24.4.0",
     "openpyxl>=3.1.0",
     "pyyaml>=6.0",  # ADR 0015: 一级路由 keywords 表 yaml 维护
-
     # 可观测性（可选）
     "opentelemetry-api>=1.27.0",
     "opentelemetry-sdk>=1.27.0",
