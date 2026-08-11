@@ -21,6 +21,8 @@ from pydantic import BaseModel, ConfigDict, Field
 #: - business_seed: 业务方手写种子（高质量基线，PASS 阈值 ≥ 90%）
 #: - llm_paraphrase: LLM 对抗式 paraphrase（C 来源，PASS 阈值 ≥ 80%）
 #: - production_log: 生产日志抽样（A 来源，M3 阶段累积）
+#: 注：aigc 主仓 excel-to-golden 导入的 case 带 "csv/<表名>/<行>" 溯源串，
+#: 不在上述三桶内——schema 放宽为任意 str，三桶字面量仅作阈值键与文档。
 CaseSource = Literal["business_seed", "llm_paraphrase", "production_log"]
 
 
@@ -42,7 +44,7 @@ class GoldenCase(BaseModel):
     category: str
     expected: dict[str, Any] = Field(default_factory=dict)
     type: str = "正案例"
-    source: CaseSource = "business_seed"
+    source: CaseSource | str = "business_seed"
     conversation: list[ConversationTurn] = Field(default_factory=list)
     # 兼容旧格式
     raw_content: str = ""
