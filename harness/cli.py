@@ -30,6 +30,9 @@ logger = logging.getLogger(__name__)
 
 
 DEFAULT_GOLDEN_PATHS = [
+    # 4c274b0 主集重命名 unified_golden.jsonl → golden.jsonl，CLI 当时漏改；
+    # 旧名保留作兜底（本地若还有旧文件也能吃到）。
+    Path("tests/fixtures/golden.jsonl"),
     Path("tests/fixtures/unified_golden.jsonl"),
 ]
 
