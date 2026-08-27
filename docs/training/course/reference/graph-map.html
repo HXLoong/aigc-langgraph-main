@@ -1,0 +1,367 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>主图与子图状态图 · otc-agent</title>
+<link rel="stylesheet" href="../assets/course.css">
+<style>
+.svgmap { width: 100%; height: auto; display: block; margin: 0.6rem 0 0.2rem; }
+.svgmap text { font-family: -apple-system, "PingFang SC", "Noto Sans SC", sans-serif; }
+.svgmap .mono { font-family: var(--mono); }
+.bx  { fill: #ffffff; stroke: #4b5563; stroke-width: 1.3; }
+.sub { fill: var(--accent-soft); stroke: var(--accent); stroke-width: 1.6; stroke-dasharray: 6 3; }
+.wn  { fill: var(--warn-bg); stroke: var(--warn-edge); stroke-width: 1.4; }
+.pl  { fill: var(--ink); }
+.dm  { fill: #ffffff; stroke: var(--accent); stroke-width: 2; }
+.ln  { stroke: #4b5563; stroke-width: 1.5; fill: none; }
+.bus { stroke: #9aa2ad; stroke-width: 1.5; fill: none; }
+.le  { stroke: var(--bad); stroke-width: 1.5; stroke-dasharray: 5 4; fill: none; }
+.lt  { stroke: #4b5563; stroke-width: 1.5; stroke-dasharray: 5 4; fill: none; }
+.tt  { font-size: 12.5px; font-weight: 600; fill: var(--ink); }
+.ts  { font-size: 10.5px; fill: var(--ink-soft); }
+.tp  { font-size: 12px; font-weight: 700; fill: #ffffff; letter-spacing: 0.08em; }
+.lb  { font-size: 11px; font-weight: 600; fill: var(--accent); }
+.lbr { font-size: 11px; font-weight: 600; fill: var(--bad); }
+.cap { font-size: 11px; fill: var(--ink-soft); font-style: italic; }
+</style>
+</head>
+<body>
+<main class="page">
+
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+<defs>
+<marker id="arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+  <path d="M0,0 L10,5 L0,10 z" fill="#4b5563"/>
+</marker>
+<marker id="arrR" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+  <path d="M0,0 L10,5 L0,10 z" fill="#b3402a"/>
+</marker>
+</defs>
+</svg>
+
+<p class="kicker">参考速查 · Reference</p>
+<h1>主图与子图状态图</h1>
+<p class="lede">otc-agent 全部图结构一页看完——每个节点、每条边都对照 <code>graph.py</code> 真实代码绘制。配合第 02 / 06 课使用，建议打印。</p>
+<div class="meta"><span>编写者：图灵科技</span><span>对照代码：app/graph/main.py + app/subgraphs/*/graph.py</span></div>
+
+<h2 id="main">一、主图（build_main_graph）</h2>
+
+<svg class="svgmap" viewBox="0 0 680 592" role="img" aria-label="主图状态图">
+  <rect class="pl" x="300" y="14" width="80" height="26" rx="13"/>
+  <text class="tp" x="340" y="31" text-anchor="middle">START</text>
+  <path class="ln" d="M340 40 V58" marker-end="url(#arr)"/>
+
+  <rect class="bx" x="270" y="64" width="140" height="40" rx="8"/>
+  <text class="tt mono" x="340" y="89" text-anchor="middle">ingest</text>
+  <path class="ln" d="M340 104 V122" marker-end="url(#arr)"/>
+
+  <rect class="bx" x="260" y="128" width="160" height="40" rx="8"/>
+  <text class="tt mono" x="340" y="153" text-anchor="middle">intent_route</text>
+  <text class="ts" x="432" y="145">三层策略：正则 →</text>
+  <text class="ts" x="432" y="159">关键词 → LLM 兜底</text>
+  <path class="ln" d="M340 168 V190" marker-end="url(#arr)"/>
+
+  <polygon class="dm" points="340,196 392,222 340,248 288,222"/>
+  <text class="ts mono" x="340" y="226" text-anchor="middle">route</text>
+  <text class="cap" x="404" y="218">_route_after_intent</text>
+  <text class="cap" x="404" y="232">app/graph/main.py:30</text>
+
+  <path class="bus" d="M340 248 V270"/>
+  <path class="bus" d="M100 270 H580"/>
+  <path class="ln" d="M100 270 V296" marker-end="url(#arr)"/>
+  <path class="ln" d="M260 270 V296" marker-end="url(#arr)"/>
+  <path class="ln" d="M420 270 V296" marker-end="url(#arr)"/>
+  <path class="le" d="M580 270 V296" marker-end="url(#arrR)"/>
+
+  <text class="lb" x="106" y="290">swap</text>
+  <text class="lb" x="266" y="290">option</text>
+  <text class="lb" x="426" y="290">option_close</text>
+  <text class="lbr" x="470" y="264">error / unknown</text>
+
+  <a href="#swap"><rect class="sub" x="30" y="300" width="140" height="52" rx="10"/>
+  <text class="tt" x="100" y="322" text-anchor="middle">swap 子图</text>
+  <text class="ts" x="100" y="340" text-anchor="middle">互换 · 6 节点 ↓二</text></a>
+
+  <a href="#option"><rect class="sub" x="190" y="300" width="140" height="52" rx="10"/>
+  <text class="tt" x="260" y="322" text-anchor="middle">option 子图</text>
+  <text class="ts" x="260" y="340" text-anchor="middle">期权 · 7 节点 ↓三</text></a>
+
+  <a href="#close"><rect class="sub" x="350" y="300" width="140" height="52" rx="10"/>
+  <text class="tt" x="420" y="322" text-anchor="middle">option_close 子图</text>
+  <text class="ts" x="420" y="340" text-anchor="middle">期权平仓 · 8 节点 ↓四</text></a>
+
+  <rect class="wn" x="510" y="300" width="140" height="52" rx="10"/>
+  <text class="tt mono" x="580" y="322" text-anchor="middle">fallback</text>
+  <text class="ts" x="580" y="340" text-anchor="middle">trace: triggered_by:*</text>
+
+  <path class="bus" d="M100 352 V378"/>
+  <path class="bus" d="M260 352 V378"/>
+  <path class="bus" d="M420 352 V378"/>
+  <path class="bus" d="M580 352 V378"/>
+  <path class="bus" d="M100 378 H580"/>
+  <path class="ln" d="M340 378 V402" marker-end="url(#arr)"/>
+  <text class="ts" x="352" y="372">4 条无条件边 → persist（main.py:87-88）</text>
+
+  <rect class="bx" x="280" y="408" width="120" height="40" rx="8"/>
+  <text class="tt mono" x="340" y="433" text-anchor="middle">persist</text>
+  <path class="ln" d="M340 448 V466" marker-end="url(#arr)"/>
+
+  <rect class="bx" x="280" y="472" width="120" height="40" rx="8"/>
+  <text class="tt mono" x="340" y="497" text-anchor="middle">render</text>
+  <text class="ts" x="412" y="489">有 error → 友好话术</text>
+  <text class="ts" x="412" y="503">无 error → 业务回复</text>
+  <path class="ln" d="M340 512 V530" marker-end="url(#arr)"/>
+
+  <rect class="pl" x="304" y="536" width="72" height="26" rx="13"/>
+  <text class="tp" x="340" y="553" text-anchor="middle">END</text>
+</svg>
+<span class="src">app/graph/main.py（graphs/main_graph.py 为兼容 shim，改图请改真源）</span>
+
+<h2 id="swap">二、swap 子图（build_swap_graph）· 7 意图全覆盖</h2>
+
+<svg class="svgmap" viewBox="0 0 680 400" role="img" aria-label="swap 子图状态图">
+  <rect class="pl" x="70" y="14" width="80" height="26" rx="13"/>
+  <text class="tp" x="110" y="31" text-anchor="middle">START</text>
+  <path class="ln" d="M110 40 V64" marker-end="url(#arr)"/>
+
+  <rect class="bx" x="30" y="70" width="160" height="44" rx="8"/>
+  <text class="tt mono" x="110" y="88" text-anchor="middle">swap_intent</text>
+  <text class="ts" x="110" y="104" text-anchor="middle">LLM 二级意图分类</text>
+  <path class="ln" d="M110 114 V154" marker-end="url(#arr)"/>
+
+  <polygon class="dm" points="110,160 152,182 110,204 68,182"/>
+  <text class="ts mono" x="110" y="186" text-anchor="middle">route</text>
+  <text class="cap" x="110" y="222" text-anchor="middle">_route_after_swap_intent</text>
+  <text class="lbr" x="110" y="238" text-anchor="middle">error → swap_unknown</text>
+
+  <path class="ln" d="M152 182 H220"/>
+  <path class="bus" d="M220 50 V314"/>
+  <path class="ln" d="M220 50 H292"  marker-end="url(#arr)"/>
+  <path class="ln" d="M220 116 H292" marker-end="url(#arr)"/>
+  <path class="ln" d="M220 182 H292" marker-end="url(#arr)"/>
+  <path class="ln" d="M220 248 H292" marker-end="url(#arr)"/>
+  <path class="ln" d="M220 314 H292" marker-end="url(#arr)"/>
+
+  <rect class="bx" x="300" y="24" width="260" height="52" rx="8"/>
+  <text class="tt mono" x="430" y="44" text-anchor="middle">swap_place_order</text>
+  <text class="ts" x="430" y="60" text-anchor="middle">place_order_request（下单/改单合一 · P0）</text>
+
+  <rect class="bx" x="300" y="90" width="260" height="52" rx="8"/>
+  <text class="tt mono" x="430" y="108" text-anchor="middle">swap_confirm</text>
+  <text class="ts" x="430" y="122" text-anchor="middle">confirm_order / confirm_cancel_order</text>
+  <text class="ts" x="430" y="135" text-anchor="middle">/ confirm_modify_order（3 合 1 · ADR 0001 D5）</text>
+
+  <rect class="bx" x="300" y="156" width="260" height="52" rx="8"/>
+  <text class="tt mono" x="430" y="176" text-anchor="middle">swap_cancel</text>
+  <text class="ts" x="430" y="192" text-anchor="middle">cancel_order_request</text>
+
+  <rect class="bx" x="300" y="222" width="260" height="52" rx="8"/>
+  <text class="tt mono" x="430" y="242" text-anchor="middle">swap_query_order</text>
+  <text class="ts" x="430" y="258" text-anchor="middle">query_order_status</text>
+
+  <rect class="wn" x="300" y="288" width="260" height="52" rx="8"/>
+  <text class="tt mono" x="430" y="308" text-anchor="middle">swap_unknown</text>
+  <text class="ts" x="430" y="324" text-anchor="middle">unknown_intent + 表外值 + cascade 兜底</text>
+
+  <path class="bus" d="M560 50 H612"/>
+  <path class="bus" d="M560 116 H612"/>
+  <path class="bus" d="M560 182 H612"/>
+  <path class="bus" d="M560 248 H612"/>
+  <path class="bus" d="M560 314 H612"/>
+  <path class="ln" d="M612 50 V342" marker-end="url(#arr)"/>
+
+  <rect class="pl" x="576" y="348" width="72" height="26" rx="13"/>
+  <text class="tp" x="612" y="365" text-anchor="middle">END</text>
+</svg>
+<span class="src">app/subgraphs/swap/graph.py（4 个业务节点经 backend.py → SwapClient.operate 调真后端）</span>
+
+<h2 id="option">三、option 子图（build_option_graph）· 9 意图 → 5 extract + 兜底</h2>
+
+<svg class="svgmap" viewBox="0 0 680 456" role="img" aria-label="option 子图状态图">
+  <rect class="pl" x="70" y="14" width="80" height="26" rx="13"/>
+  <text class="tp" x="110" y="31" text-anchor="middle">START</text>
+  <path class="ln" d="M110 40 V58" marker-end="url(#arr)"/>
+
+  <rect class="bx" x="30" y="64" width="160" height="44" rx="8"/>
+  <text class="tt mono" x="110" y="82" text-anchor="middle">option_intent</text>
+  <text class="ts" x="110" y="98" text-anchor="middle">1 intent + 5 extract 拆分（ADR 0011）</text>
+  <path class="ln" d="M110 108 V187" marker-end="url(#arr)"/>
+
+  <polygon class="dm" points="110,193 152,215 110,237 68,215"/>
+  <text class="ts mono" x="110" y="219" text-anchor="middle">route</text>
+  <text class="cap" x="110" y="255" text-anchor="middle">_route_after_option_intent</text>
+  <text class="lbr" x="110" y="271" text-anchor="middle">error → option_unknown</text>
+
+  <path class="ln" d="M152 215 H220"/>
+  <path class="bus" d="M220 50 V380"/>
+  <path class="ln" d="M220 50 H292"  marker-end="url(#arr)"/>
+  <path class="ln" d="M220 116 H292" marker-end="url(#arr)"/>
+  <path class="ln" d="M220 182 H292" marker-end="url(#arr)"/>
+  <path class="ln" d="M220 248 H292" marker-end="url(#arr)"/>
+  <path class="ln" d="M220 314 H292" marker-end="url(#arr)"/>
+  <path class="ln" d="M220 380 H292" marker-end="url(#arr)"/>
+
+  <rect class="bx" x="300" y="24" width="260" height="52" rx="8"/>
+  <text class="tt mono" x="430" y="44" text-anchor="middle">option_extract_inquiry</text>
+  <text class="ts" x="430" y="60" text-anchor="middle">new_inquiry（新询价）</text>
+
+  <rect class="bx" x="300" y="90" width="260" height="52" rx="8"/>
+  <text class="tt mono" x="430" y="108" text-anchor="middle">option_extract_place_or_modify</text>
+  <text class="ts" x="430" y="124" text-anchor="middle">place_order_from_quote / request_modify_order</text>
+
+  <rect class="bx" x="300" y="156" width="260" height="52" rx="8"/>
+  <text class="tt mono" x="430" y="174" text-anchor="middle">option_extract_cancel</text>
+  <text class="ts" x="430" y="190" text-anchor="middle">cancel_order_request / request_cancel_order</text>
+
+  <rect class="bx" x="300" y="222" width="260" height="52" rx="8"/>
+  <text class="tt mono" x="430" y="240" text-anchor="middle">option_extract_confirm</text>
+  <text class="ts" x="430" y="254" text-anchor="middle">confirm_order / confirm_cancel_order</text>
+  <text class="ts" x="430" y="267" text-anchor="middle">/ confirm_modify_order</text>
+
+  <rect class="bx" x="300" y="288" width="260" height="52" rx="8"/>
+  <text class="tt mono" x="430" y="308" text-anchor="middle">option_extract_query</text>
+  <text class="ts" x="430" y="324" text-anchor="middle">query_order_status</text>
+
+  <rect class="wn" x="300" y="354" width="260" height="52" rx="8"/>
+  <text class="tt mono" x="430" y="374" text-anchor="middle">option_unknown</text>
+  <text class="ts" x="430" y="390" text-anchor="middle">unknown_intent + 表外值 + cascade 兜底</text>
+
+  <path class="bus" d="M560 50 H612"/>
+  <path class="bus" d="M560 116 H612"/>
+  <path class="bus" d="M560 182 H612"/>
+  <path class="bus" d="M560 248 H612"/>
+  <path class="bus" d="M560 314 H612"/>
+  <path class="bus" d="M560 380 H612"/>
+  <path class="ln" d="M612 50 V404" marker-end="url(#arr)"/>
+
+  <rect class="pl" x="576" y="410" width="72" height="26" rx="13"/>
+  <text class="tp" x="612" y="427" text-anchor="middle">END</text>
+</svg>
+<span class="src">app/subgraphs/option/graph.py（9 个意图值路由到 5 个 extract 节点，一对多合并）</span>
+
+<h2 id="close">四、close 子图（build_close_graph）· 平仓 6 意图 + 兜底</h2>
+
+<svg class="svgmap" viewBox="0 0 680 520" role="img" aria-label="close 子图状态图">
+  <rect class="pl" x="70" y="14" width="80" height="26" rx="13"/>
+  <text class="tp" x="110" y="31" text-anchor="middle">START</text>
+  <path class="ln" d="M110 40 V58" marker-end="url(#arr)"/>
+
+  <rect class="bx" x="30" y="64" width="160" height="44" rx="8"/>
+  <text class="tt mono" x="110" y="82" text-anchor="middle">close_intent</text>
+  <text class="ts" x="110" y="98" text-anchor="middle">LLM 二级意图分类</text>
+  <path class="ln" d="M110 108 V220" marker-end="url(#arr)"/>
+
+  <polygon class="dm" points="110,226 152,248 110,270 68,248"/>
+  <text class="ts mono" x="110" y="252" text-anchor="middle">route</text>
+  <text class="cap" x="110" y="288" text-anchor="middle">_route_after_close_intent</text>
+  <text class="lbr" x="110" y="304" text-anchor="middle">error → close_unknown</text>
+
+  <path class="ln" d="M152 248 H220"/>
+  <path class="bus" d="M220 50 V446"/>
+  <path class="ln" d="M220 50 H292"  marker-end="url(#arr)"/>
+  <path class="ln" d="M220 116 H292" marker-end="url(#arr)"/>
+  <path class="ln" d="M220 182 H292" marker-end="url(#arr)"/>
+  <path class="ln" d="M220 248 H292" marker-end="url(#arr)"/>
+  <path class="ln" d="M220 314 H292" marker-end="url(#arr)"/>
+  <path class="ln" d="M220 380 H292" marker-end="url(#arr)"/>
+  <path class="ln" d="M220 446 H292" marker-end="url(#arr)"/>
+
+  <rect class="bx" x="300" y="24" width="260" height="52" rx="8"/>
+  <text class="tt mono" x="430" y="44" text-anchor="middle">close_holding_query</text>
+  <text class="ts" x="430" y="60" text-anchor="middle">close_order_query（持仓查询）</text>
+
+  <rect class="bx" x="300" y="90" width="260" height="52" rx="8"/>
+  <text class="tt mono" x="430" y="110" text-anchor="middle">close_place_close</text>
+  <text class="ts" x="430" y="126" text-anchor="middle">close_order_request（平仓下单 · P0）</text>
+
+  <rect class="bx" x="300" y="156" width="260" height="52" rx="8"/>
+  <text class="tt mono" x="430" y="176" text-anchor="middle">close_confirm_close</text>
+  <text class="ts" x="430" y="192" text-anchor="middle">close_order_confirm</text>
+
+  <rect class="bx" x="300" y="222" width="260" height="52" rx="8"/>
+  <text class="tt mono" x="430" y="242" text-anchor="middle">close_cancel_close</text>
+  <text class="ts" x="430" y="258" text-anchor="middle">close_order_cancel_request</text>
+
+  <rect class="bx" x="300" y="288" width="260" height="52" rx="8"/>
+  <text class="tt mono" x="430" y="308" text-anchor="middle">close_confirm_cancel</text>
+  <text class="ts" x="430" y="324" text-anchor="middle">close_order_cancel_confirm</text>
+
+  <rect class="bx" x="300" y="354" width="260" height="52" rx="8"/>
+  <text class="tt mono" x="430" y="374" text-anchor="middle">close_query_status</text>
+  <text class="ts" x="430" y="390" text-anchor="middle">close_order_order_query</text>
+
+  <rect class="wn" x="300" y="420" width="260" height="52" rx="8"/>
+  <text class="tt mono" x="430" y="440" text-anchor="middle">close_unknown</text>
+  <text class="ts" x="430" y="456" text-anchor="middle">unknown_intent + 表外值 + cascade 兜底</text>
+
+  <path class="bus" d="M560 50 H612"/>
+  <path class="bus" d="M560 116 H612"/>
+  <path class="bus" d="M560 182 H612"/>
+  <path class="bus" d="M560 248 H612"/>
+  <path class="bus" d="M560 314 H612"/>
+  <path class="bus" d="M560 380 H612"/>
+  <path class="bus" d="M560 446 H612"/>
+  <path class="ln" d="M612 50 V470" marker-end="url(#arr)"/>
+
+  <rect class="pl" x="576" y="476" width="72" height="26" rx="13"/>
+  <text class="tp" x="612" y="493" text-anchor="middle">END</text>
+</svg>
+<span class="src">app/subgraphs/close/graph.py（注意：代码目录 close/，提示词目录 option_close/——两边不对称）</span>
+
+<h2 id="ticker">五、ticker：不是主图分支，是业务节点内调用的 ReAct 工具子图</h2>
+
+<svg class="svgmap" viewBox="0 0 680 168" role="img" aria-label="ticker 调用关系图">
+  <rect class="bx" x="20" y="56" width="180" height="56" rx="8"/>
+  <text class="tt" x="110" y="78" text-anchor="middle">业务节点</text>
+  <text class="ts" x="110" y="94" text-anchor="middle">swap_place_order / extract_* 等</text>
+  <path class="ln" d="M200 76 H234" marker-end="url(#arr)"/>
+
+  <rect class="bx" x="240" y="60" width="170" height="48" rx="8"/>
+  <text class="tt mono" x="325" y="80" text-anchor="middle">resolver</text>
+  <text class="ts" x="325" y="96" text-anchor="middle">resolve_ticker(raw_text)</text>
+  <path class="ln" d="M410 76 L444 52" marker-end="url(#arr)"/>
+
+  <rect class="sub" x="450" y="18" width="210" height="44" rx="8"/>
+  <text class="tt" x="555" y="36" text-anchor="middle">ReAct Agent（create_agent）</text>
+  <text class="ts" x="555" y="52" text-anchor="middle">思考 ⇄ 调工具循环，recursion_limit 保护</text>
+
+  <path class="ln" d="M540 62 V96"  marker-end="url(#arr)"/>
+  <path class="ln" d="M570 96 V62"  marker-end="url(#arr)"/>
+
+  <rect class="bx" x="450" y="100" width="210" height="44" rx="8"/>
+  <text class="tt" x="555" y="118" text-anchor="middle">@tool × 4（GOATS 后端校验）</text>
+  <text class="ts" x="555" y="134" text-anchor="middle">TickerClient · LLM 推断 + 权威源反查</text>
+
+  <path class="lt" d="M325 108 V136 L110 136 L110 116" marker-end="url(#arr)"/>
+  <text class="ts" x="220" y="152" text-anchor="middle">tickers 写回 state（必须 from_goats=True · ADR 0008）</text>
+</svg>
+<span class="src">app/subgraphs/ticker/（react_agent / resolver / tools）——主图 4 个分支里没有它，别画错</span>
+
+<h2>六、读图要点</h2>
+
+<h3>cascade 出口对照表（每层各自设防）</h3>
+<div class="table-wrap">
+<table>
+<tr><th>error 写入的位置</th><th>由谁拦截</th><th>降级去处</th></tr>
+<tr><td><code>ingest</code> / <code>intent_route</code></td><td>主图 <code>_route_after_intent</code> 第一行</td><td>主图 <code>fallback</code> 节点</td></tr>
+<tr><td>子图 <code>*_intent</code> 节点</td><td>子图 <code>_route_after_*_intent</code> 第一行</td><td>子图 <code>*_unknown</code> 节点</td></tr>
+<tr><td>子图业务节点（如 <code>swap_place_order</code>）</td><td>无路由拦截——业务节点后是到 END 的无条件边</td><td>error 随 state 带到 <code>render</code>，由它输出友好话术</td></tr>
+</table>
+</div>
+
+<h3>四个必记结构事实</h3>
+<ol>
+<li><strong>所有路径殊途同归</strong>：4 个分支（3 子图 + fallback）跑完都走无条件边进 <code>persist → render → END</code>——所以任何失败最终都有回复、都有 checkpoint</li>
+<li><strong>主图 fallback ≠ 子图 unknown</strong>：进了子图之后再失败，主图 fallback 不会执行（第 02 课路由推演的陷阱）</li>
+<li><strong>三个子图同构</strong>：intent → 路由表 → 业务节点 + unknown 兜底。看懂 swap 就看懂全部；差异只在意图数量和"意图多对一合并"（option 9→5、swap 的 confirm 3→1）</li>
+<li><strong>ticker 是工具不是分支</strong>：它被业务节点通过 <code>resolver</code> 调用，输出 tickers 写回同一份 state——主图和三个子图的任何一条边都不通向它</li>
+</ol>
+
+<footer class="lesson-footer">
+<p>本图与代码同步维护：改了任何 <code>graph.py</code> 的节点/边，请同步更新本页对应 SVG 并在 PR 里注明。配套课程：<a href="../lessons/0002-conditional-routing-cascade.html">第 02 课</a>（路由与 cascade）· <a href="../lessons/0006-subgraph-swap-template.html">第 06 课</a>（子图模板）。疑问找助教（图灵科技）。</p>
+</footer>
+
+</main>
+</body>
+</html>
