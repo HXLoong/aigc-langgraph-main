@@ -41,6 +41,11 @@ from langgraph.checkpoint.memory import InMemorySaver
 
 from app.graphs.main_graph import build_main_graph
 from app.state import ProductType, WechatInput, make_initial_state
+from app.prompts import load_prompt
+
+# #159：收敛双实现——judge 提示词与 langfuse_eval.py 共用同一版本化文件
+# （原脚本引用 JUDGE_SYSTEM_PROMPT 却从未定义，此处一并修复潜在 NameError）
+JUDGE_SYSTEM_PROMPT = load_prompt("judge", "option_judge").system
 
 DATASET_NAME = "otc-option-golden"
 
