@@ -1,6 +1,6 @@
 # 架构决定记录（ADR）索引
 
-本目录收录 otc-agent 的全部架构决定：**ADR 0000-0020（共 21 篇）**。
+本目录收录 otc-agent 的全部架构决定：**ADR 0000-0021（共 22 篇）**。
 
 2026-08-27 全量整理（wayfinder map [#138](https://github.com/GZTL-AI/aigc-langgraph/issues/138)）：逐篇对照代码核查事实性声明后深度改写为**现状口径**——每篇读起来即当前实现；实现违背决策原意之处不洗白，以"实现偏离"小节标注并链接裁决 issue（[#153](https://github.com/GZTL-AI/aigc-langgraph/issues/153)–[#160](https://github.com/GZTL-AI/aigc-langgraph/issues/160)）。
 
@@ -14,21 +14,22 @@
 | [0003](./0003-prompt-versioning-by-file-coexistence.md) | 提示词版本化：同目录文件并存 | 已采纳 | 3 项偏离 → [#156](https://github.com/GZTL-AI/aigc-langgraph/issues/156)/[#159](https://github.com/GZTL-AI/aigc-langgraph/issues/159) |
 | [0004](./0004-trace-granularity-node-level-with-langsmith.md) | Trace 颗粒度：节点级入库 + 完整 I/O 关联 | 已采纳 | trace 后台被 **0014** 修订（LangSmith→LangFuse）；3 项偏离 → [#156](https://github.com/GZTL-AI/aigc-langgraph/issues/156) |
 | [0005](./0005-annotation-roles-judge-plus-business-spotcheck.md) | 标注闭环：LLM judge + 业务方抽检 | 已采纳（Phase 4 运营未立项） | 平台随 **0014** 定为 LangFuse；2 项偏离 → [#159](https://github.com/GZTL-AI/aigc-langgraph/issues/159) |
-| [0006](./0006-hitl-interrupt-boundary.md) | HITL interrupt 边界：写 + 资金双轴 | ⚠️ 已采纳但 **interrupt 机制 0% 落地** | 去向裁决 → [#153](https://github.com/GZTL-AI/aigc-langgraph/issues/153) |
+| [0006](./0006-hitl-interrupt-boundary.md) | HITL interrupt 边界：写 + 资金双轴 | interrupt 部分被 **0021** 取代；风险象限规则沿用 | #153 已裁决 |
 | [0007](./0007-subgraph-vs-intent-scope-rule.md) | 独立子图 vs 新意图：四条触发规则 | 已采纳 | 1 项偏离 → [#160](https://github.com/GZTL-AI/aigc-langgraph/issues/160) |
 | [0008](./0008-ticker-resolution-as-react-agent.md) | 标的识别采用 ReAct Agent | ⚠️ 已采纳但**生产为确定性 resolver，ReAct 为死代码** | 去向裁决 → [#154](https://github.com/GZTL-AI/aigc-langgraph/issues/154) |
-| [0009](./0009-mysql-version-and-tdsql-compatibility.md) | MySQL 协议 + TDSQL 生产环境 | 已采纳 | **checkpointer 从未接线**（严重）→ [#153](https://github.com/GZTL-AI/aigc-langgraph/issues/153) |
+| [0009](./0009-mysql-version-and-tdsql-compatibility.md) | MySQL 协议 + TDSQL 生产环境 | 已采纳 | checkpointer 已随 **0021** 接线（#153 修复） |
 | [0010](./0010-llm-model-selection-rules.md) | Qwen 三型号分工 | **历史背景**（被 **0020** 取代） | 强制规则从未执行 → [#158](https://github.com/GZTL-AI/aigc-langgraph/issues/158) |
 | [0011](./0011-split-option-intent-and-extraction.md) | option 拆分 intent 与 extraction | 已采纳（拆分已完成） | 3 项偏离 → [#159](https://github.com/GZTL-AI/aigc-langgraph/issues/159) |
 | [0012](./0012-restore-backend-http-for-securities-instrument.md) | 标的查询恢复走后端 HTTP | 已采纳（完整落地） | — |
 | [0013](./0013-load-dynamic-inference-prompt-fragment.md) | 加载后端动态 prompt 片段 | 已采纳（主链路落地） | 2 项 trace 护栏缺口 → [#156](https://github.com/GZTL-AI/aigc-langgraph/issues/156) |
-| [0014](./0014-langfuse-as-harness-backend.md) | LangFuse 作为 Harness 后台 | 已采纳 | 修订 **0004**/**0005**；⚠️ 部署模式与提示词闸门 3 项重大偏离 → [#155](https://github.com/GZTL-AI/aigc-langgraph/issues/155) |
+| [0014](./0014-langfuse-as-harness-backend.md) | LangFuse 作为 Harness 后台 | 已采纳 | 修订 **0004**/**0005**；例外决策 + 硬闸门已落地（#155） |
 | [0015](./0015-intent-route-rules-first-llm-fallback.md) | 一级路由：规则前置 + LLM 兜底 | 已采纳（已演进为四层） | 1 项偏离 → [#158](https://github.com/GZTL-AI/aigc-langgraph/issues/158) |
 | [0016](./0016-m3-scope-engineering-loop-not-shadow.md) | M3 范围重定义：工程联调闭环 | 已采纳（M3.3 进行中） | 修订 **0001** D8/D9 |
-| [0017](./0017-m4-canary-quantitative-exit-gate.md) | M4 金丝雀退出门量化指标 | 已采纳 | ⚠️ 3 项测量缺口，退出门当前不可自动校验 → [#157](https://github.com/GZTL-AI/aigc-langgraph/issues/157) |
+| [0017](./0017-m4-canary-quantitative-exit-gate.md) | M4 金丝雀退出门量化指标 | 已采纳 | 测量缺口已修复（#157）；展示层后置 #162；阈值待 DeepSeek 重测 |
 | [0018](./0018-dev-qwen-prod-deepseek-llm-split.md) | 开发 Qwen / 现场 DeepSeek 双模型分立 | **已被 0020 取代**（历史存根） | — |
-| [0019](./0019-incident-severity-thresholds.md) | 故障升级阈值 P0/P1/P2 | 已采纳 | 互补 **0017**；3 项偏离 → [#157](https://github.com/GZTL-AI/aigc-langgraph/issues/157) |
+| [0019](./0019-incident-severity-thresholds.md) | 故障升级阈值 P0/P1/P2 | 已采纳 | 互补 **0017**；3 项偏离已修复（#157） |
 | [0020](./0020-unify-all-llm-on-deepseek-v4-pro.md) | 全量统一 DeepSeek-V4-pro | 已采纳 | 取代 **0018**、修订 **0010**；baseline 重建为 M3.3 前置 |
+| [0021](./0021-text-confirm-replaces-interrupt.md) | 文本二阶段确认替代 interrupt + checkpointer 接线 | 已采纳 | 取代 **0006** interrupt 部分；修复 **0009** checkpointer 偏离 |
 
 ## 按主题分组
 
@@ -37,23 +38,23 @@
 - **提示词管理**：0003（版本化机制）· 0011（option 拆分）· 0013（后端动态片段）
 - **数据与后端契约**：0009（MySQL/TDSQL）· 0012（标的查询走 HTTP）
 - **可观测与评估**：0004（trace 颗粒度）· 0005（标注闭环）· 0014（LangFuse 后台）
-- **路由与交互**：0015（一级路由四层）· 0006（HITL 边界）· 0008（ticker 识别）
+- **路由与交互**：0015（一级路由四层）· 0006（HITL 边界，历史）· 0021（文本二阶段确认）· 0008（ticker 识别）
 - **上线与运维**：0016（M3 = 工程闭环）· 0017（M4 退出门）· 0019（故障升级阈值）
 
-## 待裁决的实现偏离（2026-08-27 核查产出）
+## 实现偏离裁决索引（2026-08-27 核查产出，同日裁决）
 
-全量核查共发现 **37 项实现偏离**，按根因聚为 8 张裁决 issue 交 Tony（改写后的各篇以"实现偏离"小节引用）：
+全量核查共发现 **37 项实现偏离**，按根因聚为 8 张裁决 issue；裁决与落地状态：
 
-| Issue | 主题 | 涉及 ADR |
-|---|---|---|
-| [#153](https://github.com/GZTL-AI/aigc-langgraph/issues/153) | HITL/checkpoint 基础设施缺失 | 0006 / 0008c / 0009 |
-| [#154](https://github.com/GZTL-AI/aigc-langgraph/issues/154) | ticker ReAct 死代码 vs 生产 resolver | 0008 / 0001 D5 |
-| [#155](https://github.com/GZTL-AI/aigc-langgraph/issues/155) | LangFuse 合规与提示词闸门 | 0014 |
-| [#156](https://github.com/GZTL-AI/aigc-langgraph/issues/156) | trace 可观测缺口 | 0004 / 0013 / 0003 |
-| [#157](https://github.com/GZTL-AI/aigc-langgraph/issues/157) | 告警与退出门指标失真 | 0017 / 0019 |
-| [#158](https://github.com/GZTL-AI/aigc-langgraph/issues/158) | 模型选型规则从未执行 | 0010 / 0015 / 0020 |
-| [#159](https://github.com/GZTL-AI/aigc-langgraph/issues/159) | 提示词与 golden 治理债 | 0003 / 0005 / 0011 |
-| [#160](https://github.com/GZTL-AI/aigc-langgraph/issues/160) | 工程纪律遗留 | 0001 / 0007 |
+| Issue | 主题 | 涉及 ADR | 状态 |
+|---|---|---|---|
+| [#153](https://github.com/GZTL-AI/aigc-langgraph/issues/153) | HITL/checkpoint 基础设施 | 0006 / 0008c / 0009 | ✅ 已裁决落地（ADR 0021：checkpointer 接线 + 文本二阶段确认） |
+| [#154](https://github.com/GZTL-AI/aigc-langgraph/issues/154) | ticker ReAct 死代码 vs 生产 resolver | 0008 / 0001 D5 | ⏸ 暂缓（Tony 指示） |
+| [#155](https://github.com/GZTL-AI/aigc-langgraph/issues/155) | LangFuse 合规与提示词闸门 | 0014 | ✅ 已裁决落地（例外决策 + 生产 raise 闸门） |
+| [#156](https://github.com/GZTL-AI/aigc-langgraph/issues/156) | trace 可观测缺口 | 0004 / 0013 / 0003 | 裁决已定（trace_id 实现 + 其余轻处理），落地中 |
+| [#157](https://github.com/GZTL-AI/aigc-langgraph/issues/157) | 告警与退出门指标失真 | 0017 / 0019 | ✅ 已裁决落地（核心四项修复；展示层 → #162） |
+| [#158](https://github.com/GZTL-AI/aigc-langgraph/issues/158) | 模型选型规则从未执行 | 0010 / 0015 / 0020 | ✅ 已裁决落地（追认 + 分化前置纪律） |
+| [#159](https://github.com/GZTL-AI/aigc-langgraph/issues/159) | 提示词与 golden 治理债 | 0003 / 0005 / 0011 | ✅ 已裁决落地（judge 版本化 + 同步防覆盖；golden 缺口 → #113） |
+| [#160](https://github.com/GZTL-AI/aigc-langgraph/issues/160) | 工程纪律遗留 | 0001 / 0007 | 裁决已定（四项全做，含 AgentState Pydantic 化），落地中 |
 
 ## ADR 写作与卫生约定
 

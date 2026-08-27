@@ -20,15 +20,15 @@
 
 **生产 TDSQL 版本口径修正**：原文的 `8.0.24-v24-txsq1-22.1.4-20230224` **无法由 `aigc/api` 的 `application-prod.yaml` 印证**（该 yaml 只有 jdbc 地址 + `tdsql_test_2025` 密码默认值，全仓无版本号字样）——版本号来源应视为运维口头确认，落在上下界内的结论待现场 `SELECT VERSION()` 实测回填。⚠️ 顺带记录疑点：该 prod profile 连的库名是 `goats_ai_trading_dev`（prod 指向 dev 库，Java 侧配置问题，不属本 ADR 范围，建议单独反馈）。
 
-## 实现偏离（裁决见 [#153](https://github.com/GZTL-AI/aigc-langgraph/issues/153)）
+## 实现偏离（已随 [ADR 0021](./0021-text-confirm-replaces-interrupt.md) / #153 修复）
 
-**AIOMySQLSaver checkpointer 从未接线（严重）**：`app/checkpointer/factory.py` 实现完整但全仓无调用点；`app/main.py` 以 `checkpointer=None` 编译主图（注释停留在"M1 阶段不强制"）；测试只用 InMemorySaver。后果：
+~~**AIOMySQLSaver checkpointer 从未接线（严重）**~~ ✅ 2026-08-27 已接线（`use_mysql_checkpointer` 配置，生产 fail-fast，`tests/test_checkpointer_wiring.py`）。原偏离记录：`app/checkpointer/factory.py` 实现完整但全仓无调用点；`app/main.py` 以 `checkpointer=None` 编译主图（注释停留在"M1 阶段不强制"）；测试只用 InMemorySaver。后果：
 
 - 本 ADR 声称在管理的风险（TDSQL 生成列/JSON 函数兼容性、`.setup()` 建表验证、升包回归）**从未被真实暴露**——checkpoint 库实际未启用；
 - 多轮对话状态没有持久化（跨进程/重启即失忆）；
 - 连带 [ADR 0006](./0006-hitl-interrupt-boundary.md)（HITL interrupt 依赖 checkpointer）落空。
 
-接线时机与"在 TDSQL 上跑通 `.setup()`"验收随 [#153](https://github.com/GZTL-AI/aigc-langgraph/issues/153) 裁决。
+"在 TDSQL 上跑通 `.setup()`"验收已列入现场部署 checklist（ADR 0021 §2）。
 
 ## 备选方案
 

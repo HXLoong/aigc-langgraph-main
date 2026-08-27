@@ -89,7 +89,7 @@ scripts/                     # langfuse_eval.py（Judge 评估，M3 主用） / 
                              # rollback_canary.sh / run_alerts.py / llm_cost_report.py / shadow_compare.py 等
 
 infra/langfuse/              # LangFuse self-hosted Docker Compose（PG + ClickHouse + Redis + MinIO + Web + Worker）
-docs/adr/                    # 架构决定 ADR 0000-0020（共 21 篇）+ README 索引
+docs/adr/                    # 架构决定 ADR 0000-0021（共 22 篇）+ README 索引
 docs/api-contracts/          # Java 后端真实业务 API 契约
 docs/m3-m4-roadmap.md        # M3/M4 端到端任务图（6 个交付面，2026-05-11 修订）
 docs/on-call-runbook.md      # 上线 on-call SOP
@@ -276,7 +276,7 @@ harness reporter 输出按桶分别统计；CI 维护一致性 lint（详见 `sc
 详见：
 
 - 领域语言：`@CONTEXT.md`
-- 架构决定：`@docs/adr/`（ADR 0000-0020 共 21 篇，索引见 `docs/adr/README.md`）
+- 架构决定：`@docs/adr/`（ADR 0000-0021 共 22 篇，索引见 `docs/adr/README.md`）
 - Java 契约：`@docs/api-contracts/java-backend.md`
 - M3/M4 路线图：`@docs/m3-m4-roadmap.md`
 - on-call SOP：`@docs/on-call-runbook.md` + `@docs/troubleshooting-sop.md`

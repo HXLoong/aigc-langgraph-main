@@ -101,7 +101,7 @@ app/                        # LangGraph 应用层
 harness/                    # 评测台 CLI（python -m harness <run|diff|sync-golden|...>）
 scripts/                    # langfuse_eval.py / eval_golden.py / probe_*_e2e.py / promote_*.py / canary_*.sh ...
 infra/langfuse/             # LangFuse self-hosted Docker Compose（PG + ClickHouse + Redis + MinIO + Web + Worker）
-docs/adr/                   # 架构决定 ADR 0000-0020（共 21 篇）+ README 索引
+docs/adr/                   # 架构决定 ADR 0000-0021（共 22 篇）+ README 索引
 docs/api-contracts/         # Java 后端真实业务 API 契约
 dify/                       # Dify 同步工具（保留历史 YAML 资产）
 tests/                      # 841 passed + 14 skipped；行覆盖率 82%
@@ -117,7 +117,7 @@ tests/fixtures/             # golden.jsonl（350+ 条）+ golden_ticker_2026-05.
 | [HOW_TO_RUN.md](./HOW_TO_RUN.md) | 完整启动流程 |
 | [PLAN.md](./PLAN.md) | 期权链路评估与提示词迭代方案 |
 | [QUICKSTART_CLAUDE_CODE.md](./QUICKSTART_CLAUDE_CODE.md) | Claude Code 实操指南 |
-| [docs/adr/](./docs/adr/) | 架构决定 ADR 0000-0020（共 21 篇），入口见 [索引](./docs/adr/README.md) |
+| [docs/adr/](./docs/adr/) | 架构决定 ADR 0000-0021（共 22 篇），入口见 [索引](./docs/adr/README.md) |
 | [docs/m3-m4-roadmap.md](./docs/m3-m4-roadmap.md) | M3/M4 端到端任务图（2026-05-11） |
 | [docs/on-call-runbook.md](./docs/on-call-runbook.md) | 上线 on-call SOP |
 | [docs/api-contracts/java-backend.md](./docs/api-contracts/java-backend.md) | Java 后端真实契约 |
