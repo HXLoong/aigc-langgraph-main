@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>第 06 课 · 子图模板：以 swap 为例</title>
+<link rel="stylesheet" href="../assets/course.css">
+</head>
+<body>
+<main class="page">
+
+<p class="kicker">LangGraph 团队实战课 · 第 06 课</p>
+<h1>子图模板：以 swap 为例</h1>
+<p class="lede">前五课的所有零件，今天拼成一个完整业务子图。swap 是全项目的标准模板——学会它，option / close 一眼就能看懂，未来新产品子图照葫芦画瓢。</p>
+<div class="meta">
+<span>编写者：图灵科技</span><span>预计用时：30 分钟</span><span>前置：<a href="0005-checkpointer-multiturn.html">第 05 课</a>小测全对</span>
+</div>
+
+<div class="callout">
+<span class="callout-title">为什么学这个（对齐任务）</span>
+Dify 时代加一类业务 = 在 12957 行主干 YAML 里拖节点连线；LangGraph 时代 = <strong>新建一个目录，五步组装，主图加一行</strong>。团队的"节点级 PR"协作模式（一人一节点互不冲突）就建立在这个结构上。这也是 subgraph-builder agent 干活的底层套路。
+</div>
+
+<h2>1. 全貌：一个目录就是一类业务（5 分钟）</h2>
+
+<pre><code>app/subgraphs/swap/
+├── __init__.py        <span class="cm"># 暴露 build_swap_graph</span>
+├── models.py          <span class="cm"># 第 1 步：Pydantic Output 模型（意图枚举 + 参数 schema）</span>
+├── intent.py          <span class="cm"># 第 2 步：二级意图分类节点（第 04 课的主角）</span>
+├── place_order.py     <span class="cm"># 第 3 步：业务节点 × N（LLM 提参 + ticker 解析）</span>
+├── confirm.py         <span class="cm">#          3 个 confirm 子意图合并为 1 节点（ADR 0001 D5）</span>
+├── cancel.py
+├── query_order.py
+├── backend.py         <span class="cm"># 真后端调用封装（call_swap_backend，第 07 课细讲）</span>
+└── graph.py           <span class="cm"># 第 4 步：子图组装（第 5 步在主图 main.py）</span></code></pre>
+
+<p>逻辑流（<code>graph.py</code> 顶部 docstring 原文）：</p>
+
+<pre><code>START → swap_intent → [route_by_intent]
+    → swap_place_order  (place_order_request)          ← P0 核心
+    → swap_confirm      (confirm_order / confirm_cancel_order / confirm_modify_order)
+    → swap_cancel       (cancel_order_request)
+    → swap_query_order  (query_order_status)
+    → swap_unknown      (unknown_intent + cascade 错误兜底)
+    → END</code></pre>
+<span class="src">app/subgraphs/swap/graph.py（7 个意图全覆盖：5 真节点 + 1 兜底）</span>
+
+<h2>2. 五步组装法（12 分钟）</h2>
+
+<h3>第 1 步 · models.py：先定契约</h3>
+<p>意图枚举 <code>SwapIntentType</code>（7 值，与 Java <code>SwapIntentionType</code> 对齐）+ 各节点的输出模型。<strong>先写模型再写节点</strong>——模型就是节点间、以及与后端的契约（第 04 课件套三）。</p>
+
+<h3>第 2 步 · intent.py：二级意图分类</h3>
+<p>第 04 课整课讲的就是它。输入 raw_text / quote_content / history，输出 <code>state["intent"]</code>。</p>
+
+<h3>第 3 步 · 业务节点 × N</h3>
+<p>每个意图一个 .py 文件（confirm 例外：3 个确认子意图合并 1 节点，这是 ADR 0001 D5 登记过的改写）。全部遵守：<code>@safe_node</code> + 三件套 + 返回 partial dict 写入<strong>按业务聚合</strong>的字段（<code>place_params</code> / <code>cancel_params</code> / <code>confirm</code>……，不是 <code>swap_place_order_output</code> 这种按节点铺开的字段——ADR 0001 D6）。</p>
+
+<h3>第 4 步 · graph.py：组装</h3>
+<pre><code><span class="kw">def</span> build_swap_graph() -> CompiledStateGraph:
+<span class="hl">    g: StateGraph = StateGraph(AgentState)          <span class="cm"># 与主图共享同一个 State schema！</span></span>
+    g.add_node(<span class="st">"swap_intent"</span>, swap_intent)
+    g.add_node(<span class="st">"swap_place_order"</span>, swap_place_order)
+    g.add_node(<span class="st">"swap_confirm"</span>, swap_confirm)
+    g.add_node(<span class="st">"swap_cancel"</span>, swap_cancel)
+    g.add_node(<span class="st">"swap_query_order"</span>, swap_query_order)
+    g.add_node(<span class="st">"swap_unknown"</span>, swap_unknown)
+
+    g.add_edge(START, <span class="st">"swap_intent"</span>)
+    g.add_conditional_edges(<span class="st">"swap_intent"</span>, _route_after_swap_intent, {...})  <span class="cm"># 第 02 课的路由表</span>
+    <span class="kw">for</span> n <span class="kw">in</span> (<span class="st">"swap_place_order"</span>, <span class="st">"swap_confirm"</span>, <span class="st">"swap_cancel"</span>,
+              <span class="st">"swap_query_order"</span>, <span class="st">"swap_unknown"</span>):
+        g.add_edge(n, END)
+    <span class="kw">return</span> g.compile()</code></pre>
+<span class="src">app/subgraphs/swap/graph.py:73-103</span>
+
+<h3>第 5 步 · 嵌入主图：子图就是一个节点</h3>
+<pre><code><span class="kw">from</span> app.subgraphs.swap <span class="kw">import</span> build_swap_graph
+
+g.add_node(<span class="st">"swap"</span>, build_swap_graph())      <span class="cm"># 整个子图 = 主图的一个 node</span>
+...
+<span class="kw">for</span> sub <span class="kw">in</span> (<span class="st">"swap"</span>, <span class="st">"option"</span>, <span class="st">"option_close"</span>, <span class="st">"fallback"</span>):
+    g.add_edge(sub, <span class="st">"persist"</span>)               <span class="cm"># 子图跑完统一回 persist → render</span></code></pre>
+<span class="src">app/graph/main.py:68-88</span>
+
+<div class="callout">
+<span class="callout-title">共享 State 的含义</span>
+子图和主图都用 <code>AgentState</code>：主图写的字段（raw_text / product_type）子图直接读，子图写的字段（intent / place_params / tickers）自动回传主图，render 节点统一消费。LangGraph 也支持子图用独立 schema + 输入输出转换（官方 Subgraphs 文档），但本项目刻意全部共享——<strong>少一层映射，少一类 bug</strong>。
+</div>
+
+<h2>3. 两条设计纪律（5 分钟）</h2>
+<ol>
+<li><strong>意图全覆盖 + 兜底</strong>：路由表覆盖 7 个意图中的 6 个，第 7 个 <code>unknown_intent</code> 和一切表外值都落到 <code>swap_unknown</code>。任何子图都必须有这个"意图收容所"，保证 LLM 输出什么都有地方去。</li>
+<li><strong>特例节点也是节点</strong>：<code>swap_unknown</code> 就定义在 graph.py 里（10 行，只写 trace），照样戴 <code>@safe_node</code>。不要因为节点简单就跳过规范。</li>
+</ol>
+<p>另外注意 ticker 子图是个例外——它不是手工组装的图，而是 <code>create_agent</code> 生成的 ReAct Agent（LLM 思考 → 调工具 → 看结果循环）。业务子图通过 <code>resolver.py</code> 调它。细节见 handbook 第 7 章，本课不展开。</p>
+
+<h2>4. 动手练习（8 分钟）</h2>
+<div class="task">
+<p class="task-title">练习：用 close 子图验证模板</p>
+<ol>
+<li>不看代码，先按 swap 模板<strong>预测</strong> <code>app/subgraphs/close/</code> 的文件清单和图结构（提示：CLAUDE.md 说它有 7 个节点）</li>
+<li>打开目录对答案：哪些和你预测一致？哪里不同（比如 close 有 <code>confirm_cancel</code> 拆开而 swap 合并）？</li>
+<li>思考题发助教：如果新增"雪球报价"产品线（新子图 snowball），列出全部要动的文件——子图目录之外，至少还有 3 处（提示：state.py 的 ProductType、main.py 的路由映射、prompts/ 目录，还有测试和 golden）</li>
+</ol>
+</div>
+
+<h2>5. 小测（拿到全对再进第 07 课）</h2>
+<section class="quiz">
+<h3>自测 · 4 题</h3>
+
+<div class="quiz-q" data-answer="c">
+<p class="quiz-stem">1. 子图写入的 <code>place_params</code>，主图的 render 节点为什么能直接读到？</p>
+<label><input type="radio" name="q1" value="a"> 因为子图结束时框架把输出拷贝进主图变量</label>
+<label><input type="radio" name="q1" value="b"> 因为 persist 节点负责把子图状态同步过去</label>
+<label><input type="radio" name="q1" value="c"> 因为子图与主图共享同一个 AgentState schema</label>
+<p class="quiz-explain" hidden>两边都是 StateGraph(AgentState)，子图节点返回的 partial dict 合并进的就是同一份 state——没有"拷贝/同步"这一步（handbook 第 2.8 节）。</p>
+</div>
+
+<div class="quiz-q" data-answer="a">
+<p class="quiz-stem">2. State 字段"按业务对象聚合、不按节点铺开"（ADR 0001 D6）的核心好处是？</p>
+<label><input type="radio" name="q2" value="a"> 多节点共享同字段，render 不关心数据来自哪个节点</label>
+<label><input type="radio" name="q2" value="b"> 字段数量更少，checkpoint 序列化的体积因此更小</label>
+<label><input type="radio" name="q2" value="c"> 避免不同子图的节点因字段重名而相互覆盖数据</label>
+<p class="quiz-explain" hidden>swap 和 option 的下单节点都写 place_params，render 统一读——如果按节点铺开成 24 个 output 字段，render 要写 24 个分支。（"重名覆盖"恰恰是聚合刻意利用的特性，不是要避免的问题。）</p>
+</div>
+
+<div class="quiz-q" data-answer="b">
+<p class="quiz-stem">3. 新增一个业务子图，下面哪件事<strong>不需要</strong>做？</p>
+<label><input type="radio" name="q3" value="a"> 在 state.py 的 ProductType 枚举里加新产品值</label>
+<label><input type="radio" name="q3" value="b"> 给子图单独定义一套新的 State TypedDict</label>
+<label><input type="radio" name="q3" value="c"> 在主图加 add_node 并更新一级路由映射表</label>
+<p class="quiz-explain" hidden>本项目子图一律共享 AgentState（新业务字段加进同一个 TypedDict）。a 和 c 都必须做，另外还有 prompts 目录、golden case、测试。</p>
+</div>
+
+<div class="quiz-q" data-answer="c">
+<p class="quiz-stem">4. 为什么每个子图都必须有 swap_unknown 这样的兜底节点？</p>
+<label><input type="radio" name="q4" value="a"> 框架要求条件边的映射表里必须包含默认分支</label>
+<label><input type="radio" name="q4" value="b"> 没有它 cascade 防御的错误就找不到降级出口</label>
+<label><input type="radio" name="q4" value="c"> 保证意图无论是什么值都有确定的节点可去</label>
+<p class="quiz-explain" hidden>unknown_intent 是合法意图值 + LLM 可能输出表外值 + cascade 错误也路由到它——三类"没人接"的情况都要有确定去处，图才永不卡死。（b 说反了：错误出口是它的职责之一，但不是"必须存在"的原因——主图 fallback 也能兜。）</p>
+</div>
+
+<button class="quiz-check">核对答案</button>
+<p class="quiz-score"></p>
+</section>
+
+<h2>6. 延伸与下一课</h2>
+<ul>
+<li><strong>本课首选一手资料</strong>：<a href="https://langchain-ai.github.io/langgraph/concepts/subgraphs/">LangGraph 官方文档 · Subgraphs</a>（共享 vs 独立 schema 两种模式的权威说明）</li>
+<li>深入：<code>docs/training/langgraph-handbook.md</code> 第 5 章（手把手写子图，含 place_order 完整实现）、第 7 章（ticker ReAct Agent）</li>
+<li>相关 ADR：0001 D5（confirm 合并 / option 拆分）、0001 D6（State 聚合）、0011（option intent 二次拆分）</li>
+<li>下一课：<a href="0007-protocol-client-tdd.html">第 07 课 · Protocol Client 与 TDD</a>——子图怎么调真后端，以及怎么在不联网的情况下测它</li>
+</ul>
+
+<footer class="lesson-footer">
+<p>练习第 3 题的完整清单，发给助教（图灵科技）核对——这题就是未来真实需求的预演。</p>
+</footer>
+
+</main>
+<script src="../assets/quiz.js"></script>
+</body>
+</html>

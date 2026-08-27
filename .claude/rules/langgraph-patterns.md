@@ -123,7 +123,7 @@ data = json.loads(response.content)  # 容易失败，违反 Dify 迁移原则
 # 编译时指定在哪些节点前暂停
 graph = g.compile(
     checkpointer=cp,
-    interrupt_before=["call_swap_api"],  # 下单前必须人工确认
+    interrupt_before=["swap_place_order"],  # 下单前人工确认（示例；生产当前未启用 interrupt，见 ADR 0006）
 )
 
 # API 层：暂停时返回确认卡片给企微
@@ -132,7 +132,7 @@ graph = g.compile(
 
 ## 观测
 
-- 生产：LangSmith（`ENABLE_LANGSMITH=true` + `LANGSMITH_API_KEY`）
+- 生产：LangFuse（`ENABLE_LANGFUSE=true` + `LANGFUSE_PUBLIC_KEY`/`LANGFUSE_SECRET_KEY`，ADR 0014）
 - 自建：OpenTelemetry（`app/observability/tracing.py`）
 - 每个节点通过 `trace` 字段记录决策，写到 MySQL `node_trace` 表
 

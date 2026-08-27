@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>LangGraph 核心速查表 · otc-agent</title>
+<link rel="stylesheet" href="../assets/course.css">
+</head>
+<body>
+<main class="page">
+
+<p class="kicker">参考速查 · Reference</p>
+<h1>LangGraph 核心速查表</h1>
+<p class="lede">5 个核心概念 + 节点四铁律 + 项目十二铁律，一页纸打印版。深入解释见 <code>docs/training/langgraph-handbook.md</code> 第 2 章。</p>
+<div class="meta"><span>编写者：图灵科技</span><span>适用：otc-agent 全体成员</span></div>
+
+<h2>一、5 个核心概念</h2>
+<div class="table-wrap">
+<table>
+<tr><th style="width:8rem">概念</th><th>是什么</th><th>本项目对应</th></tr>
+<tr><td><strong>State</strong></td><td>类型化 dict（TypedDict），节点间传数据的唯一载体。字段先声明后使用</td><td><code>app/graph/state.py</code> 的 <code>AgentState</code>（按业务对象聚合，ADR 0001 D6）</td></tr>
+<tr><td><strong>Node</strong></td><td>async 函数：读 state → 干活 → 返回 partial dict（只含要改的字段）</td><td>所有节点加 <code>@safe_node</code>（<code>app/graph/safe_node.py</code>）</td></tr>
+<tr><td><strong>Edge</strong></td><td>普通边 <code>add_edge</code> 无条件流转；条件边 <code>add_conditional_edges</code> 由同步纯函数路由</td><td>路由第一行必查 <code>state.get("error")</code>（cascade 防御）</td></tr>
+<tr><td><strong>Graph</strong></td><td><code>StateGraph(State)</code> 组装 → <code>compile()</code> → <code>ainvoke()</code>；子图就是一个节点</td><td><code>app/graphs/main_graph.py</code> 主图 + swap/option/close/ticker 四个子图</td></tr>
+<tr><td><strong>Checkpointer</strong></td><td>每步后 state 快照落库；同 thread_id 自动恢复 → 多轮对话</td><td>生产 <code>AIOMySQLSaver</code>，测试 <code>InMemorySaver</code>；<strong>thread_id = conversation_id</strong></td></tr>
+</table>
+</div>
+
+<h2>二、Reducer：覆盖 vs 累加</h2>
+<pre><code><span class="kw">class</span> AgentState(TypedDict, total=<span class="kw">False</span>):
+    product_type: ProductType                      <span class="cm"># 覆盖型：后写的赢</span>
+    trace: Annotated[list[TraceEntry], add]        <span class="cm"># 累加型：旧值 + 新值</span>
+    history_messages: Annotated[list[Message], add]<span class="cm"># 累加型：多轮不丢</span></code></pre>
+<span class="src">app/graph/state.py</span>
+<p>判断口诀：<strong>"多个节点都要往里写、且不能互相冲掉"的字段 → 加 reducer</strong>；单值结论字段 → 不加。</p>
+
+<h2>三、节点四铁律</h2>
+<div class="table-wrap">
+<table>
+<tr><th>铁律</th><th>反例</th><th>正例</th></tr>
+<tr><td>不 mutate 入参</td><td><code>state["counter"] += 1</code></td><td><code>return {"counter": state["counter"] + 1}</code></td></tr>
+<tr><td>返回 partial dict</td><td><code>return state</code></td><td><code>return {"intent": "..."}</code></td></tr>
+<tr><td>路由函数不做 IO/LLM</td><td>路由里 <code>await llm.ainvoke(...)</code></td><td>路由是同步纯函数，只读 state</td></tr>
+<tr><td>不裸 try/except</td><td><code>except: pass</code></td><td><code>@safe_node</code> 统一兜底</td></tr>
+</table>
+</div>
+
+<h2>四、项目十二铁律（review 必查）</h2>
+<ol>
+<li>提示词不硬编码——<code>load_prompt("swap", "intent")</code> 从 <code>app/prompts/**/*.md</code> 加载</li>
+<li>LLM 输出必须 <code>with_structured_output(PydanticModel)</code>，绝不手工 <code>json.loads</code></li>
+<li>每个节点 <code>@safe_node</code>——异常降级到 <code>state["error"]</code>，图不崩</li>
+<li>State 字段先在 <code>app/graph/state.py</code> 声明再用</li>
+<li>TDD 强制——先写失败测试（RED）再改代码（GREEN）</li>
+<li>cascade 防御——任何条件路由第一行检查 <code>state.get("error")</code></li>
+<li>标的必须 <code>from_goats=True</code>（ADR 0008）</li>
+<li>后端调用走 Protocol（Swap/Option/TickerClient），禁止节点里直接 <code>httpx.AsyncClient</code></li>
+<li>不在 main 直接改业务子图——feature 分支 + 中文 PR</li>
+<li>不掩盖后端真实响应（P0 红线）</li>
+<li>不硬编码业务数据字典——LLM 推断 + 后端校验（P0 红线）</li>
+<li>Mock 要 patch 使用点，不是定义处（<code>tests/CLAUDE.md</code>）</li>
+</ol>
+
+<h2>五、常用命令</h2>
+<pre><code>pytest tests/ -v                        <span class="cm"># 全套测试（约 2 分钟）</span>
+ruff check app/ tests/ && mypy app/     <span class="cm"># lint + 类型</span>
+python -m harness run                   <span class="cm"># golden 全集快速 smoke</span>
+python scripts/langfuse_eval.py --local tests/fixtures/golden.jsonl --ids opt-001 --concurrency 2
+                                        <span class="cm"># DeepSeek Judge 正式评估（M3 主用）</span>
+uvicorn app.main:app --reload           <span class="cm"># 启动 FastAPI</span></code></pre>
+
+<footer class="lesson-footer">
+<p>出处：<a href="https://langchain-ai.github.io/langgraph/concepts/low_level/">LangGraph 官方 Low-level Concepts</a> ·
+仓库 <code>CLAUDE.md</code> · <code>.claude/rules/langgraph-patterns.md</code> · <code>docs/training/intern-langgraph-primer.md</code> 第 6 节。
+有疑问随时在会话里问助教（图灵科技）。</p>
+</footer>
+
+</main>
+</body>
+</html>

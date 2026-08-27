@@ -1,0 +1,185 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>第 02 课 · 条件路由与 cascade 防御</title>
+<link rel="stylesheet" href="../assets/course.css">
+</head>
+<body>
+<main class="page">
+
+<p class="kicker">LangGraph 团队实战课 · 第 02 课</p>
+<h1>条件路由与 cascade 防御</h1>
+<p class="lede">Dify 的 if-else 节点在这里变成一个 Python 函数 + 一张映射表。本课学会写项目级路由，并理解为什么每个路由的第一行都在检查 <code>error</code>。</p>
+<div class="meta">
+<span>编写者：图灵科技</span><span>预计用时：25 分钟</span><span>前置：<a href="0001-state-node-edge.html">第 01 课</a>小测全对</span>
+</div>
+
+<div class="callout">
+<span class="callout-title">为什么学这个（对齐任务）</span>
+Dify 主干工作流里那个 12957 行 YAML 的核心复杂度，一大半在 if-else 分支和连线上。重构成 LangGraph 后，这些分支全部收敛为几个路由函数——<strong>读懂它们，你就读懂了整个流程的骨架</strong>。而 cascade 防御是本项目 review 必查项（CLAUDE.md 核心原则第 8 条），写错会被打回。
+</div>
+
+<h2>1. 主图一级路由：全项目最重要的 14 行（8 分钟）</h2>
+<p>打开 <code>app/graph/main.py</code>，这是真实代码（一字未改）：</p>
+
+<pre><code><span class="kw">def</span> _route_after_intent(state: AgentState) -> <span class="kw">str</span>:
+    <span class="st">"""intent_route 节点后的路由。
+
+    优先级：
+    1. state['error'] 存在 → fallback（cascade 防御，CLAUDE.md 核心原则第 8 条）
+    2. product_type == "unknown" → fallback（ADR 0015 第 3 层兜底）
+    3. 否则按 product_type 选子图
+    """</span>
+<span class="hl">    <span class="kw">if</span> state.get(<span class="st">"error"</span>) <span class="kw">is not None</span>:</span>
+<span class="hl">        <span class="kw">return</span> <span class="st">"fallback"</span></span>
+    pt = state.get(<span class="st">"product_type"</span>, <span class="st">"unknown"</span>)
+    <span class="kw">if</span> pt == <span class="st">"unknown"</span>:
+        <span class="kw">return</span> <span class="st">"fallback"</span>
+    <span class="kw">return</span> pt</code></pre>
+<span class="src">app/graph/main.py:30-43</span>
+
+<p>挂到图上时，路由函数的每个可能返回值都要在映射表里有一条：</p>
+
+<pre><code>g.add_conditional_edges(
+    <span class="st">"intent_route"</span>,
+    _route_after_intent,
+    {
+        <span class="st">"swap"</span>: <span class="st">"swap"</span>,
+        <span class="st">"option"</span>: <span class="st">"option"</span>,
+        <span class="st">"option_close"</span>: <span class="st">"option_close"</span>,
+        <span class="st">"fallback"</span>: <span class="st">"fallback"</span>,
+    },
+)</code></pre>
+<span class="src">app/graph/main.py:77-86</span>
+
+<div class="callout warn">
+<span class="callout-title">路由函数两条纪律（第 01 课的延伸）</span>
+① <strong>同步纯函数</strong>：不 await、不调 LLM、不发 HTTP。注意 <code>_route_after_intent</code> 只是"读结论"——真正判断 product_type 的三层策略（正则 → 关键词 → LLM 兜底）在上游 <code>intent_route</code> <em>节点</em>里做完并写进 state。② 返回的字符串必须是映射表的 key，返回了表外字符串 → 运行时报错。
+</div>
+
+<h2>2. 子图二级路由：一张 dict 看完所有意图分发（7 分钟）</h2>
+<p>swap 子图按 intent 分发到 5 个真节点 + 1 个兜底，Dify 里要拖 6 条 if-else 分支，这里是一张表：</p>
+
+<pre><code><span class="cm">#: intent → 真节点 key 路由表（swap 子图 7 个意图全覆盖）</span>
+_INTENT_TO_NODE: <span class="kw">dict</span>[<span class="kw">str</span>, <span class="kw">str</span>] = {
+    <span class="st">"place_order_request"</span>: <span class="st">"swap_place_order"</span>,
+    <span class="st">"cancel_order_request"</span>: <span class="st">"swap_cancel"</span>,
+    <span class="st">"confirm_order"</span>: <span class="st">"swap_confirm"</span>,
+    <span class="st">"confirm_cancel_order"</span>: <span class="st">"swap_confirm"</span>,      <span class="cm"># 3 个 confirm 共用一个节点（ADR 0001 D5）</span>
+    <span class="st">"confirm_modify_order"</span>: <span class="st">"swap_confirm"</span>,
+    <span class="st">"query_order_status"</span>: <span class="st">"swap_query_order"</span>,
+}
+
+<span class="kw">def</span> _route_after_swap_intent(state: AgentState) -> <span class="kw">str</span>:
+    <span class="st">"""swap.intent 后路由：cascade 防御 + intent 分发。"""</span>
+<span class="hl">    <span class="kw">if</span> has_error(state):</span>
+        <span class="kw">return</span> <span class="st">"swap_unknown"</span>
+    intent = state.get(<span class="st">"intent"</span>) <span class="kw">or</span> <span class="st">"unknown_intent"</span>
+<span class="hl">    <span class="kw">return</span> _INTENT_TO_NODE.get(intent, <span class="st">"swap_unknown"</span>)</span></code></pre>
+<span class="src">app/subgraphs/swap/graph.py:55-70</span>
+
+<p>注意最后一行的 <code>.get(intent, "swap_unknown")</code>——LLM 万一输出了表外的意图，也不会崩，走 <code>swap_unknown</code> 兜底。<strong>加一个新意图 = 表里加一行 + 写一个新节点文件</strong>，这就是"节点级 PR"的物理基础。</p>
+
+<h2>3. cascade 防御：错误只降级、不扩散（7 分钟）</h2>
+<p>完整链路串起来看：</p>
+
+<pre><code>某节点抛异常
+  → @safe_node 捕获，写 state["error"] = ErrorInfo(node=..., message=...)   <span class="cm"># 图不崩</span>
+  → 下游路由第一行 if state.get("error") → 返回 "fallback"                  <span class="cm"># 不再执行业务节点</span>
+  → fallback 节点在 trace 里记录 triggered_by:&lt;失败节点名&gt;                 <span class="cm"># 可定位</span>
+  → render 节点看到 error → 输出"我没完全理解你的意思，能换种说法……"      <span class="cm"># 用户侧友好</span>
+  → API 层 status="failed" + error message                                  <span class="cm"># 调用方可感知</span></code></pre>
+
+<p>项目提供了两个现成工具，简单场景不用手写路由：</p>
+
+<pre><code><span class="kw">def</span> has_error(state: AgentState) -> <span class="kw">bool</span>:
+    <span class="kw">return</span> state.get(<span class="st">"error"</span>) <span class="kw">is not None</span>
+
+<span class="kw">def</span> with_cascade_guard(next_node: <span class="kw">str</span>, fallback_node: <span class="kw">str</span> = <span class="st">"fallback"</span>):
+    <span class="st">"""生成路由函数：有 error → fallback_node，否则 → next_node。"""</span>
+    <span class="kw">def</span> router(state: AgentState) -> <span class="kw">str</span>:
+        <span class="kw">return</span> fallback_node <span class="kw">if</span> has_error(state) <span class="kw">else</span> next_node
+    <span class="kw">return</span> router</code></pre>
+<span class="src">app/graph/cascade.py:15-39</span>
+
+<p>fallback 节点本身只做一件事——把"是谁的锅"写进 trace，供 harness 定位：</p>
+
+<pre><code><span class="kw">@safe_node</span>
+<span class="kw">async def</span> fallback(state: AgentState) -> <span class="kw">dict</span>[<span class="kw">str</span>, Any]:
+    err = state.get(<span class="st">"error"</span>)
+    err_node = err.node <span class="kw">if</span> err <span class="kw">else</span> <span class="st">"no_error"</span>
+    <span class="kw">return</span> {<span class="st">"trace"</span>: [TraceEntry(node=<span class="st">"fallback"</span>, decision=<span class="st">f"triggered_by:{err_node}"</span>)]}</code></pre>
+<span class="src">app/nodes/fallback.py:17-33</span>
+
+<div class="callout warn">
+<span class="callout-title">Dify 老成员对照</span>
+Dify 里节点失败默认重试 N 次后<strong>整个工作流失败</strong>，想做兜底要在每个分支后挂"代码节点 + try/except"。LangGraph 本身没有这个机制——是我们用 <code>@safe_node</code> + 路由检查<strong>自己搭的约定</strong>。所以它靠纪律维持：漏写一处检查，错误就会 cascade 到下游节点，产生一堆令人困惑的连环报错。
+</div>
+
+<h2>4. 动手练习（3 分钟）</h2>
+<div class="task">
+<p class="task-title">练习：路由推演（不写代码，写答案发助教）</p>
+<ol>
+<li>用户消息进入 swap 子图后，<code>swap_intent</code> 节点里 LLM 超时抛了 <code>TimeoutError</code>。请写出此后经过的<strong>每一个节点</strong>，直到图结束（提示：子图的 swap_unknown 之后回主图，别忘了 persist / render）</li>
+<li>假设业务方要求新增意图 <code>adjust_hedge</code>（调整对冲），列出 <code>app/subgraphs/swap/</code> 下要动的文件和每个文件动什么</li>
+</ol>
+</div>
+
+<h2>5. 小测（拿到全对再进第 03 课）</h2>
+<section class="quiz">
+<h3>自测 · 4 题</h3>
+
+<div class="quiz-q" data-answer="c">
+<p class="quiz-stem">1. 为什么 <code>_route_after_intent</code> 不自己调 LLM 判断 product_type，而是读 state 里的现成字段？</p>
+<label><input type="radio" name="q1" value="a"> 因为路由函数里调 LLM 会让框架直接抛出异常</label>
+<label><input type="radio" name="q1" value="b"> 因为 LLM 判断结果不稳定，读字段的结果更可靠</label>
+<label><input type="radio" name="q1" value="c"> 因为路由必须是同步纯函数，IO 要放上游节点</label>
+<p class="quiz-explain" hidden>这是项目纪律而非框架强制——判断逻辑（含 LLM）放 intent_route 节点做完写进 state，路由只读结论（.claude/rules/langgraph-patterns.md）。</p>
+</div>
+
+<div class="quiz-q" data-answer="b">
+<p class="quiz-stem">2. LLM 给 swap 子图输出了一个表外意图 <code>"transfer_money"</code>，会发生什么？</p>
+<label><input type="radio" name="q2" value="a"> 路由函数返回表外字符串，运行时直接报错</label>
+<label><input type="radio" name="q2" value="b"> <code>.get()</code> 兜底返回 swap_unknown，图正常走完</label>
+<label><input type="radio" name="q2" value="c"> 框架自动重试意图识别，直到输出在表内为止</label>
+<p class="quiz-explain" hidden><code>_INTENT_TO_NODE.get(intent, "swap_unknown")</code> 的默认值兜底——注意"表外意图"和"路由函数返回映射表外的 key"是两回事，后者才会报错。</p>
+</div>
+
+<div class="quiz-q" data-answer="a">
+<p class="quiz-stem">3. cascade 防御的"防御"防的具体是什么？</p>
+<label><input type="radio" name="q3" value="a"> 上游节点已失败后，下游节点继续跑产生连环错误</label>
+<label><input type="radio" name="q3" value="b"> 用户输入了恶意内容导致提示词被注入指令攻击</label>
+<label><input type="radio" name="q3" value="c"> 两个节点并行写同一个字段时数据被相互覆盖掉</label>
+<p class="quiz-explain" hidden>error 写入后若下游照常执行业务节点，会基于残缺 state 产生一串误导性错误。cascade 防御让流程在第一个失败点就转向 fallback（CLAUDE.md 核心原则第 8 条）。</p>
+</div>
+
+<div class="quiz-q" data-answer="c">
+<p class="quiz-stem">4. fallback 节点的 trace 里 <code>triggered_by:&lt;节点名&gt;</code> 是为了什么？</p>
+<label><input type="radio" name="q4" value="a"> 让 render 节点根据失败原因生成不同风格回复</label>
+<label><input type="radio" name="q4" value="b"> 让框架知道下次重跑该图时要跳过哪个节点</label>
+<label><input type="radio" name="q4" value="c"> 让 harness 定位真正失败的节点而不是 fallback</label>
+<p class="quiz-explain" hidden>失败 case 的 trace 末尾总有 fallback——如果不记录 triggered_by，排查时会误以为问题在 fallback 自己（app/nodes/fallback.py docstring）。</p>
+</div>
+
+<button class="quiz-check">核对答案</button>
+<p class="quiz-score"></p>
+</section>
+
+<h2>6. 延伸与下一课</h2>
+<ul>
+<li><strong>本课首选一手资料</strong>：<a href="https://langchain-ai.github.io/langgraph/concepts/low_level/">LangGraph 官方 Low-level Concepts</a> 的 Conditional Edges 一节</li>
+<li>速查：<a href="../reference/langgraph-core-cheatsheet.html">核心速查表</a> 第三、四节</li>
+<li>深入：<code>docs/training/langgraph-handbook.md</code> 第 4.3.2 节（Dify if-else 逐行对照）、第 6 章（主图与一级路由三层策略）</li>
+<li>下一课：<a href="0003-safe-node.html">第 03 课 · @safe_node：错误不崩图</a>——本课反复出现的那顶"帽子"，下一课拆开看内部</li>
+</ul>
+
+<footer class="lesson-footer">
+<p>练习答案、路由推演的疑问，随时发给助教（图灵科技）核对。</p>
+</footer>
+
+</main>
+<script src="../assets/quiz.js"></script>
+</body>
+</html>

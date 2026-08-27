@@ -56,7 +56,7 @@ app/
 │   ├── safe_node.py         # @safe_node 装饰器
 │   ├── cascade.py           # cascade fallback（error → 友好降级）
 │   └── main.py              # 主图组装入口（也见 graphs/main_graph.py）
-├── graphs/main_graph.py     # 主图组装 + 一级路由（route_product_condition）
+├── graphs/main_graph.py     # 兼容 shim → 真源 app/graph/main.py（一级路由 _route_after_intent）
 ├── nodes/                   # ingest / intent_route / persist / render / fallback
 ├── subgraphs/
 │   ├── swap/                # intent / place_order / cancel / confirm / query_order / hand_to_share（+ backend / graph / models）
@@ -89,7 +89,7 @@ scripts/                     # langfuse_eval.py（Judge 评估，M3 主用） / 
                              # rollback_canary.sh / run_alerts.py / llm_cost_report.py / shadow_compare.py 等
 
 infra/langfuse/              # LangFuse self-hosted Docker Compose（PG + ClickHouse + Redis + MinIO + Web + Worker）
-docs/adr/                    # 21 个架构决定（ADR 0000-0020 + AUDIT-2026-05-13）
+docs/adr/                    # 架构决定 ADR 0000-0020（共 21 篇）+ README 索引
 docs/api-contracts/          # Java 后端真实业务 API 契约
 docs/m3-m4-roadmap.md        # M3/M4 端到端任务图（6 个交付面，2026-05-11 修订）
 docs/on-call-runbook.md      # 上线 on-call SOP
@@ -276,7 +276,7 @@ harness reporter 输出按桶分别统计；CI 维护一致性 lint（详见 `sc
 详见：
 
 - 领域语言：`@CONTEXT.md`
-- 架构决定：`@docs/adr/`（21 个 ADR：0000-0020 + AUDIT-2026-05-13）
+- 架构决定：`@docs/adr/`（ADR 0000-0020 共 21 篇，索引见 `docs/adr/README.md`）
 - Java 契约：`@docs/api-contracts/java-backend.md`
 - M3/M4 路线图：`@docs/m3-m4-roadmap.md`
 - on-call SOP：`@docs/on-call-runbook.md` + `@docs/troubleshooting-sop.md`

@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>第 01 课 · 把第一张图跑起来</title>
+<link rel="stylesheet" href="../assets/course.css">
+</head>
+<body>
+<main class="page">
+
+<p class="kicker">LangGraph 团队实战课 · 第 01 课</p>
+<h1>把第一张图跑起来：State / Node / Edge</h1>
+<p class="lede">30 行代码跑通一个带循环的 LangGraph 图。学完这一课，你就掌握了看懂 <code>app/</code> 下所有图代码的最小前置。</p>
+<div class="meta">
+<span>编写者：图灵科技</span><span>预计用时：25 分钟</span><span>前置：会 Python + async 基础</span>
+</div>
+
+<div class="callout">
+<span class="callout-title">为什么先学这个（对齐任务）</span>
+我们正把 Dify 工作流全量重构为 LangGraph。Dify 里"节点 + 变量 + 连线"这套心智，在 LangGraph 里对应的就是本课的三个概念——State（变量）、Node（节点）、Edge（连线）。区别是：<strong>Dify 的变量是全局命名空间，LangGraph 的 State 是显式声明的 schema</strong>。这一个转变，是 Dify 老成员最需要跨过的一道坎。
+</div>
+
+<h2>1. 先跑起来（10 分钟）</h2>
+<p>把下面 30 行存成 <code>hello_graph.py</code>（放本仓库根目录即可，环境已装好 langgraph），跑一遍：</p>
+
+<pre><code><span class="kw">import</span> asyncio
+<span class="kw">from</span> operator <span class="kw">import</span> add
+<span class="kw">from</span> typing <span class="kw">import</span> Annotated, TypedDict
+<span class="kw">from</span> langgraph.graph <span class="kw">import</span> END, START, StateGraph
+
+<span class="cm"># ① State：类型化 dict，节点间传数据的唯一载体</span>
+<span class="kw">class</span> State(TypedDict, total=<span class="kw">False</span>):
+    counter: <span class="kw">int</span>                       <span class="cm"># 普通字段：后写的覆盖先写的</span>
+    log: Annotated[list[<span class="kw">str</span>], add]     <span class="cm"># reducer 字段：用 + 合并（list 追加）</span>
+
+<span class="cm"># ② Node：async 函数，读 state，返回"要更新的字段"（partial dict）</span>
+<span class="kw">async def</span> increment(state: State) -> <span class="kw">dict</span>:
+    n = state.get(<span class="st">"counter"</span>, 0) + 1
+    <span class="kw">return</span> {<span class="st">"counter"</span>: n, <span class="st">"log"</span>: [<span class="st">f"now {n}"</span>]}
+
+<span class="cm"># ③ 条件路由函数：同步纯函数，返回下一站的名字</span>
+<span class="kw">def</span> is_done(state: State) -> <span class="kw">str</span>:
+    <span class="kw">return</span> <span class="st">"done"</span> <span class="kw">if</span> state.get(<span class="st">"counter"</span>, 0) >= 3 <span class="kw">else</span> <span class="st">"again"</span>
+
+<span class="cm"># ④ Graph：组装 → 编译</span>
+g = StateGraph(State)
+g.add_node(<span class="st">"inc"</span>, increment)
+g.add_edge(START, <span class="st">"inc"</span>)
+g.add_conditional_edges(<span class="st">"inc"</span>, is_done, {<span class="st">"again"</span>: <span class="st">"inc"</span>, <span class="st">"done"</span>: END})
+graph = g.compile()
+
+<span class="cm"># ⑤ 执行</span>
+result = asyncio.run(graph.ainvoke({<span class="st">"counter"</span>: 0}))
+<span class="kw">print</span>(result)
+<span class="cm"># {'counter': 3, 'log': ['now 1', 'now 2', 'now 3']}</span></code></pre>
+<span class="src">来源：docs/training/langgraph-handbook.md 第 2.11 节（可运行验证过）</span>
+
+<p>盯着输出想一件事：<code>counter</code> 最后只剩 <code>3</code>，而 <code>log</code> 攒下了三条。<strong>同样被节点写了三次，为什么一个覆盖、一个累加？</strong>答案就是 <code>Annotated[list, add]</code> 里那个 reducer——这是本课唯一需要"记住"的机制。</p>
+
+<h2>2. 三个概念对照到真实项目（10 分钟）</h2>
+
+<h3>State：从玩具到 AgentState</h3>
+<p>打开 <code>app/graph/state.py</code>，真实的 State 长这样（节选，字段有删减）：</p>
+
+<pre><code><span class="kw">class</span> AgentState(TypedDict, total=<span class="kw">False</span>):
+    <span class="cm"># 入口：ingest 节点写入</span>
+    raw_text: <span class="kw">str</span>
+    conversation_id: <span class="kw">str</span>
+<span class="hl">    <span class="cm"># 历史：reducer 累加，多轮对话不丢</span></span>
+<span class="hl">    history_messages: Annotated[list[Message], add]</span>
+    <span class="cm"># 业务路由</span>
+    product_type: ProductType        <span class="cm"># "swap" | "option" | "option_close" | "unknown"</span>
+    intent: <span class="kw">str</span>
+    <span class="cm"># 业务对象：按业务聚合，不按节点铺开（ADR 0001 D6）</span>
+    place_params: <span class="kw">dict</span>[<span class="kw">str</span>, Any] | <span class="kw">None</span>
+<span class="hl">    <span class="cm"># 工程层：每个节点追加自己的痕迹</span></span>
+<span class="hl">    trace: Annotated[list[TraceEntry], add]</span>
+    error: ErrorInfo | <span class="kw">None</span></code></pre>
+<span class="src">app/graph/state.py（真实代码节选）</span>
+
+<p>和 Dify 的关键差异：Dify 里任何节点可以用 <code>{{#节点ID.变量#}}</code> 读任何上游输出（全局命名空间）；LangGraph 里节点只能读 <code>AgentState</code> 中<strong>已声明</strong>的字段——字段拼错或没声明，mypy 直接报错，PR 合不进去。</p>
+
+<h3>Node：本项目的节点长什么样</h3>
+<p>规则和玩具例子完全一样（读 state → 返回 partial dict），只多一件外衣 <code>@safe_node</code>：</p>
+
+<pre><code><span class="kw">from</span> app.graph.safe_node <span class="kw">import</span> safe_node
+<span class="kw">from</span> app.graph.state <span class="kw">import</span> AgentState
+
+<span class="kw">@safe_node</span>
+<span class="kw">async def</span> swap_intent(state: AgentState) -> <span class="kw">dict</span>:
+    ...  <span class="cm"># 这里抛任何异常都会被兜住，写进 state["error"]，图不崩</span>
+    <span class="kw">return</span> {<span class="st">"intent"</span>: result.type}   <span class="cm"># 只返回要改的字段</span></code></pre>
+<span class="src">模式出处：app/subgraphs/swap/intent.py + app/graph/safe_node.py</span>
+
+<p><code>@safe_node</code> 的内部实现和 cascade 防御是第 03 课的主角，今天只需要记住：<strong>项目里所有节点都戴这顶帽子，写节点时不要自己 try/except</strong>。</p>
+
+<h3>Edge：主图的真实条件路由</h3>
+<pre><code><span class="kw">def</span> _route_after_intent(state: AgentState) -> <span class="kw">str</span>:
+<span class="hl">    <span class="kw">if</span> state.get(<span class="st">"error"</span>) <span class="kw">is not None</span>:      <span class="cm"># cascade 防御：永远第一行</span></span>
+        <span class="kw">return</span> <span class="st">"fallback"</span>
+    pt = state.get(<span class="st">"product_type"</span>, <span class="st">"unknown"</span>)
+    <span class="kw">return</span> <span class="st">"fallback"</span> <span class="kw">if</span> pt == <span class="st">"unknown"</span> <span class="kw">else</span> pt</code></pre>
+<span class="src">app/graph/main.py（主图一级路由）</span>
+
+<p>注意两条纪律：路由函数是<strong>同步纯函数</strong>（不 await、不调 LLM、不发 HTTP——需要这些就放进上游节点，把结论写到 state）；返回的字符串必须是映射表里的 key。</p>
+
+<div class="callout warn">
+<span class="callout-title">Dify 老成员最容易踩的坑</span>
+Dify 的 if-else 节点是声明式配置（<code>comparison_operator: contains</code>），大家习惯"分支逻辑放配置里"。LangGraph 的路由函数是任意 Python——能力更强，但也因此有纪律：<strong>路由只做判断，不做 IO</strong>。把"判断需要的信息"提前在节点里算好写进 state。
+</div>
+
+<h2>3. 动手改造（5 分钟）</h2>
+<div class="task">
+<p class="task-title">练习：给玩具图加一个 double 节点</p>
+<ol>
+<li>新增节点 <code>double</code>：把 <code>counter</code> 翻倍，并往 <code>log</code> 追加一条 <code>"doubled to N"</code></li>
+<li>改边：<code>inc → double → 路由</code>；路由条件改为 <code>counter >= 10</code> 结束</li>
+<li>跑一遍，<strong>先在纸上预测</strong> <code>counter</code> 终值和 <code>log</code> 的条数，再和实际输出核对</li>
+</ol>
+<p style="margin:0.5rem 0 0">预测对了才算真懂 reducer。预测错了——把你的推理发给助教（图灵科技），一起排查。</p>
+</div>
+
+<h2>4. 小测（拿到全对再进第 02 课）</h2>
+<section class="quiz">
+<h3>自测 · 4 题</h3>
+
+<div class="quiz-q" data-answer="b">
+<p class="quiz-stem">1. 节点函数正确的返回方式是？</p>
+<label><input type="radio" name="q1" value="a"> 修改传入的 state 后返回完整 state</label>
+<label><input type="radio" name="q1" value="b"> 只返回一个包含待更新字段的 dict</label>
+<label><input type="radio" name="q1" value="c"> 返回 None 并把结果写入全局变量</label>
+<p class="quiz-explain" hidden>节点返回 partial dict，框架负责合并；mutate 入参和返回完整 state 都是铁律反例（handbook 第 2.2 节）。</p>
+</div>
+
+<div class="quiz-q" data-answer="c">
+<p class="quiz-stem">2. <code>trace</code> 字段为什么要声明成 <code>Annotated[list[TraceEntry], add]</code>？</p>
+<label><input type="radio" name="q2" value="a"> 因为 list 类型在 TypedDict 里必须这样标注</label>
+<label><input type="radio" name="q2" value="b"> 因为这样能让 mypy 检查列表元素的类型</label>
+<label><input type="radio" name="q2" value="c"> 因为每个节点都要追加记录，覆盖会丢数据</label>
+<p class="quiz-explain" hidden>没有 reducer 的字段被后写的节点直接覆盖；trace / history_messages 是"人人都写"的字段，必须累加（app/graph/state.py）。</p>
+</div>
+
+<div class="quiz-q" data-answer="a">
+<p class="quiz-stem">3. 条件路由函数里，哪件事是被允许的？</p>
+<label><input type="radio" name="q3" value="a"> 读取 state 中的字段并返回一个字符串</label>
+<label><input type="radio" name="q3" value="b"> 调用 LLM 来判断应该走哪一个分支</label>
+<label><input type="radio" name="q3" value="c"> 发起 HTTP 请求向后端查询订单状态</label>
+<p class="quiz-explain" hidden>路由函数是同步纯函数，只读 state。LLM/HTTP 放上游节点做完、把结论写进 state（.claude/rules/langgraph-patterns.md）。</p>
+</div>
+
+<div class="quiz-q" data-answer="b">
+<p class="quiz-stem">4. 玩具例子里 <code>inc</code> 节点跑了 3 次，如果把 <code>log</code> 的 <code>add</code> reducer 去掉，最终 <code>log</code> 是什么？</p>
+<label><input type="radio" name="q4" value="a"> 三条都在，因为 list 本身就会自动追加</label>
+<label><input type="radio" name="q4" value="b"> 只剩最后一条，因为后写的值覆盖前值</label>
+<label><input type="radio" name="q4" value="c"> 抛出异常，因为同字段不允许重复写入</label>
+<p class="quiz-explain" hidden>无 reducer 的字段是覆盖语义——这正是"覆盖 vs 累加"的核心区别，也是多轮对话字段必须加 reducer 的原因。</p>
+</div>
+
+<button class="quiz-check">核对答案</button>
+<p class="quiz-score"></p>
+</section>
+
+<h2>5. 延伸与下一课</h2>
+<ul>
+<li><strong>本课首选一手资料</strong>：<a href="https://langchain-ai.github.io/langgraph/concepts/low_level/">LangGraph 官方文档 · Low-level Concepts</a>（State/Node/Edge/Reducer 的权威出处，20 分钟能读完）</li>
+<li>速查：<a href="../reference/langgraph-core-cheatsheet.html">LangGraph 核心速查表</a>（建议打印贴工位）</li>
+<li>深入：<code>docs/training/langgraph-handbook.md</code> 第 2 章（5 个概念逐个展开）、第 3 章（Dify 概念对照表）</li>
+<li>下一课：<a href="0002-conditional-routing-cascade.html">第 02 课 · 条件路由与 cascade 防御</a>——学完练习并小测全对后再进入</li>
+</ul>
+
+<footer class="lesson-footer">
+<p>卡住了？任何一段代码看不懂、练习跑不出预期，直接在会话里问助教（图灵科技）——附上你的代码和报错，助教会陪你走到通为止。</p>
+</footer>
+
+</main>
+<script src="../assets/quiz.js"></script>
+</body>
+</html>

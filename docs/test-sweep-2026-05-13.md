@@ -113,4 +113,4 @@ pytest tests/observability/ --cov=app.observability.health_probes --cov-report=t
 
 - 上线包：F4 #92-#106
 - CI：`.github/workflows/ci.yml`（M3 期 workflow_dispatch only）
-- ADR 一致性审计：`docs/adr/AUDIT-2026-05-13.md`（配套）
+- ADR 一致性审计结论：已并入 ADR 0001 D8 / 0002 / 0013 / 0019 行内修订；复检能力固化为 `scripts/check_adr_refs.py`（CI 常跑，原 AUDIT-2026-05-13.md 已删除）

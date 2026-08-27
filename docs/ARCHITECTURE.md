@@ -34,7 +34,7 @@ LangGraph 主图 (app/graphs/main_graph.py)
 
 ### 2. 图编排层（app/graphs/）
 - `main_graph.py`：组装顶层节点 + 嵌入 3 个业务子图
-- `route_product_condition()`：规则路由决定走哪个子图
+- `app/nodes/intent_route.py`（四层路由，ADR 0015）+ `app/graph/main.py` 的 `_route_after_intent()`：决定走哪个子图
 
 ### 3. 子图层（app/subgraphs/）
 - 每个产品一个子图 + 一个 models 文件（Pydantic schema）
@@ -96,7 +96,7 @@ otc_agent_business      (业务自管，sql/schema.sql)
 
 ## 可观测性
 
-- LangSmith：通过 `ENABLE_LANGSMITH=true` 启用，每个节点一个 span
+- LangFuse：通过 `ENABLE_LANGFUSE=true` 启用（ADR 0014），每个节点一个 span
 - OpenTelemetry：`app/observability/tracing.py`，FastAPI 埋点
 - 应用日志：structlog JSON 格式，生产环境写 ES
 - 业务审计：`node_trace` 表

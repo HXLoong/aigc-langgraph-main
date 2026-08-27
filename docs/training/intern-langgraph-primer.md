@@ -348,7 +348,7 @@ docker compose up -d mysql            # 业务库 + checkpoint
 | LangGraph 每个概念的展开讲解 | `docs/training/langgraph-handbook.md` 第 2 章 |
 | 手把手写一个新子图 | handbook 第 5 章 |
 | 常见陷阱 12 条 | handbook 附录 A |
-| 为什么这样设计（架构决定） | `docs/adr/`（ADR 0000-0019） |
+| 为什么这样设计（架构决定） | `docs/adr/`（ADR 0000-0020） |
 | Java 后端接口契约 | `docs/api-contracts/java-backend.md` |
 | State/节点/路由/checkpointer 项目模式 | `.claude/rules/langgraph-patterns.md` |
 | 测试规范与 mock 陷阱 | `.claude/rules/testing.md` + `tests/CLAUDE.md` |

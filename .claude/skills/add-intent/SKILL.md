@@ -14,7 +14,7 @@ allowed-tools: Read, Write, Edit, Glob, Grep, Bash
 ## 执行流程
 
 ### Step 1：审查现状
-- 读 `app/subgraphs/$1.py` 和 `app/subgraphs/$1_models.py`
+- 读 `app/subgraphs/$1/` 包（`graph.py` / `models.py` / `intent.py` / 各意图节点文件）
 - 列出当前已有的意图和路由
 
 ### Step 2：跟用户确认（停顿点）
@@ -27,15 +27,15 @@ allowed-tools: Read, Write, Edit, Glob, Grep, Bash
 
 等用户回答后再继续。
 
-### Step 3：改 `<product>_models.py`
+### Step 3：改 `app/subgraphs/<product>/models.py`
 - 在 `IntentType` Literal 加新值
 - 若需要新输出模型，加一个 `<Intent>Output` Pydantic 类
 
-### Step 4：改 `<product>.py`
+### Step 4：在 `app/subgraphs/<product>/` 加节点文件并接路由
 - 新增 `@safe_node` 装饰的提取函数 `extract_<intent>`
   - 用 `load_prompt("<product>", "<intent>")` 加载提示词
   - 用 `with_structured_output(<Intent>Output)`
-- 更新 `route_by_intent` 映射
+- 更新 `graph.py` 的 `_INTENT_TO_NODE` 路由表 **和** `add_conditional_edges` 的 path_map（两处都要改，漏一处会静默走 unknown 兜底）
 - 更新 `build_<product>_graph()`：`g.add_node` + `g.add_conditional_edges` + 合流边
 
 ### Step 5：提示词
