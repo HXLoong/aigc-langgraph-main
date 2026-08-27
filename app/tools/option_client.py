@@ -24,7 +24,16 @@ from app.tools.models import (
 
 
 class OptionIntentionType(str, Enum):
-    """对应 Java `stockOptionIntentionType`。"""
+    """对应 Java `stockOptionIntentionType`（contracts §2.1，16 值，Java 后端真实契约）。
+
+    注意：`REQUEST_MODIFY_ORDER` / `CONFIRM_MODIFY_ORDER` 在 Dify DSL v2 迁移后
+    的「期权-意图识别」LLM 节点枚举里已不再出现——期权域不再有独立改单流程，
+    对已有订单的参数修改统一由意图分类器归为 `place_order_from_quote`（见
+    `app/prompts/option/intent.md` 规则1第7条），因此 `app/subgraphs/option/`
+    没有任何节点会产出这两个值。但本枚举镜像的是 Java 后端的真实契约
+    （docs/api-contracts/java-backend.md §2.1），后端仍可能接受这两个历史意图
+    （如其他调用方/运维通道），故保留不删，避免请求校验层收窄真实契约。
+    """
 
     NEW_INQUIRY = "new_inquiry"
     PLACE_ORDER_FROM_QUOTE = "place_order_from_quote"
@@ -90,7 +99,13 @@ class GoatsOptionRfqReqVO(BaseModel):
 
 
 class FinancialOrderOpenApiSaveReqVO(BaseModel):
-    """`POST /admin-api/financial-orders/operate` 请求体（Java DTO 1:1）。"""
+    """`POST /admin-api/financial-orders/operate` 请求体（Java DTO 1:1）。
+
+    字段对齐 Dify DSL v2 code 节点「期权开仓」（spec/code_nodes/期权开仓.py）
+    组装的 payload：conversationId / messageId / messageContent / quoteAppinfo /
+    roomId / guid / userId / type / operate / operatorUserId / orderList /
+    rawContent / quoteContent。
+    """
 
     model_config = ConfigDict(extra="allow")
 
@@ -111,6 +126,8 @@ class FinancialOrderOpenApiSaveReqVO(BaseModel):
     quoteContent: str | None = None
     quoteAppinfo: str | None = None
     guid: str | None = None
+    #: 人工兜底代客操作人（本人操作时为空）；对齐 Dify `operator_user_id` 变量
+    operatorUserId: str | None = None
 
 
 # ============================================================

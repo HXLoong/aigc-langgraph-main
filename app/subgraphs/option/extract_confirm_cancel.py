@@ -1,25 +1,26 @@
-"""option.extract_query 节点 · 期权订单状态查询参数提取。
+"""option.extract_confirm_cancel 节点 · 期权确认撤单订单号提取。
 
-Dify DSL v2 迁移（对应 `期权-节点-查询订单状态`，node_id=17793301774310）：
-处理 query_order_status。
+Dify DSL v2 迁移新增节点（对应 `期权-节点-确认撤单`，node_id=17793301782150），
+从原 `extract_confirm`（confirm_order + confirm_cancel_order + confirm_modify_order
+三合一）拆出，仅处理 confirm_cancel_order。
 
 输入：raw_text + quote_content
-输出：state['query_filter'] = {orderList}
+输出：state['confirm'] = {action: "cancel", orderList}
 
 LLM：thinking 模型 + with_structured_output（ADR 0010）。
-prompt：app/prompts/option/extract_query.md。
+prompt：app/prompts/option/extract_confirm_cancel.md。
 """
 from __future__ import annotations
 
 from typing import Any
 
-from app.graph.business_params import validated_query_filter
+from app.graph.business_params import validated_confirm
 from app.graph.safe_node import safe_node
 from app.graph.state import AgentState, Message, TraceEntry
 from app.llm.clients import get_qwen_thinking
 from app.prompts import load_prompt
 from app.subgraphs.option.backend import call_option_backend
-from app.subgraphs.option.models import OptionQueryParams
+from app.subgraphs.option.models import OptionConfirmCancelParams
 from app.subgraphs.option.sanitize import sanitize_order_list
 
 
@@ -46,10 +47,10 @@ def _build_user_message(state: AgentState) -> str:
 
 
 @safe_node
-async def option_extract_query(state: AgentState) -> dict[str, Any]:
-    """option.extract_query 节点。"""
-    prompt = load_prompt("option", "extract_query")
-    llm = get_qwen_thinking().with_structured_output(OptionQueryParams)
+async def option_extract_confirm_cancel(state: AgentState) -> dict[str, Any]:
+    """option.extract_confirm_cancel 节点（confirm_cancel_order）。"""
+    prompt = load_prompt("option", "extract_confirm_cancel")
+    llm = get_qwen_thinking().with_structured_output(OptionConfirmCancelParams)
 
     user_message = _build_user_message(state)
     result: Any = await llm.ainvoke(
@@ -58,24 +59,25 @@ async def option_extract_query(state: AgentState) -> dict[str, Any]:
             ("user", user_message),
         ]
     )
+
     order_list = sanitize_order_list([item.model_dump() for item in result.orderList])
     backend = await call_option_backend(
         state,
-        intent="query_order_status",
+        intent="confirm_cancel_order",
         order_list=order_list,
     )
 
     return {
-        "query_filter": validated_query_filter(orderList=order_list),
+        "confirm": validated_confirm(action="cancel", orderList=order_list),
         **backend,
         "trace": [
             TraceEntry(
-                node="option_extract_query",
-                decision=f"orders={len(result.orderList)}",
+                node="option_extract_confirm_cancel",
+                decision=f"action=cancel,orders={len(result.orderList)}",
                 llm_output=result.model_dump(),
             )
         ],
     }
 
 
-__all__ = ["option_extract_query"]
+__all__ = ["option_extract_confirm_cancel"]

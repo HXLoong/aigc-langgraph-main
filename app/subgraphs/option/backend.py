@@ -4,6 +4,7 @@ from __future__ import annotations
 from typing import Any
 
 from app.graph.state import AgentState
+from app.subgraphs.option.sanitize import sanitize_order_list
 from app.tools.option_client import (
     FinancialOrderOpenApiBaseSaveReqVO,
     FinancialOrderOpenApiSaveReqVO,
@@ -11,6 +12,19 @@ from app.tools.option_client import (
     OptionClientHttpx,
     OptionIntentionType,
 )
+
+#: intent → operate 固定映射（Dify DSL v2：每个 extract 节点的 operate 是单值 enum，
+#: 由节点身份决定，不经 LLM 判断——见 spec/llm_schemas.txt 各「期权-节点-*」的
+#: operate enum）。未登记的 intent（如 unknown_intent）不传 operate。
+_INTENT_TO_OPERATE: dict[str, str] = {
+    "new_inquiry": "询价",
+    "place_order_from_quote": "交易",
+    "confirm_order": "交易",
+    "cancel_order_request": "取消",
+    "request_cancel_order": "交易",
+    "confirm_cancel_order": "交易",
+    "query_order_status": "交易",
+}
 
 
 def _message_id(value: Any) -> int:
@@ -33,6 +47,7 @@ def _context(state: AgentState) -> dict[str, Any]:
         "userId": state.get("user_id", "") or "",
         "roomId": state.get("room_id", "") or "",
         "guid": state.get("guid"),
+        "operatorUserId": state.get("operator_user_id"),
     }
 
 
@@ -59,11 +74,13 @@ async def call_option_backend(
     if not state.get("conversation_id") or not state.get("room_id") or not state.get("user_id"):
         return {}
 
+    cleaned_order_list = sanitize_order_list(order_list)
     req = FinancialOrderOpenApiSaveReqVO(
         type=OptionIntentionType(intent),
+        operate=_INTENT_TO_OPERATE.get(intent),
         orderList=[
             FinancialOrderOpenApiBaseSaveReqVO.model_validate(item)
-            for item in (order_list or [])
+            for item in cleaned_order_list
         ],
         optionRfq=(
             GoatsOptionRfqReqVO.model_validate(option_rfq)
