@@ -11,8 +11,11 @@
   - `option/intent_extract.md` — ADR 0011 拆分前的旧版统一节点快照，**保留供 diff 比对**，业务代码已切到 `intent.md` + `extract_*.md`
   - `option/param_limit.md` — Dify 原始参数校验节点，当前未接线（保留资产）
   - `swap/place_order.dify_original.md` — Dify 原始版快照，对照用
-  - `swap/v2/`、`ticker/tokenize_v2.md` — 灰度实验位（由 `_versions.yaml` 控制是否启用）
+  - `swap/v2/` — 灰度实验位（由 `_versions.yaml` 控制是否启用）
   - 这些文件**禁止直接删**——会破坏 ADR 0001 D5 的"重构期内可改写但需可回滚"纪律
+  - 例外（Dify DSL v2 迁移，2026-08-28）：`ticker/completeness.md`（completeness LLM 节点已被
+    确定性校验替代）、`ticker/tokenize_v2.md`（零引用灰度实验位，未被 `_versions.yaml` 或任何
+    代码/测试引用）随 `app/subgraphs/ticker/` 整体重构一并删除，详见 ADR 0008 迁移落地段
 
 ## .md 文件格式约定（4-backtick 外层 fence 才不会被内层 ``` 提前闭合）
 
