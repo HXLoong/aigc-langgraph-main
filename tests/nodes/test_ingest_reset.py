@@ -73,12 +73,10 @@ class TestMultiTurnReplyTextNoLeak:
 
     async def test_turn2_does_not_inherit_turn1_reply(self) -> None:
         """走完整图：turn1 渲染 reply，turn2 用同 thread_id 调用，turn2 reply 应是新的。"""
-        from unittest.mock import AsyncMock, MagicMock
 
         from langgraph.checkpoint.memory import InMemorySaver
 
         from app.graph.main import build_main_graph
-        from app.state import WechatInput, make_initial_state
 
         # 用 mock LLM 避免真实调用，构造一个稳定的 2 轮场景
         # 简化：直接验证 ingest 在第二轮调用时输出 reset 字段
