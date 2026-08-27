@@ -299,7 +299,9 @@ def _evaluate_metric(name: str, ctx: AlertContext, state: AlertState) -> float:
         return _calc_ratio_pct(delta("http_5xx"), delta("http_total"))
 
     if name == "cascade_fail_high":
-        return _calc_ratio_pct(delta("fallback_cascade_fail"), delta("node_total"))
+        # #157 裁决：分母改为总请求数（http_total）——ADR 0017/0019 的"率"语义按请求，
+        # 原 node_total（节点执行数 ≈ 请求 ×6-8）让阈值实际宽松近一个数量级
+        return _calc_ratio_pct(delta("fallback_cascade_fail"), delta("http_total"))
 
     if name == "llm_failure_high":
         return _calc_ratio_pct(delta("llm_error"), delta("llm_total"))
@@ -378,6 +380,10 @@ def parse_prometheus_metrics(text: str) -> dict[str, Any]:
             ):
                 result["canary_traffic_non_canary"] += value
             elif name_part == "otc_agent_intent_latency_ms_bucket":
+                # #157 裁决：剔除节点级样本（emit_node_completed 带 node= label 写入），
+                # P95 只统计端到端请求样本（routes.py 出口 emit_intent_latency，无 node label）
+                if 'node="' in labels_str:
+                    continue
                 le = _extract_le(labels_str)
                 if le is not None:
                     latency_buckets[le] = latency_buckets.get(le, 0.0) + value

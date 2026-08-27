@@ -20,6 +20,7 @@ from app.llm.clients import get_qwen_thinking
 from app.prompts import load_prompt
 from app.subgraphs.option.backend import call_option_backend
 from app.subgraphs.option.models import OptionExtractCancelParams
+from app.graph.business_params import validated_cancel_params
 
 
 def _format_history(history: list[Message] | None) -> str:
@@ -79,10 +80,7 @@ async def option_extract_cancel(state: AgentState) -> dict[str, Any]:
     )
 
     return {
-        "cancel_params": {
-            "expected_action": action,
-            "orderList": order_list,
-        },
+        "cancel_params": validated_cancel_params(expected_action=action, orderList=order_list),
         **backend,
         "trace": [
             TraceEntry(

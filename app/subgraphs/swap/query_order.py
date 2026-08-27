@@ -16,6 +16,7 @@ from app.llm.clients import get_qwen_thinking
 from app.prompts import load_prompt
 from app.subgraphs.swap.backend import call_swap_backend
 from app.subgraphs.swap.models import SwapQueryParams
+from app.graph.business_params import validated_query_filter
 
 
 def _format_history(history: list[Message] | None) -> str:
@@ -62,9 +63,7 @@ async def swap_query_order(state: AgentState) -> dict[str, Any]:
     )
 
     return {
-        "query_filter": {
-            "orderList": order_list,
-        },
+        "query_filter": validated_query_filter(orderList=order_list),
         **backend,
         "trace": [
             TraceEntry(

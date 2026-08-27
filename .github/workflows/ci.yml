@@ -45,6 +45,11 @@ jobs:
         # 详见 tests/fixtures/README.md §3
         run: python scripts/check_fixture_consistency.py
 
+      - name: ADR 引用一致性（互引虚悬 + 代码路径存在性）
+        # Issue #161（#152 裁决落地）：承接 AUDIT-2026-05-13 §4 复检能力，
+        # 跳过 ~~删除线~~ 段；详见 docs/adr/README.md "卫生检查"
+        run: python scripts/check_adr_refs.py
+
       - name: Run tests
         run: |
           if [ -d tests ] && [ -n "$(find tests -name 'test_*.py' -type f 2>/dev/null)" ]; then

@@ -275,7 +275,8 @@ _RUNBOOK_KEYWORDS: dict[str, str] = {
     "http_5xx_spike": "HTTP 5xx 率 ≥",
     "cascade_fail_high": "Cascade fail 率 ≥",
     "llm_failure_high": "LLM 失败率 ≥",
-    # non_canary_traffic 在 runbook §3 没有单独条目（属于 §4 监控告警来源段）
+    # #157 裁决：runbook §3 P0 行已补 non_canary_traffic，解除豁免
+    "non_canary_traffic": "非金丝雀流量泄漏 ≥",
     # p95_latency_degraded 在 runbook §3 有 P95 ≥ M2 baseline × 3 条目
     "p95_latency_degraded": "P95 延迟 ≥ M2 baseline",
 }
@@ -310,7 +311,8 @@ def parse_runbook() -> dict[str, AlertSpec]:
         severity = sev_match[-1].group(1)
 
         # 抽 keyword 之后的"≥ N% 持续 N 分钟" / "≥ M2 baseline × N 持续 N 分钟"
-        suffix = section[kw_idx : kw_idx + 200]
+        # #157：截到当前 bullet 结束（<br>），避免相邻条目的"即时/N 分钟"串扰
+        suffix = section[kw_idx : kw_idx + 200].split("<br>")[0]
         thresh_value = _extract_threshold_value(suffix, alert_name)
         # 对 P95：M2 baseline × N → 直接用代码侧的实际值（不在 runbook 文本里写绝对 ms）
         # 这里通过 multiplier 抽 → 由外部对账时与 alerts.py 比 multiplier 一致即可
@@ -430,7 +432,7 @@ def main() -> int:
         # 列出各 source 覆盖的告警数
         print(f"   · alerts.py: {len(alerts)} 个告警")
         print(f"   · ADR 0019: {len(adr)} 个告警")
-        print(f"   · runbook §3: {len(runbook)} 个告警（不含 non_canary_traffic）")
+        print(f"   · runbook §3: {len(runbook)} 个告警")
         return 0
 
     print(f"❌ 发现 {len(all_diffs)} 项不一致：")

@@ -48,6 +48,7 @@ class CanaryStatus:
     mode: str  # "未启用" / "F4.x 部分群" / "ALL 全量"
     canary_count: int
     non_canary_count: int
+    dry_run_intercept: int = 0  # otc_agent_dry_run_intercept_total 汇总（F4.1 shadow 护栏）
 
     @property
     def total(self) -> int:
@@ -55,9 +56,13 @@ class CanaryStatus:
 
     @property
     def is_breach(self) -> bool:
-        """ALL 模式下任何流量都算 canary；其他模式下 non_canary>0 即违规。"""
+        """部分灰度：non_canary>0 即违规；ALL 全量：dry_run 拦截>0 即违规。
+
+        #157 裁决：ALL（全量）+ DRY_RUN_BACKEND 仍在拦截写请求 = 配置错误
+        （业务写操作被悄悄丢弃），runbook §5 的 P0 护栏由此成真。
+        """
         if "ALL" in self.allowlist:
-            return False
+            return self.dry_run_intercept > 0
         return self.non_canary_count > 0
 
 
@@ -102,6 +107,23 @@ def _parse_canary_counters(metrics_text: str) -> tuple[int, int]:
     return canary, non_canary
 
 
+def _parse_dry_run_intercept(metrics_text: str) -> int:
+    """汇总 otc_agent_dry_run_intercept_total 所有 label 组合的计数（#157）。"""
+    total = 0
+    for line in metrics_text.splitlines():
+        line = line.strip()
+        if not line or line.startswith("#"):
+            continue
+        if not line.startswith("otc_agent_dry_run_intercept_total"):
+            continue
+        try:
+            value = int(float(line.rsplit(" ", 1)[1]))
+        except (ValueError, IndexError):
+            continue
+        total += value
+    return total
+
+
 def _describe_mode(allowlist: list[str]) -> str:
     if not allowlist:
         return "未启用（金丝雀关）"
@@ -118,6 +140,7 @@ def build_status(metrics_url: str) -> CanaryStatus:
 
     metrics_text = _fetch_metrics(metrics_url)
     canary_count, non_canary_count = _parse_canary_counters(metrics_text)
+    dry_run_intercept = _parse_dry_run_intercept(metrics_text)
     allowlist = sorted(get_canary_room_ids())
     host = urlparse(metrics_url).hostname or "<unknown>"
 
@@ -128,6 +151,7 @@ def build_status(metrics_url: str) -> CanaryStatus:
         mode=_describe_mode(allowlist),
         canary_count=canary_count,
         non_canary_count=non_canary_count,
+        dry_run_intercept=dry_run_intercept,
     )
 
 
@@ -146,8 +170,13 @@ def render_human(s: CanaryStatus) -> str:
     lines.append(f"非 canary 流量累计:                {s.non_canary_count}  {breach_mark}")
     lines.append("")
     lines.append("退出门检查:")
-    if "ALL" in s.allowlist:
-        lines.append("  全量模式，无需检查非 canary 流量")
+    if "ALL" in s.allowlist and s.is_breach:
+        lines.append(
+            f"  ⚠️  全量模式下 dry_run 拦截 = {s.dry_run_intercept} > 0 → "
+            "DRY_RUN_BACKEND 仍在丢弃写请求！立即检查 .env 配置（runbook §5 / P0）"
+        )
+    elif "ALL" in s.allowlist:
+        lines.append("  全量模式，无需检查非 canary 流量（dry_run 拦截 = 0 ✅）")
     elif s.is_breach:
         lines.append(
             f"  ⚠️  非 canary 流量 = {s.non_canary_count} > 0 → "

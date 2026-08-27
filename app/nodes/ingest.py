@@ -5,6 +5,7 @@ product_type 由下游 `intent_route` 节点（ADR 0015 三层路由）负责。
 """
 from __future__ import annotations
 
+import uuid
 from typing import Any
 
 from app.graph.safe_node import safe_node
@@ -32,7 +33,13 @@ async def ingest(state: AgentState) -> dict[str, Any]:
     """
     room_id = state.get("room_id")
     emit_canary_traffic(is_canary=is_canary_room(room_id))
+    updates: dict[str, Any] = {}
+    if not state.get("trace_id"):
+        # ADR 0004/#156：单次调用关联 ID（API 入口 routes.py 已生成；此处兜底
+        # 覆盖 eval 脚本 / harness 等直接 ainvoke 的路径）
+        updates["trace_id"] = uuid.uuid4().hex
     return {
+        **updates,
         "reply_text": None,
         "api_result": None,
         "api_code": None,

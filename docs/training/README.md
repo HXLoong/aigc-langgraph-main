@@ -146,7 +146,7 @@ monkeypatch.setattr("app.subgraphs.swap.intent.get_qwen_structured", fake)
 | "Dify 里这个节点对应代码哪里" | 手册第 4.3 节（节点类型逐一对照） |
 | "改了提示词没效果" | 手册附录 A.10（lru_cache 缓存） |
 | "PR review 不知道怎么改" | 手册第 10.6 节（reviewer 检查清单） |
-| "想了解某个设计为什么这样" | `docs/adr/` 16 个 ADR + `CLAUDE.md` |
+| "想了解某个设计为什么这样" | `docs/adr/`（ADR 0000-0020 共 21 篇）+ `CLAUDE.md` |
 
 ---
 

@@ -17,6 +17,8 @@ from starlette.middleware.base import BaseHTTPMiddleware
 
 from app.api.health import router as health_router
 from app.api.routes import router as api_router
+from app.checkpointer.factory import close_checkpointer, init_checkpointer
+from app.config import get_settings
 from app.graph.main import build_main_graph
 from app.observability.metrics import emit_http_response, get_collector
 
@@ -35,8 +37,19 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     """编译主图 + LangFuse 接入。"""
     logger.info("starting otc-agent-langgraph")
 
-    # M1 阶段：不强制 checkpointer（M2/M3 接入 AIOMySQLSaver）
-    app.state.main_graph = build_main_graph(checkpointer=None)
+    # #153 裁决（ADR 0009/0021）：checkpointer 接线——多轮状态持久化是生产正确性。
+    # 显式启用即硬依赖（init 失败直接抛，不静默降级）；生产未启用 fail-fast。
+    settings = get_settings()
+    checkpointer = None
+    if getattr(settings, "use_mysql_checkpointer", False):
+        checkpointer = await init_checkpointer()
+        logger.info("AIOMySQLSaver checkpointer 已接线")
+    elif getattr(settings, "environment", "") == "production":
+        raise RuntimeError(
+            "生产环境必须启用 MySQL checkpointer（USE_MYSQL_CHECKPOINTER=true，"
+            "见 ADR 0021 / issue #153）"
+        )
+    app.state.main_graph = build_main_graph(checkpointer=checkpointer)
     logger.info("main graph compiled")
 
     if _is_enabled("ENABLE_LANGFUSE"):
@@ -54,6 +67,8 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
 
     yield
 
+    if checkpointer is not None:
+        await close_checkpointer()
     logger.info("stopping otc-agent-langgraph")
 
 

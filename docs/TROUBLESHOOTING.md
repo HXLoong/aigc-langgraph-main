@@ -52,7 +52,7 @@ curl $QWEN_API_BASE/models -H "Authorization: Bearer $QWEN_API_KEY"
 ### Q: 标的识别返回空
 **排查**：
 1. goats 库不通？在 `ticker_tools.py::search_goats` 加日志
-2. LLM 自行跳过了 search_goats？看 LangSmith trace
+2. LLM 自行跳过了 search_goats？看 LangFuse trace
 3. Agent 循环超限？设 `recursion_limit=25`
 
 ### Q: LLM 输出 JSON 解析失败
@@ -122,7 +122,7 @@ pip install -e ".[dev]"
 
 ### Q: P95 延迟 > 10s
 **排查**：
-1. 看 LangSmith 或 trace，哪个节点慢
+1. 看 LangFuse 或 trace，哪个节点慢
 2. 大概率是 `extract_place_order`（用 133K 字符提示词）
 3. 优化方向：
    - 路由阶段用 Haiku 蒸馏小模型（1s 内）
@@ -148,7 +148,7 @@ pip install -e ".[dev]"
 ### 大面积解析失败
 1. **立即**：`USE_LANGGRAPH=false` 切回 Dify
 2. 看最近 1h `message_log` 表的 error 分布
-3. 看 LangSmith 定位是哪个节点批量失败
+3. 看 LangFuse 定位是哪个节点批量失败
 4. 热修复走 hotfix 分支，跑 golden set → 快速发布
 
 ### Shadow 双跑一致率骤降

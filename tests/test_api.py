@@ -87,3 +87,31 @@ def test_inputs_field_passthrough(client: TestClient) -> None:
         },
     )
     assert r.status_code == 200
+
+
+def test_workflows_run_emits_end_to_end_latency(client: TestClient) -> None:
+    """#157：请求出口必须写端到端延迟直方图（无 node label，区别于节点级样本）。"""
+    client.post(
+        "/v1/workflows/run",
+        json={
+            "inputs": {
+                "rawContent": "测试 - 互换下单",
+                "conversationId": "c-metrics-001",
+                "messageId": 43,
+                "userId": "u-1",
+                "roomId": "r-1",
+                "messageContent": "测试 - 互换下单",
+            },
+            "response_mode": "blocking",
+            "user": "c-metrics-001",
+        },
+    )
+    metrics_text = client.get("/metrics").text
+    e2e_lines = [
+        line
+        for line in metrics_text.splitlines()
+        if line.startswith("otc_agent_intent_latency_ms_count")
+        and 'node="' not in line
+        and 'product_type="swap"' in line
+    ]
+    assert e2e_lines, "端到端延迟样本（product_type=swap 且无 node label）未写入"

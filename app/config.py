@@ -72,6 +72,10 @@ class Settings(BaseSettings):
     langfuse_base_url: str = "https://cloud.langfuse.com"
     langfuse_project: str = "otc-agent"
 
+    # === Checkpointer（ADR 0009/0021，#153 接线）===
+    # 生产必须 true（多轮状态持久化）；开发/CI 默认 false 避免 MySQL 依赖与脏 checkpoint
+    use_mysql_checkpointer: bool = False
+
     # === 灰度切换 ===
     use_langgraph: bool = True
     langgraph_traffic_ratio: float = Field(default=1.0, ge=0.0, le=1.0)

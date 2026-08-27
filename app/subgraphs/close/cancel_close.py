@@ -15,6 +15,7 @@ from app.graph.state import AgentState, TraceEntry
 from app.llm.clients import get_qwen_thinking
 from app.prompts import load_prompt
 from app.subgraphs.close.models import CancelCloseParams
+from app.graph.business_params import validated_cancel_params
 
 
 def _build_user_message(state: AgentState) -> str:
@@ -71,9 +72,7 @@ async def close_cancel_close(state: AgentState) -> dict[str, Any]:
                 order_nos = [_last_oid]
 
     return {
-        "cancel_params": {
-            "cancelOrderNoList": order_nos,
-        },
+        "cancel_params": validated_cancel_params(cancelOrderNoList=order_nos),
         "trace": [
             TraceEntry(
                 node="close_cancel_close",

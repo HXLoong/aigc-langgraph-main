@@ -50,6 +50,7 @@
 |---|---|
 | `check_alert_threshold_consistency.py` | 告警阈值一致性 lint |
 | `check_fixture_consistency.py` | golden fixture 一致性 lint |
+| `check_adr_refs.py` | ADR 互引虚悬 + 引用路径存在性 lint（跳过删除线段）|
 
 ### 数据维护
 

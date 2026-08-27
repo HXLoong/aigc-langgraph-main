@@ -69,7 +69,7 @@ LangGraph 与现行 Dify 工作流并行接收同一份用户输入，对比两�
 ## 如有疑问
 
 - 技术细节：联系 LangGraph 工程团队
-- ADR 决策：见 `docs/adr/` 16 个 ADR
+- ADR 决策：见 `docs/adr/`（ADR 0000-0020 共 21 篇）
 - M2 收尾报告：`docs/m2-real-llm-final-report.md`
 
 谢谢配合。

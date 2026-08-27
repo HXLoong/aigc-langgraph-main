@@ -23,6 +23,7 @@ from app.prompts import load_prompt
 from app.subgraphs.option.backend import _with_resolved_ticker, call_option_backend
 from app.subgraphs.option.models import OptionInquiryParams
 from app.subgraphs.ticker.resolver import resolve_ticker, resolve_ticker_full
+from app.graph.business_params import validated_place_params
 
 
 #: 快速询价 / 雪球 / 参与型识别关键词（命中则不走 LLM，直传 GOATS instrument parser）
@@ -119,7 +120,7 @@ async def option_extract_inquiry(state: AgentState) -> dict[str, Any]:
         _tickers = await resolve_ticker(raw_text)
         if not _tickers:
             return {
-                "place_params": {"expected_action": "inquiry", "orderList": []},
+                "place_params": validated_place_params(expected_action="inquiry", orderList=[]),
                 "tickers": [],
                 "error": "抱歉！标的代码（或标的名称）不在标的池内，无法自动报价，请联系对口销售或交易员。",
                 "trace": [TraceEntry(node="option_extract_inquiry", decision="invalid_ticker")],
@@ -161,10 +162,7 @@ async def option_extract_inquiry(state: AgentState) -> dict[str, Any]:
     )
 
     out: dict = {
-        "place_params": {
-            "expected_action": "inquiry",
-            "orderList": order_list,
-        },
+        "place_params": validated_place_params(expected_action="inquiry", orderList=order_list),
         "tickers": tickers,
         **backend,
         "trace": [

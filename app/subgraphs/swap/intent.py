@@ -3,7 +3,7 @@
 输入：raw_text / quote_content / history_messages / conversation_id
 输出：state['intent'] = SwapIntentType 之一（7 值）
 
-LLM：standard 模型 + with_structured_output（ADR 0010 强制规则）。
+LLM：get_qwen_thinking 工厂 + with_structured_output（工厂语义现状见 ADR 0020 §4 / #158 裁决）。
 prompt：app/prompts/swap/intent.md（Dify 原文，重构期内只读）。
 
 ADR 0003 灰度：通过 `resolve_prompt_version("swap", "intent", conversation_id)`

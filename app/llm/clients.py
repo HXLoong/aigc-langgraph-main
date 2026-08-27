@@ -43,7 +43,7 @@ class _ChatLLM(ChatOpenAI):
     DeepSeek 的 OpenAI 兼容接口不支持 response_format=json_schema
     （400 "This response_format type is unavailable now"），而
     langchain_openai 的 with_structured_output 默认走 json_schema。
-    全库 43 处调用均不传 method，故在此统一降级为 function_calling。
+    业务代码 20 处调用点均不传 method，故在此统一降级为 function_calling。
     显式传入的 method 不覆盖；Qwen 走 langchain 默认行为。
     """
 

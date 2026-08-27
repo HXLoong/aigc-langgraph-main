@@ -1,7 +1,7 @@
 # 一级路由 - product_type 分类（LLM 兜底）
 
 - **node_id**: `router/product_type`
-- **model**: `qwen3-30b-a3b` (standard, ADR 0010)
+- **model**: 以 `.env` 为准（现 `deepseek-v4-pro`，ADR 0020）；调用工厂 `get_qwen_thinking`（工厂语义见 ADR 0020 §4）
 - **触发**: 仅在 `app/nodes/intent_route.py` 规则层未命中或冲突时调用
 - **决策来源**: ADR 0015
 

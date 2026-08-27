@@ -137,7 +137,7 @@ def test_evaluate_delta_detects_short_burst_not_diluted_by_history() -> None:
         "cascade_fail_high": _make_state_with_snapshot(
             name="cascade_fail_high",
             # 上次评估：累积 100000 请求 / 1000 cascade（历史 1%）
-            last_metrics={"node_total": 100000, "fallback_cascade_fail": 1000},
+            last_metrics={"http_total": 100000, "fallback_cascade_fail": 1000},
             last_timestamp=1000.0,
         )
     }
@@ -145,7 +145,7 @@ def test_evaluate_delta_detects_short_burst_not_diluted_by_history() -> None:
     ctx = AlertContext(
         timestamp=1060.0,
         requests_total=100050,
-        metrics={"node_total": 100050, "fallback_cascade_fail": 1030},
+        metrics={"http_total": 100050, "fallback_cascade_fail": 1030},
     )
     transitions = evaluate(ctx, states)
     # 60% 越线 → 启动计时器（still 未持续 sustain_seconds 不发 fire）
@@ -158,7 +158,7 @@ def test_evaluate_breach_sustained_fires() -> None:
     states = {
         "cascade_fail_high": _make_state_with_snapshot(
             name="cascade_fail_high",
-            last_metrics={"node_total": 1000, "fallback_cascade_fail": 10},
+            last_metrics={"http_total": 1000, "fallback_cascade_fail": 10},
             last_timestamp=1000.0,
             first_breach_at=1000.0,  # 已启动计时
         )
@@ -167,7 +167,7 @@ def test_evaluate_breach_sustained_fires() -> None:
     ctx = AlertContext(
         timestamp=1700.0,
         requests_total=1100,
-        metrics={"node_total": 1100, "fallback_cascade_fail": 40},
+        metrics={"http_total": 1100, "fallback_cascade_fail": 40},
     )
     transitions = evaluate(ctx, states)
     assert len(transitions) == 1
@@ -182,7 +182,7 @@ def test_evaluate_recovery_signals() -> None:
     states = {
         "cascade_fail_high": _make_state_with_snapshot(
             name="cascade_fail_high",
-            last_metrics={"node_total": 1000, "fallback_cascade_fail": 100},
+            last_metrics={"http_total": 1000, "fallback_cascade_fail": 100},
             last_timestamp=1700.0,
             is_firing=True,
             first_breach_at=1000.0,
@@ -208,7 +208,7 @@ def test_evaluate_no_double_fire() -> None:
     states = {
         "cascade_fail_high": _make_state_with_snapshot(
             name="cascade_fail_high",
-            last_metrics={"node_total": 1000, "fallback_cascade_fail": 10},
+            last_metrics={"http_total": 1000, "fallback_cascade_fail": 10},
             last_timestamp=1700.0,
             is_firing=True,
             first_breach_at=1000.0,
@@ -218,7 +218,7 @@ def test_evaluate_no_double_fire() -> None:
     ctx = AlertContext(
         timestamp=1900.0,
         requests_total=1100,
-        metrics={"node_total": 1100, "fallback_cascade_fail": 40},
+        metrics={"http_total": 1100, "fallback_cascade_fail": 40},
     )
     transitions = evaluate(ctx, states)
     assert transitions == []

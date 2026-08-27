@@ -1,8 +1,12 @@
 # ADR 0000 · 从 Dify 工作流迁移到 LangGraph
 
-- **Status**: Accepted（元 ADR：项目存在的根本动机）
-- **Date**: 2026-05-10
-- **Note**: 本 ADR 回答"为什么从 Dify 迁过来"。"如何重写当前 `app/`"由 ADR 0001 接管。
+- 状态：已采纳（元 ADR：项目存在的根本动机）
+- 日期：2026-05-10
+- 修订：2026-08-27 深度改写为现状口径（wayfinder map #138 / 核查 #139）
+- 作者：图灵科技 + Tony
+- 说明：本 ADR 回答"为什么从 Dify 迁过来"；"如何重写 `app/`"由 [ADR 0001](./0001-rewrite-app-with-harness-first.md) 接管
+
+## 动机：Dify 的四个核心痛点
 
 原系统用 Dify 编排意图识别 + 业务子图。随着业务需求增长，Dify 工作流暴露了四个长期累积的核心痛点：
 
@@ -13,19 +17,26 @@
 
 我们需要一个能让业务逻辑回到代码、能在 CI 里跑闭环、能产出结构化 trace 供监测和评估的运行时。LangGraph + FastAPI 满足这四条，且子图嵌套、HITL interrupt、checkpointer 都是一等公民。
 
-我们决定迁移到 LangGraph + FastAPI，把 Dify YAML 中的提示词原封导出为 `app/prompts/**/*.md`（生产验证过的资产，只做加载不改写），用 shadow 双跑工具持续校准两侧差异率，直到金丝雀切换。
+## 决策与落地现状（2026-08-27）
 
-> **遗留目标**：完整的"评估 / 监测 / 回归"测试 Harness 尚未建成（详见 ADR-0002 草案）。当前只有 30 条 golden + shadow_compare，离自动化评估闭环还有距离。
+决定迁移到 **LangGraph + FastAPI**，把 Dify YAML 中的提示词导出为 `app/prompts/**/*.md`（现有 37 个业务提示词 .md）。
 
-## Considered Options
+原决策的两条执行方式已按后续 ADR 演进：
+
+- **"提示词只做加载不改写"** → 已由 [ADR 0001 D5](./0001-rewrite-app-with-harness-first.md) 在重构期解禁：合并/拆分/瘦身类改写须在 D5 处置表登记，Dify 原版以 `*.dify_original.md` 等非活跃快照保留（纪律见 `app/prompts/CLAUDE.md`）；M4 全量上线后恢复只读。
+- **"shadow 双跑校准到金丝雀切换"** → 已由 [ADR 0016](./0016-m3-scope-engineering-loop-not-shadow.md) 降级为 **F4.1（M4 阶段的第二意见）**，M3 的合格性判定改为 golden PASS 率退出门。
+
+四个痛点的解药均已建成（详见 [ADR 0002](./0002-comprehensive-runtime-harness.md)）：`harness/` 评测台、`node_trace` 落库 + LangFuse trace、golden set 535 条（主）+ 34 条（ticker）按 B/C/D 桶管理、DeepSeek Judge 评估（`scripts/langfuse_eval.py`）。
+
+## 备选方案
 
 - **保留 Dify**：四个痛点无解，业务复杂度上限低。
 - **完全自研 DAG 引擎**：可控性最高但开发量大，且失去 LangGraph 生态（checkpointer / interrupt / structured output）。
 - **LangGraph + FastAPI（已选）**：成熟生态，子图嵌套和 interrupt 一等公民，可在 in-process 测试中跑通。
 
-## Consequences
+## 后果（现状口径）
 
-- 提示词必须严格保持与 Dify 原文一致，禁止改写 `app/prompts/**/*.md`，否则 shadow 双跑会失真。
-- 需要长期维护一套 Dify YAML 同步工具（`dify/sync.py` + `scripts/export_dify_prompts.py`），让业务方继续用 Dify UI 调整提示词，再批量同步进代码。
-- 新增意图/子图必须同步更新 `app/state.py` 的 TypedDict 和 `tests/fixtures/golden.jsonl`。
-- 引入了"业务逻辑下沉到代码 vs. 业务方继续在 Dify UI 里改提示词"的双轨期，需要明确治理边界（提示词归 Dify、节点编排归代码）。
+- 需要长期维护 Dify YAML 同步工具（`dify/sync.py` + `scripts/export_dify_prompts.py`），让业务方继续用 Dify UI 调整提示词，再批量同步进代码。同步脚本的覆盖写风险见裁决 issue [#159](https://github.com/GZTL-AI/aigc-langgraph/issues/159)。
+- 新增意图/子图必须同步更新 `app/graph/state.py` 的 TypedDict（`app/state.py` 仅剩兼容 shim）与 `tests/fixtures/golden.jsonl`——后者已由 CI 的 `scripts/check_fixture_consistency.py` 强制。
+- "业务逻辑下沉到代码 vs. 业务方继续在 Dify UI 改提示词"的双轨期治理边界：提示词归 Dify / 节点编排归代码；重构期内的改写例外由 ADR 0001 D5 处置表管理。
+- 原文提到的"统一 APM 体系"最终由 **LangFuse** 承载（[ADR 0014](./0014-langfuse-as-harness-backend.md) 取代早期 LangSmith 方案）。

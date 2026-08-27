@@ -69,11 +69,19 @@ def extract_prompts_from_yaml(yaml_path: Path) -> list[dict]:
     return prompts
 
 
-def save_prompt_as_md(prompt: dict, out_dir: Path) -> None:
-    """把一个提示词存成 markdown。"""
+def save_prompt_as_md(prompt: dict, out_dir: Path, overwrite: bool = False) -> bool:
+    """把一个提示词存成 markdown。
+
+    #159 裁决（ADR 0003）：默认拒绝覆盖已存在文件——Dify 同步不允许静默
+    覆盖生产提示词，需要覆盖时显式传 --overwrite，由人先 diff 再决定。
+    返回是否实际写入。
+    """
     title = prompt["title"]
     filename = sanitize_filename(title) + ".md"
     out_path = out_dir / filename
+    if out_path.exists() and not overwrite:
+        print(f"  [跳过] {out_path} 已存在（--overwrite 可强制覆盖，覆盖前请先 diff）")
+        return False
 
     lines = [
         f"# {title}",
@@ -92,12 +100,15 @@ def save_prompt_as_md(prompt: dict, out_dir: Path) -> None:
 
     out_path.write_text("\n".join(lines), encoding="utf-8")
     print(f"  [✓] {out_path}")
+    return True
 
 
 def main():
     parser = argparse.ArgumentParser(description="从 Dify YAML 导出 LLM 提示词")
     parser.add_argument("input_dir", type=Path, help="Dify YAML 目录")
     parser.add_argument("output_dir", type=Path, help="输出目录")
+    parser.add_argument("--overwrite", action="store_true",
+                        help="允许覆盖已存在文件（默认跳过，覆盖前请先 diff）")
     args = parser.parse_args()
 
     if not args.input_dir.is_dir():
@@ -116,8 +127,8 @@ def main():
         subdir.mkdir(parents=True, exist_ok=True)
 
         for prompt in prompts:
-            save_prompt_as_md(prompt, subdir)
-            total += 1
+            if save_prompt_as_md(prompt, subdir, overwrite=args.overwrite):
+                total += 1
 
     print(f"\n完成：共导出 {total} 个提示词到 {args.output_dir}")
 

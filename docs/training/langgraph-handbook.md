@@ -4022,7 +4022,7 @@ OTC_API_BASE_URL=http://localhost:8099 python -m harness run
 **永远记住三件事**：
 
 1. **CLAUDE.md 是项目宪法**——和本手册冲突时以 CLAUDE.md 为准
-2. **改之前先看 ADR**——`docs/adr/` 里 16 个 ADR 解释了"为什么这么设计"
+2. **改之前先看 ADR**——`docs/adr/` 里 ADR 0000-0020（共 21 篇）解释了"为什么这么设计"
 3. **不会就问**——团队里读过 LangGraph 全文的人不多，但都很愿意一起 pair。优先在 PR 里讨论，让讨论沉淀到 ADR
 
 祝早日提交第一个 PR。

@@ -118,7 +118,7 @@ def _match_quote_marker(quote_content: str | None) -> ProductType | None:
 
 
 # ============================================================
-# 第 3 层：LLM 兜底（standard 模型 + structured output）
+# 第 3 层：LLM 兜底（get_qwen_thinking 工厂 + structured output，见 ADR 0015/0020 §4）
 # ============================================================
 
 

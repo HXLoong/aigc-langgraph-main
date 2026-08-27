@@ -1,68 +1,56 @@
-# 标的识别采用 ReAct Agent 而非固定链式流程
+# ADR 0008 · 标的识别采用 ReAct Agent 而非固定链式流程
 
-中国 A 股标的格式规范（6 位代码 + 交易所后缀），但本系统服务的场外衍生品场景大量涉及境外标的，存在两类硬识别难题：
+- 状态：已采纳，**但生产实现已演化为确定性编排，ReAct Agent 为死代码**（2026-08-27 核查确认；去向待裁决 [#154](https://github.com/GZTL-AI/aigc-langgraph/issues/154)）
+- 日期：2026-05-10
+- 修订：2026-08-27 深度改写为现状口径（wayfinder map #138 / 核查 #140）
+- 作者：图灵科技 + Tony
 
-1. **境外期货/商品的行业俗称**：客户口头/聊天里用"伦铜"指 LME 铜期货、"布油"指 Brent 原油，无统一命名规范。
-2. **跨市场的中文简称**：客户写"腾讯"代表 `00700.HK`、写"50ETF"代表 `510050.SH`，需要简称→代码映射 + 上下文消歧。
+## 上下文
 
-识别这些标的的步骤序列**事先不确定**：短文本可能 1 步命中字典，俗称可能需要 5 步（分词 → 候选词典 → 查 GOATS → 排序 → 推断完整代码），用户输入决定路径分支。
+场外衍生品场景大量涉及境外标的，两类硬识别难题：
 
-我们采用 **LangGraph ReAct Agent + 工具循环**（`ticker.py` + `ticker_tools.py`）作为标的识别子流程，被 swap / option / close 三个业务子图共同调用。`from_goats=True` 是 ReAct 输出的硬约束——任何最终标的必须经 GOATS 库回查确认。
+1. **境外期货/商品的行业俗称**："伦铜" = LME 铜期货、"布油" = Brent 原油，无统一命名规范。
+2. **跨市场的中文简称**："腾讯" = `00700.HK`、"50ETF" = `510050.SH`，需要简称→代码映射 + 上下文消歧。
 
-## Considered Options
+原决策判断"识别步骤序列事先不确定"（短文本 1 步命中，俗称可能 5 步），因此选 **ReAct Agent + 工具循环**，否决了固定链式流程。
 
-- **固定链式四步**（分词 → 查询 → 排序 → 输出）：覆盖 A 股没问题，但碰到俗称需要大量"是否进入下一步"的判断胶水代码，且短文本场景被迫跑全四步浪费延迟。
-- **LLM 单次结构化输出**：让 LLM 直接吐 `{name, code, market}`，但俗称需要外部字典查询才能确认，单次调用无法访问字典。
-- **ReAct Agent（已选）**：让 LLM 自己决定调多少次工具，路径长度按输入复杂度自适应。代价是 trace 步数和 token 浮动需要单独监测。
+## ⚠️ 落地现状（2026-08-27）：生产走确定性 resolver，ReAct 为死代码
 
-## Consequences
+核查（[#140](https://github.com/GZTL-AI/aigc-langgraph/issues/140)）确认：
 
-- ReAct 内部的工具调用次数必须作为独立观测指标记录到 `node_trace`（参考 ADR-0004），便于发现"某类输入持续触发超长循环"的退化场景。
-- ReAct 输出必须强制走 `from_goats=True` 校验（CLAUDE.md 已列入"绝对约束"），防止 LLM 自由发挥编造代码。
-- 需要为高频俗称建本地字典缓存（如"伦铜"等），减少每次都让 LLM 重新推理的成本——这是后续优化项，当前依赖提示词内置词典。
-- ReAct Agent 跨子图共享，意味着任何对它的改动会同时影响 swap / option / close 三条业务线，golden set 必须覆盖三个子图的标的识别 case。
+- `app/subgraphs/ticker/react_agent.py` / `graph.py` 已构建但**主图从未接线**（`app/graph/main.py` 无 ticker 节点），仅测试里编译冒烟；
+- 生产链路是 `app/subgraphs/ticker/resolver.py` 的**确定性 async 编排**：`resolve_ticker_full()` = tokenize（纯正则）→ 逐 keyword 查 GOATS → `_pick_winner` 规则选优 → 命中不足时 `infer_code` LLM 推断 + **GOATS 二次校验**。函数名 `_resolve_via_react_full` 只保留了命名，无 ReAct 语义——这正是原决策否决的"固定链式流程"形态（但比原链式方案多了 LLM 定点兜底）；
+- 调用方是 **2 个节点**：`swap/place_order.py` 与 `option/extract_inquiry.py`（原文"swap/option/close 三子图共用"不成立——close 基于订单号平仓，明确不依赖标的识别）；
+- 4 个 `@tool` 中业务链路只用 `tokenize` + `infer_code`；`completeness` / `rank` 零调用，被 resolver 的三套私有选优逻辑（`_pick_winner` / `_pick_within_a_share` / `tools.pick_best`）替代且互不一致；
+- `app/prompts/ticker/{tokenize,completeness,rank,tokenize_v2}.md` 均为非活跃资产（tokenize 已纯规则化），仅 `infer_code.md` 在用。
 
-## 后续迁移澄清（与 Dify 等价性）
+**唯一完全兑现的核心约束：`from_goats=True`**——任何最终标的必须经 GOATS 回查确认（resolver 只在 GOATS 返回对象上构造 `TickerCandidate(from_goats=True)`；LLM 推断结果必须过 GOATS 二次校验才采纳）。CLAUDE.md 绝对约束持续有效。
 
-- **标的查询数据源**：原 V1 闭环为脱离 VPN 改成了 MySQL 直连标的池表，丢失了后端打分排序业务规则。已由 **ADR-0012** 修正为恢复走后端 HTTP API（`POST /admin-api/integration/securities-instrument/select`）。
-- **推断 prompt 的动态片段**：Dify 工作流额外拉取 `swap_instrument_inference_prompt` 配置项注入 prompt，本 ADR 未涉及，由 **ADR-0013** 补齐。
-- **本 ADR 描述的"ReAct Agent 收敛 31 节点"在结构层面有效**，但运行时数据获取的两个细节（数据源 + 动态 prompt）必须配合 ADR-0012 / 0013 才与 Dify 等价。
+**裁决选项**（[#154](https://github.com/GZTL-AI/aigc-langgraph/issues/154)）：(a) resolver 接回 ReAct Agent；(b) 新增 ADR 收窄本决策为"确定性编排 + LLM 定点兜底（LLM 输出必须过 GOATS 校验）"——现实现实际上是**更强的约束**，只是与本 ADR 记载相反且从未记录。
 
-## 运行时约束（grill-with-docs 2026-05-10）
+## 备选方案（历史论证）
 
-### a · Hard cap = 8 步
+- **固定链式四步**：覆盖 A 股没问题，俗称场景要大量判断胶水、短文本被迫跑全程。
+- **LLM 单次结构化输出**：无法访问外部字典。
+- **ReAct Agent（原选）**：路径长度自适应；代价是步数/token 浮动需单独监测。
 
-```python
-TICKER_MAX_STEPS = 8
+## 运行时约束（原文三条的现状）
 
-graph = create_react_agent(
-    llm_thinking,
-    tools=[tokenize, completeness, rank, infer_code],
-).with_config(recursion_limit=TICKER_MAX_STEPS * 2)
-```
+| 原约束 | 现状 | 裁定 |
+|---|---|---|
+| a · Hard cap 8 步（`TICKER_MAX_STEPS=8`，recursion_limit=16），超限返回 `from_goats=False` 触发 cascade，步数入 trace | 常量在 `react_agent.py` 但 agent 不在业务链路，**cap 从不生效**；超限降级契约未实现；resolver 不写任何步数/调用次数 trace（原 Consequence 明列的观测指标缺失） | 死逻辑，随 [#154](https://github.com/GZTL-AI/aigc-langgraph/issues/154) 一并裁决（resolver 侧应有等价护栏：keyword 数上限 / 单次解析 LLM 调用上限） |
+| b · GOATS 0 命中直接 fallback，不补 LLM 调用 | **反向实现**：primary 命中不足时调 `infer_code` LLM，再拿 LLM 答案做 GOATS 二次查询——设计更优（LLM 不可信输出被 GOATS 拦截）但与原文相反 | 建议随 (b) 选项改写为"LLM 推断 + GOATS 二次校验"约束 |
+| c · 多命中消歧：分差 ≥ 10 自动选，否则 `interrupt(...)` HITL | 整条死逻辑：`RANK_AUTO_PICK_GAP` 定义后未使用、`needs_hitl` 恒 False、`hitl_pending` 恒空、render 消歧卡片为死路径；且 **relevanceScore 语义已反转（越小越相关，0=精确匹配）**，"选最高"在新语义下应为"选分数最低"。HITL 基础设施缺失与 [ADR 0006](./0006-hitl-interrupt-boundary.md) 同簇（[#153](https://github.com/GZTL-AI/aigc-langgraph/issues/153)） | 要么实现要么删 |
 
-理由：基础路径 4 步（tokenize → completeness → rank → infer_code）+ 4 步 reflection/重试 buffer。超出 8 步直接返回当前最佳候选 + `from_goats=False`，触发 cascade 防御走 fallback。trace 必须记录步数，超 8 步是退化信号。
+另：`infer_code` 实现为 raw invoke + 正则抽取 `<result>`/windCode（非原文的 `with_structured_output`），经 `make_qwen_thinking()` 在子线程同步调用（100s 超时）；thinking 模式已随 [ADR 0020](./0020-unify-all-llm-on-deepseek-v4-pro.md) 全局关闭。
 
-### b · GOATS 0 命中 → 直接 fallback，不试图编码
+## 后续迁移澄清（与 Dify 等价性，仍有效）
 
-```python
-if not candidates:
-    return TickerCandidate(windCode="", from_goats=False, ...)
-```
+- **数据源**：走后端 HTTP `GET /admin-api/integration/securities-instrument/select`（[ADR 0012](./0012-restore-backend-http-for-securities-instrument.md)），已落地于 `TickerClientHttpx`。
+- **动态 prompt 片段**：`instrument-inference-prompt` 拉取 + 拼接（[ADR 0013](./0013-load-dynamic-inference-prompt-fragment.md)），已落地（5 分钟缓存 + 净化 + 降级）。
+- "收敛 Dify 31 节点"在结构层面有效，收敛载体是共享 ticker 模块（resolver），非 ReAct Agent。
 
-LLM 在 ReAct 内部已经有 8 步反复尝试。0 命中后再"最后一击"只是浪费一次 LLM 调用。CLAUDE.md "标的必须 from_goats=True" 是硬约束，不让 LLM 编造代码。
+## 后果（现状口径）
 
-### c · 多命中消歧 = 分差 ≥ 10 自动选最高，否则 HITL
-
-```python
-if len(candidates) >= 2:
-    top, second = candidates[0], candidates[1]
-    if top.relevanceScore - second.relevanceScore >= 10:
-        return top
-    else:
-        return interrupt({"need_user_choice": True, "candidates": candidates[:5]})
-```
-
-ADR 0006 把 HITL 定为"业务参数二次确认"边界——"标的多义"是参数歧义的典型场景，正好命中。分差 ≥ 10 是经验阈值（relevanceScore 0-100），M2 落地后实测调整。HITL 消息样例："你说的'腾讯'是指 00700.HK 还是 TCEHY？"
-
-HITL 链路沿用 ADR 0006：interrupt → API 层返回 ASK_USER 响应 → 企微卡片 → 用户回复 → `graph.ainvoke(None, config)` 从 checkpoint 恢复。
+- ticker 模块跨子图共享（swap.place_order + option.extract_inquiry），任何改动同时影响两条业务线，golden 须覆盖两方的标的识别 case。
+- 高频俗称的本地字典缓存仍未建（依赖 `infer_code.md` 内置词典 + LLM 通用知识推断；注意 CLAUDE.md "禁止硬编码业务数据字典"红线——缓存只能做运行时 LRU，不能做静态清单）。

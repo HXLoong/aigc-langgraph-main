@@ -17,6 +17,7 @@ from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, ConfigDict, Field
 
 from app.graph.state import AgentState
+from app.observability.metrics import emit_intent_latency
 
 router = APIRouter()
 
@@ -91,7 +92,14 @@ async def run_workflow(
     # 把 inputs 解构成 AgentState（按 contracts §2.1 §3.1 的 9 个机器人上下文字段）
     initial_state = _inputs_to_state(req.inputs, fallback_conversation_id=req.user)
 
-    config = {"configurable": {"thread_id": req.user}}
+    # ADR 0004/#156：单次调用关联 ID——node_trace.trace_id 与 LangFuse trace metadata 同源
+    trace_id = uuid.uuid4().hex
+    initial_state["trace_id"] = trace_id
+
+    config = {
+        "configurable": {"thread_id": req.user},
+        "metadata": {"trace_id": trace_id},
+    }
 
     t0 = time.perf_counter()
     try:
@@ -108,6 +116,13 @@ async def run_workflow(
         error_msg = f"{type(exc).__name__}: {exc}"
 
     elapsed = time.perf_counter() - t0
+    # #157 裁决：端到端 P95 数据源（ADR 0017/0019 退出门与 p95_latency_degraded 告警）
+    # 无 node label —— alerts 侧以此与节点级样本区分
+    emit_intent_latency(
+        product_type=final_state.get("product_type") or "unknown",
+        intent=final_state.get("intent") or "unknown",
+        elapsed_ms=int(elapsed * 1000),
+    )
     finished_at = int(time.time())
 
     outputs = _state_to_outputs(final_state)

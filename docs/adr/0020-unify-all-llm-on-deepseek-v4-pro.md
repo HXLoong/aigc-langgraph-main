@@ -4,6 +4,7 @@
 - 日期：2026-08-27
 - 取代：[ADR 0018](./0018-dev-qwen-prod-deepseek-llm-split.md)（双模型分立）；修订 [ADR 0010](./0010-llm-model-selection-rules.md)（Qwen 三型号分工）
 - 起源：Tony 2026-08-27 指示"全部使用 DeepSeek-V4-pro"
+- 修订：2026-08-27 按核查 #142 订正 4 处事实（调用点计数、§4 措辞、C1.19、工厂清单）
 - 作者：图灵科技 + Tony
 
 ## 上下文
@@ -21,7 +22,7 @@ M3.3 进入真后端 golden 回归 + 业务方 sign-off 阶段，评估结论必
 
 ### 1. 模型统一
 
-所有 LLM 调用（standard / thinking / structured / complex 四个工厂）统一 `deepseek-v4-pro`。
+所有 LLM 调用统一 `deepseek-v4-pro`，覆盖 5 个文本工厂：standard / thinking / **make_qwen_thinking**（跨 event loop 非缓存工厂，同读 `qwen_model_thinking`）/ structured / complex（VL 例外见 §3）。
 切换仍只通过 `.env`，代码不硬编码 vendor（`QWEN_*` 是历史通用前缀，沿用 ADR 0018 的命名妥协）：
 
 ```dotenv
@@ -39,21 +40,29 @@ DeepSeek 的 OpenAI 兼容接口与 Qwen/dashscope 有两处硬差异，已在�
 | 差异 | 现象 | 适配 |
 |---|---|---|
 | 关闭思考模式参数不同 | DeepSeek 静默忽略 Qwen 的 `enable_thinking=False`，默认仍开思考（实测 reasoning token 非零，延迟不可控） | `_thinking_off_extra_body()`：DeepSeek 用 `{"thinking": {"type": "disabled"}}`，Qwen 保持 `enable_thinking=False` |
-| 不支持 `response_format=json_schema` | 400 "This response_format type is unavailable now"；而 langchain_openai 的 `with_structured_output` 默认走 json_schema，全库 43 处调用均不传 method | `_ChatLLM.with_structured_output`：模型名以 deepseek 开头且未显式传 method 时，自动降级 `method="function_calling"`（实测可用；`json_mode` 会漂移字段名，不采用） |
+| 不支持 `response_format=json_schema` | 400 "This response_format type is unavailable now"；而 langchain_openai 的 `with_structured_output` 默认走 json_schema，业务代码 **20 处调用点**均不传 method | `_ChatLLM.with_structured_output`：模型名以 deepseek 开头且未显式传 method 时，自动降级 `method="function_calling"`（实测可用；`json_mode` 会漂移字段名，不采用） |
+
+注：`_thinking_off_extra_body` 应用于 5 个文本工厂；VL 工厂不传该 extra_body（视觉模型无思考开关）。
 
 ### 3. VL 视觉模型例外
 
 DeepSeek 暂无视觉模型。`get_qwen_vl` 仍指向 `qwen-vl-max-latest`，但 base 已切
-DeepSeek，**当前不可用**。M3 未使用图片链路（place_order_image / image_recognize 为
-P2 增量节点）；启用时需给 VL 工厂单独配 Qwen base（新增独立 env var），届时修订本 ADR。
+DeepSeek，**当前不可用**——实际影响面为零：`get_qwen_vl` 全库无调用方（M3 未使用
+图片链路，place_order_image / image_recognize 为 P2 增量节点）。启用时需给 VL 工厂
+单独配 Qwen base（新增独立 env var，将引入第二个 vendor 依赖，[ADR 0019](./0019-incident-severity-thresholds.md)
+的"LLM 单一外部依赖"论证需同步修订），届时修订本 ADR。
 
 ### 4. 对 ADR 0010 选型规则的影响
 
-- standard / thinking / complex 三型号**事实合一**（同一模型、同为关思考）；四个工厂函数与
+- standard / thinking / complex 三型号**事实合一**（同一模型、同为关思考）；工厂函数与
   import 语义保留，未来按节点切不同模型时只改 `.env` 或对应工厂
 - ADR 0010 的核心约束"thinking 模型不支持 structured output"在 DeepSeek 下不再成立
-  （function calling 全模型可用），该规则降级为历史背景；"structured output 节点默认走
-  standard 工厂"的习惯保留，不强制回改存量代码
+  （function calling 全模型可用），该规则降级为历史背景
+- ⚠️ **工厂语义现状如实记录**（2026-08-27 核查 #142 订正本节原措辞）：ADR 0010 的
+  "structured output 强制 standard"**从未被执行**——20 个 structured output 调用点实际
+  分布为 thinking 15 / structured 2 / complex 1 / standard 0。当前同模型无运行时后果，
+  该偏离已裁决（[#158](https://github.com/GZTL-AI/aigc-langgraph/issues/158)，2026-08-27）：**追认 thinking 工厂为事实默认**；
+  **分化前置纪律**——按工厂分化模型前必须先做调用点统一 PR，否则 15 个节点会静默跟随 thinking 工厂
 
 ## 替代方案
 
@@ -67,8 +76,10 @@ P2 增量节点）；启用时需给 VL 工厂单独配 Qwen base（新增独立
 ### 正面
 
 - 开发 / 评测 / 现场单一口径，golden 回归结论可直接外推现场
-- C1.19 从"一次性 smoke 验证"升级为常态：所有日常评估天然在 DeepSeek 上进行
-- vendor 差异集中在 clients.py 一处，节点代码零改动（43 处 `with_structured_output` 未动）
+- ADR 0018 C1.19 的验证意图由日常评估天然承接（注：C1.19 gate 本身已于 2026-05-12
+  标记跳过、从未执行，见 ADR 0018 存根第 3 条——事后证明"风险低"是误判，两处硬差异由
+  本 ADR §2 适配层补救）
+- vendor 差异集中在 clients.py 一处，节点代码零改动（20 处 `with_structured_output` 调用点未动）
 
 ### 负面 / 风险
 
@@ -81,7 +92,7 @@ P2 增量节点）；启用时需给 VL 工厂单独配 Qwen base（新增独立
 
 ### 回退路径
 
-- `.env` 中保留 Qwen 配置注释，切回只改 §3 四行
+- `.env` 中保留 Qwen 配置注释，切回只改 §1 四行
 - `_thinking_off_extra_body` / `_ChatLLM` 按模型名分支，双 vendor 兼容，回退无需改代码
 
 ## 关联

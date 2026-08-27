@@ -1,31 +1,42 @@
-# Qwen 三型号分工：structured output 节点强制 standard
+# ADR 0010 · Qwen 三型号分工：structured output 节点强制 standard
 
-> **2026-08-27 修订**：[ADR 0020](./0020-unify-all-llm-on-deepseek-v4-pro.md) 起全部环境统一
-> DeepSeek-V4-pro，standard / thinking / complex 事实合一，"thinking 不支持 structured
-> output"的约束在 DeepSeek 下不成立。本文保留为历史背景；工厂函数的 import 语义与
-> "structured output 默认走 standard 工厂"的习惯仍然沿用。
+- 状态：**历史背景**（选型口径已被 [ADR 0020](./0020-unify-all-llm-on-deepseek-v4-pro.md) 取代：全部环境统一 DeepSeek-V4-pro，三型号事实合一）
+- 日期：2026-05-10
+- 修订：2026-08-27 深度改写为现状口径（wayfinder map #138 / 核查 #142）
+- 作者：图灵科技 + Tony
 
-`app/llm/clients.py` 暴露三个 Qwen 客户端：standard（`qwen3-30B-A3B`）、thinking（`qwen-max-latest` + `enable_thinking=True`）、VL（多模态）。我们用以下选型规则约束开发者：
+## 原决策（历史）
 
-| 场景 | 必选型号 | 理由 |
+开发期 Qwen 时代按型号分工：standard（`qwen3-30B-A3B`）/ thinking（`qwen-max-latest` + `enable_thinking=True`）/ VL（多模态），选型规则：
+
+| 场景 | 必选型号 | 理由（当时）|
 |---|---|---|
-| 任何使用 `with_structured_output(PydanticModel)` 的节点 | **standard** | thinking 模型不支持 structured output（function calling），返回非法 JSON 会让 Pydantic 解析失败 |
-| ReAct Agent / 不走 structured output 的工具循环 | thinking | 利用思考能力做多步推理 |
-| 输入含图片（截图、合同照片、含图 Excel） | VL | 唯一支持多模态 |
-| 短文本路由判断（无 structured output 需求） | standard | 默认低延迟 |
+| 任何 `with_structured_output(PydanticModel)` 节点 | **standard** | thinking 模型不支持 structured output |
+| ReAct Agent / 工具循环 | thinking | 多步推理 |
+| 输入含图片 | VL | 唯一多模态，含图请求整条链路走 VL |
+| 短文本路由 | standard | 低延迟 |
 
-**默认原则**：写新节点时**先用 standard**。只有当节点是 ReAct Agent 或确实不需要 structured output 时才考虑 thinking。
+## 现状（2026-08-27）
 
-## Considered Options
+- 工厂已从"三个客户端"演进为 **6 个**：`get_qwen_standard` / `get_qwen_thinking` / `make_qwen_thinking`（跨 event loop 非缓存）/ `get_qwen_structured` / `get_qwen_complex` / `get_qwen_vl`（`app/llm/clients.py`）。
+- 模型实体以 `.env` 为准，现全部 `deepseek-v4-pro` 且**统一关闭思考**（含 thinking 工厂——原表"thinking + enable_thinking=True"已双双反转）。
+- "thinking 不支持 structured output"的核心约束在 DeepSeek 下**不成立**（function calling 全模型可用，0020 §2 适配层处理）。
+- VL：`get_qwen_vl` **全库零调用点**，且 base 已切 DeepSeek 后不可用（0020 §3）；"含图整条链路走 VL"从未被使用。
+- 原 Consequences 承诺"规则写入 `.claude/rules/langgraph-patterns.md`"**未执行**（该文件无此条目）。
 
-- **全部 thinking 追求最高准确率**：`qwen-max-latest` 不支持 structured output，业务子图全部依赖 Pydantic 解析，无法工作。
-- **全部 standard 追求一致性**：ticker ReAct Agent 这类多步推理场景准确率会下降。
-- **按业务复杂度自由选（无规则）**：开发者直觉容易写"复杂参数抽取选 thinking"，撞上 structured output 限制后线上才暴露。
+## 实现偏离（历史事实，必须记录；裁决见 [#158](https://github.com/GZTL-AI/aigc-langgraph/issues/158)）
 
-## Consequences
+**本 ADR 的强制规则从未在代码中被执行**：`get_qwen_standard` 业务侧零调用；20 个 `with_structured_output` 调用点实际分布为 **thinking 15 / structured 2 / complex 1 / standard 0**（`swap/intent.py` 的 docstring 甚至自称遵守本规则，实际调 thinking 工厂）。
 
-- 这条规则反直觉（"复杂场景反而用更小模型"），必须在 PR review 强制检查。`.claude/rules/langgraph-patterns.md` 应明确写入。
-- 如果未来 `qwen-max-latest` 或新版 thinking 模型支持 structured output，这条规则需要重新评估并更新 ADR。
-- structured output 节点的"准确率不够"问题不能靠换 thinking 解决，只能靠：(a) 拆解提示词为多阶段；(b) 给 standard 模型更精细的 few-shot；(c) 升级 standard 模型本身（如未来的 qwen3.5）。
-- ReAct Agent 用 thinking 后，单次调用延迟和 token 浮动更大，必须配合 ADR-0004 的 trace 监控工具调用次数。
-- VL 模型与 standard / thinking 不能混用：含图请求**整条链路**（含意图分类）都要走 VL，不能"先 standard 判定有图再切 VL"——切换会丢失上下文且增加延迟。
+**裁决（#158，Tony 2026-08-27）**：选 (b) 追认——thinking 工厂为 structured output 的**事实默认**，本规则正式废止。**分化前置纪律**：未来按工厂分化模型前，必须先做一个'调用点统一 PR'把 20 处 structured output 调用点归位到语义正确的工厂，否则 15 个节点会静默跟随 thinking 工厂拿到错误模型。
+
+## 备选方案（历史论证）
+
+- **全部 thinking**：当时 qwen-max 不支持 structured output，无法工作。
+- **全部 standard**：ReAct 多步推理准确率下降。
+- **按复杂度自由选**：开发者直觉易撞 structured output 限制。
+
+## 后果（现状口径）
+
+- 保留价值：四个工厂函数的 **import 语义**（standard/thinking/structured/complex 的意图分工）仍是未来按节点分化模型时的挂载点——前提是先解决上述偏离。
+- structured output 准确率问题的解法不变：拆提示词、精细 few-shot、升级模型本体——不靠切 thinking。

@@ -127,16 +127,15 @@ def build_swap_graph():
 
 ## 创建全新子图（如引入"收益凭证"产品）
 
-1. 读 `app/state.py` → 确认 `AgentState` 是否需要新字段；若需要，先改 state.py
-2. 新建 `app/subgraphs/<new_product>_models.py`
-3. 新建 `app/subgraphs/<new_product>.py`
-4. 在 `app/state.py` 加对应 `IntentType` 枚举字面量
-5. 在 `app/nodes/route.py` 加 `<new_product>_KEYWORDS` 和规则
-6. 在 `app/graphs/main_graph.py`：
+1. 读 `app/graph/state.py` → 确认 `AgentState` 是否需要新字段；若需要，先改它（`app/state.py` 仅兼容 shim）
+2. 新建 `app/subgraphs/<new_product>/` 包（`graph.py` / `models.py` / `intent.py` / 各意图节点文件）
+3. 在 `app/subgraphs/<new_product>/models.py` 定义 `IntentType` Literal，`app/graph/state.py` 的 `ProductType` 加值
+4. 在 `app/nodes/intent_route.py` + `app/prompts/router/keywords.yaml` 加路由规则（ADR 0015 四层）
+5. 在 `app/graph/main.py`：
    - `g.add_node("<new_product>", build_<new_product>_graph().compile())`
-   - 在 `route_product_condition` 的映射加一项
+   - 在 `_route_after_intent` 的映射加一项
    - `g.add_edge("<new_product>", "persist_intent")`
-7. 测试全覆盖：路由 / 模型 / E2E
+6. 测试全覆盖：路由 / 模型 / E2E
 
 ## 禁止
 

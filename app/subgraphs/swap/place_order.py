@@ -24,6 +24,7 @@ from app.prompts import load_prompt
 from app.subgraphs.swap.backend import _with_resolved_ticker, call_swap_backend
 from app.subgraphs.swap.models import SwapPlaceOrderParams
 from app.subgraphs.ticker.resolver import resolve_ticker_full
+from app.graph.business_params import validated_place_params
 
 
 def _format_history(history: list[Message] | None) -> str:
@@ -153,10 +154,7 @@ async def swap_place_order(state: AgentState) -> dict[str, Any]:
                 order_list[i]["orderId"] = oid
 
     out: dict = {
-        "place_params": {
-            "expected_action": action,
-            "orderList": order_list,
-        },
+        "place_params": validated_place_params(expected_action=action, orderList=order_list),
         "tickers": tickers,
         **backend,
         "trace": [

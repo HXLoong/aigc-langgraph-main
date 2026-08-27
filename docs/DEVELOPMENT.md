@@ -148,8 +148,8 @@ ORDER BY step_index;
 2. 写成 curl 发到本地 /v1/message
 3. 看 trace 定位哪个节点出错
 
-### LangSmith trace
-启用 `ENABLE_LANGSMITH=true`，然后在 LangSmith UI 按 thread_id 搜索，能看到每一步的输入输出。
+### LangFuse trace
+启用 `ENABLE_LANGFUSE=true`（ADR 0014），然后在 LangFuse UI 按 thread_id 搜索，能看到每一步的输入输出。
 
 ## 性能调优
 

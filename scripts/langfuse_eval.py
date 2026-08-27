@@ -32,6 +32,7 @@ sys.path.insert(0, str(PROJECT_ROOT))
 
 from langgraph.checkpoint.memory import InMemorySaver
 from app.graphs.main_graph import build_main_graph
+from app.prompts import load_prompt
 from app.state import WechatInput, make_initial_state
 
 DATASET_NAME = "otc-option-golden"
@@ -211,16 +212,9 @@ async def run_langgraph_pipeline(*, item, **kwargs):
     return {"reply_text": "\n".join(lines), "turns": results, "trace_log": "\n".join(trace_log_lines)}
 
 # ── Judge ──
-JUDGE = """你是场外衍生品AI指令助手的测试审查员。
-评估: 产品路由(swap/option/option_close)、意图识别、关键参数(标的/方向/数量/价格)、多轮逻辑、反案例
-正案例评分:
-- 产品路由 + 主意图正确 + 主参数(标的/方向/数量任一)对 = 1.0
-- 后端返回业务拒绝(未授权/参数缺/系统忙等)且 expected 是"未完成/失败/请联系"类描述 = 1.0
-- 仅个别非关键字段(描述文案/单号格式)与 expected 不完全匹配但语义等同 = 1.0
-- 路由错或主意图错 = 0
-反案例评分: 机器人拒绝/不执行/提示用户补充 = 1.0; 错误生成订单 = 0
-**宽松原则**: 机器人 reply 不必完全匹配 expected 字面,只要意图正确处理(成功 or 合理拒绝) 都算 1.0。
-只输出 JSON: {"pass":true/false,"score":0.0~1.0,"reason":"一句话"}"""
+# #159 裁决：judge 提示词纳入 ADR 0003 版本化（app/prompts/judge/option_judge.md），
+# 改动走 git PR 留痕；不要在本脚本内改写 judge 正文
+JUDGE = load_prompt("judge", "option_judge").system
 
 _JSON_OBJ_RE = re.compile(r'\{[^{}]*"pass"[^{}]*"score"[^{}]*\}', re.DOTALL)
 

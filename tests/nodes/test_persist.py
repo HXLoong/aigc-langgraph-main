@@ -65,10 +65,11 @@ def test_parse_mysql_uri_default_port() -> None:
 
 def test_trace_entry_to_row_from_pydantic() -> None:
     entry = TraceEntry(node="swap.intent", decision="place_order_request", elapsed_ms=150)
-    row = _trace_entry_to_row(entry, 0, "msg-1", "conv-1")
+    row = _trace_entry_to_row(entry, 0, "msg-1", "conv-1", "tid-1")
     assert row == (
         "msg-1",          # message_id
         "conv-1",         # thread_id
+        "tid-1",          # trace_id（#156）
         "swap.intent",    # node_name
         0,                # step_index
         "place_order_request",  # input_preview
@@ -82,8 +83,8 @@ def test_trace_entry_to_row_from_pydantic() -> None:
 def test_trace_entry_to_row_error_status() -> None:
     entry = TraceEntry(node="bad.node", decision="error", elapsed_ms=50)
     row = _trace_entry_to_row(entry, 1, "msg-1", "conv-1")
-    assert row[6] == "error"
-    assert row[7] == "error"  # error_msg = decision when status=error
+    assert row[7] == "error"
+    assert row[8] == "error"  # error_msg = decision when status=error
 
 
 def test_trace_entry_to_row_from_dict() -> None:
@@ -91,9 +92,9 @@ def test_trace_entry_to_row_from_dict() -> None:
         {"node": "render", "decision": "fallback", "elapsed_ms": 5},
         2, "msg-1", "conv-1",
     )
-    assert row[2] == "render"
-    assert row[3] == 2
-    assert row[4] == "fallback"
+    assert row[3] == "render"
+    assert row[4] == 2
+    assert row[5] == "fallback"
 
 
 def test_trace_entry_to_row_with_llm_output() -> None:
@@ -104,8 +105,8 @@ def test_trace_entry_to_row_with_llm_output() -> None:
         llm_output={"type": "inquiry", "tickers": ["600519.SH"]},
     )
     row = _trace_entry_to_row(entry, 0, "msg-1", "conv-1")
-    assert "inquiry" in row[5]
-    assert "600519" in row[5]
+    assert "inquiry" in row[6]
+    assert "600519" in row[6]
 
 
 @pytest.mark.asyncio

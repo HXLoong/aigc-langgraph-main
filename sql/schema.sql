@@ -35,6 +35,7 @@ CREATE TABLE IF NOT EXISTS node_trace (
     id              BIGINT          PRIMARY KEY AUTO_INCREMENT,
     message_id      VARCHAR(64)     NOT NULL,
     thread_id       VARCHAR(128)    NOT NULL COMMENT 'LangGraph thread_id',
+    trace_id        VARCHAR(64)     NOT NULL DEFAULT '' COMMENT '单次 graph 调用关联 ID（ADR 0004/#156，关联 LangFuse）',
     node_name       VARCHAR(64)     NOT NULL,
     step_index      INT             NOT NULL COMMENT '节点执行顺序',
     input_preview   TEXT            COMMENT '输入预览',
@@ -45,8 +46,12 @@ CREATE TABLE IF NOT EXISTS node_trace (
     created_at      TIMESTAMP(3)    NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
     KEY idx_message (message_id, step_index),
     KEY idx_thread (thread_id, created_at),
-    KEY idx_node_status (node_name, status, created_at)
+    KEY idx_node_status (node_name, status, created_at),
+    KEY idx_trace (trace_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='节点执行追踪';
+-- 存量库迁移（2026-08-27 #156）：
+--   ALTER TABLE node_trace ADD COLUMN trace_id VARCHAR(64) NOT NULL DEFAULT '' COMMENT '单次 graph 调用关联 ID' AFTER thread_id,
+--                          ADD KEY idx_trace (trace_id);
 
 -- 3. Shadow 对比结果表（灰度期使用）
 CREATE TABLE IF NOT EXISTS shadow_compare (
