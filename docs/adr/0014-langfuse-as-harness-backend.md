@@ -19,7 +19,11 @@ LangSmith 是海外 SaaS，所有 prompt + LLM 输出（含客户企微原话、
 
 **落地资产**：`infra/langfuse/docker-compose.yml` —— 实际 **6 服务**：PostgreSQL + ClickHouse + MinIO + Redis + Worker + Web（原文写 3 组件，本次更正），约 6GB RAM。
 
-**⚠️ 现状偏离（本组最重，裁决见 [#155](https://github.com/GZTL-AI/aigc-langgraph/issues/155)）**：当前**默认与实操路径都是美国 Cloud**——`app/config.py` 默认 `https://cloud.langfuse.com`、`.env` 实配 `us.cloud.langfuse.com`、`HOW_TO_RUN.md` 与 `scripts/langfuse_eval.py` 默认口径同。self-hosted 栈存在但非在用路径。这直接违背本 ADR 的唯一驱动理由（trace 含客户企微原话与订单参数）。裁决方向：补"开发/评测期临时用 Cloud、现场部署强制 self-hosted"的例外决策（含脱敏说明），或把默认切回 self-hosted。
+**例外决策（#155 裁决，Tony 2026-08-27）**：
+
+- **开发/评测期允许使用 LangFuse Cloud（us.cloud.langfuse.com）**——出境数据限定为 **golden 测试数据**（业务方手写种子 + LLM paraphrase，非生产客户流量）与提示词全文；此风险显式接受，M3.3 现场 sign-off 材料中须向业务方说明。
+- **客户现场部署强制 self-hosted**——`.env.customer.template` 指向 `infra/langfuse/` 自托管栈，现场严禁配置 Cloud host。
+- 附带闸门（同批落地）：生产环境 `USE_LANGFUSE_PROMPTS=true` 时 `load_prompt` 直接 raise（D3-2 硬闸门）；Langfuse 拉取/注入失败从静默降级升为 warning。
 
 ### D2 · 取代 LangSmith，不双跑 ✅
 
@@ -32,8 +36,8 @@ LangSmith 是海外 SaaS，所有 prompt + LLM 输出（含客户企微原话、
 **落地现状**：
 
 - ✅ 晋升脚本 `scripts/promote_langfuse_prompt.py <category.name>`：按 [ADR 0003](./0003-prompt-versioning-by-file-coexistence.md) 扫描现有版本写 `_v{N+1}.md`，行为与设计一致。
-- ⚠️ **双源开关与决策相反**（裁决 [#155](https://github.com/GZTL-AI/aigc-langgraph/issues/155)）：实际机制是 `enable_langfuse && use_langfuse_prompts` 全局布尔（非原设计的 per-prompt `LANGFUSE_PROMPT_OVERRIDE` + `is_staging()`），且开关打开时 **Langfuse 优先、本地 .md 降级为 fallback**——优先级方向与"git 是真理来源"相反；拉取失败仅 `logger.debug` 静默回退，会掩盖"以为在用 Langfuse 版实则本地版"的错配。
-- ⚠️ **生产硬闸门不存在**（裁决 [#155](https://github.com/GZTL-AI/aigc-langgraph/issues/155)）：原设计"生产环境读取 override 直接 raise"完全未实现，无 environment 分支——生产误开 `USE_LANGFUSE_PROMPTS=true` 即绕过 git PR 审计，无任何阻挡，当前仅靠 `.env` 默认 false 兜底。
+- **双源开关追认现状**（#155 裁决）：实际机制是 `enable_langfuse && use_langfuse_prompts` 全局布尔（非原设计的 per-prompt `LANGFUSE_PROMPT_OVERRIDE` + `is_staging()`），且开关打开时 **Langfuse 优先、本地 .md 降级为 fallback**——优先级方向与"git 是真理来源"相反；拉取失败仅 `logger.debug` 静默回退，会掩盖"以为在用 Langfuse 版实则本地版"的错配。
+- ✅ **生产硬闸门已补齐**（#155 裁决落地，2026-08-27）：`load_prompt` 在 `environment=production` 且 `use_langfuse_prompts=true` 时直接 raise（`tests/test_langfuse_prompt_gate.py` 覆盖）；拉取失败从 debug 静默升为 warning。
 - D3-4"晋升后 7 天删 LangFuse 实验版"无自动化承载，降级为 checklist 纪律。
 
 不走 LangFuse 作为生产提示词真理来源的理由不变：金融审计要求提示词改动走 git PR review；提示词与加载逻辑/Pydantic schema/节点函数耦合演进须同 commit；文件 diff 是最自然的 review 形式。
@@ -78,7 +82,7 @@ Trace 90 天（LangFuse retention policy）/ Dataset、Score、Annotation 永久
 ## 后果（现状口径）
 
 - 四件套统一、业务方独立操作、AI 工具可拉 REST API——均成立。
-- **合规"一次解决"的声明在 D1 偏离修复前不成立**——这是 M3.3 现场 sign-off 前需要向业务方说清的事项（[#155](https://github.com/GZTL-AI/aigc-langgraph/issues/155)）。
+- 合规口径按 D1 例外决策执行：开发期 Cloud 仅承载 golden 测试数据（风险显式接受并向业务方披露），现场强制 self-hosted（#155 已裁决）。
 - 文档残留（LangSmith 字样 5 处）随外部引用修正票清理。
 
 ## Related

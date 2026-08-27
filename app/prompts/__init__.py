@@ -88,12 +88,17 @@ def _langfuse_name(category: str, name: str) -> str:
     return "_".join(category.split("/") + [name])
 
 
+def _get_langfuse_client():
+    """惰性构造 Langfuse 客户端（独立函数便于测试替换）。"""
+    from langfuse import Langfuse
+
+    return Langfuse()
+
+
 def _load_from_langfuse(category: str, name: str) -> Prompt | None:
     """从 Langfuse 拉取提示词，失败返回 None。"""
     try:
-        from langfuse import Langfuse
-
-        lf = Langfuse()
+        lf = _get_langfuse_client()
         lf_name = _langfuse_name(category, name)
         lf_prompt = lf.get_prompt(lf_name)
 
@@ -120,8 +125,11 @@ def _load_from_langfuse(category: str, name: str) -> Prompt | None:
             user_template=user_template,
             config=lf_prompt.config or {},
         )
-    except Exception:
-        logger.debug("Langfuse 加载 %s/%s 失败，回退本地", category, name, exc_info=True)
+    except Exception as exc:  # noqa: BLE001
+        # #155 裁决：从 debug 静默升为 warning——静默回退会掩盖
+        # "以为在用 Langfuse 版实则本地版"的版本错配
+        logger.warning("Langfuse 加载 %s/%s 失败，回退本地：%s", category, name, exc)
+        logger.debug("Langfuse 加载失败详情", exc_info=True)
         return None
 
 
@@ -142,6 +150,13 @@ def load_prompt(category: str, name: str) -> Prompt:
     from app.config import get_settings
 
     settings = get_settings()
+    if settings.use_langfuse_prompts and getattr(settings, "environment", "") == "production":
+        # ADR 0014 D3-2 硬闸门（#155 裁决补齐）：生产提示词真理来源是 git .md，
+        # 从 LangFuse 拉取会绕过 git PR 审计，误开即 fail-fast
+        raise RuntimeError(
+            "生产环境禁止从 LangFuse 拉取提示词（USE_LANGFUSE_PROMPTS 必须为 false，"
+            "见 ADR 0014 D3-2 / issue #155）"
+        )
     if settings.enable_langfuse and settings.use_langfuse_prompts:
         lf_prompt = _load_from_langfuse(category, name)
         if lf_prompt is not None:

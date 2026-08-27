@@ -5,8 +5,6 @@ M2 阶段：intent_route 已实现真三层路由（ADR 0015）；子图逐一�
 """
 from __future__ import annotations
 
-from typing import Any
-
 from langgraph.checkpoint.base import BaseCheckpointSaver
 from langgraph.graph import END, START, StateGraph
 from langgraph.graph.state import CompiledStateGraph
@@ -20,7 +18,6 @@ from app.nodes.render import render
 from app.subgraphs.close import build_close_graph
 from app.subgraphs.option import build_option_graph
 from app.subgraphs.swap import build_swap_graph
-
 
 # ============================================================
 # 路由函数（含 cascade 防御 + unknown 兜底）
@@ -121,8 +118,12 @@ def _attach_langfuse_callbacks(compiled: CompiledStateGraph) -> CompiledStateGra
 
         handler = CallbackHandler()
         return compiled.with_config(callbacks=[handler])
-    except Exception:  # noqa: BLE001
-        # Langfuse 未安装 / 网络异常 → 不阻断业务，返回未包装图
+    except Exception as exc:  # noqa: BLE001
+        # Langfuse 未安装 / 网络异常 → 不阻断业务，返回未包装图；
+        # #155 裁决：从静默升为 warning——生产 LangFuse 挂掉必须有信号
+        import logging
+
+        logging.getLogger(__name__).warning("Langfuse CallbackHandler 注入失败，trace 降级：%s", exc)
         return compiled
 
 
