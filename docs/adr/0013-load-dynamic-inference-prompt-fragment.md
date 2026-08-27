@@ -21,12 +21,12 @@ Dify 工作流通过后端接口拉取一段**运维可热改的 prompt 片段**
 4. 净化：`_sanitize_dynamic_prompt`（**实现于调用侧** `tools.py`，非原文说的 client 侧；行为等价）——strip + 控制字符剔除 + 4096 字符截断。⚠️ 超限当前是**静默截断**，非原文的"落警并降级"。
 5. 降级：后端不可达 → warning + 空片段（仅静态文件），metrics 计数 `otc_agent_dynamic_prompt_total{status=cache_hit|cache_miss_ok|fallback}`，不让 ticker 崩。
 
-## 实现偏离（裁决见 [#156](https://github.com/GZTL-AI/aigc-langgraph/issues/156)）
+## 实现偏离（#156 裁决：追认 metrics 方案 + 轻修）
 
 | 偏离 | 现状 |
 |---|---|
-| **拼接后完整 prompt 摘要未落 trace（中）** | 原文把它写成硬要求（"否则线上排错失去依据"）：动态片段被运维热改后，无法从 trace 还原当时实际生效的完整提示词。可降级实现为"记录动态片段哈希 + 长度"。注意原文的"前 500 字符"引用了 [ADR 0004](./0004-trace-granularity-node-level-with-langsmith.md) 旧约定，现行截断长度为 2048 |
-| **降级标记落 metrics 不落 trace（轻）** | 原设计 trace `dynamic_prompt_fallback=true`；实际只有计数器——能看到"降级了多少次"，定位不到"哪条会话降级了"，与 ADR 0004 的节点级排错路径不衔接 |
+| 拼接后完整 prompt 摘要未落 trace | #156 裁决：**降级为结构化日志**——`_get_dynamic_prompt_cached` 命中/拉取时以 warning/info 记录片段长度（现有 logger 已含），完整还原依赖后端 config 的变更审计；不再作为 trace 硬要求 |
+| 降级标记落 metrics 不落 trace | #156 裁决：**追认 metrics 方案**（`otc_agent_dynamic_prompt_total{status=fallback}` 为正式载体）；会话级定位可用 #156 落地的 trace_id 关联 LangFuse warning 日志 |
 
 ## 备选方案
 

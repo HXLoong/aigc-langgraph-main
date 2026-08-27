@@ -92,7 +92,14 @@ async def run_workflow(
     # 把 inputs 解构成 AgentState（按 contracts §2.1 §3.1 的 9 个机器人上下文字段）
     initial_state = _inputs_to_state(req.inputs, fallback_conversation_id=req.user)
 
-    config = {"configurable": {"thread_id": req.user}}
+    # ADR 0004/#156：单次调用关联 ID——node_trace.trace_id 与 LangFuse trace metadata 同源
+    trace_id = uuid.uuid4().hex
+    initial_state["trace_id"] = trace_id
+
+    config = {
+        "configurable": {"thread_id": req.user},
+        "metadata": {"trace_id": trace_id},
+    }
 
     t0 = time.perf_counter()
     try:

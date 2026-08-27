@@ -49,6 +49,7 @@ async def persist(state: AgentState) -> dict[str, Any]:
 
     message_id = state.get("message_id") or ""
     thread_id = state.get("conversation_id") or ""
+    trace_id = state.get("trace_id") or ""
 
     # 控制台日志（保留 M1 行为）
     logger.info(
@@ -61,7 +62,7 @@ async def persist(state: AgentState) -> dict[str, Any]:
 
     # MySQL 写入：完全独立 try/except，失败不影响业务
     try:
-        await _write_to_mysql(trace, message_id, thread_id)
+        await _write_to_mysql(trace, message_id, thread_id, trace_id)
     except Exception as exc:  # noqa: BLE001 - 监控不能影响业务
         logger.warning(
             "persist: MySQL 写入失败（不影响主流程）: %s", exc,
@@ -74,6 +75,7 @@ async def _write_to_mysql(
     trace: list[Any],
     message_id: str,
     thread_id: str,
+    trace_id: str = "",
 ) -> None:
     """批量写 trace 到 node_trace 表。
 
@@ -87,7 +89,7 @@ async def _write_to_mysql(
     host, port, user, password, db = _parse_mysql_uri(uri)
 
     rows = [
-        _trace_entry_to_row(entry, idx, message_id, thread_id)
+        _trace_entry_to_row(entry, idx, message_id, thread_id, trace_id)
         for idx, entry in enumerate(trace)
     ]
 
@@ -105,9 +107,9 @@ async def _write_to_mysql(
         async with conn.cursor() as cur:
             sql = (
                 "INSERT INTO node_trace "
-                "(message_id, thread_id, node_name, step_index, "
+                "(message_id, thread_id, trace_id, node_name, step_index, "
                 " input_preview, output_preview, status, error, duration_ms) "
-                "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)"
+                "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)"
             )
             await cur.executemany(sql, rows)
             logger.debug("persist: wrote %d rows to node_trace", len(rows))
@@ -116,7 +118,7 @@ async def _write_to_mysql(
 
 
 def _trace_entry_to_row(
-    entry: Any, idx: int, message_id: str, thread_id: str,
+    entry: Any, idx: int, message_id: str, thread_id: str, trace_id: str = "",
 ) -> tuple:
     """把 TraceEntry / dict 转成 INSERT 行 tuple。"""
     # 鸭子类型：TraceEntry pydantic 模型 / dict
@@ -153,6 +155,7 @@ def _trace_entry_to_row(
     return (
         message_id,
         thread_id,
+        trace_id,
         node_name,
         idx,
         input_preview,

@@ -101,6 +101,8 @@ class AgentState(TypedDict, total=False):
     history_messages: Annotated[list[Message], add]
 
     # -------- 业务路由 --------
+    #: 单次 graph 调用的关联 ID（ADR 0004/#156：node_trace ↔ LangFuse 关联键）
+    trace_id: str
     product_type: ProductType
     intent: str  # 小写下划线 type 字符串，对齐 Java SwapIntentionType / stockOptionIntentionType
 

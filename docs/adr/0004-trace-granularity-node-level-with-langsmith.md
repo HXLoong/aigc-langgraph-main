@@ -26,13 +26,13 @@
 
 **LangFuse 侧**：`ENABLE_LANGFUSE` 开关（`app/config.py`），`app/graph/main.py` 注入 CallbackHandler。
 
-## 实现偏离（裁决见 [#156](https://github.com/GZTL-AI/aigc-langgraph/issues/156)）
+## 实现偏离（#156 裁决落地，2026-08-27）
 
 | 偏离 | 现状 |
 |---|---|
-| **`trace_id` 贯穿从未实现** | 原决策要求 graph 入口生成 uuid7/ULID 并贯穿所有节点作为 SQL↔LangFuse 关联键；全仓零命中、表无该列。现状只能靠 `thread_id + message_id` 粗关联，定位不到单次 graph 调用 |
-| **摘要长度擅自加长** | 500 → 2048/4096，且原文明文禁止"为排查临时加长"；连带 [ADR 0013](./0013-load-dynamic-inference-prompt-fragment.md) 的"500 字符"引用失效 |
-| **LangFuse 从"生产硬依赖"降级为静默软依赖** | 原决策"不可用需新增 ADR 评估"；实际 `_attach_langfuse_callbacks` 捕获所有异常静默返回未包装图——生产 LangFuse 挂掉无任何信号 |
+| ~~`trace_id` 贯穿从未实现~~ | ✅ **已实现（#156）**：routes 入口生成（ingest 兜底覆盖 eval 路径）→ state → `node_trace.trace_id` 列（含存量迁移 SQL）→ LangFuse config metadata 同源；`tests/nodes/test_trace_id.py` 覆盖 |
+| ~~摘要长度擅自加长~~ | ✅ 追认（#156 裁决）：2048/4096 为现行约定，本 ADR 即变更记录 |
+| ~~LangFuse 静默软依赖~~ | ✅ 已升 warning（随 #155 批次落地）：注入/拉取失败均有日志信号 |
 
 ## 备选方案
 
@@ -42,5 +42,5 @@
 
 ## 后果（现状口径）
 
-- SQL ↔ LangFuse 的调用级关联依赖 trace_id 补实现（[#156](https://github.com/GZTL-AI/aigc-langgraph/issues/156)），在此之前 E3.4 错例追溯只能按会话 + message 粗定位。
+- SQL ↔ LangFuse 调用级关联已就位（trace_id，#156）：E3.4 错例追溯可从 node_trace 行直达对应 LangFuse trace（按 metadata.trace_id 过滤）。
 - 文档残留：`.claude/rules/langgraph-patterns.md` 等 5 处仍写 `ENABLE_LANGSMITH`/LangSmith，随外部引用修正票清理。
