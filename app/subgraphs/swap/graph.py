@@ -44,6 +44,7 @@ from app.graph.state import AgentState, TraceEntry
 from app.subgraphs.swap.cancel import swap_cancel
 from app.subgraphs.swap.confirm import swap_confirm
 from app.subgraphs.swap.intent import swap_intent
+from app.subgraphs.swap.multimodal import swap_excel_order, swap_image_order
 from app.subgraphs.swap.place_order import swap_place_order, swap_place_order_submit
 from app.subgraphs.swap.query_order import swap_query_order
 from app.subgraphs.swap.select_counterparty import swap_select_counterparty
@@ -81,6 +82,25 @@ def _has_usable_quote(state: AgentState) -> bool:
     if not quote:
         return False
     return str(quote).strip().lower() != "null"
+
+
+def _route_swap_entry(state: AgentState) -> str:
+    """子图入口分流(DSL v2):swap_input_mode 决定文本/图片/Excel 三链。
+
+    intent_route 写入 swap_input_mode:text | image | excel。
+    图片/Excel 链跳过意图识别,直接走多模态提取 → 提交(与 DSL 拓扑一致)。
+    """
+    mode = state.get("swap_input_mode") or "text"
+    if mode == "image":
+        return "swap_image_order"
+    if mode == "excel":
+        return "swap_excel_order"
+    return "swap_intent"
+
+
+def _route_after_multimodal(state: AgentState) -> str:
+    """图片/Excel 提取后路由:cascade 防御,直进提交节点。"""
+    return "swap_unknown" if has_error(state) else "swap_place_order_submit"
 
 
 def _route_after_swap_intent(state: AgentState) -> str:
@@ -124,8 +144,27 @@ def build_swap_graph() -> CompiledStateGraph:
     g.add_node("swap_cancel", swap_cancel)
     g.add_node("swap_query_order", swap_query_order)
     g.add_node("swap_unknown", swap_unknown)
+    g.add_node("swap_image_order", swap_image_order)
+    g.add_node("swap_excel_order", swap_excel_order)
 
-    g.add_edge(START, "swap_intent")
+    g.add_conditional_edges(
+        START,
+        _route_swap_entry,
+        {
+            "swap_intent": "swap_intent",
+            "swap_image_order": "swap_image_order",
+            "swap_excel_order": "swap_excel_order",
+        },
+    )
+    for mm_node in ("swap_image_order", "swap_excel_order"):
+        g.add_conditional_edges(
+            mm_node,
+            _route_after_multimodal,
+            {
+                "swap_place_order_submit": "swap_place_order_submit",
+                "swap_unknown": "swap_unknown",
+            },
+        )
     g.add_conditional_edges(
         "swap_intent",
         _route_after_swap_intent,
