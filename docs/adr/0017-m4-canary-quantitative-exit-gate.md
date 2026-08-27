@@ -1,6 +1,6 @@
 # ADR 0017 · M4 金丝雀退出门量化指标
 
-- 状态：已采纳（阈值体系有效；**三项测量基础存在实现偏离，退出门当前不可自动校验**，见对应小节）
+- 状态：已采纳（阈值体系有效；测量基础已随 #157 修复，展示层后置 #162；绝对阈值待 DeepSeek 口径重测）
 - 日期：2026-05-12
 - 起源：grill-with-docs（docs/m3-m4-roadmap.md F4.7）
 - 修订：2026-08-27 深度改写为现状口径（wayfinder map #138 / 核查 #143）
@@ -16,9 +16,9 @@ M4 金丝雀走完 100% 切流后，需要明确退出门判定"是否可以下�
 
 | 指标 | 阈值 | 测量方式（现状口径） | 测量现状 |
 |---|---|---|---|
-| HTTP 5xx 率 | < 0.1%（7 天） | Prometheus `/metrics` 的 `otc_agent_http_total`（HTTPMetricsMiddleware，含 unhandled exception 补报；**非原文的 LangFuse**） | ✅ 埋点在；Grafana 无 5xx panel |
-| Cascade fail 率 | < 1%（7 天） | `emit_fallback(reason="cascade_fail")` 计数 / **总请求数** | ⚠️ 代码实际分母是 `node_total`（节点执行数 ≈ 请求数 ×6-8），阈值被实际放宽近一个数量级，且与 [ADR 0019](./0019-incident-severity-thresholds.md) 同名指标口径不一致——裁决 [#157](https://github.com/GZTL-AI/aigc-langgraph/issues/157) |
-| P95 回复延迟 | ≤ M2 baseline × 1.5 | 端到端延迟直方图 P95 | ⚠️ **端到端 P95 从未被采集**：`emit_intent_latency` 无生产调用方，`otc_agent_intent_latency_ms` 实际只装了单节点耗时（label 恒 unknown）——**该退出门项目前不可测**，F4 前置阻塞（[#157](https://github.com/GZTL-AI/aigc-langgraph/issues/157)） |
+| HTTP 5xx 率 | < 0.1%（7 天） | Prometheus `/metrics` 的 `otc_agent_http_total`（HTTPMetricsMiddleware，含 unhandled exception 补报；**非原文的 LangFuse**） | ✅ 埋点在；Grafana panel 后置 #162 |
+| Cascade fail 率 | < 1%（7 天） | `emit_fallback(reason="cascade_fail")` 计数 / **总请求数** | ✅ **已修复（#157，2026-08-27）**：分母改为 `http_total`（总请求数），与 [ADR 0019](./0019-incident-severity-thresholds.md) 口径统一 |
+| P95 回复延迟 | ≤ M2 baseline × 1.5 | 端到端延迟直方图 P95 | ✅ **已接线（#157，2026-08-27）**：`/v1/workflows/run` 出口 `emit_intent_latency`（无 node label）；alerts P95 剔除节点级样本只算端到端。绝对阈值待 DeepSeek 口径重测回填 |
 
 ### 业务层指标（业务方人工标注）
 
@@ -54,14 +54,14 @@ M4 金丝雀走完 100% 切流后，需要明确退出门判定"是否可以下�
 
 ### 负面 / 当前缺口（原文预警"金丝雀末期才发现监控不到位"**已实际发生**，裁决 [#157](https://github.com/GZTL-AI/aigc-langgraph/issues/157)）
 
-- "退出门可被监控仪表盘自动校验"**当前不成立**：Grafana 模板无 5xx panel、无 cascade 比率 panel、P95 panel 是节点级；`scripts/metrics_snapshot.py` 明确跳过 histogram、无 HTTP 段——运维 CLI 读不出 5xx 与 P95 两项。
+- 仪表盘自动校验：核心测量已修复（#157）；Grafana panel 与 metrics_snapshot 增强后置 #162（F4 启动前完成）。
 - `scripts/canary_status.py` 只判定切流白名单合规（`otc_agent_canary_traffic_total`），**不覆盖本 ADR 任何指标**，不要当退出门校验工具混用。
 
 ### 后续行动（更新）
 
-1. 端到端延迟埋点接线（`emit_intent_latency` 挂到请求出口）——F4 启动前置
-2. cascade 分母统一（与 0019 一并，二选一：改代码对齐"总请求数"或改两份 ADR 追认 `node_total` 并重定阈值）
-3. Grafana 补 5xx / cascade 比率 / 端到端 P95 三个 panel + 7 天退出门视图；metrics_snapshot 补 HTTP 与 histogram 段
+1. ~~端到端延迟埋点接线~~ ✅ #157 已完成
+2. ~~cascade 分母统一~~ ✅ #157 已改为总请求数
+3. Grafana panel + metrics_snapshot 增强 → #162（F4 启动前）
 4. E3.6 业务方培训含"严重错例标准对齐"议题（不变）
 5. F4.7 报告模板按本 ADR 阈值表输出——**尚未落地**（无对应文件）
 

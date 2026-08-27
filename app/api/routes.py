@@ -17,6 +17,7 @@ from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, ConfigDict, Field
 
 from app.graph.state import AgentState
+from app.observability.metrics import emit_intent_latency
 
 router = APIRouter()
 
@@ -108,6 +109,13 @@ async def run_workflow(
         error_msg = f"{type(exc).__name__}: {exc}"
 
     elapsed = time.perf_counter() - t0
+    # #157 裁决：端到端 P95 数据源（ADR 0017/0019 退出门与 p95_latency_degraded 告警）
+    # 无 node label —— alerts 侧以此与节点级样本区分
+    emit_intent_latency(
+        product_type=final_state.get("product_type") or "unknown",
+        intent=final_state.get("intent") or "unknown",
+        elapsed_ms=int(elapsed * 1000),
+    )
     finished_at = int(time.time())
 
     outputs = _state_to_outputs(final_state)

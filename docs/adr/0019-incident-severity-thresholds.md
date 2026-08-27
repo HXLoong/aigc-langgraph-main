@@ -1,6 +1,6 @@
 # ADR 0019 · 故障升级阈值（P0/P1/P2 量化判定）
 
-- 状态：已采纳（阈值表与 alerts.py 逐条一致；**三项护栏存在实现偏离**，见对应小节）
+- 状态：已采纳（阈值表与 alerts.py 逐条一致；三项护栏偏离已随 #157 修复）
 - 日期：2026-05-12
 - 起源：on-call-runbook §3 曾误引 ADR 0017（0017 是退出门阈值）；F4 灰度上线前补正
 - 修订：2026-08-27 深度改写为现状口径（wayfinder map #138 / 核查 #143）
@@ -17,10 +17,10 @@
 | name | severity | 阈值 | 持续 | 触发动作 | 测量现状 |
 |---|---|---|---|---|---|
 | `http_5xx_spike` | P0 | 5xx 率 ≥ 1% | 5 分钟 | 立即介入 + 评估回切 | ✅ |
-| `cascade_fail_high` | P1 | fallback{cascade_fail} 率 ≥ 5% | 10 分钟 | 15 分钟介入 | ⚠️ 分母是 `node_total`（节点执行数），本 ADR 未定义分母、0017 写"总请求数"——两 ADR 同名指标口径不一致且代码取了最宽的一种，裁决 [#157](https://github.com/GZTL-AI/aigc-langgraph/issues/157) |
+| `cascade_fail_high` | P1 | fallback{cascade_fail} 率 ≥ 5% | 10 分钟 | 15 分钟介入 | ✅ 分母 = `http_total`（总请求数，#157 修复，与 0017 口径统一） |
 | `llm_failure_high` | P1 | llm_total{status≠ok} 率 ≥ 10% | 5 分钟 | 15 分钟介入 | ✅ |
-| `non_canary_traffic` | P0 | is_canary=false 计数 ≥ 1 | 即时 | 立即回切 Webhook | ⚠️ 见"实现偏离" |
-| `p95_latency_degraded` | P1 | P95 端到端 ≥ 12600ms（4200 × 3，`M2_BASELINE_P95_MS` 可调） | 10 分钟 | 15 分钟介入 | ⚠️ 直方图实际只装节点级耗时（端到端埋点未接线），用节点分布比端到端阈值**几乎不可能触发，告警形同虚设**——裁决 [#157](https://github.com/GZTL-AI/aigc-langgraph/issues/157) |
+| `non_canary_traffic` | P0 | is_canary=false 计数 ≥ 1 | 即时 | 立即回切 Webhook | ✅ runbook §3 已补条目，lint 校验 5/5/5（#157） |
+| `p95_latency_degraded` | P1 | P95 端到端 ≥ 12600ms（4200 × 3，`M2_BASELINE_P95_MS` 可调） | 10 分钟 | 15 分钟介入 | ✅ 端到端埋点已接线且 P95 剔除节点级样本（#157）；12600ms 基准仍待 DeepSeek 口径重测 |
 
 ⚠️ **baseline 注记**：4200ms 为 Qwen + mock 口径，已随 [ADR 0020](./0020-unify-all-llm-on-deepseek-v4-pro.md) 失效；DeepSeek 真后端重测前 12600ms 仅为占位（本 ADR 原"后续行动"第 3 条，仍未执行）。
 
@@ -55,17 +55,17 @@
 2. 改本 ADR §1/§2
 3. 改 `docs/on-call-runbook.md` §3
 4. 改 `docs/m3-f4.0-oncall-drill.md` Scene 2（文本叙述，人工修订，不在自动 lint 范围）
-5. **（新增）核对 runbook §3 P0 行是否含 `non_canary_traffic`**——见下方偏离；lint 目前豁免该项，人工必查
+5. **（新增）runbook §3 P0 行的 `non_canary_traffic` 条目已入 lint 校验范围**（#157 豁免解除），随第 3 步一并同步
 
 CI lint ✅：`scripts/check_alert_threshold_consistency.py`（PR #106，25 测试 + CI step，本次核查实跑"三处阈值全部对齐"）。
 
-## 实现偏离（裁决见 [#157](https://github.com/GZTL-AI/aigc-langgraph/issues/157)）
+## 实现偏离（已全部修复，[#157](https://github.com/GZTL-AI/aigc-langgraph/issues/157) 裁决落地）
 
 | 偏离 | 现状 |
 |---|---|
-| **`non_canary_traffic`(P0) 不在 runbook 定级表** | runbook §3 P0 行只列 5xx/Java 后端/进程崩溃/业务方反馈；且 lint **主动豁免**该项——CI 永远发现不了，值班照 runbook 定级会漏掉这条 P0 |
-| **runbook §5 声称的 canary_status 护栏不存在** | runbook 写"`canary_status.py` 检测 `CANARY_ROOM_IDS=ALL` + `dry_run_intercept > 0` 时 P0 告警"；脚本无 `dry_run_intercept` 字样，`ALL` 模式反而直接 `is_breach=False`——**虚假安全护栏声明**，F4.1 shadow 期误下单风险无实际拦截 |
-| **`p95_latency_degraded` 数据源失真** | 见 §1 表注：端到端埋点未接线，节点级分布对 12600ms 阈值形同虚设（与 [ADR 0017](./0017-m4-canary-quantitative-exit-gate.md) P95 项同根因） |
+| ~~`non_canary_traffic`(P0) 不在 runbook 定级表~~ | ✅ 已修复（#157）：runbook §3 P0 行已补该条，lint 豁免解除（现校验 5/5/5） |
+| ~~runbook §5 声称的 canary_status 护栏不存在~~ | ✅ 已实现（#157）：canary_status 解析 `otc_agent_dry_run_intercept_total`，ALL 模式 + 拦截>0 → is_breach（P0），声明成真 |
+| ~~`p95_latency_degraded` 数据源失真~~ | ✅ 已修复（#157）：端到端埋点接线 + 节点样本剔除（同 §1 表注） |
 
 ## 替代方案（保留）
 
