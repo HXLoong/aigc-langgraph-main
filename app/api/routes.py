@@ -148,17 +148,44 @@ async def run_workflow(
 
 
 # Dify inputs 字段名（Java 透传）→ AgentState 字段名 映射
+# DSL v2（2026-08 主干工作流 start 节点）新增:fast_query / at_bot /
+# existing_command / bot_name / operator_user_id / option_counterparties /
+# swap_counterparties;旧 9 字段保留兼容（userId/messageContent 仍接受）。
 _INPUT_FIELD_MAP = {
     "rawContent": "raw_text",
     "raw_content": "raw_text",
     "conversationId": "conversation_id",
+    "conversation_id": "conversation_id",
     "messageId": "message_id",
+    "message_id": "message_id",
     "userId": "user_id",
     "roomId": "room_id",
+    "room_id": "room_id",
     "guid": "guid",
     "messageContent": "message_content",
     "quoteContent": "quote_content",
+    "quote_content": "quote_content",
     "quoteAppinfo": "quote_appinfo",
+    "quote_appinfo": "quote_appinfo",
+    # -------- DSL v2 新入参 --------
+    "fast_query": "fast_query",
+    "fastQuery": "fast_query",
+    "at_bot": "at_bot",
+    "atBot": "at_bot",
+    "existing_command": "existing_command",
+    "existingCommand": "existing_command",
+    "bot_name": "bot_name",
+    "botName": "bot_name",
+    "operator_user_id": "operator_user_id",
+    "operatorUserId": "operator_user_id",
+    # 对手预查 JSON 串（pre_route 解析成精简列表）
+    "option_counterparties": "option_counterparties_raw",
+    "optionCounterparties": "option_counterparties_raw",
+    "swap_counterparties": "swap_counterparties_raw",
+    "swapCounterparties": "swap_counterparties_raw",
+    # 输入文件（Dify sys.files 等价物;全图片/全 Excel 分流互换多模态链）
+    "files": "input_files",
+    "sysFiles": "input_files",
 }
 
 

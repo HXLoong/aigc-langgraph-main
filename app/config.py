@@ -92,6 +92,9 @@ class Settings(BaseSettings):
     # v2：裁剪版，compose_prompt 把 _base + 意图片段拼接，字符数少 ~20%
     swap_prompt_version: Literal["v1", "v2"] = "v1"
 
+    # === 兜底回复（DSL v2 env.default_reply,fallback/answer 节点统一文案）===
+    default_reply: str = "我没完全理解你的意思，能换种说法重新告诉我吗"
+
     # 从 Langfuse 拉提示词（需同时 enable_langfuse=true）
     use_langfuse_prompts: bool = False
 
