@@ -34,17 +34,23 @@ def _format_history(history: list[Message] | None) -> str:
 
 
 def _build_user_message(state: AgentState) -> str:
-    """组装 user message（4 个既有 Dify 输入变量 + shortname_list 占位）。
+    """组装 user message（4 个既有 Dify 输入变量 + shortname_list）。
 
     `shortname_list`（交易对手简称候选列表，Dify DSL v2 源
-    `1772773805306.optionListStr`）当前 AgentState 无对应数据源，与既有
-    `bot_name_list` 同处理方式，固定传空列表（详见迁移报告的裁量决定）。
+    `1772773805306.optionListStr`）取自 pre_route 解析的
+    state["option_counterparties"]（后端预查对手精简列表）。
+    `bot_name_list` 取 state["bot_name"]（DSL v2 start 入参）。
     """
     raw_content = state.get("raw_text", "") or ""
     quote_content = state.get("quote_content") or ""
     history_str = _format_history(state.get("history_messages"))
-    bot_name_list: list[str] = []
-    shortname_list: list[str] = []
+    bot_name = state.get("bot_name")
+    bot_name_list: list[str] = [bot_name] if bot_name else []
+    shortname_list: list[str] = [
+        cp.get("shortName")
+        for cp in (state.get("option_counterparties") or [])
+        if cp.get("shortName")
+    ]
 
     return (
         f"raw_content: {raw_content}\n\n"

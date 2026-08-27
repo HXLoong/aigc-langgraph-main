@@ -238,20 +238,25 @@ class OptionClientHttpx:
         self,
         order_ids: list[str] | None = None,
         contract_codes: list[str] | None = None,
+        room_id: str | None = None,
+        message_id: int | None = None,
     ) -> CommonResult:
         """查可平仓订单数据（contracts §2.x）。
 
-        真后端按 orderIds + contractCodes 过滤；签名修正于 #80 follow-up，
-        旧 signature `(ctx: MachineContext)` 实际与真后端 endpoint 不兼容，
-        且无生产 caller。
+        真后端按 orderIds + contractCodes 过滤；roomId/messageId 对齐
+        DSL v2「获取订单信息」http 节点 payload（P3 迁移 follow-up）。
         """
         from app.tools.exceptions import translate_httpx_errors
 
         url = f"{self._base_url}/admin-api/financial-orders/query-close-orders"
-        payload = {
+        payload: dict[str, Any] = {
             "orderIds": order_ids or [],
             "contractCodes": contract_codes or [],
         }
+        if room_id is not None:
+            payload["roomId"] = room_id
+        if message_id is not None:
+            payload["messageId"] = message_id
         async with (
             translate_httpx_errors("option"),
             httpx.AsyncClient(**self._client_kwargs()) as client,

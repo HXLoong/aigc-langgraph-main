@@ -43,7 +43,8 @@ def _patch_query_close_orders(
     monkeypatch: pytest.MonkeyPatch, holdings: list[dict[str, Any]]
 ) -> None:
     """patch OptionClientHttpx.query_close_orders 返回固定持仓数据。"""
-    async def _fake_query(self, order_ids=None, contract_codes=None):  # type: ignore[no-untyped-def]
+    async def _fake_query(self, order_ids=None, contract_codes=None, **kwargs):  # type: ignore[no-untyped-def]
+        # kwargs 吸收 room_id/message_id(DSL v2「获取订单信息」payload 对齐)
         return CommonResult(code=0, msg="ok", data=holdings)
 
     monkeypatch.setattr(

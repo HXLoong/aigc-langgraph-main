@@ -69,11 +69,22 @@ def _build_user_message(
     )
 
 
-async def _fetch_order_data(order_ids: list[str], contract_codes: list[str]) -> list[dict[str, Any]]:
-    """获取订单信息[http] + 格式化订单数据[code]（走标准 OptionClient）。"""
+async def _fetch_order_data(
+    order_ids: list[str],
+    contract_codes: list[str],
+    room_id: str | None = None,
+    message_id: int | None = None,
+) -> list[dict[str, Any]]:
+    """获取订单信息[http] + 格式化订单数据[code]（走标准 OptionClient）。
+
+    roomId/messageId 对齐 DSL v2「获取订单信息」payload。
+    """
     try:
         result = await OptionClientHttpx().query_close_orders(
-            order_ids=order_ids, contract_codes=contract_codes
+            order_ids=order_ids,
+            contract_codes=contract_codes,
+            room_id=room_id,
+            message_id=message_id,
         )
         if result.code == 0 and isinstance(result.data, list):
             return result.data
@@ -102,7 +113,12 @@ async def close_place_close(state: AgentState) -> dict[str, Any]:
     parsed = parse_reference_message(quote, raw)
 
     # 步骤 2+3：获取订单信息[http] → 格式化订单数据[code]
-    order_data = await _fetch_order_data(parsed["orderIds"], parsed["contractCodes"])
+    order_data = await _fetch_order_data(
+        parsed["orderIds"],
+        parsed["contractCodes"],
+        room_id=state.get("room_id"),
+        message_id=state.get("message_id"),
+    )
 
     # 步骤 4：请求下单和确认全部平仓参数提取[llm]
     prompt = load_prompt("option_close", "place_close")
