@@ -129,3 +129,6 @@ secrets/
 .VSCodeCounter/
 .harness-runs/
 .mcp.json
+
+# 本地练手目录(培训 Day 4 练习产物,不入库)
+aka/
