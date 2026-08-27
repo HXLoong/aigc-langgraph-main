@@ -64,12 +64,15 @@ class Prompt:
         return text
 
 
+# 闭合围栏必须后跟下一节标题(## [...])或文件尾——否则 [system] 段内嵌套的
+# ``` 围栏(如输出格式示例)会让非贪婪匹配提前截断(P1 迁移期发现的隐藏 bug,
+# 曾把 option_close/cancel_close.md 从 4717 字符截到 1049)。
 _MD_SYSTEM_RE = re.compile(
-    r"##\s*\[system\]\s*\n+```[a-zA-Z]*\n(.*?)\n```",
+    r"##\s*\[system\]\s*\n+```[a-zA-Z]*\n(.*?)\n```(?=\s*(?:##\s*\[|\Z))",
     re.DOTALL,
 )
 _MD_USER_RE = re.compile(
-    r"##\s*\[user\]\s*\n+```[a-zA-Z]*\n(.*?)\n```",
+    r"##\s*\[user\]\s*\n+```[a-zA-Z]*\n(.*?)\n```(?=\s*(?:##\s*\[|\Z))",
     re.DOTALL,
 )
 
