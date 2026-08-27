@@ -38,9 +38,9 @@
 - **由工程师独立判断**：容易做出业务方看不懂的代码组织。
 - **四条规则触发制（已选）**：业务直觉（3）+ 技术内聚（1、2）+ 复杂度阈值（4）合一，可机械执行。
 
-## 实现偏离（裁决见 [#160](https://github.com/GZTL-AI/aigc-langgraph/issues/160)）
+## 实现偏离（#160 裁决落地）
 
-- **"PR 模板强制 review 四条规则"无载体**：`.github/` 下无 `pull_request_template.md`，`.claude/skills/add-intent` 也无此判断项——规则目前无任何执行点，靠人自觉。
+- ~~"PR 模板强制 review 四条规则"无载体~~ ✅ 已创建 `.github/pull_request_template.md`（2026-08-27）：含"是否触发独立子图条件"判定项与提交检查清单。
 
 ## 后果（现状口径）
 

@@ -106,7 +106,8 @@ class AgentState(TypedDict, total=False):
     product_type: ProductType
     intent: str  # 小写下划线 type 字符串，对齐 Java SwapIntentionType / stockOptionIntentionType
 
-    # -------- 业务对象（M1 用 dict 占位，M2 替换为 Pydantic 模型）--------
+    # -------- 业务对象（#160/ADR 0001 D6：运行时为 dict，写入必须经
+    # app/graph/business_params.py 的 validated_* 校验——形状的唯一权威）--------
     tickers: list[TickerCandidate]
     place_params: dict[str, Any] | None
     cancel_params: dict[str, Any] | None

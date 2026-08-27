@@ -27,6 +27,7 @@ from app.prompts import load_prompt
 from app.subgraphs.close.models import ClosePlaceParams
 from app.tools.exceptions import BackendUnreachableError
 from app.tools.option_client import OptionClientHttpx
+from app.graph.business_params import validated_close_params
 
 
 def _build_user_message(state: AgentState) -> str:
@@ -73,7 +74,7 @@ async def close_place_close(state: AgentState) -> dict[str, Any]:
     # 空列表 → 返回错误（避免 render 无回复）
     if not close_list:
         return {
-            "close_params": result.model_dump(),
+            "close_params": validated_close_params(**result.model_dump()),
             "error": "未能识别平仓参数，请提供订单号或持仓序号。",
             "intent": "close_order_request",
             "trace": [
@@ -207,7 +208,7 @@ async def close_place_close(state: AgentState) -> dict[str, Any]:
     if _validation_errors:
         _err_msg = "参数校验不通过：" + "；".join(set(_validation_errors))
         return {
-            "close_params": result.model_dump(),
+            "close_params": validated_close_params(**result.model_dump()),
             "reply_text": _err_msg,
             "intent": "close_order_request",
             "trace": [
@@ -264,7 +265,7 @@ async def close_place_close(state: AgentState) -> dict[str, Any]:
     decision = f"orders={len(close_list)}, types={types}, full_close={full_closes}"
 
     return {
-        "close_params": result.model_dump(),
+        "close_params": validated_close_params(**result.model_dump()),
         "reply_text": _reply,
         "intent": "close_order_request",
         "trace": [

@@ -22,6 +22,7 @@ from app.llm.clients import get_qwen_thinking
 from app.prompts import load_prompt
 from app.subgraphs.option.backend import call_option_backend
 from app.subgraphs.option.models import OptionPlaceOrModifyParams
+from app.graph.business_params import validated_place_params
 
 
 def _format_history(history: list[Message] | None) -> str:
@@ -94,10 +95,7 @@ async def option_extract_place_or_modify(state: AgentState) -> dict[str, Any]:
     )
 
     return {
-        "place_params": {
-            "expected_action": expected_action,
-            "orderList": order_list,
-        },
+        "place_params": validated_place_params(expected_action=expected_action, orderList=order_list),
         **backend,
         "trace": [
             TraceEntry(

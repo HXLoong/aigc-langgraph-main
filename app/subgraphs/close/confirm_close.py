@@ -17,6 +17,7 @@ from app.llm.clients import get_qwen_thinking
 from app.prompts import load_prompt
 from app.subgraphs.close.models import ConfirmCloseParams
 from app.subgraphs.option.backend import call_option_backend
+from app.graph.business_params import validated_confirm
 
 
 def _build_user_message(state: AgentState) -> str:
@@ -68,10 +69,7 @@ async def close_confirm_close(state: AgentState) -> dict[str, Any]:
     )
 
     return {
-        "confirm": {
-            "action": "close",
-            "confirmOrderNoList": confirm_ids,
-        },
+        "confirm": validated_confirm(action="close", confirmOrderNoList=confirm_ids),
         **backend,
         "trace": [
             TraceEntry(

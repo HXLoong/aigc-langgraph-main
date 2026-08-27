@@ -22,6 +22,7 @@ from app.llm.clients import get_qwen_thinking
 from app.prompts import load_prompt
 from app.subgraphs.close.models import HoldingQueryParams
 from app.subgraphs.option.backend import call_option_backend
+from app.graph.business_params import validated_close_params
 
 
 def _build_user_message(state: AgentState) -> str:
@@ -69,7 +70,7 @@ async def close_holding_query(state: AgentState) -> dict[str, Any]:
     )
 
     return {
-        "close_params": result.model_dump(),
+        "close_params": validated_close_params(**result.model_dump()),
         **backend,
         "trace": [
             TraceEntry(

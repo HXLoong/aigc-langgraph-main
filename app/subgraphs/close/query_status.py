@@ -16,6 +16,7 @@ from app.llm.clients import get_qwen_thinking
 from app.prompts import load_prompt
 from app.subgraphs.close.models import QueryStatusParams
 from app.subgraphs.option.backend import call_option_backend
+from app.graph.business_params import validated_query_filter
 
 
 def _build_user_message(state: AgentState) -> str:
@@ -45,9 +46,7 @@ async def close_query_status(state: AgentState) -> dict[str, Any]:
     )
 
     return {
-        "query_filter": {
-            "queryOrderNoList": result.queryOrderNoList,
-        },
+        "query_filter": validated_query_filter(queryOrderNoList=result.queryOrderNoList),
         **backend,
         "trace": [
             TraceEntry(

@@ -47,14 +47,14 @@
 
 | Issue | 主题 | 涉及 ADR | 状态 |
 |---|---|---|---|
-| [#153](https://github.com/GZTL-AI/aigc-langgraph/issues/153) | HITL/checkpoint 基础设施 | 0006 / 0008c / 0009 | ✅ 已裁决落地（ADR 0021：checkpointer 接线 + 文本二阶段确认） |
+| [#153](https://github.com/GZTL-AI/aigc-langgraph/issues/153) | HITL/checkpoint 基础设施 | 0006 / 0008c / 0009 | ✅ 已裁决落地（ADR 0021） |
 | [#154](https://github.com/GZTL-AI/aigc-langgraph/issues/154) | ticker ReAct 死代码 vs 生产 resolver | 0008 / 0001 D5 | ⏸ 暂缓（Tony 指示） |
 | [#155](https://github.com/GZTL-AI/aigc-langgraph/issues/155) | LangFuse 合规与提示词闸门 | 0014 | ✅ 已裁决落地（例外决策 + 生产 raise 闸门） |
-| [#156](https://github.com/GZTL-AI/aigc-langgraph/issues/156) | trace 可观测缺口 | 0004 / 0013 / 0003 | 裁决已定（trace_id 实现 + 其余轻处理），落地中 |
+| [#156](https://github.com/GZTL-AI/aigc-langgraph/issues/156) | trace 可观测缺口 | 0004 / 0013 / 0003 | ✅ 已裁决落地（trace_id 贯穿 + 追认/轻修） |
 | [#157](https://github.com/GZTL-AI/aigc-langgraph/issues/157) | 告警与退出门指标失真 | 0017 / 0019 | ✅ 已裁决落地（核心四项修复；展示层 → #162） |
 | [#158](https://github.com/GZTL-AI/aigc-langgraph/issues/158) | 模型选型规则从未执行 | 0010 / 0015 / 0020 | ✅ 已裁决落地（追认 + 分化前置纪律） |
 | [#159](https://github.com/GZTL-AI/aigc-langgraph/issues/159) | 提示词与 golden 治理债 | 0003 / 0005 / 0011 | ✅ 已裁决落地（judge 版本化 + 同步防覆盖；golden 缺口 → #113） |
-| [#160](https://github.com/GZTL-AI/aigc-langgraph/issues/160) | 工程纪律遗留 | 0001 / 0007 | 裁决已定（四项全做，含 AgentState Pydantic 化），落地中 |
+| [#160](https://github.com/GZTL-AI/aigc-langgraph/issues/160) | 工程纪律遗留 | 0001 / 0007 | ✅ 已裁决落地（business_params 校验 + PR 模板 + 两项追认） |
 
 ## ADR 写作与卫生约定
 

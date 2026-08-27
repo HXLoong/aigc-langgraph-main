@@ -101,7 +101,7 @@ app/
 ├── tools/                     # option_client / swap_client / ticker_client（3 Protocol）
 │                              #   + models / auth / exceptions / goats_rfq
 ├── llm/clients.py             # LLM 统一工厂（ADR 0020 vendor 适配层）
-├── checkpointer/factory.py    # AIOMySQLSaver（⚠️ 未接线，见"实现偏离"）
+├── checkpointer/factory.py    # AIOMySQLSaver（已随 ADR 0021/#153 接线，use_mysql_checkpointer）
 ├── observability/             # tracing / metrics / alerts / canary / health_probes
 └── prompts/                   # 37 个业务 .md + _versions.yaml
 harness/                       # 评测台（模块清单见 ADR 0002）
@@ -142,9 +142,9 @@ P0（swap.place_order / option intent+extract / close.place_close / ticker）→
 | 偏离 | 现状 | 裁决 issue |
 |---|---|---|
 | **ticker "1 节点 = ReAct Agent 子图"名存实亡** | 主图从未 `add_node("ticker", ...)`；生产走 `ticker/resolver.py` 确定性流水线（tokenize → GOATS → 规则选优 → infer_code 兜底），`react_agent.py` 为死代码。节点计数 20 中的这 1 个是虚的 | [#154](https://github.com/GZTL-AI/aigc-langgraph/issues/154) |
-| **AgentState 业务参数字段停在 `dict[str, Any]`** | D6 设计为 `SwapPlaceParams` 等 Pydantic 类型（harness 按业务对象 `==` 比对的前提）；`state.py:109-113` 五字段仍是 M1 的 dict 占位 | [#160](https://github.com/GZTL-AI/aigc-langgraph/issues/160) |
-| **D9.1 `--mock-ticker` 开关从未实现** | harness cli 无此参数；CI 也不跑 harness golden（仅 pytest + lint），"CI 全集 < 1 分钟"的双轨成本控制不存在 | [#160](https://github.com/GZTL-AI/aigc-langgraph/issues/160) |
-| **harness 依赖面超纪律 3** | 除 `build_main_graph` 外另依赖 `app.config`（langfuse_client）与 `app.llm.clients`（case_generator）（轻） | [#160](https://github.com/GZTL-AI/aigc-langgraph/issues/160) |
+| ~~AgentState 业务参数字段无类型契约~~ | ✅ **#160 落地（2026-08-27）**：新增 `app/graph/business_params.py` 状态级模型，15 个写入点全部经 `validated_*` 校验（extra=forbid 防字段名拼错，输出与历史 dict 逐字节一致）；运行时保持 dict（读取侧/checkpoint/eval 零改动）——这是 D6 意图在 M3.3 阶段的实现形态，全运行时对象化留 M4 后评估 |
+| ~~D9.1 `--mock-ticker` 开关~~ | ✅ #160 裁决：**承诺撤销**——CI 回归由 pytest + mock LLM 承担（977 collected），harness golden 人工/评估触发；D9.1 该段转历史 |
+| ~~harness 依赖面超纪律 3~~ | ✅ #160 裁决：**纪律放宽**为"harness 仅依赖三个稳定入口：`app.graph.main` / `app.config` / `app.llm.clients`"——现状即合规，新增依赖需回本表登记 |
 
 关联的 checkpointer 未接线问题记录在 [ADR 0009](./0009-mysql-version-and-tdsql-compatibility.md)（裁决 [#153](https://github.com/GZTL-AI/aigc-langgraph/issues/153)）。
 

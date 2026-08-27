@@ -43,4 +43,4 @@
 ## 后果（现状口径）
 
 - SQL ↔ LangFuse 调用级关联已就位（trace_id，#156）：E3.4 错例追溯可从 node_trace 行直达对应 LangFuse trace（按 metadata.trace_id 过滤）。
-- 文档残留：`.claude/rules/langgraph-patterns.md` 等 5 处仍写 `ENABLE_LANGSMITH`/LangSmith，随外部引用修正票清理。
+- 文档残留（LangSmith 字样）已随 #151 引用修正清理完毕。
