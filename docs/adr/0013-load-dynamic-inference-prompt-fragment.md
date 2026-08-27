@@ -1,31 +1,42 @@
-# 加载后端动态 prompt 片段（swap_instrument_inference_prompt）
+# ADR 0013 · 加载后端动态 prompt 片段（swap_instrument_inference_prompt）
 
-> **Status update (2026-05-10)**：审计后核实 endpoint 路径正确——`GET /admin-api/counterparty/info/instrument-inference-prompt`，由 `CounterpartyInfoController.java:33` 实现。返回类型为 `CommonResult<String>`（包裹一个纯字符串），不是 JSON 对象。`/admin-api` 前缀由 `WebProperties.adminApi` 框架级配置自动注入。
-> 客户端实现：`await client.get(url)` → 解析 `result.data` 为 `str`。
+- 状态：已采纳（主链路已落地；两处 trace 护栏未实现，见"实现偏离"）
+- 日期：2026-05-10
+- 修订：2026-08-27 深度改写为现状口径（wayfinder map #138 / 核查 #141）
+- 作者：图灵科技 + Tony
 
-> **Status update (2026-05-13)**：客户端归属修正。ADR 0001 D2 修订版把单一 OtcBackendClient 拆成 3 个 Protocol（option / swap / ticker），`get_inference_prompt` 实际落在 `app/tools/ticker_client.py:TickerClient.get_inference_prompt`（不是本 ADR 原文写的 otc_backend.py）。下方"实现要点 1"已过期，以代码现状为准。
+## 决策
 
-Dify 工作流通过 `GET /admin-api/counterparty/info/instrument-inference-prompt`（实际返回全局配置 `configApi.getConfigValueByKey("swap_instrument_inference_prompt")`）拉取一段**运维可热改的 prompt 片段**，注入到标的推断 LLM 节点。LangGraph 当前用静态 `app/prompts/ticker/infer_code.md`，这一热改能力被丢失：业务方/运维想临时调整标的推断规则（加新约束、新字典）就必须发版。
+Dify 工作流通过后端接口拉取一段**运维可热改的 prompt 片段**（全局配置 `swap_instrument_inference_prompt`）注入标的推断 LLM 节点。LangGraph 若只用静态 `infer_code.md`，业务方/运维临时调整推断规则（加新约束、新字典）就必须发版。决定补上：ticker 推断前先拉取动态片段，与静态文件拼接后喂给 LLM。
 
-我们决定补上这条能力：在 LangGraph 的 ticker 子图调用推断 LLM 前，先调 `OtcBackendClient` 拉取 `swap_instrument_inference_prompt` 配置值，与静态文件 `infer_code.md` 拼接后再喂给 LLM。
+## 落地现状（2026-08-27，原两条行内 Status update 已吸收）
 
-**实现要点**：
-1. ~~在 `app/tools/otc_backend.py` 新增 `async def get_inference_prompt() -> str`，对应 endpoint Y。~~（已过期，见上方 2026-05-13 Status update：实际落在 `app/tools/ticker_client.py`）
-2. 在 ticker 子图推断节点入口，先获取该片段（带 5 分钟 LRU 缓存，降低 HTTP 往返成本）。
-3. 拼接策略：静态 `infer_code.md` 作为基础提示词框架（包含输出格式、工具调用规范），动态片段作为 **业务规则补充**追加到 `system` 部分末尾。
-4. 后端不可达时降级为仅用静态文件，记录 warning + trace `dynamic_prompt_fallback=true`，不让 ticker 子图崩。
+**Endpoint**：`GET /admin-api/counterparty/info/instrument-inference-prompt`，返回 `CommonResult<String>`（包裹纯字符串）。Java 侧 `CounterpartyInfoController.java:32`（`@GetMapping`）/ `:36`（方法签名）——原修订注的 `:33` 是行号偏移，`docs/api-contracts/java-backend.md` 同处偏移待一并修正。`/admin-api` 前缀由 `WebProperties.adminApi` 框架级注入。
 
-## Considered Options
+**实现链路**：
 
-- **不补，保留静态文件**：失去运维热改能力，业务方反馈会变多，违背 ADR-0001 列的"业务逻辑可见 + 可调"目标。
-- **改为按 counterparty 拉取**（实现 URL 路径暗示的语义）：后端目前返回的是全局配置，与按 counterparty 定制不一致；过度设计，等真出现按客户定制需求再说。
-- **拼接策略反向**（动态片段作为基础，静态文件作为补充）：动态片段是规则补充而非框架，静态文件包含的输出格式 / 工具调用约束更基础，反过来风险高。
-- **本 ADR 的方案（已选）**：拉取 + 拼接 + 降级，3 步即可恢复等价行为。
+1. 客户端：`app/tools/ticker_client.py` 的 `TickerClient.get_inference_prompt()`（普通 GET → `result.data` 为 `str`；ADR 0001 D2 三 Protocol 拆分后的归属，原文的 `OtcBackendClient` 已不存在）。
+2. 缓存：`app/subgraphs/ticker/tools.py` 的 `_get_dynamic_prompt_cached()` —— **模块级单 key 缓存 + 300s 绝对过期 + 进程重启清空**（非 `functools.lru_cache`；`infer_code` 工具入口调用）。多副本部署时各副本缓存独立，热改后最长 5 分钟不一致，可接受。
+3. 拼接：静态 `app/prompts/ticker/infer_code.md` 作框架（输出格式、调用规范），动态片段以 `## 后端动态片段（实时拼接）` 追加到 system 末尾。
+4. 净化：`_sanitize_dynamic_prompt`（**实现于调用侧** `tools.py`，非原文说的 client 侧；行为等价）——strip + 控制字符剔除 + 4096 字符截断。⚠️ 超限当前是**静默截断**，非原文的"落警并降级"。
+5. 降级：后端不可达 → warning + 空片段（仅静态文件），metrics 计数 `otc_agent_dynamic_prompt_total{status=cache_hit|cache_miss_ok|fallback}`，不让 ticker 崩。
 
-## Consequences
+## 实现偏离（裁决见 [#156](https://github.com/GZTL-AI/aigc-langgraph/issues/156)）
 
-- 缓存 5 分钟意味着热改后最长 5 分钟生效，业务方可接受。如需即时生效，可暴露管理端清除缓存接口（暂不做）。
-- 推断 prompt 不再"完全静态可读"——读 `infer_code.md` 只能看到框架，必须配合后端 config 才能看完整提示词。trace（ADR-0004）必须记录拼接后的完整 prompt 摘要（前 500 字符），否则线上排错失去依据。
-- 动态片段是字符串，没有类型/格式约束，运维错误配置（如 YAML 注入、非 UTF-8）可能让 LLM 直接崩溃。需要在 `get_inference_prompt()` 加基础净化：trim、长度上限（如 4096 字符）、字符集校验，超限或异常时落警并降级。
-- 缓存失效策略需要写明：5 分钟绝对过期 + 进程重启清空。如果未来上多副本，缓存独立，最长 5 分钟内不同副本响应可能不一致——可接受。
-- 同样模式可推广到其他需要热配的 LLM 提示词节点（如未来若 swap/option 也需要按客户定制规则），但当前不预先抽象通用框架，按出现需求再做。
+| 偏离 | 现状 |
+|---|---|
+| **拼接后完整 prompt 摘要未落 trace（中）** | 原文把它写成硬要求（"否则线上排错失去依据"）：动态片段被运维热改后，无法从 trace 还原当时实际生效的完整提示词。可降级实现为"记录动态片段哈希 + 长度"。注意原文的"前 500 字符"引用了 [ADR 0004](./0004-trace-granularity-node-level-with-langsmith.md) 旧约定，现行截断长度为 2048 |
+| **降级标记落 metrics 不落 trace（轻）** | 原设计 trace `dynamic_prompt_fallback=true`；实际只有计数器——能看到"降级了多少次"，定位不到"哪条会话降级了"，与 ADR 0004 的节点级排错路径不衔接 |
+
+## 备选方案
+
+- **不补，保留静态文件**：失去运维热改能力。
+- **按 counterparty 拉取**：后端返回的是全局配置，过度设计。
+- **拼接策略反向**：动态片段是规则补充非框架，反向风险高。
+- **拉取 + 拼接 + 降级（已选）**：3 步恢复等价行为。
+
+## 后果（现状口径）
+
+- 热改后最长 5 分钟生效；即时生效的缓存清除接口暂不做。
+- 推断 prompt 不再"完全静态可读"：读 `infer_code.md` 只见框架，完整提示词 = 框架 + 后端 config（排错依赖上表第一项护栏补齐）。
+- 同样模式（热配 prompt 片段）暂不抽象通用框架——当前仅 ticker `infer_code` 一处使用，按需求出现再做。
