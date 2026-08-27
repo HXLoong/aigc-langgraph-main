@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>第 04 课 · LLM 三件套</title>
+<link rel="stylesheet" href="../assets/course.css">
+</head>
+<body>
+<main class="page">
+
+<p class="kicker">LangGraph 团队实战课 · 第 04 课</p>
+<h1>LLM 三件套：load_prompt + with_structured_output + Pydantic</h1>
+<p class="lede">项目里 20+ 个 LLM 节点全是同一个模板。学完本课，你能独立写出一个规范的 LLM 节点——这是领第一个 issue 的最低门槛。</p>
+<div class="meta">
+<span>编写者：图灵科技</span><span>预计用时：30 分钟</span><span>前置：<a href="0003-safe-node.html">第 03 课</a>小测全对</span>
+</div>
+
+<div class="callout">
+<span class="callout-title">为什么学这个（对齐任务）</span>
+Dify 的 LLM 节点 = YAML 里嵌几千行 prompt + 内嵌 JSON Schema。迁移后拆成三件：<strong>提示词</strong>（.md 资产，来自 Dify 导出）、<strong>输出模型</strong>（Pydantic，对齐 Java DTO）、<strong>节点函数</strong>（10 行胶水）。这个拆法让业务方能改 .md、后端能对 DTO、工程能测函数——三方并行工作，这正是我们迁出 Dify 的核心理由。
+</div>
+
+<h2>1. 完整模板：swap.intent 逐行读（10 分钟）</h2>
+<p>真实代码（<code>app/subgraphs/swap/intent.py</code>），三件套已标注：</p>
+
+<pre><code><span class="kw">@safe_node</span>
+<span class="kw">async def</span> swap_intent(state: AgentState) -> <span class="kw">dict</span>[<span class="kw">str</span>, Any]:
+    conversation_id = state.get(<span class="st">"conversation_id"</span>)
+<span class="hl">    prompt_name = resolve_prompt_version(<span class="st">"swap"</span>, <span class="st">"intent"</span>, conversation_id)  <span class="cm"># 灰度：可能是 intent_v2</span></span>
+<span class="hl">    prompt = load_prompt(<span class="st">"swap"</span>, prompt_name)                    <span class="cm"># ① 件套一：提示词从 .md 加载</span></span>
+<span class="hl">    llm = get_qwen_thinking().with_structured_output(SwapIntentOutput)  <span class="cm"># ②③ 件套二三</span></span>
+
+    user_message = _build_user_message(state)     <span class="cm"># 拼 4 个 Dify 输入变量（raw/quote/history/bot_name）</span>
+    result = <span class="kw">await</span> llm.ainvoke([
+        (<span class="st">"system"</span>, prompt.system),
+        (<span class="st">"user"</span>, user_message),
+    ])                                            <span class="cm"># result 直接是 SwapIntentOutput 实例，不是字符串！</span>
+
+    <span class="kw">return</span> {
+        <span class="st">"intent"</span>: result.type,
+        <span class="st">"trace"</span>: [TraceEntry(
+            node=<span class="st">"swap_intent"</span>,
+            decision=<span class="st">f"intent={result.type} prompt={prompt_name}"</span>,
+            llm_output={<span class="st">"type"</span>: result.type, <span class="st">"prompt_name"</span>: prompt_name},
+        )],
+    }</code></pre>
+<span class="src">app/subgraphs/swap/intent.py:58-88</span>
+
+<p>对应的输出模型（件套三），一个 <code>Literal</code> 枚举把 LLM 关进 7 个值里：</p>
+
+<pre><code>SwapIntentType = Literal[
+    <span class="st">"place_order_request"</span>, <span class="st">"cancel_order_request"</span>,
+    <span class="st">"confirm_order"</span>, <span class="st">"confirm_cancel_order"</span>, <span class="st">"confirm_modify_order"</span>,
+    <span class="st">"query_order_status"</span>, <span class="st">"unknown_intent"</span>,
+]
+
+<span class="kw">class</span> SwapIntentOutput(BaseModel):
+    model_config = ConfigDict(extra=<span class="st">"forbid"</span>)   <span class="cm"># 意图节点：多余字段直接拒</span>
+    type: SwapIntentType</code></pre>
+<span class="src">app/subgraphs/swap/models.py（7 值与 Java SwapIntentionType 对齐）</span>
+
+<div class="callout warn">
+<span class="callout-title">extra="forbid" vs extra="ignore"</span>
+意图分类这类<strong>小输出</strong>用 <code>forbid</code>（严格）；参数提取这类<strong>大输出</strong>（如 SwapOrderItem 19 个字段）用 <code>ignore</code>——容忍 LLM 多吐字段，避免无谓的重试。选错方向会造成大量 ValidationError 假失败。
+</div>
+
+<h2>2. 件套一：load_prompt 的三个必知点（8 分钟）</h2>
+
+<h3>2.1 .md 文件格式与来源</h3>
+<p>提示词是从 Dify YAML 导出的资产，放 <code>app/prompts/&lt;category&gt;/&lt;name&gt;.md</code>，格式约定：<code>## [system]</code> 与 <code>## [user]</code> 两段代码块。注意目录名陷阱：<strong>提示词目录是 <code>option_close/</code>，代码目录是 <code>subgraphs/close/</code></strong>，两边不对称（沿用 Dify 命名，<code>app/prompts/CLAUDE.md</code>）。</p>
+<p>Dify 占位符 <code>{{#node_id.var#}}</code> <strong>保留原样</strong>，不要 regex 替换——LLM 能理解为上下文标记，替换反而破坏与 Dify 的行为对齐。</p>
+
+<h3>2.2 lru_cache 陷阱（高频踩坑）</h3>
+<pre><code><span class="kw">@lru_cache</span>(maxsize=128)
+<span class="kw">def</span> load_prompt(category: <span class="kw">str</span>, name: <span class="kw">str</span>) -> Prompt: ...</code></pre>
+<span class="src">app/prompts/__init__.py:128</span>
+<p>启动后重复加载零成本——代价是<strong>改了 .md 不重启就不生效</strong>。测试里改提示词后要 <code>from app.prompts import clear_cache; clear_cache()</code>。"改了提示词没效果"九成是这个。</p>
+
+<h3>2.3 来源优先级（ADR 0014）</h3>
+<p><code>ENABLE_LANGFUSE=true</code> 且 <code>use_langfuse_prompts=true</code> 时优先从 LangFuse 拉（运行时可热更、可灰度晋升），失败自动回退本地 .md。所以生产行为可能和你本地 .md 不同——排查提示词问题先确认当时加载的是哪个来源（trace 里记了 prompt_name）。</p>
+
+<h2>3. 件套二：LLM 工厂——为什么不许自己 new ChatOpenAI（7 分钟）</h2>
+<p>所有节点从 <code>app/llm/clients.py</code> 的工厂拿 LLM（<code>get_qwen_standard / thinking / structured / complex / vl</code>）。名字里的 qwen 是历史命名——<strong>ADR 0020 起现场统一 DeepSeek-V4-pro</strong>，vendor 由 .env 切换。工厂里封了两个 vendor 适配，自己 new 就会绕过它们：</p>
+
+<pre><code><span class="cm"># 适配一：统一关闭思考模式（速度：4-7s vs thinking 60-180s），两家参数不同</span>
+<span class="kw">def</span> _thinking_off_extra_body(model: <span class="kw">str</span>) -> <span class="kw">dict</span>[<span class="kw">str</span>, Any]:
+    <span class="kw">if</span> _is_deepseek(model):
+        <span class="kw">return</span> {<span class="st">"thinking"</span>: {<span class="st">"type"</span>: <span class="st">"disabled"</span>}}   <span class="cm"># DeepSeek 会静默忽略 Qwen 的参数！</span>
+    <span class="kw">return</span> {<span class="st">"enable_thinking"</span>: <span class="kw">False</span>}
+
+<span class="cm"># 适配二：DeepSeek 不支持 response_format=json_schema（400 报错），</span>
+<span class="cm"># 统一把 with_structured_output 降级为 function_calling</span>
+<span class="kw">class</span> _ChatLLM(ChatOpenAI):
+    <span class="kw">def</span> with_structured_output(self, schema=<span class="kw">None</span>, **kwargs):
+        <span class="kw">if</span> _is_deepseek(self.model_name) <span class="kw">and</span> <span class="st">"method"</span> <span class="kw">not in</span> kwargs:
+            kwargs[<span class="st">"method"</span>] = <span class="st">"function_calling"</span>
+        <span class="kw">return</span> <span class="kw">super</span>().with_structured_output(schema, **kwargs)</code></pre>
+<span class="src">app/llm/clients.py:29-53</span>
+
+<h2>4. 件套三补充：为什么绝不手工 json.loads（3 分钟）</h2>
+<div class="table-wrap">
+<table>
+<tr><th></th><th>手工 <code>json.loads(response.content)</code></th><th><code>with_structured_output(Model)</code></th></tr>
+<tr><td>LLM 输出裹了 ```json 围栏</td><td>解析失败，节点挂</td><td>框架处理，拿到干净对象</td></tr>
+<tr><td>字段类型错（"5000股"→int）</td><td>下游才炸，难定位</td><td>Pydantic 当场校验 + 自带 1 次重试</td></tr>
+<tr><td>重试仍失败</td><td>各节点自造轮子</td><td>抛 ValidationError → @safe_node 兜底 → fallback（第 03 课链路）</td></tr>
+<tr><td>静态检查</td><td>dict 取值全靠猜</td><td><code>result.type</code> 有类型提示，mypy 保护</td></tr>
+</table>
+</div>
+
+<h2>5. 动手练习（5 分钟）</h2>
+<div class="task">
+<p class="task-title">练习：在 option 子图找出三件套</p>
+<ol>
+<li>打开 <code>app/subgraphs/option/</code> 下任一 <code>extract_*.py</code> 节点</li>
+<li>标出三件套各在哪一行：提示词加载 / LLM 工厂 + structured output / Pydantic 输出模型（去 <code>option/models.py</code> 找到定义）</li>
+<li>回答两个问题发助教：这个模型用的 <code>extra</code> 策略是 forbid 还是 ignore，为什么？它的提示词 .md 在哪个目录（注意 2.1 的目录名陷阱）？</li>
+</ol>
+</div>
+
+<h2>6. 小测（拿到全对再进第 05 课）</h2>
+<section class="quiz">
+<h3>自测 · 4 题</h3>
+
+<div class="quiz-q" data-answer="c">
+<p class="quiz-stem">1. 你改了 <code>app/prompts/swap/intent.md</code>，重跑正在运行的服务里的请求发现行为没变，最可能的原因是？</p>
+<label><input type="radio" name="q1" value="a"> md 文件格式写错，system 段没有被解析出来</label>
+<label><input type="radio" name="q1" value="b"> 服务在从 LangFuse 拉取提示词，本地文件无效</label>
+<label><input type="radio" name="q1" value="c"> load_prompt 有 lru_cache，进程没重启就不生效</label>
+<p class="quiz-explain" hidden>三个都可能，但最高频的是 lru_cache（handbook 附录 A.10）。排查顺序：先重启/clear_cache，再看 trace 里的 prompt 来源，最后查格式。</p>
+</div>
+
+<div class="quiz-q" data-answer="b">
+<p class="quiz-stem">2. LLM 输出不符合 Pydantic schema 时，第一道处理是什么？</p>
+<label><input type="radio" name="q2" value="a"> @safe_node 立即捕获并把错误写入 state 里</label>
+<label><input type="radio" name="q2" value="b"> with_structured_output 自带的 1 次解析重试</label>
+<label><input type="radio" name="q2" value="c"> 节点函数里的校验逻辑把输出修剪成合法值</label>
+<p class="quiz-explain" hidden>顺序是：框架重试 1 次 → 仍失败抛 ValidationError → @safe_node 兜底写 error → cascade 走 fallback。不走 HITL（CLAUDE.md 核心原则第 8 条）。</p>
+</div>
+
+<div class="quiz-q" data-answer="a">
+<p class="quiz-stem">3. 为什么必须从 <code>app/llm/clients.py</code> 工厂拿 LLM，而不是节点里自己 <code>ChatOpenAI(...)</code>？</p>
+<label><input type="radio" name="q3" value="a"> 工厂封装了 vendor 适配：关思考模式与降级 function_calling</label>
+<label><input type="radio" name="q3" value="b"> 因为 ChatOpenAI 的构造函数是私有 API，禁止直接使用</label>
+<label><input type="radio" name="q3" value="c"> 工厂函数能让每个节点拿到互相隔离的独立客户端实例</label>
+<p class="quiz-explain" hidden>自己 new 会绕过 _thinking_off_extra_body（DeepSeek 默认开思考 → 延迟 60-180s）和 _ChatLLM 的 function_calling 降级（json_schema 直接 400）——两个都是线上真实踩过的坑（ADR 0020）。另外 lru_cache 单例还省了重复建连接池。</p>
+</div>
+
+<div class="quiz-q" data-answer="b">
+<p class="quiz-stem">4. 参数提取模型 <code>SwapOrderItem</code>（19 个字段）的 <code>extra</code> 策略应该选哪个，为什么？</p>
+<label><input type="radio" name="q4" value="a"> forbid——严格拒绝多余字段才能保证参数不出错</label>
+<label><input type="radio" name="q4" value="b"> ignore——容忍 LLM 多输出字段，减少假性失败</label>
+<label><input type="radio" name="q4" value="c"> allow——把多余字段也保留下来供后续节点使用</label>
+<p class="quiz-explain" hidden>大 schema 下 LLM 经常多吐一两个顶层字段；forbid 会让本来正确的提取因此重试甚至失败。意图类小输出才用 forbid（swap/models.py 两种用法并存）。</p>
+</div>
+
+<button class="quiz-check">核对答案</button>
+<p class="quiz-score"></p>
+</section>
+
+<h2>7. 延伸与下一课</h2>
+<ul>
+<li><strong>本课首选一手资料</strong>：<code>.claude/rules/prompt-management.md</code>（提示词纪律的完整出处：改写登记、A/B 共存、Dify 同步流程）</li>
+<li>深入：<code>docs/training/langgraph-handbook.md</code> 第 4.3.1 节（Dify LLM 节点逐项对照）、第 8 章（提示词与 LLM 调用）</li>
+<li>相关 ADR：0003（提示词版本化）、0010（structured output 强制）、0014（LangFuse 来源）、0020（全量 DeepSeek-V4-pro）</li>
+<li>下一课：<a href="0005-checkpointer-multiturn.html">第 05 课 · Checkpointer 与多轮对话</a></li>
+</ul>
+
+<footer class="lesson-footer">
+<p>学完本课你已具备领 P2 issue 的最低门槛——想开始练手就找导师，课程问题找助教（图灵科技）。</p>
+</footer>
+
+</main>
+<script src="../assets/quiz.js"></script>
+</body>
+</html>

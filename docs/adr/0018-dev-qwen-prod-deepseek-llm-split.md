@@ -1,6 +1,6 @@
 # ADR 0018 · 开发期 Qwen / 客户现场 DeepSeek-v4-pro 双模型分立
 
-- 状态：已采纳
+- 状态：**已被 [ADR 0020](./0020-unify-all-llm-on-deepseek-v4-pro.md) 取代**（2026-08-27 起全部环境统一 DeepSeek-V4-pro）
 - 日期：2026-05-12
 - 起源：grill-with-docs（M3/M4 路线图 C1.10）
 - 作者：图灵科技 + Tony

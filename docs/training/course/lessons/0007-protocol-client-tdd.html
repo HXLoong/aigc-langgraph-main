@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>第 07 课 · Protocol Client 与 TDD</title>
+<link rel="stylesheet" href="../assets/course.css">
+</head>
+<body>
+<main class="page">
+
+<p class="kicker">LangGraph 团队实战课 · 第 07 课</p>
+<h1>Protocol Client 与 TDD</h1>
+<p class="lede">Dify 时代最大的痛是"没法测试"。本课学两件事：后端调用为什么走 Protocol（以及它怎么让测试成为可能），和项目强制的 TDD 红绿流程——外加一个坑掉过无数人的 mock 陷阱。</p>
+<div class="meta">
+<span>编写者：图灵科技</span><span>预计用时：30 分钟</span><span>前置：<a href="0006-subgraph-swap-template.html">第 06 课</a>小测全对</span>
+</div>
+
+<div class="callout">
+<span class="callout-title">为什么学这个（对齐任务）</span>
+"可严肃测试"是我们迁出 Dify 的第一理由（handbook 第 1.1 节），841 个测试就是成果。但这套体系有两条纪律撑着：<strong>依赖反转</strong>（后端可 mock）和 <strong>TDD 强制</strong>（CLAUDE.md 核心原则第 5 条：先写失败测试再改代码，禁止反过来）。你的每一个 PR 都会被用这两条检验。
+</div>
+
+<h2>1. Protocol：三行接口换来整个可测性（8 分钟）</h2>
+<p>铁律：节点里<strong>禁止直接 <code>httpx.AsyncClient</code> 调后端</strong>，必须走三个 Protocol 之一（Swap / Option / TickerClient，ADR 0001 D2 修订版）。看 SwapClient 的真实定义：</p>
+
+<pre><code><span class="kw">class</span> SwapClient(Protocol):
+    <span class="st">"""互换操作客户端协议。"""</span>
+    <span class="kw">async def</span> operate(self, req: SwapOrderOpenApiSaveReqVO) -> CommonResult: ...
+    <span class="kw">async def</span> get(self, order_id: <span class="kw">str</span>) -> CommonResult: ...
+    <span class="kw">async def</span> get_conversation_orders(self, conversation_id: <span class="kw">str</span>) -> CommonResult: ...
+
+<span class="kw">class</span> SwapClientHttpx:
+    <span class="st">"""走 httpx 的 SwapClient 实现。"""</span>
+    <span class="kw">def</span> __init__(self, base_url=<span class="st">""</span>, timeout=30.0, token=<span class="kw">None</span>,
+<span class="hl">                 transport: httpx.AsyncBaseTransport | <span class="kw">None</span> = <span class="kw">None</span>,   <span class="cm"># ← 测试注入口</span></span>
+                 dry_run: <span class="kw">bool</span> | <span class="kw">None</span> = <span class="kw">None</span>): ...</code></pre>
+<span class="src">app/tools/swap_client.py:113-148</span>
+
+<p>三个层次各管一段：</p>
+<div class="table-wrap">
+<table>
+<tr><th>层</th><th>职责</th><th>测试策略</th></tr>
+<tr><td><code>Protocol</code></td><td>接口契约（Python 结构化鸭子类型，实现类无需显式继承）</td><td>单测塞 FakeClient——一个实现了同名 async 方法的普通类</td></tr>
+<tr><td>Pydantic ReqVO</td><td>与 Java DTO 1:1（如 <code>SwapOrderOpenApiSaveReqVO</code>：type + orderList + 9 个机器人上下文）</td><td>模型校验测试（tests/subgraphs/swap/test_models.py）</td></tr>
+<tr><td><code>SwapClientHttpx</code></td><td>真 HTTP：认证头、tenacity 重试、dry_run 拦截</td><td>注入 <code>transport</code> mock HTTP 层——<strong>测试慢就 mock 这里，绝不改业务代码路径</strong>（P0 红线）</td></tr>
+</table>
+</div>
+
+<p>节点侧通过 <code>backend.py</code> 的 <code>call_swap_backend(state, intent=..., order_list=...)</code> 统一调用——它负责拼 9 个机器人上下文字段、把 ticker 解析出的 windCode 写回 orderList，然后 <code>operate()</code>。后端不可达抛 <code>BackendUnreachableError</code>，由节点的 <code>@safe_node</code> 兜底（第 03 课链路又见面了）。</p>
+
+<h2>2. mock 陷阱：patch 使用点，不是定义处（8 分钟）</h2>
+<p>全项目最高频的测试坑（<code>tests/CLAUDE.md</code> 专页警告）。原理一句话：<code>from x import y</code> 会把 <code>y</code> 这个名字<strong>绑进当前模块</strong>，此后 patch 原模块的 <code>x.y</code> 改不到这个已绑定的名字。</p>
+
+<pre><code><span class="cm"># ❌ 不生效：patch 定义处</span>
+monkeypatch.setattr(<span class="st">"app.llm.clients.get_qwen_thinking"</span>, fake)
+<span class="cm"># swap/intent.py 早就 `from app.llm.clients import get_qwen_thinking`，名字已绑到 intent 模块
+
+# ✅ 生效：patch 使用点（intent 模块里的名字）</span>
+monkeypatch.setattr(<span class="st">"app.subgraphs.swap.intent.get_qwen_thinking"</span>, fake)</code></pre>
+
+<p>再看项目里 mock LLM 的标准写法——注意 mock 链要还原 <code>with_structured_output</code> 的调用形状：</p>
+
+<pre><code><span class="kw">def</span> _patch_llm(monkeypatch, return_type: <span class="kw">str</span>) -> AsyncMock:
+    <span class="st">"""让 swap.intent 调 LLM 时返回固定 SwapIntentOutput。"""</span>
+<span class="hl">    fake_output = SwapIntentOutput(type=return_type)          <span class="cm"># mock 到 Pydantic 实例，不是 JSON 字符串！</span></span>
+
+    fake_llm_with_schema = MagicMock()
+    fake_llm_with_schema.ainvoke = AsyncMock(return_value=fake_output)
+
+    fake_base_llm = MagicMock()
+    fake_base_llm.with_structured_output = MagicMock(return_value=fake_llm_with_schema)
+
+<span class="hl">    monkeypatch.setattr(intent_module, <span class="st">"get_qwen_thinking"</span>, <span class="kw">lambda</span>: fake_base_llm)  <span class="cm"># 使用点！</span></span>
+    <span class="kw">return</span> fake_llm_with_schema.ainvoke
+
+<span class="cm"># 用法：节点函数直接当普通 async 函数测，连图都不用建</span>
+<span class="kw">async def</span> test_classifies_place_order(monkeypatch):
+    _patch_llm(monkeypatch, <span class="st">"place_order_request"</span>)
+    result = <span class="kw">await</span> swap_intent({<span class="st">"raw_text"</span>: <span class="st">"做一笔招商银行的 TRS"</span>})
+    <span class="kw">assert</span> result[<span class="st">"intent"</span>] == <span class="st">"place_order_request"</span></code></pre>
+<span class="src">tests/subgraphs/swap/test_intent.py:63-90（真实测试原文）</span>
+
+<h2>3. TDD 红绿流程（6 分钟）</h2>
+<p>项目强制顺序（禁止先改代码再补测试，禁止跳过 RED 验证）：</p>
+
+<pre><code><span class="cm"># 1. 写最小复现测试（体现 bug 或新需求的期望行为）</span>
+<span class="cm"># 2. 跑到 RED —— 必须亲眼看到它失败</span>
+.venv/bin/python -m pytest tests/subgraphs/swap/test_yyy.py -v
+<span class="cm"># 3. 写最小修复代码</span>
+<span class="cm"># 4. 跑到 GREEN + 全量回归</span>
+.venv/bin/python -m pytest tests/ -q --tb=line 2>&1 | tail -5</code></pre>
+
+<div class="callout warn">
+<span class="callout-title">为什么 RED 这一步不能省</span>
+没见过测试失败，你就不知道它<strong>是否真的在测你以为在测的东西</strong>——一个从写出来就绿的测试，很可能 mock 错了位置（比如 patch 了定义处），改什么都绿。RED 是测试自身的测试。三层金字塔（模型/路由单测 → 子图节点测 → E2E）与更多技巧见 <code>.claude/rules/testing.md</code>。
+</div>
+
+<h2>4. 动手练习：完整走一遍红绿（8 分钟）</h2>
+<div class="task">
+<p class="task-title">练习：给 swap_cancel 写一个新测试</p>
+<ol>
+<li>模仿 <code>test_intent.py</code> 的 <code>_patch_llm</code> 写法，给 <code>swap_cancel</code> 节点写一个"取消意图正确写入 cancel_params"的测试（先读 <code>app/subgraphs/swap/cancel.py</code> 确认它的 LLM 工厂名和输出模型）</li>
+<li>故意先把 patch 目标写成定义处 <code>app.llm.clients....</code>，跑一遍——观察测试是怎么"错着绿"或者报错的，体感一次陷阱</li>
+<li>改成使用点，跑到真 GREEN；再全量 <code>pytest tests/subgraphs/swap/ -v</code> 确认没破坏别的</li>
+<li>把两次运行的差异和你的解释发助教</li>
+</ol>
+</div>
+
+<h2>5. 小测（拿到全对再进第 08 课）</h2>
+<section class="quiz">
+<h3>自测 · 4 题</h3>
+
+<div class="quiz-q" data-answer="b">
+<p class="quiz-stem">1. 节点里为什么禁止直接 <code>httpx.AsyncClient</code> 调后端？</p>
+<label><input type="radio" name="q1" value="a"> httpx 是同步库，在异步节点里调用会阻塞事件循环</label>
+<label><input type="radio" name="q1" value="b"> 绕过 Protocol 后单测无法替换实现，认证重试也散落</label>
+<label><input type="radio" name="q1" value="c"> 直连后端不安全，Protocol 层加了参数加密的能力</label>
+<p class="quiz-explain" hidden>依赖反转：节点依赖接口，测试塞 FakeClient、生产用 Httpx 实现（内聚了认证头/tenacity 重试/dry_run）。httpx 本身是异步库，a 是错误说法（ADR 0001 D2 修订版）。</p>
+</div>
+
+<div class="quiz-q" data-answer="a">
+<p class="quiz-stem">2. patch 了 <code>app.llm.clients.get_qwen_thinking</code> 但节点还在调真 LLM，原因是？</p>
+<label><input type="radio" name="q2" value="a"> 节点模块 import 时已把名字绑定进自己命名空间</label>
+<label><input type="radio" name="q2" value="b"> monkeypatch 在异步测试里需要额外的作用域参数</label>
+<label><input type="radio" name="q2" value="c"> lru_cache 把真实客户端缓存住了导致替换失效</label>
+<p class="quiz-explain" hidden>"patch where it's looked up"——from x import y 后，y 存在于导入方的命名空间，改原模块无效。要 patch app.subgraphs.swap.intent.get_qwen_thinking（tests/CLAUDE.md 头号陷阱）。</p>
+</div>
+
+<div class="quiz-q" data-answer="c">
+<p class="quiz-stem">3. mock LLM 时，<code>ainvoke</code> 的返回值应该设成什么？</p>
+<label><input type="radio" name="q3" value="a"> 含 JSON 字符串的字典，模拟大模型的原始输出</label>
+<label><input type="radio" name="q3" value="b"> AIMessage 对象，content 字段放序列化的结果</label>
+<label><input type="radio" name="q3" value="c"> 输出模型的 Pydantic 实例，如 SwapIntentOutput</label>
+<p class="quiz-explain" hidden>with_structured_output 之后 ainvoke 返回的就是 Pydantic 实例——mock 要还原这个形状（fake_output = SwapIntentOutput(type=...)），返回字符串会让节点代码 result.type 直接炸（testing.md E2E 节）。</p>
+</div>
+
+<div class="quiz-q" data-answer="b">
+<p class="quiz-stem">4. 测试太慢，因为它真的在发 HTTP 请求。正确的提速方式是？</p>
+<label><input type="radio" name="q4" value="a"> 在业务代码里加环境变量开关，测试时切到本地假路径</label>
+<label><input type="radio" name="q4" value="b"> 用 transport 注入或 FakeClient 在测试侧 mock 掉 HTTP</label>
+<label><input type="radio" name="q4" value="c"> 在 conftest 里加 autouse fixture 全局替换掉后端地址</label>
+<p class="quiz-explain" hidden>mock 属于测试侧：transport 注入 / FakeClient。a（业务代码里内置"备用实现"开关）和 c（autouse 全局绕过真实路径）都被 CLAUDE.md"面向测试编程"红线明令禁止。</p>
+</div>
+
+<button class="quiz-check">核对答案</button>
+<p class="quiz-score"></p>
+</section>
+
+<h2>6. 延伸与下一课</h2>
+<ul>
+<li><strong>本课首选一手资料</strong>：<code>tests/CLAUDE.md</code> + <code>.claude/rules/testing.md</code>（mock 陷阱与测试金字塔的项目权威出处）</li>
+<li>深入：<code>docs/training/langgraph-handbook.md</code> 第 4.3.4 节（Dify HTTP 节点对照）、第 9 章（测试与 harness）；<code>docs/api-contracts/java-backend.md</code>（写 ReqVO 必看）</li>
+<li>工具：修 bug 时可用 <code>/test-driven-development</code> skill 走完整 TDD workflow</li>
+<li>下一课：<a href="0008-harness-golden-pr.html">第 08 课 · harness 与 golden case：你的第一个 PR</a>——最后一课，把一切串成上线标准</li>
+</ul>
+
+<footer class="lesson-footer">
+<p>练习第 2 步"错着绿"的现象每个人看到的都不一样，发给助教（图灵科技）分析你那一版。</p>
+</footer>
+
+</main>
+<script src="../assets/quiz.js"></script>
+</body>
+</html>
