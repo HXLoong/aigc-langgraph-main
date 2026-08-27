@@ -1,18 +1,41 @@
-# 提示词版本化采用"同目录文件并存"
+# ADR 0003 · 提示词版本化采用"同目录文件并存"
 
-ADR-0002 Phase 3 需要提示词 A/B 与版本化能力。我们决定在文件层面采用并存方式：`swap/intent.md` 是当前生产版本，新版叫 `swap/intent_v2.md`，代码通过 `load_prompt("swap", "intent_v2")` 选择版本。A/B 期间两个版本同时存活，金丝雀流量按代码逻辑切分，不依赖双部署/双镜像。
+- 状态：已采纳
+- 日期：2026-05-10
+- 修订：2026-08-27 深度改写为现状口径（wayfinder map #138 / 核查 #140）
+- 作者：图灵科技 + Tony
 
-老版本清理规则：新版上线满一个完整金丝雀周期 + 稳定 7 天后，删除老版本文件并把新版改回无后缀名。
+## 决策
 
-## Considered Options
+[ADR 0002](./0002-comprehensive-runtime-harness.md) Phase 3 需要提示词 A/B 与版本化能力。在文件层面采用**同目录并存**：`swap/intent.md` 是当前生产版本，新版叫 `swap/intent_v2.md`。A/B 期间两版同时存活，金丝雀流量按代码逻辑切分，不依赖双部署/双镜像。
 
-- **同目录并存（已选）**：与现有 `prompt-management.md` 规则、Dify 批量同步流程天然对齐，单部署即可灰度，回滚成本低。
-- **git 分支 + 单一文件**：目录干净但要双分支双部署，对 LLM 应用场景过度复杂。
-- **数据库存储 + 后台管理**：有 Dify UI 那种灵活度但要重新搭管理后台，回到迁移前的"提示词不在代码里"问题。
+## 落地现状（2026-08-27）
 
-## Consequences
+实际选版链路比原设计更完善，**以 `app/prompts/_versions.yaml` 为 A/B 真源**：
 
-- `app/prompts/` 目录会短期膨胀（同一提示词可能 v1、v2 并存），需要清理纪律。超过 2 个并存版本的目录视为治理债，要求 review 时清理。
-- 加载器必须支持任意文件名（不能硬编码 v1/v2 后缀），保持加载逻辑与版本号解耦。
-- 提示词文件命名是 A/B 实验的真理来源——所有 trace、评估报告、shadow 结果必须记录加载的具体文件名（如 `intent_v2.md`），否则版本对比失去意义。
-- 与 `dify/sync.py` 同步策略必须明确：从 Dify 拉下来的新版默认放到 `_v{N+1}.md`，不直接覆盖原文件，由人决定何时下线旧版。
+```
+_versions.yaml（灰度配置，如 swap.intent = 95% intent / 5% intent_v2）
+  → resolve_prompt_version(category, base_name, conversation_id)
+      · conversation_id sha256 稳定 hash 分流（同会话恒命中同版本）
+      · 环境变量 OTC_PROMPT_<CAT>_<NAME>_VERSION 可强制覆盖
+  → load_prompt(category, name)   # 加载器不硬编码后缀，支持任意文件名
+```
+
+节点侧示例：`app/subgraphs/swap/intent.py` 先 `resolve_prompt_version` 再 `load_prompt`。原文"代码写死 `load_prompt("swap", "intent_v2")`"仅是临时调试用法。
+
+**第二种版本化形态（原文未记录，本次补录）**：`compose_prompt(category, name, version)` + `swap/v2/` 子目录拼装（`_base.md` + 意图片段，字符数 -20%），由 `SWAP_PROMPT_VERSION` 配置选择。⚠️ 当前 `compose_prompt` 在 `app/` 内零调用点、`swap_prompt_version` 为死配置——接线或删除待裁决（[#159](https://github.com/GZTL-AI/aigc-langgraph/issues/159)）。
+
+## 备选方案
+
+- **同目录并存（已选）**：与 Dify 批量同步流程天然对齐，单部署即可灰度，回滚成本低。
+- **git 分支 + 单一文件**：要双分支双部署，对 LLM 应用过度复杂。
+- **数据库存储 + 后台管理**：回到迁移前"提示词不在代码里"的问题。
+
+## 后果与纪律（现状口径）
+
+- 加载器支持任意文件名 ✅；trace / 评估报告须记录实际加载的文件名——`harness/reporter.py` 已按 `prompt_name` 分桶统计，但**节点侧只有 swap_intent 一处写入 `prompt_name`（覆盖率 1/21）**，对其他节点做 A/B 会失真（[#156](https://github.com/GZTL-AI/aigc-langgraph/issues/156)）。
+- **文件分两类，清理规则不同**（本次改写澄清原文与 `app/prompts/CLAUDE.md` "禁止直接删"的冲突）：
+  - **A/B 实验位**（`*_v2.md` 等）：新版满一个金丝雀周期 + 稳定 7 天后清理、去后缀；
+  - **Dify 原始快照 / 回滚资产**（`*.dify_original.md`、冻结的 `intent_extract.md` 等）：按 ADR 0001 D5 纪律保留，M4 前禁止删除。
+- ">2 个并存版本视为治理债"目前**无执行机制且已被突破**（`swap/place_order` 3 变体；`ticker/tokenize*.md` 双死文件）——裁决见 [#159](https://github.com/GZTL-AI/aigc-langgraph/issues/159)。
+- Dify 同步策略：原决策要求"拉下来的新版放 `_v{N+1}.md`、不覆盖原文件"；**现状 `scripts/export_dify_prompts.py` 是直接覆盖写**，保护不存在（[#159](https://github.com/GZTL-AI/aigc-langgraph/issues/159)）。同步操作前须人工 diff（见 `.claude/rules/prompt-management.md` 场景 C）。

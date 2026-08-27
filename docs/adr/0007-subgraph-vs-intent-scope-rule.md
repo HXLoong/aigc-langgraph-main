@@ -1,34 +1,49 @@
-# 新业务场景的归属：独立子图 vs. 现有子图新意图
+# ADR 0007 · 新业务场景的归属：独立子图 vs. 现有子图新意图
 
-随着产品线扩张（结构化产品、雪球、收益凭证、债券等），需要一条规则避免"主图越来越胖"或"子图越来越乱"。我们采用 **四条触发规则任一命中 → 独立子图，否则归入现有子图作为新意图**：
+- 状态：已采纳
+- 日期：2026-05-10
+- 修订：2026-08-27 深度改写为现状口径（wayfinder map #138 / 核查 #140）
+- 作者：图灵科技 + Tony
 
-**独立子图的触发条件**（任一命中即可）：
+## 决策（规则本体，仍有效）
+
+随着产品线扩张（结构化产品、雪球、收益凭证、债券等），需要一条规则避免"主图越来越胖"或"子图越来越乱"。**四条触发规则任一命中 → 独立子图，否则归入现有子图作为新意图**：
+
 1. 后端 API 集合与现有子图无重叠或重叠 < 30%
-2. 有独立的"前置查询"流程（如 close 的 holding_query）
+2. 有独立的"前置查询"流程（如 close 的 `holding_query`）
 3. 业务方在 PRD 中作为独立产品线介绍
 4. 意图数量预计 ≥ 4 个
 
-**未触发时**：归入语义最接近的现有子图，作为新意图。需要：
-- 在 `app/state.py` 的意图枚举里新增条目
-- 更新 `<product>/intent.md` 提示词（让 LLM 能分类到新意图）
-- 新增对应 `<intent>.md` 提示词文件
-- 在子图里加 `@safe_node` 函数 + 路由分支
-- 在 `tests/fixtures/golden.jsonl` 加至少 2 条 case
+现状划分与规则自洽：swap 7 意图 / option 10 / close 7，close 因规则 2 独立成子图，option 已按 [ADR 0011](./0011-split-option-intent-and-extraction.md) 拆分 intent 与 extraction。
 
-立独立子图时还要追加：
-- `app/subgraphs/<name>.py` + `<name>_models.py`
-- 主图 `route_product` 增加产品类型路由分支
-- `state.py` `ProductType` 枚举新增条目
+## 执行 checklist（按当前代码布局，2026-08-27 更新）
 
-## Considered Options
+**归入现有子图（新意图）**：
 
-- **完全跟随业务方分类**：业务概念变化频繁、且不一定对应技术合理边界（业务把"国债期货互换"算独立线，但代码层和现有 swap 完全可复用）。
-- **由工程师独立判断**：脱离业务直觉容易做出业务方看不懂的代码组织。
-- **四条规则触发制（已选）**：把业务直觉（条件 3）、技术内聚（条件 1、2）、复杂度阈值（条件 4）三者合一，给一个可机械执行的判断方法。
+- 意图枚举：在 `app/subgraphs/<product>/models.py` 的 `<Product>IntentType` Literal 加值（不是原文写的 `app/state.py`——它只剩兼容 shim；`app/graph/state.py` 的 `intent` 字段是裸 `str`）
+- 更新 `app/prompts/<product>/intent.md` 提示词；新增对应 extract 提示词文件
+- 子图加 `@safe_node` 节点函数 + **两处路由都要改**：`graph.py` 的 `_INTENT_TO_NODE` 路由表 **和** `add_conditional_edges` 的 path_map（漏一处会静默走 unknown 兜底）
+- `tests/fixtures/golden.jsonl` 至少 2 条 case（CI 的 `check_fixture_consistency.py` 会查）
 
-## Consequences
+**立独立子图**（额外）：
 
-- 规则要在新增产品 PR 模板里强制 review（写明"是否触发独立子图条件"），否则规则会被 bypass。
-- 30% 是经验阈值，需要每年回顾一次（如果发现某个独立子图与 swap 重叠超 30%，可能要合并）。
-- "意图数量预计 ≥ 4"是预测，可能不准——上线后超过 4 个意图但当时归入现有子图的，下次重构窗口要拆出去。
-- 业务方对"产品线"分类拥有否决权（条件 3）：即便技术上能塞进现有子图，业务方说"这是独立产品"就独立——避免代码结构与业务沟通脱节。
+- 新建 `app/subgraphs/<name>/` **包目录**（`graph.py` / `models.py` / `intent.py` / 每意图一个节点文件——不是原文的单文件 `<name>.py` + `<name>_models.py`）
+- 一级路由：`app/nodes/intent_route.py`（[ADR 0015](./0015-intent-route-rules-first-llm-fallback.md) 四层路由）+ 主图 `app/graph/main.py` 的 `_route_after_intent` 与节点注册（原文的 `route_product` 命名已消失）
+- `app/graph/state.py` 的 `ProductType` Literal 加值
+- ⚠️ 易错点：提示词目录与子图目录命名不对称的先例——`app/prompts/option_close/` 对应 `app/subgraphs/close/`（见 `app/prompts/CLAUDE.md`）
+
+## 备选方案
+
+- **完全跟随业务方分类**：业务概念变化频繁，不一定对应技术合理边界。
+- **由工程师独立判断**：容易做出业务方看不懂的代码组织。
+- **四条规则触发制（已选）**：业务直觉（3）+ 技术内聚（1、2）+ 复杂度阈值（4）合一，可机械执行。
+
+## 实现偏离（裁决见 [#160](https://github.com/GZTL-AI/aigc-langgraph/issues/160)）
+
+- **"PR 模板强制 review 四条规则"无载体**：`.github/` 下无 `pull_request_template.md`，`.claude/skills/add-intent` 也无此判断项——规则目前无任何执行点，靠人自觉。
+
+## 后果（现状口径）
+
+- 30% 是经验阈值，每年回顾一次；"预计 ≥ 4 个意图"是预测，上线后超阈值但归了现有子图的，下次重构窗口拆出。
+- 业务方对"产品线"分类拥有否决权（条件 3）。
+- 文档修正项（随外部引用修正处理）：`.claude/skills/add-intent/SKILL.md` 与 `.claude/agents/subgraph-builder.md` 仍在教旧路径（`app/subgraphs/$1.py`、`route_product_condition`），照抄会生成错误代码。
