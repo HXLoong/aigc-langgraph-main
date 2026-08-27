@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>第 08 课 · harness 与 golden case：你的第一个 PR</title>
+<link rel="stylesheet" href="../assets/course.css">
+</head>
+<body>
+<main class="page">
+
+<p class="kicker">LangGraph 团队实战课 · 第 08 课（最终课）</p>
+<h1>harness 与 golden case：你的第一个 PR</h1>
+<p class="lede">测试保证"代码没写错"，评估保证"机器人没答错"——这是两套体系。本课学会跑评估、顺 trace 定位失败节点，以及"节点级 PR"的完整交付标准。学完这课，课程毕业，实战开始。</p>
+<div class="meta">
+<span>编写者：图灵科技</span><span>预计用时：30 分钟</span><span>前置：<a href="0007-protocol-client-tdd.html">第 07 课</a>小测全对</span>
+</div>
+
+<div class="callout">
+<span class="callout-title">为什么学这个（对齐任务）</span>
+M3.3 当前的核心工作就是"真后端 golden 回归 + 错例修 P0/P1"（issues #82-#87）。你改任何提示词或节点，唯一能回答"有没有回归"的就是 golden 评估。Dify 时代这靠拉几个 case 肉眼看；现在是 350+ 条 golden 一键回归——<strong>会用这套是参与 M3.3 的入场券</strong>。</p>
+</div>
+
+<h2>1. golden case：期望行为的数据化（7 分钟）</h2>
+<p><code>tests/fixtures/golden.jsonl</code> 每行一条 case，真实样例（swap-001 节选）：</p>
+
+<pre><code>{
+  <span class="st">"id"</span>: <span class="st">"swap-001"</span>,
+  <span class="st">"category"</span>: <span class="st">"swap/place_order"</span>,
+  <span class="st">"type"</span>: <span class="st">"positive"</span>,
+  <span class="st">"source"</span>: <span class="st">"csv/A股、深港通、沪港通的算法单支持限价/row2"</span>,
+  <span class="st">"expected"</span>: {
+    <span class="st">"product_type"</span>: <span class="st">"swap"</span>,
+    <span class="st">"intent"</span>: <span class="st">"place_order_request"</span>,
+    <span class="st">"output"</span>: <span class="st">"机器人返回场外收益互换详情，包含：单号、标的代码000001.SZ、……"</span>
+  },
+  <span class="st">"conversation"</span>: [
+    {<span class="st">"raw_content"</span>: <span class="st">"000001 买入5000股 限价18.12 ……@场外AI交易助手测试C"</span>, <span class="st">"quote_desc"</span>: <span class="st">""</span>}
+  ]
+}</code></pre>
+<span class="src">tests/fixtures/golden.jsonl（350+ 条；conversation 数组多条即多轮 case）</span>
+
+<p>case 分三桶维护，退出门不同（M3 阶段口径）：</p>
+<div class="table-wrap">
+<table>
+<tr><th>桶</th><th>来源</th><th>PASS 门槛</th></tr>
+<tr><td><strong>B</strong></td><td>业务方手写种子（主基线，意图均衡）</td><td>≥ 90%</td></tr>
+<tr><td><strong>C</strong></td><td>LLM 对抗式 paraphrase（<code>harness/case_generator/</code>，边界 case）</td><td>≥ 80%</td></tr>
+<tr><td><strong>D</strong></td><td>客户历史真实输入（须业务方标注 expected 后合入）</td><td>持续累积，无硬门槛</td></tr>
+</table>
+</div>
+<p>纪律：<strong>新增节点/意图必须同步加 golden case</strong>（每节点至少 5 条），禁止"先合代码、稍后补 case"。</p>
+
+<h2>2. 两个评估入口（8 分钟）</h2>
+
+<h3>入口一（M3 主用）：langfuse_eval.py —— 带 DeepSeek Judge</h3>
+<pre><code><span class="cm"># 全量 350+（约需较长时间，改动大时跑）</span>
+python scripts/langfuse_eval.py --local tests/fixtures/golden.jsonl --concurrency 4
+<span class="cm"># 只跑受影响的 case（日常迭代）</span>
+python scripts/langfuse_eval.py --local tests/fixtures/golden.jsonl --ids opt-001,opt-018 --concurrency 2</code></pre>
+<p>每条 case 由 DeepSeek Judge 打分（score + judge_comment），并把 <strong>per-turn 富集 JSON</strong> 写入 Langfuse——排查失败的首选数据源（下一节）。</p>
+
+<h3>入口二（本地快速）：harness CLI —— 无 Judge 的 smoke</h3>
+<pre><code>python -m harness run                     <span class="cm"># 跑 golden 全集，出 JSON + markdown 报告（按桶统计）</span>
+python -m harness diff &lt;run-a&gt; &lt;run-b&gt;    <span class="cm"># 两次 run 字段级 diff（改动前后对比回归）</span>
+python -m harness sync-golden             <span class="cm"># 本地 jsonl ↔ LangFuse dataset 同步</span></code></pre>
+
+<h2>3. 查错 SOP：从 score 到根因文件（8 分钟）</h2>
+<p>失败 case 的定位有固定套路（CLAUDE.md"排查与修复流程"），按 Langfuse 富集 JSON 的字段查表：</p>
+
+<pre><code>eval stdout 找到  <span class="st">"LangFuse 写入成功  run=local-YYYYMMDD-HHMMSS"</span>
+→ Langfuse UI 按 run name 过滤 → 点开失败 case
+→ 顶层 score + judge_comment 锁定差异
+→ turns[i] 按字段定位错误层 ↓</code></pre>
+
+<div class="table-wrap">
+<table>
+<tr><th>哪个字段错了</th><th>根因大概率在</th></tr>
+<tr><td><code>product_type</code></td><td><code>app/nodes/intent_route.py</code>（一级路由）</td></tr>
+<tr><td><code>intent</code></td><td>子图 <code>intent.py</code> 的提示词</td></tr>
+<tr><td><code>tickers</code> 缺失/错</td><td><code>app/subgraphs/ticker/</code></td></tr>
+<tr><td><code>place_params</code> 字段漏</td><td>子图 <code>extract_*.py</code> 提示词</td></tr>
+<tr><td><code>api_result</code> 含"正在处理/请勿重复"</td><td>后端 dedup（eval 节奏问题，workaround 只准进 langfuse_eval.py，<strong>绝不进业务代码</strong>）</td></tr>
+<tr><td><code>error</code> 非空</td><td>看 <code>error.node</code> + <code>error.message</code>（第 03 课的 ErrorInfo）</td></tr>
+</table>
+</div>
+
+<p>读 <code>trace</code> 时记住第 05 课的结论：它是累积的（add reducer），<strong>多轮 case 的本轮节点在末尾</strong>；找"第一个错的节点"，fallback 的 <code>triggered_by:</code> 直接告诉你（第 02 课）。</p>
+
+<p>定位到根因后走第 07 课的 TDD：写复现测试 → RED → 最小修复 → GREEN → 全量回归 → <strong>重跑对应 golden case 确认</strong>。三课在这里合流成完整的修 bug 闭环。</p>
+
+<h2>4. 节点级 PR 交付标准（4 分钟）</h2>
+<p>你的第一个 PR 按这张单子自检（出处：<code>.claude/rules/git-workflow.md</code> + docs/training/README.md）：</p>
+<ol>
+<li>feature 分支开发（<code>feature/xxx</code>），不动 main</li>
+<li><code>pytest tests/ -v</code> 全绿 + <code>ruff check app/ tests/</code> 零警告 + <code>mypy app/</code> 无错</li>
+<li>该节点<strong>至少 5 条 golden 全 PASS</strong>（这是节点 PR 的"绿"标准——PASS 率，不是行覆盖率）</li>
+<li>改了提示词 → 按 ADR 0001 D5 处置表登记；改了 State → 声明 + 初始化同步</li>
+<li>PR 标题/描述<strong>中文</strong>（<code>feat(swap): ...</code> 前缀保留），含 变更内容/验证/关联 issue 小节</li>
+<li>commit 遵循 <code>&lt;type&gt;(&lt;scope&gt;): ...</code>；无硬编码 secret</li>
+</ol>
+
+<h2>5. 毕业练习（3 分钟 + 课后）</h2>
+<div class="task">
+<p class="task-title">毕业任务：完整闭环一次</p>
+<ol>
+<li>跑 <code>python -m harness run</code>，打开报告，任选一条非 PASS 的 case（没有就找导师要一条已知错例）</li>
+<li>按第 3 节 SOP 定位到根因文件，写一段"根因分析"（哪个字段错 → 哪个节点 → 为什么）发助教核对</li>
+<li>与导师确认后按 TDD 修复，走完第 4 节的 PR 清单，提交你的第一个 PR</li>
+</ol>
+<p style="margin:0.5rem 0 0">这就是 M3.3 错例修复（issue #85）的日常工作本身——完成即毕业。</p>
+</div>
+
+<h2>6. 小测（毕业考）</h2>
+<section class="quiz">
+<h3>自测 · 4 题</h3>
+
+<div class="quiz-q" data-answer="c">
+<p class="quiz-stem">1. pytest 全绿但 golden PASS 率跌了，说明什么？</p>
+<label><input type="radio" name="q1" value="a"> golden case 过期了，应该更新 expected 让评估变绿</label>
+<label><input type="radio" name="q1" value="b"> 评估的 LLM Judge 不稳定，多跑几次取最好成绩</label>
+<label><input type="radio" name="q1" value="c"> 代码逻辑没错但模型行为回归了，要按 SOP 定位</label>
+<p class="quiz-explain" hidden>测试测代码正确性（mock LLM），评估测端到端行为（真 LLM）——两套体系正交。改 expected 迁就结果 = 面向测试编程（红线）；Judge 抖动存在但先按 SOP 定位而不是刷分。</p>
+</div>
+
+<div class="quiz-q" data-answer="b">
+<p class="quiz-stem">2. 失败 case 的 turns 里 <code>intent</code> 错了（product_type 正确），第一站去查哪里？</p>
+<label><input type="radio" name="q2" value="a"> app/nodes/intent_route.py 的三层路由策略</label>
+<label><input type="radio" name="q2" value="b"> 对应子图 intent.py 节点及其提示词文件</label>
+<label><input type="radio" name="q2" value="c"> app/graphs/main_graph.py 的一级路由映射</label>
+<p class="quiz-explain" hidden>product_type 对 → 一级路由没问题；intent 是子图内二级意图分类的产出，查子图 intent.py + 它加载的提示词（CLAUDE.md 定位表）。</p>
+</div>
+
+<div class="quiz-q" data-answer="a">
+<p class="quiz-stem">3. eval 多轮间隔太短撞了后端 dedup（"请勿重复提交"），正确处理是？</p>
+<label><input type="radio" name="q3" value="a"> 在 langfuse_eval.py 的 turn 间加 sleep 之类调整</label>
+<label><input type="radio" name="q3" value="b"> 在 render 里把 dedup 响应替换成正常订单卡片</label>
+<label><input type="radio" name="q3" value="c"> 给后端 client 加开关让评估流量跳过防重检查</label>
+<p class="quiz-explain" hidden>这是评估节奏问题，workaround 只准进评估脚本。b 是"掩盖后端真实响应"P0 红线的原型案例（用户会看到伪造订单卡）；c 是往业务代码塞测试专用路径，同样禁止。</p>
+</div>
+
+<div class="quiz-q" data-answer="c">
+<p class="quiz-stem">4. 节点级 PR 的"绿"标准是什么？</p>
+<label><input type="radio" name="q4" value="a"> 该节点的行覆盖率达到 80% 且全部测试通过</label>
+<label><input type="radio" name="q4" value="b"> harness 全量跑完之后整体 PASS 率不低于 92.5%</label>
+<label><input type="radio" name="q4" value="c"> 该节点至少 5 条 golden 全部 PASS 且回归不降</label>
+<p class="quiz-explain" hidden>节点 PR 的验收单位是"该节点的 golden PASS"（≥5 条），不是行覆盖率；92.5% 是里程碑级退出门不是单 PR 门槛（docs/training/README.md 必读第 5 条）。</p>
+</div>
+
+<button class="quiz-check">核对答案</button>
+<p class="quiz-score"></p>
+</section>
+
+<h2>7. 毕业之后</h2>
+<ul>
+<li><strong>本课首选一手资料</strong>：仓库根 <code>CLAUDE.md</code> 的"排查与修复流程"一节（查错 SOP 的完整原文，日常工作的案头文件）</li>
+<li>深入：handbook 第 9 章（harness 全解）、第 10-11 章（PR 规约与第一次 PR）；<code>scripts/CLAUDE.md</code>（25+ 脚本目录页）</li>
+<li>实战辅助 skill：<code>/run-eval</code>（跑评估）、<code>/iterate-option</code>（期权链路批量迭代）、<code>/add-intent</code>(新增意图全套)</li>
+<li>回顾全课程：<a href="../reference/langgraph-core-cheatsheet.html">核心速查表</a>打印贴工位；忘了哪课回 <code>SYLLABUS.md</code> 找</li>
+</ul>
+
+<footer class="lesson-footer">
+<p>八课完结。毕业任务的根因分析、第一个 PR 的 review，都可以随时找助教（图灵科技）。欢迎把课程中没讲透的点反馈回来——它们会变成课件的下一次修订。</p>
+</footer>
+
+</main>
+<script src="../assets/quiz.js"></script>
+</body>
+</html>

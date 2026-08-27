@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>第 03 课 · @safe_node：错误不崩图</title>
+<link rel="stylesheet" href="../assets/course.css">
+</head>
+<body>
+<main class="page">
+
+<p class="kicker">LangGraph 团队实战课 · 第 03 课</p>
+<h1>@safe_node：错误不崩图</h1>
+<p class="lede">项目里每个节点都戴的那顶帽子，今天整个拆开。学完你能解释：为什么节点里禁止裸 try/except、trace 是怎么"自动"出现的、一次异常从抛出到用户看到友好回复的全过程。</p>
+<div class="meta">
+<span>编写者：图灵科技</span><span>预计用时：20 分钟</span><span>前置：<a href="0002-conditional-routing-cascade.html">第 02 课</a>小测全对</span>
+</div>
+
+<div class="callout">
+<span class="callout-title">为什么学这个（对齐任务）</span>
+生产环境里 LLM 会超时、后端会 5xx、Pydantic 会校验失败。Dify 时代这些是"平台重试后工作流失败"；LangGraph 时代<strong>兜底责任在我们自己代码里</strong>。<code>@safe_node</code> 就是全项目统一的兜底层——你写的每个节点都要靠它，review 时"节点没加 @safe_node"是一票否决项（CLAUDE.md 核心原则第 3 条）。
+</div>
+
+<h2>1. 装饰器全文剖析（10 分钟）</h2>
+<p><code>app/graph/safe_node.py</code> 一共 91 行，核心是这个 wrapper（真实代码，只删了日志与埋点行）：</p>
+
+<pre><code><span class="kw">def</span> safe_node(fn: NodeFn) -> NodeFn:
+    <span class="kw">@functools.wraps</span>(fn)
+    <span class="kw">async def</span> wrapper(state: AgentState) -> <span class="kw">dict</span>[<span class="kw">str</span>, Any]:
+        node_name = fn.__name__
+        t0 = time.perf_counter()
+        <span class="kw">try</span>:
+            update = <span class="kw">await</span> fn(state)                       <span class="cm"># ① 跑真正的节点函数</span>
+            elapsed_ms = <span class="kw">int</span>((time.perf_counter() - t0) * 1000)
+
+<span class="hl">            <span class="cm"># ② 自动追加 trace（节点函数没自带 trace 时）</span></span>
+<span class="hl">            existing_trace = update.setdefault(<span class="st">"trace"</span>, [])</span>
+<span class="hl">            <span class="kw">if not any</span>(_is_same_node(entry, node_name) <span class="kw">for</span> entry <span class="kw">in</span> existing_trace):</span>
+<span class="hl">                existing_trace.append(TraceEntry(node=node_name, elapsed_ms=elapsed_ms))</span>
+
+            emit_node_completed(node=node_name, status=<span class="st">"ok"</span>, elapsed_ms=elapsed_ms)
+            <span class="kw">return</span> update
+
+        <span class="kw">except</span> Exception <span class="kw">as</span> exc:                           <span class="cm"># ③ 兜底：任何异常都不外抛</span>
+            emit_node_completed(node=node_name, status=<span class="st">"error"</span>, elapsed_ms=...)
+            <span class="kw">return</span> {
+<span class="hl">                <span class="st">"error"</span>: ErrorInfo(</span>
+<span class="hl">                    node=node_name,</span>
+<span class="hl">                    type=<span class="kw">type</span>(exc).__name__,</span>
+<span class="hl">                    message=<span class="kw">str</span>(exc),</span>
+<span class="hl">                    traceback=traceback.format_exc(),</span>
+<span class="hl">                ),</span>
+                <span class="st">"trace"</span>: [TraceEntry(node=node_name, decision=<span class="st">"error"</span>, elapsed_ms=...)],
+            }
+    <span class="kw">return</span> wrapper</code></pre>
+<span class="src">app/graph/safe_node.py:26-81（节选，日志/埋点细节见原文件）</span>
+
+<p>三个职责逐一看：</p>
+
+<div class="table-wrap">
+<table>
+<tr><th>职责</th><th>实现</th><th>对你写节点的意义</th></tr>
+<tr><td>① 异常兜底</td><td><code>except Exception</code> → 返回 <code>{"error": ErrorInfo(...)}</code>，节点<strong>正常返回</strong></td><td>节点里<strong>不写</strong> try/except；抛出去就是最好的错误处理</td></tr>
+<tr><td>② 自动 trace</td><td><code>setdefault("trace", [])</code> + 查重后追加（elapsed_ms 自动计）</td><td>不关心耗时就别写 trace；要记录决策就自己 append（如 <code>decision="intent=..."</code>），装饰器查重不会重复加</td></tr>
+<tr><td>③ 监控埋点</td><td><code>emit_node_completed(status="ok"/"error")</code></td><td>Prometheus <code>/metrics</code> 的节点成功率/耗时指标免费获得（C1.5）</td></tr>
+</table>
+</div>
+
+<p><code>ErrorInfo</code> 四个字段（<code>app/graph/state.py:56-63</code>）：<code>node</code>（谁失败）/ <code>type</code>（异常类名）/ <code>message</code> / <code>traceback</code>（完整栈，harness 定位用）。</p>
+
+<h2>2. 一次异常的完整旅程（5 分钟）</h2>
+<p>把 02 课的链路加上本课细节，从抛出到用户看到回复：</p>
+
+<pre><code>swap_intent 里 LLM 超时抛 TimeoutError
+  ①  @safe_node 捕获 → return {"error": ErrorInfo(node="swap_intent", type="TimeoutError", ...),
+                                "trace": [TraceEntry(node="swap_intent", decision="error")]}
+  ②  子图路由 _route_after_swap_intent：has_error(state) → "swap_unknown" → 子图结束
+  ③  主图继续 persist → render；render 看到 error → reply_text = 友好话术
+  ④  API 层（app/api/routes.py:99）：status = "failed" if final_state.get("error") else "succeeded"
+      error_msg = final_state["error"].message      ← 调用方（Java）拿到可读错误</code></pre>
+
+<div class="callout warn">
+<span class="callout-title">两个边界，别理解过头</span>
+① <code>@safe_node</code> 兜的是<strong>意外异常</strong>；LLM structured output 解析失败先由 <code>with_structured_output</code> 自带 1 次重试，重试仍失败抛 ValidationError 才轮到它兜（第 04 课细讲）。② 它<strong>不是</strong>业务分支工具——"后端返回订单不存在"是正常业务响应，该在节点里如实处理并透传，不是靠抛异常走 fallback（P0 红线：不掩盖后端真实响应）。
+</div>
+
+<h2>3. 动手实验（5 分钟）</h2>
+<div class="task">
+<p class="task-title">实验：亲手触发一次兜底</p>
+<ol>
+<li>在 scratch 文件里写一个 <code>@safe_node</code> 装饰的节点，函数体只有一行 <code>raise ValueError("boom")</code></li>
+<li><code>asyncio.run()</code> 调用它（传 <code>{}</code>），打印返回值——确认拿到的是 dict 而不是异常</li>
+<li>检查 <code>error.node</code> / <code>error.type</code> / <code>error.message</code> 三个字段的值，和 trace 里那条 <code>decision="error"</code></li>
+<li>去掉装饰器再跑一次，感受"图会崩"是什么样</li>
+</ol>
+<p style="margin:0.5rem 0 0">提示：需要 <code>from app.graph.safe_node import safe_node</code>，在仓库根目录用 <code>.venv/bin/python</code> 跑。</p>
+</div>
+
+<h2>4. 小测（拿到全对再进第 04 课）</h2>
+<section class="quiz">
+<h3>自测 · 4 题</h3>
+
+<div class="quiz-q" data-answer="b">
+<p class="quiz-stem">1. 节点函数里为什么禁止自己写 <code>try: ... except: pass</code>？</p>
+<label><input type="radio" name="q1" value="a"> 因为 Python 异步函数里的裸 except 会拦不住异常</label>
+<label><input type="radio" name="q1" value="b"> 因为吞掉异常后 error 不会写入 state，兜底链路失效</label>
+<label><input type="radio" name="q1" value="c"> 因为 ruff 的默认配置会把裸 except 报成语法错误</label>
+<p class="quiz-explain" hidden>异常被节点自己吞掉，@safe_node 就捕不到，state["error"] 不会写入，cascade 防御和 API 的 failed 状态全部失灵——错误被静默掩盖是最难排查的故障。</p>
+</div>
+
+<div class="quiz-q" data-answer="a">
+<p class="quiz-stem">2. 节点自己往返回值里写了 <code>trace</code>（带 decision），装饰器还会再追加一条同节点的 TraceEntry 吗？</p>
+<label><input type="radio" name="q2" value="a"> 不会，装饰器按节点名查重后才追加缺失的</label>
+<label><input type="radio" name="q2" value="b"> 会的，装饰器无条件追加自己那条耗时记录</label>
+<label><input type="radio" name="q2" value="c"> 会的，但框架合并时会自动去掉重复的条目</label>
+<p class="quiz-explain" hidden><code>if not any(_is_same_node(entry, node_name) ...)</code>——已有同名条目就不追加，所以自带 decision 的 trace 不会出现重复（safe_node.py:47-51）。</p>
+</div>
+
+<div class="quiz-q" data-answer="c">
+<p class="quiz-stem">3. 一个节点抛了异常，API 最终返回给 Java 调用方的是什么？</p>
+<label><input type="radio" name="q3" value="a"> HTTP 500 加上完整的 Python traceback 字符串</label>
+<label><input type="radio" name="q3" value="b"> HTTP 200 且 status 为 succeeded，错误只在日志</label>
+<label><input type="radio" name="q3" value="c"> HTTP 200 且 status 为 failed，带可读错误信息</label>
+<p class="quiz-explain" hidden>图不崩、正常走完并返回 Dify 协议响应，status="failed" + error.message（app/api/routes.py:99-104）。500 只发生在图外层的意外（也被 routes 的 except 转成 failed）。</p>
+</div>
+
+<div class="quiz-q" data-answer="b">
+<p class="quiz-stem">4. 后端接口返回了业务错误"订单不存在"，节点应该怎么处理？</p>
+<label><input type="radio" name="q4" value="a"> 抛出异常让 @safe_node 兜底并走 fallback 话术</label>
+<label><input type="radio" name="q4" value="b"> 当作正常业务结果写入 state，如实透传给用户</label>
+<label><input type="radio" name="q4" value="c"> 在节点里替换成更友好的话术再写入 state 里</label>
+<p class="quiz-explain" hidden>"订单不存在"是后端的真实业务响应，不是系统故障——@safe_node 只兜意外异常。改写后端响应触碰 P0 红线"不掩盖后端真实响应"（CLAUDE.md 绝对禁止清单）。</p>
+</div>
+
+<button class="quiz-check">核对答案</button>
+<p class="quiz-score"></p>
+</section>
+
+<h2>5. 延伸与下一课</h2>
+<ul>
+<li><strong>本课首选一手资料</strong>：<code>app/graph/safe_node.py</code> 全文 91 行（本课就是它的导读——现在回去通读一遍，应该每行都认识了）</li>
+<li>深入：<code>docs/training/langgraph-handbook.md</code> 第 2.3 节、第 4.5 节（Dify 默认错误行为对照）</li>
+<li>相关 ADR：<code>docs/adr/</code> 0001 D5/D6（safe_node 的设计出处）</li>
+<li>下一课：<a href="0004-llm-three-pieces.html">第 04 课 · LLM 三件套</a>——终于开始写真正的 LLM 节点</li>
+</ul>
+
+<footer class="lesson-footer">
+<p>实验第 4 步"图会崩"的具体表现，或任何看不懂的行，发给助教（图灵科技）。</p>
+</footer>
+
+</main>
+<script src="../assets/quiz.js"></script>
+</body>
+</html>
