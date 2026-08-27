@@ -9,7 +9,7 @@ dependencies:
 - current_identifier: null
   type: package
   value:
-    plugin_unique_identifier: langgenius/openai_api_compatible:0.0.22@88c295aff1ea52ea6ab56e3869ee37702d91f7b678c547254cf2b48271c8e81f
+    plugin_unique_identifier: langgenius/openai_api_compatible:0.0.55-1@d6b094b3217748ebfc992562cb1865eac85835935d0b30eeecc93722bdf13a60
     version: null
 kind: app
 version: 0.5.0
@@ -110,19 +110,6 @@ workflow:
         isInIteration: false
         isInLoop: false
         sourceType: if-else
-        targetType: llm
-      id: 1775735644609-true-1775735672603-target
-      selected: false
-      source: '1775735644609'
-      sourceHandle: 'true'
-      target: '1775735672603'
-      targetHandle: target
-      type: custom
-      zIndex: 0
-    - data:
-        isInIteration: false
-        isInLoop: false
-        sourceType: if-else
         targetType: end
       id: 1775735644609-false-1775735731507-target
       selected: false
@@ -156,114 +143,6 @@ workflow:
       targetHandle: target
       type: custom
       zIndex: 0
-    - data:
-        isInIteration: false
-        isInLoop: false
-        sourceType: code
-        targetType: code
-      id: 1775735803700-source-1775735848902-target
-      selected: false
-      source: '1775735803700'
-      sourceHandle: source
-      target: '1775735848902'
-      targetHandle: target
-      type: custom
-      zIndex: 0
-    - data:
-        isInIteration: false
-        isInLoop: false
-        sourceType: code
-        targetType: if-else
-      id: 1775735848902-source-1775735883116-target
-      selected: false
-      source: '1775735848902'
-      sourceHandle: source
-      target: '1775735883116'
-      targetHandle: target
-      type: custom
-      zIndex: 0
-    - data:
-        isInIteration: false
-        isInLoop: false
-        sourceType: if-else
-        targetType: end
-      id: 1775735883116-true-1775735898669-target
-      selected: false
-      source: '1775735883116'
-      sourceHandle: 'true'
-      target: '1775735898669'
-      targetHandle: target
-      type: custom
-      zIndex: 0
-    - data:
-        isInIteration: false
-        isInLoop: false
-        sourceType: if-else
-        targetType: iteration
-      id: 1775735883116-false-1775735915069-target
-      selected: false
-      source: '1775735883116'
-      sourceHandle: 'false'
-      target: '1775735915069'
-      targetHandle: target
-      type: custom
-      zIndex: 0
-    - data:
-        isInIteration: true
-        isInLoop: false
-        iteration_id: '1775735915069'
-        sourceType: iteration-start
-        targetType: code
-      id: 1775735915069start-source-1775735929909-target
-      selected: false
-      source: 1775735915069start
-      sourceHandle: source
-      target: '1775735929909'
-      targetHandle: target
-      type: custom
-      zIndex: 1002
-    - data:
-        isInIteration: true
-        isInLoop: false
-        iteration_id: '1775735915069'
-        sourceType: code
-        targetType: if-else
-      id: 1775735929909-source-1775735939182-target
-      selected: false
-      source: '1775735929909'
-      sourceHandle: source
-      target: '1775735939182'
-      targetHandle: target
-      type: custom
-      zIndex: 1002
-    - data:
-        isInIteration: true
-        isInLoop: false
-        iteration_id: '1775735915069'
-        sourceType: if-else
-        targetType: llm
-      id: 1775735939182-true-1775736021855-target
-      selected: false
-      source: '1775735939182'
-      sourceHandle: 'true'
-      target: '1775736021855'
-      targetHandle: target
-      type: custom
-      zIndex: 1002
-    - data:
-        isInIteration: true
-        isInLoop: false
-        iteration_id: '1775735915069'
-        sourceType: llm
-        targetType: code
-      id: 1775736021855-source-1775736037991-target
-      selected: false
-      source: '1775736021855'
-      sourceHandle: source
-      target: '1775736037991'
-      targetHandle: target
-      type: custom
-      zIndex: 1002
     - data:
         isInIteration: false
         isInLoop: false
@@ -306,34 +185,9 @@ workflow:
     - data:
         isInLoop: false
         sourceType: code
-        targetType: http-request
-      id: 1775913928411-source-1776168671136-target
-      selected: false
-      source: '1775913928411'
-      sourceHandle: source
-      target: '1776168671136'
-      targetHandle: target
-      type: custom
-      zIndex: 0
-    - data:
-        isInLoop: false
-        sourceType: http-request
-        targetType: code
-      id: 1776168671136-source-1776168771679-target
-      selected: false
-      source: '1776168671136'
-      sourceHandle: source
-      target: '1776168771679'
-      targetHandle: target
-      type: custom
-      zIndex: 0
-    - data:
-        isInLoop: false
-        sourceType: code
         targetType: llm
-      id: 1776168771679-source-1775735653728-target
-      selected: false
-      source: '1776168771679'
+      id: 1775913928411-source-1775735653728-target
+      source: '1775913928411'
       sourceHandle: source
       target: '1775735653728'
       targetHandle: target
@@ -341,36 +195,47 @@ workflow:
       zIndex: 0
     - data:
         isInLoop: false
-        sourceType: iteration
-        targetType: code
-      id: 1775735915069-source-1775736106719-target
-      selected: false
-      source: '1775735915069'
+        sourceType: code
+        targetType: llm
+      id: 1775913928411-source-1775735672603-target
+      source: '1775913928411'
       sourceHandle: source
-      target: '1775736106719'
+      target: '1775735672603'
       targetHandle: target
       type: custom
       zIndex: 0
     - data:
         isInLoop: false
         sourceType: code
-        targetType: code
-      id: 1775736106719-source-1777032234378-target
-      selected: false
-      source: '1775736106719'
+        targetType: llm
+      id: 1775913928411-source-1782200000003-target
+      source: '1775913928411'
       sourceHandle: source
-      target: '1777032234378'
+      target: '1782200000003'
       targetHandle: target
       type: custom
       zIndex: 0
     - data:
+        isInLoop: false
+        sourceType: llm
+        targetType: variable-aggregator
+      id: 1782200000003-source-1775735777660-target
+      source: '1782200000003'
+      sourceHandle: source
+      target: '1775735777660'
+      targetHandle: target
+      type: custom
+      zIndex: 0
+    - data:
+        isInIteration: false
         isInLoop: false
         sourceType: code
         targetType: end
-      id: 1777032234378-source-1775736154680-target
-      source: '1777032234378'
+      id: 1775735803700-source-1775735898669-target
+      selected: false
+      source: '1775735803700'
       sourceHandle: source
-      target: '1775736154680'
+      target: '1775735898669'
       targetHandle: target
       type: custom
       zIndex: 0
@@ -389,7 +254,27 @@ workflow:
           required: true
           type: paragraph
           variable: list
-      height: 108
+        - default: '[]'
+          hide: false
+          hint: ''
+          label: transactionTypes
+          max_length: 500
+          options: []
+          placeholder: ''
+          required: false
+          type: paragraph
+          variable: transactionTypes
+        - default: ''
+          hide: false
+          hint: ''
+          label: inferencePrompt
+          max_length: 1000000
+          options: []
+          placeholder: ''
+          required: false
+          type: paragraph
+          variable: inferencePrompt
+      height: 160
       id: '1775735320484'
       position:
         x: 80
@@ -435,7 +320,7 @@ workflow:
       sourcePosition: right
       targetPosition: left
       type: custom
-      width: 242
+      width: 241
     - data:
         cases:
         - case_id: 'true'
@@ -464,7 +349,7 @@ workflow:
       sourcePosition: right
       targetPosition: left
       type: custom
-      width: 242
+      width: 241
     - data:
         context:
           enabled: false
@@ -472,30 +357,82 @@ workflow:
         model:
           completion_params:
             enable_thinking: false
-            temperature: 0
+            temperature: 0.1
           mode: chat
-          name: external-kimi-k2.5
+          name: external-deepseek-v4-pro-non-thinking
           provider: langgenius/openai_api_compatible/openai_api_compatible
         prompt_template:
         - id: 52cbe606-d635-4f6f-9c09-ba6b47a4126c
           role: system
           text: "你是一个证券交易员，请将用户输入的标的名称转换为正确的证券标的代码和标的简称。\n\n当前日期：{{{{#1775913928411.date#}}}}\n\
-            {{#1776168771679.result#}}\n## 期货合约日期推断规则\n\n1. **合约粒度判断**：根据品种特性自行判断合约代码的最小时间粒度（月级或日级），按实际粒度推断代码\n\
+            交易品种范围（可空，JSON 数组）：{{{{#1775735320484.transactionTypes#}}}}\n{{#1775735320484.inferencePrompt#}}\n\
+            ## 期货合约日期推断规则\n\n1. **合约粒度判断**：根据品种特性自行判断合约代码的最小时间粒度（月级或日级），按实际粒度推断代码\n\
             2. **日期补全逻辑**：\n   - 用户**明确指定了完整日期（年+月 或 年+月+日）**：尊重用户意图，直接输出对应合约，即使已过期\n\
             \   - 用户**只指定了月份（或月+日），未指定年份**：优先匹配当前日期之后最近的该月（该日）合约\n   - 用户**未指定任何日期**：输出当前日期之后最近的未到期合约\n\
-            \n## 期货合约代码格式规则\n\n期货代码分两种格式，必须根据交易所/市场判断后选用，不得混用：\n\n### 1. 国内期货（上期所\
-            \ SHFE、大商所 DCE、郑商所 CZCE、中金所 CFFEX、上期能源 INE 等）\n\n格式：品种代码 + YYMM（2 位年份\
-            \ + 2 位月份，共 4 位数字）\n\n- 示例：沪铜 2026 年 9 月 → `CU2609`；豆粕 2026 年 12 月 → `M2612`；沪深\
-            \ 300 股指 2026 年 6 月 → `IF2606`\n\n### 2. 国际期货（CME / COMEX / NYMEX / ICE\
-            \ / LME / CBOT / SGX 等海外交易所）\n\n格式：品种代码 + 月份字母 + YY（2 位年份）\n\n**月份字母映射表**（行业通用，严格记忆）：\n\
-            \n| 月份 | 字母 | 月份 | 字母 |\n| --- | --- | --- | --- |\n| 1月 | F | 7月 | N\
-            \ |\n| 2月 | G | 8月 | Q |\n| 3月 | H | 9月 | U |\n| 4月 | J | 10月 | V |\n\
-            | 5月 | K | 11月 | X |\n| 6月 | M | 12月 | Z |\n\n**强约束**：月份字母在前、2 位年份在后，顺序严禁颠倒（不可写成\"\
-            品种+年份+字母\"）。\n\n- 示例：NYMEX_WTI 原油 2026 年 5 月 → `CLK26`（CL + K + 26）\n\
-            - 示例：CBOT 大豆 2026 年 7 月 → `ZSN26`（ZS + N + 26）\n- 示例：ICE 棉花 2026 年 3 月\
-            \ → `CTH26`（CT + H + 26）\n\n### 国际期货识别提示\n\n输入中出现以下关键词时，按国际期货格式输出：\n-\
-            \ 交易所/市场前缀：`COMEX`、`NYMEX`、`CME`、`ICE`、`LME`、`CBOT`、`SGX`、`IPE`\n- 国际品种简称：`WTI`、`布伦特/Brent`、`伦铜/伦铝/伦锌`\
-            \ 等 LME 品种\n- 品种本身只在海外市场上市的情况\n\n## 纠错识别规则\n\n若输入的名称无法直接匹配已知标的，必须先尝试以下纠错推断，再得出结论：\n\
+            3. **必须是可下单的具体到期月份合约（强约束）**：\n   - **严禁输出主力 / 连续 / 加权 / 指数 等合成合约代码**，因为它们在\
+            \ GOATS 交易系统**无法下单**，输出即等于无效推断\n   - 典型不可下单代码（绝对禁止）：`CU0`、`CU00`、`CU99`、`CUMAIN`、`CUL9`、`CFD连续`、`沪铜主力`、`沪铜加权`、`沪铜指数`、`IFM`、`IF0`、`IF00`、`CL主力`、`CL连续`\
+            \ 等。这类代码的共同特征：后缀含 `0/00/99/L9/M/MAIN/主力/主连/连续/加权/指数`\n   - 即便用户输入是\"沪铜主力\"\
+            \"沪铜主连\"\"沪铜连续\"\"IF 主力\"等指代主合约的表达，也必须**回落到当前最近的未到期具体月份合约**（如当前 2026-05\
+            \ 推断 → `CU2606` 而不是 `CU0`），并在 `<analysis>` 中说明\"主力合约不可下单，回落到 YYYY 年 M\
+            \ 月最近月合约\"\n   - `value` 数组**第 0 个元素必须是带具体年月（YYMM 或 月份字母+YY）的可交易合约**；如果同时识别出多个候选月份，按到期由近到远排序，主力\
+            \ / 连续等合成代码一律不进 `value`\n\n## 期货合约代码格式规则\n\n期货代码分两种格式，必须根据交易所/市场判断后选用，不得混用：\n\
+            \n### 1. 国内期货（上期所 SHFE、大商所 DCE、郑商所 CZCE、中金所 CFFEX、上期能源 INE 等）\n\n格式：品种代码\
+            \ + YYMM（2 位年份 + 2 位月份，共 4 位数字）\n\n- 示例：沪铜 2026 年 9 月 → `CU2609`；豆粕 2026\
+            \ 年 12 月 → `M2612`；沪深 300 股指 2026 年 6 月 → `IF2606`\n\n### 2. 国际期货（CME\
+            \ / COMEX / NYMEX / ICE / LME / CBOT / SGX 等海外交易所）\n\n格式：品种代码 + 月份字母 +\
+            \ YY（2 位年份）\n\n**月份字母映射表**（行业通用，严格记忆）：\n\n| 月份 | 字母 | 月份 | 字母 |\n| ---\
+            \ | --- | --- | --- |\n| 1月 | F | 7月 | N |\n| 2月 | G | 8月 | Q |\n| 3月\
+            \ | H | 9月 | U |\n| 4月 | J | 10月 | V |\n| 5月 | K | 11月 | X |\n| 6月 | M\
+            \ | 12月 | Z |\n\n**强约束**：月份字母在前、2 位年份在后，顺序严禁颠倒（不可写成\"品种+年份+字母\"）。\n\n\
+            - 示例：NYMEX_WTI 原油 2026 年 5 月 → `CLK26`（CL + K + 26）\n- 示例：CBOT 大豆 2026\
+            \ 年 7 月 → `ZSN26`（ZS + N + 26）\n- 示例：ICE 棉花 2026 年 3 月 → `CTH26`（CT +\
+            \ H + 26）\n\n### 国际期货识别提示\n\n输入中出现以下关键词时，按国际期货格式输出：\n- 交易所/市场前缀：`COMEX`、`NYMEX`、`CME`、`ICE`、`LME`、`CBOT`、`SGX`、`IPE`\n\
+            - 国际品种简称：`WTI`、`布伦特/Brent`、`伦铜/伦铝/伦锌` 等 LME 品种\n- 品种本身只在海外市场上市的情况\n\n\
+            ## 交易品种范围限制规则\n\n### 变量来源与含义\n\n- 顶部声明的 `交易品种范围` 字段由调用方注入，**可能不传**\n-\
+            \ 可能取值：`null` / `\"\"` / `[]` / `[\"A_SHARE\",\"HK_STOCK\"]` / `[\"A股\"\
+            ,\"港股\"]`（**枚举 code 与中文名两种写法都识别**）\n- 若占位符 为`null` / `\"\"` / `[]` **视为空，按\"\
+            不约束\"处理**\n\n后端枚举 `GoatsTransactionType` 全集对照：\n\n| 枚举 code | 中文名 | 是否支持互换\
+            \ |\n| --- | --- | --- |\n| A_SHARE | A股 | true |\n| HK_STOCK | 港股 | true\
+            \ |\n| US_STOCK | 美股 | true |\n| SZ_HK_CONNECT | 深港通 | true |\n| SH_HK_CONNECT\
+            \ | 沪港通 | true |\n| CHN_FUTURE | 境内期货 | false |\n| CROSS_FUTURE | 跨境期货\
+            \ | true |\n| CROSS_OTHER | 其他境外市场股票 | true |\n\n### 判定逻辑\n\n- 范围为 `null`\
+            \ / `\"\"` / `[]` / 占位符未替换 → **不约束**，按原规则推断\n- 范围非空 → **只能输出该范围内的标的**\n\
+            \  - 输入俗称对应的标的在范围内 → 正常返回 `[代码, 名称, ...]`\n  - 输入俗称对应的标的**不在范围内任何一个品种**\
+            \ → value 输出空数组 `[]`，并在 `<analysis>` 中标注「超出指定品种范围（实际品种：xxx，允许范围：yyy）」\n\
+            \n### 品种 → 代码格式对照\n\n| 品种 | 代码后缀 / 格式 | 示例 |\n| --- | --- | --- |\n| A股\
+            \ | 6 位数字 + `.SH`（上交所）/ `.SZ`（深交所），含创业板 300xxx、科创板 688xxx、A 股 ETF | `601398.SH`、`300750.SZ`、`588000.SH`\
+            \ |\n| 港股 | 4~5 位数字 + `.HK` | `0700.HK`、`9988.HK` |\n| 美股 | 字母代码（部分场景带\
+            \ `.US` 后缀） | `AAPL`、`TSLA` |\n| 深港通 | 港股代码 + 港股通通道（按上下文判定，无独立后缀） | `0700.HK`（经深港通）\
+            \ |\n| 沪港通 | 港股代码 + 港股通通道（按上下文判定，无独立后缀） | `0700.HK`（经沪港通） |\n| 境内期货 |\
+            \ 品种代码 + YYMM | `CU2609`、`M2612`、`IF2606` |\n| 跨境期货 | 品种代码 + 月份字母 + YY\
+            \ | `CLK26`、`ZSN26`、`CTH26` |\n| 其他境外市场股票 | 因市场而异（如东京 4 位 + `.T`、新加坡 +\
+            \ `.SI`、伦敦 + `.L` 等） | `7203.T`、`U96.SI` |\n\n### 与已有规则的优先级（从高到低）\n\n\
+            1. **范围约束**：超范围直接 `[]`，不再走下面任何识别\n2. ETF / 公募基金的\"基金管理人\"消歧\n3. 纠错识别（错别字\
+            \ / 同音字 / 多字 / 漏字）\n4. 部分提取（输入含非标的片段）\n\n### 歧义场景与范围的交互\n\n- 输入\"沪深300\
+            \ ETF\"（无管理人前缀）+ 范围 `[\"A_SHARE\"]`：候选 ETF 均为 A 股代码，仍按\"未指定基金管理人，列出全部候选\"\
+            输出\n- 输入\"恒生科技 ETF\" + 范围 `[\"A_SHARE\"]`：恒生科技 ETF（513180.SH 等）属 A 股 QDII，落在范围内，按多候选输出\n\
+            - 输入\"腾讯\" + 范围 `[\"A_SHARE\"]`：腾讯控股 0700.HK 属港股，超出范围 → `[]`\n- 输入\"腾讯\"\
+            \ + 范围 `[\"HK_STOCK\",\"SZ_HK_CONNECT\"]`：在范围内 → `[\"0700.HK\", \"腾讯控股\"\
+            ]`\n\n## ETF / 公募基金标的识别规则\n\n### 核心约束\n\nETF / 公募基金类标的，必须解析到 **\"基金管理人\
+            \ + 产品\"** 维度，**严禁在\"底层跟踪指数\"层做归一**。底层指数相同 ≠ 同一标的：\n\n- 不同基金公司发行的同指数 ETF\
+            \ 在衍生品定价场景下是完全不同的标的\n- 价格序列、IOPV、隐含波动率、流动性、借券成本、分红除权时点全部各自独立\n- 衍生品合约的标的资产是法律意义上的具体证券，券商对冲也是按具体代码做的，不能用同指数另一只\
+            \ ETF 替代\n\n### 基金管理人前缀（关键消歧词，识别到必须保留）\n\n常见基金管理人公司名：华夏、华泰柏瑞、南方、易方达、嘉实、博时、广发、汇添富、富国、华安、招商、鹏华、工银瑞信、建信、中银、银华、大成、国泰、海富通、平安\
+            \ 等。\n\n输入若包含这些公司前缀（如\"华泰柏瑞300\"、\"南方中证500\"、\"易方达创业板\"），必须按对应基金匹配，**不得跨基金归一**。\n\
+            \n### 同指数多管理人 ETF 的判定原则\n\n以下 ETF 品类在市场上均存在多家基金管理人发行的同指数产品，且代码各异、定价独立：\n\
+            \n- 沪深300 ETF（CSI300）\n- 中证500 ETF（CSI500）\n- 科创50 ETF（STAR50）\n- 创业板\
+            \ ETF（GEI）\n- 恒生科技 ETF（HSTECH）\n- 半导体 ETF、医药 ETF、消费 ETF 等行业类同样存在多家管理人\n\
+            \n对上述任何品类：\n\n- 输入**带管理人前缀**：按\"管理人 + 品类\"精确对应到该基金发行的具体证券代码，**不要**因为底层指数相同而归并到同品类的其他基金代码\n\
+            - 输入**不带管理人前缀**：按下方\"歧义处理\"规则输出全部主流候选代码\n\n请基于你已有的金融知识完成中文俗称 → 证券代码的映射（不要在\
+            \ prompt 中硬编码具体代码），关键是**始终在\"基金管理人 + 产品\"维度做识别**，不要塌缩到指数层。\n\n### 歧义处理：未指定基金管理人时，输出全部主流候选代码\n\
+            \n当输入只命中 ETF 品类（如\"沪深300 ETF\"、\"中证500 ETF\"、\"创业板 ETF\"），**未携带任何基金管理人前缀**时：\n\
+            \n- **不要** silent pick 单一代码\n- **不要** 输出空数组 `[]`（品类已识别，不属于\"无法推断\"）\n\
+            - value 数组**只放候选代码**（按市场规模 / 流动性从大到小排序），**不交错名称**\n- 候选数量 ≤ 5（命中数组上限），取头部主流即可\n\
+            - 在 `<analysis>` 中标注 \"未指定基金管理人，列出全部候选\"，并对应给出基金公司\n\n**带管理人前缀**的输入（如\"\
+            华泰柏瑞沪深300\"、\"南方中证500\"），仍按 `[代码, 名称]` 单一候选输出，与默认规则一致。\n\n### 与\"纠错识别规则\"\
+            的优先级\n\n先做基金管理人识别 + 消歧，**再**做纠错。\n反例：用户写\"华泰柏瑞300\" → **不要**纠正为\"华夏300\"\
+            ，二者是不同基金管理人，纠错会引入新的标的错误。基金管理人前缀视为强约束，纠错只能在同一管理人/产品族内做。\n\n## 纠错识别规则\n\n\
+            **纠错仅适用于「中文名称」的字符笔误（下列 4 类）；纯数字串 / 代码绝不纠错**——不得把数字补全、改写或凑成另一个代码（例如把位数不足的数字凑成\
+            \ 6 位 A股代码），数字一律按原文当代码 keyword 处理，宁可不识别也绝不臆造代码。\n若输入的名称无法直接匹配已知标的，必须先尝试以下纠错推断，再得出结论：\n\
             \n1. **错别字**：字形相近导致的笔误，如\"腾迅\"→\"腾讯\"、\"平安人险\"→\"平安人寿\"\n2. **同音字**：发音相同或相近的字替换，如\"\
             格里\"→\"格力\"、\"中信证劵\"→\"中信证券\"\n3. **多字**：输入中多出了字，如\"中国中平煤炭\"→\"中国中煤\"\n\
             4. **漏字**：输入中缺少了字，如\"宁德时\"→\"宁德时代\"、\"贵州茅\"→\"贵州茅台\"\n\n纠错置信度判断：\n- **唯一合理匹配**\
@@ -503,23 +440,31 @@ workflow:
             \ 中输出置信度最高的一个\n- **无法推断** → result 中对应 value 输出空数组 `[]`\n\n## 部分提取规则\n\
             \n若输入整体无法匹配已知标的，但其中**包含可识别的证券名称片段**（其余部分为基金产品名、账户名、机构名等非标的信息），则：\n- 提取可识别的证券名称片段，按正常流程推断其代码和名称\n\
             - result 的 key 仍为原始输入原文，value 输出提取到的证券信息\n- 在 analysis 中说明提取过程，如：\"识别到证券名称'贵州茅台'，其余部分'鑫远稳健一号'为产品名称，忽略\"\
-            \n- 若输入中包含多个可识别的证券名称，逐一输出，合并进同一 value 数组（不超过5个元素）\n\n## 输出要求\n分两步输出：\n\
-            \n第一步：在 <analysis> 标签内，逐个分析每个输入项。若发生纠错，格式为：\n`\"输入原文\"（纠错：X→Y，原因：同音字/错别字/多字/漏字）：推断结果...`\n\
-            若无需纠错，正常说明推断过程。对于期货品种，说明品种代码、月份代码、年份，推导出完整合约代码和合约名称，并生成兜底关键词；对于股票/ETF等品种，推断出其规范的标的简称。\n\
-            \n第二步：在 <result> 标签内，输出纯 JSON（不要 ```json 包裹）。\n\n格式如下：\n\n<analysis>\n\
-            \"9月沪铜期货\"：上期所铜期货代码CU，2026年9月→代码CU2609，名称\"沪铜2609\"，兜底关键词\"沪铜26\"\n\"\
-            12月豆粕期货\"：大商所豆粕期货代码M，2026年12月→代码M2612，名称\"豆粕2612\"，兜底关键词\"豆粕26\"\n\"5月WTI原油\"\
-            ：NYMEX_WTI 原油代码 CL，2026 年 5 月→月份字母 K，代码 CLK26，名称\"WTI原油2605\"，兜底关键词\"\
-            WTI原油26\"\n\"腾讯\"：港股腾讯控股→代码0700.HK，名称\"腾讯控股\"（非期货，无兜底关键词）\n\"腾迅\"（纠错：腾迅→腾讯，同音字）：港股腾讯控股→代码0700.HK，名称\"\
-            腾讯控股\"（非期货，无兜底关键词）\n\"宁德时\"（纠错：宁德时→宁德时代，漏字）：A股宁德时代→代码300750.SZ，名称\"宁德时代\"\
-            （非期货，无兜底关键词）\n</analysis>\n<result>\n{\"9月沪铜期货\": [\"CU2609\", \"沪铜2609\"\
-            , \"沪铜26\"], \"12月豆粕期货\": [\"M2612\", \"豆粕2612\", \"豆粕26\"], \"5月WTI原油\"\
-            : [\"CLK26\", \"WTI原油2605\", \"WTI原油26\"], \"腾讯\": [\"0700.HK\", \"腾讯控股\"\
-            ], \"腾迅\": [\"0700.HK\", \"腾讯控股\"], \"宁德时\": [\"300750.SZ\", \"宁德时代\"\
+            \n- 若输入中包含多个可识别的证券名称，逐一输出，合并进同一 value 数组（不超过5个元素）\n\n## 输出要求\n\n分两步输出。\n\
+            \n第一步：在 <analysis> 标签内，**每个输入项只输出一行**，格式：\n`\"输入原文\" → [代码, 名称(, 兜底词)]\
+            \ | 依据`\n依据栏只在发生纠错 / 主力回落 / 多候选消歧 / 超出品种范围时写一句简短说明，否则留空；不要逐项展开长推理。\n\n\
+            第二步：在 <result> 标签内，输出纯 JSON（不要 ```json 包裹）。\n\n示例：\n<analysis>\n\"9月沪铜期货\"\
+            \ → [CU2609, 沪铜2609, 沪铜26] |\n\"腾迅\" → [0700.HK, 腾讯控股] | 纠错 腾迅→腾讯\n\"\
+            沪深300ETF\" → [510300.SH, 159919.SZ, 510310.SH, 510330.SH] | 未指定基金管理人，列全部候选\n\
+            \"沪铜主力\" → [CU2606, 沪铜2606, 沪铜26] | 主力不可下单，回落最近月\n\"苹果\"（范围[A_SHARE,HK_STOCK]）→\
+            \ [] | 超出品种范围(US_STOCK)\n</analysis>\n<result>\n{\"9月沪铜期货\": [\"CU2609\"\
+            , \"沪铜2609\", \"沪铜26\"], \"12月豆粕期货\": [\"M2612\", \"豆粕2612\", \"豆粕26\"\
+            ], \"5月WTI原油\": [\"CLK26\", \"WTI原油2605\", \"WTI原油26\"], \"腾讯\": [\"0700.HK\"\
+            , \"腾讯控股\"], \"腾迅\": [\"0700.HK\", \"腾讯控股\"], \"宁德时\": [\"300750.SZ\"\
+            , \"宁德时代\"], \"华泰柏瑞沪深300ETF\": [\"510300.SH\", \"沪深300ETF（华泰柏瑞）\"], \"\
+            沪深300ETF\": [\"510300.SH\", \"159919.SZ\", \"510310.SH\", \"510330.SH\"\
+            ], \"工商银行\": [\"601398.SH\", \"工商银行\"], \"苹果\": [], \"沪铜主力\": [\"CU2606\"\
+            , \"沪铜2606\", \"沪铜26\"], \"IF 主连\": [\"IF2606\", \"沪深300股指2606\", \"沪深300股指26\"\
             ]}\n</result>\n\nJSON 规则：\n- key 必须是原始输入项原文（不替换为纠正后的名称）\n- value 是字符串数组，代码在前、名称在后\n\
             - **期货合约**（含具体到期月份的合约）额外在数组末尾追加一个兜底关键词：格式为\"品种中文名 + 2位年份\"，如\"沪铜26\"、\"\
             豆粕26\"，用于在精确代码搜索失败时兜底查询\n- 非期货品种（股票、ETF等）不追加兜底关键词\n- 数组内不得重复，每个数组最多 5\
-            \ 个元素\n- 名称须为规范标的简称，不得直接使用输入的简称或别名\n- 无法推断时 value 输出空数组 `[]`\n\n----------"
+            \ 个元素\n- 名称须为规范标的简称，不得直接使用输入的简称或别名\n- 无法推断时 value 输出空数组 `[]`\n- 若顶部\"\
+            交易品种范围\"非空且输入标的的实际品种**不在该范围内**，value 输出空数组 `[]`，并在 analysis 中说明「超出指定品种范围（实际品种：xxx，允许范围：yyy）」\n\
+            - **期货合约首位必须是可下单代码（强约束）**：\n  - `value` 数组的**第 0 个元素**必须是带具体到期月份的可交易合约代码（YYMM\
+            \ 或 月份字母+YY 格式），**严禁**把主力 / 连续 / 加权 / 指数等合成代码（`CU0`、`CU00`、`CU99`、`CUMAIN`、`IFM`、`CL连续`、`沪铜主力`\
+            \ 等）放在首位，**任何位置都不要输出**\n  - 用户输入若是\"沪铜主力\"\"IF 主力\"\"WTI 连续\"等指代主合约的表达，回落到当前日期之后最近的未到期具体月合约（如\
+            \ `CU2606`、`IF2606`、`CLM26`），并在 `<analysis>` 中标注\"主力合约不可下单，回落到最近月合约 YYYYMM\"\
+            \n  - 多个候选月份合约共存时，按到期由近到远排序，最近月在第 0 个\n\n----------"
         - id: 63438c18-ddcf-44df-b82e-50639b7c0a7c
           role: user
           text: '{{#1775735613760.result#}}
@@ -533,25 +478,94 @@ workflow:
       height: 87
       id: '1775735653728'
       position:
-        x: 1389.2817076684757
+        x: 1326.3088178231778
         y: 146.64524766644954
       positionAbsolute:
-        x: 1389.2817076684757
+        x: 1326.3088178231778
         y: 146.64524766644954
-      selected: false
+      selected: true
       sourcePosition: right
       targetPosition: left
       type: custom
-      width: 242
+      width: 241
     - data:
         context:
           enabled: false
           variable_selector: []
         model:
           completion_params:
+            enable_thinking: false
             temperature: 0.1
           mode: chat
-          name: internal-qwen3-30b-a3b
+          name: external-deepseek-v4-pro-non-thinking
+          provider: langgenius/openai_api_compatible/openai_api_compatible
+        prompt_template:
+        - id: a1b2c3d4-0001-4000-8000-000000000001
+          role: system
+          text: '你是一个金融标的类型判别助手。根据每个输入项，判断它最可能对应的标的类型，输出标准枚举之一：
+
+            - EQUITY：个股 / 股票（如 贵州茅台、0700.HK、AAPL、平安银行）
+
+            - FUND：基金 / ETF / LOF（名称含 ETF、LOF、基金、指数增强 等，如 科创50ETF、纳斯达克100ETF、沪深300ETF）
+
+            - FUTURE：期货 / 期货合约（品种名 + 月份/主力/合约代码，如 沪铜2601、IF2506、CLM25、WTI原油、螺纹钢主力）
+
+            - INDEX：指数本身（如 沪深300、中证500、标普500，且未含 ETF/基金字样）
+
+
+            判别要点：
+
+            - 名称/简称带 ETF、LOF、基金、指数增强 → FUND
+
+            - 纯指数名（沪深300、中证500、纳斯达克100）且未含 ETF/基金字样 → INDEX
+
+            - 期货品种 + 月份/主力/期货合约代码（IF2506、沪锌10月、CLM25.NYM）→ FUTURE
+
+            - 其余可交易个股 → EQUITY
+
+            - 无法高置信判断时，输出空字符串（宁可不判，交由后端不过滤兜底）
+
+
+            ## 输出格式
+
+            严格输出纯 JSON，禁止使用 markdown 代码块包裹，禁止任何额外文字。
+
+            key 必须是原始输入项原文，value 是上述枚举之一或空串：
+
+            {"原始输入1": "EQUITY", "原始输入2": "FUND", "原始输入3": ""}'
+        - id: a1b2c3d4-0002-4000-8000-000000000002
+          role: user
+          text: '{{#1775735613760.result#}}
+
+            '
+        selected: false
+        title: 大模型判断标的类型
+        type: llm
+        vision:
+          enabled: false
+      height: 87
+      id: '1782200000003'
+      position:
+        x: 1326.3088178231778
+        y: 420
+      positionAbsolute:
+        x: 1326.3088178231778
+        y: 420
+      selected: false
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 241
+    - data:
+        context:
+          enabled: false
+          variable_selector: []
+        model:
+          completion_params:
+            enable_thinking: false
+            temperature: 0.1
+          mode: chat
+          name: external-deepseek-v4-pro-non-thinking
           provider: langgenius/openai_api_compatible/openai_api_compatible
         prompt_template:
         - id: d03beda4-d446-452b-92d0-6e5087e859ed
@@ -614,36 +628,37 @@ workflow:
             \ → `[\"513110\", \"纳斯达克100\"]`\n- `科创50ETF588000` → `[\"588000\", \"\
             科创50ETF\"]`\n\n但：\n- `科创50` 不能拆成 `[\"50\", \"科创\"]`\n- `沪深300` 不能拆成 `[\"\
             300\", \"沪深\"]`\n\n## 市场/交易所前缀分词规则\n\n当输入项以常见市场/交易所/板块前缀词开头，且去掉前缀后剩余部分是有意义的名称或代码（长度\
-            \ ≥ 2 个字符）时，必须拆分为两个独立 keyword。\n\n### 前缀词表\n\n- 境内市场：`A股`、`沪市`、`深市`、`沪股`、`深股`、`北交所`、`新三板`\n\
+            \ ≥ 2 个字符）时，去掉前缀只保留剩余部分作为 keyword——**市场/交易所/板块前缀词本身是导航词、对标的数据库查询无帮助，识别出来后不要输出为\
+            \ keyword**。\n\n### 前缀词表\n\n- 境内市场：`A股`、`沪市`、`深市`、`沪股`、`深股`、`北交所`、`新三板`\n\
             - 境内板块：`科创板`、`创业板`、`主板`\n- 境外市场：`港股`、`美股`、`日股`、`英股`、`新加坡`\n- 交易所简称：`纳斯达克`、`纽交所`、`港交所`、`上交所`、`深交所`\n\
             \n### 不拆分例外词表\n\n以下词虽然以前缀词开头，但本身是完整的产品/概念名称，不应拆分：\n\n- `港股通`、`沪股通`、`深股通`\n\
             - `沪深通`\n- `A股通`\n\n遇到例外词表中的词时，整体作为一个 name keyword 输出，不拆分。\n当输入项以例外词开头时，不再尝试拆分前缀，整体按普通名称处理。\n\
             \n### 分词规则\n\n1. 优先检查不拆分例外词表：如果输入项以例外词开头，跳过前缀分词，按普通名称规则处理\n2. 前缀词必须完整匹配（不能截断匹配）\n\
-            3. 去掉前缀后剩余部分长度必须 ≥ 2 个字符\n4. 拆分后的前缀和剩余部分各自作为独立 keyword\n5. 此规则可与代码提取规则叠加：如果剩余部分包含高置信代码，继续按已有规则提取\n\
-            \n### 前缀分词示例\n\n- `美股苹果` → `[\"美股\", \"苹果\"]`\n- `A股中国平安` → `[\"A股\",\
-            \ \"中国平安\"]`\n- `科创板中芯国际` → `[\"科创板\", \"中芯国际\"]`\n- `美股TSLA` → `[\"美股\"\
-            , \"TSLA\"]`\n- `沪市600519` → `[\"沪市\", \"600519\"]`\n- `港交所00700腾讯` →\
-            \ `[\"港交所\", \"00700\", \"腾讯\"]`（前缀拆分 + 代码名称拆分叠加）\n\n不拆分的情况：\n- `港股通`\
-            \ → `[\"港股通\"]`（例外词表命中）\n- `沪股通50ETF` → `[\"沪股通50ETF\"]`（以例外词开头，不拆分前缀）\n\
-            \n## 期货名称去噪规则\n\n以下规则**非常重要**，用于处理\"自然语言描述的期货标的\"。\n\n当输入项整体在描述**单一期货标的**，且没有出现完整标准期货代码，但出现了自然语言月份、交割月份、或\
-            \ `期货/合约/主力` 等修饰词时：\n- 不要把 `1月`、`6月`、`10月`、`12月` 这种自然语言月份识别为代码 keyword\n\
-            - 不要把 `期货`、`合约`、`交割`、`主力`、`次主力` 原样保留在 name keyword 中\n- 要尽量提取出更容易命中库内简称的核心词\n\
-            \n### 去噪处理规则\n\n1. 国内期货：优先保留品种核心词，如 `沪锌`、`线材`、`工业硅`、`豆一`，去掉月份/主力修饰\n\n\
-            2. 海外期货：如果交易所前缀是库内简称的重要组成部分，保留（如 `NYMEX_WTI原油`、`CBOT玉米`）\n\n3. 交易所后接过短商品简称时：至少保留交易所\
-            \ token（如 `sgx`）\n\n### 期货去噪示例\n\n- `6月WTI原油` → `[\"WTI原油\"]`\n- `沪锌10月`\
-            \ → `[\"沪锌\"]`\n- `线材1月` → `[\"线材\"]`\n- `6月sgx铁期货` → `[\"sgx\"]`\n- `NYMEX_WTI原油2506`\
-            \ → `[\"2506\", \"NYMEX_WTI原油\"]`\n- `CBOT玉米2507` → `[\"2507\", \"CBOT玉米\"\
-            ]`\n- `ZN2510` → `[\"ZN2510\"]`\n- `CLM25.NYM` → `[\"CLM25.NYM\", \"CLM25\"\
-            ]`（带后缀，输出两个）\n\n## Keyword 提取规则\n\n### 规则 1：整项就是代码\n如果整个输入项本身就是一个完整代码，则输出该代码的\
-            \ keyword：\n- 无后缀：`[\"code\"]`\n- 带后缀：`[\"code.SUFFIX\", \"code\"]`（两个）\n\
-            \n例如：\n- `2333` → `[\"2333\"]`\n- `02513` → `[\"02513\"]`\n- `600519`\
-            \ → `[\"600519\"]`\n- `600519.SH` → `[\"600519.SH\", \"600519\"]`\n- `AAOI`\
-            \ → `[\"AAOI\"]`\n- `AAOI.O` → `[\"AAOI.O\", \"AAOI\"]`\n- `IF2506` →\
-            \ `[\"IF2506\"]`\n- `IF2506.CFE` → `[\"IF2506.CFE\", \"IF2506\"]`\n\n\
-            ### 规则 2：整项就是名称\n如果整个输入项本身更像名称，且未出现高置信代码，则输出整体名称（期货去噪后的核心词）：\n\n例如：\n\
-            - `智谱` → `[\"智谱\"]`\n- `贵州茅台` → `[\"贵州茅台\"]`\n- `纳斯达克100` → `[\"纳斯达克100\"\
-            ]`\n- `MSCI中国A50ETF` → `[\"MSCI中国A50ETF\"]`\n- `6月WTI原油` → `[\"WTI原油\"\
-            ]`（去噪）\n- `沪锌10月` → `[\"沪锌\"]`（去噪）\n\n### 规则 3：一个代码 + 一个名称\n从输入项中识别并提取代码和名称：\n\
+            3. 去掉前缀后剩余部分长度必须 ≥ 2 个字符\n4. 只输出去掉前缀后的剩余部分作为 keyword；识别出的市场/交易所/板块前缀词本身不输出\n\
+            5. 此规则可与代码提取规则叠加：如果剩余部分包含高置信代码，继续按已有规则提取\n\n### 前缀分词示例\n\n- `美股苹果` → `[\"\
+            苹果\"]`（去掉市场词「美股」）\n- `A股中国平安` → `[\"A股\", \"中国平安\"]`\n- `科创板中芯国际` → `[\"\
+            中芯国际\"]`（去掉板块词「科创板」）\n- `美股TSLA` → `[\"美股\", \"TSLA\"]`\n- `沪市600519`\
+            \ → `[\"600519\"]`（去掉市场词「沪市」）\n- `港交所00700腾讯` → `[\"00700\", \"腾讯\"]`（去掉交易所词「港交所」，保留代码+名称）\n\
+            \n不拆分的情况：\n- `港股通` → `[\"港股通\"]`（例外词表命中）\n- `沪股通50ETF` → `[\"沪股通50ETF\"\
+            ]`（以例外词开头，不拆分前缀）\n\n## 期货名称去噪规则\n\n以下规则**非常重要**，用于处理\"自然语言描述的期货标的\"。\n\
+            \n当输入项整体在描述**单一期货标的**，且没有出现完整标准期货代码，但出现了自然语言月份、交割月份、或 `期货/合约/主力` 等修饰词时：\n\
+            - 不要把 `1月`、`6月`、`10月`、`12月` 这种自然语言月份识别为代码 keyword\n- 不要把 `期货`、`合约`、`交割`、`主力`、`次主力`\
+            \ 原样保留在 name keyword 中\n- 要尽量提取出更容易命中库内简称的核心词\n\n### 去噪处理规则\n\n1. 国内期货：优先保留品种核心词，如\
+            \ `沪锌`、`线材`、`工业硅`、`豆一`，去掉月份/主力修饰\n\n2. 海外期货：如果交易所前缀是库内简称的重要组成部分，保留（如 `NYMEX_WTI原油`、`CBOT玉米`）\n\
+            \n3. 交易所后接过短商品简称时：至少保留交易所 token（如 `sgx`）\n\n### 期货去噪示例\n\n- `6月WTI原油`\
+            \ → `[\"WTI原油\"]`\n- `沪锌10月` → `[\"沪锌\"]`\n- `线材1月` → `[\"线材\"]`\n- `6月sgx铁期货`\
+            \ → `[\"sgx\"]`\n- `NYMEX_WTI原油2506` → `[\"2506\", \"NYMEX_WTI原油\"]`\n\
+            - `CBOT玉米2507` → `[\"2507\", \"CBOT玉米\"]`\n- `ZN2510` → `[\"ZN2510\"]`\n\
+            - `CLM25.NYM` → `[\"CLM25.NYM\", \"CLM25\"]`（带后缀，输出两个）\n\n## Keyword 提取规则\n\
+            \n### 规则 1：整项就是代码\n如果整个输入项本身就是一个完整代码，则输出该代码的 keyword：\n- 无后缀：`[\"code\"\
+            ]`\n- 带后缀：`[\"code.SUFFIX\", \"code\"]`（两个）\n\n例如：\n- `2333` → `[\"2333\"\
+            ]`\n- `02513` → `[\"02513\"]`\n- `600519` → `[\"600519\"]`\n- `600519.SH`\
+            \ → `[\"600519.SH\", \"600519\"]`\n- `AAOI` → `[\"AAOI\"]`\n- `AAOI.O`\
+            \ → `[\"AAOI.O\", \"AAOI\"]`\n- `IF2506` → `[\"IF2506\"]`\n- `IF2506.CFE`\
+            \ → `[\"IF2506.CFE\", \"IF2506\"]`\n\n### 规则 2：整项就是名称\n如果整个输入项本身更像名称，且未出现高置信代码，则输出整体名称（期货去噪后的核心词）：\n\
+            \n例如：\n- `智谱` → `[\"智谱\"]`\n- `贵州茅台` → `[\"贵州茅台\"]`\n- `纳斯达克100` → `[\"\
+            纳斯达克100\"]`\n- `MSCI中国A50ETF` → `[\"MSCI中国A50ETF\"]`\n- `6月WTI原油` → `[\"\
+            WTI原油\"]`（去噪）\n- `沪锌10月` → `[\"沪锌\"]`（去噪）\n\n### 规则 3：一个代码 + 一个名称\n从输入项中识别并提取代码和名称：\n\
             - 如果代码带后缀，代码部分输出两个 keyword\n\n例如：\n- `02513智谱` → `[\"02513\", \"智谱\"]`\n\
             - `智谱02513` → `[\"02513\", \"智谱\"]`\n- `600519贵州茅台` → `[\"600519\", \"\
             贵州茅台\"]`\n- `贵州茅台600519` → `[\"600519\", \"贵州茅台\"]`\n- `600519.SH贵州茅台`\
@@ -714,23 +729,23 @@ workflow:
           role: user
           text: 标的列表：{{#1775735613760.result#}}
         selected: false
-        title: 互换-标的代码和code的拆分
+        title: 标的代码和code的拆分
         type: llm
         vision:
           enabled: false
       height: 87
       id: '1775735672603'
       position:
-        x: 962
-        y: 268.17499498321007
+        x: 1326.3088178231778
+        y: 295.8240059944513
       positionAbsolute:
-        x: 962
-        y: 268.17499498321007
+        x: 1326.3088178231778
+        y: 295.8240059944513
       selected: false
       sourcePosition: right
       targetPosition: left
       type: custom
-      width: 242
+      width: 241
     - data:
         outputs:
         - value_selector:
@@ -741,19 +756,19 @@ workflow:
         selected: false
         title: 输出
         type: end
-      height: 88
+      height: 87
       id: '1775735731507'
       position:
-        x: 962
-        y: 384.8142828475486
+        x: 978.2388031663015
+        y: 386.16751644474044
       positionAbsolute:
-        x: 962
-        y: 384.8142828475486
+        x: 978.2388031663015
+        y: 386.16751644474044
       selected: false
       sourcePosition: right
       targetPosition: left
       type: custom
-      width: 242
+      width: 241
     - data:
         advanced_settings:
           group_enabled: true
@@ -770,83 +785,30 @@ workflow:
             variables:
             - - '1775735672603'
               - text
+          - groupId: c9e1f2a3-0003-4000-8000-000000000003
+            group_name: Group3
+            output_type: string
+            variables:
+            - - '1782200000003'
+              - text
         output_type: any
         selected: false
         title: 变量聚合器
         type: variable-aggregator
         variables: []
-      height: 162
+      height: 217
       id: '1775735777660'
       position:
-        x: 2059.6342419037883
-        y: 254.785329932428
+        x: 1961.7705371503166
+        y: 268.17499498321007
       positionAbsolute:
-        x: 2059.6342419037883
-        y: 254.785329932428
+        x: 1961.7705371503166
+        y: 268.17499498321007
       selected: false
       sourcePosition: right
       targetPosition: left
       type: custom
-      width: 242
-    - data:
-        code: "function stripMarkdown(str) {\n    if (typeof str !== 'string') return\
-          \ str;\n    return str.replace(/^```[a-z]*\\s*/i, '').replace(/\\s*```$/,\
-          \ '').trim();\n}\n\nfunction main({inferCodes, splitCodes}) {\n    try {\
-          \ if (typeof inferCodes === 'string') inferCodes = JSON.parse(stripMarkdown(inferCodes));\
-          \ } catch (e) { inferCodes = {}; }\n    try { if (typeof splitCodes ===\
-          \ 'string') splitCodes = JSON.parse(stripMarkdown(splitCodes)); } catch\
-          \ (e) { splitCodes = {}; }\n\n    if (!inferCodes || typeof inferCodes !==\
-          \ 'object') inferCodes = {};\n    if (!splitCodes || typeof splitCodes !==\
-          \ 'object') splitCodes = {};\n\n    // 合并两个来源的所有 key\n    var allKeys =\
-          \ new Set([...Object.keys(inferCodes), ...Object.keys(splitCodes)]);\n\n\
-          \    var result = [];\n    allKeys.forEach(function(orgStr) {\n        var\
-          \ rawInfer = Array.isArray(inferCodes[orgStr]) ? inferCodes[orgStr] : [];\n\
-          \        var fromInfer = rawInfer.reduce(function(acc, item) {\n       \
-          \     return acc.concat(Array.isArray(item) ? item : [item]);\n        },\
-          \ []);\n        var fromSplit = Array.isArray(splitCodes[orgStr]) ? splitCodes[orgStr]\
-          \ : [];\n\n        // 合并去重，过滤空值\n        var seen = {};\n        var keywords\
-          \ = [];\n        var sources = fromInfer.concat(fromSplit);\n        for\
-          \ (var i = 0; i < sources.length; i++) {\n            var val = sources[i];\n\
-          \            if (val != null && val !== '' && !seen[val]) {\n          \
-          \      seen[val] = true;\n                keywords.push(val);\n        \
-          \    }\n        }\n\n        if (orgStr != null && orgStr !== '' && !seen[orgStr])\
-          \ {\n            keywords.push(orgStr);\n        }\n\n        result.push({\
-          \ orgStr: orgStr, keywords: keywords });\n    });\n\n    return { result:\
-          \ result };\n}\n"
-        code_language: javascript
-        outputs:
-          result:
-            children: null
-            type: array[object]
-        selected: true
-        title: 合并数据
-        type: code
-        variables:
-        - value_selector:
-          - '1775735777660'
-          - Group1
-          - output
-          value_type: object
-          variable: inferCodes
-        - value_selector:
-          - '1775735777660'
-          - Group2
-          - output
-          value_type: object
-          variable: splitCodes
-      height: 51
-      id: '1775735803700'
-      position:
-        x: 2352.707140318687
-        y: 254.785329932428
-      positionAbsolute:
-        x: 2352.707140318687
-        y: 254.785329932428
-      selected: true
-      sourcePosition: right
-      targetPosition: left
-      type: custom
-      width: 242
+      width: 241
     - data:
         code: "// 交易所枚举：[名称, MIC代码, Wind后缀]\nvar EXCHANGE_ENUM = [\n    // 中国大陆及港澳台\n\
           \    [\"上海证券交易所\", \"SSE\", \"SH\"],\n    [\"深圳证券交易所\", \"SZSE\", \"SZ\"\
@@ -892,542 +854,116 @@ workflow:
           , \"LM\"]\n];\n\n// 按后缀长度降序排列，避免正则短串优先匹配（如 TW 先于 TWO）\nvar _suffixes = EXCHANGE_ENUM.map(function(e)\
           \ { return e[2]; })\n    .sort(function(a, b) { return b.length - a.length;\
           \ });\nvar FULL_CODE_REGEX = new RegExp('\\\\.(' + _suffixes.join('|') +\
-          \ ')$');\n\nfunction main({list}) {\n    if (!Array.isArray(list)) {\n \
-          \       try { list = JSON.parse(list); } catch (e) { list = []; }\n    }\n\
-          \    if (!Array.isArray(list)) list = [];\n\n    var fullKeywords = [];\n\
-          \n    var result = list.map(function(item) {\n        if (!item || typeof\
-          \ item !== 'object') return item;\n        var keywords = Array.isArray(item.keywords)\
-          \ ? item.keywords : [];\n        var keywordObjs = keywords.map(function(kw)\
-          \ {\n            var isFull = FULL_CODE_REGEX.test(kw);\n            var\
-          \ id = Math.random().toString(36).slice(2, 10) + Date.now().toString(36);\n\
-          \            if (isFull) fullKeywords.push({ id: id, keyword: kw });\n \
-          \           return { id: id, keyword: kw, isFull: isFull };\n        });\n\
-          \        return { orgStr: item.orgStr, keywords: keywordObjs };\n    });\n\
-          \n    var resultWithoutId = result.map(function(group) {\n        if (!group\
-          \ || typeof group !== 'object') return group;\n        return {\n      \
-          \      orgStr: group.orgStr,\n            keywords: (group.keywords || []).map(function(kw)\
-          \ {\n                return { keyword: kw.keyword, isFull: kw.isFull };\n\
-          \            })\n        };\n    });\n\n    return { result: result, fullKeywords:\
-          \ fullKeywords, resultStr: JSON.stringify(resultWithoutId) };\n}\n"
+          \ ')$');\n// 纯市场/板块导航词：作为搜索关键词对标的 DB 查询无帮助、只引噪声，丢弃（市场意图由 placeOrderTransactionType\
+          \ 承载）\nvar MARKET_WORDS = {'A股':1,'沪市':1,'深市':1,'沪股':1,'深股':1,'北交所':1,'新三板':1,'科创板':1,'创业板':1,'主板':1,'港股':1,'美股':1,'日股':1,'英股':1};\n\
+          \n\nfunction stripMarkdown(str) {\n    if (typeof str !== 'string') return\
+          \ str;\n    return str.replace(/^```[a-z]*\\s*/i, '').replace(/\\s*```$/,\
+          \ '').trim();\n}\n\nfunction main({inferCodes, splitCodes, insFamilyData})\
+          \ {\n    try { if (typeof inferCodes === 'string') inferCodes = JSON.parse(stripMarkdown(inferCodes));\
+          \ } catch (e) { inferCodes = {}; }\n    try { if (typeof splitCodes ===\
+          \ 'string') splitCodes = JSON.parse(stripMarkdown(splitCodes)); } catch\
+          \ (e) { splitCodes = {}; }\n    if (!inferCodes || typeof inferCodes !==\
+          \ 'object') inferCodes = {};\n    if (!splitCodes || typeof splitCodes !==\
+          \ 'object') splitCodes = {};\n    try { if (typeof insFamilyData === 'string')\
+          \ insFamilyData = JSON.parse(stripMarkdown(insFamilyData)); } catch (e)\
+          \ { insFamilyData = {}; }\n    if (!insFamilyData || typeof insFamilyData\
+          \ !== 'object') insFamilyData = {};\n\n    var allKeys = new Set([...Object.keys(inferCodes),\
+          \ ...Object.keys(splitCodes)]);\n\n    var result = [];\n    allKeys.forEach(function(orgStr)\
+          \ {\n        var rawInfer = Array.isArray(inferCodes[orgStr]) ? inferCodes[orgStr]\
+          \ : [];\n        var fromInfer = rawInfer.reduce(function(acc, item) {\n\
+          \            return acc.concat(Array.isArray(item) ? item : [item]);\n \
+          \       }, []);\n        var fromSplit = Array.isArray(splitCodes[orgStr])\
+          \ ? splitCodes[orgStr] : [];\n\n        // 合并去重，过滤空值（字符串关键词）\n        var\
+          \ seen = {};\n        var rawKeywords = [];\n        var sources = fromInfer.concat(fromSplit);\n\
+          \        for (var i = 0; i < sources.length; i++) {\n            var val\
+          \ = sources[i];\n            if (val != null && val !== '' && !seen[val])\
+          \ { seen[val] = true; rawKeywords.push(val); }\n        }\n        if (orgStr\
+          \ != null && orgStr !== '' && !seen[orgStr]) { rawKeywords.push(orgStr);\
+          \ }\n        // 期货合约日期前置规整：YYMM(4位)/YYMMDD(6位) + 名称 -> 名称 + 日期（纯正则）\n  \
+          \      var _nm = (typeof orgStr === 'string') ? orgStr.match(/^(\\d{2}(?:0[1-9]|1[0-2])(?:0[1-9]|[12]\\\
+          d|3[01])?)([^\\d].*)$/) : null;\n        if (_nm && String((insFamilyData||{})[orgStr]||'').toUpperCase().trim()==='FUTURE')\
+          \ { var _norm = _nm[2] + _nm[1]; if (!seen[_norm]) { seen[_norm] = true;\
+          \ rawKeywords.push(_norm); } }\n\n        // 转关键词对象 + 标记完整标的 + 完整标的追加去 0\
+          \ 前缀副本\n        var keywords = [];\n        rawKeywords.forEach(function(kw)\
+          \ {\n            if (MARKET_WORDS[kw]) return;\n            var isFull =\
+          \ FULL_CODE_REGEX.test(kw);\n            var id = Math.random().toString(36).slice(2,\
+          \ 10) + Date.now().toString(36);\n            keywords.push({ id: id, keyword:\
+          \ kw, isFull: isFull });\n            if (isFull && typeof kw === 'string')\
+          \ {\n                var dz = kw.replace(/^0+/, '');\n                if\
+          \ (dz !== kw) keywords.push({ id: id, keyword: dz, isFull: isFull });\n\
+          \            }\n        });\n\n        result.push({ orgStr: orgStr, keywords:\
+          \ keywords });\n    });\n\n    return { result: result };\n}\n"
         code_language: javascript
         outputs:
-          fullKeywords:
-            children: null
-            type: array[object]
           result:
             children: null
             type: array[object]
-          resultStr:
-            children: null
-            type: string
         selected: false
-        title: 正则校验是否为完整标的
+        title: 合并数据并校验完整标的
         type: code
         variables:
+        - value_selector:
+          - '1775735777660'
+          - Group1
+          - output
+          value_type: object
+          variable: inferCodes
+        - value_selector:
+          - '1775735777660'
+          - Group2
+          - output
+          value_type: object
+          variable: splitCodes
+        - value_selector:
+          - '1775735777660'
+          - Group3
+          - output
+          value_type: object
+          variable: insFamilyData
+      height: 51
+      id: '1775735803700'
+      position:
+        x: 2306.415717458551
+        y: 268.17499498321007
+      positionAbsolute:
+        x: 2306.415717458551
+        y: 268.17499498321007
+      selected: false
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 241
+    - data:
+        outputs:
         - value_selector:
           - '1775735803700'
           - result
           value_type: array[object]
-          variable: list
-      height: 51
-      id: '1775735848902'
-      position:
-        x: 2678.6416897556055
-        y: 155.78332998880666
-      positionAbsolute:
-        x: 2678.6416897556055
-        y: 155.78332998880666
-      selected: false
-      sourcePosition: right
-      targetPosition: left
-      type: custom
-      width: 242
-    - data:
-        cases:
-        - case_id: 'true'
-          conditions:
-          - comparison_operator: empty
-            id: 5d115203-a90b-4d49-bf56-2d434ebc9aa6
-            value: ''
-            varType: array[object]
-            variable_selector:
-            - '1775735848902'
-            - fullKeywords
-          id: 'true'
-          logical_operator: and
-        selected: false
-        title: 通过代码校验的列表是否为空
-        type: if-else
-      height: 123
-      id: '1775735883116'
-      position:
-        x: 2984.9934260168643
-        y: 155.78332998880666
-      positionAbsolute:
-        x: 2984.9934260168643
-        y: 155.78332998880666
-      selected: false
-      sourcePosition: right
-      targetPosition: left
-      type: custom
-      width: 242
-    - data:
-        outputs:
-        - value_selector:
-          - '1775735848902'
-          - result
-          value_type: array[object]
           variable: result
+        - value_selector:
+          - '1782200000003'
+          - text
+          value_type: string
+          variable: insFamily
         selected: false
         title: 输出 2
         type: end
-      height: 88
+      height: 113
       id: '1775735898669'
       position:
-        x: 3305.300550401147
-        y: 20.46689780389744
+        x: 2662.9797477182606
+        y: 268.17499498321007
       positionAbsolute:
-        x: 3305.300550401147
-        y: 20.46689780389744
+        x: 2662.9797477182606
+        y: 268.17499498321007
       selected: false
       sourcePosition: right
       targetPosition: left
       type: custom
-      width: 242
+      width: 241
     - data:
-        error_handle_mode: terminated
-        flatten_output: true
-        height: 212
-        is_parallel: false
-        iterator_input_type: array[object]
-        iterator_selector:
-        - '1775735848902'
-        - fullKeywords
-        output_selector:
-        - '1775736037991'
-        - result
-        output_type: array[object]
-        parallel_nums: 10
-        selected: false
-        start_node_id: 1775735915069start
-        title: 迭代
-        type: iteration
-        width: 1292
-      height: 212
-      id: '1775735915069'
-      position:
-        x: 3305.300550401147
-        y: 155.78332998880666
-      positionAbsolute:
-        x: 3305.300550401147
-        y: 155.78332998880666
-      selected: false
-      sourcePosition: right
-      targetPosition: left
-      type: custom
-      width: 1292
-      zIndex: 1
-    - data:
-        desc: ''
-        isInIteration: true
-        selected: false
-        title: ''
-        type: iteration-start
-      draggable: false
-      height: 48
-      id: 1775735915069start
-      parentId: '1775735915069'
-      position:
-        x: 24
-        y: 68
-      positionAbsolute:
-        x: 3329.300550401147
-        y: 223.78332998880666
-      selectable: false
-      sourcePosition: right
-      targetPosition: left
-      type: custom-iteration-start
-      width: 44
-      zIndex: 1002
-    - data:
-        code: "\nfunction main({item}) {\n    if (typeof item === 'string') {\n  \
-          \      try { item = JSON.parse(item); } catch (e) { item = {}; }\n    }\n\
-          \    if (!item || typeof item !== 'object') item = {};\n    var keyword\
-          \ = item.keyword != null ? String(item.keyword).trim() : '';\n    return\
-          \ { result: keyword };\n}\n"
-        code_language: javascript
-        isInIteration: true
-        isInLoop: false
-        iteration_id: '1775735915069'
-        outputs:
-          result:
-            children: null
-            type: string
-        selected: false
-        title: 提取标的
-        type: code
-        variables:
-        - value_selector:
-          - '1775735915069'
-          - item
-          value_type: object
-          variable: item
-      height: 51
-      id: '1775735929909'
-      parentId: '1775735915069'
-      position:
-        x: 144.3297592769195
-        y: 66.51547642937098
-      positionAbsolute:
-        x: 3449.6303096780666
-        y: 222.29880641817763
-      selected: false
-      sourcePosition: right
-      targetPosition: left
-      type: custom
-      width: 242
-      zIndex: 1002
-    - data:
-        cases:
-        - case_id: 'true'
-          conditions:
-          - comparison_operator: not empty
-            id: 2e28966f-d928-4485-84a0-478856fe2502
-            value: ''
-            varType: string
-            variable_selector:
-            - '1775735929909'
-            - result
-          id: 'true'
-          logical_operator: and
-        isInIteration: true
-        isInLoop: false
-        iteration_id: '1775735915069'
-        selected: false
-        title: 条件分支 3
-        type: if-else
-      height: 123
-      id: '1775735939182'
-      parentId: '1775735915069'
-      position:
-        x: 430
-        y: 68
-      positionAbsolute:
-        x: 3735.300550401147
-        y: 223.78332998880666
-      selected: false
-      sourcePosition: right
-      targetPosition: left
-      type: custom
-      width: 242
-      zIndex: 1002
-    - data:
-        context:
-          enabled: false
-          variable_selector: []
-        isInIteration: true
-        isInLoop: false
-        iteration_id: '1775735915069'
-        model:
-          completion_params:
-            temperature: 0.1
-          mode: chat
-          name: internal-qwen3-30b-a3b
-          provider: langgenius/openai_api_compatible/openai_api_compatible
-        prompt_template:
-        - id: 20ded7d0-764d-48e7-ac61-25fcc45f7911
-          role: system
-          text: '你是一个金融标的完整性判断助手。
-
-
-            你的唯一任务是判断：给定字符串本身，是否已经是一个完整的、标准的、可直接使用的标的代码。
-
-
-            输入：
-
-            标的：{{#1775735929909.result#}}
-
-
-            请不要把这个任务理解成“正则匹配后缀”。你需要充分利用你对全球主流金融市场的预训练知识进行综合判断，包括但不限于：
-
-            - 股票、ETF、指数、基金、期货、期权、债券、外汇、加密资产等常见代码体系
-
-            - 不同市场的 ticker 习惯、交易所或市场后缀、港股前导零、期货合约月份、主流行情终端常见写法
-
-            - 不同资产类别在什么条件下才算“信息足够完整”，尤其是哪些代码在缺少交易所/市场信息时仍然不完整
-
-
-            你的判断目标不是“它看起来像不像代码”，而是：
-
-            这个字符串在去掉首尾空格后，是否已经足以直接作为标准标的代码使用，而不需要再补充交易所、市场、后缀、前导零、合约月份、品种主体或其他关键信息。
-
-
-            特别注意：
-
-            - 对股票、ETF、基金、指数等常见证券代码，如果缺少用于唯一定位市场/交易所的关键信息，通常应判定为 `false`
-
-            - 例如 `AAPL`、`HSBC`、`0700`、`000852` 这类裸代码，默认都不视为完整标准代码
-
-            - 例如 `AAPL.O`、`HSBC.N`、`0700.HK`、`000852.SH` 这类已带足够市场信息的写法，才更应视为完整
-
-            - 但像部分期货合约代码这类在业务上本身就可独立成立的写法，例如 `IF2506`，仍可判定为 `true`
-
-
-            判定原则：
-
-            1. 如果它本身就是标准、完整、可直接使用的标的代码，输出 `true`
-
-            2. 如果它只是名称、简称、代码片段、名称和代码的混合串、带交易描述的文本，或者仍需要补充关键信息才能可靠定位具体标的，输出 `false`
-
-            3. 如果字符串里“包含了”完整代码，但整个字符串本身不是纯粹的标准代码，也输出 `false`
-
-            4. 如果存在明显歧义，宁可判定为 `false`，不要猜测补全
-
-            5. 不要把名称映射成代码，也不要把不完整代码脑补成完整代码；你只判断输入本身是否完整
-
-            6. 不要机械依赖固定后缀表、固定长度规则或少量样例；示例只是帮助你校准判断边界，不是白名单或黑名单
-
-
-            以下示例仅用于帮助你理解边界，不是穷举规则：
-
-
-            通常应判定为 `true` 的例子：
-
-            - `HSBC.N`
-
-            - `0700.HK`
-
-            - `000852.SH`
-
-            - `AAOI.O`
-
-            - `IF2506`
-
-            - `IF2506.CFE`
-
-
-            通常应判定为 `false` 的例子：
-
-            - `HSBC`
-
-            - `AAPL`
-
-            - `0700`
-
-            - `000852`
-
-            - `腾讯控股`
-
-            - `腾讯控股0700.HK`
-
-            - `买入0700.HK`
-
-            - `纳斯达克100`
-
-            - `沪深300ETF`
-
-            - `IF`
-
-            - `AU`
-
-
-            输出要求：
-
-            - 只能输出一个布尔值：`true` 或 `false`
-
-            - 不要输出 JSON
-
-            - 不要输出任何额外解释、标点、换行说明或 Markdown 代码块
-
-            - 不要使用 Markdown 代码块
-
-
-            输出示例：
-
-            - 完整标的代码 -> `true`
-
-            - 不完整或不是标准代码 -> `false`
-
-            '
-        selected: false
-        title: 大模型识别标的完整性
-        type: llm
-        vision:
-          enabled: false
-      height: 87
-      id: '1775736021855'
-      parentId: '1775735915069'
-      position:
-        x: 732
-        y: 66.89489100784783
-      positionAbsolute:
-        x: 4037.300550401147
-        y: 222.6782209966545
-      selected: false
-      sourcePosition: right
-      targetPosition: left
-      type: custom
-      width: 242
-      zIndex: 1002
-    - data:
-        code: "\nfunction main({item, flag}) {\n    if (typeof item === 'string')\
-          \ {\n        try { item = JSON.parse(item); } catch (e) { item = {}; }\n\
-          \    }\n    if (!item || typeof item !== 'object') item = {};\n    return\
-          \ {\n        result: {\n            ...item,\n            flag: flag !=\
-          \ null ? flag : false\n        }\n    };\n}\n"
-        code_language: javascript
-        isInIteration: true
-        isInLoop: false
-        iteration_id: '1775735915069'
-        outputs:
-          result:
-            children: null
-            type: object
-        selected: false
-        title: 组装对象返回
-        type: code
-        variables:
-        - value_selector:
-          - '1775735915069'
-          - item
-          value_type: object
-          variable: item
-        - value_selector:
-          - '1775736021855'
-          - text
-          value_type: string
-          variable: flag
-      height: 51
-      id: '1775736037991'
-      parentId: '1775735915069'
-      position:
-        x: 1034
-        y: 68
-      positionAbsolute:
-        x: 4339.300550401147
-        y: 223.78332998880666
-      selected: false
-      sourcePosition: right
-      targetPosition: left
-      type: custom
-      width: 242
-      zIndex: 1002
-    - data:
-        code: "\nfunction main({list, mergeData}) {\n    if (typeof list === 'string')\
-          \ { try { list = JSON.parse(list); } catch (e) { list = []; } }\n    if\
-          \ (typeof mergeData === 'string') { try { mergeData = JSON.parse(mergeData);\
-          \ } catch (e) { mergeData = []; } }\n    if (!Array.isArray(list)) list\
-          \ = [];\n    if (!Array.isArray(mergeData)) mergeData = [];\n\n    // 构建\
-          \ id -> flag 映射\n    var flagMap = {};\n    for (var i = 0; i < list.length;\
-          \ i++) {\n        var item = list[i];\n        if (item && item.id != null)\
-          \ {\n            // flag 可能是字符串 \"true\"/\"false\"，统一转为 boolean\n      \
-          \      flagMap[item.id] = item.flag === true || item.flag === 'true';\n\
-          \        }\n    }\n\n    var result = mergeData.map(function(group) {\n\
-          \        if (!group || typeof group !== 'object') return group;\n      \
-          \  var keywords = Array.isArray(group.keywords) ? group.keywords : [];\n\
-          \        var newKeywords = keywords.map(function(kw) {\n            if (!kw\
-          \ || typeof kw !== 'object') return kw;\n            var isFull = kw.id\
-          \ != null && flagMap.hasOwnProperty(kw.id)\n                ? flagMap[kw.id]\n\
-          \                : kw.isFull;\n            // 去除 id 字段\n            return\
-          \ { keyword: kw.keyword, isFull: isFull };\n        });\n        return\
-          \ { orgStr: group.orgStr, keywords: newKeywords };\n    });\n\n    return\
-          \ { result: result, resultStr: JSON.stringify(result) };\n}\n"
-        code_language: javascript
-        default_value:
-        - key: result
-          type: array[object]
-          value: '[]'
-        - key: resultStr
-          type: string
-          value: '[]'
-        error_strategy: default-value
-        outputs:
-          result:
-            children: null
-            type: array[object]
-          resultStr:
-            children: null
-            type: string
-        selected: false
-        title: 设置是否完整标识
-        type: code
-        variables:
-        - value_selector:
-          - '1775735915069'
-          - output
-          value_type: array[object]
-          variable: list
-        - value_selector:
-          - '1775735848902'
-          - result
-          value_type: array[object]
-          variable: mergeData
-      height: 87
-      id: '1775736106719'
-      position:
-        x: 4676.721776319229
-        y: 155.78332998880666
-      positionAbsolute:
-        x: 4676.721776319229
-        y: 155.78332998880666
-      selected: false
-      sourcePosition: right
-      targetPosition: left
-      type: custom
-      width: 242
-    - data:
-        outputs:
-        - value_selector:
-          - '1777032234378'
-          - result
-          value_type: array[object]
-          variable: result
-        selected: false
-        title: 输出 3
-        type: end
-      height: 88
-      id: '1775736154680'
-      position:
-        x: 5254.656149058164
-        y: 155.78332998880666
-      positionAbsolute:
-        x: 5254.656149058164
-        y: 155.78332998880666
-      selected: false
-      sourcePosition: right
-      targetPosition: left
-      type: custom
-      width: 242
-    - data:
-        author: wxzhoutao
-        desc: ''
-        height: 146
-        selected: false
-        showAuthor: true
-        text: '{"root":{"children":[{"children":[{"detail":0,"format":0,"mode":"normal","style":"font-size:
-          16px;","text":"如果传入多个标的字符串，可能会出现重复项，重复调用大模型是没必要的，复用逻辑待补充。","type":"text","version":1}],"direction":null,"format":"","indent":0,"type":"paragraph","version":1,"textStyle":"font-size:
-          16px;","textFormat":0}],"direction":null,"format":"","indent":0,"type":"root","version":1,"textStyle":"font-size:
-          16px;"}}'
-        theme: blue
-        title: ''
-        type: ''
-        width: 584
-      height: 146
-      id: '1775740221581'
-      position:
-        x: 3475.487335192579
-        y: 442.2799504394608
-      positionAbsolute:
-        x: 3475.487335192579
-        y: 442.2799504394608
-      selected: false
-      sourcePosition: right
-      targetPosition: left
-      type: custom-note
-      width: 584
-    - data:
-        code: "function main() {\n    return {\n        date: new Date().toLocaleString()\n\
-          \    }\n}"
+        code: "function main() {\n    return {\n        date: new Date().toLocaleString(\"\
+          zh-CN\", { timeZone: \"Asia/Shanghai\" })\n    }\n}"
         code_language: javascript
         outputs:
           date:
@@ -1454,7 +990,7 @@ workflow:
       sourcePosition: right
       targetPosition: left
       type: custom
-      width: 242
+      width: 241
     - data:
         code: "function main({ text }) {\n    const match = text.match(/<result>\\\
           s*([\\s\\S]*?)\\s*<\\/result>/);\n    if (match) {\n        return { result:\
@@ -1476,144 +1012,18 @@ workflow:
       height: 51
       id: '1775916374447'
       position:
-        x: 1774.8384869179074
+        x: 1697.3071801993904
         y: 146.64524766644954
       positionAbsolute:
-        x: 1774.8384869179074
+        x: 1697.3071801993904
         y: 146.64524766644954
       selected: false
       sourcePosition: right
       targetPosition: left
       type: custom
-      width: 242
-    - data:
-        authorization:
-          config: null
-          type: no-auth
-        body:
-          data: []
-          type: none
-        default_value:
-        - key: body
-          type: string
-          value: '{ "code": 0,"data": "","msg": "", "serviceId": "c36f79df-68f9-4271-8558-e66f61f2e144"
-            }'
-        - key: status_code
-          type: number
-          value: 0
-        - key: headers
-          type: object
-          value: '{}'
-        error_strategy: default-value
-        headers: authorization:{{#env.otc_secret#}}
-        method: get
-        params: ''
-        retry_config:
-          max_retries: 3
-          retry_enabled: false
-          retry_interval: 100
-        selected: false
-        ssl_verify: true
-        timeout:
-          max_connect_timeout: 0
-          max_read_timeout: 0
-          max_write_timeout: 0
-        title: 获取大模型标的推断动态prompt
-        type: http-request
-        url: '{{#env.api_url#}}/admin-api/counterparty/info/instrument-inference-prompt'
-        variables: []
-      height: 163
-      id: '1776168671136'
-      position:
-        x: 968.0920548815714
-        y: 5.026038473986091
-      positionAbsolute:
-        x: 968.0920548815714
-        y: 5.026038473986091
-      selected: false
-      sourcePosition: right
-      targetPosition: left
-      type: custom
-      width: 242
-    - data:
-        code: "function main({ body }) {\n    try {\n        const parsed = JSON.parse(body\
-          \ || '{}');\n        return {\n            result: parsed.code === 0 ? (parsed.data\
-          \ ?? null) : \"\"\n        };\n    } catch (e) {\n        return { result:\
-          \ \"\" };\n    }\n}"
-        code_language: javascript
-        outputs:
-          result:
-            children: null
-            type: string
-        selected: false
-        title: 提取接口返回的prompt
-        type: code
-        variables:
-        - value_selector:
-          - '1776168671136'
-          - body
-          value_type: string
-          variable: body
-      height: 51
-      id: '1776168771679'
-      position:
-        x: 968.0920548815714
-        y: 172.55754771719998
-      positionAbsolute:
-        x: 968.0920548815714
-        y: 172.55754771719998
-      selected: false
-      sourcePosition: right
-      targetPosition: left
-      type: custom
-      width: 242
-    - data:
-        code: "function main({ list }) {\n    try {\n        if (!Array.isArray(list))\
-          \ {\n            return { result: [] };\n        }\n\n        const result\
-          \ = list.map(item => {\n            if (!item || typeof item !== 'object'\
-          \ || !Array.isArray(item.keywords)) {\n                return item;\n  \
-          \          }\n\n            const newKeywords = [];\n\n            item.keywords.forEach(kw\
-          \ => {\n                if (!kw || typeof kw !== 'object') {\n         \
-          \           return;\n                }\n\n                newKeywords.push(kw);\n\
-          \n                const isFull = kw.isFull === true || kw.isFull === 'true';\n\
-          \n                if (isFull && typeof kw.keyword === 'string') {\n    \
-          \                const newKeyword = kw.keyword.replace(/^0+/, '');\n   \
-          \                 if (newKeyword !== kw.keyword) {\n                   \
-          \     newKeywords.push({\n                            ...kw,\n         \
-          \                   keyword: newKeyword\n                        });\n \
-          \                   }\n                }\n            });\n\n          \
-          \  return { ...item, keywords: newKeywords };\n        });\n\n        return\
-          \ { result };\n    } catch (e) {\n        return { result: [] };\n    }\n\
-          }"
-        code_language: javascript
-        outputs:
-          result:
-            children: null
-            type: array[object]
-        selected: false
-        title: 完整标的复制无0前缀标的
-        type: code
-        variables:
-        - value_selector:
-          - '1775736106719'
-          - result
-          value_type: array[object]
-          variable: list
-      height: 51
-      id: '1777032234378'
-      position:
-        x: 4960.824054577559
-        y: 155.78332998880666
-      positionAbsolute:
-        x: 4960.824054577559
-        y: 155.78332998880666
-      selected: false
-      sourcePosition: right
-      targetPosition: left
-      type: custom
-      width: 242
+      width: 241
     viewport:
-      x: -936.168748258523
-      y: 491.740861926162
-      zoom: 0.7120416648717198
+      x: -329.1629293662745
+      y: 251.89021447790662
+      zoom: 0.7323903765963257
   rag_pipeline_variables: []
