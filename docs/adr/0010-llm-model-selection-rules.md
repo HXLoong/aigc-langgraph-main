@@ -1,5 +1,10 @@
 # Qwen 三型号分工：structured output 节点强制 standard
 
+> **2026-08-27 修订**：[ADR 0020](./0020-unify-all-llm-on-deepseek-v4-pro.md) 起全部环境统一
+> DeepSeek-V4-pro，standard / thinking / complex 事实合一，"thinking 不支持 structured
+> output"的约束在 DeepSeek 下不成立。本文保留为历史背景；工厂函数的 import 语义与
+> "structured output 默认走 standard 工厂"的习惯仍然沿用。
+
 `app/llm/clients.py` 暴露三个 Qwen 客户端：standard（`qwen3-30B-A3B`）、thinking（`qwen-max-latest` + `enable_thinking=True`）、VL（多模态）。我们用以下选型规则约束开发者：
 
 | 场景 | 必选型号 | 理由 |

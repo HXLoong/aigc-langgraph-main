@@ -1,10 +1,12 @@
-"""LLM 客户端封装。
+"""LLM 客户端封装（标准模型客户端，非仅 Qwen —— ADR 0018）。
 
-Qwen 系列走 OpenAI 兼容 API，用 langchain_openai.ChatOpenAI。
+全部走 OpenAI 兼容 API，用 langchain_openai.ChatOpenAI。
+vendor 由 .env 的 QWEN_API_BASE / QWEN_API_KEY / QWEN_MODEL_* 切换
+（`qwen_` 前缀是历史通用命名，现场=DeepSeek-v4-pro，开发期=Qwen）。
 
-当前策略（2026-05-14）：
-全部节点统一用 qwen3.5-35b-a3b + enable_thinking=False，
-以速度为先（4-7s/长 prompt vs thinking 模式 60-180s），与内部部署对齐。
+当前策略：全部节点统一关闭思考模式，以速度为先
+（4-7s/长 prompt vs thinking 模式 60-180s）。
+关闭参数两家不同，见 _thinking_off_extra_body。
 
 保留 standard / thinking / structured / complex 4 个工厂函数，是为了：
 1. 兼容现有节点的 import 路径
@@ -13,24 +15,56 @@ Qwen 系列走 OpenAI 兼容 API，用 langchain_openai.ChatOpenAI。
 from __future__ import annotations
 
 from functools import lru_cache
+from typing import Any
 
 from langchain_openai import ChatOpenAI
 
 from app.config import get_settings
 
 
+def _is_deepseek(model: str) -> bool:
+    return model.lower().startswith("deepseek")
+
+
+def _thinking_off_extra_body(model: str) -> dict[str, Any]:
+    """按 vendor 返回"关闭思考模式"的 extra_body。
+
+    DeepSeek 会静默忽略 Qwen 的 enable_thinking 参数（默认仍开思考），
+    必须用它自己的 thinking.type=disabled；Qwen/dashscope 反之。
+    """
+    if _is_deepseek(model):
+        return {"thinking": {"type": "disabled"}}
+    return {"enable_thinking": False}
+
+
+class _ChatLLM(ChatOpenAI):
+    """ChatOpenAI 的 vendor 适配薄层。
+
+    DeepSeek 的 OpenAI 兼容接口不支持 response_format=json_schema
+    （400 "This response_format type is unavailable now"），而
+    langchain_openai 的 with_structured_output 默认走 json_schema。
+    全库 43 处调用均不传 method，故在此统一降级为 function_calling。
+    显式传入的 method 不覆盖；Qwen 走 langchain 默认行为。
+    """
+
+    def with_structured_output(self, schema=None, **kwargs):  # type: ignore[override]
+        if _is_deepseek(self.model_name) and "method" not in kwargs:
+            kwargs["method"] = "function_calling"
+        return super().with_structured_output(schema, **kwargs)
+
+
 @lru_cache(maxsize=1)
 def get_qwen_standard() -> ChatOpenAI:
-    """标准 Qwen：意图识别 / 路由（非 thinking）。"""
+    """标准模型：意图识别 / 路由（非 thinking）。"""
     settings = get_settings()
-    return ChatOpenAI(
+    return _ChatLLM(
         model=settings.qwen_model_standard,
         base_url=settings.qwen_api_base,
         api_key=settings.qwen_api_key,
         temperature=0.0,
         timeout=60,
         max_retries=2,
-        extra_body={"enable_thinking": False},
+        extra_body=_thinking_off_extra_body(settings.qwen_model_standard),
     )
 
 
@@ -42,14 +76,14 @@ def get_qwen_thinking() -> ChatOpenAI:
     只改本函数即可。
     """
     settings = get_settings()
-    return ChatOpenAI(
+    return _ChatLLM(
         model=settings.qwen_model_thinking,
         base_url=settings.qwen_api_base,
         api_key=settings.qwen_api_key,
         temperature=0.0,
         timeout=60,
         max_retries=2,
-        extra_body={"enable_thinking": False},
+        extra_body=_thinking_off_extra_body(settings.qwen_model_thinking),
     )
 
 
@@ -60,29 +94,29 @@ def make_qwen_thinking() -> ChatOpenAI:
     里复用，httpx 连接池绑定旧 loop，污染主 loop 客户端导致 Connection error。
     """
     settings = get_settings()
-    return ChatOpenAI(
+    return _ChatLLM(
         model=settings.qwen_model_thinking,
         base_url=settings.qwen_api_base,
         api_key=settings.qwen_api_key,
         temperature=0.0,
         timeout=60,
         max_retries=2,
-        extra_body={"enable_thinking": False},
+        extra_body=_thinking_off_extra_body(settings.qwen_model_thinking),
     )
 
 
 @lru_cache(maxsize=1)
 def get_qwen_structured() -> ChatOpenAI:
-    """Qwen 模型专用于 with_structured_output（非 thinking）。"""
+    """专用于 with_structured_output（非 thinking）。"""
     settings = get_settings()
-    return ChatOpenAI(
+    return _ChatLLM(
         model=settings.qwen_model_standard,
         base_url=settings.qwen_api_base,
         api_key=settings.qwen_api_key,
         temperature=0.0,
         timeout=60,
         max_retries=2,
-        extra_body={"enable_thinking": False},
+        extra_body=_thinking_off_extra_body(settings.qwen_model_standard),
     )
 
 
@@ -90,14 +124,14 @@ def get_qwen_structured() -> ChatOpenAI:
 def get_qwen_complex() -> ChatOpenAI:
     """复杂提取专用（当前 = standard，保留接口供未来切回 235b）。"""
     settings = get_settings()
-    return ChatOpenAI(
+    return _ChatLLM(
         model=settings.qwen_model_complex,
         base_url=settings.qwen_api_base,
         api_key=settings.qwen_api_key,
         temperature=0.0,
         timeout=60,
         max_retries=2,
-        extra_body={"enable_thinking": False},
+        extra_body=_thinking_off_extra_body(settings.qwen_model_complex),
     )
 
 
@@ -105,7 +139,7 @@ def get_qwen_complex() -> ChatOpenAI:
 def get_qwen_vl() -> ChatOpenAI:
     """视觉 Qwen：图片 OCR / 截图识别。"""
     settings = get_settings()
-    return ChatOpenAI(
+    return _ChatLLM(
         model=settings.qwen_model_vl,
         base_url=settings.qwen_api_base,
         api_key=settings.qwen_api_key,

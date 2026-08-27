@@ -69,7 +69,7 @@ app/
 │   ├── swap_client.py       # SwapClient Protocol（POST /swap-order/operate）
 │   ├── ticker_client.py     # TickerClient Protocol（GET /securities-instrument/select）
 │   ├── auth.py / exceptions.py
-├── llm/clients.py           # Qwen 工厂：standard / thinking / VL / qwen3.5-35b-a3b 非 thinking（get_qwen_complex）
+├── llm/clients.py           # LLM 统一工厂：全量 DeepSeek-V4-pro（ADR 0020，thinking 关闭 + structured output 走 function_calling 适配）
 ├── checkpointer/factory.py  # AIOMySQLSaver
 ├── observability/           # tracing.py + metrics.py（Prometheus 兼容 /metrics）
 └── prompts/                 # Dify 提示词资产（router / swap / option / option_close / ticker）
@@ -89,7 +89,7 @@ scripts/                     # langfuse_eval.py（Judge 评估，M3 主用） / 
                              # rollback_canary.sh / run_alerts.py / llm_cost_report.py / shadow_compare.py 等
 
 infra/langfuse/              # LangFuse self-hosted Docker Compose（PG + ClickHouse + Redis + MinIO + Web + Worker）
-docs/adr/                    # 20 个架构决定（ADR 0000-0019 + AUDIT-2026-05-13）
+docs/adr/                    # 21 个架构决定（ADR 0000-0020 + AUDIT-2026-05-13）
 docs/api-contracts/          # Java 后端真实业务 API 契约
 docs/m3-m4-roadmap.md        # M3/M4 端到端任务图（6 个交付面，2026-05-11 修订）
 docs/on-call-runbook.md      # 上线 on-call SOP
@@ -276,7 +276,7 @@ harness reporter 输出按桶分别统计；CI 维护一致性 lint（详见 `sc
 详见：
 
 - 领域语言：`@CONTEXT.md`
-- 架构决定：`@docs/adr/`（20 个 ADR：0000-0019 + AUDIT-2026-05-13）
+- 架构决定：`@docs/adr/`（21 个 ADR：0000-0020 + AUDIT-2026-05-13）
 - Java 契约：`@docs/api-contracts/java-backend.md`
 - M3/M4 路线图：`@docs/m3-m4-roadmap.md`
 - on-call SOP：`@docs/on-call-runbook.md` + `@docs/troubleshooting-sop.md`
