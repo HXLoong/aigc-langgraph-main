@@ -40,7 +40,7 @@ def parse_excel_rows(content: bytes) -> list[dict[str, Any]]:
     for row in rows_iter:
         if all(v is None for v in row):
             continue
-        result.append(dict(zip(headers, row)))
+        result.append(dict(zip(headers, row, strict=False)))
     return result
 
 

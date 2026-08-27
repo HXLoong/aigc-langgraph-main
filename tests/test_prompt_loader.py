@@ -5,8 +5,11 @@ bug:_MD_SYSTEM_RE 非贪婪匹配遇 [system] 段内嵌套的 ``` 围栏在第�
 """
 from __future__ import annotations
 
-from app.prompts import clear_cache, load_prompt
-from app.prompts import _parse_prompt_md  # type: ignore[attr-defined]
+from app.prompts import (
+    _parse_prompt_md,  # type: ignore[attr-defined]
+    clear_cache,
+    load_prompt,
+)
 
 _NESTED_MD = """# 测试提示词
 
