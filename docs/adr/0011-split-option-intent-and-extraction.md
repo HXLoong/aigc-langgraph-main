@@ -1,56 +1,42 @@
-# option 子图拆分"意图识别"与"参数提取"为两阶段 LLM 调用
+# ADR 0011 · option 子图拆分"意图识别"与"参数提取"为两阶段 LLM 调用
 
-> **Status update (2026-05-10, 二次修订)**：grill-with-docs 复盘后定为 **5 个 extract**（去掉原列表中的 `extract_close`）。原 6-7 份方案错误地把 6 个 `close_order_*` 意图算进 option 子图——但 close 已是**独立子图**（`option_close/`，独立 product_type），一级路由判定 `product=close` 后根本不会进 option 子图。option 子图只处理基础 10 个意图（去掉 6 个 close_order_*）。
+- 状态：已采纳（拆分已完成落地；灰度与 golden 覆盖两项前置纪律未兑现，见"实现偏离"）
+- 日期：2026-05-10（含同日二次修订：extract 定为 5 份，close_order_* 归独立 close 子图）
+- 修订：2026-08-27 深度改写为现状口径（wayfinder map #138 / 核查 #143）
+- 作者：图灵科技 + Tony
 
-Dify 主干工作流中"期权-意图识别、参数提取"是单 LLM 节点同时承担分类 + 完整参数抽取，对应 LangGraph 的 `app/prompts/option/intent_extract.md` 高达 **2870 行**。这个"双任务巨型提示词"是当前用户体验差的最大单一根因，被 Dify 迁移按"原封保留"原则带进了 LangGraph，路由和 trace 问题虽已解，意图准确率仍未显著好转。
+## 上下文
 
-我们决定把 option 子图拆分为两阶段 LLM 调用，对齐 swap 子图已验证的模式：
+Dify 主干中"期权-意图识别、参数提取"是单 LLM 节点同时承担分类 + 完整参数抽取（`intent_extract.md` 2870 行），"双任务巨型提示词"是用户体验差的最大单一根因。决定拆为两阶段，对齐 swap 已验证的 `intent.md` + 分意图提取模式。
 
-1. **阶段一：意图分类**（新建 `app/prompts/option/intent.md`，目标 < 500 行）—— 仅输出 `stockOptionIntentionType` 中的一种值（小写下划线 type 字符串），使用 standard 模型 + structured output。
-2. **阶段二：参数提取**（按意图分多份提示词文件 `option/extract_<intent>.md`）—— 在路由到具体意图后才加载对应抽取提示词，单文件聚焦、token 成本下降。
+二次修订要点（已吸收）：原方案错把 6 个 `close_order_*` 算进 option——close 是独立子图（`option_close/` 提示词目录 + `close/` 代码目录），一级路由判 `product=close` 后不进 option。option 只处理基础意图。
 
-**真实意图枚举**（共 16 个，含 6 个平仓意图，按职责合并后实际需要约 7-8 份 extract 提示词）：
+## 落地现状（2026-08-27，拆分已完成）
 
-期权基础（6 类）：
-- `new_inquiry` — 询价
-- `place_order_from_quote` — 基于报价下单/纠正参数
-- `confirm_order` — 确认下单
-- `cancel_order_request` — 取消下单请求（订单作废）
-- `request_cancel_order` — 请求撤单
-- `confirm_cancel_order` — 确认撤单
-- `request_modify_order` — 请求改单
-- `confirm_modify_order` — 确认改单
-- `query_order_status` — 查询订单状态
+- **阶段一**：`app/prompts/option/intent.md`（71 行，远低于 500 行目标）——`get_qwen_structured()` + `with_structured_output(OptionIntentOutput)`（模型实体现为 deepseek-v4-pro，[ADR 0020](./0020-unify-all-llm-on-deepseek-v4-pro.md)）。
+- **阶段二**：5 份 extract 齐备——`extract_inquiry`(108 行) / `extract_place_or_modify`(107) / `extract_cancel`(49) / `extract_confirm`(56) / `extract_query`(45)；节点与 `_INTENT_TO_NODE` 路由表与下方合并规则逐条一致（`option/graph.py` 注册 7 节点 = intent + 5 extract + unknown）。
+- 原 `intent_extract.md` 仍为 2870 行，**已冻结为 diff 快照**（业务代码零加载，`app/prompts/CLAUDE.md` 登记）。
+- **意图枚举真值 = 9 个业务意图 + `unknown_intent`**（原文"期权基础（6 类）"标题与其下 9 条列表自相矛盾，本次订正）：`new_inquiry` / `place_order_from_quote` / `confirm_order` / `cancel_order_request` / `request_cancel_order` / `confirm_cancel_order` / `request_modify_order` / `confirm_modify_order` / `query_order_status`。
+- extract 合并规则（与代码一致）：inquiry ← new_inquiry；place_or_modify ← place_order_from_quote + request_modify_order；cancel ← cancel_order_request + request_cancel_order；confirm ← 3 种确认（expected_action 区分，同 ADR 0001 D5 swap confirm 合并原则）；query ← query_order_status。
+- **原文未记录的新增逻辑（本次补录）**：`option/intent.py` 在 LLM 前有三条确定性快速路径（`-` 单字符 / "确认下单" / "撤单"），LLM 后有关键词改写规则。这层规则**无 ADR 锚点**（[ADR 0015](./0015-intent-route-rules-first-llm-fallback.md) 只覆盖一级 product 路由，不覆盖子图 intent）——登记为偏离待裁决。
+- close 子图后续：close 已按同款模式完成 intent + 6 份分意图提示词拆分；遗留项收敛为 **`option_close/place_close.md` 1036 行单文件瘦身**（是否做取决于收益数据）。
 
-期权平仓（6 类，可独立子图也可合并到 option 内）：
-- `close_order_query / close_order_request / close_order_confirm`
-- `close_order_cancel_request / close_order_cancel_confirm / close_order_order_query`
+## 实现偏离（裁决见 [#159](https://github.com/GZTL-AI/aigc-langgraph/issues/159)）
 
-`unknown_intent` 兜底。
+| 偏离 | 现状 |
+|---|---|
+| **跳过灰度直接硬切** | 原 Consequences 约定按 [ADR 0003](./0003-prompt-versioning-by-file-coexistence.md) 走 `intent_v2.md` 并存 + 灰度切流验证；实际直接新建 `intent.md` 一次性切换，`_versions.yaml` 仅有 swap.intent 一条 override，option 从未进灰度。需追认"为何跳过"或补灰度 |
+| **golden 覆盖前置未满足** | 原文明写"5 份 extract 必须独立 golden 覆盖，否则某意图无样本回归会被遗漏"；现状 option 侧 `request_modify_order` / `confirm_modify_order` **零覆盖**、`query_order_status` 仅 1 条（对照：new_inquiry 99 / place_order_from_quote 68）。可并入 Issue #113 fixture 质量修复 |
+| **intent.py 确定性规则层无 ADR 锚点** | 决策形态是"两阶段纯 LLM"，实际带前置/后处理规则——需补锚点（本 ADR 追认或另开 ADR）|
 
-按职责合并后的 extract 提示词（**5 份**，covered 10 个 option 基础意图，不含 close）：
-1. `extract_inquiry.md` — 询价（new_inquiry）
-2. `extract_place_or_modify.md` — 下单/改单参数（place_order_from_quote + request_modify_order）
-3. `extract_cancel.md` — 撤单（cancel_order_request + request_cancel_order）
-4. `extract_confirm.md` — 各种确认（confirm_order + confirm_cancel_order + confirm_modify_order）
-5. `extract_query.md` — 查询（query_order_status）
+## 备选方案（历史论证）
 
-`unknown_intent` 走兜底无需 extract。**6 个 `close_order_*` 意图归 close 子图（`option_close/`），不在 option 内**。
+- **保留单 LLM 节点**：准确率天花板已触顶。
+- **两阶段拆分（已选）**：swap 模式已在生产验证。
+- **三阶段（意图 → 草稿 → 校验）**：工程复杂度超出回报曲线。
 
-意图分类后的路由层与 ADR 0001 D5 的"互换 confirm 合并"原则一致：高度相似的"确认 X"用同一个 extract + 一个 expected_action 字段区分。
+## 后果（现状口径）
 
-实施前提是 `option/intent_extract.md` 内部确无"必须同时拿到参数才能定意图"的耦合（与业务方确认无此约束）。
-
-## Considered Options
-
-- **保留单 LLM 节点**：与现状一致，准确率天花板已经触顶。
-- **两阶段拆分（已选）**：参考 swap 的 `intent.md` + `place_order.md` 模式，已在生产验证可行。
-- **三阶段（意图 → 参数草稿 → 校验）**：理论更稳，工程复杂度大幅增加，超出当前回报曲线。
-
-## Consequences
-
-- 单次请求多一次 LLM 调用，端到端延迟会增加（预估 +200~400ms）。需要在 ADR-0004 trace 里观察"option 子图 P95 延迟"作为反向指标，确认延迟代价 < 准确率收益。
-- 5 份抽取提示词必须独立做 golden set 覆盖，否则拆开后某一意图无样本回归会被遗漏。
-- 拆分按 ADR-0003 文件并存策略推进：先做 `option/intent_v2.md` + `option/extract_*.md`，与原 `intent_extract.md` 并存，灰度切流验证准确率；老版本满稳定期后下线。
-- 此举是 Phase 1.5 的提示词架构清理，应纳入 ADR-0002 的路线图（在 Phase 2 trace 监测能力之上才能量化收益）。
-- close 子图同样问题待评估：`option_close/place_close.md` 1036 行尚未拆分，是否走同样路径取决于本 ADR 实施后的收益数据。
+- 多一次 LLM 调用的延迟代价（预估 +200~400ms）需在 trace 观察"option 子图 P95"作反向指标——注意端到端 P95 采集本身尚未接线（[ADR 0017](./0017-m4-canary-quantitative-exit-gate.md) 偏离，#157）。
+- 拆分是 Phase 1.5 提示词架构清理，隶属 [ADR 0002](./0002-comprehensive-runtime-harness.md) 路线。
+- 实施前提（"intent_extract 内无'必须同时拿参数才能定意图'的耦合"）已与业务方确认并被落地结果验证。
