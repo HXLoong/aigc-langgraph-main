@@ -1,7 +1,7 @@
 # 互换-节点-确认下单
 
 - **node_id**: `1776160728475`
-- **model**: `internal-qwen3-30b-a3b`
+- **model**: `external-deepseek-v4-flash-non-thinking`
 
 ## [system]
 

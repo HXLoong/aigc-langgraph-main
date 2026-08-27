@@ -113,15 +113,75 @@ class TestSwapConfirmNode:
     async def test_orderid_can_be_null(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """与 Dify schema 一致，orderId 允许 null（找不到时兜底）。"""
+        """与 Dify schema 一致，orderId 允许 null（找不到时兜底）。
+
+        raw_text 必须含二次校验关键词之一（本用例用"确认下单"）才能走到 LLM
+        提取步骤——见 TestConfirmOrderSecondaryCheck。
+        """
         params = SwapConfirmParams(
             orderList=[SwapOrderRefItem(orderId=None)]
         )
         _patch(monkeypatch, confirm_module, params)
         result = await swap_confirm(
-            {"raw_text": "确认", "intent": "confirm_order"}
+            {"raw_text": "确认下单", "intent": "confirm_order"}
         )
         assert result["confirm"]["orderList"][0]["orderId"] is None
+
+
+# ============================================================
+# 互换-确认下单二次校验（DSL v2 if-else 1781200000774，仅 confirm_order 分支）
+# ============================================================
+
+
+class TestConfirmOrderSecondaryCheck:
+    @pytest.mark.parametrize(
+        "raw_text",
+        ["确认下单", "确定下单", "确认订单", "下单确认", "麻烦确认下单谢谢"],
+    )
+    def test_passes_with_keyword(self, raw_text: str) -> None:
+        from app.subgraphs.swap.confirm import confirm_order_secondary_check_passed
+
+        assert confirm_order_secondary_check_passed(raw_text) is True
+
+    @pytest.mark.parametrize(
+        "raw_text", ["确认", "好的", "撤单", "", None]
+    )
+    def test_fails_without_keyword(self, raw_text: str | None) -> None:
+        from app.subgraphs.swap.confirm import confirm_order_secondary_check_passed
+
+        assert confirm_order_secondary_check_passed(raw_text) is False
+
+
+@pytest.mark.asyncio
+class TestSwapConfirmSecondaryCheckNode:
+    async def test_confirm_order_without_keyword_sets_error_and_skips_llm(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """confirm_order 且 raw_text 未含关键词 → 不调 LLM/后端，直接 state['error']。"""
+        ainvoke = _patch(
+            monkeypatch,
+            confirm_module,
+            SwapConfirmParams(orderList=[SwapOrderRefItem(orderId="H-1")]),
+        )
+        result = await swap_confirm(
+            {"raw_text": "确认", "intent": "confirm_order"}
+        )
+        assert "confirm" not in result
+        assert result.get("error") is not None
+        assert result["error"].node == "swap_confirm"
+        ainvoke.assert_not_called()
+
+    async def test_confirm_cancel_order_bypasses_secondary_check(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """confirm_cancel_order / confirm_modify_order 不受二次校验约束。"""
+        params = SwapConfirmParams(orderList=[SwapOrderRefItem(orderId="H-1")])
+        _patch(monkeypatch, confirm_module, params)
+        result = await swap_confirm(
+            {"raw_text": "确认撤单", "intent": "confirm_cancel_order"}
+        )
+        assert result.get("error") is None
+        assert result["confirm"]["action"] == "cancel"
 
 
 # ============================================================

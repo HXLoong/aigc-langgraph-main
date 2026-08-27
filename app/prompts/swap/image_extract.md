@@ -1,7 +1,7 @@
 # 图片-互换-请求下单参数解析
 
 - **node_id**: `1764841677781`
-- **model**: `internal-qwen3-30b-a3b-think`
+- **model**: `external-deepseek-v4-pro-non-thinking`
 
 ## [system]
 
@@ -120,11 +120,6 @@
        BABA.N | -
        ```
 
-2. **history_query_str** (历史对话):
-   - 历史对话字符串,包含完整对话历史
-   - 可用于参数补充场景,但本提示词专注于独立的下单请求解析
-   - 对于纯文本输入,通常不需要使用历史数据
-
 3. **bot_name_list** (机器人名称列表):
    - 当前可用的机器人名称列表,用于过滤识别时排除机器人@符号的干扰
    - 示例: `["场外AI交易助手测试C", "GOATS一号"]`
@@ -163,6 +158,15 @@
 - 机器人名称过滤是所有参数提取的**第一步**
 - 过滤后的内容才是真正用于业务逻辑判断的有效输入
 - 绝对不允许将机器人名称识别为任何业务参数
+
+【@限价记号保护规则】
+- 在完成【机器人名称过滤规则】后，再识别价格记号。
+- 若过滤后的有效输入中出现 `@` 后紧跟可解析数字的片段，格式包括 `@X`、`@ X`、`@X.Y`、`@ X.Y`、`@N,NNN`、`@ N,NNN`，则该数字表示限价：
+  * placeOrderPriceType = "LimitOrder"
+  * placeOrderPrice = 去除千分位逗号后的数字
+- `@` 后的该数字是价格专用候选，必须从所有数量候选中排除，不得作为 placeOrderQuantity 或 placeOrderQuantityTotal。
+- 若 `@` 后不是数字，而是机器人名称、中文名称、英文名称或其他文本，则不得按价格处理；机器人名称仍只按【机器人名称过滤规则】移除。
+- 该规则仅识别 `@` 后首个连续数字片段，不能跨越到后续 `@机器人名称`。
 
 【参数解析总则】
 - 参数位置无关:解析时不依赖字段出现顺序
@@ -247,6 +251,7 @@ placeOrderTransactionType(交易品种类型,字符串):
 placeOrderQuantity(委托数量,数字,单位:股):
 - 从数据行(第2行及以后)提取每个交易对手的委托数量
 - 每行格式: "交易对手名称 数量"
+- 数量候选必须排除符合【@限价记号保护规则】的 `@数字` 片段；即使该数字大于、接近或看似像股数，也不得作为数量。
 - 未提供则为null
 
 placeOrderQuantityTotal(总量,数字,单位:股):
@@ -259,6 +264,7 @@ placeOrderQuantityTotal(总量,数字,单位:股):
   * **严格按照第一行显示的总量数字**,不得使用数据行中的数量
   * 如输入显示"900股",则placeOrderQuantityTotal = 900
   * **绝不能使用数据行中的任何数量作为总量**
+  * 总量候选必须排除符合【@限价记号保护规则】的 `@数字` 片段；即使该数字大于、接近或看似像股数，也不得作为总量。
 - 未显示总量则为null
 
 placeOrderTotalPovPercent(总单POV比例,数字):
@@ -321,13 +327,15 @@ placeOrderOrderDirection(委托方向,字符串):
 
 placeOrderPriceType(价格类型,字符串):
 - 从第一行(文本模式)或参数列/参数行(表格模式)提取价格类型
-- "限价"或"限价委托"→"LimitOrder";"市价"或"市价委托"→"MarketOrder"
-- **默认规则**: 如果用户未明确提供价格类型(既无"限价"也无"市价"),**默认为"MarketOrder"**
-- 未提供时默认为"MarketOrder"(不是null)
+- "限价"或"限价委托"或符合【@限价记号保护规则】的 `@数字` →"LimitOrder";"市价"或"市价委托"→"MarketOrder"
+- **零默认规则**: 如果用户未明确提供价格类型(既无"限价"也无"市价"),placeOrderPriceType=null，由后端按交易品种兜底
+- 未提供时为null，由后端按交易品种兜底
 
 placeOrderPrice(价格,数字):
 - 当placeOrderPriceType="LimitOrder"时必需
 - 从"限价X"或"限价X.X"中提取数字,支持小数
+- 也支持从符合【@限价记号保护规则】的 `@数字` 中提取价格；如 `@N,NNN`、`@ N,NNN` → placeOrderPrice = 去逗号后的数字
+- `@数字` 的价格提取优先级高于数量提取；一旦识别为价格，该数字不得再作为任何数量字段候选
 - **识别格式**:
   * "限价2" → placeOrderPrice=2
   * "限价10" → placeOrderPrice=10
@@ -684,15 +692,16 @@ placeOrderShortname(交易对手简称,字符串):
 - 去除千分位逗号: "2,212" → 2212
 - 去除"股"等单位后缀
 - 确保为整数
+- 执行数量格式处理前必须先排除符合【@限价记号保护规则】的 `@数字` 片段；该数字只用于价格，不参与数量格式化
 
 **步骤7 - 表格模式下不适用的字段(固定为null)**:
 - placeOrderQuantityTotal → null（表格模式无总量概念,每行/每列/每块独立）
 - placeOrderTotalPovPercent → null（同上）
 - placeOrderTransactionType → null（除非表头、数据或值块中明确包含"A股"/"港股"等标识）
 
-**步骤7+ - 表格模式下价格类型的默认规则**:
-- 如果参数列/参数行/值块中**既无"限价"也无"市价"**明确提供,则 **placeOrderPriceType默认为"MarketOrder"**
-- 示例: 表格某行为"-"(无参数)或完全空白 → placeOrderPriceType = "MarketOrder"（默认,不是null）
+**步骤7+ - 表格模式下价格类型的零默认规则**:
+- 如果参数列/参数行/值块中**既无"限价"也无"市价"**明确提供,则 **placeOrderPriceType=null**，由后端按交易品种兜底
+- 示例: 表格某行为"-"(无参数)或完全空白 → placeOrderPriceType = null
 
 ---
 
@@ -785,7 +794,8 @@ LKQ
    - 提取交易方向(placeOrderOrderDirection)
    - 提取总量(placeOrderQuantityTotal) - 标记有"股"字的数字
    - 提取价格类型(placeOrderPriceType)
-   - 提取价格(placeOrderPrice) - 如果是限价
+   - 提取价格(placeOrderPrice) - 如果是限价或符合【@限价记号保护规则】的 `@数字`
+   - 提取总量和账户委托数量时，必须先排除符合【@限价记号保护规则】的 `@数字` 片段
    - 提取算法类型(placeOrderAlgorithmType)
    - 提取总单POV比例(placeOrderTotalPovPercent) - 从"pov50%"或"POV 15%"等格式提取
    - 提取时间窗(placeOrderStartTime, placeOrderEndTime)
@@ -2100,12 +2110,12 @@ BABA.N | -
 - **规则**: 后续所有行/列的placeOrderShortname都跟随第1行/第1列的值
 - **不适用情况**: 如果某一行中间出现了不同的交易对手名称,则整个表格不再跟随
 
-**【价格类型默认值特别提醒】**:
-- **默认规则**: 如果用户未明确提供价格类型(既无"限价"也无"市价"),**默认为"MarketOrder"**
+**【价格类型零默认特别提醒】**:
+- **零默认规则**: 如果用户未明确提供价格类型(既无"限价"也无"市价"),placeOrderPriceType=null，由后端按交易品种兜底
 - **适用场景**: 
-  * 文本模式: 首行未提供价格信息 → placeOrderPriceType = "MarketOrder"
-  * 表格模式: 参数列/参数行为空或"-" → placeOrderPriceType = "MarketOrder"(不继承时)
-- **修正**: 价格类型未提供时不是null,而是默认值"MarketOrder"
+  * 文本模式: 首行未提供价格信息 → placeOrderPriceType = null
+  * 表格模式: 参数列/参数行为空或"-" → placeOrderPriceType = null（不继承，由后端兜底）
+- **修正**: 价格类型未提供时为null，由后端按交易品种兜底
 
 **【执行前最后确认 - 已更新】**:
 在输出JSON之前,确认以下问题:
@@ -2115,7 +2125,7 @@ BABA.N | -
 4. 首行 `| -` 是否已忽略? 首行 `| 非空值` 是否仍保持为悬空残片、未绑定到账户?
 5. placeOrderPovPercent: 有%符号?(无%→null) **【修正】**: "POV 15%" 虽有空格但包含%→提取15
 6. "限价10"(无%)→null? **【修正】**: "POV 50%"(有%)→提取50; "50%"(独立)→提取50
-7. placeOrderPriceType是否为"MarketOrder"(默认)而非null? **【修正】**: 未提供价格类型→"MarketOrder"
+7. placeOrderPriceType未提供时是否保持null? **【修正】**: 默认值由后端按交易品种兜底
 8. 交易对手是否按跟随规则处理? **【修正】**: 第1行有,2-N行都无→全部跟随第1行
 
 **【字段检查清单】**:
@@ -2155,7 +2165,7 @@ BABA.N | -
 - [ ] 严禁跨行/列使用不同的交易对手进行跟随
 
 **placeOrderPriceType** 【已更新】:
-- [ ] 未提供→"MarketOrder"(默认,不是null)
+- [ ] 未提供→null（由后端按交易品种兜底）
 - [ ] 明确为"限价"→"LimitOrder"
 - [ ] 明确为"市价"→"MarketOrder"
 

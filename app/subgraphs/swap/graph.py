@@ -1,24 +1,35 @@
-"""swap 子图编译入口。
+"""swap 子图编译入口（DSL v2 迁移，2026-08）。
 
-ADR 0001 D5/D6 + grill-with-docs 第 1 决策。
+ADR 0001 D5/D6 + grill-with-docs 第 1 决策 + DSL v2「主干工作流」互换段拓扑。
 
-★ swap 子图主路由 7/7 意图全覆盖（5 个真节点 + 1 unknown 兜底）：
+★ swap 子图主路由 6/6 意图全覆盖（unknown_intent 走 swap_unknown 兜底）：
 
     START → swap_intent → [route_by_intent]
-        → swap_place_order  (place_order_request)         ← P0 核心
+        → swap_place_order → [quote_content 非空且非 "null"?]
+              ├─ 是 → swap_select_counterparty → swap_select_ticker → swap_place_order_submit
+              └─ 否 → swap_place_order_submit                                     ← P0 核心
         → swap_confirm      (confirm_order / confirm_cancel_order /
-                             confirm_modify_order)        ← 合并版（ADR 0001 D5）
+                             confirm_modify_order，共用节点函数按 intent 切 prompt)
         → swap_cancel       (cancel_order_request)
         → swap_query_order  (query_order_status)
         → swap_unknown      (unknown_intent + cascade 错误兜底)
         → END
 
-P2 辅助节点（不对应 intent，是 swap.place_order 的工具）后续 PR 实施：
+cascade 防御（CLAUDE.md 核心原则第 8 条）：place_order 分支每一段 conditional
+都检查 `has_error`，任一环节（下单 LLM / 选择交易对手 / 选择标的）失败即跳
+swap_unknown，不让错误 cascade 到后端提交。
+
+DSL v2 相对旧 DSL 的变化：
+- 手转股（hand_to_share）迭代链已从新 DSL 消失，整体删除（Dify 原节点已死）
+- 新增 swap.select_counterparty / swap.select_ticker（互换-选择交易对手 /
+  互换-选择标的）+ swap.place_order 内联的互换-规整引用补参摘要（quote_hints.py）
+- 下单提交（互换开仓-前置清洗 → 互换开仓）从 swap.place_order 拆到独立的
+  swap.place_order_submit，确保标的/对手候选覆盖已落地再提交
+
+P2 辅助节点（不对应 intent，是 swap.place_order 的工具，按线上流量增量补）：
 - swap.place_order_image（图片输入）
 - swap.place_order_excel（Excel 输入）
 - swap.image_recognize（图片识别工具）
-- swap.hand_to_share（互换分享）
-- swap.cancel_extract（如未来需要双阶段撤单确认）
 """
 from __future__ import annotations
 
@@ -33,8 +44,10 @@ from app.graph.state import AgentState, TraceEntry
 from app.subgraphs.swap.cancel import swap_cancel
 from app.subgraphs.swap.confirm import swap_confirm
 from app.subgraphs.swap.intent import swap_intent
-from app.subgraphs.swap.place_order import swap_place_order
+from app.subgraphs.swap.place_order import swap_place_order, swap_place_order_submit
 from app.subgraphs.swap.query_order import swap_query_order
+from app.subgraphs.swap.select_counterparty import swap_select_counterparty
+from app.subgraphs.swap.select_ticker import swap_select_ticker
 
 
 @safe_node
@@ -51,7 +64,7 @@ async def swap_unknown(state: AgentState) -> dict[str, Any]:
     }
 
 
-#: intent → 真节点 key 路由表（swap 子图 7 个意图全覆盖）
+#: intent → 真节点 key 路由表（swap 子图 6 个真实意图全覆盖，unknown_intent 走兜底）
 _INTENT_TO_NODE: dict[str, str] = {
     "place_order_request": "swap_place_order",
     "cancel_order_request": "swap_cancel",
@@ -62,6 +75,14 @@ _INTENT_TO_NODE: dict[str, str] = {
 }
 
 
+def _has_usable_quote(state: AgentState) -> bool:
+    """互换-引用消息判空：quote_content 非空且非字面量 "null"（大小写不敏感）。"""
+    quote = state.get("quote_content")
+    if not quote:
+        return False
+    return str(quote).strip().lower() != "null"
+
+
 def _route_after_swap_intent(state: AgentState) -> str:
     """swap.intent 后路由：cascade 防御 + intent 分发。"""
     if has_error(state):
@@ -70,11 +91,35 @@ def _route_after_swap_intent(state: AgentState) -> str:
     return _INTENT_TO_NODE.get(intent, "swap_unknown")
 
 
+def _route_after_place_order(state: AgentState) -> str:
+    """swap.place_order 后路由：互换-引用消息判空 if-else。
+
+    quote_content 非空且非 "null" → 需要标的/对手候选选择链（select_counterparty
+    → select_ticker）；否则直接进提交节点（fresh 全新下单场景）。
+    """
+    if has_error(state):
+        return "swap_unknown"
+    return "swap_select_counterparty" if _has_usable_quote(state) else "swap_place_order_submit"
+
+
+def _route_after_select_counterparty(state: AgentState) -> str:
+    """swap.select_counterparty 后路由：cascade 防御，顺序进 select_ticker。"""
+    return "swap_unknown" if has_error(state) else "swap_select_ticker"
+
+
+def _route_after_select_ticker(state: AgentState) -> str:
+    """swap.select_ticker 后路由：cascade 防御，顺序进提交节点。"""
+    return "swap_unknown" if has_error(state) else "swap_place_order_submit"
+
+
 def build_swap_graph() -> CompiledStateGraph:
-    """构建 swap 子图（主路由 7/7 意图全覆盖）。"""
+    """构建 swap 子图（主路由 6/6 意图全覆盖 + place_order 选择链）。"""
     g: StateGraph = StateGraph(AgentState)
     g.add_node("swap_intent", swap_intent)
     g.add_node("swap_place_order", swap_place_order)
+    g.add_node("swap_select_counterparty", swap_select_counterparty)
+    g.add_node("swap_select_ticker", swap_select_ticker)
+    g.add_node("swap_place_order_submit", swap_place_order_submit)
     g.add_node("swap_confirm", swap_confirm)
     g.add_node("swap_cancel", swap_cancel)
     g.add_node("swap_query_order", swap_query_order)
@@ -92,8 +137,33 @@ def build_swap_graph() -> CompiledStateGraph:
             "swap_unknown": "swap_unknown",
         },
     )
-    for n in (
+    g.add_conditional_edges(
         "swap_place_order",
+        _route_after_place_order,
+        {
+            "swap_select_counterparty": "swap_select_counterparty",
+            "swap_place_order_submit": "swap_place_order_submit",
+            "swap_unknown": "swap_unknown",
+        },
+    )
+    g.add_conditional_edges(
+        "swap_select_counterparty",
+        _route_after_select_counterparty,
+        {
+            "swap_select_ticker": "swap_select_ticker",
+            "swap_unknown": "swap_unknown",
+        },
+    )
+    g.add_conditional_edges(
+        "swap_select_ticker",
+        _route_after_select_ticker,
+        {
+            "swap_place_order_submit": "swap_place_order_submit",
+            "swap_unknown": "swap_unknown",
+        },
+    )
+    for n in (
+        "swap_place_order_submit",
         "swap_confirm",
         "swap_cancel",
         "swap_query_order",

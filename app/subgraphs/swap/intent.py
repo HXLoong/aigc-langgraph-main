@@ -1,57 +1,45 @@
 """swap.intent 节点 · 互换二级意图分类。
 
-输入：raw_text / quote_content / history_messages / conversation_id
+输入：raw_text / quote_content / swap_counterparties / conversation_id
 输出：state['intent'] = SwapIntentType 之一（7 值）
 
 LLM：get_qwen_thinking 工厂 + with_structured_output（工厂语义现状见 ADR 0020 §4 / #158 裁决）。
-prompt：app/prompts/swap/intent.md（Dify 原文，重构期内只读）。
+prompt：app/prompts/swap/intent.md（DSL v2 互换-节点-意图识别，2026-08 版）。
 
 ADR 0003 灰度：通过 `resolve_prompt_version("swap", "intent", conversation_id)`
 按 `app/prompts/_versions.yaml` 配置或 `OTC_PROMPT_SWAP_INTENT_VERSION` 环境变量
-切到 intent_v2.md 等版本（同一会话稳定路由）。
+切版本（同一会话稳定路由）；DSL v2 迁移后旧 g008 canary（intent_v2.md）已废弃
+（新提示词已内置对应仲裁规则），当前无生产灰度条目，机制保留供未来使用。
 """
 from __future__ import annotations
 
 from typing import Any
 
 from app.graph.safe_node import safe_node
-from app.graph.state import AgentState, Message, TraceEntry
+from app.graph.state import AgentState, TraceEntry
 from app.llm.clients import get_qwen_thinking
 from app.prompts import load_prompt, resolve_prompt_version
 from app.subgraphs.swap.models import SwapIntentOutput
 
 
-def _format_history(history: list[Message] | None) -> str:
-    """把 history_messages 拼成给 LLM 看的字符串。
-
-    格式（与 Dify 原工作流约定一致）：
-        user: <内容>
-        assistant: <内容>
-        ...
-    """
-    if not history:
-        return ""
-    lines: list[str] = []
-    for msg in history:
-        role = msg.role if hasattr(msg, "role") else msg.get("role", "user")
-        content = msg.content if hasattr(msg, "content") else msg.get("content", "")
-        lines.append(f"{role}: {content}")
-    return "\n".join(lines)
+def _format_shortname_list(counterparties: list[dict[str, Any]] | None) -> str:
+    """[{ctptyId,shortName,longName,sort}] → "shortName1, shortName2" 近似 Dify trsShortListStr。"""
+    items = counterparties or []
+    return ", ".join(
+        c.get("shortName", "") for c in items if isinstance(c, dict)
+    )
 
 
 def _build_user_message(state: AgentState) -> str:
-    """组装 user message（含 4 个 Dify 输入变量）。"""
+    """组装 user message（DSL v2 互换-节点-意图识别.md 的 3 个输入变量）。"""
     raw_content = state.get("raw_text", "") or ""
     quote_content = state.get("quote_content") or ""
-    history_str = _format_history(state.get("history_messages"))
-    # bot_name_list 由 ingest 节点未来从 Dify inputs 解析；M2 骨架阶段先空
-    bot_name_list: list[str] = []
+    shortname_list = _format_shortname_list(state.get("swap_counterparties"))
 
     return (
-        f"raw_content: {raw_content}\n"
-        f"quote_content: {quote_content}\n"
-        f"history_query_str: {history_str}\n"
-        f"bot_name_list: {bot_name_list}"
+        f"raw_content：{raw_content}\n"
+        f"quote_content：{quote_content}\n"
+        f"shortname_list：{shortname_list}"
     )
 
 

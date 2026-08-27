@@ -22,7 +22,8 @@ async def test_main_graph_compiles() -> None:
 async def test_main_graph_e2e_swap_keyword(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """ADR 0015 第 2 层：'互换' 关键词 → swap 子图 → place_order_request → swap_place_order 真节点。"""
+    """ADR 0015 第 2 层：'互换' 关键词 → swap 子图 → place_order_request →
+    swap_place_order + swap_place_order_submit 真节点链。"""
     from unittest.mock import AsyncMock, MagicMock
 
     from app.subgraphs.swap import intent as swap_intent_module
@@ -32,6 +33,7 @@ async def test_main_graph_e2e_swap_keyword(
         SwapOrderItem,
         SwapPlaceOrderParams,
     )
+    from app.tools.models import CommonResult
 
     def _patch(
         module: object, value: object, fn: str = "get_qwen_thinking"
@@ -41,6 +43,13 @@ async def test_main_graph_e2e_swap_keyword(
         fake_base = MagicMock()
         fake_base.with_structured_output = MagicMock(return_value=fake_llm)
         monkeypatch.setattr(module, fn, lambda: fake_base)
+
+    async def _fake_operate(self, req):  # type: ignore[no-untyped-def]
+        return CommonResult(code=0, msg="ok", data={"orderId": "H-20260828-0000000001"})
+
+    monkeypatch.setattr(
+        "app.tools.swap_client.SwapClientHttpx.operate", _fake_operate
+    )
 
     _patch(swap_intent_module, SwapIntentOutput(type="place_order_request"))
     _patch(

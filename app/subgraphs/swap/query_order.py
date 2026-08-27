@@ -1,44 +1,29 @@
 """swap.query_order 节点 · 互换订单状态查询参数提取。
 
-输入：raw_text + quote_content + history_messages
+输入：raw_text + quote_content
 输出：state['query_filter'] = {orderList}
 
-LLM：standard 模型 + with_structured_output（ADR 0010）。
-prompt：app/prompts/swap/query_order.md（Dify 原文）。
+LLM：thinking 模型 + with_structured_output（ADR 0010）。
+prompt：app/prompts/swap/query_order.md（DSL v2 互换-节点-查询订单，2 变量：
+raw_content / quote_content，不再含 history_query_str）。
 """
 from __future__ import annotations
 
 from typing import Any
 
+from app.graph.business_params import validated_query_filter
 from app.graph.safe_node import safe_node
-from app.graph.state import AgentState, Message, TraceEntry
+from app.graph.state import AgentState, TraceEntry
 from app.llm.clients import get_qwen_thinking
 from app.prompts import load_prompt
 from app.subgraphs.swap.backend import call_swap_backend
 from app.subgraphs.swap.models import SwapQueryParams
-from app.graph.business_params import validated_query_filter
-
-
-def _format_history(history: list[Message] | None) -> str:
-    if not history:
-        return ""
-    lines: list[str] = []
-    for msg in history:
-        role = msg.role if hasattr(msg, "role") else msg.get("role", "user")
-        content = msg.content if hasattr(msg, "content") else msg.get("content", "")
-        lines.append(f"{role}: {content}")
-    return "\n".join(lines)
 
 
 def _build_user_message(state: AgentState) -> str:
     raw_content = state.get("raw_text", "") or ""
     quote_content = state.get("quote_content") or ""
-    history_str = _format_history(state.get("history_messages"))
-    return (
-        f"raw_content: {raw_content}\n\n"
-        f"quote_content: {quote_content}\n\n"
-        f"history_query_str:\n{history_str}"
-    )
+    return f"raw_content：{raw_content}\nquote_content：{quote_content}"
 
 
 @safe_node
