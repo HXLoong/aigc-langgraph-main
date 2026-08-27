@@ -16,6 +16,12 @@
   - 例外（Dify DSL v2 迁移，2026-08-28）：`ticker/completeness.md`（completeness LLM 节点已被
     确定性校验替代）、`ticker/tokenize_v2.md`（零引用灰度实验位，未被 `_versions.yaml` 或任何
     代码/测试引用）随 `app/subgraphs/ticker/` 整体重构一并删除，详见 ADR 0008 迁移落地段
+  - `swap/confirm.md` — 旧"三确认合并版"快照（DSL v2 后代码按 intent 动态加载
+    confirm_order/confirm_cancel/confirm_modify 三个独立文件），保留供 diff 比对
+- **瘦身 v2 灰度系列**（2026-08-28 P0 批，ADR 0001 D5 处置表 + `docs/swap-prompt-slimming-assessment.md`）：
+  `swap/{intent,image_extract,excel_extract,image_ocr}_v2.md` 为零风险瘦身版,由
+  `_versions.yaml` / `OTC_PROMPT_SWAP_*_VERSION` 环境变量控制,默认 0 流量;
+  eval PASS ≥ v1 基线后才允许放量,达标转正时 v2→v1 并删 v2(ADR 0003)
 
 ## .md 文件格式约定（4-backtick 外层 fence 才不会被内层 ``` 提前闭合）
 

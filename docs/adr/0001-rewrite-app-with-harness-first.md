@@ -60,7 +60,8 @@
 |------|------|---|
 | **合并** | 互换 3 个"确认 X"节点 → 1 个 `swap.confirm(expected_action)`，新写统一 confirm 提示词（`app/subgraphs/swap/confirm.py`） | 本 ADR |
 | **拆分** | 期权 intent_extract（2870 行单节点）→ 1 intent + 5 extract（`extract_inquiry` / `extract_place_or_modify` / `extract_cancel` / `extract_confirm` / `extract_query`；close_order_* 归独立 close 子图） | [ADR 0011](./0011-split-option-intent-and-extraction.md) 二次修订 |
-| **瘦身** | `app/prompts/swap/place_order.md`：Dify 原版 3059 行 / 152,546 字符 → **2249 行 / 126,171 字符**（删冗余示例、压缩重复规则，保留语义；原版存为 `place_order.dify_original.md`） | 2026-05-12 grill 授权，M2/M3 执行，本次补登记 |
+| **瘦身** | `app/prompts/swap/place_order.md`：Dify 原版 3059 行 / 152,546 字符 → **2249 行 / 126,171 字符**（删冗余示例、压缩重复规则，保留语义；原版存为 `place_order.dify_original.md`）。注：DSL v2（2026-08）Dify 侧已自行重写该提示词，旧瘦身版随迁移被替换 | 2026-05-12 grill 授权，M2/M3 执行，本次补登记 |
+| **瘦身 P0 批（2026-08-28）** | 客户反馈提示词冗长/规则写死损害泛化性，全量评估见 `docs/swap-prompt-slimming-assessment.md`。P0 零风险档产出 4 个 v2 共存文件：`swap/{intent,image_extract,excel_extract,image_ocr}_v2.md`——只删死重（JSON 格式禁令，structured output 已强制）、悬空规则（bot_name_list/shortname_list/序号/total 等未注入变量）、重复陈述（同一规则 2~9 遍收敛为 1 处权威表述）、自相矛盾的补丁修订史（"POV 空格"）；**业务规则语义不变**。灰度经 `_versions.yaml`/env 控制，默认 0 流量，eval PASS ≥ v1 基线后方可放量（ADR 0003） | 本 ADR + 评估报告 |
 | **保持** | 其他 Dify LLM 节点 1:1 复刻，提示词照搬 | — |
 
 **节点数：蓝图 24 → 主干落地 20**（与 CLAUDE.md / README 口径一致）：

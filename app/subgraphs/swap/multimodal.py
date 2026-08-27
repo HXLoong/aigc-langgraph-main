@@ -21,7 +21,7 @@ import openpyxl
 from app.graph.safe_node import safe_node
 from app.graph.state import AgentState, TraceEntry
 from app.llm.clients import get_qwen_structured, get_qwen_vl
-from app.prompts import load_prompt
+from app.prompts import load_prompt, resolve_prompt_version
 from app.subgraphs.swap.models import SwapPlaceOrderParams
 from app.subgraphs.swap.place_order import _expected_action
 
@@ -61,9 +61,12 @@ def _image_urls(files: list[dict[str, Any]]) -> list[str]:
     return urls
 
 
-async def _extract_params(prompt_name: str, user_text: str) -> SwapPlaceOrderParams:
-    """image_extract / excel_extract 共用的参数提取调用。"""
-    prompt = load_prompt("swap", prompt_name)
+async def _extract_params(
+    prompt_name: str, user_text: str, conversation_id: str | None = None
+) -> SwapPlaceOrderParams:
+    """image_extract / excel_extract 共用的参数提取调用(走 _versions.yaml 灰度)。"""
+    resolved = resolve_prompt_version("swap", prompt_name, conversation_id)
+    prompt = load_prompt("swap", resolved)
     llm = get_qwen_structured().with_structured_output(SwapPlaceOrderParams)
     result: Any = await llm.ainvoke(
         [
@@ -94,7 +97,9 @@ async def swap_image_order(state: AgentState) -> dict[str, Any]:
     if not urls:
         raise ValueError("互换-图片链:无可用图片文件")
 
-    ocr_prompt = load_prompt("swap", "image_ocr")
+    ocr_prompt = load_prompt(
+        "swap", resolve_prompt_version("swap", "image_ocr", state.get("conversation_id"))
+    )
     vl = get_qwen_vl()
     content: list[dict[str, Any]] = [{"type": "text", "text": ocr_prompt.system}]
     for u in urls:
@@ -103,7 +108,9 @@ async def swap_image_order(state: AgentState) -> dict[str, Any]:
     ocr_text = getattr(ocr_result, "content", "") or ""
 
     user_text = f"图片识别内容:\n{ocr_text}\n\nraw_content: {state.get('raw_text', '') or ''}"
-    params = await _extract_params("image_extract", user_text)
+    params = await _extract_params(
+        "image_extract", user_text, state.get("conversation_id")
+    )
     return _params_update(params, "swap_image_order", f"images={len(urls)}")
 
 
@@ -125,7 +132,9 @@ async def swap_excel_order(state: AgentState) -> dict[str, Any]:
     rows_text = json.dumps(rows, ensure_ascii=False, default=str)
 
     user_text = f"Excel 数据:\n{rows_text}\n\nraw_content: {state.get('raw_text', '') or ''}"
-    params = await _extract_params("excel_extract", user_text)
+    params = await _extract_params(
+        "excel_extract", user_text, state.get("conversation_id")
+    )
     return _params_update(params, "swap_excel_order", f"rows={len(rows)}")
 
 

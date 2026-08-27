@@ -18,8 +18,31 @@
 
 # 当前灰度配置
 #
-# 2026-08 DSL v2 迁移：原 swap.intent g008 canary（intent_v2.md，5% 灰度修复
-# "swap 确认修改订单 H-..." 误判）已随新版 app/prompts/swap/intent.md（DSL v2
-# 互换-节点-意图识别，内置对应仲裁规则）一并废弃，intent_v2.md 文件已删除，
-# 灰度条目一并清理。当前无生产灰度配置。
+# 2026-08 DSL v2 迁移：原 swap.intent g008 canary 已随新版 intent.md 废弃。
+#
+# 2026-08-28 · swap 提示词瘦身 P0 批（docs/swap-prompt-slimming-assessment.md）：
+# 四个 *_v2.md 为「零风险删除档」瘦身版（删悬空规则/JSON 禁令/重复陈述/矛盾修订史，
+# 业务规则语义与 v1 一致）。默认 0 流量；验证方式二选一：
+#   a) 环境变量强制（开发/eval 验证）：
+#      OTC_PROMPT_SWAP_INTENT_VERSION=intent_v2
+#      OTC_PROMPT_SWAP_IMAGE_EXTRACT_VERSION=image_extract_v2
+#      OTC_PROMPT_SWAP_EXCEL_EXTRACT_VERSION=excel_extract_v2
+#      OTC_PROMPT_SWAP_IMAGE_OCR_VERSION=image_ocr_v2
+#   b) 取消下方注释开灰度（eval PASS 率 ≥ v1 基线后才允许）：
+# swap.intent:
+#   versions:
+#     - {name: intent, weight: 0.95}
+#     - {name: intent_v2, weight: 0.05}
+# swap.image_extract:
+#   versions:
+#     - {name: image_extract, weight: 0.95}
+#     - {name: image_extract_v2, weight: 0.05}
+# swap.excel_extract:
+#   versions:
+#     - {name: excel_extract, weight: 0.95}
+#     - {name: excel_extract_v2, weight: 0.05}
+# swap.image_ocr:
+#   versions:
+#     - {name: image_ocr, weight: 0.95}
+#     - {name: image_ocr_v2, weight: 0.05}
 overrides: {}
