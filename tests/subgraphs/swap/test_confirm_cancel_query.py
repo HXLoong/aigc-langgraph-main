@@ -1,272 +1,208 @@
-"""swap.confirm + swap.cancel + swap.query_order 节点测试（mock LLM）。"""
-from __future__ import annotations
+"""swap confirm / cancel / query_order 节点测试(瘦身 P1 去 LLM 化后)。
 
-from unittest.mock import AsyncMock, MagicMock
+三节点不再调 LLM,订单号由 app/subgraphs/swap/order_id.py 确定性提取
+(提取器细粒度行为见 test_order_id.py,本文件测节点装配:state 输出形状、
+二次校验、backend 载荷、safe_node 兜底)。
+"""
+from __future__ import annotations
 
 import pytest
 
-from app.subgraphs.swap import (
-    cancel as cancel_module,
-)
-from app.subgraphs.swap import (
-    confirm as confirm_module,
-)
-from app.subgraphs.swap import (
-    query_order as query_module,
-)
+import app.subgraphs.swap.cancel as cancel_module
+import app.subgraphs.swap.confirm as confirm_module
+import app.subgraphs.swap.query_order as query_module
 from app.subgraphs.swap.cancel import swap_cancel
 from app.subgraphs.swap.confirm import (
-    _expected_action as confirm_action,
-)
-from app.subgraphs.swap.confirm import swap_confirm
-from app.subgraphs.swap.models import (
-    SwapCancelParams,
-    SwapConfirmParams,
-    SwapOrderRefItem,
-    SwapQueryParams,
+    _expected_action,
+    confirm_order_secondary_check_passed,
+    swap_confirm,
 )
 from app.subgraphs.swap.query_order import swap_query_order
 
-
-def _patch(
-    monkeypatch: pytest.MonkeyPatch, module: object, value: object
-) -> AsyncMock:
-    fake_llm = MagicMock()
-    fake_llm.ainvoke = AsyncMock(return_value=value)
-    fake_base = MagicMock()
-    fake_base.with_structured_output = MagicMock(return_value=fake_llm)
-    monkeypatch.setattr(module, "get_qwen_thinking", lambda: fake_base)
-    return fake_llm.ainvoke
+ORDER = "H-20260304-0000000001"
+ORDER2 = "H-20260304-0000000002"
 
 
-# ============================================================
-# expected_action 推导（confirm 合并版）
-# ============================================================
+def _patch_backend(monkeypatch: pytest.MonkeyPatch, module: object) -> list[dict]:
+    """打桩 call_swap_backend,记录调用载荷。"""
+    calls: list[dict] = []
+
+    async def fake_backend(state, *, intent, order_list):
+        calls.append({"intent": intent, "order_list": order_list})
+        return {"api_result": "mock", "api_code": 0}
+
+    monkeypatch.setattr(module, "call_swap_backend", fake_backend)
+    return calls
 
 
 class TestConfirmExpectedAction:
     def test_confirm_order_maps_place(self) -> None:
-        assert confirm_action("confirm_order") == "place"
+        assert _expected_action("confirm_order") == "place"
 
     def test_confirm_cancel_maps_cancel(self) -> None:
-        assert confirm_action("confirm_cancel_order") == "cancel"
+        assert _expected_action("confirm_cancel_order") == "cancel"
 
     def test_confirm_modify_maps_modify(self) -> None:
-        assert confirm_action("confirm_modify_order") == "modify"
+        assert _expected_action("confirm_modify_order") == "modify"
 
     def test_unknown_falls_back_to_place(self) -> None:
-        assert confirm_action(None) == "place"
-        assert confirm_action("garbage") == "place"
-
-
-# ============================================================
-# swap.confirm 节点（合并版）
-# ============================================================
-
-
-@pytest.mark.asyncio
-class TestSwapConfirmNode:
-    async def test_confirm_order_action_place(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        params = SwapConfirmParams(
-            orderList=[SwapOrderRefItem(orderId="H-20260304-AAAA")]
-        )
-        _patch(monkeypatch, confirm_module, params)
-        result = await swap_confirm(
-            {
-                "raw_text": "确认下单",
-                "quote_content": "订单 H-20260304-AAAA",
-                "intent": "confirm_order",
-            }
-        )
-        assert result["confirm"]["action"] == "place"
-        assert (
-            result["confirm"]["orderList"][0]["orderId"]
-            == "H-20260304-AAAA"
-        )
-
-    async def test_confirm_cancel_action_cancel(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        params = SwapConfirmParams(
-            orderList=[SwapOrderRefItem(orderId="H-1")]
-        )
-        _patch(monkeypatch, confirm_module, params)
-        result = await swap_confirm(
-            {"raw_text": "确认撤单", "intent": "confirm_cancel_order"}
-        )
-        assert result["confirm"]["action"] == "cancel"
-
-    async def test_confirm_modify_action_modify(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        params = SwapConfirmParams(
-            orderList=[SwapOrderRefItem(orderId="H-1")]
-        )
-        _patch(monkeypatch, confirm_module, params)
-        result = await swap_confirm(
-            {"raw_text": "确认改单", "intent": "confirm_modify_order"}
-        )
-        assert result["confirm"]["action"] == "modify"
-
-    async def test_orderid_can_be_null(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        """与 Dify schema 一致，orderId 允许 null（找不到时兜底）。
-
-        raw_text 必须含二次校验关键词之一（本用例用"确认下单"）才能走到 LLM
-        提取步骤——见 TestConfirmOrderSecondaryCheck。
-        """
-        params = SwapConfirmParams(
-            orderList=[SwapOrderRefItem(orderId=None)]
-        )
-        _patch(monkeypatch, confirm_module, params)
-        result = await swap_confirm(
-            {"raw_text": "确认下单", "intent": "confirm_order"}
-        )
-        assert result["confirm"]["orderList"][0]["orderId"] is None
-
-
-# ============================================================
-# 互换-确认下单二次校验（DSL v2 if-else 1781200000774，仅 confirm_order 分支）
-# ============================================================
+        assert _expected_action(None) == "place"
 
 
 class TestConfirmOrderSecondaryCheck:
-    @pytest.mark.parametrize(
-        "raw_text",
-        ["确认下单", "确定下单", "确认订单", "下单确认", "麻烦确认下单谢谢"],
-    )
+    @pytest.mark.parametrize("raw_text", ["确认下单", "swap确定下单", "确认订单 H-1", "下单确认!"])
     def test_passes_with_keyword(self, raw_text: str) -> None:
-        from app.subgraphs.swap.confirm import confirm_order_secondary_check_passed
+        assert confirm_order_secondary_check_passed(raw_text)
 
-        assert confirm_order_secondary_check_passed(raw_text) is True
-
-    @pytest.mark.parametrize(
-        "raw_text", ["确认", "好的", "撤单", "", None]
-    )
+    @pytest.mark.parametrize("raw_text", ["确认", "下单", "好的", "", None])
     def test_fails_without_keyword(self, raw_text: str | None) -> None:
-        from app.subgraphs.swap.confirm import confirm_order_secondary_check_passed
-
-        assert confirm_order_secondary_check_passed(raw_text) is False
+        assert not confirm_order_secondary_check_passed(raw_text)
 
 
-@pytest.mark.asyncio
-class TestSwapConfirmSecondaryCheckNode:
-    async def test_confirm_order_without_keyword_sets_error_and_skips_llm(
+class TestSwapConfirmNode:
+    @pytest.mark.asyncio
+    async def test_confirm_order_extracts_all_from_quote(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """confirm_order 且 raw_text 未含关键词 → 不调 LLM/后端，直接 state['error']。"""
-        ainvoke = _patch(
-            monkeypatch,
-            confirm_module,
-            SwapConfirmParams(orderList=[SwapOrderRefItem(orderId="H-1")]),
+        calls = _patch_backend(monkeypatch, confirm_module)
+        out = await swap_confirm(
+            {
+                "intent": "confirm_order",
+                "raw_text": "确认下单",
+                "quote_content": f"订单{ORDER}(序号1)\n订单{ORDER2}(序号2)",
+            }
         )
-        result = await swap_confirm(
-            {"raw_text": "确认", "intent": "confirm_order"}
-        )
-        assert "confirm" not in result
-        assert result.get("error") is not None
-        assert result["error"].node == "swap_confirm"
-        ainvoke.assert_not_called()
+        assert out["confirm"]["action"] == "place"
+        ids = [o["orderId"] for o in out["confirm"]["orderList"]]
+        assert ids == [ORDER, ORDER2]
+        assert calls[0]["intent"] == "confirm_order"
 
+    @pytest.mark.asyncio
+    async def test_confirm_cancel_action_cancel(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        calls = _patch_backend(monkeypatch, confirm_module)
+        out = await swap_confirm(
+            {
+                "intent": "confirm_cancel_order",
+                "raw_text": "确认撤单",
+                "quote_content": f"单号:{ORDER}",
+            }
+        )
+        assert out["confirm"]["action"] == "cancel"
+        assert out["confirm"]["orderList"][0]["orderId"] == ORDER
+        assert calls[0]["intent"] == "confirm_cancel_order"
+
+    @pytest.mark.asyncio
+    async def test_confirm_modify_action_modify(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        _patch_backend(monkeypatch, confirm_module)
+        out = await swap_confirm(
+            {
+                "intent": "confirm_modify_order",
+                "raw_text": "确认改单",
+                "quote_content": f"单号:{ORDER}",
+            }
+        )
+        assert out["confirm"]["action"] == "modify"
+
+    @pytest.mark.asyncio
+    async def test_orderid_can_be_null(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        _patch_backend(monkeypatch, confirm_module)
+        out = await swap_confirm(
+            {"intent": "confirm_cancel_order", "raw_text": "确认撤单", "quote_content": ""}
+        )
+        assert out["confirm"]["orderList"][0]["orderId"] is None
+
+
+class TestSwapConfirmSecondaryCheckNode:
+    @pytest.mark.asyncio
+    async def test_confirm_order_without_keyword_sets_error(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        calls = _patch_backend(monkeypatch, confirm_module)
+        out = await swap_confirm(
+            {"intent": "confirm_order", "raw_text": "好的", "quote_content": f"单号:{ORDER}"}
+        )
+        assert out["error"] is not None
+        assert out["error"].type == "ConfirmOrderSecondaryCheckFailed"
+        assert calls == []  # 未过校验绝不调后端
+
+    @pytest.mark.asyncio
     async def test_confirm_cancel_order_bypasses_secondary_check(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """confirm_cancel_order / confirm_modify_order 不受二次校验约束。"""
-        params = SwapConfirmParams(orderList=[SwapOrderRefItem(orderId="H-1")])
-        _patch(monkeypatch, confirm_module, params)
-        result = await swap_confirm(
-            {"raw_text": "确认撤单", "intent": "confirm_cancel_order"}
+        _patch_backend(monkeypatch, confirm_module)
+        out = await swap_confirm(
+            {
+                "intent": "confirm_cancel_order",
+                "raw_text": "随便说说",  # 无确认下单关键词也放行(DSL 二次校验仅限 confirm_order)
+                "quote_content": f"单号:{ORDER}",
+            }
         )
-        assert result.get("error") is None
-        assert result["confirm"]["action"] == "cancel"
+        assert out.get("error") is None
+        assert out["confirm"]["action"] == "cancel"
 
 
-# ============================================================
-# swap.cancel 节点
-# ============================================================
-
-
-@pytest.mark.asyncio
 class TestSwapCancelNode:
-    async def test_extracts_orderid(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        params = SwapCancelParams(
-            orderList=[SwapOrderRefItem(orderId="H-20260304-XYZ")]
+    @pytest.mark.asyncio
+    async def test_raw_explicit_wins(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        calls = _patch_backend(monkeypatch, cancel_module)
+        out = await swap_cancel(
+            {"raw_text": f"撤掉 {ORDER2}", "quote_content": f"单号:{ORDER}"}
         )
-        _patch(monkeypatch, cancel_module, params)
-        result = await swap_cancel(
-            {"raw_text": "撤 H-20260304-XYZ"}
-        )
-        assert (
-            result["cancel_params"]["orderList"][0]["orderId"]
-            == "H-20260304-XYZ"
-        )
+        assert out["cancel_params"]["orderList"][0]["orderId"] == ORDER2
+        assert calls[0]["intent"] == "cancel_order_request"
 
+    @pytest.mark.asyncio
+    async def test_quote_all_when_raw_bare(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        _patch_backend(monkeypatch, cancel_module)
+        out = await swap_cancel(
+            {"raw_text": "全部撤单", "quote_content": f"单号:{ORDER}\n单号:{ORDER2}"}
+        )
+        ids = [o["orderId"] for o in out["cancel_params"]["orderList"]]
+        assert ids == [ORDER, ORDER2]
+
+    @pytest.mark.asyncio
     async def test_orderid_null_when_not_found(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        params = SwapCancelParams(
-            orderList=[SwapOrderRefItem(orderId=None)]
-        )
-        _patch(monkeypatch, cancel_module, params)
-        result = await swap_cancel({"raw_text": "取消下单"})
-        assert result["cancel_params"]["orderList"][0]["orderId"] is None
+        _patch_backend(monkeypatch, cancel_module)
+        out = await swap_cancel({"raw_text": "撤单", "quote_content": ""})
+        assert out["cancel_params"]["orderList"][0]["orderId"] is None
 
-    async def test_safe_node_catches_error(
+    @pytest.mark.asyncio
+    async def test_safe_node_catches_backend_error(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        fake_llm = MagicMock()
-        fake_llm.with_structured_output = MagicMock(
-            return_value=MagicMock(
-                ainvoke=AsyncMock(side_effect=RuntimeError("LLM down"))
-            )
-        )
-        monkeypatch.setattr(
-            cancel_module, "get_qwen_thinking", lambda: fake_llm
-        )
-        result = await swap_cancel({"raw_text": "x"})
-        assert result.get("error") is not None
-        assert result["error"].node == "swap_cancel"
+        async def boom(state, *, intent, order_list):
+            raise RuntimeError("backend boom")
+
+        monkeypatch.setattr(cancel_module, "call_swap_backend", boom)
+        out = await swap_cancel({"raw_text": f"撤 {ORDER}"})
+        assert out["error"] is not None
+        assert out["error"].node == "swap_cancel"
 
 
-# ============================================================
-# swap.query_order 节点
-# ============================================================
-
-
-@pytest.mark.asyncio
 class TestSwapQueryOrderNode:
-    async def test_extracts_orderid(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        params = SwapQueryParams(
-            orderList=[SwapOrderRefItem(orderId="H-20260304-AAAA")]
+    @pytest.mark.asyncio
+    async def test_raw_first(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        calls = _patch_backend(monkeypatch, query_module)
+        out = await swap_query_order(
+            {"raw_text": f"查 {ORDER2}", "quote_content": f"单号:{ORDER}"}
         )
-        _patch(monkeypatch, query_module, params)
-        result = await swap_query_order(
-            {"raw_text": "TRS 查 H-20260304-AAAA 状态"}
-        )
-        assert (
-            result["query_filter"]["orderList"][0]["orderId"]
-            == "H-20260304-AAAA"
-        )
+        assert out["query_filter"]["orderList"][0]["orderId"] == ORDER2
+        assert calls[0]["intent"] == "query_order_status"
 
-    async def test_writes_trace_with_count(
+    @pytest.mark.asyncio
+    async def test_quote_fallback_and_trace(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        params = SwapQueryParams(
-            orderList=[
-                SwapOrderRefItem(orderId="H-A"),
-                SwapOrderRefItem(orderId="H-B"),
-            ]
+        _patch_backend(monkeypatch, query_module)
+        out = await swap_query_order(
+            {"raw_text": "订单怎么样了", "quote_content": f"单号:{ORDER}"}
         )
-        _patch(monkeypatch, query_module, params)
-        result = await swap_query_order({"raw_text": "查 H-A H-B 状态"})
-        trace = result.get("trace", [])
-        assert len(trace) == 1
-        assert trace[0].node == "swap_query_order"
-        assert "orders=2" in trace[0].decision
+        assert out["query_filter"]["orderList"][0]["orderId"] == ORDER
+        trace = [e for e in out["trace"] if e.node == "swap_query_order"]
+        assert trace and trace[0].decision.startswith("deterministic")

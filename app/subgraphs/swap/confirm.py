@@ -35,26 +35,14 @@ from typing import Any
 from app.graph.business_params import validated_confirm
 from app.graph.safe_node import safe_node
 from app.graph.state import AgentState, ErrorInfo, TraceEntry
-from app.llm.clients import get_qwen_thinking
-from app.prompts import load_prompt
 from app.subgraphs.swap.backend import call_swap_backend
-from app.subgraphs.swap.models import SwapConfirmParams
-
-#: intent → 对应 prompt 文件名（DSL v2 三个独立提示词）
-_PROMPT_BY_INTENT: dict[str, str] = {
-    "confirm_order": "confirm_order",
-    "confirm_cancel_order": "confirm_cancel",
-    "confirm_modify_order": "confirm_modify",
-}
+from app.subgraphs.swap.order_id import (
+    extract_for_confirm_order,
+    extract_for_confirm_single,
+)
 
 #: 互换-确认下单二次校验关键词（DSL v2 if-else `1781200000774`，含同义词）
 _CONFIRM_ORDER_KEYWORDS: tuple[str, ...] = ("确认下单", "确定下单", "确认订单", "下单确认")
-
-
-def _build_user_message(state: AgentState) -> str:
-    raw_content = state.get("raw_text", "") or ""
-    quote_content = state.get("quote_content") or ""
-    return f"raw_content：{raw_content}\nquote_content：{quote_content}"
 
 
 def _expected_action(intent: str | None) -> str:
@@ -106,19 +94,14 @@ async def swap_confirm(state: AgentState) -> dict[str, Any]:
             ],
         }
 
-    prompt_name = _PROMPT_BY_INTENT.get(intent or "", "confirm_order")
-    prompt = load_prompt("swap", prompt_name)
-    llm = get_qwen_thinking().with_structured_output(SwapConfirmParams)
-
-    user_message = _build_user_message(state)
-    result: Any = await llm.ainvoke(
-        [
-            ("system", prompt.system),
-            ("user", user_message),
-        ]
-    )
-
-    order_list = [item.model_dump() for item in result.orderList]
+    # 确定性订单号提取(瘦身 P1 去 LLM 化,来源优先级对照原三提示词):
+    # confirm_order → quote 全部(不遗漏);confirm_cancel/modify → quote 优先单源
+    raw, quote = state.get("raw_text"), state.get("quote_content")
+    if action == "place":
+        order_ids = extract_for_confirm_order(raw=raw, quote=quote)
+    else:
+        order_ids = extract_for_confirm_single(raw=raw, quote=quote)
+    order_list = [{"orderId": oid} for oid in order_ids]
 
     # action → SwapIntentionType 映射
     _ACTION_INTENT = {
@@ -138,8 +121,7 @@ async def swap_confirm(state: AgentState) -> dict[str, Any]:
         "trace": [
             TraceEntry(
                 node="swap_confirm",
-                decision=f"action={action},orders={len(result.orderList)},prompt={prompt_name}",
-                llm_output=result.model_dump(),
+                decision=f"deterministic,action={action},orders={len(order_list)}",
             )
         ],
     }

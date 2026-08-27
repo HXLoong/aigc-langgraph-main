@@ -18,6 +18,10 @@
     代码/测试引用）随 `app/subgraphs/ticker/` 整体重构一并删除，详见 ADR 0008 迁移落地段
   - `swap/confirm.md` — 旧"三确认合并版"快照（DSL v2 后代码按 intent 动态加载
     confirm_order/confirm_cancel/confirm_modify 三个独立文件），保留供 diff 比对
+- **去 LLM 化后转非活跃**（2026-08-28 瘦身 P1，ADR 0001 D5 处置表）：
+  `swap/{cancel_order,query_order,confirm_order,confirm_cancel,confirm_modify}.md` ——
+  对应节点已改确定性订单号提取（`app/subgraphs/swap/order_id.py`），不再有 LLM 调用;
+  五个文件保留为行为规约参照与可回滚资产
 - **瘦身 v2 灰度系列**（2026-08-28 P0 批，ADR 0001 D5 处置表 + `docs/swap-prompt-slimming-assessment.md`）：
   `swap/{intent,image_extract,excel_extract,image_ocr}_v2.md` 为零风险瘦身版,由
   `_versions.yaml` / `OTC_PROMPT_SWAP_*_VERSION` 环境变量控制,默认 0 流量;

@@ -1,11 +1,11 @@
-"""swap.query_order 节点 · 互换订单状态查询参数提取。
+"""swap.query_order 节点 · 互换订单状态查询(确定性,已去 LLM 化)。
 
-输入：raw_text + quote_content
-输出：state['query_filter'] = {orderList}
+瘦身 P1(docs/swap-prompt-slimming-assessment.md 病灶 2):原 LLM 调用的唯一
+任务是提取 H- 订单号,改为确定性提取。原提示词 app/prompts/swap/query_order.md
+保留为非活跃资产。行为约定 1:1 对照原提示词:raw 优先,否则 quote。
 
-LLM：thinking 模型 + with_structured_output（ADR 0010）。
-prompt：app/prompts/swap/query_order.md（DSL v2 互换-节点-查询订单，2 变量：
-raw_content / quote_content，不再含 history_query_str）。
+输入:raw_text + quote_content
+输出:state['query_filter'] = {orderList} + 后端调用结果
 """
 from __future__ import annotations
 
@@ -14,33 +14,18 @@ from typing import Any
 from app.graph.business_params import validated_query_filter
 from app.graph.safe_node import safe_node
 from app.graph.state import AgentState, TraceEntry
-from app.llm.clients import get_qwen_thinking
-from app.prompts import load_prompt
 from app.subgraphs.swap.backend import call_swap_backend
-from app.subgraphs.swap.models import SwapQueryParams
-
-
-def _build_user_message(state: AgentState) -> str:
-    raw_content = state.get("raw_text", "") or ""
-    quote_content = state.get("quote_content") or ""
-    return f"raw_content：{raw_content}\nquote_content：{quote_content}"
+from app.subgraphs.swap.order_id import extract_for_query
 
 
 @safe_node
 async def swap_query_order(state: AgentState) -> dict[str, Any]:
-    """swap.query_order 节点。"""
-    prompt = load_prompt("swap", "query_order")
-    llm = get_qwen_thinking().with_structured_output(SwapQueryParams)
-
-    user_message = _build_user_message(state)
-    result: Any = await llm.ainvoke(
-        [
-            ("system", prompt.system),
-            ("user", user_message),
-        ]
+    """swap.query_order 节点(确定性提取)。"""
+    order_ids = extract_for_query(
+        raw=state.get("raw_text"), quote=state.get("quote_content")
     )
+    order_list = [{"orderId": oid} for oid in order_ids]
 
-    order_list = [item.model_dump() for item in result.orderList]
     backend = await call_swap_backend(
         state,
         intent="query_order_status",
@@ -53,8 +38,7 @@ async def swap_query_order(state: AgentState) -> dict[str, Any]:
         "trace": [
             TraceEntry(
                 node="swap_query_order",
-                decision=f"orders={len(result.orderList)}",
-                llm_output=result.model_dump(),
+                decision=f"deterministic,orders={len(order_list)}",
             )
         ],
     }
