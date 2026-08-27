@@ -49,7 +49,7 @@ _FIELD_BY_PRODUCT: dict[str, dict[str, str]] = {
     },
     "place_params": {
         "swap": "swap_place_order",
-        "option": "option_extract_place_or_modify",
+        "option": "option_extract_place",  # DSL v2:place_or_modify 拆分后的下单节点
         "option_close": "close_place_close",
     },
     "tickers": {
@@ -62,8 +62,9 @@ _FIELD_BY_PRODUCT: dict[str, dict[str, str]] = {
         "option_close": "close_holding_query",  # 默认；具体节点见 trace
     },
     "confirm": {
+        "swap": "swap_confirm",
+        "option": "option_extract_confirm_place",  # DSL v2 确认下单节点
         "option_close": "close_confirm_close",
-        # swap.confirm 合并版后续 PR 实施
     },
     "cancel_params": {
         "option_close": "close_cancel_close",
@@ -75,21 +76,27 @@ _FIELD_BY_PRODUCT: dict[str, dict[str, str]] = {
 _FIELD_FALLBACK: dict[str, str] = {
     "product_type": "intent_route",
     "intent": "intent_route",  # 当 product_type=unknown 时漏判在 intent_route
-    "tickers": "ticker_react_agent",
+    "tickers": "ticker_resolver",  # DSL v2:ReAct 退役,resolver 管线内嵌于业务节点
 }
 
 
 #: 节点名 → 提示词文件路径
 _NODE_TO_PROMPT: dict[str, str] = {
-    "intent_route": "app/prompts/router/product_type.md",
-    "ticker_react_agent": "app/prompts/ticker/infer_code.md",
+    "intent_route": "app/prompts/router/unknown_intent.md",  # DSL v2:LLM 兜底提示词
+    "ticker_resolver": "app/prompts/ticker/infer_code.md",
     "swap_intent": "app/prompts/swap/intent.md",
     "swap_place_order": "app/prompts/swap/place_order.md",
+    "swap_confirm": "app/prompts/swap/confirm_order.md",
+    "swap_select_counterparty": "app/prompts/swap/select_counterparty.md",
+    "swap_select_ticker": "app/prompts/swap/select_ticker.md",
     "option_intent": "app/prompts/option/intent.md",
     "option_extract_inquiry": "app/prompts/option/extract_inquiry.md",
-    "option_extract_place_or_modify": (
-        "app/prompts/option/extract_place_or_modify.md"
-    ),
+    "option_extract_place": "app/prompts/option/extract_place.md",
+    "option_extract_confirm_place": "app/prompts/option/extract_confirm_place.md",
+    "option_extract_cancel_place": "app/prompts/option/extract_cancel_place.md",
+    "option_extract_confirm_cancel": "app/prompts/option/extract_confirm_cancel.md",
+    "option_extract_cancel": "app/prompts/option/extract_cancel.md",
+    "option_extract_query": "app/prompts/option/extract_query.md",
     "close_intent": "app/prompts/option_close/intent.md",
     "close_holding_query": "app/prompts/option_close/holding_query.md",
     "close_place_close": "app/prompts/option_close/place_close.md",
