@@ -61,8 +61,8 @@ DeepSeek，**当前不可用**——实际影响面为零：`get_qwen_vl` 全库
 - ⚠️ **工厂语义现状如实记录**（2026-08-27 核查 #142 订正本节原措辞）：ADR 0010 的
   "structured output 强制 standard"**从未被执行**——20 个 structured output 调用点实际
   分布为 thinking 15 / structured 2 / complex 1 / standard 0。当前同模型无运行时后果，
-  但按工厂分化模型前必须先裁决该偏离（[#158](https://github.com/GZTL-AI/aigc-langgraph/issues/158)：
-  改调用点对齐 vs 改 ADR 重定义工厂语义），否则 15 个节点会静默跟随 thinking 工厂
+  该偏离已裁决（[#158](https://github.com/GZTL-AI/aigc-langgraph/issues/158)，2026-08-27）：**追认 thinking 工厂为事实默认**；
+  **分化前置纪律**——按工厂分化模型前必须先做调用点统一 PR，否则 15 个节点会静默跟随 thinking 工厂
 
 ## 替代方案
 

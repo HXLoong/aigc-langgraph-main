@@ -6,7 +6,7 @@ ADR 0011 二次修订：从原"意图识别+参数提取"巨型 prompt 拆出独
 输入：raw_text / quote_content / history_messages
 输出：state['intent'] = OptionIntentType 之一（10 值）
 
-LLM：standard 模型 + with_structured_output（ADR 0010）。
+LLM：get_qwen_structured 工厂 + with_structured_output（工厂语义现状见 ADR 0020 §4）。
 prompt：`app/prompts/option/intent.md`（拆分后的轻量版，~80 行）。
 """
 from __future__ import annotations

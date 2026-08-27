@@ -28,7 +28,7 @@
 
 **本 ADR 的强制规则从未在代码中被执行**：`get_qwen_standard` 业务侧零调用；20 个 `with_structured_output` 调用点实际分布为 **thinking 15 / structured 2 / complex 1 / standard 0**（`swap/intent.py` 的 docstring 甚至自称遵守本规则，实际调 thinking 工厂）。
 
-0020 之后同模型故无运行时后果，但**工厂 import 语义仍有分化风险**：未来按 0020 §4 路径给不同工厂配不同模型时，15 个 structured output 节点会静默跟随 thinking 工厂。裁决方向：(a) 批量改调用点对齐本规则；(b) 改 ADR 承认"thinking 工厂为 structured output 事实默认"并重定义各工厂语义。
+**裁决（#158，Tony 2026-08-27）**：选 (b) 追认——thinking 工厂为 structured output 的**事实默认**，本规则正式废止。**分化前置纪律**：未来按工厂分化模型前，必须先做一个'调用点统一 PR'把 20 处 structured output 调用点归位到语义正确的工厂，否则 15 个节点会静默跟随 thinking 工厂拿到错误模型。
 
 ## 备选方案（历史论证）
 
