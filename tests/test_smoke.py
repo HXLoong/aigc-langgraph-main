@@ -142,6 +142,7 @@ async def test_main_graph_e2e_option_close_order_no(
         CloseOrderItem,
         ClosePlaceParams,
     )
+    from app.tools.models import CommonResult
 
     def _patch(module: object, value: object, fn: str = "get_qwen_thinking") -> None:
         fake_llm = MagicMock()
@@ -149,6 +150,20 @@ async def test_main_graph_e2e_option_close_order_no(
         fake_base = MagicMock()
         fake_base.with_structured_output = MagicMock(return_value=fake_llm)
         monkeypatch.setattr(module, fn, lambda: fake_base)
+
+    async def _fake_query_close_orders(self, order_ids=None, contract_codes=None):  # type: ignore[no-untyped-def]
+        return CommonResult(code=0, msg="ok", data=[])
+
+    async def _fake_operate(self, req):  # type: ignore[no-untyped-def]
+        return CommonResult(code=0, msg="ok", data="mock-backend-result")
+
+    monkeypatch.setattr(
+        "app.tools.option_client.OptionClientHttpx.query_close_orders",
+        _fake_query_close_orders,
+    )
+    monkeypatch.setattr(
+        "app.tools.option_client.OptionClientHttpx.operate", _fake_operate
+    )
 
     _patch(close_intent_module, CloseIntentOutput(type="close_order_request"))
     _patch(

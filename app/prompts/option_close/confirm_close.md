@@ -1,7 +1,7 @@
 # 确认平仓
 
 - **node_id**: `1772615066119`
-- **model**: `internal-qwen3-30b-a3b-think`
+- **model**: `external-deepseek-v4-flash-non-thinking`
 
 ## [system]
 
