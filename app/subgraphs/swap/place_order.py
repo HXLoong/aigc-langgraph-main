@@ -36,7 +36,7 @@ from app.graph.business_params import validated_place_params
 from app.graph.safe_node import safe_node
 from app.graph.state import AgentState, TraceEntry
 from app.llm.clients import get_qwen_complex
-from app.prompts import load_prompt
+from app.prompts import load_prompt, resolve_prompt_version
 from app.subgraphs.swap.backend import _with_resolved_ticker, call_swap_backend
 from app.subgraphs.swap.models import SwapPlaceOrderParams
 from app.subgraphs.swap.quote_hints import refine_quote_hints
@@ -107,7 +107,10 @@ async def swap_place_order(state: AgentState) -> dict[str, Any]:
     hints = refine_quote_hints(quote_content, raw_text)
 
     # 2. LLM 提取下单参数
-    prompt = load_prompt("swap", "place_order")
+    prompt = load_prompt(
+        "swap",
+        resolve_prompt_version("swap", "place_order", state.get("conversation_id")),
+    )
     llm = get_qwen_complex().with_structured_output(SwapPlaceOrderParams)
     user_message = _build_user_message(state, hints)
     params: Any = await llm.ainvoke(

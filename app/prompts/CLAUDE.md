@@ -23,7 +23,7 @@
   对应节点已改确定性订单号提取（`app/subgraphs/swap/order_id.py`），不再有 LLM 调用;
   五个文件保留为行为规约参照与可回滚资产
 - **瘦身 v2 灰度系列**（2026-08-28 P0 批，ADR 0001 D5 处置表 + `docs/swap-prompt-slimming-assessment.md`）：
-  `swap/{intent,image_extract,excel_extract,image_ocr}_v2.md` 为零风险瘦身版,由
+  `swap/{intent,image_extract,excel_extract,image_ocr,place_order}_v2.md` 为零风险/去重瘦身版,由
   `_versions.yaml` / `OTC_PROMPT_SWAP_*_VERSION` 环境变量控制,默认 0 流量;
   eval PASS ≥ v1 基线后才允许放量,达标转正时 v2→v1 并删 v2(ADR 0003)
 

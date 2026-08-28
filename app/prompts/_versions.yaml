@@ -28,6 +28,7 @@
 #      OTC_PROMPT_SWAP_IMAGE_EXTRACT_VERSION=image_extract_v2
 #      OTC_PROMPT_SWAP_EXCEL_EXTRACT_VERSION=excel_extract_v2
 #      OTC_PROMPT_SWAP_IMAGE_OCR_VERSION=image_ocr_v2
+#      OTC_PROMPT_SWAP_PLACE_ORDER_VERSION=place_order_v2
 #   b) 取消下方注释开灰度（eval PASS 率 ≥ v1 基线后才允许）：
 # swap.intent:
 #   versions:
@@ -45,4 +46,8 @@
 #   versions:
 #     - {name: image_ocr, weight: 0.95}
 #     - {name: image_ocr_v2, weight: 0.05}
+# swap.place_order:
+#   versions:
+#     - {name: place_order, weight: 0.95}
+#     - {name: place_order_v2, weight: 0.05}
 overrides: {}
