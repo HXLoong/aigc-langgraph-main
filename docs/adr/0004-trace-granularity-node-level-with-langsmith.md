@@ -11,9 +11,11 @@
 
 ## 落地现状（2026-08-27）
 
-**`node_trace` 实际字段**（`sql/schema.sql`，写入方 `app/nodes/persist.py`）：
+**`node_trace` 写入契约字段**（写入方 `app/nodes/persist.py`）：
 
 `id / message_id / thread_id（= conversation_id）/ node_name / step_index / input_preview / output_preview / status / error / duration_ms / created_at`
+
+⚠️ 当前仓库没有原文引用的 `sql/schema.sql`，也找不到 `CREATE TABLE node_trace` 的迁移资产；上述字段是代码期待的契约，不代表部署库一定已初始化。实测未建表时 `persist` 记录 warning 并按“不阻塞业务”策略继续，因此 SQL 统计和 SQL ↔ LangFuse 关联能力在补齐 schema 前不可用。
 
 与原设计的差异：
 
@@ -42,5 +44,5 @@
 
 ## 后果（现状口径）
 
-- SQL ↔ LangFuse 调用级关联已就位（trace_id，#156）：E3.4 错例追溯可从 node_trace 行直达对应 LangFuse trace（按 metadata.trace_id 过滤）。
+- SQL ↔ LangFuse 的 `trace_id` 关联字段与写入代码已就位（#156）；补齐并部署 `node_trace` schema 后，E3.4 才能从 SQL 行关联对应 LangFuse trace（按 metadata.trace_id 过滤）。
 - 文档残留（LangSmith 字样）已随 #151 引用修正清理完毕。

@@ -132,7 +132,7 @@ harness/                       # 评测台（模块清单见 ADR 0002）
 |--------|------|---|
 | M1 · 骨架 | 新 graph/state + 3 Protocol + harness MVP | ✅（30 条 golden 全 PASS，历史退出门）|
 | M2 · 子图实现 | 主干节点逐个实现 + golden 扩张 | ✅（PR #41；mock baseline 92.5% / 真 LLM 84.6%——**Qwen 口径，已被 ADR 0020 作废待重建**）|
-| M3 · 工程联调闭环（[ADR 0016](./0016-m3-scope-engineering-loop-not-shadow.md) 重定义，非 shadow 双跑）| 真后端联调 + 真 LLM 评测 + 灰度工具链 | M3.1/M3.2 ✅，M3.3 进行中（Issue #82-#87）|
+| M3 · 工程联调闭环（[ADR 0016](./0016-m3-scope-engineering-loop-not-shadow.md) 重定义，非 shadow 双跑）| 真后端联调 + 真 LLM 评测 + 灰度工具链 | M3.1/M3.2 ✅；历史 #82-#87 已关闭，M3.3 是否满足退出门以当前 DeepSeek 评估与验收证据为准 |
 | M4 · 金丝雀切换 | 按群组切流 + F4.1 shadow 第二意见 | 工具链就绪，未启动（[ADR 0017](./0017-m4-canary-quantitative-exit-gate.md) / [0019](./0019-incident-severity-thresholds.md)）|
 
 ### D9 · M2 节点实现优先级（历史记录）
@@ -148,7 +148,7 @@ P0（swap.place_order / option intent+extract / close.place_close / ticker）→
 | ~~D9.1 `--mock-ticker` 开关~~ | ✅ #160 裁决：**承诺撤销**——CI 回归由 pytest + mock LLM 承担（977 collected），harness golden 人工/评估触发；D9.1 该段转历史 |
 | ~~harness 依赖面超纪律 3~~ | ✅ #160 裁决：**纪律放宽**为"harness 仅依赖三个稳定入口：`app.graph.main` / `app.config` / `app.llm.clients`"——现状即合规，新增依赖需回本表登记 |
 
-关联的 checkpointer 未接线问题记录在 [ADR 0009](./0009-mysql-version-and-tdsql-compatibility.md)（裁决 [#153](https://github.com/GZTL-AI/aigc-langgraph/issues/153)）。
+关联的 checkpointer 未接线问题已由 [ADR 0021](./0021-text-confirm-replaces-interrupt.md) / [#153](https://github.com/GZTL-AI/aigc-langgraph/issues/153) 修复；数据库兼容边界见 [ADR 0009](./0009-mysql-version-and-tdsql-compatibility.md)。
 
 ## 备选方案（历史论证，保留）
 

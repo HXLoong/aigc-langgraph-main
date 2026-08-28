@@ -1,6 +1,6 @@
 # ADR 0014 · LangFuse 作为 Harness 工程的后台服务
 
-- 状态：已采纳（trace/dataset/eval 四件套决策有效；**部署模式与提示词闸门存在重大实现偏离**，见对应小节）
+- 状态：已采纳（trace/dataset/eval 四件套有效；#155 已将开发期 Cloud 明确为例外，并落地生产 self-hosted/prompt 硬闸门）
 - 日期：2026-05-10
 - 修订：2026-08-27 深度改写为现状口径（wayfinder map #138 / 核查 #142）
 - 作者：图灵科技 + Tony
@@ -13,7 +13,7 @@ LangSmith 是海外 SaaS，所有 prompt + LLM 输出（含客户企微原话、
 
 ## Decision
 
-### D1 · 部署模式：Self-hosted（⚠️ 现状偏离）
+### D1 · 部署模式：生产 Self-hosted，开发期 Cloud 为显式例外
 
 **决策**：LangFuse 自托管内网，所有 trace、dataset、annotation 数据**不出境**；不选 LangFuse Cloud（连 EU Cloud 都因"仍是出境、金融审计争议"被否决）。
 
@@ -29,14 +29,14 @@ LangSmith 是海外 SaaS，所有 prompt + LLM 输出（含客户企微原话、
 
 全库无 langsmith 引用，trace 走 LangFuse 单一通道（`app/graph/main.py` 注入 CallbackHandler）。
 
-### D3 · 提示词管理：Git `.md` 是真理来源（⚠️ 实现与决策相反）
+### D3 · 提示词管理：生产以 Git `.md` 为真理来源
 
 **决策**：真理来源永远是 `app/prompts/**/*.md`；生产绝不走 LangFuse 拉提示词；LangFuse Prompts 仅作 staging 演练区，演练通过后经 `promote_langfuse_prompt.py` 晋升为 `_v{N+1}.md` 走 git PR（保留审计屏障）。
 
 **落地现状**：
 
 - ✅ 晋升脚本 `scripts/promote_langfuse_prompt.py <category.name>`：按 [ADR 0003](./0003-prompt-versioning-by-file-coexistence.md) 扫描现有版本写 `_v{N+1}.md`，行为与设计一致。
-- **双源开关追认现状**（#155 裁决）：实际机制是 `enable_langfuse && use_langfuse_prompts` 全局布尔（非原设计的 per-prompt `LANGFUSE_PROMPT_OVERRIDE` + `is_staging()`），且开关打开时 **Langfuse 优先、本地 .md 降级为 fallback**——优先级方向与"git 是真理来源"相反；拉取失败仅 `logger.debug` 静默回退，会掩盖"以为在用 Langfuse 版实则本地版"的错配。
+- **双源开关追认现状**（#155 裁决）：开发/评测环境使用 `enable_langfuse && use_langfuse_prompts` 全局布尔；开关打开时 Langfuse 优先、本地 `.md` 为 fallback。该机制不进入生产，故不改变“生产以 Git 为真理来源”的决策。
 - ✅ **生产硬闸门已补齐**（#155 裁决落地，2026-08-27）：`load_prompt` 在 `environment=production` 且 `use_langfuse_prompts=true` 时直接 raise（`tests/test_langfuse_prompt_gate.py` 覆盖）；拉取失败从 debug 静默升为 warning。
 - D3-4"晋升后 7 天删 LangFuse 实验版"无自动化承载，降级为 checklist 纪律。
 
