@@ -79,3 +79,24 @@ Dify 主干工作流 2026-08 版重写了一级路由,本 ADR 的分层结构随
 - **前置分流**:路由之前主图先分流 fast_query(快速询价)与 existing_command(存量兼容),
   并由 `pre_route` 解析对手列表/引用候选标的(见 `app/graph/main.py`)。
 - trace decision 取值变为 `rule→<DSL 标签>` / `llm→<DSL 标签>` 两种。
+
+## 多轮引用语境修正（2026-08-28 二次修订，#167 客户反馈 bug）
+
+客户反馈意图识别 bug；评估（`docs/intent-recognition-assessment-2026-08.md`）定位为 DSL v2 1:1 移植
+丢失了旧 quote_marker 层的多轮工程修复。本次在规则层叠加三处**工程增强**（偏离 DSL 源，特此登记）：
+
+1. **期权语境让位**（`_has_option_context`）：口语化平仓(step2)与互换下单特征(step4)原本不看
+   quote——raw/quote 含期权特征（期权/看涨/看跌/雪球/CALL/PUT）时，step2 直接归期权平仓、
+   step4 让位后续层。修复「引用期权持仓卡 + '序号1市价全平'→互换」类 42 条实锤错分。
+2. **持仓引用让位**（step5.5）：引用含"持仓"且带期权语境时归期权平仓（raw 含明确互换方向词除外）。
+   修复「持仓卡 + '序号1平留300万/限价10 200w'→计数层误归 option」类 57 条错分。
+   口语化模式补 `平剩`。
+3. **多轮粘性**（intent_route 第 3 层）：规则与 LLM 双 unknown 且 checkpoint 携带上一轮
+   product_type 时继承之（trace `sticky→<pt>`）。修复「裸发'确认下单'→LLM 判 unknown→
+   fallback 打断」（LLM 兜底实测 229/244 判 unknown）。配套：`make_initial_state` 移除
+   `product_type="unknown"` 的每轮重置（eval 入口原会覆盖 checkpoint 粘性）。
+
+量化（golden 802 轮 · 真实卡片近似口径）：规则层精准率 **90.2% → 99.7%**（错分 76 → 2 条边角），
+详见评估报告附录。`Q-` 单号归 option 由 Tony 裁决确认（2026-08-28），golden opt_close-064 已同步。
+trace decision 新增第三种取值 `sticky→<pt>`。回归：`tests/nodes/test_route_rules_context.py`
+（真实卡片 fixture 矩阵，P0-2 口径修正）+ `tests/nodes/test_intent_route_sticky.py`。

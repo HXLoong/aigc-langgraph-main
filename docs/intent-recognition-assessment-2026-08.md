@@ -78,3 +78,18 @@ DSL v2 按源工作流把 `Q-\d{8}-` 归 **option**（d5397af 明确记载）；
 
 - 离线扫描脚本与 LLM 实测样本：session scratchpad（`rule_sweep.py` / `llm_fallback_eval.py`，244 条样本清单 `/tmp/llm_fallback_samples.json`）
 - 错分明细 45 条完整清单可由扫描脚本复现（golden 全轮次口径）
+
+## 修复落地（2026-08-28 追记）
+
+P0-1 / P0-2 / P1-3 / P1-4 已全部落地（同日 TDD，详见 ADR 0015「多轮引用语境修正」段 + issue #167）：
+
+| 项 | 落地 | 验证 |
+|---|---|---|
+| P0-1 | `_has_option_context` 语境让位（step2/step4）+ step5.5 持仓引用让位 + 口语化补"平剩" | 真实卡片 fixture 矩阵 16 例 |
+| P0-2 | `tests/nodes/test_route_rules_context.py` 用真实卡片文案替代 quote_desc 占位口径 | 同上 |
+| P1-3 | intent_route 第 3 层多轮粘性（`sticky→<pt>`）+ `make_initial_state` 移除 product_type 重置 | sticky 6 例 |
+| P1-4 | Tony 裁决 Q- 归 option（DSL 语义），golden opt_close-064 category 同步 | fixture 数据 |
+
+量化（真实卡片近似口径，golden 802 轮）：精准率 **90.2% → 99.7%**，错分 76 → 2 条（裸"平仓"无引用、
+OPT-NOTEXIST 伪单号——双双属边角，前者 DSL 语义归互换存在业务双关，留观察）。
+真实卡片口径的最终确认仍依赖真后端全量 eval（#133/#135）。

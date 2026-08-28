@@ -84,6 +84,14 @@ async def intent_route(state: AgentState) -> dict[str, Any]:
         source = "llm"
 
     pt, mode = _LABEL_MAP.get(label, ("unknown", None))
+
+    # 第 3 层:多轮粘性(#167 P1-3,ADR 0015 工程增强)——规则与 LLM 双 unknown 且
+    # checkpoint 携带上一轮 product_type 时继承之,避免"确认下单"裸发落 fallback
+    if pt == "unknown" and not files:
+        prev = state.get("product_type")
+        if prev in ("swap", "option", "option_close"):
+            pt, mode = prev, "text"
+            source, label = "sticky", prev
     update: dict[str, Any] = {
         "product_type": pt,
         "trace": [TraceEntry(node="intent_route", decision=f"{source}→{label}")],
