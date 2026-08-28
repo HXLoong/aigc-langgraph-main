@@ -49,8 +49,8 @@
 
 刻意找了三轮,可简化项很少(这本身是好信号):
 
-1. **`app/graphs/main_graph.py` 兼容 shim** —— 一行重定向文件,DSL v2 后引用方已全部指向真源,可删(极小清理)
-2. **`app/state.py` shim**(若仍存在)同上
+1. **`app/graphs/main_graph.py` 兼容 shim** —— ~~可删~~ 已删(4 处引用迁至 `app/graph/main`)
+2. ~~`app/state.py` shim~~ 勘误:该文件承载 `make_initial_state`/`WechatInput`,非纯 shim,保留
 3. **swap 多模态链与文本链的字段规范重复** —— 已在提示词瘦身 P2 方案中(共享字段规范拆分),按既定门槛推进,不新增计划
 4. **不建议再简的**:39 个节点各有业务职责;4 个 Protocol 是接口稳定层;三层测试金字塔是交付信心来源——这些"体积"都在产出价值
 

@@ -55,8 +55,7 @@ app/
 │   ├── state.py             # AgentState（按业务对象聚合）
 │   ├── safe_node.py         # @safe_node 装饰器
 │   ├── cascade.py           # cascade fallback（error → 友好降级）
-│   └── main.py              # 主图组装入口（也见 graphs/main_graph.py）
-├── graphs/main_graph.py     # 兼容 shim → 真源 app/graph/main.py（一级路由 _route_after_intent）
+│   └── main.py              # 主图组装入口（build_main_graph;旧 graphs/ shim 已删）
 ├── nodes/                   # ingest / pre_route（对手+候选提取）/ route_rules + intent_route（DSL v2 两层路由）
 │                            # / fast_query（快速询价+存量兼容前置分支）/ persist / render / fallback
 ├── subgraphs/               # —— 2026-08 Dify DSL v2 迁移后结构 ——
