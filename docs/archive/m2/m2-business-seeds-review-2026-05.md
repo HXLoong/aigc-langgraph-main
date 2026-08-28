@@ -107,7 +107,7 @@ python -m harness run --category swap  # 按 product 子集
 
 - 候选池：`tests/fixtures/golden_business_seeds_2026-05.jsonl`
 - 现有生产 golden：`tests/fixtures/golden.jsonl`（30 条）
-- LLM 对抗式候选：`docs/m2-llm-generated-cases.md`（60 条 paraphrase）
+- LLM 对抗式候选：`docs/archive/m2/m2-llm-generated-cases.md`（60 条 paraphrase）
 
 ## 下次同步建议
 

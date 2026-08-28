@@ -139,5 +139,5 @@ REQUEST_CANCEL_ORDER = "request_cancel_order"   # 请求撤单（订单已成交
 ## 关联
 
 - 关联 Issue #82（本任务）/ #85（E3.4 错例聚类）
-- 路线图 C1.3 prompt 调优：[roadmap 4.2 子线 1B](m3-m4-roadmap.md)
+- 路线图 C1.3 prompt 调优：[roadmap 4.2 子线 1B](../../m3-m4-roadmap.md)
 - ADR 0003：prompt 版本化 + A/B 灰度

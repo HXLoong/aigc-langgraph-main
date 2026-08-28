@@ -118,4 +118,4 @@ HARNESS_MOCK_TICKER=true python -m harness run
 - ADR 0008（ReAct 运行时约束）
 - ADR 0010（thinking 模型选择）
 - ADR 0013（动态 prompt 片段加载）
-- `docs/m2-real-llm-run-guide.md`（harness 真 LLM 跑测指南）
+- `docs/archive/m2/m2-real-llm-run-guide.md`（harness 真 LLM 跑测指南）

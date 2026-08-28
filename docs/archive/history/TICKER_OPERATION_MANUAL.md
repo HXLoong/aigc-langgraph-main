@@ -302,10 +302,10 @@ taskkill /F /IM python.exe   # 慎用，会关掉所有 Python
 | [app/subgraphs/ticker_models.py](../app/subgraphs/ticker_models.py) | TokenizeOutput 模型 |
 | [app/subgraphs/ticker_tools.py](../app/subgraphs/ticker_tools.py) | search_securities_instrument 工具 |
 | [app/state.py](../app/state.py) | AgentState + TickerCandidate |
-| [app/prompts/ticker/tokenize_v2.md](../app/prompts/ticker/tokenize_v2.md) | 分词提示词（当前版本） |
-| [app/prompts/ticker/rank.md](../app/prompts/ticker/rank.md) | 排序提示词 |
+| [app/prompts/ticker/tokenize_v2.md](../../../app/prompts/ticker/tokenize.md) | 分词提示词（当前版本） |
+| [app/prompts/ticker/rank.md](../../../app/prompts/ticker/rank.md) | 排序提示词 |
 | [tests/test_ticker.py](../tests/test_ticker.py) | 27 个测试（路由/节点/图/工具） |
 | [tests/run_integration_mock.py](../tests/run_integration_mock.py) | 14 条全链路集成测试 |
 | [mock_goats_api/server.py](../mock_goats_api/server.py) | Mock 服务器（26 个接口） |
 | [mock_goats_api/openapi.json](../mock_goats_api/openapi.json) | Apifox 可导入的 OpenAPI 文档 |
-| [docs/TICKER_GRAPH_REFACTOR.md](../docs/TICKER_GRAPH_REFACTOR.md) | ReAct→StateGraph 重构记录 |
+| [docs/archive/history/TICKER_GRAPH_REFACTOR.md](./TICKER_GRAPH_REFACTOR.md) | ReAct→StateGraph 重构记录 |

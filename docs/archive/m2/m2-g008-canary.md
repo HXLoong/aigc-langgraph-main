@@ -125,4 +125,4 @@ export OTC_PROMPT_SWAP_INTENT_VERSION=v1
 
 - ADR 0003 — 提示词版本化采用"同目录文件并存"
 - ADR 0001 D5 — Dify 重构期内可改写
-- `docs/m2-prompt-ab-testing.md` — 灰度机制操作手册
+- `docs/archive/m2/m2-prompt-ab-testing.md` — 灰度机制操作手册

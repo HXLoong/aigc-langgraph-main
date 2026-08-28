@@ -97,7 +97,7 @@ class OptionClientHttpx:
 | 项 | 为什么不做 |
 |---|---|
 | 把 golden.jsonl deprecated | 含 g001-g030 ADR 0015 规则层锚点，仍被 test_intent_route.py 使用，不能删 |
-| 修订 docs/m2-real-llm-final-report.md "317 条" 数字 | 历史报告冻结，新文档引用 README.md 即可 |
+| 修订 docs/archive/m2/m2-real-llm-final-report.md "317 条" 数字 | 历史报告冻结，新文档引用 README.md 即可 |
 | 把所有业务子图 e2e 测试改成调 mock_api | 工程量大，本 PR 只补 client 层入口；子图层后续按需迁移 |
 | 真后端 probe 定时化 | 需要 Tony 对齐 cron 调度 + 通知策略 |
 

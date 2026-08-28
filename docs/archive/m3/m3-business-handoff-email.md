@@ -57,7 +57,7 @@ LangGraph 与现行 Dify 工作流并行接收同一份用户输入，对比两�
 | Dify 协议兼容 endpoint | `POST /v1/workflows/run` |
 | shadow 工具 | `scripts/shadow_compare.py` 350 行（含 dry-run / MySQL 写入）|
 | 评测台 harness（317 条 golden）| `python -m harness run` |
-| 真 LLM PASS 基线 | swap 82% / option 85% / close 96%（M2 跑测报告 `docs/m2-real-llm-final-report.md`）|
+| 真 LLM PASS 基线 | swap 82% / option 85% / close 96%（M2 跑测报告 `docs/archive/m2/m2-real-llm-final-report.md`）|
 
 ## 时间线建议
 
@@ -70,7 +70,7 @@ LangGraph 与现行 Dify 工作流并行接收同一份用户输入，对比两�
 
 - 技术细节：联系 LangGraph 工程团队
 - ADR 决策：见 `docs/adr/`（ADR 0000-0020 共 21 篇）
-- M2 收尾报告：`docs/m2-real-llm-final-report.md`
+- M2 收尾报告：`docs/archive/m2/m2-real-llm-final-report.md`
 
 谢谢配合。
 

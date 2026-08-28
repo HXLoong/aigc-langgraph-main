@@ -84,7 +84,7 @@ class Settings(BaseSettings):
     # F4.1 shadow 双跑用：拦截 *.operate / close_order_* 等"写类"客户端调用，
     # 返回 fake CommonResult，避免 LangGraph 替代客户真下单/真撤单。
     # read 类（query / get / list / search / get_inference_prompt）正常调真后端。
-    # 详见 docs/m3-shadow-compare-dry-run-design.md
+    # 详见 docs/archive/m3/m3-shadow-compare-dry-run-design.md
     dry_run_backend: bool = False
 
     # === Prompt 版本 ===

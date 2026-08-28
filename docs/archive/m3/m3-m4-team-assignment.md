@@ -387,8 +387,8 @@ python -m harness run --output .harness-runs/audit-$(date +%F)/
 |---|---|---|
 | `tests/fixtures/golden.jsonl` | 数据工程师 | golden case 主集 |
 | `tests/fixtures/golden_ticker_2026-05.jsonl` | 数据工程师 | ticker 专项 fixture |
-| `docs/m2-golden-seeds/` | 数据工程师 + PM | 业务方种子收集模板 |
-| `docs/m2-llm-generated-cases.md` | 数据工程师 B | C 桶 review 工作台 |
+| `docs/archive/m2/m2-golden-seeds/` | 数据工程师 + PM | 业务方种子收集模板 |
+| `docs/archive/m2/m2-llm-generated-cases.md` | 数据工程师 B | C 桶 review 工作台 |
 | `docs/customer-smoke-checklist.md` | 开发工程师 + Tony | 客户现场 smoke 清单 |
 | `harness/case_generator/` | 开发工程师 | C 桶 paraphrase 工具 |
 | `app/prompts/**/*.md` | 开发工程师 | 提示词资产 |

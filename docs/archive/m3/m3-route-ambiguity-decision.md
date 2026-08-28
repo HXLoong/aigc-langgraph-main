@@ -72,5 +72,5 @@ E3.1 真后端跑 swap/confirm 类别 45 条 case，76%（34 条）失败聚类�
 
 - Issue #82 E3.1 · 真后端 PASS rate
 - Issue #85 E3.4 · 错例聚类
-- `docs/m3-e3-real-backend-sample.md` · 三簇分析报告
+- `docs/archive/m3/m3-e3-real-backend-sample.md` · 三簇分析报告
 - `app/prompts/router/keywords.yaml` · 关键词优先级表

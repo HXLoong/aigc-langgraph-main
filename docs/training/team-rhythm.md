@@ -129,7 +129,7 @@ A 此时还没读完 ADR 0016（onboarding Day 2 才要求读），但 1:1 不�
 | LangFuse 是否离线打包 | ? | A 调研后给 Tony 决策 |
 | 部署形态决策（Docker / 二进制） | 倾向 Docker | A 调研客户 Docker 版本 |
 
-> 把这张表的 raw 内容写成 `docs/customer-env-assessment.md` 草稿（当场建文件，写完会议提交）。
+> 把这张表的 raw 内容写成 `docs/customer/customer-env-assessment.md` 草稿（当场建文件，写完会议提交）。
 
 #### 25-40 分钟 · M3.2 准备工作排期
 
@@ -161,7 +161,7 @@ A 此时还没读完 ADR 0016（onboarding Day 2 才要求读），但 1:1 不�
 
 ### 产出清单
 
-- [ ] `docs/customer-env-assessment.md` 草稿建立（即使只有问题没有答案）
+- [ ] `docs/customer/customer-env-assessment.md` 草稿建立（即使只有问题没有答案）
 - [ ] M3.2 准备工作清单贴到 #33 评论里
 - [ ] VPN 申请进度责任人 + 时间点明确
 - [ ] 每周 1:1 时间订好

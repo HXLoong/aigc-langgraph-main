@@ -195,7 +195,7 @@ QWEN_REQUEST_INTERVAL_MS=200  # 串行间隔
 python -m harness run --category swap/confirm --out .harness-runs/retry
 ```
 
-→ 抖动率 > 5% 视为 prompt 健壮性问题，记 `docs/m2-prompt-improvements-backlog.md`。
+→ 抖动率 > 5% 视为 prompt 健壮性问题，记 `docs/archive/m2/m2-prompt-improvements-backlog.md`。
 
 ## 结果上报
 
@@ -211,5 +211,5 @@ python -m harness run --category swap/confirm --out .harness-runs/retry
 - ADR 0014 — Harness 评测台架构
 - ADR 0015 — 一级路由三层
 - ADR 0003 — Prompt 灰度切流
-- `docs/m2-prompt-ab-testing.md` — 灰度操作手册
-- `docs/m2-g008-canary.md` — g008 修复说明
+- `docs/archive/m2/m2-prompt-ab-testing.md` — 灰度操作手册
+- `docs/archive/m2/m2-g008-canary.md` — g008 修复说明

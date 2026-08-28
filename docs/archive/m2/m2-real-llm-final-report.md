@@ -76,7 +76,7 @@
 
 ## 六、M3 启动步骤
 
-1. **本周内**：发邮件向业务方索取 Dify URL + API key（草稿见 `docs/m3-business-handoff-email.md`）
+1. **本周内**：发邮件向业务方索取 Dify URL + API key（草稿见 `docs/archive/m3/m3-business-handoff-email.md`）
 2. **shadow_compare smoke test**：用 mock dify endpoint 验证管道（不需真 Dify）
 3. **业务方提供 Dify 接入后**：跑真 shadow，目标 24 小时无 crash
 4. **退出门** (ADR 0001)：主要意图 diff < 5%，下单 / 平仓 < 1%
@@ -94,5 +94,5 @@
 - ADR 0001 D9（M3 范围）
 - ADR 0014（harness 评测台）
 - ADR 0015（一级路由）
-- `docs/m2-real-llm-run-guide.md`
-- `docs/m2-prompt-improvements-backlog.md`
+- `docs/archive/m2/m2-real-llm-run-guide.md`
+- `docs/archive/m2/m2-prompt-improvements-backlog.md`
