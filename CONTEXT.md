@@ -15,6 +15,14 @@ _Avoid_: 用 ADR 0019 的 on-call P0/P1/P2 阈值给开发测试失败定级
 真后端联调时作为一条业务流计数的端到端场景。一个验收场景可以包含多轮用户指令，并消费前序步骤产生的真实订单号、报价或持仓；计数单位是完整业务闭环，不是单条消息。
 _Avoid_: 把一个多轮闭环中的每条用户指令分别计为一条业务流
 
+**本地链路 PASS**：
+GOATS 在开发机不可达时，验收场景仍完整经过 LangGraph 和真实 Java 业务代码，并由 Java 按真实 `integration_api_config` 实际尝试调用 GOATS；请求、集成日志和失败原因可核验，Java 与 LangGraph 如实表达失败，不伪造下单、撤单、成交或查询成功。GOATS 连接失败可以是预期结果；未进入正确业务分支、未发起 GOATS 请求、配置缺失、异常被吞掉或回复伪成功均为 FAIL。
+_Avoid_: 本地业务交易 PASS、mock GOATS 成功、把“失败可观测”表述成“交易走通”
+
+**业务交易 PASS**：
+在可访问真实 GOATS 的客户环境中，验收场景获得 GOATS 的真实成功响应，且后续订单状态可以查询和追踪。它是业务闭环的最终验收，不由本地链路 PASS 替代。
+_Avoid_: 仅凭 Java 已尝试调用 GOATS、集成日志存在或 mock 返回成功就宣称交易成功
+
 **Harness（评测台 / Harness Engineering）**：
 一套把 "case → 跑 LangGraph → 比对预期 → 结构化输出失败原因 → 喂给 AI 工具改代码 → 再跑" 做成全自动闭环的工具链。包含 golden set、replay 工具、结构化 diff 报告、可被 Claude Code 单命令调用的 CLI。
 _Avoid_: 混沌工程（Chaos Engineering，不同概念）、可观测性平台（trace 只是 harness 的副产品之一）、单元测试（粒度更粗，跑端到端）
