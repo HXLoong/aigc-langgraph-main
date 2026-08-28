@@ -1,7 +1,7 @@
 # 互换-节点-确认撤单
 
 - **node_id**: `1776161199939`
-- **model**: `internal-qwen3-30b-a3b`
+- **model**: `external-deepseek-v4-flash-non-thinking`
 
 ## [system]
 
@@ -16,7 +16,6 @@
 
 1. **raw_content**: 用户的原始消息内容
 2. **quote_content**: 用户引用的群消息内容(可能为空)
-3. **history_query_str**: 历史对话字符串
 
 【orderId提取规则】
 
@@ -25,9 +24,7 @@
   1. **从quote_content中提取**(最高优先级):
      * 查找"单号:H-YYYYMMDD-XXXXXXXXXX"格式
      * 查找"互换订单H-YYYYMMDD-XXXXXXXXXX"格式
-  2. **从history_query_str中提取**:
-     * 查找最近一次LLM识别结果中的orderId字段(非null值)
-  3. **从raw_content中提取**:
+  2. **从raw_content中提取**:
      * 用户明确指定的订单号(如"H-20250115-000001")
 - 如果无法提取到orderId，则为null
 
@@ -53,17 +50,13 @@
 
 - type 固定为 "confirm_cancel_order"
 - orderList 中仅需包含对应的 orderId 对象
-- orderId 从 quote_content 或 history_query_str 中提取，未找到则为 null
+- orderId 从 quote_content 中提取，未找到则为 null
 
 【示例】
 
 用户:确认撤单(引用了包含"H-20250115-000001"的机器人消息)
 输出:
 {"type": "confirm_cancel_order", "orderList": [{"orderId": "H-20250115-000001"}]}
-
-用户:确认撤单
-输出(从history_query_str中提取orderId):
-{"type": "confirm_cancel_order", "orderList": [{"orderId": "H-20251212-1654368256"}]}
 
 ```
 
@@ -72,5 +65,4 @@
 ```
 raw_content：{{#1755072621769.raw_content#}}
 quote_content：{{#1755072621769.quote_content#}}
-history_query_str： {{#1756283976410.history_query_str#}}
 ```

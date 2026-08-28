@@ -14,6 +14,18 @@ from app.subgraphs.close.models import (
     CloseIntentOutput,
     ConfirmCloseParams,
 )
+from app.tools.models import CommonResult
+
+
+def _patch_close_backend(monkeypatch: pytest.MonkeyPatch) -> None:
+    """close/backend.py 调用的 OptionClientHttpx.operate 不打真网络。"""
+
+    async def _fake_operate(self, req):  # type: ignore[no-untyped-def]
+        return CommonResult(code=0, msg="ok", data="mock-backend-result")
+
+    monkeypatch.setattr(
+        "app.tools.option_client.OptionClientHttpx.operate", _fake_operate
+    )
 
 
 def _patch(
@@ -41,6 +53,7 @@ async def test_close_order_confirm_routes_to_confirm_close(
         ConfirmCloseParams(confirmOrderNoList=["CO-20260304-ABCD"]),
         fn="get_qwen_thinking",
     )
+    _patch_close_backend(monkeypatch)
 
     graph = build_close_graph()
     final = await graph.ainvoke(
@@ -77,6 +90,7 @@ async def test_close_order_cancel_request_routes_to_cancel_close(
         cancel_module,
         CancelCloseParams(cancelOrderNoList=["CO-20260304-XYZ"]),
     )
+    _patch_close_backend(monkeypatch)
 
     graph = build_close_graph()
     final = await graph.ainvoke(

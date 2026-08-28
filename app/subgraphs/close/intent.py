@@ -79,15 +79,16 @@ async def close_intent(state: AgentState) -> dict[str, Any]:
             intent = "close_order_request"
     # "撤单" 关键词 → close_order_cancel_request（覆盖 LLM 误判）
     if "撤单" in raw and intent not in (
-        "close_order_confirm_cancel", "close_order_cancel_request"
+        "close_order_cancel_confirm", "close_order_cancel_request"
     ):
         intent = "close_order_cancel_request"
     # "查可平持仓"/"查询持仓" → close_order_query
     if any(kw in raw for kw in ("查可平持仓", "查询持仓", "我有哪些")):
         intent = "close_order_query"
-    # "确认撤单" → close_order_confirm_cancel
+    # "确认撤单" → close_order_cancel_confirm（修复历史 typo：曾写成不存在的
+    # close_order_confirm_cancel，导致规则从未命中、静默 fall through 到 unknown）
     if "确认撤单" in raw:
-        intent = "close_order_confirm_cancel"
+        intent = "close_order_cancel_confirm"
     # "取消" + quote 中有撤单上下文 → confirm_cancel
     if "取消" in raw:
         if "撤单" in quote or "撤单请求" in quote:

@@ -22,7 +22,8 @@ async def test_main_graph_compiles() -> None:
 async def test_main_graph_e2e_swap_keyword(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """ADR 0015 第 2 层：'互换' 关键词 → swap 子图 → place_order_request → swap_place_order 真节点。"""
+    """ADR 0015 第 2 层：'互换' 关键词 → swap 子图 → place_order_request →
+    swap_place_order + swap_place_order_submit 真节点链。"""
     from unittest.mock import AsyncMock, MagicMock
 
     from app.subgraphs.swap import intent as swap_intent_module
@@ -32,6 +33,7 @@ async def test_main_graph_e2e_swap_keyword(
         SwapOrderItem,
         SwapPlaceOrderParams,
     )
+    from app.tools.models import CommonResult
 
     def _patch(
         module: object, value: object, fn: str = "get_qwen_thinking"
@@ -41,6 +43,13 @@ async def test_main_graph_e2e_swap_keyword(
         fake_base = MagicMock()
         fake_base.with_structured_output = MagicMock(return_value=fake_llm)
         monkeypatch.setattr(module, fn, lambda: fake_base)
+
+    async def _fake_operate(self, req):  # type: ignore[no-untyped-def]
+        return CommonResult(code=0, msg="ok", data={"orderId": "H-20260828-0000000001"})
+
+    monkeypatch.setattr(
+        "app.tools.swap_client.SwapClientHttpx.operate", _fake_operate
+    )
 
     _patch(swap_intent_module, SwapIntentOutput(type="place_order_request"))
     _patch(
@@ -86,10 +95,9 @@ async def test_main_graph_e2e_swap_keyword(
     assert final.get("product_type") == "swap"
     assert final.get("intent") == "place_order_request"
     intent_route_entries = [e for e in final["trace"] if e.node == "intent_route"]
-    # E3.4 trace 增强：decision 格式从 "rule:keyword→swap" 改为 "rule:keyword[kw:互换]→swap"
+    # DSL v2 路由：decision 格式为 "rule→<DSL 标签>"（规则层标签见 route_rules.py）
     assert any(
-        e.decision.startswith("rule:keyword[") and e.decision.endswith("→swap")
-        for e in intent_route_entries
+        e.decision == "rule→互换-文本" for e in intent_route_entries
     )
     # 验证 swap.place_order 真节点写入了 place_params
     assert final.get("place_params", {}).get("expected_action") == "place"
@@ -142,6 +150,7 @@ async def test_main_graph_e2e_option_close_order_no(
         CloseOrderItem,
         ClosePlaceParams,
     )
+    from app.tools.models import CommonResult
 
     def _patch(module: object, value: object, fn: str = "get_qwen_thinking") -> None:
         fake_llm = MagicMock()
@@ -149,6 +158,20 @@ async def test_main_graph_e2e_option_close_order_no(
         fake_base = MagicMock()
         fake_base.with_structured_output = MagicMock(return_value=fake_llm)
         monkeypatch.setattr(module, fn, lambda: fake_base)
+
+    async def _fake_query_close_orders(self, order_ids=None, contract_codes=None):  # type: ignore[no-untyped-def]
+        return CommonResult(code=0, msg="ok", data=[])
+
+    async def _fake_operate(self, req):  # type: ignore[no-untyped-def]
+        return CommonResult(code=0, msg="ok", data="mock-backend-result")
+
+    monkeypatch.setattr(
+        "app.tools.option_client.OptionClientHttpx.query_close_orders",
+        _fake_query_close_orders,
+    )
+    monkeypatch.setattr(
+        "app.tools.option_client.OptionClientHttpx.operate", _fake_operate
+    )
 
     _patch(close_intent_module, CloseIntentOutput(type="close_order_request"))
     _patch(
@@ -193,8 +216,7 @@ async def test_main_graph_e2e_option_close_order_no(
     assert final.get("intent") == "close_order_request"
     intent_route_entries = [e for e in final["trace"] if e.node == "intent_route"]
     assert any(
-        e.decision == "rule:order_no→option_close"
-        for e in intent_route_entries
+        e.decision == "rule→期权平仓-文本" for e in intent_route_entries
     )
     # 验证 close.place_close 输出确实写入 state['close_params']
     close_params = final.get("close_params", {})

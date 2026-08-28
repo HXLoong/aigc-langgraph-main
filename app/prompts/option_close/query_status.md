@@ -1,7 +1,7 @@
 # 平仓订单查询
 
 - **node_id**: `1772707335701`
-- **model**: `internal-qwen3-30b-a3b`
+- **model**: `external-deepseek-v4-flash-non-thinking`
 
 ## [system]
 

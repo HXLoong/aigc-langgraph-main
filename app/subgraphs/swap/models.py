@@ -3,12 +3,17 @@
 字段命名严格对齐 Java enum `SwapIntentionType`（7 值，ADR 0001 D2）。
 LLM 输出统一用 `type` 字段（与 Dify 原 prompt 约定一致）。
 """
+# ruff: noqa: N815
+# 说明：本文件字段名逐字对齐 Dify structured_output / Java DTO 的 camelCase 原文
+# （orderId / placeOrderWindCode / hasSignal 等），改成 snake_case 会破坏与 Dify
+# prompt JSON schema、Java 后端字段名的 1:1 映射（详见 CLAUDE.md「提示词不硬编码」
+# 纪律 + docs/api-contracts/java-backend.md）。全文件统一豁免这条命名检查，比在
+# 40 多处字段逐行加豁免注释更清晰。
 from __future__ import annotations
 
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
-
 
 # ============================================================
 # 意图分类（swap.intent）
@@ -70,13 +75,33 @@ SwapPriceType = Literal["LimitOrder", "MarketOrder"]
 #: 算法类型（与 Java GoatsAlgoType 一致：POV/TWAP/VWAP/ICEBERG/SNIPER；M2 阶段 LLM 主要用 POV/TWAP/VWAP）。
 SwapAlgorithmType = Literal["POV", "TWAP", "VWAP", "ICEBERG", "SNIPER"]
 
+#: 委托数量单位（DSL v2 新增，互换-节点-下单.md「placeOrderQuantityUnit」）。
+#: HAND=手系单位落 quantity；SHARE=股系单位落 quantity；AMOUNT=金额落 notional。
+SwapQuantityUnit = Literal["HAND", "SHARE", "AMOUNT"]
+
+#: 委托名义本金币种（DSL v2 新增，互换-节点-下单.md「placeOrderNotionalCurrency」）。
+SwapNotionalCurrency = Literal[
+    "CNY", "USD", "HKD", "EUR", "GBP", "JPY", "AUD", "NZD", "CNH"
+]
+
 
 class SwapOrderItem(BaseModel):
-    """swap orderList 中的单个订单条目（与 Dify place_order.md 字段对齐）。
+    """swap orderList 中的单个订单条目（与 DSL v2 互换-节点-下单.md 字段对齐）。
 
-    19 个字段全部 Optional —— Dify prompt 允许 null 表示"用户未提供"。
+    全部字段 Optional —— prompt 允许 null 表示"用户未提供"。
     `extra="ignore"` 让 LLM 输出的顶层 type 字段或其他多余字段被丢弃，
     不触发 ValidationError。
+
+    DSL v2 新增 7 字段（互换-节点-下单.md structured_output，2026-08 版）：
+    hasFastExecutionIntent / placeOrderCloseIntent / placeOrderEntrustRatio /
+    placeOrderNotional / placeOrderNotionalCurrency / placeOrderQuantityUnit /
+    placeOrderRelativeTimeMinutes。
+
+    `placeOrderQuantityHand` 是旧 DSL 字段，新提示词已不再要求 LLM 填写（改用
+    placeOrderQuantityUnit="HAND" + placeOrderQuantity 表达），但保留在模型里
+    ——`app/nodes/render.py`（主图渲染节点，swap 域外）仍读取该字段区分"手/股"
+    单位显示，删除会导致其静默失效；后续应由 render 域的 PR 迁移到读
+    placeOrderQuantityUnit。
     """
 
     model_config = ConfigDict(extra="ignore")
@@ -86,7 +111,8 @@ class SwapOrderItem(BaseModel):
     placeOrderWindCode: str | None = None
     placeOrderTransactionType: SwapTransactionType | None = None
     placeOrderQuantity: int | None = None
-    placeOrderQuantityHand: int | None = None
+    placeOrderQuantityHand: int | None = None  # 旧字段，见 docstring
+    placeOrderQuantityUnit: SwapQuantityUnit | None = None
     placeOrderOrderDirection: SwapOrderDirection | None = None
     placeOrderPriceType: SwapPriceType | None = None
     placeOrderAlgorithmType: SwapAlgorithmType | None = None
@@ -97,9 +123,15 @@ class SwapOrderItem(BaseModel):
     placeOrderMaxVol: float | int | None = None
     placeOrderStartTime: str | None = None
     placeOrderEndTime: str | None = None
+    placeOrderRelativeTimeMinutes: float | int | None = None
     placeOrderShortname: str | None = None
     placeOrderQuantityTotal: int | None = None
     placeOrderPremarket: bool | None = None
+    placeOrderNotional: float | int | None = None
+    placeOrderNotionalCurrency: SwapNotionalCurrency | None = None
+    placeOrderEntrustRatio: float | int | None = None
+    placeOrderCloseIntent: bool | None = None
+    hasFastExecutionIntent: bool | None = None
 
 
 class SwapPlaceOrderParams(BaseModel):
@@ -157,22 +189,54 @@ class SwapQueryParams(BaseModel):
 
 
 # ============================================================
-# 手转为股（hand_to_share）单条输出 schema
+# 标的/交易对手选择指针（swap.select_ticker / swap.select_counterparty）
+#
+# DSL v2 新节点：只判断用户是否在切换候选标的 / 选择交易对手，输出指针
+# （不输出最终 windCode / shortName，由 app/subgraphs/swap/aggregate.py
+# 的确定性查表覆盖到 swap.place_order 的 orderList 上）。
 # ============================================================
 
 
-class SwapHandToShareItemOutput(BaseModel):
-    """swap.hand_to_share 节点 LLM 输出：单条订单的手→股换算结果。
-
-    Dify 原节点（node_id 1776947381378）一次处理 1 条 item，
-    LangGraph 版在 batch 函数里循环调用。
-    """
+class SwapTickerPick(BaseModel):
+    """互换-选择标的 单条指针（对齐 candidate_list 定位 + candidates.seq）。"""
 
     model_config = ConfigDict(extra="ignore")
 
-    uniqueId: str
-    placeOrderQuantityHand: float | int | None = None
-    placeOrderQuantity: float | int | None = None
+    orderId: str | None = None
+    orderSeq: int | None = None
+    idx: int | None = None
+    seq: int | None = None
+    directRef: str | None = None
+
+
+class SwapSelectTickerOutput(BaseModel):
+    """swap.select_ticker 节点 LLM 输出：未切换标的时 picks 为空数组。"""
+
+    model_config = ConfigDict(extra="ignore")
+
+    picks: list[SwapTickerPick] = Field(default_factory=list)
+
+
+class SwapCounterpartyPick(BaseModel):
+    """互换-选择交易对手 单条指针（letter/ordinal/directName 三选一）。"""
+
+    model_config = ConfigDict(extra="ignore")
+
+    orderId: str | None = None
+    orderSeq: int | None = None
+    idx: int | None = None
+    letter: str | None = None
+    ordinal: int | None = None
+    directName: str | None = None
+
+
+class SwapSelectCounterpartyOutput(BaseModel):
+    """swap.select_counterparty 节点 LLM 输出：hasSignal=False 时无对手选择信号。"""
+
+    model_config = ConfigDict(extra="ignore")
+
+    hasSignal: bool = False
+    picks: list[SwapCounterpartyPick] = Field(default_factory=list)
 
 
 __all__ = [
@@ -182,11 +246,16 @@ __all__ = [
     "SwapOrderDirection",
     "SwapPriceType",
     "SwapAlgorithmType",
+    "SwapQuantityUnit",
+    "SwapNotionalCurrency",
     "SwapOrderItem",
     "SwapPlaceOrderParams",
     "SwapOrderRefItem",
     "SwapConfirmParams",
     "SwapCancelParams",
     "SwapQueryParams",
-    "SwapHandToShareItemOutput",
+    "SwapTickerPick",
+    "SwapSelectTickerOutput",
+    "SwapCounterpartyPick",
+    "SwapSelectCounterpartyOutput",
 ]

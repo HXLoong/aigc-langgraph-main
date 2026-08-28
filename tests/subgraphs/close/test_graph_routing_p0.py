@@ -13,6 +13,25 @@ from app.subgraphs.close.models import (
     CloseOrderItem,
     ClosePlaceParams,
 )
+from app.tools.models import CommonResult
+
+
+def _patch_close_backend_calls(monkeypatch: pytest.MonkeyPatch) -> None:
+    """close.place_close 链路的两次真后端调用（获取订单信息 + 提交平仓）不打真网络。"""
+
+    async def _fake_query_close_orders(self, order_ids=None, contract_codes=None):  # type: ignore[no-untyped-def]
+        return CommonResult(code=0, msg="ok", data=[])
+
+    async def _fake_operate(self, req):  # type: ignore[no-untyped-def]
+        return CommonResult(code=0, msg="ok", data="mock-backend-result")
+
+    monkeypatch.setattr(
+        "app.tools.option_client.OptionClientHttpx.query_close_orders",
+        _fake_query_close_orders,
+    )
+    monkeypatch.setattr(
+        "app.tools.option_client.OptionClientHttpx.operate", _fake_operate
+    )
 
 
 def _patch(monkeypatch: pytest.MonkeyPatch, module: object, value: object, fn: str = "get_qwen_thinking") -> None:
@@ -47,6 +66,7 @@ async def test_close_order_request_routes_to_place_close(
         ),
         fn="get_qwen_thinking",
     )
+    _patch_close_backend_calls(monkeypatch)
 
     graph = build_close_graph()
     final = await graph.ainvoke(

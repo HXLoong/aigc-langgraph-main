@@ -1,7 +1,7 @@
 # 期权平仓-意图识别
 
 - **node_id**: `1772589205439`
-- **model**: `internal-qwen3-30b-a3b`
+- **model**: `external-qwen3.6-35b-a3b-non-thinking`
 
 ## [system]
 
@@ -31,6 +31,7 @@
 - 期货持仓、股票持仓有哪些、ETF持仓情况
 - 我想平掉OPTG-SZZSCF20250030这笔期权
 - 我想平掉OPT-SZZSCF20260001、OPTG-SZZSCF20260005、OPT-LYAFT20260001
+-  用户消息中携带了{{#17797951842080.keywords#}}
 
 
 ### 2. close_order_order_query（平仓订单查询）

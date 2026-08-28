@@ -69,7 +69,7 @@ async def test_zero_match_trace_records_zero_tickers(
 async def test_resolve_ticker_full_returns_empty_not_raises(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """resolve_ticker_full 后端 0 命中时返回 empty resolution，不抛异常。"""
+    """resolve_ticker_full 后端 + LLM 均 0 命中时返回 empty resolution，不抛异常。"""
     from unittest.mock import AsyncMock, MagicMock
 
     import app.subgraphs.ticker.resolver as res_mod
@@ -79,6 +79,12 @@ async def test_resolve_ticker_full_returns_empty_not_raises(
     client.search_securities_instrument = AsyncMock(return_value=[])
     monkeypatch.setattr(tools_mod, "_make_client", lambda: client)
     monkeypatch.setattr(res_mod, "_make_client", lambda: client)
+
+    # 3 路批量 LLM 全部返回空 dict：候选无法解析出任何 org item，管线在
+    # merge_and_validate 前即无 GOATS 查询目标，属于 0 命中的合法路径之一。
+    fake_llm = MagicMock()
+    fake_llm.ainvoke = AsyncMock(return_value=MagicMock(content=""))
+    monkeypatch.setattr(tools_mod, "get_qwen_standard", lambda: fake_llm)
 
     from app.subgraphs.ticker.resolver import resolve_ticker_full
 

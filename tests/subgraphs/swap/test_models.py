@@ -6,7 +6,6 @@ from pydantic import ValidationError
 
 from app.subgraphs.swap.models import SwapIntentOutput
 
-
 # ============================================================
 # 7 个合法 type 值（CONTEXT.md / ADR 0001 D2）
 # ============================================================

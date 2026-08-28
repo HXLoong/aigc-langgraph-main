@@ -14,6 +14,7 @@ from app.subgraphs.close import confirm_close as confirm_module
 from app.subgraphs.close.cancel_close import close_cancel_close
 from app.subgraphs.close.confirm_close import close_confirm_close
 from app.subgraphs.close.models import CancelCloseParams, ConfirmCloseParams
+from app.tools.models import CommonResult
 
 
 def _patch_llm(
@@ -195,3 +196,43 @@ class TestCloseCancelCloseNode:
         )
         assert result.get("error") is not None
         assert result["error"].node == "close_cancel_close"
+
+    async def test_calls_real_backend_when_context_present(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """P0 payload 对齐：close_order_cancel_request 此前遗漏了真后端调用这一跳
+        （Dify 全 6 分支均汇入 期权平仓-参数聚合 → 期权平仓[code]）。"""
+        params = CancelCloseParams(cancelOrderNoList=["CO-20260304-759125AD"])
+        _patch_llm(monkeypatch, cancel_module, params)
+
+        captured: list[object] = []
+
+        async def _fake_operate(self, req):  # type: ignore[no-untyped-def]
+            captured.append(req)
+            return CommonResult(code=0, msg="ok", data="撤单请求已提交")
+
+        monkeypatch.setattr(
+            "app.tools.option_client.OptionClientHttpx.operate",
+            _fake_operate,
+        )
+
+        result = await close_cancel_close(
+            {
+                "raw_text": "撤销第一笔",
+                "quote_content": "1. CO-20260304-759125AD",
+                "conversation_id": "t",
+                "user_id": "u",
+                "room_id": "r",
+                "message_id": 1,
+            }
+        )
+        assert len(captured) == 1
+        req = captured[0]
+        assert req.type.value == "close_order_cancel_request"
+        assert req.orderList == []
+        assert req.closeOrderReqVO.model_dump()["cancelOrderNoList"] == [
+            "CO-20260304-759125AD"
+        ]
+        # P0：真后端响应逐字节透传
+        assert result.get("api_result") == "撤单请求已提交"
+        assert result.get("api_code") == 0

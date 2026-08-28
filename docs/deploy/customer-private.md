@@ -21,7 +21,7 @@
 
 完成以下 4 件事**之前**不要启动部署：
 
-1. ✅ `docs/customer-env-assessment.md` 14 节调研填完整（所有"待填"字段都有真实值）
+1. ✅ `docs/customer/customer-env-assessment.md` 14 节调研填完整（所有"待填"字段都有真实值）
 2. ✅ MySQL 已创建好 2 个库（业务库 + checkpoint 库），账号权限就位
 3. ✅ DeepSeek-v4-pro API Key 拿到（开发期我方提供，现场客户对齐）
 4. ✅ Java 后端可达（curl 测试 8 endpoints 至少有 1 返回 CommonResult）
@@ -34,7 +34,7 @@
 
 ## 1. 主机准备
 
-参考 `docs/customer-env-assessment.md` §2 部署前检查清单。最低配置：
+参考 `docs/customer/customer-env-assessment.md` §2 部署前检查清单。最低配置：
 
 - OS：Ubuntu 22.04 / CentOS 7+ / RHEL 8+
 - CPU：8 核
@@ -346,7 +346,7 @@ curl ... -d '{"inputs":{"raw_text":"完全不存在的标的xyz 询价"...}'
 ## 关联资源
 
 - `.env.customer.template`（本目录的 env 模板）
-- [`docs/customer-env-assessment.md`](../customer-env-assessment.md) · 部署前调研清单
+- [`docs/customer/customer-env-assessment.md`](../customer/customer-env-assessment.md) · 部署前调研清单
 - [`docs/deploy/langfuse-self-hosted.md`](./langfuse-self-hosted.md) · LangFuse 部署详解
 - [`docs/on-call-runbook.md`](../on-call-runbook.md) · 故障 playbook
 - [`docs/api-contracts/java-backend.md`](../api-contracts/java-backend.md) · Java 后端契约

@@ -96,10 +96,7 @@ async def run_workflow(
     trace_id = uuid.uuid4().hex
     initial_state["trace_id"] = trace_id
 
-    config = {
-        "configurable": {"thread_id": req.user},
-        "metadata": {"trace_id": trace_id},
-    }
+    config = _build_run_config(conversation_id=req.user, trace_id=trace_id)
 
     t0 = time.perf_counter()
     try:
@@ -147,18 +144,59 @@ async def run_workflow(
 # ============================================================
 
 
+#: 图递归上限(架构体检 2026-08 改进 A):现图均为 DAG,50 为防御纵深上限;
+#: 未来引入循环子图时按 CLAUDE.md 指引单独收紧(复杂子图 25)
+GRAPH_RECURSION_LIMIT = 50
+
+
+def _build_run_config(conversation_id: str, trace_id: str) -> dict:
+    """构造 graph.ainvoke 的 RunnableConfig(thread 绑定 + trace 关联 + 递归上限)。"""
+    return {
+        "configurable": {"thread_id": conversation_id},
+        "metadata": {"trace_id": trace_id},
+        "recursion_limit": GRAPH_RECURSION_LIMIT,
+    }
+
+
 # Dify inputs 字段名（Java 透传）→ AgentState 字段名 映射
+# DSL v2（2026-08 主干工作流 start 节点）新增:fast_query / at_bot /
+# existing_command / bot_name / operator_user_id / option_counterparties /
+# swap_counterparties;旧 9 字段保留兼容（userId/messageContent 仍接受）。
 _INPUT_FIELD_MAP = {
     "rawContent": "raw_text",
     "raw_content": "raw_text",
     "conversationId": "conversation_id",
+    "conversation_id": "conversation_id",
     "messageId": "message_id",
+    "message_id": "message_id",
     "userId": "user_id",
     "roomId": "room_id",
+    "room_id": "room_id",
     "guid": "guid",
     "messageContent": "message_content",
     "quoteContent": "quote_content",
+    "quote_content": "quote_content",
     "quoteAppinfo": "quote_appinfo",
+    "quote_appinfo": "quote_appinfo",
+    # -------- DSL v2 新入参 --------
+    "fast_query": "fast_query",
+    "fastQuery": "fast_query",
+    "at_bot": "at_bot",
+    "atBot": "at_bot",
+    "existing_command": "existing_command",
+    "existingCommand": "existing_command",
+    "bot_name": "bot_name",
+    "botName": "bot_name",
+    "operator_user_id": "operator_user_id",
+    "operatorUserId": "operator_user_id",
+    # 对手预查 JSON 串（pre_route 解析成精简列表）
+    "option_counterparties": "option_counterparties_raw",
+    "optionCounterparties": "option_counterparties_raw",
+    "swap_counterparties": "swap_counterparties_raw",
+    "swapCounterparties": "swap_counterparties_raw",
+    # 输入文件（Dify sys.files 等价物;全图片/全 Excel 分流互换多模态链）
+    "files": "input_files",
+    "sysFiles": "input_files",
 }
 
 

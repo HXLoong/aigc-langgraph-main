@@ -3,7 +3,7 @@
 # 用法：bash scripts/run_real_llm_harness.sh [stage]
 #   stage 可选：anchor | seeds | canary | all（默认 all）
 #
-# 文档：docs/m2-real-llm-run-guide.md
+# 文档：docs/archive/m2/m2-real-llm-run-guide.md
 
 set -euo pipefail
 
@@ -133,4 +133,4 @@ esac
 
 echo ""
 echo ">>> 全部完成 · 报告目录 .harness-runs/${TS}-*"
-echo ">>> 文档：docs/m2-real-llm-run-guide.md"
+echo ">>> 文档：docs/archive/m2/m2-real-llm-run-guide.md"

@@ -443,7 +443,7 @@ async def main(args: argparse.Namespace) -> int:
     try:
         from langgraph.checkpoint.memory import InMemorySaver
 
-        from app.graphs.main_graph import build_main_graph
+        from app.graph.main import build_main_graph
 
         graph = build_main_graph(InMemorySaver())
 

@@ -19,7 +19,7 @@
 |------|------|---|
 | 保留 | `app/prompts/`（现 **37 个**业务 .md）· `app/checkpointer/factory.py` · `dify/sync.py` + `dify/yaml/` · `tests/fixtures/golden.jsonl` | `app/llm/clients.py` 保留路径、**内容已按 [ADR 0020](./0020-unify-all-llm-on-deepseek-v4-pro.md) 重写**为 vendor 适配层 |
 | ~~保留~~ 已下线 | `mock_api/server.py` | 2026-05-13 随"切换真实后端环境"删除（commit `4ac9f0b`），单测改 AsyncMock、e2e 走 `scripts/probe_*_e2e.py` 真后端探针 |
-| 重写 | `app/state.py` · `app/graphs/` · `app/subgraphs/` · `app/nodes/` · `app/tools/` · `app/api/routes.py` · `tests/` · `scripts/` | `app/state.py` 与 `app/graphs/main_graph.py` 现仅剩兼容 shim，真源在 `app/graph/` |
+| 重写 | `app/state.py` · `app/graphs/` · `app/subgraphs/` · `app/nodes/` · `app/tools/` · `app/api/routes.py` · `tests/` · `scripts/` | `app/state.py` 现仅剩兼容 shim（`app/graphs/` shim 已于 2026-08-28 清理删除），真源在 `app/graph/` |
 | 新增 | `harness/` 顶层目录（评测台，与 `app/` 解耦） | 已建成，模块清单见 [ADR 0002](./0002-comprehensive-runtime-harness.md) |
 
 ### D2 · `tools/` 层的契约策略（落地与蓝图一致）
@@ -60,7 +60,9 @@
 |------|------|---|
 | **合并** | 互换 3 个"确认 X"节点 → 1 个 `swap.confirm(expected_action)`，新写统一 confirm 提示词（`app/subgraphs/swap/confirm.py`） | 本 ADR |
 | **拆分** | 期权 intent_extract（2870 行单节点）→ 1 intent + 5 extract（`extract_inquiry` / `extract_place_or_modify` / `extract_cancel` / `extract_confirm` / `extract_query`；close_order_* 归独立 close 子图） | [ADR 0011](./0011-split-option-intent-and-extraction.md) 二次修订 |
-| **瘦身** | `app/prompts/swap/place_order.md`：Dify 原版 3059 行 / 152,546 字符 → **2249 行 / 126,171 字符**（删冗余示例、压缩重复规则，保留语义；原版存为 `place_order.dify_original.md`） | 2026-05-12 grill 授权，M2/M3 执行，本次补登记 |
+| **瘦身** | `app/prompts/swap/place_order.md`：Dify 原版 3059 行 / 152,546 字符 → **2249 行 / 126,171 字符**（删冗余示例、压缩重复规则，保留语义；原版存为 `place_order.dify_original.md`）。注：DSL v2（2026-08）Dify 侧已自行重写该提示词，旧瘦身版随迁移被替换 | 2026-05-12 grill 授权，M2/M3 执行，本次补登记 |
+| **瘦身 P0 批（2026-08-28）** | 客户反馈提示词冗长/规则写死损害泛化性，全量评估见 `docs/swap-prompt-slimming-assessment.md`。P0 零风险档产出 4 个 v2 共存文件：`swap/{intent,image_extract,excel_extract,image_ocr}_v2.md`——只删死重（JSON 格式禁令，structured output 已强制）、悬空规则（bot_name_list/shortname_list/序号/total 等未注入变量）、重复陈述（同一规则 2~9 遍收敛为 1 处权威表述）、自相矛盾的补丁修订史（"POV 空格"）；**业务规则语义不变**。灰度经 `_versions.yaml`/env 控制，默认 0 流量，eval PASS ≥ v1 基线后方可放量（ADR 0003） | 本 ADR + 评估报告 |
+| **去 LLM 化（2026-08-28 瘦身 P1）** | swap 撤单/查单/三确认共 5 个节点的唯一任务是提取 `H-` 订单号，改为确定性提取（`app/subgraphs/swap/order_id.py`，来源优先级 1:1 对照原提示词规约）；省 5 次 LLM 调用（≈4.8K tokens/请求）与幻觉面。5 个提示词转非活跃资产保留。二次校验/后端调用/输出形状不变 | 本 ADR + 评估报告 |
 | **保持** | 其他 Dify LLM 节点 1:1 复刻，提示词照搬 | — |
 
 **节点数：蓝图 24 → 主干落地 20**（与 CLAUDE.md / README 口径一致）：

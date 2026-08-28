@@ -9,7 +9,7 @@
 - 变体覆盖：缩写 / 错别字 / 口语化 / 引用同义词 / 边界场景
 
 注：生成的 case **不直接合入** golden.jsonl —— 必须经业务方 review pass。
-本工具只产生 docs/m2-llm-generated-cases.md 候选清单。
+本工具只产生 docs/archive/m2/m2-llm-generated-cases.md 候选清单。
 """
 from __future__ import annotations
 

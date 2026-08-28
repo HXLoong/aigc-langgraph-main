@@ -9,6 +9,19 @@ from app.subgraphs.close import build_close_graph
 from app.subgraphs.close import holding_query as hq_module
 from app.subgraphs.close import intent as intent_module
 from app.subgraphs.close.models import CloseIntentOutput, HoldingQueryParams
+from app.tools.models import CommonResult
+
+
+def _patch_close_backend(monkeypatch: pytest.MonkeyPatch) -> None:
+    """close/backend.py 调用的 OptionClientHttpx.operate 不打真网络（路由测试关注
+    路由本身，不关注真后端联调，真联调见 scripts/probe_close_write_e2e.py）。"""
+
+    async def _fake_operate(self, req):  # type: ignore[no-untyped-def]
+        return CommonResult(code=0, msg="ok", data="mock-backend-result")
+
+    monkeypatch.setattr(
+        "app.tools.option_client.OptionClientHttpx.operate", _fake_operate
+    )
 
 
 def _patch_intent(monkeypatch: pytest.MonkeyPatch, intent_type: str) -> None:
@@ -40,6 +53,7 @@ async def test_close_query_routes_to_holding_query(
         monkeypatch,
         HoldingQueryParams(closeable_only=False),
     )
+    _patch_close_backend(monkeypatch)
     graph = build_close_graph()
     final = await graph.ainvoke(
         {
