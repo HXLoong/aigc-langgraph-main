@@ -269,3 +269,21 @@
 - **`docs/m3-m4-roadmap.md`** · C1.16（本草稿任务卡）/ F4.0（演练任务卡）
 - **`docs/SHADOW_COMPARE_GUIDE.md`** · Shadow 双跑工具（F4.1，与本手册无直接依赖）
 - **`docs/TROUBLESHOOTING.md`** · 开发期通用故障排查（与生产 on-call 不同语境）
+
+## checkpoint 表清理(客户现场例行运维,2026-08 架构体检改进 B)
+
+LangGraph checkpoint 三表(checkpoints / checkpoint_blobs / checkpoint_writes)只增不减,
+长期运行持续膨胀。按「线程最近一次 checkpoint 时间」清理,保留活跃会话完整历史:
+
+```bash
+# 每日巡检(dry-run,只报数)
+python scripts/cleanup_checkpoints.py --days 30
+
+# 确认数字合理后真删
+python scripts/cleanup_checkpoints.py --days 30 --execute
+```
+
+- 建议 cron 每日低峰执行 `--execute`;保留天数按客户会话时效要求调整(默认 30 天)
+- 判据是 checkpoint JSON 的 `$.ts`(线程最新一条早于 N 天前即整线程删除)
+- 删除对业务无感:被删线程等价于"新会话从零开始",不影响在保留期内的多轮上下文
+- 交付包必含此脚本;首次上线一个月后检查表大小确认 cron 生效

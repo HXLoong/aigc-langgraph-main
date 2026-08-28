@@ -10,8 +10,7 @@ from __future__ import annotations
 from operator import add
 from typing import Annotated, Any, Literal, TypedDict
 
-from pydantic import BaseModel, ConfigDict, Field
-
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 # ============================================================
 # 子模型
@@ -42,8 +41,31 @@ class TickerCandidate(BaseModel):
     )
 
 
+#: trace 内单个字符串值的长度上限(架构体检 2026-08 改进 C)。
+#: trace 是 add-reducer 累积字段,每个 checkpoint 携带全部历史 trace——
+#: llm_output 若存完整 LLM 输出(如 OCR 全文),长会话 checkpoint 线性膨胀。
+TRACE_TEXT_LIMIT = 500
+
+_TRUNC_MARK = "…[已截断]"
+
+
+def _truncate_trace_value(value: Any) -> Any:
+    """递归截断超长字符串;结构、数字、短值原样保留。"""
+    if isinstance(value, str) and len(value) > TRACE_TEXT_LIMIT:
+        return value[:TRACE_TEXT_LIMIT] + _TRUNC_MARK
+    if isinstance(value, dict):
+        return {k: _truncate_trace_value(v) for k, v in value.items()}
+    if isinstance(value, list):
+        return [_truncate_trace_value(v) for v in value]
+    return value
+
+
 class TraceEntry(BaseModel):
-    """每节点决策痕迹（供 harness 失败定位 + ADR 0014 D7 失败报告）。"""
+    """每节点决策痕迹（供 harness 失败定位 + ADR 0014 D7 失败报告）。
+
+    llm_output / llm_input_excerpt 在写入时统一截断(TRACE_TEXT_LIMIT),
+    防止累积 trace 撑大 checkpoint;完整 LLM I/O 由 LangFuse 侧保留。
+    """
 
     model_config = ConfigDict(extra="allow")
     node: str
@@ -51,6 +73,11 @@ class TraceEntry(BaseModel):
     elapsed_ms: int | None = None
     llm_input_excerpt: str | None = None
     llm_output: dict[str, Any] | None = None
+
+    @field_validator("llm_output", "llm_input_excerpt", mode="before")
+    @classmethod
+    def _truncate_long_text(cls, v: Any) -> Any:
+        return _truncate_trace_value(v)
 
 
 class ErrorInfo(BaseModel):
