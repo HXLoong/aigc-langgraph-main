@@ -195,7 +195,7 @@ def _load_golden_with_strong_signal() -> list[dict]:
     path = Path(__file__).parent / "fixtures" / "golden.jsonl"
     cases = [
         json.loads(line)
-        for line in path.read_text().splitlines()
+        for line in path.read_text(encoding="utf-8").splitlines()
         if line.strip()
     ]
     return [

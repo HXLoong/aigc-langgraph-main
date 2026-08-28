@@ -209,7 +209,7 @@ def _run(*args: str, env_extra: dict | None = None, timeout: int = 30) -> subpro
     env.pop("EVAL_ROOM_ID", None)
     env.update(env_extra or {})
     return subprocess.run(
-        ["python3", str(SCRIPT), *args],
+        [sys.executable, str(SCRIPT), *args],
         cwd=ROOT, env=env, capture_output=True, text=True, timeout=timeout,
     )
 
