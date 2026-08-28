@@ -34,8 +34,8 @@ async def test_main_graph_e2e_swap_keyword(
         SwapOrderItem,
         SwapPlaceOrderParams,
     )
-    from app.tools.models import CommonResult
     from app.subgraphs.ticker.resolver import TickerResolution
+    from app.tools.models import CommonResult
 
     def _patch(module: object, value: object, fn: str = "get_qwen_thinking") -> None:
         fake_llm = MagicMock()
