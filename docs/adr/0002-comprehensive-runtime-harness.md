@@ -14,7 +14,7 @@
 ## 三个阶段的覆盖面（现状）
 
 - **开发期**：节点 / 子图 / 模型层单元测试（`tests/` 977 项 collected）+ in-process 闭环 demo（`scripts/demo_closed_loop.py`，零外部依赖跑全量 golden）+ 子图金字塔。
-- **运行期**：每个节点产出结构化 trace 写入 MySQL `node_trace` 表（`app/nodes/persist.py`），对接 **LangFuse**（[ADR 0014](./0014-langfuse-as-harness-backend.md)，取代早期 LangSmith 方案）+ OpenTelemetry（`app/observability/tracing.py`），基于 `/metrics` 做延迟、错误率告警（`app/observability/{metrics,alerts}.py`）。
+- **运行期**：每个节点产出结构化 trace；`app/nodes/persist.py` 提供写入 MySQL `node_trace` 的代码，对接 **LangFuse**（[ADR 0014](./0014-langfuse-as-harness-backend.md)，取代早期 LangSmith 方案）+ OpenTelemetry（`app/observability/tracing.py`），基于 `/metrics` 做延迟、错误率告警（`app/observability/{metrics,alerts}.py`）。⚠️ 仓库尚无 `node_trace` 建表/迁移资产，未初始化业务库时写入会降级失败。
 - **提示词调优期**：提示词版本化（`app/prompts/_versions.yaml` + [ADR 0003](./0003-prompt-versioning-by-file-coexistence.md)）+ golden set 自动评分（`scripts/eval_golden.py` / `scripts/langfuse_eval.py` DeepSeek Judge）+ A/B 流量染色（conversation_id 稳定 hash 分流，`swap.intent` 95/5 灰度在跑）。
 
 ## 备选方案
@@ -28,7 +28,7 @@
 | Phase | 内容 | 状态 |
 |---|---|---|
 | 1 | 闭环 demo + golden set + shadow_compare | ✅（golden 已从 30 条扩到 **535 条主集 + 34 条 ticker**，B/C/D 桶管理）|
-| 2 | 节点级 trace 落库 + trace 后台接入 | ✅（`node_trace` + LangFuse CallbackHandler；后台由 LangSmith 换为 LangFuse，[ADR 0004](./0004-trace-granularity-node-level-with-langsmith.md) / 0014）|
+| 2 | 节点级 trace 落库 + trace 后台接入 | 🟡（LangFuse CallbackHandler 与 `node_trace` 写入代码已完成；`node_trace` 建表/迁移资产缺失，部署闭环未完成；后台由 LangSmith 换为 LangFuse，[ADR 0004](./0004-trace-granularity-node-level-with-langsmith.md) / 0014）|
 | 3 | 提示词版本化 + 评分自动化 + A/B 染色 | ✅（三件套均落地，见上；[ADR 0003](./0003-prompt-versioning-by-file-coexistence.md)）|
 | 4 | 线上 trace → 人工标注 → golden 反哺 | 🔄 平台已选定 LangFuse（trace/dataset/eval/annotation 四件套），`scripts/upload_golden_to_langfuse.py` / `harness sync-golden` 已就绪；标注运营与 D 桶回流待跑（[ADR 0005](./0005-annotation-roles-judge-plus-business-spotcheck.md)、二期 Issue #37）|
 

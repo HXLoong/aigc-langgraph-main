@@ -1,6 +1,6 @@
 # ADR 0009 · 数据库选型：MySQL 协议 + TDSQL for MySQL 生产环境
 
-- 状态：已采纳（checkpointer 接线部分未落地，见"实现偏离"）
+- 状态：已采纳（checkpointer 已随 [ADR 0021](./0021-text-confirm-replaces-interrupt.md) 接线；TDSQL 现场兼容性仍待首次部署实测）
 - 日期：2026-05-10
 - 修订：2026-08-27 深度改写为现状口径（wayfinder map #138 / 核查 #141）
 - 作者：图灵科技 + Tony

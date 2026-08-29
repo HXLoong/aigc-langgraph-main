@@ -9,7 +9,7 @@
 
 主图入口需要把客户原话路由到 `product_type` 一级类目。复盘 golden 与 Java 后端约定后确认：ProductType 真值集 4 个（`swap` / `option` / `option_close` / `unknown`）；订单号 prefix 是业务硬约定（"订单号 over 关键词"，g029 案例）；强信号 case 占比高（立项时 30 条 golden 约 14 条——M2 立项时口径，golden 现已 535 条）；口语化 case 必须 LLM。
 
-## 决策与落地现状（`app/nodes/intent_route.py`，实际为四层）
+## 历史落地（DSL v2 前的四层路由，已由文末迁移修订取代）
 
 ### 第 1 层 · 订单号正则（命中即返回）
 
@@ -35,7 +35,7 @@
 - ~~`load_prompt("router", "product_type")`~~（DSL v2 迁移后改为 `load_prompt("router", "unknown_intent")`,391 行,原 product_type.md 已删除）
 - 入参：`raw_text` **+ `quote_content`**（拼接到 user 段，原文只写 raw_text，本次补录）
 - `with_structured_output(ProductTypeOutput)`，Literal 四值
-- ⚠️ **工厂选择偏离**（裁决 [#158](https://github.com/GZTL-AI/aigc-langgraph/issues/158)）：原决策"模型选 standard（按 [ADR 0010](./0010-llm-model-selection-rules.md)）"，代码实际用 `get_qwen_thinking()`（`product_type.md` 头部仍标 standard）。[ADR 0020](./0020-unify-all-llm-on-deepseek-v4-pro.md) 后同模型无运行时后果，但按工厂分化模型时会静默跟错。
+- **历史工厂偏离已裁决**（[#158](https://github.com/GZTL-AI/aigc-langgraph/issues/158)）：旧决策选 standard，实际用 thinking；#158 追认 thinking 工厂为事实默认，并规定未来按工厂分化模型前先统一调用点。
 
 ### 第 4 层 · unknown 兜底
 
@@ -54,9 +54,9 @@ LLM 判 unknown 或异常 → `product_type="unknown"` → 主图走 fallback re
 ## 后果（现状口径）
 
 - 约一半流量省一次 LLM 调用，成本延迟双优；trace 可统计"规则 vs LLM"来源反哺关键词覆盖率。
-- 新增 product 需改正则/yaml/LLM prompt 三处；订单号 prefix 变更走 ADR + 灰度（正则集中在 `intent_route.py` 一处）。
+- DSL v2 后新增 product 需同步 `route_rules.py`、unknown LLM prompt、标签映射与 golden；订单号 prefix 变更走 ADR + 回归评估。
 - 层次演进（quote_marker 层、Q- 正则）说明规则层会随错例分析持续生长——新增规则须同步本 ADR 或在 trace decision 中可辨识。
-- ~~待修正：`app/prompts/router/product_type.md` 头部 model 标注~~（该文件已随 DSL v2 迁移删除,待修正项失效）。
+- 旧 `product_type.md` 已随 DSL v2 删除，不再保留失效的模型标注待办。
 
 ## Related
 
