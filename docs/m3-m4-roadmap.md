@@ -304,7 +304,7 @@ A0.1 PR#41 修绿  →  A0.2 merge
 - **ADR 0001 D9** · 原 M3 阶段定义（被 ADR 0016 修订）
 - **ADR 0008 / 0013 / 0014** · ticker / 动态 prompt / LangFuse 后端
 - **`docs/archive/m2/m2-real-llm-final-report.md`** · M2 92.5% pass rate baseline
-- **`docs/SHADOW_COMPARE_GUIDE.md`** · Shadow 工具（M4 使用）
+- **`docs/deploy/SHADOW_COMPARE_GUIDE.md`** · Shadow 工具（M4 使用）
 - **GitHub Epic** · #33（客户验证）/ #34（M3 v2）/ #35-#37（二期）
 
 ---

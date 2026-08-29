@@ -267,7 +267,7 @@
 - **[ADR 0017](./adr/0017-m4-canary-quantitative-exit-gate.md)** · M4 金丝雀退出门量化指标（互补：金丝雀结束判定，不是故障升级）
 - **CONTEXT.md** · "紧急回滚"术语定义（本手册 §7 的语义来源）
 - **`docs/m3-m4-roadmap.md`** · C1.16（本草稿任务卡）/ F4.0（演练任务卡）
-- **`docs/SHADOW_COMPARE_GUIDE.md`** · Shadow 双跑工具（F4.1，与本手册无直接依赖）
+- **`docs/deploy/SHADOW_COMPARE_GUIDE.md`** · Shadow 双跑工具（F4.1，与本手册无直接依赖）
 - **`docs/TROUBLESHOOTING.md`** · 开发期通用故障排查（与生产 on-call 不同语境）
 
 ## checkpoint 表清理(客户现场例行运维,2026-08 架构体检改进 B)

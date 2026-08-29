@@ -281,7 +281,7 @@ aigc-langgraph/
 │   ├── test_e2e.py
 │   └── test_models.py
 ├── docs/
-│   ├── WINDOWS_LOCAL_SETUP.md    # 本文档
+│   ├── training/WINDOWS_LOCAL_SETUP.md  # 本文档
 │   └── TEST_AND_CONNECTIVITY_STATUS.md
 ├── docker-compose.yml
 ├── .env.example
