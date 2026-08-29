@@ -1,4 +1,5 @@
 """close 子图路由扩展测试 · 验证新增 confirm_close / cancel_close 路径。"""
+
 from __future__ import annotations
 
 from unittest.mock import AsyncMock, MagicMock
@@ -106,9 +107,7 @@ async def test_close_order_cancel_request_routes_to_cancel_close(
     trace_nodes = [e.node for e in final.get("trace", [])]
     assert "close_cancel_close" in trace_nodes
     assert "close_todo" not in trace_nodes
-    assert final.get("cancel_params", {}).get("cancelOrderNoList") == [
-        "CO-20260304-XYZ"
-    ]
+    assert final.get("cancel_params", {}).get("cancelOrderNoList") == ["CO-20260304-XYZ"]
 
 
 @pytest.mark.asyncio

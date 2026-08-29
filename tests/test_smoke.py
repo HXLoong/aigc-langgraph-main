@@ -4,6 +4,7 @@ ADR 0001 D1 + ADR 0015：M1 smoke 已升级为含 intent_route 的端到端验�
 - ingest → intent_route（规则层）→ swap/option/option_close stub → persist → render
 - unknown / cascade 路径走 fallback
 """
+
 from __future__ import annotations
 
 import pytest
@@ -33,11 +34,10 @@ async def test_main_graph_e2e_swap_keyword(
         SwapOrderItem,
         SwapPlaceOrderParams,
     )
+    from app.subgraphs.ticker.resolver import TickerResolution
     from app.tools.models import CommonResult
 
-    def _patch(
-        module: object, value: object, fn: str = "get_qwen_thinking"
-    ) -> None:
+    def _patch(module: object, value: object, fn: str = "get_qwen_thinking") -> None:
         fake_llm = MagicMock()
         fake_llm.ainvoke = AsyncMock(return_value=value)
         fake_base = MagicMock()
@@ -63,6 +63,11 @@ async def test_main_graph_e2e_swap_keyword(
             ]
         ),
         fn="get_qwen_complex",
+    )
+    monkeypatch.setattr(
+        swap_po_module,
+        "resolve_ticker_full",
+        AsyncMock(return_value=TickerResolution(resolved=[], hitl_pending=[])),
     )
 
     graph = build_main_graph()
@@ -113,9 +118,7 @@ async def test_main_graph_e2e_unknown_routes_to_fallback(
     async def fake_classify(text: str, quote_content: str | None = None) -> str:
         return "unknown"
 
-    monkeypatch.setattr(
-        intent_route_module, "_classify_with_llm", fake_classify
-    )
+    monkeypatch.setattr(intent_route_module, "_classify_with_llm", fake_classify)
 
     graph = build_main_graph()
     final = await graph.ainvoke(
@@ -221,10 +224,7 @@ async def test_main_graph_e2e_option_close_order_no(
     # 验证 close.place_close 输出确实写入 state['close_params']
     close_params = final.get("close_params", {})
     assert close_params.get("closeOrderList")
-    assert (
-        close_params["closeOrderList"][0]["orderId"]
-        == "CO-20260304-ABCD1234"
-    )
+    assert close_params["closeOrderList"][0]["orderId"] == "CO-20260304-ABCD1234"
 
 
 @pytest.mark.asyncio
