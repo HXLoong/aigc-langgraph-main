@@ -11,7 +11,6 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
-
 #: option 子图处理的 10 个基础意图（不含 close_order_*）
 OptionIntentType = Literal[
     "new_inquiry",

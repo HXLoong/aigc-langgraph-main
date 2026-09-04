@@ -14,7 +14,6 @@ from app.subgraphs.swap.backend import (
 from app.tools.exceptions import BackendUnreachableError
 from app.tools.models import CommonResult
 
-
 # ============================================================
 # _message_id
 # ============================================================
@@ -178,7 +177,7 @@ async def test_place_order_node_writes_api_code(
 ) -> None:
     """swap_place_order 节点端到端：state 含上下文 → 调真客户端 → api_code 写回。"""
     from app.subgraphs.swap import place_order as po_module
-    from app.subgraphs.swap.models import SwapPlaceOrderParams, SwapOrderItem
+    from app.subgraphs.swap.models import SwapOrderItem, SwapPlaceOrderParams
 
     # mock LLM
     params = SwapPlaceOrderParams(

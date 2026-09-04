@@ -22,7 +22,6 @@ from app.subgraphs.ticker.tools import (
 )
 from app.tools.ticker_client import SecuritiesInstrumentRespVO
 
-
 # ============================================================
 # tokenize · 纯规则
 # ============================================================

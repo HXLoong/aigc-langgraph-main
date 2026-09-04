@@ -6,9 +6,8 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from app.subgraphs.swap import intent as intent_module
-from app.subgraphs.swap.intent import _format_history, _build_user_message, swap_intent
+from app.subgraphs.swap.intent import _build_user_message, _format_history, swap_intent
 from app.subgraphs.swap.models import SwapIntentOutput
-
 
 # ============================================================
 # 辅助函数 _format_history

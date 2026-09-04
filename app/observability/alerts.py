@@ -149,7 +149,7 @@ class AlertState:
         }
 
     @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> "AlertState":
+    def from_dict(cls, data: dict[str, Any]) -> AlertState:
         return cls(
             name=data["name"],
             is_firing=data.get("is_firing", False),

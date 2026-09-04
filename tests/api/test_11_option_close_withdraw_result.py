@@ -3,7 +3,7 @@
 """
 from __future__ import annotations
 
-from _utils import check, get, post, report, COM_AID, COM_SUB
+from _utils import COM_AID, COM_SUB, check, get, post, report
 
 print("11. 期权平仓撤单结果查询  GET /api/internal/agent/option/order/close/withdrawResult")
 

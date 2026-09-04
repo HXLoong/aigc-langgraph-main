@@ -18,13 +18,13 @@ from __future__ import annotations
 
 from typing import Any
 
+from app.graph.business_params import validated_confirm
 from app.graph.safe_node import safe_node
 from app.graph.state import AgentState, Message, TraceEntry
 from app.llm.clients import get_qwen_thinking
 from app.prompts import load_prompt
 from app.subgraphs.swap.backend import call_swap_backend
 from app.subgraphs.swap.models import SwapConfirmParams
-from app.graph.business_params import validated_confirm
 
 
 def _format_history(history: list[Message] | None) -> str:

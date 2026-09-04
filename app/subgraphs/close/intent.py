@@ -16,7 +16,6 @@ from app.llm.clients import get_qwen_thinking
 from app.prompts import load_prompt
 from app.subgraphs.close.models import CloseIntentOutput
 
-
 #: 后置追加到 prompt.system 末尾的 JSON 输出指令（不修改 Dify 原 .md）
 _JSON_OUTPUT_INSTRUCTION = """
 

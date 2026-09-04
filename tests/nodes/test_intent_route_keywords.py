@@ -13,8 +13,6 @@ Round 12 trace 暴露："跟量" 在 option_close 关键词列表里，导致 sw
 """
 from __future__ import annotations
 
-import pytest
-
 from app.nodes.intent_route import _match_keywords
 
 

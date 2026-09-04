@@ -20,6 +20,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from app.graph.business_params import validated_close_params
 from app.graph.safe_node import safe_node
 from app.graph.state import AgentState, TraceEntry
 from app.llm.clients import get_qwen_thinking
@@ -27,7 +28,6 @@ from app.prompts import load_prompt
 from app.subgraphs.close.models import ClosePlaceParams
 from app.tools.exceptions import BackendUnreachableError
 from app.tools.option_client import OptionClientHttpx
-from app.graph.business_params import validated_close_params
 
 
 def _build_user_message(state: AgentState) -> str:

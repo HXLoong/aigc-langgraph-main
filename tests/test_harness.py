@@ -1,9 +1,6 @@
 """harness/ 单元测试 — golden / differ / runner / reporter / cli."""
 from __future__ import annotations
 
-import json
-from pathlib import Path
-
 import pytest
 
 from harness.cli import build_parser
@@ -16,7 +13,6 @@ from harness.golden import (
 )
 from harness.reporter import render_failure_json, render_markdown, summarize
 from harness.runner import run_case
-
 
 # ============================================================
 # golden loader

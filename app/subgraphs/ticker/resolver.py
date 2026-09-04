@@ -95,6 +95,7 @@ def _ends_with_any(wind: str, suffixes: tuple[str, ...]) -> bool:
 
 #: 完整 wind code 模式：纯数字代码 + 已知交易所后缀
 import re as _re_wc
+
 _EXPLICIT_WIND_CODE_RE = _re_wc.compile(r"^\d{4,6}\.(SH|SZ|BJ|HK|CFE|DCE|SHF|CZC|INE)$", _re_wc.IGNORECASE)
 
 

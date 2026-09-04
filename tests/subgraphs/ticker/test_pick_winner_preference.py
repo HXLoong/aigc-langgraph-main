@@ -11,8 +11,6 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock
 
-import pytest
-
 from app.subgraphs.ticker.resolver import _pick_winner
 
 

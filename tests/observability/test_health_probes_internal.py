@@ -21,7 +21,6 @@ import pytest
 
 from app.observability import health_probes as hp
 
-
 # ============================================================
 # Settings fake helpers
 # ============================================================

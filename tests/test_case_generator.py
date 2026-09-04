@@ -5,10 +5,8 @@ import pytest
 
 from harness.case_generator import (
     NODE_REGISTRY,
-    NodeSeedSpec,
     render_seed_template,
 )
-
 
 # ============================================================
 # 节点注册表

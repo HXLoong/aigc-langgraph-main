@@ -19,8 +19,6 @@ from app.subgraphs.ticker.resolver import TickerResolution, resolve_ticker_full
 from app.tools.ticker_client import SecuritiesInstrumentRespVO
 
 
-
-
 def _resp(wind: str, sht: str | None = None, score: int = 0) -> SecuritiesInstrumentRespVO:
     return SecuritiesInstrumentRespVO(
         windCode=wind, insShtDesc=sht or wind, relevanceScore=score

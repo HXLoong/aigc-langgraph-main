@@ -16,6 +16,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from app.graph.business_params import validated_place_params
 from app.graph.safe_node import safe_node
 from app.graph.state import AgentState, Message, TraceEntry
 from app.llm.clients import get_qwen_thinking
@@ -23,8 +24,6 @@ from app.prompts import load_prompt
 from app.subgraphs.option.backend import _with_resolved_ticker, call_option_backend
 from app.subgraphs.option.models import OptionInquiryParams
 from app.subgraphs.ticker.resolver import resolve_ticker, resolve_ticker_full
-from app.graph.business_params import validated_place_params
-
 
 #: 快速询价 / 雪球 / 参与型识别关键词（命中则不走 LLM，直传 GOATS instrument parser）
 _FAST_INQUIRY_MARKERS = ("快速询价", "雪球", "参与型", "敲入", "敲出")

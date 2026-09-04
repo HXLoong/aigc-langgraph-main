@@ -9,7 +9,6 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
-
 # ============================================================
 # 意图分类（swap.intent）
 # ============================================================

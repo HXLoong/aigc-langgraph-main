@@ -6,7 +6,6 @@ from pydantic import ValidationError
 
 from app.subgraphs.option.models import OptionIntentOutput
 
-
 # ============================================================
 # 10 个合法 type 值（ADR 0011 二次修订，不含 close_order_*）
 # ============================================================

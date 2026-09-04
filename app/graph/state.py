@@ -12,7 +12,6 @@ from typing import Annotated, Any, Literal, TypedDict
 
 from pydantic import BaseModel, ConfigDict, Field
 
-
 # ============================================================
 # 子模型
 # ============================================================
