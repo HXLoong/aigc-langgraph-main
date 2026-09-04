@@ -34,6 +34,11 @@ def _patch_llm(
     fake_base = MagicMock()
     fake_base.with_structured_output = MagicMock(return_value=fake_llm)
     monkeypatch.setattr(ei_module, "get_qwen_thinking", lambda: fake_base)
+    monkeypatch.setattr(
+        ei_module,
+        "call_option_backend",
+        AsyncMock(return_value={"api_code": 0, "api_result": "backend reply"}),
+    )
     return fake_llm.ainvoke
 
 
@@ -118,6 +123,7 @@ class TestOptionExtractInquiryNode:
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         """节点正常完成，LLM 提取不受 ticker resolver 影响。"""
+        _patch_resolver(monkeypatch, [])
         params = OptionInquiryParams(
             orderList=[
                 OptionInquiryItem(stockCode="某不存在的标的", tenor="1M")

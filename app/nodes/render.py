@@ -1,10 +1,7 @@
 """render 节点：从 final state 生成 reply_text（Issue #20 M2 实现）。
 
-三路输出优先级：
-1. ticker_hitl_candidates → 多命中消歧卡片（列出候选请用户确认）
-2. tickers == [] 且 place_params 存在 → 0 命中友好提示
-3. error → 通用兜底提示（"我没完全理解..."）
-4. 其他 → 不写 reply_text（API 层从业务字段构造输出）
+期权业务卡片以 api_result 为唯一来源并原样透传；本地只生成消歧、错误提示及
+不含报价数据的操作类回复。
 """
 from __future__ import annotations
 
@@ -26,6 +23,12 @@ _ZERO_HIT_TMPL = (
 )
 _ERROR_REPLY = "我没完全理解你的意思，能换种说法重新告诉我吗？"
 _UNREACHABLE_REPLY = "系统暂时不可用，请稍后再试。若紧急需求请联系交易员或运营。"
+_OPTION_MISSING_CONTEXT_REPLY = (
+    "请求信息不完整，暂时无法调用期权服务，请重新发送原消息或联系运营。"
+)
+_OPTION_NO_RESULT_REPLY = (
+    "期权服务未返回有效结果，本次未生成报价，请稍后重试或联系交易员。"
+)
 
 
 def _format_hitl_card(hitl_candidates: list[dict[str, Any]]) -> str:
@@ -42,35 +45,6 @@ def _format_hitl_card(hitl_candidates: list[dict[str, Any]]) -> str:
     if not lines:
         return _ERROR_REPLY
     return _HITL_HEADER + "\n" + "\n".join(lines)
-
-
-#: 后端拒绝消息的特征关键字（不在池/报价不存在等），命中即视为"识别成功但不可报价"。
-_BACKEND_REJECTION_MARKERS = ("不在标的池", "报价不存在", "不支持的标的")
-
-
-def _augment_with_ticker_recognition(raw_reply: str, state: AgentState) -> str:
-    """后端拒绝消息 + 已 resolved tickers → 前置追加"已识别为 [windCode insShtDesc]"。
-
-    Why: 当 backend 标的池不收某些代码（如指数 399006.SZ）时，回复只显示"X 不在标的池内"，
-    Judge 看不到我们其实识别成功了，会判"未识别"。此函数在拒绝消息前面附加识别详情，
-    确保下游（Judge / 用户）能看到 ticker 识别已成功。
-
-    其他类型的 api_result（正常订单回执 / 询价卡）不附加，保持原样。
-    """
-    if not any(m in raw_reply for m in _BACKEND_REJECTION_MARKERS):
-        return raw_reply
-    tickers = state.get("tickers") or []
-    parts: list[str] = []
-    for t in tickers:
-        wc = t.windCode if hasattr(t, "windCode") else t.get("windCode")
-        desc = t.insShtDesc if hasattr(t, "insShtDesc") else t.get("insShtDesc")
-        if not wc:
-            continue
-        parts.append(f"{wc} {desc}" if desc else wc)
-    if not parts:
-        return raw_reply
-    prefix = "已识别为 " + "、".join(parts) + "；\n"
-    return prefix + raw_reply
 
 
 def _extract_swap_extras_from_text(raw_text: str, wind: str | None) -> dict[str, str]:
@@ -173,7 +147,6 @@ def _render_swap_order(o: dict[str, Any], state: AgentState, place: dict[str, An
     # - 则 swap：price = qty；qty 改为 notional / price（取整）
     # 这是**结构化数值大小关系判断**，不依赖具体业务字典；和 close place_close
     # "X万vs Y元 magnitude 比较"同样思路（参 prompt: Ex26）。
-    import re as _re_qp
     if (qty and price is None
             and extras.get("notional")
             and not o.get("placeOrderQuantityHand")
@@ -319,43 +292,50 @@ def _render_close_card(o: dict[str, Any], state: AgentState) -> str:
     return "\n".join(lines)
 
 
-def _resolve_stock_display(stock_code: str, state: AgentState) -> str:
-    """用 ticker resolver 结果拼接 windCode + 中文名。"""
-    tickers = state.get("tickers") or []
-    for t in tickers:
-        wc = t.windCode if hasattr(t, "windCode") else t.get("windCode", "")
-        desc = t.insShtDesc if hasattr(t, "insShtDesc") else t.get("insShtDesc", "")
-        # 匹配：stockCode 是中文名，insShtDesc 也含中文名
-        if stock_code and desc and (stock_code in desc or desc in stock_code):
-            return f"{wc}{desc}"
-        # 匹配：stockCode 本身就是 windCode
-        if stock_code and wc and stock_code == wc:
-            return f"{wc}{desc or ''}"
-    return stock_code
-
-
 @safe_node
 async def render(state: AgentState) -> dict[str, Any]:
     """生成 reply_text，供 API 层透传企微。
 
     优先级：
     1. 子图已生成 reply_text → 透传
-    2. ticker_hitl_candidates → 多命中消歧卡片（互换下单/改单除外）
-    3. 互换下单/改单 → 订单参数（含 HITL 场景，orderList 已提取）
-    4. 0 命中（期权询价） → 0 命中友好提示
-    5. api_result → 后端返回透传
-    6. error → 通用兜底提示
-    7. product_type == unknown → 引导提示
-    8. 结构化参数 → 互换确认/撤单/查询、期权询价/平仓/撤单
-    9. 兜底 → {}（API 层从业务字段构造）
+    2. 期权 api_result → 后端返回原样透传
+    3. 期权后端上下文/空结果错误 → 明确错误提示
+    4. ticker_hitl_candidates → 多命中消歧卡片（互换下单/改单除外）
+    5. 互换下单/改单 → 订单参数（含 HITL 场景，orderList 已提取）
+    6. 0 命中（期权询价） → 0 命中友好提示
+    7. 其他 api_result → 后端返回原样透传
+    8. error → 通用兜底提示
+    9. product_type == unknown → 引导提示
+    10. 结构化参数 → 互换确认/撤单/查询、期权平仓/撤单
+    11. 兜底 → {}（API 层从业务字段构造）
     """
     # 1. 子图已生成 reply_text → 透传
     if state.get("reply_text"):
         return {}
 
     place = state.get("place_params") or {}
+    product_type = state.get("product_type")
+    api_result = state.get("api_result")
+    is_option = product_type in ("option", "option_close")
 
-    # 2. HITL 消歧（互换下单/改单除外——此时已有 orderList，应优先展示订单参数）
+    # 期权业务卡片与拒绝消息均由后端生成，优先于本地 HITL/零命中状态且不改写。
+    if is_option and api_result is not None:
+        return {"reply_text": str(api_result)}
+
+    err = state.get("error")
+    err_type = None
+    if err is not None and not isinstance(err, str):
+        err_type = err.type if hasattr(err, "type") else (
+            err.get("type") if isinstance(err, dict) else None
+        )
+    if is_option and err_type == "MissingBackendContextError":
+        emit_fallback(reason="option_backend_missing_context")
+        return {"reply_text": _OPTION_MISSING_CONTEXT_REPLY}
+    if is_option and err_type == "EmptyBackendResultError":
+        emit_fallback(reason="option_backend_empty_result")
+        return {"reply_text": _OPTION_NO_RESULT_REPLY}
+
+    # HITL 消歧（互换下单/改单除外——此时已有 orderList，应优先展示订单参数）
     hitl = state.get("ticker_hitl_candidates")
     if hitl:
         emit_hitl(node="render")
@@ -377,20 +357,15 @@ async def render(state: AgentState) -> dict[str, Any]:
         raw_text = (state.get("raw_text") or "")[:40]
         return {"reply_text": _ZERO_HIT_TMPL.format(raw_text=raw_text)}
 
-    # 5. api_result 来自后端
-    if state.get("api_result"):
-        raw_reply = str(state["api_result"])
-        return {"reply_text": _augment_with_ticker_recognition(raw_reply, state)}
+    # 其他产品的 api_result 也只做透传。
+    if api_result is not None:
+        return {"reply_text": str(api_result)}
 
-    # 5. error → 区分不可达 vs 一般 cascade fail
-    err = state.get("error")
+    # error → 区分不可达 vs 一般 cascade fail
     if err is not None:
         # 节点直接写字符串 error（如 option_extract_inquiry invalid_ticker）→ 当 reply 用
         if isinstance(err, str):
             return {"reply_text": err}
-        err_type = err.type if hasattr(err, "type") else (
-            err.get("type") if isinstance(err, dict) else None
-        )
         if err_type == "BackendUnreachableError":
             emit_fallback(reason="backend_unreachable")
             return {"reply_text": _UNREACHABLE_REPLY}
@@ -451,21 +426,10 @@ async def render(state: AgentState) -> dict[str, Any]:
             return {"reply_text": f"已收到查询请求，订单号: {', '.join(ids)}"}
         return {"reply_text": "已收到查询请求。"}
 
-    # 8d. 期权询价
-    if place.get("expected_action") == "inquiry":
-        orders = place.get("orderList", [])
-        if orders:
-            o = orders[0]
-            stock_code = _resolve_stock_display(o.get("stockCode", "N/A"), state)
-            return {"reply_text": (
-                f"-----场外期权询价详情-----\n"
-                f"标的代码: {stock_code}\n"
-                f"期权类型: {o.get('optionType', 'N/A')}\n"
-                f"期限: {o.get('tenor', 'N/A')}\n"
-                f"执行价格: {o.get('strikePercentage', 'N/A')}%\n"
-                f"期权费率: 6.9%\n名义本金: 待补充\n建仓指令: 待补充\n交易对手: 待补充\n\n"
-                f"如需下单，请引用本消息补充【交易对手】【名义本金】【建仓指令】。"
-            )}
+    # 期权询价没有后端结果时绝不本地拼装报价卡片。
+    if product_type == "option" and place.get("expected_action") == "inquiry":
+        emit_fallback(reason="option_backend_no_result")
+        return {"reply_text": _OPTION_NO_RESULT_REPLY}
 
     if close.get("closeOrderList"):
         return {"reply_text": _render_close_card(close["closeOrderList"][0], state)}

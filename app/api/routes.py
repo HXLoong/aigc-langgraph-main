@@ -1,8 +1,9 @@
 """POST /v1/workflows/run — 兼容 Dify Workflow Run API（ADR 0001 D3）。
 
 设计要点：
-- Body: {inputs: {...}, response_mode: "blocking", user: "<conversation_id>"}
-- Response: Dify 协议形态 — {workflow_run_id, task_id, data: {outputs, status, ...}}
+- Body: {inputs: {...}, response_mode: "blocking", user: "<stable_user_key>"}
+- Response: Dify 协议形态 + Java 顶层字段
+  {workflow_run_id, task_id, conversationId, answer, data: {outputs, status, ...}}
 - 仅支持 blocking 模式（Java StockBotMessageServiceImpl.java:1646 写死 blocking）
 - inputs 字段透传 9 个机器人上下文 + raw_text
 - outputs 字段含 intent / product_type / 业务对象（M1 阶段含 stub 数据）
@@ -34,7 +35,7 @@ class DifyWorkflowRunRequest(BaseModel):
 
     inputs: dict[str, Any] = Field(default_factory=dict)
     response_mode: Literal["blocking", "streaming"] = "blocking"
-    user: str  # Java 侧传 conversation_id
+    user: str  # 调用方的稳定用户标识；不作为 LangGraph conversation_id
 
 
 class DifyWorkflowRunData(BaseModel):
@@ -57,10 +58,12 @@ class DifyWorkflowRunData(BaseModel):
 class DifyWorkflowRunResponse(BaseModel):
     """Dify Workflow Run API 响应。"""
 
-    model_config = ConfigDict(extra="allow")
+    model_config = ConfigDict(extra="allow", populate_by_name=True)
 
     workflow_run_id: str
     task_id: str
+    conversation_id: str = Field(alias="conversationId")
+    answer: str
     data: DifyWorkflowRunData
 
 
@@ -90,14 +93,30 @@ async def run_workflow(
     created_at = int(time.time())
 
     # 把 inputs 解构成 AgentState（按 contracts §2.1 §3.1 的 9 个机器人上下文字段）
-    initial_state = _inputs_to_state(req.inputs, fallback_conversation_id=req.user)
+    try:
+        initial_state = _inputs_to_state(req.inputs)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    # 首轮 conversation_id 允许为空：由 LangGraph 入口生成并通过响应返回。
+    # 后续轮次由调用方把该值原样传回，以便 checkpointer 命中同一 thread。
+    conversation_id = str(initial_state.get("conversation_id") or "").strip()
+    if not conversation_id:
+        conversation_id = str(uuid.uuid4())
+    initial_state["conversation_id"] = conversation_id
+
+    # Dify 顶层 user 会成为工作流内的 sys.user_id；Java 业务接口也把它
+    # 作为客户唯一 ID。显式 inputs.userId/user_id 非空时仍保持最高优先级。
+    user_id = str(initial_state.get("user_id") or "").strip()
+    if not user_id:
+        initial_state["user_id"] = req.user.strip()
 
     # ADR 0004/#156：单次调用关联 ID——node_trace.trace_id 与 LangFuse trace metadata 同源
     trace_id = uuid.uuid4().hex
     initial_state["trace_id"] = trace_id
 
     config = {
-        "configurable": {"thread_id": req.user},
+        "configurable": {"thread_id": conversation_id},
         "metadata": {"trace_id": trace_id},
     }
 
@@ -138,7 +157,11 @@ async def run_workflow(
         finished_at=finished_at,
     )
     return DifyWorkflowRunResponse(
-        workflow_run_id=workflow_run_id, task_id=task_id, data=data
+        workflow_run_id=workflow_run_id,
+        task_id=task_id,
+        conversation_id=conversation_id,
+        answer=final_state.get("reply_text") or "",
+        data=data,
     )
 
 
@@ -148,32 +171,37 @@ async def run_workflow(
 
 
 # Dify inputs 字段名（Java 透传）→ AgentState 字段名 映射
-_INPUT_FIELD_MAP = {
-    "rawContent": "raw_text",
-    "raw_content": "raw_text",
-    "conversationId": "conversation_id",
-    "messageId": "message_id",
-    "userId": "user_id",
-    "roomId": "room_id",
-    "guid": "guid",
-    "messageContent": "message_content",
-    "quoteContent": "quote_content",
-    "quoteAppinfo": "quote_appinfo",
+_INPUT_FIELD_ALIASES = {
+    "raw_text": ("rawContent", "raw_content"),
+    "conversation_id": ("conversationId", "conversation_id"),
+    "message_id": ("messageId", "message_id"),
+    "user_id": ("userId", "user_id"),
+    "room_id": ("roomId", "room_id"),
+    "guid": ("guid",),
+    "message_content": ("messageContent", "message_content"),
+    "quote_content": ("quoteContent", "quote_content"),
+    "quote_appinfo": ("quoteAppinfo", "quote_appinfo"),
 }
 
 
-def _inputs_to_state(
-    inputs: dict[str, Any], fallback_conversation_id: str
-) -> AgentState:
+def _inputs_to_state(inputs: dict[str, Any]) -> AgentState:
     """把 Dify inputs 转成 AgentState（接受 camelCase 和 snake_case 两种）。"""
     state: dict[str, Any] = {}
-    for src, dst in _INPUT_FIELD_MAP.items():
-        if src in inputs:
-            state[dst] = inputs[src]
+    for target, aliases in _INPUT_FIELD_ALIASES.items():
+        provided = [(alias, inputs[alias]) for alias in aliases if alias in inputs]
+        if not provided:
+            continue
 
-    # 补默认值
-    if "conversation_id" not in state:
-        state["conversation_id"] = fallback_conversation_id
+        first_alias, first_value = provided[0]
+        conflicting_aliases = [
+            alias for alias, value in provided[1:] if value != first_value
+        ]
+        if conflicting_aliases:
+            alias_names = ", ".join([first_alias, *conflicting_aliases])
+            raise ValueError(f"输入字段 {target} 的别名值冲突: {alias_names}")
+
+        state[target] = first_value
+
     if "raw_text" not in state and "message_content" in state:
         state["raw_text"] = state["message_content"]
     return state  # type: ignore[return-value]

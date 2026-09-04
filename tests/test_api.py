@@ -1,10 +1,34 @@
 """api/ 单元测试 — 验证 Dify Workflow Run API 兼容（ADR 0001 D3）。"""
 from __future__ import annotations
 
+from uuid import UUID
+
 import pytest
 from fastapi.testclient import TestClient
 
 from app.main import app
+from app.subgraphs.option import backend as option_backend
+from app.tools.models import CommonResult
+
+
+class _CapturingGraph:
+    """记录 API 入口传入的 state，避免字段映射测试依赖真实业务子图。"""
+
+    def __init__(self) -> None:
+        self.initial_state: dict | None = None
+        self.config: dict | None = None
+
+    async def ainvoke(self, state: dict, config: dict) -> dict:
+        self.initial_state = state
+        self.config = config
+        return {
+            **state,
+            "product_type": "option",
+            "intent": "new_inquiry",
+            "reply_text": "BACKEND_CARD",
+            "tickers": [],
+            "trace": [],
+        }
 
 
 @pytest.fixture()
@@ -56,6 +80,33 @@ def test_workflows_run_returns_dify_compatible_schema(client: TestClient) -> Non
     assert outputs["intent"] is not None
 
 
+def test_workflows_run_returns_conversation_id_and_answer_at_top_level(
+    client: TestClient,
+) -> None:
+    """Java 调用方可从响应顶层直接读取会话 ID 和最终回答。"""
+    r = client.post(
+        "/v1/workflows/run",
+        json={
+            "inputs": {
+                "rawContent": "测试 - 互换下单",
+                "conversationId": "c-top-level-001",
+                "messageId": 42,
+                "userId": "u-1",
+                "roomId": "r-1",
+                "messageContent": "测试 - 互换下单",
+            },
+            "response_mode": "blocking",
+            "user": "c-top-level-001",
+        },
+    )
+
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["conversationId"] == "c-top-level-001"
+    assert isinstance(body["answer"], str)
+    assert body["answer"] == body["data"]["outputs"]["reply_text"]
+
+
 def test_streaming_mode_rejected(client: TestClient) -> None:
     """blocking only（contracts §3：Java StockBotMessageServiceImpl.java:1646）。"""
     r = client.post(
@@ -87,6 +138,213 @@ def test_inputs_field_passthrough(client: TestClient) -> None:
         },
     )
     assert r.status_code == 200
+
+
+def test_workflows_run_normalizes_complete_snake_case_inputs(
+    client: TestClient,
+) -> None:
+    """Dify 风格 snake_case 上下文必须完整进入 AgentState。"""
+    graph = _CapturingGraph()
+    client.app.state.main_graph = graph
+
+    r = client.post(
+        "/v1/workflows/run",
+        json={
+            "inputs": {
+                "raw_content": "300773.SZ，欧式看涨，80%",
+                "conversation_id": "c-snake-complete",
+                "message_id": 123,
+                "user_id": "u-snake",
+                "room_id": "r-snake",
+                "message_content": "300773.SZ，欧式看涨，80%",
+                "quote_content": "quoted",
+                "quote_appinfo": "meta",
+                "guid": "g-snake",
+            },
+            "response_mode": "blocking",
+            "user": "fallback-conversation",
+        },
+    )
+
+    assert r.status_code == 200, r.text
+    assert graph.initial_state is not None
+    assert graph.initial_state["raw_text"] == "300773.SZ，欧式看涨，80%"
+    assert graph.initial_state["conversation_id"] == "c-snake-complete"
+    assert graph.initial_state["message_id"] == 123
+    assert graph.initial_state["user_id"] == "u-snake"
+    assert graph.initial_state["room_id"] == "r-snake"
+    assert graph.initial_state["message_content"] == "300773.SZ，欧式看涨，80%"
+    assert graph.initial_state["quote_content"] == "quoted"
+    assert graph.initial_state["quote_appinfo"] == "meta"
+    assert graph.initial_state["guid"] == "g-snake"
+
+
+def test_workflows_run_preserves_complete_camel_case_inputs(
+    client: TestClient,
+) -> None:
+    graph = _CapturingGraph()
+    client.app.state.main_graph = graph
+
+    r = client.post(
+        "/v1/workflows/run",
+        json={
+            "inputs": {
+                "rawContent": "300773.SZ，欧式看涨，80%",
+                "conversationId": "c-camel",
+                "messageId": 456,
+                "userId": "u-camel",
+                "roomId": "r-camel",
+                "messageContent": "camel message",
+                "quoteContent": "camel quote",
+                "quoteAppinfo": "camel meta",
+                "guid": "g-camel",
+            },
+            "response_mode": "blocking",
+            "user": "fallback-conversation",
+        },
+    )
+
+    assert r.status_code == 200, r.text
+    assert graph.initial_state is not None
+    assert graph.initial_state["raw_text"] == "300773.SZ，欧式看涨，80%"
+    assert graph.initial_state["conversation_id"] == "c-camel"
+    assert graph.initial_state["message_id"] == 456
+    assert graph.initial_state["user_id"] == "u-camel"
+    assert graph.initial_state["room_id"] == "r-camel"
+    assert graph.initial_state["message_content"] == "camel message"
+    assert graph.initial_state["quote_content"] == "camel quote"
+    assert graph.initial_state["quote_appinfo"] == "camel meta"
+    assert graph.initial_state["guid"] == "g-camel"
+
+
+def test_first_turn_generates_conversation_id_and_followup_reuses_it(
+    client: TestClient,
+) -> None:
+    first_graph = _CapturingGraph()
+    client.app.state.main_graph = first_graph
+
+    first_response = client.post(
+        "/v1/workflows/run",
+        json={
+            "inputs": {
+                "raw_content": "300773.SZ，欧式看涨，80%",
+                "conversation_id": "",
+                "message_id": 1,
+                "user_id": "u-1",
+                "room_id": "r-1",
+            },
+            "response_mode": "blocking",
+            "user": "stable-user-key",
+        },
+    )
+
+    assert first_response.status_code == 200, first_response.text
+    generated_id = first_response.json()["conversationId"]
+    assert str(UUID(generated_id)) == generated_id
+    assert generated_id != "stable-user-key"
+    assert first_graph.initial_state is not None
+    assert first_graph.config is not None
+    assert first_graph.initial_state["conversation_id"] == generated_id
+    assert first_graph.config["configurable"]["thread_id"] == generated_id
+
+    followup_graph = _CapturingGraph()
+    client.app.state.main_graph = followup_graph
+    followup_response = client.post(
+        "/v1/workflows/run",
+        json={
+            "inputs": {
+                "raw_content": "补充期限1M",
+                "conversation_id": generated_id,
+                "message_id": 2,
+                "user_id": "u-1",
+                "room_id": "r-1",
+            },
+            "response_mode": "blocking",
+            "user": "stable-user-key",
+        },
+    )
+
+    assert followup_response.status_code == 200, followup_response.text
+    assert followup_response.json()["conversationId"] == generated_id
+    assert followup_graph.initial_state is not None
+    assert followup_graph.config is not None
+    assert followup_graph.initial_state["conversation_id"] == generated_id
+    assert followup_graph.config["configurable"]["thread_id"] == generated_id
+
+
+def test_top_level_user_fills_missing_backend_user_id(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    captured_request = None
+
+    class _Client:
+        async def operate(self, request):
+            nonlocal captured_request
+            captured_request = request
+            return CommonResult(code=0, data="BACKEND_CARD")
+
+    class _BackendCallingGraph:
+        async def ainvoke(self, state: dict, config: dict) -> dict:
+            backend_result = await option_backend.call_option_backend(
+                state,
+                intent="new_inquiry",
+                option_rfq={},
+            )
+            return {
+                **state,
+                **backend_result,
+                "product_type": "option",
+                "intent": "new_inquiry",
+                "reply_text": backend_result["api_result"],
+                "tickers": [],
+                "trace": [],
+            }
+
+    monkeypatch.setattr(option_backend, "OptionClientHttpx", _Client)
+    client.app.state.main_graph = _BackendCallingGraph()
+
+    response = client.post(
+        "/v1/workflows/run",
+        json={
+            "inputs": {
+                "raw_content": "300773.SZ，欧式看涨，80%",
+                "conversation_id": "",
+                "message_id": 1,
+                "room_id": "room-1",
+            },
+            "response_mode": "blocking",
+            "user": "dify-user-1",
+        },
+    )
+
+    assert response.status_code == 200, response.text
+    assert response.json()["data"]["status"] == "succeeded"
+    assert captured_request is not None
+    assert captured_request.userId == "dify-user-1"
+
+
+def test_workflows_run_rejects_conflicting_input_aliases(
+    client: TestClient,
+) -> None:
+    """同一上下文字段的 camelCase/snake_case 值冲突时不得静默选一个。"""
+    graph = _CapturingGraph()
+    client.app.state.main_graph = graph
+
+    r = client.post(
+        "/v1/workflows/run",
+        json={
+            "inputs": {
+                "rawContent": "camel value",
+                "raw_content": "snake value",
+            },
+            "response_mode": "blocking",
+            "user": "c-conflict",
+        },
+    )
+
+    assert r.status_code == 422
+    assert "raw_text" in r.text
+    assert graph.initial_state is None
 
 
 def test_workflows_run_emits_end_to_end_latency(client: TestClient) -> None:

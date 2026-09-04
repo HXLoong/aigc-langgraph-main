@@ -69,6 +69,15 @@ def test_emit_fallback_categorizes_reason() -> None:
     assert coll.get_counter(M.METRIC_FALLBACK_TOTAL, {"reason": "zero_match"}) == 1
 
 
+def test_emit_option_backend_validation_metrics() -> None:
+    M.emit_option_backend_missing_context()
+    M.emit_option_backend_empty_result()
+
+    coll = M.get_collector()
+    assert coll.get_counter(M.METRIC_OPTION_BACKEND_MISSING_CONTEXT_TOTAL) == 1
+    assert coll.get_counter(M.METRIC_OPTION_BACKEND_EMPTY_RESULT_TOTAL) == 1
+
+
 def test_emit_hitl() -> None:
     M.emit_hitl(node="ticker.resolver")
     M.emit_hitl(node="ticker.resolver")

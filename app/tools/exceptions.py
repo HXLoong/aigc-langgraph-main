@@ -1,7 +1,9 @@
-"""client 层统一的不可达异常（D2.3 / Issue #73）。
+"""client/业务后端调用层的统一异常。
 
-把 httpx 的网络异常 + 5xx 收敛成单一类型，让节点 / render 层能区分：
+让节点 / render 层能够区分：
 - BackendUnreachableError → 上游网络问题，输出"系统暂时不可用"友好回复
+- MissingBackendContextError → 调用必需上下文缺失，不得静默跳过后端
+- EmptyBackendResultError → 后端没有返回可展示的业务结果
 - 其他 Exception → 一般故障，走通用 fallback
 """
 from __future__ import annotations
@@ -27,6 +29,25 @@ class BackendUnreachableError(RuntimeError):
         self.reason = reason  # timeout / connect_error / http_5xx
 
 
+class MissingBackendContextError(RuntimeError):
+    """调用业务后端所需的机器人上下文字段缺失。"""
+
+    def __init__(self, target: str, missing_fields: list[str]) -> None:
+        self.target = target
+        self.missing_fields = tuple(missing_fields)
+        fields = ", ".join(self.missing_fields)
+        super().__init__(f"{target}: missing required context fields: {fields}")
+
+
+class EmptyBackendResultError(RuntimeError):
+    """业务后端返回成功或失败状态，但没有可供用户展示的结果。"""
+
+    def __init__(self, target: str, code: int) -> None:
+        self.target = target
+        self.code = code
+        super().__init__(f"{target}: backend returned an empty result (code={code})")
+
+
 @asynccontextmanager
 async def translate_httpx_errors(target: str) -> AsyncIterator[None]:
     """把 httpx 的 timeout / ConnectError / 5xx 翻译成 BackendUnreachableError。
@@ -47,4 +68,9 @@ async def translate_httpx_errors(target: str) -> AsyncIterator[None]:
         raise
 
 
-__all__ = ["BackendUnreachableError", "translate_httpx_errors"]
+__all__ = [
+    "BackendUnreachableError",
+    "EmptyBackendResultError",
+    "MissingBackendContextError",
+    "translate_httpx_errors",
+]
