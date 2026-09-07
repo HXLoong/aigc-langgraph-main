@@ -269,18 +269,27 @@ def judge_by_deepseek(*, output, expected_output, metadata=None, **kwargs):
     overview = (metadata or {}).get("overview","")
     user = f"## 测试用例\n{overview}\n\n## 实际回复\n{actual}\n\n## 期望回复\n{expected_output}\n\n请评分："
     client = Anthropic()
-    resp = client.messages.create(
-        model=os.environ.get("ANTHROPIC_MODEL","deepseek-v4-flash"),
-        max_tokens=2048,
-        system=JUDGE,
-        messages=[{"role":"user","content":user}],
-    )
+    request = {
+        "model": os.environ.get("ANTHROPIC_MODEL","deepseek-v4-flash"),
+        "max_tokens": 2048,
+        "system": JUDGE,
+        "messages": [{"role":"user","content":user}],
+    }
+    resp = client.messages.create(**request, thinking={"type":"disabled"})
     texts = []
     for block in resp.content:
         if getattr(block, "type", "") == "text":
             texts.append(block.text)
     text = "".join(texts).strip()
     result = _parse_judge_json(text)
+    if not result and getattr(resp, "stop_reason", "") == "max_tokens":
+        resp = client.messages.create(**request, thinking={"type":"disabled"})
+        text = "".join(
+            block.text
+            for block in resp.content
+            if getattr(block, "type", "") == "text"
+        ).strip()
+        result = _parse_judge_json(text)
     if not result:
         result = {"pass":False,"score":0.0,"reason":f"JSON解析失败:{text[:100]}"}
     from langfuse.experiment import Evaluation
