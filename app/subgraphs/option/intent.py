@@ -87,22 +87,6 @@ async def option_intent(state: AgentState) -> dict[str, Any]:
     )
 
     intent = result.type
-    # === 后处理规则修正 ===
-    _combined = f"{raw} {quote}"
-    _from_inquiry = any(kw in _combined for kw in (
-        "询价详情", "如需下单", "名义本金", "期权费率", "标的代码",
-        "已收到您的下单指令", "请引用本消息",
-    ))
-    if _from_inquiry and intent in ("new_inquiry", "unknown", ""):
-        if any(kw in raw for kw in ("确认", "好的", "可以", "行", "下单")):
-            intent = "confirm_order"
-        elif any(kw in raw for kw in ("撤消", "取消", "不要", "算了")):
-            intent = "cancel_order_request"
-        elif any(kw in raw for kw in ("下单", "市价", "限价", "POV", "TWAP", "改")):
-            intent = "place_order_from_quote"
-        else:
-            intent = "place_order_from_quote"
-
     return {
         "intent": intent,
         "trace": [

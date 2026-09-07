@@ -6,6 +6,7 @@ from uuid import UUID
 import pytest
 from fastapi.testclient import TestClient
 
+from app.graph.state import TraceEntry
 from app.main import app
 from app.subgraphs.option import backend as option_backend
 from app.tools.models import CommonResult
@@ -23,11 +24,11 @@ class _CapturingGraph:
         self.config = config
         return {
             **state,
-            "product_type": "option",
-            "intent": "new_inquiry",
+            "product_type": "swap",
+            "intent": "place_order_request",
             "reply_text": "BACKEND_CARD",
             "tickers": [],
-            "trace": [],
+            "trace": [TraceEntry(node="ingest", decision="ok")],
         }
 
 
@@ -35,6 +36,8 @@ class _CapturingGraph:
 def client():
     # 必须用 contextmanager 触发 lifespan（编译主图到 app.state）
     with TestClient(app) as c:
+        # API 单元测试只验证协议与字段映射，不访问真实 LLM/Java 后端。
+        c.app.state.main_graph = _CapturingGraph()
         yield c
 
 
@@ -270,6 +273,66 @@ def test_first_turn_generates_conversation_id_and_followup_reuses_it(
     assert followup_graph.config is not None
     assert followup_graph.initial_state["conversation_id"] == generated_id
     assert followup_graph.config["configurable"]["thread_id"] == generated_id
+
+
+@pytest.mark.parametrize("locations", [
+    ("top",), ("camel",), ("snake",), ("top", "camel"),
+    ("top", "snake"), ("camel", "snake"), ("top", "camel", "snake"),
+])
+@pytest.mark.parametrize("conversation_id", [
+    "java-session-001", "(\\existing-id\\\\)", "  Opaque-ID/中文  ",
+])
+def test_conversation_id_is_reused_verbatim_across_supported_locations(
+    client: TestClient, locations: tuple[str, ...], conversation_id: str,
+) -> None:
+    payload = {"inputs": {"raw_content": "你好"}, "user": "stable-user"}
+    for location in locations:
+        if location == "top":
+            payload["conversation_id"] = conversation_id
+        else:
+            alias = "conversationId" if location == "camel" else "conversation_id"
+            payload["inputs"][alias] = conversation_id
+
+    response = client.post("/v1/workflows/run", json=payload)
+
+    assert response.status_code == 200, response.text
+    assert response.json()["conversationId"] == conversation_id
+    graph = client.app.state.main_graph
+    assert graph.initial_state["conversation_id"] == conversation_id
+    assert graph.config["configurable"]["thread_id"] == conversation_id
+
+
+@pytest.mark.parametrize("top,inputs", [
+    ("java-id", {"conversationId": "different-id"}),
+    ("java-id", {"conversation_id": "different-id"}),
+    (None, {"conversationId": "java-id", "conversation_id": "different-id"}),
+    ("java-id", {"conversationId": "java-id", "conversation_id": "different-id"}),
+    ("java-id", {"conversationId": " java-id "}),
+])
+def test_conflicting_conversation_ids_return_422_without_running_graph(
+    client: TestClient, top: str | None, inputs: dict,
+) -> None:
+    response = client.post("/v1/workflows/run", json={
+        "conversation_id": top, "inputs": {"raw_content": "你好", **inputs},
+        "user": "stable-user",
+    })
+    assert response.status_code == 422, response.text
+    assert "conversation_id" in response.text
+    assert client.app.state.main_graph.initial_state is None
+
+
+@pytest.mark.parametrize("empty", [None, "", " \t "])
+def test_empty_conversation_aliases_do_not_override_provided_id(
+    client: TestClient, empty: str | None,
+) -> None:
+    response = client.post("/v1/workflows/run", json={
+        "conversation_id": empty,
+        "inputs": {"raw_content": "你好", "conversationId": empty,
+                   "conversation_id": "java-id"},
+        "user": "stable-user",
+    })
+    assert response.status_code == 200, response.text
+    assert response.json()["conversationId"] == "java-id"
 
 
 def test_top_level_user_fills_missing_backend_user_id(

@@ -21,6 +21,7 @@ from app.checkpointer.factory import close_checkpointer, init_checkpointer
 from app.config import get_settings
 from app.graph.main import build_main_graph
 from app.observability.metrics import emit_http_response, get_collector
+from app.tools.message_client import MessageClientHttpx
 
 logger = logging.getLogger(__name__)
 
@@ -49,7 +50,9 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
             "生产环境必须启用 MySQL checkpointer（USE_MYSQL_CHECKPOINTER=true，"
             "见 ADR 0021 / issue #153）"
         )
-    app.state.main_graph = build_main_graph(checkpointer=checkpointer)
+    app.state.main_graph = build_main_graph(
+        checkpointer=checkpointer, message_client_factory=MessageClientHttpx,
+    )
     logger.info("main graph compiled")
 
     if _is_enabled("ENABLE_LANGFUSE"):

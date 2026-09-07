@@ -32,6 +32,7 @@ async def test_main_graph_e2e_swap_keyword(
         SwapOrderItem,
         SwapPlaceOrderParams,
     )
+    from app.subgraphs.ticker.resolver import TickerResolution
 
     def _patch(
         module: object, value: object, fn: str = "get_qwen_thinking"
@@ -54,6 +55,16 @@ async def test_main_graph_e2e_swap_keyword(
             ]
         ),
         fn="get_qwen_complex",
+    )
+    monkeypatch.setattr(
+        swap_po_module,
+        "resolve_ticker_full",
+        AsyncMock(return_value=TickerResolution(resolved=[], hitl_pending=[])),
+    )
+    monkeypatch.setattr(
+        swap_po_module,
+        "call_swap_backend",
+        AsyncMock(return_value={"api_code": 0, "api_result": {}}),
     )
 
     graph = build_main_graph()

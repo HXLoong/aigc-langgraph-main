@@ -50,7 +50,7 @@ OptionOrderType = Literal["市价单", "限价单", "POV", "TWAP"]
 class OptionOrderItem(BaseModel):
     """orderList 中的单个订单条目（与 Dify 拆分版 prompt 对齐）。
 
-    orderId 必需（Q- 询价单号），其余字段全 Optional——LLM 仅提取用户提供的，
+    orderId 为可选的原单号，其余字段也全 Optional——LLM 仅提取用户提供的，
     未提供字段保持 null（与 close.place_close 同模式）。
     """
 
@@ -58,6 +58,8 @@ class OptionOrderItem(BaseModel):
 
     #: Q- 开头的询价单号
     orderId: str | None = None
+    #: 保留询价期限补充，供 Java 在需要时纠正意图并合并原单参数。
+    tenor: str | None = None
     orderType: OptionOrderType | None = None
     limitPrice: float | int | None = None
     povRatio: float | int | None = None
@@ -106,6 +108,8 @@ class OptionInquiryItem(BaseModel):
 
     model_config = ConfigDict(extra="ignore")
 
+    #: 补参时传原 Q- 询价单号；首次询价未提供时为 None。
+    orderId: str | None = None  # noqa: N815 - Java DTO 字段名
     stockCode: str | None = None
     optionType: OptionContractType | None = None
     tenor: str | None = None

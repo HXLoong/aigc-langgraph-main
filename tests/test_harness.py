@@ -84,18 +84,23 @@ def test_differ_handles_lists() -> None:
 
 @pytest.mark.asyncio
 async def test_runner_executes_case() -> None:
-    """harness 跑一条强信号 case（含"互换"关键词），验证规则层路由 → swap stub。
+    """harness 通过公开 graph 注入点执行一条 case 并返回规范化结果。"""
 
-    ADR 0015 修订后，raw_content 必须含订单号或关键词才能不走 LLM 兜底；
-    用"做一笔互换"让第 2 层关键词命中。
-    """
+    class _Graph:
+        async def ainvoke(self, state: dict, config: dict) -> dict:
+            return {
+                **state,
+                "product_type": "swap",
+                "trace": [],
+            }
+
     case = GoldenCase(
         id="harness-smoke",
         category="swap/place_order",
         raw_content="做一笔互换 100 手",
         expected={"product_type": "swap"},
     )
-    result = await run_case(case)
+    result = await run_case(case, graph=_Graph())
     assert result.error is None
     assert result.final_state.get("product_type") == "swap"
     assert result.elapsed_ms >= 0

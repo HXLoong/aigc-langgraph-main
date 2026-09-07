@@ -194,7 +194,7 @@ def test_compare_ignores_alert_only_in_one_source() -> None:
 
 def _run_cli(*args: str) -> subprocess.CompletedProcess:
     return subprocess.run(
-        ["python3", str(SCRIPT), *args],
+        [sys.executable, str(SCRIPT), *args],
         capture_output=True, text=True, timeout=15,
     )
 

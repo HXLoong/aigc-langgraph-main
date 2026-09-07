@@ -17,10 +17,24 @@ import json
 import os
 import shutil
 import subprocess
+import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = ROOT / "scripts" / "drill_smoke.sh"
+
+
+def _bash_executable() -> str:
+    """优先使用 Git Bash，避免 Windows 的 WSL 启动器抢占 bash 命令。"""
+    if os.name == "nt":
+        git = shutil.which("git")
+        if git:
+            git_root = Path(git).resolve().parent.parent
+            for relative_path in ("bin/bash.exe", "usr/bin/bash.exe"):
+                candidate = git_root / relative_path
+                if candidate.is_file():
+                    return str(candidate)
+    return shutil.which("bash") or "bash"
 
 
 def _run(
@@ -28,14 +42,17 @@ def _run(
     project_dir: Path | None = None,
 ) -> subprocess.CompletedProcess:
     env = {**os.environ}
+    env["PYTHON_BIN"] = Path(sys.executable).as_posix()
     if project_dir is not None:
         env["PROJECT_DIR"] = str(project_dir)
     return subprocess.run(
-        ["bash", str(SCRIPT), *args],
+        [_bash_executable(), str(SCRIPT), *args],
         cwd=cwd or ROOT,
         env=env,
         capture_output=True,
         text=True,
+        encoding="utf-8",
+        errors="replace",
         timeout=timeout,
     )
 

@@ -64,6 +64,11 @@ async def test_place_order_request_routes_to_place_order_node(
         ),
         fn="get_qwen_complex",
     )
+    monkeypatch.setattr(
+        po_module,
+        "call_swap_backend",
+        AsyncMock(return_value={"api_code": 0, "api_result": {}}),
+    )
 
     graph = build_swap_graph()
     final = await graph.ainvoke(

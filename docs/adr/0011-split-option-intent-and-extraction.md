@@ -18,7 +18,7 @@ Dify 主干中"期权-意图识别、参数提取"是单 LLM 节点同时承担�
 - 原 `intent_extract.md` 仍为 2870 行，**已冻结为 diff 快照**（业务代码零加载，`app/prompts/CLAUDE.md` 登记）。
 - **意图枚举真值 = 9 个业务意图 + `unknown_intent`**（原文"期权基础（6 类）"标题与其下 9 条列表自相矛盾，本次订正）：`new_inquiry` / `place_order_from_quote` / `confirm_order` / `cancel_order_request` / `request_cancel_order` / `confirm_cancel_order` / `request_modify_order` / `confirm_modify_order` / `query_order_status`。
 - extract 合并规则（与代码一致）：inquiry ← new_inquiry；place_or_modify ← place_order_from_quote + request_modify_order；cancel ← cancel_order_request + request_cancel_order；confirm ← 3 种确认（expected_action 区分，同 ADR 0001 D5 swap confirm 合并原则）；query ← query_order_status。
-- **原文未记录的新增逻辑（本次补录）**：`option/intent.py` 在 LLM 前有三条确定性快速路径（`-` 单字符 / "确认下单" / "撤单"），LLM 后有关键词改写规则。这层规则**无 ADR 锚点**（[ADR 0015](./0015-intent-route-rules-first-llm-fallback.md) 只覆盖一级 product 路由，不覆盖子图 intent）——登记为偏离待裁决。
+- **原文未记录的新增逻辑（本次补录）**：`option/intent.py` 在 LLM 前有三条确定性快速路径（`-` 单字符 / "确认下单" / "撤单"）。2026-09-07 按用户要求删除 LLM 后依据引用卡片关键词强制转下单的规则，询价期限补充保留 `new_inquiry`（登记见 [ADR 0001 D5](./0001-rewrite-app-with-harness-first.md)）。剩余前置规则**无 ADR 锚点**（[ADR 0015](./0015-intent-route-rules-first-llm-fallback.md) 只覆盖一级 product 路由，不覆盖子图 intent）——登记为偏离待裁决。
 - close 子图后续：close 已按同款模式完成 intent + 6 份分意图提示词拆分；遗留项收敛为 **`option_close/place_close.md` 1036 行单文件瘦身**（是否做取决于收益数据）。
 
 ## 实现偏离（裁决见 [#159](https://github.com/GZTL-AI/aigc-langgraph/issues/159)）
@@ -27,7 +27,7 @@ Dify 主干中"期权-意图识别、参数提取"是单 LLM 节点同时承担�
 |---|---|
 | **跳过灰度直接硬切** | 原 Consequences 约定按 [ADR 0003](./0003-prompt-versioning-by-file-coexistence.md) 走 `intent_v2.md` 并存 + 灰度切流验证；实际直接新建 `intent.md` 一次性切换，`_versions.yaml` 仅有 swap.intent 一条 override，option 从未进灰度。需追认"为何跳过"或补灰度 |
 | **golden 覆盖前置未满足** | 原文明写"5 份 extract 必须独立 golden 覆盖，否则某意图无样本回归会被遗漏"；现状 option 侧 `request_modify_order` / `confirm_modify_order` **零覆盖**、`query_order_status` 仅 1 条（对照：new_inquiry 99 / place_order_from_quote 68）。可并入 Issue #113 fixture 质量修复 |
-| **intent.py 确定性规则层无 ADR 锚点** | 决策形态是"两阶段纯 LLM"，实际带前置/后处理规则——需补锚点（本 ADR 追认或另开 ADR）|
+| **intent.py 确定性规则层无 ADR 锚点** | 决策形态是"两阶段纯 LLM"，实际保留三条前置规则——需补锚点（本 ADR 追认或另开 ADR）；引用卡片关键词后处理已于 2026-09-07 删除 |
 
 ## 备选方案（历史论证）
 
