@@ -388,7 +388,7 @@ docker volume rm langfuse_clickhouse_logs
 | docker-compose 配置 | `infra/langfuse/docker-compose.yml` |
 | .env 模板 | `infra/langfuse/.env.example` |
 | ADR | [ADR 0014 · LangFuse 作为 Harness 后端](../adr/0014-langfuse-as-harness-backend.md) |
-| 客户环境调研 §7 | [`docs/customer-env-assessment.md`](../customer-env-assessment.md) |
+| 客户环境调研 §7 | [`docs/customer/customer-env-assessment.md`](../customer/customer-env-assessment.md) |
 | On-call runbook §5.5 | [`docs/on-call-runbook.md`](../on-call-runbook.md) |
 | 一键部署脚本（C1.13） | `scripts/deploy-customer.sh`（PR 待发布） |
 | 离线包打包（C1.14） | `scripts/build-offline-bundle.sh`（PR 待发布） |

@@ -135,3 +135,13 @@ class TestCloseIntentNode:
         result = await close_intent({"raw_text": "x"})
         assert result.get("error") is not None
         assert result["error"].node == "close_intent"
+
+    async def test_confirm_cancel_keyword_maps_to_valid_enum_value(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """回归测试：历史 typo 把"确认撤单"规则覆盖写成不存在的枚举值
+        `close_order_confirm_cancel`（正确顺序是 `close_order_cancel_confirm`），
+        导致规则从未命中、静默 fall through 到 close_unknown。"""
+        _patch_llm(monkeypatch, "close_order_query")  # LLM 误判，靠规则纠正
+        result = await close_intent({"raw_text": "确认撤单 CO-20260304-ABCD1234"})
+        assert result["intent"] == "close_order_cancel_confirm"

@@ -47,9 +47,9 @@ class TestPlaceParamsByProductType:
         assert node == "swap_place_order"
         assert prompt == "app/prompts/swap/place_order.md"
 
-    def test_option_place_params_points_to_extract_place_or_modify(self) -> None:
+    def test_option_place_params_points_to_extract_place(self) -> None:
         node, _ = _suspect(_diff("place_params"), {"product_type": "option"})
-        assert node == "option_extract_place_or_modify"
+        assert node == "option_extract_place"  # DSL v2 拆分后的下单节点
 
     def test_option_close_place_params_points_to_close_place_close(self) -> None:
         node, _ = _suspect(
@@ -81,7 +81,7 @@ class TestFallback:
         """g019 类场景：product_type=unknown → intent_route 漏判嫌疑。"""
         node, prompt = _suspect(_diff("intent"), {"product_type": "unknown"})
         assert node == "intent_route"
-        assert prompt == "app/prompts/router/product_type.md"
+        assert prompt == "app/prompts/router/unknown_intent.md"  # DSL v2 LLM 兜底提示词
 
     def test_intent_without_final_state_falls_back(self) -> None:
         node, _ = _suspect(_diff("intent"), None)

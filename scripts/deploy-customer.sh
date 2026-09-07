@@ -26,7 +26,7 @@
 # 关联文档：
 #   - docs/deploy/customer-private.md（详细手工步骤）
 #   - docs/deploy/langfuse-self-hosted.md（LangFuse 深度部署）
-#   - docs/customer-env-assessment.md（环境调研）
+#   - docs/customer/customer-env-assessment.md（环境调研）
 #   - docs/on-call-runbook.md（部署后故障）
 # ============================================================
 
@@ -106,7 +106,7 @@ step1_preflight() {
 
     # Docker
     if ! command -v docker >/dev/null 2>&1; then
-        abort "未安装 Docker (≥ 24.x)" "docs/customer-env-assessment.md#2.2"
+        abort "未安装 Docker (≥ 24.x)" "docs/customer/customer-env-assessment.md#2.2"
     fi
     local docker_ver
     docker_ver=$(docker --version | grep -oE '[0-9]+\.[0-9]+' | head -1)
@@ -114,7 +114,7 @@ step1_preflight() {
 
     # Docker Compose
     if ! docker compose version >/dev/null 2>&1; then
-        abort "未安装 Docker Compose v2 (plugin)" "docs/customer-env-assessment.md#2.2"
+        abort "未安装 Docker Compose v2 (plugin)" "docs/customer/customer-env-assessment.md#2.2"
     fi
     info "Docker Compose: $(docker compose version --short)"
 

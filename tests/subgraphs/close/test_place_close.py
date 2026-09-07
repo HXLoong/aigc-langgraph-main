@@ -198,8 +198,8 @@ class TestClosePlaceCloseNode:
         )
         messages = ainvoke.call_args[0][0]
         user_content = messages[-1][1]
-        assert "用户发送消息：第一笔限价 10" in user_content
-        assert "用户引用消息：1. CO-20260304-AAAA" in user_content
+        assert "User input: 第一笔限价 10" in user_content
+        assert "quote_content：1. CO-20260304-AAAA" in user_content
 
     async def test_safe_node_catches_llm_error(
         self, monkeypatch: pytest.MonkeyPatch

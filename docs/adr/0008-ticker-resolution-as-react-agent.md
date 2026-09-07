@@ -1,11 +1,30 @@
 # ADR 0008 · 标的识别采用 ReAct Agent 而非固定链式流程
 
-- 状态：已采纳，**但生产实现已演化为确定性编排，ReAct Agent 为死代码**（2026-08-27 核查确认；去向待裁决 [#154](https://github.com/GZTL-AI/aigc-langgraph/issues/154)）
+- 状态：**已裁决**——[#154](https://github.com/GZTL-AI/aigc-langgraph/issues/154) 选项 (b)：确定性编排 + LLM 定点兜底（LLM 输出必须过 GOATS 校验），ReAct Agent 死代码已随 Dify DSL v2 迁移删除
 - 日期：2026-05-10
-- 修订：2026-08-27 深度改写为现状口径（wayfinder map #138 / 核查 #140）
+- 修订：**2026-08-28 P1 ticker 域迁移落地**（Dify DSL v2 → LangGraph，见下方「迁移落地」段）；2026-08-27 深度改写为现状口径（wayfinder map #138 / 核查 #140）
 - 作者：图灵科技 + Tony
 
-## 上下文
+## ✅ 迁移落地（2026-08-28）
+
+~~`app/subgraphs/ticker/react_agent.py`~~ / ~~`graph.py`~~ 已删除（无任何生产/测试引用，`build_ticker_graph` 从未被主图接线）。`resolver.py` 重写为对齐 Dify 新 DSL「标的智能化推断和分词工具」（12 节点）+「标的相关性排序工具」的确定性编排管线：
+
+```
+tokenize（本地候选提取，暂代 P5 路由域的"候选标的提取"节点）
+  -> format_candidate_list（空 -> 短路）
+  -> asyncio.gather(infer_code_batch, split_ticker_keywords, judge_ticker_type)  # 3 路批量 LLM，一次调用处理全部候选
+  -> merge_and_validate（确定性，交易所后缀正则校验完整标的，移植自 Dify code 节点）
+  -> 逐 orgStr：GOATS securities-instrument/select 批量查询 + rank_candidates（LLM 排序过滤）
+  -> TickerCandidate(from_goats=True)
+```
+
+- `completeness` 工具已删除，被 `merge_and_validate` 的确定性正则校验替代（Dify 新 DSL 同步删除了 completeness LLM 节点）。
+- `_pick_winner` / `_pick_within_a_share` / `tools.pick_best` 三套互不一致的私有选优逻辑已删除，统一由 `rank_candidates`（LLM，对齐「大模型排序并过滤」提示词）承担排序 + 过滤职责。
+- `infer_code` 从"单 keyword 同步线程调用 + 动态 prompt HTTP 拉取拼接"（ADR 0013）改为"全候选批量 async 调用 + 纯静态 `load_prompt()` 加载"，删除 5 分钟 LRU 缓存与 `_get_dynamic_prompt_cached` 链路。
+- `from_goats=True` 硬约束**保持不变**——新管线在 GOATS 之后才产出 `TickerCandidate`，是本项目对 Dify DSL（本身不含 GOATS 校验步骤）的有意增强，详见下方「后果」段。
+- 运行时约束 a/c（hard cap 8 步 / HITL 消歧）随死代码一并移除，未来若要接真 HITL 应走 [ADR 0006](./0006-hitl-interrupt-boundary.md) 的 interrupt 机制，而非复活 ReAct cap。
+
+## 上下文（历史，供追溯原始决策动机）
 
 场外衍生品场景大量涉及境外标的，两类硬识别难题：
 
@@ -14,11 +33,11 @@
 
 原决策判断"识别步骤序列事先不确定"（短文本 1 步命中，俗称可能 5 步），因此选 **ReAct Agent + 工具循环**，否决了固定链式流程。
 
-## ⚠️ 落地现状（2026-08-27）：生产走确定性 resolver，ReAct 为死代码
+## ⚠️（历史，2026-08-27 核查快照，已被上方「迁移落地」段取代）落地现状：生产走确定性 resolver，ReAct 为死代码
 
 核查（[#140](https://github.com/GZTL-AI/aigc-langgraph/issues/140)）确认：
 
-- `app/subgraphs/ticker/react_agent.py` / `graph.py` 已构建但**主图从未接线**（`app/graph/main.py` 无 ticker 节点），仅测试里编译冒烟；
+- ~~`app/subgraphs/ticker/react_agent.py`~~ / ~~`graph.py`~~（2026-08-28 已删除，见上方「迁移落地」段）已构建但**主图从未接线**（`app/graph/main.py` 无 ticker 节点），仅测试里编译冒烟；
 - 生产链路是 `app/subgraphs/ticker/resolver.py` 的**确定性 async 编排**：`resolve_ticker_full()` = tokenize（纯正则）→ 逐 keyword 查 GOATS → `_pick_winner` 规则选优 → 命中不足时 `infer_code` LLM 推断 + **GOATS 二次校验**。函数名 `_resolve_via_react_full` 只保留了命名，无 ReAct 语义——这正是原决策否决的"固定链式流程"形态（但比原链式方案多了 LLM 定点兜底）；
 - 调用方是 **2 个节点**：`swap/place_order.py` 与 `option/extract_inquiry.py`（原文"swap/option/close 三子图共用"不成立——close 基于订单号平仓，明确不依赖标的识别）；
 - 4 个 `@tool` 中业务链路只用 `tokenize` + `infer_code`；`completeness` / `rank` 零调用，被 resolver 的三套私有选优逻辑（`_pick_winner` / `_pick_within_a_share` / `tools.pick_best`）替代且互不一致；

@@ -1,6 +1,7 @@
 # tests · 局部约定
 
 > 测试规范见 `.claude/rules/testing.md`（金字塔 / Mock 陷阱 / TDD / Golden）。本文件只补**目录布局**与**局部命令**。
+> 测试体系总入口与分层实操（mock 环境 / 真后端切换 / 排查路径）见 `docs/testing/README.md`。
 
 ## 目录布局
 
