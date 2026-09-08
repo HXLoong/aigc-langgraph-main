@@ -10,6 +10,8 @@
 """
 from __future__ import annotations
 
+import asyncio
+import logging
 import time
 import uuid
 from typing import Any, Literal
@@ -17,10 +19,12 @@ from typing import Any, Literal
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, ConfigDict, Field
 
+from app.config import get_settings
 from app.graph.state import AgentState
 from app.observability.metrics import emit_intent_latency
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
 
 # ============================================================
@@ -122,6 +126,9 @@ async def run_workflow(
     initial_state["trace_id"] = trace_id
 
     config = _build_run_config(conversation_id=conversation_id, trace_id=trace_id)
+    trace_handler, trace_url = await _development_langfuse_trace(trace_id)
+    if trace_handler is not None:
+        config["callbacks"] = [trace_handler]
 
     t0 = time.perf_counter()
     try:
@@ -156,6 +163,10 @@ async def run_workflow(
         )
 
     outputs = _state_to_outputs(final_state)
+    if trace_handler is not None:
+        outputs["trace_id"] = trace_id
+    if trace_url:
+        outputs["trace_url"] = trace_url
 
     data = DifyWorkflowRunData(
         id=workflow_run_id,
@@ -184,6 +195,42 @@ async def run_workflow(
 #: 图递归上限(架构体检 2026-08 改进 A):现图均为 DAG,50 为防御纵深上限;
 #: 未来引入循环子图时按 CLAUDE.md 指引单独收紧(复杂子图 25)
 GRAPH_RECURSION_LIMIT = 50
+
+
+async def _development_langfuse_trace(trace_id: str) -> tuple[Any | None, str | None]:
+    """开发环境为单次请求创建可直接跳转的 LangFuse trace。"""
+    settings = get_settings()
+    if (
+        settings.environment != "development"
+        or not settings.enable_langfuse
+        or not settings.langfuse_public_key
+        or not settings.langfuse_secret_key
+    ):
+        return None, None
+
+    try:
+        from langfuse import Langfuse
+        from langfuse.langchain import CallbackHandler
+
+        client = Langfuse(
+            public_key=settings.langfuse_public_key,
+            secret_key=settings.langfuse_secret_key,
+            host=settings.langfuse_base_url,
+        )
+        handler = CallbackHandler(
+            public_key=settings.langfuse_public_key,
+            trace_context={"trace_id": trace_id},
+        )
+    except Exception as exc:  # noqa: BLE001 - tracing 失败不阻断业务
+        logger.warning("development LangFuse trace unavailable: %s", exc)
+        return None, None
+
+    try:
+        trace_url = await asyncio.to_thread(client.get_trace_url, trace_id=trace_id)
+    except Exception as exc:  # noqa: BLE001 - 链接失败不影响 trace 上报
+        logger.warning("development LangFuse trace link unavailable: %s", exc)
+        trace_url = None
+    return handler, trace_url
 
 
 def _build_run_config(conversation_id: str, trace_id: str) -> dict:
