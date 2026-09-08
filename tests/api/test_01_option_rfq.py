@@ -1,7 +1,7 @@
 """01. 期权询价查询  POST /api/internal/agent/get_option_rfq"""
 from __future__ import annotations
 
-from _utils import check, post, report, OPT_AID, OPT_SUB
+from _utils import OPT_AID, OPT_SUB, check, post, report
 
 print("01. 期权询价查询  POST /api/internal/agent/get_option_rfq")
 

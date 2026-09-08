@@ -7,7 +7,6 @@ from __future__ import annotations
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
-from pydantic import ValidationError
 
 from app.subgraphs.close import cancel_close as cancel_module
 from app.subgraphs.close import confirm_close as confirm_module
@@ -20,12 +19,21 @@ from app.tools.models import CommonResult
 def _patch_llm(
     monkeypatch: pytest.MonkeyPatch, module: object, return_value: object,
     fn: str = "get_qwen_thinking",
+    mock_backend: bool = True,
 ) -> AsyncMock:
     fake_llm = MagicMock()
     fake_llm.ainvoke = AsyncMock(return_value=return_value)
     fake_base = MagicMock()
     fake_base.with_structured_output = MagicMock(return_value=fake_llm)
     monkeypatch.setattr(module, fn, lambda: fake_base)
+    if mock_backend and hasattr(module, "call_close_backend"):
+        monkeypatch.setattr(
+            module,
+            "call_close_backend",
+            AsyncMock(
+                return_value={"api_code": 0, "api_result": "backend reply"}
+            ),
+        )
     return fake_llm.ainvoke
 
 
@@ -203,7 +211,7 @@ class TestCloseCancelCloseNode:
         """P0 payload 对齐：close_order_cancel_request 此前遗漏了真后端调用这一跳
         （Dify 全 6 分支均汇入 期权平仓-参数聚合 → 期权平仓[code]）。"""
         params = CancelCloseParams(cancelOrderNoList=["CO-20260304-759125AD"])
-        _patch_llm(monkeypatch, cancel_module, params)
+        _patch_llm(monkeypatch, cancel_module, params, mock_backend=False)
 
         captured: list[object] = []
 

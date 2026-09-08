@@ -50,6 +50,7 @@ async def test_e2e_fast_query_skips_intent_route(monkeypatch):
     nodes = [e.node for e in final["trace"]]
     assert "quick_inquiry" in nodes
     assert "intent_route" not in nodes
+    assert "persist_intent" not in nodes
     assert final["reply_text"] == "快速询价暂不可用,请检查网络"
 
 
@@ -68,6 +69,7 @@ async def test_e2e_existing_command_silent_sentinel(monkeypatch):
     )
     assert final["reply_text"] == IGNORE_REPLY_SENTINEL
     assert "intent_route" not in [e.node for e in final["trace"]]
+    assert "persist_intent" not in [e.node for e in final["trace"]]
 
 
 @pytest.mark.asyncio

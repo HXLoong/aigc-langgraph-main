@@ -26,9 +26,8 @@ class TestLifespanWiring:
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         monkeypatch.setattr(app_main, "get_settings", lambda: _settings("production", False))
-        with pytest.raises(RuntimeError, match="checkpointer"):
-            with TestClient(app_main.app):
-                pass
+        with pytest.raises(RuntimeError, match="checkpointer"), TestClient(app_main.app):
+            pass
 
     def test_enabled_but_init_failure_raises(
         self, monkeypatch: pytest.MonkeyPatch
@@ -38,9 +37,8 @@ class TestLifespanWiring:
 
         monkeypatch.setattr(app_main, "get_settings", lambda: _settings("development", True))
         monkeypatch.setattr(app_main, "init_checkpointer", _boom)
-        with pytest.raises(ConnectionError):
-            with TestClient(app_main.app):
-                pass
+        with pytest.raises(ConnectionError), TestClient(app_main.app):
+            pass
 
     def test_enabled_wires_saver_into_graph(
         self, monkeypatch: pytest.MonkeyPatch

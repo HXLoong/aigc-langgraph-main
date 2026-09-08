@@ -2,8 +2,7 @@
 from __future__ import annotations
 
 import requests
-
-from _utils import report, DIFY_BASE_URL, DIFY_API_KEY
+from _utils import DIFY_API_KEY, DIFY_BASE_URL, report
 
 print("20. 大模型rerank(Dify)  POST /v1/workflows/run")
 

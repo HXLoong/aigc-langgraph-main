@@ -9,7 +9,6 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict
 
-
 # ============================================================
 # Goats 共用枚举（contracts §5）
 # ============================================================

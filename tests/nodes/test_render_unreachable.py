@@ -37,6 +37,38 @@ async def test_other_error_uses_generic_reply() -> None:
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("error_type", "expected_reply"),
+    [
+        (
+            "MissingBackendContextError",
+            "请求信息不完整，暂时无法调用期权服务，请重新发送原消息或联系运营。",
+        ),
+        (
+            "EmptyBackendResultError",
+            "期权服务未返回有效结果，本次未生成报价，请稍后重试或联系交易员。",
+        ),
+    ],
+)
+async def test_option_backend_validation_errors_are_explicit(
+    error_type: str, expected_reply: str
+) -> None:
+    state: dict = {
+        "product_type": "option",
+        "error": ErrorInfo(
+            node="option_extract_inquiry",
+            type=error_type,
+            message="internal detail",
+            traceback=None,
+        ),
+    }
+
+    update = await render(state)  # type: ignore[arg-type]
+
+    assert update["reply_text"] == expected_reply
+
+
+@pytest.mark.asyncio
 async def test_error_as_dict_with_unreachable_type() -> None:
     """error 字段是 dict 形式（兼容情况）也能正确识别。"""
     state: dict = {

@@ -6,7 +6,6 @@ from pydantic import ValidationError
 
 from app.subgraphs.option.models import OptionIntentOutput
 
-
 # ============================================================
 # 8 个合法 type 值（Dify DSL v2：7 基础意图 + unknown_intent，不含 close_order_*，
 # 不再含 request_modify_order / confirm_modify_order）

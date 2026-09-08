@@ -10,12 +10,11 @@ from app.tools import (
     GoatsPriceType,
     GoatsTransactionType,
     OptionIntentionType,
+    SecuritiesInstrumentReqVO,
     SwapIntentionType,
     SwapOrderOpenApiBaseSaveReqVO,
     SwapOrderOpenApiSaveReqVO,
-    SecuritiesInstrumentReqVO,
 )
-
 
 # ============================================================
 # 枚举完整性（对齐 Java 真实 type 值）

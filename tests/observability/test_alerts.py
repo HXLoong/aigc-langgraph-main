@@ -1,15 +1,12 @@
 """C1.6 告警评估器单元测试（Issue #55）。"""
 from __future__ import annotations
 
-import json
 from unittest.mock import patch
 
-import pytest
-
 from app.observability.alerts import (
+    THRESHOLDS,
     AlertContext,
     AlertState,
-    THRESHOLDS,
     _calc_ratio_pct,
     evaluate,
     format_alert_message,

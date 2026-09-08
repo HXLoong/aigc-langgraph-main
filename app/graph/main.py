@@ -5,6 +5,10 @@ M2 阶段：intent_route 已实现真三层路由（ADR 0015）；子图逐一�
 """
 from __future__ import annotations
 
+from collections.abc import Callable
+from typing import Any
+
+from langchain_core.runnables import RunnableLambda
 from langgraph.checkpoint.base import BaseCheckpointSaver
 from langgraph.graph import END, START, StateGraph
 from langgraph.graph.state import CompiledStateGraph
@@ -20,11 +24,14 @@ from app.nodes.fast_query import (
 from app.nodes.ingest import ingest
 from app.nodes.intent_route import intent_route
 from app.nodes.persist import persist
+from app.nodes.persist_intent import make_persist_intent
 from app.nodes.pre_route import pre_route
+from app.nodes.record_history import record_history
 from app.nodes.render import render
 from app.subgraphs.close import build_close_graph
 from app.subgraphs.option import build_option_graph
 from app.subgraphs.swap import build_swap_graph
+from app.tools.message_client import MessageClient
 
 # ============================================================
 # 路由函数（含 cascade 防御 + unknown 兜底）
@@ -66,17 +73,25 @@ def _route_after_intent(state: AgentState) -> str:
 # ============================================================
 
 
+def _business_update(state: AgentState) -> dict[str, Any]:
+    """子图只读历史；避免将旧历史回传给父图的 add reducer 再累加一次。"""
+    return {key: value for key, value in state.items() if key != "history_messages"}
+
+
 def build_main_graph(
     checkpointer: BaseCheckpointSaver | None = None,
+    message_client_factory: Callable[[], MessageClient] | None = None,
 ) -> CompiledStateGraph:
     """组装并编译主图（DSL v2 拓扑）。
 
     流程：
-        START → ingest → [route_entry] →
-            quick_inquiry | existing_command_query          （前置分支,直达 persist）
-          | pre_route → intent_route → [route_after_intent] →
-                swap | option | option_close | fallback
-        → persist → render → END
+        START -> ingest -> [route_entry]
+            quick_inquiry | existing_command_query -> persist
+            pre_route -> intent_route -> swap | option | option_close | fallback
+                -> persist_intent -> persist
+        persist -> render -> record_history -> END
+
+    FastAPI lifespan injects message_client_factory to enable message persistence.
 
     cascade 防御：
     - intent_route 写 state['error'] → 跳 fallback
@@ -89,12 +104,14 @@ def build_main_graph(
     g.add_node("existing_command_query", existing_command_query)
     g.add_node("pre_route", pre_route)
     g.add_node("intent_route", intent_route)
-    g.add_node("swap", build_swap_graph())
-    g.add_node("option", build_option_graph())
-    g.add_node("option_close", build_close_graph())
+    g.add_node("swap", build_swap_graph() | RunnableLambda(_business_update))
+    g.add_node("option", build_option_graph() | RunnableLambda(_business_update))
+    g.add_node("option_close", build_close_graph() | RunnableLambda(_business_update))
     g.add_node("fallback", fallback)
+    g.add_node("persist_intent", RunnableLambda(make_persist_intent(message_client_factory)))
     g.add_node("persist", persist)
     g.add_node("render", render)
+    g.add_node("record_history", record_history)
 
     g.add_edge(START, "ingest")
     g.add_conditional_edges(
@@ -117,17 +134,14 @@ def build_main_graph(
             "fallback": "fallback",
         },
     )
-    for sub in (
-        "swap",
-        "option",
-        "option_close",
-        "fallback",
-        "quick_inquiry",
-        "existing_command_query",
-    ):
+    for sub in ("swap", "option", "option_close", "fallback"):
+        g.add_edge(sub, "persist_intent")
+    for sub in ("quick_inquiry", "existing_command_query"):
         g.add_edge(sub, "persist")
+    g.add_edge("persist_intent", "persist")
     g.add_edge("persist", "render")
-    g.add_edge("render", END)
+    g.add_edge("render", "record_history")
+    g.add_edge("record_history", END)
 
     if checkpointer is not None:
         compiled = g.compile(checkpointer=checkpointer)

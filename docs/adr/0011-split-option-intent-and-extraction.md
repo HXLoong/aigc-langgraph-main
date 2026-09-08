@@ -33,6 +33,8 @@ Dify 旧主干把期权意图分类和完整参数抽取塞进一个 2870 行提
 
 DSL v2 删除了独立 `request_modify_order` / `confirm_modify_order`：已有订单的参数修改统一归 `place_order_from_quote`。这取代了旧版“9 个业务意图合并到 5 个 extract”的实现形态，但不改变“两阶段拆分”的核心决策。
 
+2026-09-08 合并会话续接修复：保留 7 个提取节点，询价尚未完成时补期限仍归 `new_inquiry`；不恢复依据引用卡片关键词强制改为下单的后处理。`OptionOrderItem` 的可选 `orderId` 与 `tenor` 同时用于询价和下单分支，仅携带原单号及本轮新增参数，缺省参数由 Java 合并。旧 `extract_place_or_modify` 的补参约束迁入 `extract_place`，处置登记见 [ADR 0001 D5](./0001-rewrite-app-with-harness-first.md)。
+
 ## 历史偏离与裁决
 
 - 旧版跳过 A/B 灰度直接硬切；该历史事实保留，不要求对已退役结构补做灰度。
