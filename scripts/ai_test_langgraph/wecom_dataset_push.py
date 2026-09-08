@@ -9,14 +9,7 @@ import sys
 from collections.abc import Sequence
 from pathlib import Path
 
-SCRIPT_DIR = Path(__file__).resolve().parent
-REPO_ROOT = SCRIPT_DIR.parents[1]
-LANGGRAPH_SCRIPT = SCRIPT_DIR / "langgraph_direct_regression.py"
-DIFY_HELPER_DIR = SCRIPT_DIR.parent / "ai_test_dify"
-if str(DIFY_HELPER_DIR) not in sys.path:
-    sys.path.insert(0, str(DIFY_HELPER_DIR))
-
-from wecom_dataset_push import (
+from wecom_report_support import (
     build_markdown_summary,
     load_dotenv,
     load_json_report,
@@ -24,6 +17,10 @@ from wecom_dataset_push import (
     resolve_report,
     resolve_webhook,
 )
+
+SCRIPT_DIR = Path(__file__).resolve().parent
+REPO_ROOT = SCRIPT_DIR.parents[1]
+LANGGRAPH_SCRIPT = SCRIPT_DIR / "langgraph_direct_regression.py"
 
 
 def build_parser() -> argparse.ArgumentParser:
