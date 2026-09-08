@@ -1,0 +1,2993 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#f4f7fb">
+  <title>LangGraph 自动化测试队列</title>
+  <style>
+    /*
+     * Local QA console visual system.
+     * Shape rule: 14px work surfaces, 8px controls, 6px status labels.
+     * Layer rule: base 0, sticky rail 10, dialogs 30.
+     */
+    :root {
+      color-scheme: light dark;
+      --canvas: #f2f4f7;
+      --surface: #fafbfc;
+      --surface-raised: #fefefe;
+      --surface-subtle: #f5f6f8;
+      --surface-strong: #eceff3;
+      --line: #dde2e9;
+      --line-strong: #c7ced8;
+      --ink: #171a21;
+      --ink-soft: #394252;
+      --muted: #657084;
+      --placeholder: #69758a;
+      --accent: #3158c9;
+      --accent-fill: #3158c9;
+      --accent-fill-hover: #2849aa;
+      --accent-soft: #edf1ff;
+      --accent-line: #c8d3fa;
+      --accent-contrast: #f8f9fc;
+      --success: #087653;
+      --success-soft: #eaf7f1;
+      --success-line: #b6dfcf;
+      --warning: #8a5a12;
+      --warning-soft: #fff6e5;
+      --warning-line: #ebd39f;
+      --danger: #b72d45;
+      --danger-soft: #fff0f2;
+      --danger-line: #edbbc4;
+      --paused: #6546a5;
+      --paused-soft: #f3effc;
+      --paused-line: #d3c7ed;
+      --code-bg: #171b24;
+      --code-ink: #dce2ec;
+      --shadow-rail: 0 12px 32px rgba(44, 56, 79, .08);
+      --radius-surface: 14px;
+      --radius-control: 8px;
+      --radius-label: 6px;
+      font-family: "SF Pro Text", "SF Pro Display", -apple-system, BlinkMacSystemFont,
+        "Segoe UI Variable", "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+    }
+
+    * { box-sizing: border-box; }
+    [hidden] { display: none !important; }
+    html { min-width: 320px; background: var(--canvas); }
+    body {
+      min-width: 320px;
+      min-height: 100dvh;
+      margin: 0;
+      color: var(--ink);
+      background: var(--canvas);
+      font-size: 14px;
+      line-height: 1.5;
+      -webkit-font-smoothing: antialiased;
+      text-rendering: optimizeLegibility;
+    }
+
+    button,
+    input,
+    select,
+    textarea,
+    summary,
+    a { font: inherit; }
+
+    button,
+    summary,
+    a { touch-action: manipulation; }
+
+    button,
+    input,
+    select,
+    textarea { color-scheme: inherit; }
+
+    .skip-link {
+      position: fixed;
+      top: 10px;
+      left: 10px;
+      z-index: 30;
+      padding: 8px 12px;
+      border-radius: var(--radius-control);
+      color: var(--accent-contrast);
+      background: var(--accent-fill);
+      transform: translateY(-180%);
+    }
+
+    .skip-link:focus { transform: translateY(0); }
+
+    main {
+      width: min(1840px, calc(100% - clamp(24px, 4vw, 64px)));
+      margin: 0 auto;
+      padding: 24px 0 48px;
+    }
+
+    .hero {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      align-items: end;
+      gap: 28px;
+      margin-bottom: 16px;
+      padding: 4px 2px;
+    }
+
+    .brand {
+      display: flex;
+      min-width: 0;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .brand-mark {
+      display: grid;
+      width: 40px;
+      height: 40px;
+      flex: 0 0 auto;
+      place-items: center;
+      border: 1px solid var(--accent);
+      border-radius: 10px;
+      color: var(--accent-contrast);
+      background: var(--accent-fill);
+      font-size: 13px;
+      font-weight: 820;
+      letter-spacing: -.02em;
+      box-shadow: inset 0 1px 0 rgba(255, 255, 255, .2);
+    }
+
+    .brand-copy { min-width: 0; }
+
+    h1 {
+      margin: 0;
+      font-size: clamp(24px, 2vw, 30px);
+      font-weight: 740;
+      letter-spacing: -.03em;
+      line-height: 1.2;
+    }
+
+    .hero p {
+      max-width: 58ch;
+      margin: 4px 0 0;
+      color: var(--muted);
+      font-size: 14px;
+    }
+
+    .queue-summary,
+    .chat-summary {
+      display: grid;
+      overflow: hidden;
+      border: 1px solid var(--line);
+      border-radius: var(--radius-surface);
+      background: var(--surface-raised);
+    }
+
+    .queue-summary { grid-template-columns: repeat(4, minmax(72px, 1fr)); }
+    .chat-summary { grid-template-columns: repeat(2, minmax(112px, 1fr)); }
+
+    .summary-chip {
+      min-width: 82px;
+      padding: 9px 13px 8px;
+      border-left: 1px solid var(--line);
+      color: var(--muted);
+      text-align: left;
+    }
+
+    .summary-chip:first-child { border-left: 0; }
+
+    .summary-chip strong {
+      display: block;
+      color: var(--ink);
+      font-family: ui-monospace, "SFMono-Regular", "Cascadia Code", Menlo, Consolas, monospace;
+      font-size: 19px;
+      font-variant-numeric: tabular-nums;
+      font-weight: 690;
+      line-height: 1.15;
+    }
+
+    .summary-chip span {
+      display: block;
+      margin-top: 3px;
+      font-size: 12px;
+      white-space: nowrap;
+    }
+
+    .workspace-tabs {
+      display: inline-grid;
+      grid-template-columns: repeat(2, minmax(124px, 1fr));
+      gap: 3px;
+      margin-bottom: 16px;
+      padding: 3px;
+      border: 1px solid var(--line);
+      border-radius: 11px;
+      background: var(--surface-strong);
+    }
+
+    .workspace-tab {
+      min-height: 38px;
+      border: 0;
+      color: var(--muted);
+      background: transparent;
+    }
+
+    .workspace-tab:hover:not(:disabled) { background: var(--surface-subtle); }
+
+    .workspace-tab[aria-selected="true"] {
+      color: var(--ink);
+      background: var(--surface-raised);
+      box-shadow: 0 1px 4px color-mix(in srgb, var(--ink) 9%, transparent);
+    }
+
+    .layout {
+      display: grid;
+      grid-template-columns: clamp(340px, 28vw, 430px) minmax(0, 1fr);
+      align-items: start;
+      gap: 16px;
+    }
+
+    .layout > * { min-width: 0; }
+
+    .chat-layout {
+      display: grid;
+      grid-template-columns: clamp(320px, 25vw, 390px) minmax(0, 1fr);
+      align-items: start;
+      gap: 16px;
+    }
+
+    .chat-layout > * { min-width: 0; }
+
+    .panel {
+      overflow: hidden;
+      border: 1px solid var(--line);
+      border-radius: var(--radius-surface);
+      background: var(--surface);
+    }
+
+    .config-panel,
+    .chat-config-panel {
+      position: sticky;
+      top: 16px;
+      z-index: 10;
+      max-height: calc(100dvh - 126px);
+      overflow: auto;
+      overscroll-behavior: contain;
+      box-shadow: var(--shadow-rail);
+      scrollbar-gutter: stable;
+    }
+
+    .panel-header {
+      display: flex;
+      min-height: 62px;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      padding: 15px 18px;
+      border-bottom: 1px solid var(--line);
+      background: var(--surface-raised);
+    }
+
+    .panel-title {
+      display: flex;
+      min-width: 0;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .panel-title::before {
+      width: 3px;
+      height: 18px;
+      border-radius: 2px;
+      background: var(--accent);
+      content: "";
+    }
+
+    h2,
+    h3 { margin: 0; }
+
+    h2 {
+      font-size: 16px;
+      font-weight: 730;
+      letter-spacing: -.01em;
+    }
+
+    .panel-header small {
+      color: var(--muted);
+      font-family: ui-monospace, "SFMono-Regular", "Cascadia Code", Menlo, Consolas, monospace;
+      font-size: 11px;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .settings-form { padding: 4px 18px 18px; }
+
+    fieldset {
+      min-width: 0;
+      margin: 0;
+      padding: 17px 0;
+      border: 0;
+      border-bottom: 1px solid var(--line);
+    }
+
+    legend {
+      width: 100%;
+      margin-bottom: 12px;
+      padding: 0;
+      color: var(--ink);
+      font-size: 14px;
+      font-weight: 720;
+    }
+
+    .field-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 11px;
+    }
+
+    .field-grid .wide { grid-column: 1 / -1; }
+
+    label.field {
+      display: block;
+      min-width: 0;
+    }
+
+    .label-row {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      gap: 8px;
+      margin-bottom: 6px;
+      color: var(--ink-soft);
+      font-size: 13px;
+      font-weight: 680;
+    }
+
+    .hint {
+      color: var(--muted);
+      font-weight: 450;
+      text-align: right;
+    }
+
+    input,
+    select,
+    textarea {
+      width: 100%;
+      min-height: 42px;
+      padding: 8px 10px;
+      border: 1px solid var(--line-strong);
+      border-radius: var(--radius-control);
+      outline: 0;
+      color: var(--ink);
+      background: var(--surface-raised);
+      font-size: 14px;
+      line-height: 1.45;
+      transition: border-color .14s ease, box-shadow .14s ease, background-color .14s ease;
+    }
+
+    input:hover,
+    select:hover,
+    textarea:hover { border-color: var(--muted); }
+
+    input:focus-visible,
+    select:focus-visible,
+    textarea:focus-visible,
+    button:focus-visible,
+    summary:focus-visible,
+    a:focus-visible {
+      outline: 2px solid color-mix(in srgb, var(--accent) 30%, transparent);
+      outline-offset: 2px;
+      border-color: var(--accent);
+    }
+
+    input::placeholder,
+    textarea::placeholder {
+      color: var(--placeholder);
+      opacity: 1;
+    }
+
+    input:disabled,
+    select:disabled,
+    textarea:disabled {
+      color: var(--muted);
+      background: var(--surface-strong);
+      cursor: not-allowed;
+    }
+
+    textarea {
+      min-height: 70px;
+      resize: vertical;
+    }
+
+    .dataset-list {
+      display: grid;
+      max-height: 250px;
+      gap: 6px;
+      overflow: auto;
+      padding: 8px;
+      border: 1px solid var(--line-strong);
+      border-radius: var(--radius-control);
+      background: var(--surface-raised);
+    }
+
+    .dataset-option {
+      display: grid;
+      grid-template-columns: 18px minmax(0, 1fr) auto;
+      align-items: start;
+      gap: 8px;
+      padding: 7px 8px;
+      border-radius: 7px;
+      color: var(--ink-soft);
+      cursor: pointer;
+    }
+
+    .dataset-option:hover { background: var(--surface-subtle); }
+
+    .dataset-option input {
+      width: 16px;
+      min-height: 16px;
+      margin: 2px 0 0;
+      padding: 0;
+    }
+
+    .dataset-option-name {
+      min-width: 0;
+      overflow-wrap: anywhere;
+    }
+
+    .dataset-option-count {
+      color: var(--muted);
+      font-size: 12px;
+      white-space: nowrap;
+    }
+
+    code,
+    pre,
+    .mono,
+    .json-editor,
+    #workflow-id,
+    #workflow-key,
+    #case-nos,
+    #custom-dataset {
+      font-family: ui-monospace, "SFMono-Regular", "Cascadia Code", Menlo, Consolas, monospace;
+      font-variant-numeric: tabular-nums;
+    }
+
+    details.config-details {
+      margin: 12px 0 0;
+      overflow: clip;
+      border: 1px solid var(--line);
+      border-radius: var(--radius-control);
+      background: var(--surface-subtle);
+    }
+
+    details.config-details summary {
+      position: relative;
+      min-height: 44px;
+      padding: 12px 38px 12px 13px;
+      list-style: none;
+      color: var(--ink-soft);
+      font-size: 13px;
+      font-weight: 690;
+      cursor: pointer;
+      user-select: none;
+    }
+
+    details.config-details summary::-webkit-details-marker { display: none; }
+
+    details.config-details summary::after {
+      position: absolute;
+      top: 50%;
+      right: 15px;
+      width: 7px;
+      height: 7px;
+      border-right: 1.5px solid currentColor;
+      border-bottom: 1.5px solid currentColor;
+      content: "";
+      transform: translateY(-70%) rotate(45deg);
+    }
+
+    details.config-details[open] summary {
+      color: var(--ink);
+      background: var(--surface-raised);
+    }
+
+    details.config-details[open] summary::after {
+      transform: translateY(-25%) rotate(225deg);
+    }
+
+    .details-body {
+      padding: 13px;
+      border-top: 1px solid var(--line);
+      background: var(--surface-raised);
+    }
+
+    .json-editor {
+      min-height: 140px;
+      white-space: pre;
+    }
+
+    .schema-editor { min-height: 260px; }
+
+    .details-toolbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      margin-bottom: 12px;
+    }
+
+    .details-toolbar p {
+      margin: 0;
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .details-toolbar button {
+      min-height: 32px;
+      flex: 0 0 auto;
+      padding: 6px 9px;
+    }
+
+    .check-row {
+      display: grid;
+      gap: 8px;
+      margin-top: 12px;
+    }
+
+    .check-row label {
+      display: flex;
+      min-height: 30px;
+      align-items: center;
+      gap: 8px;
+      color: var(--ink-soft);
+      font-size: 13px;
+      cursor: pointer;
+    }
+
+    input[type="checkbox"] {
+      width: 16px;
+      min-height: 16px;
+      height: 16px;
+      margin: 0;
+      accent-color: var(--accent);
+    }
+
+    .form-actions {
+      display: flex;
+      gap: 8px;
+      margin-top: 15px;
+    }
+
+    button {
+      appearance: none;
+      -webkit-appearance: none;
+      min-height: 38px;
+      padding: 8px 12px;
+      border: 1px solid transparent;
+      border-radius: var(--radius-control);
+      color: var(--ink-soft);
+      background: var(--surface-raised);
+      font-size: 13px;
+      font-weight: 700;
+      line-height: 1.2;
+      white-space: nowrap;
+      cursor: pointer;
+      transition: transform .12s ease, background-color .12s ease, border-color .12s ease;
+    }
+
+    button:hover:not(:disabled) { transform: translateY(-1px); }
+    button:active:not(:disabled) { transform: translateY(1px); }
+    button:disabled { cursor: not-allowed; opacity: .5; }
+
+    .primary {
+      flex: 1;
+      color: var(--accent-contrast);
+      background: var(--accent-fill);
+    }
+
+    .primary:hover:not(:disabled) { background: var(--accent-fill-hover); }
+
+    .queue-start-button {
+      min-height: 36px;
+      flex: 0 0 auto;
+      padding-inline: 14px;
+    }
+
+    .queue-header-actions {
+      display: flex;
+      min-width: 0;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .queue-header-actions small { white-space: nowrap; }
+
+    .secondary {
+      border-color: var(--line-strong);
+      color: var(--ink-soft);
+      background: var(--surface-raised);
+    }
+
+    .secondary:hover:not(:disabled) { background: var(--surface-subtle); }
+
+    .danger-button {
+      border-color: var(--danger-line);
+      color: var(--danger);
+      background: var(--danger-soft);
+    }
+
+    .pause-button {
+      border-color: var(--paused-line);
+      color: var(--paused);
+      background: var(--paused-soft);
+    }
+
+    .resume-button {
+      border-color: var(--accent-line);
+      color: var(--accent);
+      background: var(--accent-soft);
+    }
+
+    .icon-button {
+      min-width: 36px;
+      padding: 7px 9px;
+    }
+
+    .error-banner {
+      display: none;
+      margin: 0 18px 16px;
+      padding: 10px 12px;
+      border: 1px solid var(--danger-line);
+      border-radius: var(--radius-control);
+      color: var(--danger);
+      background: var(--danger-soft);
+      font-size: 13px;
+      overflow-wrap: anywhere;
+    }
+
+    .error-banner.visible { display: block; }
+
+    .chat-settings-note {
+      margin: 0;
+      padding: 13px 18px 16px;
+      border-top: 1px solid var(--line);
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .conversation-panel {
+      display: grid;
+      min-height: 580px;
+      height: clamp(580px, calc(100dvh - 166px), 900px);
+      grid-template-rows: auto minmax(0, 1fr);
+    }
+
+    .conversation-header-actions {
+      display: flex;
+      min-width: 0;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .conversation-meta {
+      max-width: min(34vw, 430px);
+      overflow: hidden;
+      color: var(--muted);
+      font-family: ui-monospace, "SFMono-Regular", "Cascadia Code", Menlo, Consolas, monospace;
+      font-size: 11px;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .chat-shell {
+      display: grid;
+      min-height: 0;
+      grid-template-rows: minmax(0, 1fr) auto;
+      background: var(--surface-subtle);
+    }
+
+    .chat-history {
+      min-height: 0;
+      overflow: auto;
+      padding: clamp(16px, 2vw, 28px);
+      overscroll-behavior: contain;
+      scrollbar-gutter: stable;
+    }
+
+    .chat-empty {
+      display: grid;
+      min-height: 100%;
+      place-content: center;
+      justify-items: start;
+      padding: 32px clamp(4px, 7vw, 88px);
+      color: var(--muted);
+    }
+
+    .chat-empty strong {
+      margin-bottom: 6px;
+      color: var(--ink);
+      font-size: clamp(20px, 2.3vw, 30px);
+      font-weight: 740;
+      letter-spacing: -.03em;
+    }
+
+    .chat-empty p {
+      max-width: 48ch;
+      margin: 0;
+      color: var(--ink-soft);
+      font-size: 14px;
+    }
+
+    .chat-empty code {
+      display: inline-block;
+      margin-top: 14px;
+      color: var(--muted);
+      font-size: 11px;
+    }
+
+    .chat-message-list {
+      display: grid;
+      align-content: start;
+      gap: 15px;
+    }
+
+    .chat-message {
+      display: grid;
+      width: min(82%, 860px);
+      gap: 7px;
+    }
+
+    .chat-message.user { justify-self: end; }
+    .chat-message.assistant,
+    .chat-message.request-error { justify-self: start; }
+
+    .message-meta {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      color: var(--muted);
+      font-size: 11px;
+    }
+
+    .message-meta strong {
+      color: var(--ink-soft);
+      font-size: 12px;
+      font-weight: 720;
+    }
+
+    .message-surface {
+      overflow: hidden;
+      border: 1px solid var(--line);
+      border-radius: var(--radius-surface);
+      color: var(--ink);
+      background: var(--surface-raised);
+    }
+
+    .chat-message.user .message-surface {
+      border-color: var(--accent-line);
+      background: var(--accent-soft);
+    }
+
+    .chat-message.request-error .message-surface {
+      padding: 12px 14px;
+      border-color: var(--danger-line);
+      color: var(--danger);
+      background: var(--danger-soft);
+    }
+
+    .message-content {
+      margin: 0;
+      padding: 12px 14px;
+      white-space: pre-wrap;
+      overflow-wrap: anywhere;
+      font: inherit;
+      line-height: 1.65;
+    }
+
+    .message-reference {
+      margin: 0;
+      padding: 10px 13px;
+      border-bottom: 1px solid var(--accent-line);
+      color: var(--ink-soft);
+      background: color-mix(in srgb, var(--surface-raised) 58%, transparent);
+      font-size: 12px;
+    }
+
+    .message-reference strong {
+      display: block;
+      margin-bottom: 3px;
+      color: var(--accent);
+      font-size: 11px;
+    }
+
+    .message-reference p {
+      display: -webkit-box;
+      margin: 0;
+      overflow: hidden;
+      -webkit-box-orient: vertical;
+      -webkit-line-clamp: 3;
+      white-space: pre-wrap;
+      overflow-wrap: anywhere;
+    }
+
+    .message-actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      padding: 8px 10px;
+      border-top: 1px solid var(--line);
+      background: var(--surface-subtle);
+    }
+
+    .message-actions button,
+    .message-actions a {
+      display: inline-flex;
+      min-height: 30px;
+      align-items: center;
+      padding: 5px 8px;
+      border: 1px solid var(--line-strong);
+      border-radius: var(--radius-control);
+      color: var(--ink-soft);
+      background: var(--surface-raised);
+      font-size: 11px;
+      font-weight: 700;
+      line-height: 1.2;
+      text-decoration: none;
+      white-space: nowrap;
+    }
+
+    .message-actions button:hover:not(:disabled),
+    .message-actions a:hover { border-color: var(--accent); color: var(--accent); }
+
+    .message-actions .quote-action {
+      border-color: var(--accent-line);
+      color: var(--accent);
+      background: var(--accent-soft);
+    }
+
+    .message-pending .message-surface { padding: 13px 14px 15px; }
+
+    .pending-label {
+      display: block;
+      margin-bottom: 10px;
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .skeleton-lines { display: grid; gap: 7px; }
+
+    .skeleton-line {
+      width: 88%;
+      height: 7px;
+      border-radius: var(--radius-label);
+      background: var(--surface-strong);
+    }
+
+    .skeleton-line:nth-child(2) { width: 68%; }
+    .skeleton-line:nth-child(3) { width: 42%; }
+
+    .chat-composer {
+      padding: 12px 14px 14px;
+      border-top: 1px solid var(--line);
+      background: var(--surface-raised);
+    }
+
+    .chat-composer .error-banner { margin: 0 0 10px; }
+
+    .quote-preview {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 4px 12px;
+      margin-bottom: 10px;
+      padding: 9px 10px 9px 12px;
+      border: 1px solid var(--accent-line);
+      border-inline-start: 3px solid var(--accent);
+      border-radius: var(--radius-control);
+      color: var(--ink-soft);
+      background: var(--accent-soft);
+    }
+
+    .quote-preview strong {
+      color: var(--accent);
+      font-size: 11px;
+    }
+
+    .quote-preview p {
+      grid-column: 1 / -1;
+      margin: 0;
+      overflow: hidden;
+      font-size: 12px;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .quote-preview button {
+      min-width: 28px;
+      min-height: 28px;
+      padding: 3px 7px;
+      border-color: var(--accent-line);
+      color: var(--accent);
+      background: transparent;
+    }
+
+    .composer-label {
+      display: block;
+      margin-bottom: 6px;
+      color: var(--ink-soft);
+      font-size: 12px;
+      font-weight: 700;
+    }
+
+    #chat-input {
+      min-height: 88px;
+      max-height: 220px;
+      resize: vertical;
+    }
+
+    .composer-footer {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto auto;
+      align-items: center;
+      gap: 10px;
+      margin-top: 9px;
+    }
+
+    .composer-hint {
+      min-width: 0;
+      color: var(--muted);
+      font-size: 11px;
+    }
+
+    .at-bot-control {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      color: var(--ink-soft);
+      font-size: 12px;
+      white-space: nowrap;
+    }
+
+    #chat-send-button {
+      min-width: 88px;
+      padding-inline: 16px;
+    }
+
+    #chat-workflow-id,
+    #chat-workflow-key,
+    #chat-base-url,
+    #chat-room-id,
+    #chat-user-id {
+      font-family: ui-monospace, "SFMono-Regular", "Cascadia Code", Menlo, Consolas, monospace;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .queue-body {
+      min-height: 520px;
+      padding: 12px;
+    }
+
+    .queue-panel {
+      min-width: 0;
+      container: queue-panel / inline-size;
+    }
+
+    .empty-state {
+      display: grid;
+      min-height: 440px;
+      place-content: center;
+      padding: 40px 20px;
+      color: var(--muted);
+      text-align: center;
+    }
+
+    .empty-state::before {
+      display: block;
+      width: 34px;
+      height: 4px;
+      margin: 0 auto 16px;
+      border-radius: 2px;
+      background: var(--line-strong);
+      content: "";
+    }
+
+    .empty-state strong {
+      display: block;
+      margin-bottom: 4px;
+      color: var(--ink-soft);
+      font-size: 15px;
+    }
+
+    .task-queue { display: grid; gap: 10px; }
+
+    .task-card {
+      overflow: hidden;
+      border: 1px solid var(--line);
+      border-inline-start: 3px solid var(--line-strong);
+      border-radius: var(--radius-surface);
+      background: var(--surface-raised);
+    }
+
+    .task-card[data-status="ready"] { border-inline-start-color: var(--accent); }
+    .task-card[data-status="running"] { border-inline-start-color: var(--warning); }
+    .task-card[data-status="paused"] { border-inline-start-color: var(--paused); }
+    .task-card[data-status="success"] { border-inline-start-color: var(--success); }
+    .task-card[data-status="failed"],
+    .task-card[data-status="cancelled"] { border-inline-start-color: var(--danger); }
+
+    .task-top {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 14px;
+      padding: 14px 15px 9px;
+    }
+
+    .task-title-block { min-width: 0; }
+
+    .task-title-row {
+      display: grid;
+      grid-template-columns: 28px minmax(0, 1fr);
+      align-items: baseline;
+      gap: 7px;
+      min-width: 0;
+    }
+
+    .task-order {
+      color: var(--muted);
+      background: transparent;
+      font-family: ui-monospace, "SFMono-Regular", "Cascadia Code", Menlo, Consolas, monospace;
+      font-size: 12px;
+      font-variant-numeric: tabular-nums;
+      font-weight: 650;
+    }
+
+    .task-name {
+      overflow: hidden;
+      color: var(--ink);
+      font-size: 15px;
+      font-weight: 710;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .status-badge {
+      display: inline-flex;
+      min-height: 24px;
+      flex: 0 0 auto;
+      align-items: center;
+      gap: 6px;
+      padding: 4px 7px;
+      border: 1px solid var(--line);
+      border-radius: var(--radius-label);
+      color: var(--muted);
+      background: var(--surface-subtle);
+      font-size: 11px;
+      font-weight: 760;
+    }
+
+    .status-badge::before {
+      width: 5px;
+      height: 5px;
+      border-radius: 50%;
+      background: currentColor;
+      content: "";
+    }
+
+    .status-badge.running,
+    .case-status.running {
+      border-color: var(--warning-line);
+      color: var(--warning);
+      background: var(--warning-soft);
+    }
+
+    .status-badge.ready {
+      border-color: var(--accent-line);
+      color: var(--accent);
+      background: var(--accent-soft);
+    }
+
+    .status-badge.paused,
+    .case-status.paused {
+      border-color: var(--paused-line);
+      color: var(--paused);
+      background: var(--paused-soft);
+    }
+
+    .status-badge.success,
+    .case-status.success {
+      border-color: var(--success-line);
+      color: var(--success);
+      background: var(--success-soft);
+    }
+
+    .status-badge.failed,
+    .status-badge.cancelled,
+    .case-status.failed,
+    .case-status.cancelled {
+      border-color: var(--danger-line);
+      color: var(--danger);
+      background: var(--danger-soft);
+    }
+
+    .progress-area {
+      padding: 10px 15px;
+      border-top: 1px solid var(--line);
+      background: var(--surface-subtle);
+    }
+
+    .progress-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      margin-bottom: 7px;
+      color: var(--muted);
+      font-size: 11px;
+    }
+
+    .progress-counts {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      font-family: ui-monospace, "SFMono-Regular", "Cascadia Code", Menlo, Consolas, monospace;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .progress-counts .pass { color: var(--success); }
+    .progress-counts .fail { color: var(--danger); }
+
+    .progress-track {
+      height: 3px;
+      overflow: hidden;
+      background: var(--surface-strong);
+    }
+
+    .progress-bar {
+      width: 0;
+      height: 100%;
+      background: var(--accent-fill);
+      transition: width .2s ease;
+    }
+
+    .task-actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      padding: 9px 15px;
+      border-top: 1px solid var(--line);
+    }
+
+    .task-actions button {
+      min-height: 34px;
+      padding: 7px 10px;
+      font-size: 12px;
+    }
+
+    .case-section {
+      padding: 11px 15px 14px;
+      border-top: 1px solid var(--line);
+    }
+
+    .case-toolbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      margin-bottom: 8px;
+    }
+
+    .case-toolbar strong {
+      color: var(--ink-soft);
+      font-size: 12px;
+    }
+
+    .case-filters {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 4px;
+    }
+
+    .case-filter {
+      min-height: 27px;
+      padding: 4px 7px;
+      border-color: transparent;
+      border-radius: var(--radius-label);
+      color: var(--muted);
+      background: transparent;
+      font-size: 11px;
+    }
+
+    .case-filter:hover:not(:disabled) {
+      border-color: var(--line);
+      background: var(--surface-subtle);
+    }
+
+    .case-filter.active {
+      border-color: var(--accent-line);
+      color: var(--accent);
+      background: var(--accent-soft);
+    }
+
+    .case-table-wrap {
+      max-height: clamp(260px, 38dvh, 420px);
+      min-width: 0;
+      overflow: auto;
+      border: 1px solid var(--line);
+      border-radius: var(--radius-control);
+      scrollbar-gutter: stable;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      table-layout: fixed;
+      font-size: 12px;
+    }
+
+    th {
+      position: sticky;
+      top: 0;
+      z-index: 1;
+      padding: 8px 9px;
+      border-bottom: 1px solid var(--line);
+      color: var(--muted);
+      background: var(--surface-subtle);
+      text-align: left;
+      font-size: 11px;
+      font-weight: 690;
+    }
+
+    td {
+      padding: 8px 9px;
+      border-bottom: 1px solid var(--line);
+      color: var(--ink-soft);
+      vertical-align: top;
+      overflow-wrap: anywhere;
+    }
+
+    tbody tr:last-child td { border-bottom: 0; }
+    tbody tr:hover td { background: color-mix(in srgb, var(--accent-soft) 35%, transparent); }
+
+    th:nth-child(1),
+    td:nth-child(1) { width: 42px; }
+
+    th:nth-child(2),
+    td:nth-child(2) { width: 84px; }
+
+    th:nth-child(4),
+    td:nth-child(4) { width: 70px; }
+
+    th:nth-child(5),
+    td:nth-child(5) { width: 72px; }
+
+    .case-status {
+      display: inline-block;
+      padding: 3px 5px;
+      border: 1px solid transparent;
+      border-radius: var(--radius-label);
+      color: var(--muted);
+      background: var(--surface-strong);
+      font-size: 11px;
+      font-weight: 760;
+    }
+
+    .case-name {
+      color: var(--ink);
+      font-weight: 660;
+    }
+
+    .failure-text {
+      display: block;
+      margin-top: 3px;
+      color: var(--danger);
+      font-size: 11px;
+    }
+
+    .case-log-button {
+      min-height: 28px;
+      padding: 4px 7px;
+      border-color: var(--accent-line);
+      color: var(--accent);
+      background: var(--accent-soft);
+      font-size: 11px;
+    }
+
+    .case-empty {
+      padding: 24px;
+      color: var(--muted);
+      text-align: center;
+    }
+
+    .report-links {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      margin-top: 9px;
+    }
+
+    .report-link {
+      padding: 5px 8px;
+      border: 1px solid var(--accent-line);
+      border-radius: var(--radius-label);
+      color: var(--accent);
+      background: var(--accent-soft);
+      font-size: 11px;
+      text-decoration: none;
+      overflow-wrap: anywhere;
+    }
+
+    .report-link:hover { border-color: var(--accent); }
+
+    dialog {
+      width: min(920px, calc(100% - 32px));
+      max-height: calc(100dvh - 32px);
+      padding: 0;
+      overflow: hidden;
+      border: 1px solid var(--line-strong);
+      border-radius: var(--radius-surface);
+      color: var(--ink);
+      background: var(--surface-raised);
+      box-shadow: 0 28px 80px rgba(24, 31, 45, .25);
+    }
+
+    #case-log-dialog {
+      width: min(1360px, calc(100% - clamp(24px, 4vw, 56px)));
+      height: min(900px, calc(100dvh - clamp(24px, 4vh, 40px)));
+    }
+
+    #case-log-dialog[open] {
+      display: grid;
+      grid-template-rows: auto minmax(0, 1fr);
+    }
+
+    dialog::backdrop {
+      background: rgba(26, 31, 42, .56);
+      backdrop-filter: blur(2px);
+    }
+
+    .dialog-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 18px;
+      padding: 17px 20px;
+      border-bottom: 1px solid var(--line);
+      background: var(--surface-raised);
+    }
+
+    .dialog-header > div { min-width: 0; }
+
+    .dialog-title-line {
+      display: flex;
+      min-width: 0;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .dialog-header h3 {
+      overflow: hidden;
+      font-size: 18px;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .dialog-status {
+      display: inline-flex;
+      min-height: 26px;
+      flex: 0 0 auto;
+      align-items: center;
+      padding: 4px 8px;
+      border: 1px solid var(--line);
+      border-radius: var(--radius-label);
+      color: var(--muted);
+      background: var(--surface-subtle);
+      font-size: 11px;
+      font-weight: 760;
+    }
+
+    #case-log-dialog[data-result="success"] .dialog-status {
+      border-color: var(--success-line);
+      color: var(--success);
+      background: var(--success-soft);
+    }
+
+    #case-log-dialog[data-result="failed"] .dialog-status {
+      border-color: var(--danger-line);
+      color: var(--danger);
+      background: var(--danger-soft);
+    }
+
+    .dialog-subtitle {
+      margin: 4px 0 0;
+      color: var(--muted);
+      font-family: ui-monospace, "SFMono-Regular", "Cascadia Code", Menlo, Consolas, monospace;
+      font-size: 11px;
+      overflow-wrap: anywhere;
+    }
+
+    .dialog-close {
+      min-width: 36px;
+      min-height: 36px;
+      padding: 4px;
+      border-color: var(--line-strong);
+      color: var(--muted);
+      background: var(--surface-raised);
+      font-size: 18px;
+      line-height: 1;
+    }
+
+    .dialog-close:hover:not(:disabled) {
+      color: var(--ink);
+      background: var(--surface-subtle);
+    }
+
+    .dialog-body {
+      max-height: calc(100dvh - 120px);
+      overflow: auto;
+      padding: 16px 18px 20px;
+    }
+
+    #case-log-dialog .dialog-body {
+      min-height: 0;
+      max-height: none;
+      padding: 0;
+      background: var(--surface-subtle);
+    }
+
+    .case-summary {
+      display: grid;
+      grid-template-columns: minmax(110px, .55fr) minmax(280px, 1.8fr) auto;
+      align-items: center;
+      gap: 12px 24px;
+      padding: 15px 20px;
+      border-bottom: 1px solid var(--line);
+      background: var(--surface-raised);
+    }
+
+    .case-summary-item {
+      display: grid;
+      min-width: 0;
+      gap: 3px;
+    }
+
+    .case-summary-label {
+      color: var(--muted);
+      font-size: 11px;
+      font-weight: 650;
+    }
+
+    .case-summary-value {
+      min-width: 0;
+      overflow: hidden;
+      color: var(--ink-soft);
+      font-family: ui-monospace, "SFMono-Regular", "Cascadia Code", Menlo, Consolas, monospace;
+      font-size: 12px;
+      font-variant-numeric: tabular-nums;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .case-summary-action {
+      display: flex;
+      align-items: center;
+      justify-content: flex-end;
+    }
+
+    .trace-link {
+      display: inline-flex;
+      min-height: 34px;
+      align-items: center;
+      padding: 7px 11px;
+      border: 1px solid var(--accent-line);
+      border-radius: var(--radius-control);
+      color: var(--accent);
+      background: var(--accent-soft);
+      font-size: 12px;
+      font-weight: 700;
+      text-decoration: none;
+      white-space: nowrap;
+    }
+
+    .trace-link:hover { border-color: var(--accent); }
+
+    .case-error-note {
+      margin: 16px 20px 0;
+      padding: 11px 13px;
+      border: 1px solid var(--danger-line);
+      border-radius: var(--radius-control);
+      color: var(--danger);
+      background: var(--danger-soft);
+      font-size: 12px;
+      overflow-wrap: anywhere;
+    }
+
+    .turn-list {
+      display: grid;
+      gap: 16px;
+      padding: 16px 20px 22px;
+    }
+
+    .turn-card {
+      overflow: hidden;
+      border: 1px solid var(--line);
+      border-radius: var(--radius-surface);
+      background: var(--surface-raised);
+    }
+
+    .turn-head {
+      display: flex;
+      min-height: 52px;
+      align-items: center;
+      justify-content: space-between;
+      gap: 14px;
+      padding: 10px 15px;
+      border-bottom: 1px solid var(--line);
+      background: var(--surface-raised);
+    }
+
+    .turn-scene {
+      min-width: 0;
+      overflow: hidden;
+      color: var(--ink);
+      font-size: 14px;
+      font-weight: 720;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .turn-content {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr);
+      align-items: start;
+      gap: 14px;
+      padding: 15px;
+    }
+
+    .log-block { min-width: 0; }
+
+    .log-block-head {
+      display: flex;
+      min-height: 30px;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      margin-bottom: 7px;
+    }
+
+    .log-block-title {
+      color: var(--ink-soft);
+      font-size: 12px;
+      font-weight: 700;
+    }
+
+    .copy-button {
+      min-height: 28px;
+      padding: 4px 8px;
+      border-color: var(--line);
+      color: var(--muted);
+      background: var(--surface-subtle);
+      font-size: 11px;
+    }
+
+    .copy-button:hover:not(:disabled) {
+      border-color: var(--line-strong);
+      color: var(--ink-soft);
+    }
+
+    .log-block pre,
+    #task-raw-log {
+      max-height: clamp(180px, 38dvh, 360px);
+      margin: 0;
+      overflow: auto;
+      padding: 13px 14px;
+      border-radius: var(--radius-control);
+      color: var(--code-ink);
+      background: var(--code-bg);
+      white-space: pre-wrap;
+      overflow-wrap: anywhere;
+      font-family: ui-monospace, "SFMono-Regular", "Cascadia Code", Menlo, Consolas, monospace;
+      font-size: 12px;
+      font-variant-numeric: tabular-nums;
+      line-height: 1.65;
+      scrollbar-gutter: stable;
+    }
+
+    .log-block pre:focus-visible,
+    .assertion-list:focus-visible {
+      outline: 2px solid var(--accent);
+      outline-offset: -3px;
+    }
+
+    .log-block.input-block pre {
+      max-height: clamp(140px, 24dvh, 220px);
+      border: 1px solid var(--line);
+      color: var(--ink-soft);
+      background: var(--surface-subtle);
+    }
+
+    .assertion-panel {
+      margin: 14px 15px 0;
+      overflow: hidden;
+      border: 1px solid var(--danger-line);
+      border-radius: var(--radius-control);
+      background: var(--danger-soft);
+    }
+
+    .assertion-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 9px 12px;
+      border-bottom: 1px solid var(--danger-line);
+      color: var(--danger);
+      font-size: 12px;
+    }
+
+    .assertion-head strong { font-weight: 760; }
+
+    .assertion-list {
+      max-height: 220px;
+      margin: 0;
+      overflow: auto;
+      padding: 10px 14px 11px 34px;
+      color: var(--danger);
+      font-size: 12px;
+      line-height: 1.55;
+    }
+
+    .assertion-list li + li { margin-top: 4px; }
+
+    .structured-panel {
+      margin: 0 15px 15px;
+      overflow: hidden;
+      border: 1px solid var(--line);
+      border-radius: var(--radius-control);
+      background: var(--surface-subtle);
+    }
+
+    .structured-panel summary {
+      display: flex;
+      min-height: 42px;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 9px 12px;
+      color: var(--ink-soft);
+      font-size: 12px;
+      font-weight: 700;
+      cursor: pointer;
+      list-style: none;
+    }
+
+    .structured-panel summary::-webkit-details-marker { display: none; }
+
+    .structured-panel summary::after {
+      color: var(--muted);
+      content: "展开";
+      font-size: 11px;
+      font-weight: 600;
+    }
+
+    .structured-panel[open] summary {
+      border-bottom: 1px solid var(--line);
+      background: var(--surface-raised);
+    }
+
+    .structured-panel[open] summary::after { content: "收起"; }
+
+    .structured-body { padding: 12px; }
+
+    .structured-body .log-block pre { max-height: clamp(220px, 45dvh, 430px); }
+
+    .structured-error {
+      margin: 0 15px 15px;
+      padding: 10px 12px;
+      border: 1px solid var(--danger-line);
+      border-radius: var(--radius-control);
+      color: var(--danger);
+      background: var(--danger-soft);
+      font-size: 12px;
+      overflow-wrap: anywhere;
+    }
+
+    .case-detail-empty {
+      padding: 60px 20px;
+      color: var(--muted);
+      text-align: center;
+    }
+
+    #task-raw-log {
+      min-height: 300px;
+      max-height: calc(100dvh - 170px);
+    }
+
+    @container queue-panel (max-width: 760px) {
+      th,
+      td { padding-inline: 7px; }
+
+      th:nth-child(1),
+      td:nth-child(1) { width: 38px; }
+
+      th:nth-child(2),
+      td:nth-child(2) { width: 78px; }
+
+      th:nth-child(4),
+      td:nth-child(4) { width: 62px; }
+
+      th:nth-child(5),
+      td:nth-child(5) { width: 60px; }
+    }
+
+    @media (max-width: 980px) {
+      .layout,
+      .chat-layout { grid-template-columns: 1fr; }
+      .config-panel,
+      .chat-config-panel {
+        position: static;
+        max-height: none;
+        overflow: hidden;
+        box-shadow: none;
+      }
+      .conversation-panel { height: min(760px, calc(100dvh - 150px)); }
+    }
+
+    @media (max-height: 800px) and (min-width: 981px) {
+      main { padding-top: 16px; }
+
+      .hero {
+        gap: 20px;
+        margin-bottom: 12px;
+      }
+
+      .config-panel,
+      .chat-config-panel {
+        top: 12px;
+        max-height: calc(100dvh - 110px);
+      }
+
+      .panel-header {
+        min-height: 56px;
+        padding-block: 12px;
+      }
+    }
+
+    @media (max-width: 720px) {
+      main {
+        width: min(100% - 20px, 1840px);
+        padding: 14px 0 30px;
+      }
+
+      .hero {
+        grid-template-columns: 1fr;
+        align-items: start;
+        gap: 14px;
+        margin-bottom: 12px;
+      }
+
+      .queue-summary {
+        width: 100%;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+
+      .chat-summary { width: 100%; }
+
+      .workspace-tabs {
+        display: grid;
+        width: 100%;
+        margin-bottom: 12px;
+      }
+
+      .summary-chip:nth-child(3) { border-left: 0; }
+      .summary-chip:nth-child(n + 3) { border-top: 1px solid var(--line); }
+
+      .panel-header,
+      .settings-form {
+        padding-left: 14px;
+        padding-right: 14px;
+      }
+
+      .conversation-panel {
+        min-height: 620px;
+        height: calc(100dvh - 116px);
+      }
+
+      .conversation-header-actions {
+        align-items: flex-end;
+        flex-direction: column;
+        gap: 6px;
+      }
+
+      .conversation-meta { max-width: 54vw; }
+      .chat-history { padding: 14px 12px; }
+      .chat-message { width: 94%; }
+      .composer-footer { grid-template-columns: minmax(0, 1fr) auto; }
+      .composer-hint { grid-column: 1 / -1; grid-row: 2; }
+
+      .queue-body { padding: 8px; }
+      .field-grid { grid-template-columns: 1fr; }
+      .field-grid .wide { grid-column: auto; }
+      .task-top { flex-direction: column; }
+      .case-toolbar {
+        align-items: flex-start;
+        flex-direction: column;
+      }
+      .turn-content,
+      .case-summary { grid-template-columns: 1fr; }
+      .case-summary-action { justify-content: flex-start; }
+      .turn-head {
+        align-items: flex-start;
+        flex-direction: column;
+      }
+      .empty-state { min-height: 280px; }
+    }
+
+    @media (max-width: 520px) {
+      .brand-mark { display: none; }
+      .hero p { font-size: 11px; }
+      .summary-chip { min-width: 0; }
+      .workspace-tabs { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .details-toolbar { align-items: flex-start; flex-direction: column; }
+      .form-actions { flex-wrap: wrap; }
+      .form-actions button { flex: 1 1 120px; }
+      .conversation-panel { height: calc(100dvh - 100px); }
+      .conversation-header-actions { min-width: 112px; }
+      .conversation-meta { max-width: 112px; }
+      .chat-message { width: 100%; }
+      .composer-footer { grid-template-columns: 1fr; }
+      .composer-hint,
+      .at-bot-control { grid-column: auto; grid-row: auto; }
+      #chat-send-button { width: 100%; }
+      .task-title-row { grid-template-columns: 24px minmax(0, 1fr); }
+      th:nth-child(4),
+      td:nth-child(4) { display: none; }
+      th:nth-child(1),
+      td:nth-child(1) { width: 34px; }
+      th:nth-child(5),
+      td:nth-child(5) { width: 58px; }
+    }
+
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --canvas: #111318;
+        --surface: #171a20;
+        --surface-raised: #1c2028;
+        --surface-subtle: #20242c;
+        --surface-strong: #292e38;
+        --line: #2c323d;
+        --line-strong: #414a58;
+        --ink: #f0f2f5;
+        --ink-soft: #c7ccd5;
+        --muted: #9ca5b4;
+        --placeholder: #a8b0bd;
+        --accent: #8aa2f5;
+        --accent-fill: #405eb6;
+        --accent-fill-hover: #4a68c5;
+        --accent-soft: #222b4b;
+        --accent-line: #3e4f86;
+        --accent-contrast: #f7f8fb;
+        --success: #71c9a6;
+        --success-soft: #19342b;
+        --success-line: #2c5d4c;
+        --warning: #e4b86c;
+        --warning-soft: #392e1d;
+        --warning-line: #63502d;
+        --danger: #ee8b9d;
+        --danger-soft: #402129;
+        --danger-line: #6e3945;
+        --paused: #b6a0e5;
+        --paused-soft: #302744;
+        --paused-line: #544373;
+        --code-bg: #101319;
+        --code-ink: #d8dee8;
+        --shadow-rail: 0 14px 36px rgba(5, 7, 10, .28);
+      }
+
+      dialog::backdrop { background: rgba(4, 6, 9, .68); }
+      .brand-mark { box-shadow: inset 0 1px 0 rgba(255, 255, 255, .16); }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      *,
+      *::before,
+      *::after {
+        scroll-behavior: auto !important;
+        transition-duration: .01ms !important;
+        animation-duration: .01ms !important;
+      }
+    }
+
+    @media (forced-colors: active) {
+      .panel-title::before,
+      .progress-bar,
+      .empty-state::before { background: CanvasText; }
+      .task-card { border-inline-start-width: 1px; }
+    }
+  </style>
+</head>
+<body>
+  <a class="skip-link" href="#main-content">跳到主要内容</a>
+  <main id="main-content">
+    <header class="hero">
+      <div class="brand">
+        <span class="brand-mark" aria-hidden="true">QA</span>
+        <div class="brand-copy">
+          <h1>LangGraph 测试工作台</h1>
+          <p>自由验证一段指令，或按队列运行确定性回归。</p>
+        </div>
+      </div>
+      <div id="chat-summary" class="chat-summary" aria-label="对话汇总">
+        <div class="summary-chip"><strong id="chat-summary-turns">0</strong><span>对话轮次</span></div>
+        <div class="summary-chip"><strong id="chat-summary-context">新会话</strong><span>上下文</span></div>
+      </div>
+      <div id="queue-summary" class="queue-summary" aria-label="队列汇总" hidden>
+        <div class="summary-chip"><strong id="summary-total">0</strong><span>任务</span></div>
+        <div class="summary-chip"><strong id="summary-active">0</strong><span>运行 / 暂停</span></div>
+        <div class="summary-chip"><strong id="summary-passed">0</strong><span>成功用例</span></div>
+        <div class="summary-chip"><strong id="summary-failed">0</strong><span>失败用例</span></div>
+      </div>
+    </header>
+
+    <div class="workspace-tabs" role="tablist" aria-label="测试方式">
+      <button id="chat-tab" class="workspace-tab" type="button" role="tab" aria-selected="true" aria-controls="chat-workspace" data-workspace="chat">自由对话</button>
+      <button id="queue-tab" class="workspace-tab" type="button" role="tab" aria-selected="false" aria-controls="queue-workspace" data-workspace="queue" tabindex="-1">回归队列</button>
+    </div>
+
+    <section id="chat-workspace" class="workspace-view" role="tabpanel" aria-labelledby="chat-tab">
+      <div class="chat-layout">
+        <section class="panel chat-config-panel" aria-labelledby="chat-config-title">
+          <div class="panel-header">
+            <div class="panel-title"><h2 id="chat-config-title">对话配置</h2></div>
+            <small>本地临时使用</small>
+          </div>
+          <form id="chat-settings-form" class="settings-form">
+            <fieldset>
+              <legend>LangGraph 连接</legend>
+              <div class="field-grid">
+                <label class="field wide">
+                  <span class="label-row"><span>LangGraph 地址</span><span class="hint">仅允许 dev / localhost</span></span>
+                  <input id="chat-base-url" type="url" autocomplete="off" spellcheck="false" value="__DEFAULT_LANGGRAPH_BASE__" required>
+                </label>
+                <label class="field">
+                  <span class="label-row"><span>企微群 ID（必填）</span></span>
+                  <input id="chat-room-id" type="text" inputmode="numeric" autocomplete="off" spellcheck="false" value="__DEFAULT_ROOM_ID__" required>
+                </label>
+                <label class="field">
+                  <span class="label-row"><span>用户 ID（必填）</span></span>
+                  <input id="chat-user-id" type="text" autocomplete="off" spellcheck="false" value="__DEFAULT_USER_ID__" required>
+                </label>
+              </div>
+            </fieldset>
+            <details class="config-details">
+              <summary>请求参数</summary>
+              <div class="details-body">
+                <div class="field-grid">
+                  <label class="field"><span class="label-row"><span>单轮超时（秒）</span></span><input id="chat-langgraph-timeout" type="number" min="1" max="3600" value="300"></label>
+                  <label class="field"><span class="label-row"><span>重试次数</span></span><input id="chat-langgraph-retries" type="number" min="0" max="10" value="2"></label>
+                </div>
+                <div class="check-row"><label><input id="chat-insecure" type="checkbox">关闭 HTTPS 证书校验</label></div>
+              </div>
+            </details>
+            <details class="config-details">
+              <summary>交易对手候选</summary>
+              <div class="details-body field-grid">
+                <label class="field wide"><span class="label-row"><span>期权交易对手候选</span><span class="hint">JSON 数组</span></span><textarea id="chat-option-counterparties" class="json-editor" autocomplete="off" spellcheck="false" required></textarea></label>
+                <label class="field wide"><span class="label-row"><span>互换交易对手候选</span><span class="hint">JSON 数组</span></span><textarea id="chat-swap-counterparties" class="json-editor" autocomplete="off" spellcheck="false" required></textarea></label>
+              </div>
+            </details>
+          </form>
+          <p class="chat-settings-note">建立会话后配置会锁定；对话记录和 conversation_id 只保存在当前页面。</p>
+        </section>
+
+        <section class="panel conversation-panel" aria-labelledby="conversation-title">
+          <div class="panel-header">
+            <div class="panel-title"><h2 id="conversation-title">自定义对话</h2></div>
+            <div class="conversation-header-actions">
+              <span id="chat-conversation-meta" class="conversation-meta">尚未建立 conversation_id</span>
+              <button id="new-chat-button" class="secondary" type="button" disabled>新对话</button>
+            </div>
+          </div>
+          <div class="chat-shell">
+            <div id="chat-history" class="chat-history">
+              <div id="chat-empty" class="chat-empty"><strong>输入一段指令开始测试</strong><p>后续消息沿用同一个 conversation_id；可引用 LangGraph 回复继续测试。</p><code>Enter 发送，Shift + Enter 换行</code></div>
+              <div id="chat-message-list" class="chat-message-list" aria-live="polite" aria-relevant="additions"></div>
+            </div>
+            <form id="chat-composer" class="chat-composer">
+              <div id="chat-error-banner" class="error-banner" role="alert" aria-live="assertive" tabindex="-1"></div>
+              <div id="quote-preview" class="quote-preview" hidden><strong>引用 LangGraph 回复</strong><button id="clear-quote-button" type="button" aria-label="取消引用">取消</button><p id="quote-preview-text"></p></div>
+              <label class="composer-label" for="chat-input">输入测试指令</label>
+              <textarea id="chat-input" maxlength="32768" autocomplete="off" spellcheck="false" placeholder="例如：中信1000增强，各下500万，市价" required></textarea>
+              <div class="composer-footer">
+                <span class="composer-hint">引用内容单独写入 quote_content，本轮原文保持不变。</span>
+                <label class="at-bot-control"><input id="chat-at-bot" type="checkbox" checked>本轮模拟 @机器人</label>
+                <button id="chat-send-button" class="primary" type="submit">发送</button>
+              </div>
+            </form>
+          </div>
+        </section>
+      </div>
+    </section>
+
+    <section id="queue-workspace" class="workspace-view" role="tabpanel" aria-labelledby="queue-tab" hidden>
+    <div class="layout">
+      <section class="panel config-panel" aria-labelledby="config-title">
+        <div class="panel-header">
+          <div class="panel-title"><h2 id="config-title">新增队列任务</h2></div>
+        </div>
+        <form id="runner-form" class="settings-form">
+          <fieldset>
+            <legend>任务与测试用例集</legend>
+            <div class="field-grid">
+              <label class="field wide">
+                <span class="label-row"><span>任务名称</span><span class="hint">可选</span></span>
+                <input id="task-name" type="text" maxlength="100" autocomplete="off" placeholder="例如：互换下单 L0 回归">
+              </label>
+              <div class="field wide">
+                <span class="label-row"><span>测试用例集</span><span class="hint">可多选，按所选顺序合并执行</span></span>
+                <div id="dataset-list" class="dataset-list" role="group" aria-label="测试用例集">
+                  <span class="hint">正在加载数据集…</span>
+                </div>
+              </div>
+              <label id="custom-dataset-field" class="field wide" hidden>
+                <span class="label-row"><span>仓库内 JSONL 路径</span><span class="hint">可填写多个，逗号或换行分隔</span></span>
+                <textarea id="custom-dataset" class="mono" autocomplete="off" spellcheck="false" placeholder="tests/fixtures/golden.jsonl&#10;tests/fixtures/golden_ticker_2026-05.jsonl"></textarea>
+              </label>
+              <label class="field">
+                <span class="label-row"><span>最多执行</span><span class="hint">留空为全部</span></span>
+                <input id="limit" type="number" min="1" max="10000" inputmode="numeric" placeholder="例如 20">
+              </label>
+              <label class="field">
+                <span class="label-row"><span>关键词筛选</span><span class="hint">可选</span></span>
+                <input id="keyword" type="text" autocomplete="off" placeholder="匹配整条用例">
+              </label>
+              <label class="field wide">
+                <span class="label-row"><span>用例 ID（选填）</span><span class="hint">支持多个，逗号或换行分隔</span></span>
+                <textarea id="case-nos" autocomplete="off" spellcheck="false" placeholder="例如：swap-001, opt-001, opt_close-001, query-001, tk001"></textarea>
+              </label>
+            </div>
+          </fieldset>
+
+          <fieldset>
+            <legend>任务独立配置</legend>
+            <div class="field-grid">
+              <label class="field wide">
+                <span class="label-row"><span>LangGraph 地址</span></span>
+                <input id="base-url" type="url" autocomplete="off" spellcheck="false" value="__DEFAULT_LANGGRAPH_BASE__" required>
+              </label>
+              <label class="field">
+                <span class="label-row"><span>企微群 ID（必填）</span></span>
+                <input id="room-id" type="text" inputmode="numeric" autocomplete="off" spellcheck="false" value="__DEFAULT_ROOM_ID__" required>
+              </label>
+              <label class="field">
+                <span class="label-row"><span>用户 ID（必填）</span></span>
+                <input id="user-id" type="text" autocomplete="off" spellcheck="false" value="__DEFAULT_USER_ID__" required>
+              </label>
+            </div>
+          </fieldset>
+
+          <details class="config-details">
+            <summary>执行与企微参数</summary>
+            <div class="details-body">
+              <div class="field-grid">
+                <label class="field"><span class="label-row"><span>单轮超时（秒）</span></span><input id="langgraph-timeout" type="number" min="1" max="3600" value="300"></label>
+                <label class="field"><span class="label-row"><span>重试次数</span></span><input id="langgraph-retries" type="number" min="0" max="10" value="2"></label>
+                <label class="field wide"><span class="label-row"><span>请求间隔（毫秒）</span></span><input id="throttle-ms" type="number" min="0" max="60000" value="0"></label>
+              </div>
+              <div class="check-row">
+                <label><input id="push-wecom" type="checkbox">任务完成后推送企微报告</label>
+                <label><input id="keep-mentions" type="checkbox">严格校验 @机器人</label>
+                <label><input id="insecure" type="checkbox">关闭 HTTPS 证书校验</label>
+              </div>
+            </div>
+          </details>
+
+          <details class="config-details">
+            <summary>交易对手候选（随任务独立保存）</summary>
+            <div class="details-body field-grid">
+              <label class="field wide">
+                <span class="label-row"><span>期权交易对手候选</span></span>
+                <textarea id="option-counterparties" class="json-editor" autocomplete="off" spellcheck="false" required></textarea>
+              </label>
+              <label class="field wide">
+                <span class="label-row"><span>互换交易对手候选</span></span>
+                <textarea id="swap-counterparties" class="json-editor" autocomplete="off" spellcheck="false" required></textarea>
+              </label>
+            </div>
+          </details>
+
+          <div class="form-actions">
+            <button id="add-task-button" class="primary" type="submit">加入任务队列</button>
+            <button class="secondary" type="reset">重置</button>
+          </div>
+        </form>
+        <div id="error-banner" class="error-banner" role="alert" aria-live="polite" tabindex="-1"></div>
+      </section>
+
+      <section class="panel queue-panel" aria-labelledby="queue-title">
+        <div class="panel-header">
+          <div class="panel-title"><h2 id="queue-title">串行任务队列</h2></div>
+          <div class="queue-header-actions">
+            <button id="start-queue-button" class="primary queue-start-button" type="button" disabled>启动队列</button>
+            <small id="queue-updated">等待同步</small>
+          </div>
+        </div>
+        <div class="queue-body">
+          <div id="queue-empty" class="empty-state"><strong>队列还是空的</strong>先在左侧选择测试用例集并配置任务。</div>
+          <div id="task-queue" class="task-queue" aria-live="polite"></div>
+        </div>
+      </section>
+    </div>
+    </section>
+  </main>
+
+  <template id="assistant-message-template">
+    <article class="chat-message assistant">
+      <div class="message-meta"><strong>LangGraph</strong><span class="message-timing"></span></div>
+      <div class="message-surface"><pre class="message-content"></pre><div class="message-actions"><button class="quote-action" type="button" data-chat-action="quote">引用回复</button><button type="button" data-chat-action="copy">复制</button></div><details class="structured-panel"><summary>LangGraph outputs</summary><pre class="message-outputs"></pre></details></div>
+    </article>
+  </template>
+
+  <template id="task-card-template">
+    <article class="task-card">
+      <div class="task-top">
+        <div class="task-title-block">
+          <div class="task-title-row"><span class="task-order"></span><h3 class="task-name"></h3></div>
+        </div>
+        <span class="status-badge task-status"></span>
+      </div>
+      <div class="progress-area">
+        <div class="progress-head"><span class="progress-label"></span><span class="progress-counts"></span></div>
+        <div class="progress-track" role="progressbar"><div class="progress-bar"></div></div>
+      </div>
+      <div class="task-actions"></div>
+      <div class="case-section">
+        <div class="case-toolbar"><strong>用例进度</strong><div class="case-filters"></div></div>
+        <div class="case-table-wrap">
+          <table>
+            <thead><tr><th>#</th><th>状态</th><th>用例 / 失败原因</th><th>耗时</th><th>日志</th></tr></thead>
+            <tbody class="case-list"></tbody>
+          </table>
+        </div>
+        <div class="report-links"></div>
+      </div>
+    </article>
+  </template>
+
+  <template id="pause-button-template"><button class="pause-button" type="button" data-action="pause">暂停</button></template>
+
+  <dialog id="case-log-dialog" aria-labelledby="case-dialog-title">
+    <div class="dialog-header">
+      <div>
+        <div class="dialog-title-line">
+          <span id="case-dialog-status" class="dialog-status">状态</span>
+          <h3 id="case-dialog-title">用例日志</h3>
+        </div>
+      </div>
+      <button class="dialog-close" type="button" data-close-dialog="case-log-dialog" aria-label="关闭">×</button>
+    </div>
+    <div id="case-dialog-body" class="dialog-body"></div>
+  </dialog>
+
+  <dialog id="task-log-dialog" aria-labelledby="task-dialog-title">
+    <div class="dialog-header">
+      <div><h3 id="task-dialog-title">任务运行日志</h3><p id="task-dialog-subtitle" class="dialog-subtitle"></p></div>
+      <button class="dialog-close" type="button" data-close-dialog="task-log-dialog" aria-label="关闭">×</button>
+    </div>
+    <div class="dialog-body"><pre id="task-raw-log">正在加载…</pre></div>
+  </dialog>
+
+  <script>
+    const RUNNER_TOKEN = "__RUNNER_TOKEN__";
+    const IS_STATIC_PREVIEW = RUNNER_TOKEN.startsWith("__RUNNER_");
+    const $ = (id) => document.getElementById(id);
+    const form = $("runner-form");
+    const chatSettingsForm = $("chat-settings-form");
+    const chatComposer = $("chat-composer");
+    const chatMessageList = $("chat-message-list");
+    const queueElement = $("task-queue");
+    const caseFilters = new Map();
+    let queueState = {jobs: [], pause_supported: true};
+    let pollTimer = 0;
+    let refreshing = false;
+    let activeWorkspace = "chat";
+    let chatConversationId = "";
+    let chatQuote = "";
+    let chatSending = false;
+    let chatTurns = 0;
+
+    const statusLabels = {
+      ready: "待启动",
+      queued: "已排队",
+      running: "运行中",
+      paused: "已暂停",
+      stopping: "停止中",
+      success: "成功",
+      failed: "失败",
+      cancelled: "已取消",
+      pending: "等待",
+    };
+
+    function showError(message) {
+      const banner = $("error-banner");
+      banner.textContent = message || "";
+      banner.classList.toggle("visible", Boolean(message));
+      if (message) banner.focus();
+    }
+
+    function showChatError(message) {
+      const banner = $("chat-error-banner");
+      banner.textContent = message || "";
+      banner.classList.toggle("visible", Boolean(message));
+      if (message) banner.focus();
+    }
+
+    function switchWorkspace(workspace) {
+      activeWorkspace = workspace === "queue" ? "queue" : "chat";
+      const isChat = activeWorkspace === "chat";
+      $("chat-workspace").hidden = !isChat;
+      $("queue-workspace").hidden = isChat;
+      $("chat-summary").hidden = !isChat;
+      $("queue-summary").hidden = isChat;
+      for (const tab of document.querySelectorAll("[data-workspace]")) {
+        const selected = tab.dataset.workspace === activeWorkspace;
+        tab.setAttribute("aria-selected", String(selected));
+        tab.tabIndex = selected ? 0 : -1;
+      }
+    }
+
+    async function readJsonResponse(response) {
+      const contentType = response.headers.get("Content-Type") || "";
+      if (!contentType.includes("application/json")) {
+        throw new Error(
+          "当前页面是静态预览，无法调用测试接口。请运行 " +
+          "python scripts/ai_test_langgraph/automation_runner_server.py 后打开 http://127.0.0.1:9001。"
+        );
+      }
+      return response.json();
+    }
+
+    async function api(path, options = {}) {
+      const request = {...options, cache: "no-store"};
+      if ((request.method || "GET") !== "GET") {
+        request.headers = {...(request.headers || {}), "X-Runner-Token": RUNNER_TOKEN};
+      }
+      const response = await fetch(path, request);
+      const payload = await readJsonResponse(response);
+      if (!response.ok) throw new Error(payload.error || `请求失败：HTTP ${response.status}`);
+      return payload;
+    }
+
+    function prettyJson(raw) {
+      try { return JSON.stringify(JSON.parse(raw), null, 2); } catch (error) { return raw; }
+    }
+
+    async function loadServerDefaults() {
+      const config = await api("/api/config");
+      const mappings = [
+        ["base-url", "base_url"], ["user-id", "user_id"],
+        ["room-id", "room_id"], ["option-counterparties", "option_counterparties"],
+        ["swap-counterparties", "swap_counterparties"],
+        ["chat-base-url", "base_url"], ["chat-user-id", "user_id"],
+        ["chat-room-id", "room_id"], ["chat-option-counterparties", "option_counterparties"],
+        ["chat-swap-counterparties", "swap_counterparties"]
+      ];
+      for (const [id, key] of mappings) {
+        const input = $(id);
+        const raw = config[key] || "";
+        const value = id.endsWith("counterparties") ? prettyJson(raw) : raw;
+        input.value = value;
+        input.defaultValue = value;
+      }
+      const list = $("dataset-list");
+      list.replaceChildren();
+      let hasDefault = false;
+      for (const dataset of config.datasets || []) {
+        const option = document.createElement("label");
+        option.className = "dataset-option";
+        option.title = dataset.path;
+        const checkbox = document.createElement("input");
+        checkbox.type = "checkbox";
+        checkbox.name = "datasets";
+        checkbox.value = dataset.path;
+        checkbox.checked = dataset.path.endsWith("gf-data/swap_prod_data.jsonl");
+        checkbox.defaultChecked = checkbox.checked;
+        hasDefault ||= checkbox.checked;
+        const name = document.createElement("span");
+        name.className = "dataset-option-name";
+        name.textContent = dataset.name;
+        const count = document.createElement("span");
+        count.className = "dataset-option-count";
+        count.textContent = `${dataset.cases} 条`;
+        option.append(checkbox, name, count);
+        list.appendChild(option);
+      }
+      const firstDataset = list.querySelector('input[name="datasets"]');
+      if (!hasDefault && firstDataset) {
+        firstDataset.checked = true;
+        firstDataset.defaultChecked = true;
+        hasDefault = true;
+      }
+      const custom = document.createElement("label");
+      custom.className = "dataset-option";
+      const customCheckbox = document.createElement("input");
+      customCheckbox.type = "checkbox";
+      customCheckbox.name = "datasets";
+      customCheckbox.value = "__custom__";
+      customCheckbox.checked = !hasDefault;
+      customCheckbox.defaultChecked = customCheckbox.checked;
+      const customName = document.createElement("span");
+      customName.className = "dataset-option-name";
+      customName.textContent = "自定义仓库内 JSONL 路径";
+      custom.append(customCheckbox, customName);
+      list.appendChild(custom);
+      syncDatasetField();
+      queueState.pause_supported = config.pause_supported !== false;
+    }
+
+    function chatPayload() {
+      const value = (id) => $(id).value.trim();
+      return {
+        query: value("chat-input"), quote_content: chatQuote,
+        conversation_id: chatConversationId, at_bot: $("chat-at-bot").checked,
+        base_url: value("chat-base-url"), room_id: value("chat-room-id"),
+        user_id: value("chat-user-id"),
+        option_counterparties: value("chat-option-counterparties"),
+        swap_counterparties: value("chat-swap-counterparties"),
+        langgraph_timeout: value("chat-langgraph-timeout"),
+        langgraph_retries: value("chat-langgraph-retries"),
+        insecure: $("chat-insecure").checked
+      };
+    }
+
+    function validateChatPayload(payload) {
+      if (!payload.query) return "请输入测试指令。";
+      try { new URL(payload.base_url); } catch (error) { return "请输入格式正确的 LangGraph 地址。"; }
+      if (!/^\d{10,32}$/.test(payload.room_id)) return "企微群 ID 必须是 10-32 位数字。";
+      if (!payload.user_id || payload.user_id.length > 256) return "请输入有效的用户 ID。";
+      return validateCounterparties(payload.option_counterparties, "期权交易对手候选") ||
+        validateCounterparties(payload.swap_counterparties, "互换交易对手候选");
+    }
+
+    function setChatLocked(locked) {
+      for (const control of chatSettingsForm.querySelectorAll("input, textarea, button")) control.disabled = locked;
+      $("new-chat-button").disabled = !locked || chatSending;
+    }
+
+    function updateChatSummary() {
+      $("chat-summary-turns").textContent = String(chatTurns);
+      $("chat-summary-context").textContent = chatConversationId ? "已建立" : "新会话";
+      $("chat-conversation-meta").textContent = chatConversationId
+        ? `conversation_id: ${chatConversationId}` : "尚未建立 conversation_id";
+      $("chat-conversation-meta").title = chatConversationId;
+    }
+
+    function clearChatQuote() {
+      chatQuote = "";
+      $("quote-preview").hidden = true;
+      $("quote-preview-text").textContent = "";
+    }
+
+    function appendUserMessage(text, quote) {
+      const article = document.createElement("article");
+      article.className = "chat-message user";
+      const meta = document.createElement("div");
+      meta.className = "message-meta";
+      const author = document.createElement("strong");
+      author.textContent = "你";
+      meta.appendChild(author);
+      const surface = document.createElement("div");
+      surface.className = "message-surface";
+      if (quote) {
+        const reference = document.createElement("blockquote");
+        reference.className = "message-reference";
+        const label = document.createElement("strong");
+        label.textContent = "引用的 LangGraph 回复";
+        const quoted = document.createElement("p");
+        quoted.textContent = quote;
+        reference.append(label, quoted);
+        surface.appendChild(reference);
+      }
+      const content = document.createElement("pre");
+      content.className = "message-content";
+      content.textContent = text;
+      surface.appendChild(content);
+      article.append(meta, surface);
+      chatMessageList.appendChild(article);
+    }
+
+    function appendAssistantMessage(result) {
+      const fragment = $("assistant-message-template").content.cloneNode(true);
+      const article = fragment.querySelector(".chat-message");
+      article.dataset.answer = result.answer || "";
+      fragment.querySelector(".message-content").textContent = result.answer || "（空回复）";
+      const timing = fragment.querySelector(".message-timing");
+      const timingParts = [`${Number(result.duration || 0).toFixed(2)} 秒`];
+      if (result.workflow_run_id) timingParts.push(`run ${String(result.workflow_run_id).slice(0, 8)}`);
+      timing.textContent = timingParts.join("，");
+      timing.title = result.workflow_run_id || "";
+      const outputs = fragment.querySelector(".message-outputs");
+      outputs.textContent = JSON.stringify(result.outputs || {}, null, 2);
+      chatMessageList.appendChild(fragment);
+    }
+
+    function appendChatError(message) {
+      const article = document.createElement("article");
+      article.className = "chat-message request-error";
+      const surface = document.createElement("div");
+      surface.className = "message-surface";
+      surface.textContent = message;
+      article.appendChild(surface);
+      chatMessageList.appendChild(article);
+    }
+
+    function resetChat() {
+      chatConversationId = "";
+      chatTurns = 0;
+      chatMessageList.replaceChildren();
+      $("chat-empty").hidden = false;
+      $("chat-at-bot").checked = true;
+      clearChatQuote();
+      setChatLocked(false);
+      updateChatSummary();
+      showChatError("");
+      $("chat-input").focus();
+    }
+
+    async function sendChatMessage() {
+      if (chatSending) return;
+      showChatError("");
+      if (!chatComposer.reportValidity() || !chatSettingsForm.reportValidity()) return;
+      const payload = chatPayload();
+      const validation = validateChatPayload(payload);
+      if (validation) return showChatError(validation);
+      chatSending = true;
+      $("chat-send-button").disabled = true;
+      $("chat-send-button").textContent = "发送中…";
+      $("chat-empty").hidden = true;
+      appendUserMessage(payload.query, payload.quote_content);
+      clearChatQuote();
+      setChatLocked(true);
+      try {
+        const result = await api("/api/chat/messages", {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify(payload)});
+        chatConversationId = String(result.conversation_id || chatConversationId);
+        chatTurns += 1;
+        appendAssistantMessage(result);
+        $("chat-input").value = "";
+        $("chat-at-bot").checked = false;
+      } catch (error) {
+        appendChatError(error.message);
+        showChatError(error.message);
+      } finally {
+        chatSending = false;
+        $("chat-send-button").disabled = IS_STATIC_PREVIEW;
+        $("chat-send-button").textContent = "发送";
+        setChatLocked(Boolean(chatConversationId));
+        $("new-chat-button").disabled = !chatConversationId;
+        updateChatSummary();
+        $("chat-history").scrollTop = $("chat-history").scrollHeight;
+        $("chat-input").focus();
+      }
+    }
+
+    function selectedDatasetValues() {
+      const selected = Array.from(document.querySelectorAll('#dataset-list input[name="datasets"]:checked'))
+        .map((input) => input.value);
+      const predefined = selected.filter((item) => item !== "__custom__");
+      const custom = selected.includes("__custom__")
+        ? $("custom-dataset").value.split(/[\n,，]+/).map((item) => item.trim()).filter(Boolean)
+        : [];
+      return Array.from(new Set([...predefined, ...custom]));
+    }
+
+    function syncDatasetField() {
+      const custom = Boolean(document.querySelector('#dataset-list input[value="__custom__"]:checked'));
+      $("custom-dataset-field").hidden = !custom;
+      $("custom-dataset").required = custom;
+    }
+
+    function validateCounterparties(raw, label) {
+      let items;
+      try { items = JSON.parse(raw); } catch (error) { return `${label}不是合法 JSON：${error.message}`; }
+      if (!Array.isArray(items)) return `${label}必须是 JSON 数组。`;
+      if (items.length > 200) return `${label}最多允许 200 条。`;
+      const ids = new Set();
+      const names = new Set();
+      for (let index = 0; index < items.length; index += 1) {
+        const item = items[index];
+        const location = `${label}第 ${index + 1} 条`;
+        if (!item || typeof item !== "object" || Array.isArray(item)) return `${location}必须是 JSON 对象。`;
+        if (!Number.isInteger(item.ctptyId) || item.ctptyId <= 0) return `${location}的 ctptyId 必须是正整数。`;
+        if (typeof item.shortName !== "string" || !item.shortName.trim()) return `${location}的 shortName 不能为空。`;
+        if (typeof item.longName !== "string" || typeof item.sort !== "string") return `${location}的 longName 和 sort 必须是字符串。`;
+        if (ids.has(item.ctptyId)) return `${label}存在重复 ctptyId：${item.ctptyId}。`;
+        if (names.has(item.shortName)) return `${label}存在重复 shortName：${item.shortName}。`;
+        ids.add(item.ctptyId); names.add(item.shortName);
+      }
+      return "";
+    }
+
+    function formPayload() {
+      const value = (id) => $(id).value.trim();
+      return {
+        task_name: value("task-name"), datasets: selectedDatasetValues(), run_langgraph: true,
+        push_wecom: $("push-wecom").checked, limit: value("limit"), keyword: value("keyword"),
+        case_nos: value("case-nos"),
+        base_url: value("base-url"), room_id: value("room-id"), user_id: value("user-id"),
+        option_counterparties: value("option-counterparties"), swap_counterparties: value("swap-counterparties"),
+        langgraph_timeout: value("langgraph-timeout"), langgraph_retries: value("langgraph-retries"), throttle_ms: value("throttle-ms"),
+        keep_expected_mentions: $("keep-mentions").checked, insecure: $("insecure").checked,
+        wecom_timeout: 15, wecom_retries: 2
+      };
+    }
+
+    function validatePayload(payload) {
+      if (!Array.isArray(payload.datasets) || !payload.datasets.length) return "请至少选择或填写一份 JSONL 测试用例集。";
+      if (payload.datasets.some((dataset) => !dataset.toLowerCase().endsWith(".jsonl"))) return "测试用例集必须全部使用 .jsonl 后缀。";
+      try { new URL(payload.base_url); } catch (error) { return "请输入格式正确的 LangGraph 地址。"; }
+      if (!/^\d{10,32}$/.test(payload.room_id)) return "企微群 ID 必须是 10-32 位数字。";
+      if (!payload.user_id || payload.user_id.length > 256) return "请输入有效的用户 ID。";
+      return validateCounterparties(payload.option_counterparties, "期权交易对手候选") ||
+        validateCounterparties(payload.swap_counterparties, "互换交易对手候选");
+    }
+
+    function makeButton(label, action, className = "secondary") {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = className;
+      button.dataset.action = action;
+      button.textContent = label;
+      return button;
+    }
+
+    async function copyText(value, button) {
+      const original = button.textContent;
+      button.disabled = true;
+      try {
+        if (navigator.clipboard?.writeText) {
+          await navigator.clipboard.writeText(value);
+        } else {
+          const textarea = document.createElement("textarea");
+          textarea.value = value;
+          textarea.style.position = "fixed";
+          textarea.style.opacity = "0";
+          document.body.appendChild(textarea);
+          try {
+            textarea.select();
+            if (!document.execCommand("copy")) throw new Error("copy failed");
+          } finally {
+            textarea.remove();
+          }
+        }
+        button.textContent = "已复制";
+      } catch (error) {
+        button.textContent = "复制失败";
+      } finally {
+        window.setTimeout(() => {
+          if (button.isConnected) {
+            button.disabled = false;
+            button.textContent = original;
+          }
+        }, 1200);
+      }
+    }
+
+    function makeCopyButton(value, ariaLabel = "复制内容") {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "copy-button";
+      button.textContent = "复制";
+      button.setAttribute("aria-label", ariaLabel);
+      button.addEventListener("click", () => copyText(value, button));
+      return button;
+    }
+
+    function makeLogBlock(label, value, kind = "") {
+      const text = value === null || value === undefined ? "" : String(value);
+      const block = document.createElement("section");
+      block.className = `log-block ${kind}`.trim();
+      const head = document.createElement("div");
+      head.className = "log-block-head";
+      const title = document.createElement("span");
+      title.className = "log-block-title";
+      title.textContent = label;
+      head.append(title, makeCopyButton(text, `复制${label}`));
+      const pre = document.createElement("pre");
+      pre.textContent = text || "暂无内容";
+      pre.tabIndex = 0;
+      pre.setAttribute("aria-label", label);
+      block.append(head, pre);
+      return block;
+    }
+
+    function makeCaseSummaryItem(label, value) {
+      const item = document.createElement("div");
+      item.className = "case-summary-item";
+      const name = document.createElement("span");
+      name.className = "case-summary-label";
+      name.textContent = label;
+      const content = document.createElement("span");
+      content.className = "case-summary-value";
+      content.textContent = value || "-";
+      content.title = value || "-";
+      item.append(name, content);
+      return item;
+    }
+
+    function renderCaseFilters(container, job) {
+      const selected = caseFilters.get(job.job_id) || "all";
+      const filters = [["all", "全部"], ["success", "成功"], ["failed", "失败"], ["active", "进行中 / 等待"]];
+      for (const [value, label] of filters) {
+        const button = makeButton(label, "case-filter", "case-filter");
+        button.dataset.filter = value;
+        button.classList.toggle("active", selected === value);
+        container.appendChild(button);
+      }
+    }
+
+    function filteredCases(job) {
+      const selected = caseFilters.get(job.job_id) || "all";
+      if (selected === "all") return job.cases || [];
+      if (selected === "active") return (job.cases || []).filter((item) => ["pending", "running", "paused"].includes(item.status));
+      return (job.cases || []).filter((item) => item.status === selected);
+    }
+
+    function jobDatasetText(job) {
+      const datasets = Array.isArray(job.datasets) && job.datasets.length
+        ? job.datasets
+        : [job.dataset].filter(Boolean);
+      return datasets.join(" · ");
+    }
+
+    function renderCases(tbody, job) {
+      const cases = filteredCases(job);
+      if (!cases.length) {
+        const row = document.createElement("tr");
+        const cell = document.createElement("td");
+        cell.colSpan = 5;
+        cell.className = "case-empty";
+        cell.textContent = (job.cases || []).length ? "当前筛选下没有用例" : "等待回归脚本加载用例清单…";
+        row.appendChild(cell); tbody.appendChild(row); return;
+      }
+      for (const item of cases) {
+        const row = document.createElement("tr");
+        const index = document.createElement("td"); index.textContent = String(item.index);
+        const status = document.createElement("td");
+        const badge = document.createElement("span"); badge.className = `case-status ${item.status}`; badge.textContent = statusLabels[item.status] || item.status; status.appendChild(badge);
+        const name = document.createElement("td");
+        const nameText = document.createElement("span"); nameText.className = "case-name"; nameText.textContent = item.name || `用例 ${item.index}`; name.appendChild(nameText);
+        if (item.failure) { const failure = document.createElement("span"); failure.className = "failure-text"; failure.textContent = item.failure; name.appendChild(failure); }
+        const duration = document.createElement("td"); duration.textContent = Number.isFinite(Number(item.duration)) ? `${Number(item.duration).toFixed(2)}s` : "-";
+        const action = document.createElement("td");
+        if (item.detail_url) { const button = makeButton("查看", "case-log", "case-log-button"); button.dataset.url = item.detail_url; action.appendChild(button); }
+        else { action.textContent = "-"; }
+        row.append(index, status, name, duration, action); tbody.appendChild(row);
+      }
+    }
+
+    function renderTask(job, order) {
+      const fragment = $("task-card-template").content.cloneNode(true);
+      const card = fragment.querySelector(".task-card");
+      card.dataset.jobId = job.job_id;
+      card.dataset.status = job.status;
+      card.querySelector(".task-order").textContent = `#${order}`;
+      card.querySelector(".task-name").textContent = job.name;
+      const status = card.querySelector(".task-status");
+      status.textContent = statusLabels[job.status] || job.status;
+      status.classList.add(job.status);
+
+      const progress = job.progress || {};
+      const total = Number(progress.total || 0);
+      const completed = Number(progress.completed || 0);
+      const percent = total ? Math.min(100, completed / total * 100) : 0;
+      if (job.status === "ready") {
+        card.querySelector(".progress-label").textContent = `待手动启动，共 ${total} 条用例`;
+      } else if (total) {
+        card.querySelector(".progress-label").textContent = `${completed} / ${total} 已完成`;
+      } else {
+        card.querySelector(".progress-label").textContent = job.status === "queued" ? `队列位置 ${job.queue_position || "-"}` : "正在初始化用例清单";
+      }
+      const counts = card.querySelector(".progress-counts");
+      const passed = document.createElement("span"); passed.className = "pass"; passed.textContent = `成功 ${progress.passed || 0}`;
+      const failed = document.createElement("span"); failed.className = "fail"; failed.textContent = `失败 ${progress.failed || 0}`;
+      counts.append(passed, failed);
+      const track = card.querySelector(".progress-track"); track.setAttribute("aria-valuenow", String(Math.round(percent))); track.setAttribute("aria-valuemin", "0"); track.setAttribute("aria-valuemax", "100");
+      card.querySelector(".progress-bar").style.width = `${percent}%`;
+
+      const actions = card.querySelector(".task-actions");
+      if (["ready", "queued"].includes(job.status)) {
+        actions.append(makeButton("↑ 前移", "move-up"), makeButton("↓ 后移", "move-down"));
+      }
+      if (job.status === "running" && queueState.pause_supported) {
+        actions.appendChild($("pause-button-template").content.cloneNode(true));
+      }
+      if (job.status === "paused") actions.append(makeButton("恢复", "resume", "resume-button"));
+      if (["queued", "running", "paused"].includes(job.status)) actions.append(makeButton("停止", "stop", "danger-button"));
+      if (job.status === "stopping") { const stopping = makeButton("停止中…", "noop", "danger-button"); stopping.disabled = true; actions.append(stopping); }
+      actions.append(makeButton("任务日志", "task-log"));
+      if (!["running", "paused", "stopping"].includes(job.status)) actions.append(makeButton("删除记录", "delete", "danger-button"));
+
+      renderCaseFilters(card.querySelector(".case-filters"), job);
+      renderCases(card.querySelector(".case-list"), job);
+      const reports = card.querySelector(".report-links");
+      for (const report of job.reports || []) {
+        const link = document.createElement("a"); link.className = "report-link"; link.href = report.url; link.target = "_blank"; link.rel = "noopener"; link.textContent = report.name; reports.appendChild(link);
+      }
+      return card;
+    }
+
+    function captureCaseScrollPositions() {
+      const positions = new Map();
+      for (const card of queueElement.querySelectorAll(".task-card")) {
+        const scroller = card.querySelector(".case-table-wrap");
+        if (scroller) positions.set(card.dataset.jobId, {top: scroller.scrollTop, left: scroller.scrollLeft});
+      }
+      return positions;
+    }
+
+    function renderQueue(payload) {
+      const scrollPositions = captureCaseScrollPositions();
+      queueState = payload;
+      queueElement.replaceChildren();
+      const jobs = payload.jobs || [];
+      jobs.forEach((job, index) => {
+        const card = renderTask(job, index + 1);
+        queueElement.appendChild(card);
+        const saved = scrollPositions.get(job.job_id);
+        const scroller = card.querySelector(".case-table-wrap");
+        if (saved && scroller) {
+          scroller.scrollTop = saved.top;
+          scroller.scrollLeft = saved.left;
+        }
+      });
+      $("queue-empty").hidden = Boolean(jobs.length);
+      const readyCount = jobs.filter((job) => job.status === "ready").length;
+      const startButton = $("start-queue-button");
+      startButton.disabled = IS_STATIC_PREVIEW || readyCount === 0;
+      startButton.textContent = readyCount ? `启动队列 (${readyCount})` : "启动队列";
+      $("summary-total").textContent = String(jobs.length);
+      $("summary-active").textContent = String(jobs.filter((job) => ["running", "paused", "stopping"].includes(job.status)).length);
+      $("summary-passed").textContent = String(jobs.reduce((sum, job) => sum + Number(job.progress?.passed || 0), 0));
+      $("summary-failed").textContent = String(jobs.reduce((sum, job) => sum + Number(job.progress?.failed || 0), 0));
+      $("queue-updated").textContent = `更新于 ${new Date().toLocaleTimeString("zh-CN", {hour12: false})}`;
+    }
+
+    async function refreshQueue() {
+      if (refreshing || IS_STATIC_PREVIEW) return;
+      refreshing = true;
+      try { renderQueue(await api("/api/jobs")); }
+      catch (error) { showError(error.message); }
+      finally {
+        refreshing = false;
+        const active = (queueState.jobs || []).some((job) => ["queued", "running", "paused", "stopping"].includes(job.status));
+        window.clearTimeout(pollTimer);
+        pollTimer = window.setTimeout(refreshQueue, active ? 850 : 2200);
+      }
+    }
+
+    function openDialog(dialog) {
+      if (typeof dialog.showModal === "function") dialog.showModal(); else dialog.setAttribute("open", "");
+    }
+
+    function renderCaseDetail(detail) {
+      const result = detail.case;
+      const dialog = $("case-log-dialog");
+      const resultStatus = result.passed ? "success" : "failed";
+      dialog.dataset.result = resultStatus;
+      $("case-dialog-status").textContent = result.passed ? "成功" : "失败";
+      $("case-dialog-title").textContent = result.name || result.case_no || "用例日志";
+
+      const body = $("case-dialog-body");
+      body.replaceChildren();
+      const summary = document.createElement("div");
+      summary.className = "case-summary";
+      summary.append(
+        makeCaseSummaryItem("耗时", `${Number(result.duration || 0).toFixed(2)}s`),
+        makeCaseSummaryItem("conversation_id", result.conversation_id || "-")
+      );
+      if (result.conversation_url) {
+        const action = document.createElement("div");
+        action.className = "case-summary-action";
+        const link = document.createElement("a");
+        link.className = "trace-link";
+        link.href = result.conversation_url;
+        link.target = "_blank";
+        link.rel = "noopener";
+        link.textContent = "查看运行记录";
+        action.appendChild(link);
+        summary.appendChild(action);
+      }
+      body.appendChild(summary);
+
+      if (result.error) {
+        const error = document.createElement("div");
+        error.className = "case-error-note";
+        error.textContent = result.error;
+        body.appendChild(error);
+      }
+
+      const turnList = document.createElement("div");
+      turnList.className = "turn-list";
+      const turns = result.turns || [];
+      if (!turns.length) {
+        const empty = document.createElement("div");
+        empty.className = "case-detail-empty";
+        empty.textContent = "该用例暂无可展示的工作流日志。";
+        turnList.appendChild(empty);
+      }
+
+      for (const turn of turns) {
+        const card = document.createElement("section");
+        card.className = "turn-card";
+        const head = document.createElement("div");
+        head.className = "turn-head";
+        const scene = document.createElement("strong");
+        scene.className = "turn-scene";
+        scene.textContent = turn.scene || "场景";
+        head.appendChild(scene);
+        card.appendChild(head);
+
+        const failures = turn.assertion?.failures || [];
+        if (failures.length) {
+          const panel = document.createElement("section");
+          panel.className = "assertion-panel";
+          const assertionHead = document.createElement("div");
+          assertionHead.className = "assertion-head";
+          const assertionTitle = document.createElement("strong");
+          assertionTitle.textContent = "断言失败";
+          const assertionCount = document.createElement("span");
+          assertionCount.textContent = `${failures.length} 项`;
+          assertionHead.append(assertionTitle, assertionCount);
+          const list = document.createElement("ol");
+          list.className = "assertion-list";
+          list.tabIndex = 0;
+          list.setAttribute("aria-label", "断言失败列表");
+          failures.forEach((failure) => {
+            const item = document.createElement("li");
+            item.textContent = failure;
+            list.appendChild(item);
+          });
+          panel.append(assertionHead, list);
+          card.appendChild(panel);
+        }
+
+        const content = document.createElement("div");
+        content.className = "turn-content";
+        content.append(
+          makeLogBlock("输入消息", turn.query, "input-block"),
+          makeLogBlock("LangGraph 回复", turn.answer, "output-block")
+        );
+        card.appendChild(content);
+
+        if (turn.outputs !== null && turn.outputs !== undefined) {
+          const structured = document.createElement("details");
+          structured.className = "structured-panel";
+          const structuredSummary = document.createElement("summary");
+          structuredSummary.textContent = "LangGraph outputs";
+          const structuredBody = document.createElement("div");
+          structuredBody.className = "structured-body";
+          structuredBody.appendChild(
+            makeLogBlock("outputs", JSON.stringify(turn.outputs, null, 2))
+          );
+          structured.append(structuredSummary, structuredBody);
+          card.appendChild(structured);
+        }
+        turnList.appendChild(card);
+      }
+      body.appendChild(turnList);
+      body.scrollTop = 0;
+      openDialog(dialog);
+    }
+
+    async function showTaskLog(jobId) {
+      const detail = await api(`/api/jobs/${jobId}`);
+      $("task-dialog-title").textContent = detail.name;
+      $("task-dialog-subtitle").textContent = `${jobDatasetText(detail)} · ${statusLabels[detail.status] || detail.status}`;
+      $("task-raw-log").textContent = detail.log || "任务尚无运行日志。";
+      openDialog($("task-log-dialog"));
+    }
+
+    async function runAction(jobId, action, button) {
+      if (action === "noop") return;
+      if (action === "delete" && !window.confirm("确认删除这条任务记录？已生成的报告文件会保留。")) return;
+      button.disabled = true;
+      try {
+        if (action === "case-log") { renderCaseDetail(await api(button.dataset.url)); return; }
+        if (action === "task-log") { await showTaskLog(jobId); return; }
+        if (action === "case-filter") { caseFilters.set(jobId, button.dataset.filter); renderQueue(queueState); return; }
+        if (action === "delete") {
+          await api(`/api/jobs/${jobId}`, {method: "DELETE"});
+          caseFilters.delete(jobId);
+          await refreshQueue();
+          return;
+        }
+        const endpointAction = action === "move-up" || action === "move-down" ? "move" : action;
+        const options = {method: "POST"};
+        if (endpointAction === "move") {
+          options.headers = {"Content-Type": "application/json"};
+          options.body = JSON.stringify({direction: action === "move-up" ? "up" : "down"});
+        }
+        await api(`/api/jobs/${jobId}/${endpointAction}`, options);
+        await refreshQueue();
+      } catch (error) { showError(error.message); }
+      finally { button.disabled = false; }
+    }
+
+    async function startQueue() {
+      const button = $("start-queue-button");
+      button.disabled = true;
+      button.textContent = "正在启动…";
+      showError("");
+      try {
+        renderQueue(await api("/api/queue/start", {method: "POST"}));
+      } catch (error) {
+        showError(error.message);
+        button.disabled = false;
+        button.textContent = "启动队列";
+      }
+    }
+
+    form.addEventListener("submit", async (event) => {
+      event.preventDefault(); showError("");
+      if (!form.reportValidity()) return;
+      const payload = formPayload();
+      const validation = validatePayload(payload);
+      if (validation) return showError(validation);
+      const button = $("add-task-button"); button.disabled = true; button.textContent = "正在加入…";
+      try {
+        await api("/api/jobs", {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify(payload)});
+        $("task-name").value = "";
+        await refreshQueue();
+      } catch (error) { showError(error.message); }
+      finally { button.disabled = IS_STATIC_PREVIEW; button.textContent = "加入任务队列"; }
+    });
+
+    form.addEventListener("reset", () => window.setTimeout(() => { syncDatasetField(); showError(""); }, 0));
+    chatComposer.addEventListener("submit", (event) => { event.preventDefault(); sendChatMessage(); });
+    $("chat-input").addEventListener("keydown", (event) => {
+      if (event.key === "Enter" && !event.shiftKey && !event.isComposing) {
+        event.preventDefault();
+        sendChatMessage();
+      }
+    });
+    chatMessageList.addEventListener("click", (event) => {
+      const button = event.target.closest("[data-chat-action]");
+      const message = event.target.closest(".chat-message.assistant");
+      if (!button || !message) return;
+      const answer = message.dataset.answer || "";
+      if (button.dataset.chatAction === "quote") {
+        chatQuote = answer;
+        $("quote-preview-text").textContent = answer;
+        $("quote-preview").hidden = false;
+        $("chat-input").focus();
+      } else if (button.dataset.chatAction === "copy") {
+        copyText(answer, button);
+      }
+    });
+    $("clear-quote-button").addEventListener("click", clearChatQuote);
+    $("new-chat-button").addEventListener("click", resetChat);
+    document.querySelectorAll("[data-workspace]").forEach((tab) => {
+      tab.addEventListener("click", () => switchWorkspace(tab.dataset.workspace));
+    });
+    $("dataset-list").addEventListener("change", syncDatasetField);
+    $("start-queue-button").addEventListener("click", startQueue);
+    queueElement.addEventListener("click", (event) => {
+      const button = event.target.closest("button[data-action]");
+      const card = event.target.closest(".task-card");
+      if (button && card) runAction(card.dataset.jobId, button.dataset.action, button);
+    });
+    document.addEventListener("click", (event) => {
+      const closer = event.target.closest("[data-close-dialog]");
+      if (closer) $(closer.dataset.closeDialog).close();
+    });
+
+    if (IS_STATIC_PREVIEW) {
+      $("add-task-button").disabled = true;
+      $("chat-send-button").disabled = true;
+      showError("当前是静态预览。请启动 automation_runner_server.py 后使用任务队列。");
+      showChatError("当前是静态预览。请启动 automation_runner_server.py 后使用自由对话。");
+    } else {
+      loadServerDefaults().then(refreshQueue).catch((error) => showError(error.message));
+    }
+    switchWorkspace("chat");
+    updateChatSummary();
+  </script>
+</body>
+</html>
