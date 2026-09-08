@@ -8,11 +8,25 @@ from __future__ import annotations
 import os
 import shutil
 import subprocess
+import sys
 from pathlib import Path
 
 import pytest
 
 SCRIPT = Path(__file__).resolve().parents[1] / "scripts" / "rollback_canary.sh"
+
+
+def _bash_executable() -> str:
+    """优先使用 Git Bash，避免 Windows 的 WSL 启动器抢占 bash 命令。"""
+    if os.name == "nt":
+        git = shutil.which("git")
+        if git:
+            git_root = Path(git).resolve().parent.parent
+            for relative_path in ("bin/bash.exe", "usr/bin/bash.exe"):
+                candidate = git_root / relative_path
+                if candidate.is_file():
+                    return str(candidate)
+    return shutil.which("bash") or "bash"
 
 
 def _make_env(tmp_path: Path, canary_value: str) -> Path:
@@ -43,13 +57,19 @@ def _run_rollback(
     shutil.copy(SCRIPT, target_scripts / "rollback_canary.sh")
     os.chmod(target_scripts / "rollback_canary.sh", 0o755)
 
-    full_env = {**os.environ, **(env_extra or {})}
+    full_env = {
+        **os.environ,
+        "PYTHON_BIN": Path(sys.executable).as_posix(),
+        **(env_extra or {}),
+    }
     return subprocess.run(
-        ["bash", "scripts/rollback_canary.sh", *extra_args],
+        [_bash_executable(), "scripts/rollback_canary.sh", *extra_args],
         cwd=workdir,
         env=full_env,
         capture_output=True,
         text=True,
+        encoding="utf-8",
+        errors="replace",
         timeout=20,
     )
 

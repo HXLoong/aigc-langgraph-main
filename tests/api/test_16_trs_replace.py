@@ -6,7 +6,7 @@ from __future__ import annotations
 import time
 from datetime import datetime
 
-from _utils import check, post, report, COM_AID, COM_SUB
+from _utils import COM_AID, COM_SUB, check, post, report
 
 print("16. 互换改单  POST /api/internal/agent/trs/order/replace")
 

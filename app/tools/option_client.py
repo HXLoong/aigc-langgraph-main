@@ -15,7 +15,6 @@ from app.tools.models import (
     CommonResult,
     GoatsOrderDirection,
     GoatsPriceType,
-    MachineContext,
 )
 
 # ============================================================

@@ -23,6 +23,8 @@ def _patch_llm(
     fake_base = MagicMock()
     fake_base.with_structured_output = MagicMock(return_value=fake_llm)
     monkeypatch.setattr(ep_module, "get_qwen_thinking", lambda: fake_base)
+    monkeypatch.setattr(ep_module, "call_option_backend",
+                        AsyncMock(return_value={"api_code": 0, "api_result": "backend reply"}))
     return fake_llm.ainvoke
 
 

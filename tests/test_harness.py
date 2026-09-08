@@ -2,15 +2,8 @@
 
 from __future__ import annotations
 
-from unittest.mock import AsyncMock, MagicMock
-
 import pytest
 
-from app.subgraphs.swap import backend as swap_backend_module
-from app.subgraphs.swap import intent as swap_intent_module
-from app.subgraphs.swap import place_order as swap_place_order_module
-from app.subgraphs.swap.models import SwapIntentOutput, SwapPlaceOrderParams
-from app.subgraphs.ticker.resolver import TickerResolution
 from harness.cli import build_parser
 from harness.differ import diff_fields, is_pass
 from harness.golden import (
@@ -91,40 +84,16 @@ def test_differ_handles_lists() -> None:
 
 
 @pytest.mark.asyncio
-async def test_runner_executes_case(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """harness 跑一条强信号 case（含"互换"关键词），验证规则层路由 → swap stub。
+async def test_runner_executes_case() -> None:
+    """harness 通过公开 graph 注入点执行一条 case 并返回规范化结果。"""
 
-    ADR 0015 修订后，raw_content 必须含订单号或关键词才能不走 LLM 兜底；
-    用"做一笔互换"让第 2 层关键词命中。
-    """
-
-    def fake_structured_llm(value: object) -> MagicMock:
-        llm = MagicMock()
-        llm.ainvoke = AsyncMock(return_value=value)
-        base = MagicMock()
-        base.with_structured_output.return_value = llm
-        return base
-
-    monkeypatch.setattr(
-        swap_intent_module,
-        "get_qwen_thinking",
-        lambda: fake_structured_llm(SwapIntentOutput(type="place_order_request")),
-    )
-    monkeypatch.setattr(
-        swap_place_order_module,
-        "get_qwen_complex",
-        lambda: fake_structured_llm(SwapPlaceOrderParams(orderList=[])),
-    )
-    monkeypatch.setattr(
-        swap_place_order_module,
-        "resolve_ticker_full",
-        AsyncMock(return_value=TickerResolution(resolved=[], hitl_pending=[])),
-    )
-    fake_client = MagicMock()
-    fake_client.operate = AsyncMock(return_value=MagicMock(code=0, data={}, msg=""))
-    monkeypatch.setattr(swap_backend_module, "SwapClientHttpx", lambda: fake_client)
+    class _Graph:
+        async def ainvoke(self, state: dict, config: dict) -> dict:
+            return {
+                **state,
+                "product_type": "swap",
+                "trace": [],
+            }
 
     case = GoldenCase(
         id="harness-smoke",
@@ -132,7 +101,7 @@ async def test_runner_executes_case(
         raw_content="做一笔互换 100 手",
         expected={"product_type": "swap"},
     )
-    result = await run_case(case)
+    result = await run_case(case, graph=_Graph())
     assert result.error is None
     assert result.final_state.get("product_type") == "swap"
     assert result.elapsed_ms >= 0

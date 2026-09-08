@@ -1,10 +1,16 @@
 """Option 子图后端调用。"""
 from __future__ import annotations
 
+import logging
 from typing import Any
 
 from app.graph.state import AgentState
+from app.observability.metrics import (
+    emit_option_backend_empty_result,
+    emit_option_backend_missing_context,
+)
 from app.subgraphs.option.sanitize import sanitize_order_list
+from app.tools.exceptions import EmptyBackendResultError, MissingBackendContextError
 from app.tools.option_client import (
     FinancialOrderOpenApiBaseSaveReqVO,
     FinancialOrderOpenApiSaveReqVO,
@@ -13,6 +19,7 @@ from app.tools.option_client import (
     OptionIntentionType,
 )
 
+logger = logging.getLogger(__name__)
 #: intent → operate 固定映射（Dify DSL v2：每个 extract 节点的 operate 是单值 enum，
 #: 由节点身份决定，不经 LLM 判断——见 spec/llm_schemas.txt 各「期权-节点-*」的
 #: operate enum）。未登记的 intent（如 unknown_intent）不传 operate。
@@ -64,6 +71,16 @@ def _with_resolved_ticker(
     return order
 
 
+def _is_empty_backend_result(value: Any) -> bool:
+    if value is None:
+        return True
+    if isinstance(value, str):
+        return not value.strip()
+    if isinstance(value, (dict, list, tuple, set)):
+        return not value
+    return False
+
+
 async def call_option_backend(
     state: AgentState,
     *,
@@ -71,8 +88,20 @@ async def call_option_backend(
     order_list: list[dict[str, Any]] | None = None,
     option_rfq: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    if not state.get("conversation_id") or not state.get("room_id") or not state.get("user_id"):
-        return {}
+    missing_fields = [
+        field
+        for field in ("conversation_id", "room_id", "user_id")
+        if not state.get(field)
+    ]
+    if _message_id(state.get("message_id")) <= 0:
+        missing_fields.append("message_id")
+    if missing_fields:
+        logger.error(
+            "option backend call blocked: missing_fields=%s",
+            ",".join(missing_fields),
+        )
+        emit_option_backend_missing_context()
+        raise MissingBackendContextError("option", missing_fields)
 
     cleaned_order_list = sanitize_order_list(order_list)
     req = FinancialOrderOpenApiSaveReqVO(
@@ -90,7 +119,11 @@ async def call_option_backend(
         **_context(state),
     )
     result = await OptionClientHttpx().operate(req)
+    backend_result = result.data if result.code == 0 else result.msg
+    if _is_empty_backend_result(backend_result):
+        emit_option_backend_empty_result()
+        raise EmptyBackendResultError("option", result.code)
     return {
         "api_code": result.code,
-        "api_result": result.data if result.code == 0 else result.msg,
+        "api_result": backend_result,
     }

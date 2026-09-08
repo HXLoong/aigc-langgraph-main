@@ -165,7 +165,7 @@ otc_agent_canary_traffic_total{is_canary="false"} 3
 
 def test_alerts_evaluate_non_canary_fires_on_any_traffic() -> None:
     """≥ 1 条 non-canary 流量即触发（sustain_seconds=0 即时）。"""
-    from app.observability.alerts import AlertContext, AlertState, evaluate
+    from app.observability.alerts import AlertContext, evaluate
 
     # 第一次评估只记 snapshot
     ctx1 = AlertContext(

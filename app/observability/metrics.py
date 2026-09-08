@@ -236,6 +236,12 @@ METRIC_DYNAMIC_PROMPT_TOTAL = "otc_agent_dynamic_prompt_total"  # D2.5 / ADR 001
 METRIC_CANARY_TRAFFIC_TOTAL = "otc_agent_canary_traffic_total"  # G5.1 / F4.2：按 is_canary 区分进入的请求
 METRIC_HTTP_RESPONSE_TOTAL = "otc_agent_http_total"  # ADR 0019 P0：HTTP 5xx 暴增告警依赖
 METRIC_DRY_RUN_INTERCEPT_TOTAL = "otc_agent_dry_run_intercept_total"  # F4.1 shadow：写类调用被 dry-run 拦截
+METRIC_OPTION_BACKEND_MISSING_CONTEXT_TOTAL = (
+    "otc_agent_option_backend_missing_context_total"
+)
+METRIC_OPTION_BACKEND_EMPTY_RESULT_TOTAL = (
+    "otc_agent_option_backend_empty_result_total"
+)
 
 
 def emit_node_completed(node: str, status: str = "ok", elapsed_ms: int | None = None) -> None:
@@ -262,6 +268,16 @@ def emit_intent_latency(product_type: str, intent: str, elapsed_ms: int) -> None
 def emit_fallback(reason: str = "unknown") -> None:
     """fallback render 触发。reason: cascade_fail / zero_match / hitl_card / error_fallback"""
     get_collector().inc_counter(METRIC_FALLBACK_TOTAL, {"reason": reason})
+
+
+def emit_option_backend_missing_context() -> None:
+    """期权后端调用因机器人上下文缺失而被阻止。"""
+    get_collector().inc_counter(METRIC_OPTION_BACKEND_MISSING_CONTEXT_TOTAL)
+
+
+def emit_option_backend_empty_result() -> None:
+    """期权后端返回了空的业务结果。"""
+    get_collector().inc_counter(METRIC_OPTION_BACKEND_EMPTY_RESULT_TOTAL)
 
 
 def emit_hitl(node: str) -> None:
@@ -393,6 +409,8 @@ __all__ = [
     "emit_node_completed",
     "emit_intent_latency",
     "emit_fallback",
+    "emit_option_backend_missing_context",
+    "emit_option_backend_empty_result",
     "emit_hitl",
     "emit_llm_call",
     "emit_llm_tokens",
@@ -409,4 +427,6 @@ __all__ = [
     "METRIC_LLM_TOKENS",
     "METRIC_HTTP_RESPONSE_TOTAL",
     "METRIC_DRY_RUN_INTERCEPT_TOTAL",
+    "METRIC_OPTION_BACKEND_MISSING_CONTEXT_TOTAL",
+    "METRIC_OPTION_BACKEND_EMPTY_RESULT_TOTAL",
 ]

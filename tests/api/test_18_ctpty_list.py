@@ -1,7 +1,7 @@
 """18. 企微群绑定交易对手查询  GET /api/internal/agent/getCtptyListByChatRoomId"""
 from __future__ import annotations
 
-from _utils import check, get, report, COM_AID, COM_SUB
+from _utils import COM_AID, COM_SUB, check, get, report
 
 print("18. 企微群绑定交易对手查询  GET /api/internal/agent/getCtptyListByChatRoomId")
 

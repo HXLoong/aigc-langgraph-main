@@ -48,6 +48,14 @@ def _patch(
     fake_base = MagicMock()
     fake_base.with_structured_output = MagicMock(return_value=fake_llm)
     monkeypatch.setattr(module, fn, lambda: fake_base)
+    if hasattr(module, "call_option_backend"):
+        monkeypatch.setattr(
+            module,
+            "call_option_backend",
+            AsyncMock(
+                return_value={"api_code": 0, "api_result": "backend reply"}
+            ),
+        )
 
 
 def _patch_intent(monkeypatch: pytest.MonkeyPatch, intent_type: str) -> None:

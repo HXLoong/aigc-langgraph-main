@@ -6,7 +6,14 @@ OTC_API_BASE_URL 从 .env 读取，指向真实后端地址。
 """
 from __future__ import annotations
 
-import argparse, asyncio, json, os, re, sys, time
+import argparse
+import asyncio
+import json
+import os
+import re
+import sys
+import time
+import uuid
 from pathlib import Path
 
 _DOTENV = Path(__file__).resolve().parent.parent / ".env"
@@ -108,8 +115,10 @@ async def run_langgraph_pipeline(*, item, **kwargs):
     turns_data = inp.get("turns", [])
     cp = InMemorySaver()
     graph = build_main_graph(cp)
-    config = {"configurable": {"thread_id": f"eval-{item.id}"}}
+    conversation_id = str(uuid.uuid4())
+    config = {"configurable": {"thread_id": conversation_id}}
     results, prev = [], None
+    failure: dict | None = None
     for t in turns_data:
         # 多轮之间加 sleep 避开后端 dedup（仅对第 2 轮起生效）
         if results and _TURN_INTERVAL_SECONDS > 0:
@@ -192,6 +201,19 @@ async def run_langgraph_pipeline(*, item, **kwargs):
         tr["raw_content"] = t.get("raw_content", "")
         results.append(tr)
         prev = tr.get("reply_text") or ""
+
+        has_node_error = tr.get("error") is not None
+        api_code = tr.get("api_code")
+        has_backend_error = api_code is not None and api_code != 0
+        if has_node_error or has_backend_error:
+            failure = {
+                "turn": tr["turn"],
+                "kind": "node_error" if has_node_error else "backend_error",
+                "api_code": api_code,
+                "error": tr.get("error"),
+                "reply_text": tr.get("reply_text", ""),
+            }
+            break
     lines = []
     for r in results:
         l = f"[第{r['turn']}轮] 机器人回复: {r['reply_text'] or '(无回复)'}"
@@ -209,7 +231,15 @@ async def run_langgraph_pipeline(*, item, **kwargs):
         if r.get("error"):
             tl += f" | ERROR: {r['error']}"
         trace_log_lines.append(tl)
-    return {"reply_text": "\n".join(lines), "turns": results, "trace_log": "\n".join(trace_log_lines)}
+    output = {
+        "reply_text": "\n".join(lines),
+        "turns": results,
+        "trace_log": "\n".join(trace_log_lines),
+    }
+    if failure is not None:
+        output["failure"] = failure
+        output["remaining_turns"] = len(turns_data) - len(results)
+    return output
 
 # ── Judge ──
 # #159 裁决：judge 提示词纳入 ADR 0003 版本化（app/prompts/judge/option_judge.md），
@@ -269,18 +299,27 @@ def judge_by_deepseek(*, output, expected_output, metadata=None, **kwargs):
     overview = (metadata or {}).get("overview","")
     user = f"## 测试用例\n{overview}\n\n## 实际回复\n{actual}\n\n## 期望回复\n{expected_output}\n\n请评分："
     client = Anthropic()
-    resp = client.messages.create(
-        model=os.environ.get("ANTHROPIC_MODEL","deepseek-v4-flash"),
-        max_tokens=2048,
-        system=JUDGE,
-        messages=[{"role":"user","content":user}],
-    )
+    request = {
+        "model": os.environ.get("ANTHROPIC_MODEL","deepseek-v4-flash"),
+        "max_tokens": 2048,
+        "system": JUDGE,
+        "messages": [{"role":"user","content":user}],
+    }
+    resp = client.messages.create(**request, thinking={"type":"disabled"})
     texts = []
     for block in resp.content:
         if getattr(block, "type", "") == "text":
             texts.append(block.text)
     text = "".join(texts).strip()
     result = _parse_judge_json(text)
+    if not result and getattr(resp, "stop_reason", "") == "max_tokens":
+        resp = client.messages.create(**request, thinking={"type":"disabled"})
+        text = "".join(
+            block.text
+            for block in resp.content
+            if getattr(block, "type", "") == "text"
+        ).strip()
+        result = _parse_judge_json(text)
     if not result:
         result = {"pass":False,"score":0.0,"reason":f"JSON解析失败:{text[:100]}"}
     from langfuse.experiment import Evaluation

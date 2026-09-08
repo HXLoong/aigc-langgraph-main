@@ -189,10 +189,12 @@ async def test_option_backend_missing_context_short_circuits(
         option_backend, "OptionClientHttpx",
         _make_real_option_client_with_mock_api,
     )
-    result = await option_backend.call_option_backend(
-        {"raw_text": "x"}, intent="new_inquiry"
-    )
-    assert result == {}
+    from app.tools.exceptions import MissingBackendContextError
+
+    with pytest.raises(MissingBackendContextError):
+        await option_backend.call_option_backend(
+            {"raw_text": "x"}, intent="new_inquiry"
+        )
 
 
 # ============================================================
