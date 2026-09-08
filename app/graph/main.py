@@ -5,13 +5,14 @@ M2 阶段：intent_route 已实现真三层路由（ADR 0015）；子图逐一�
 """
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 from typing import Any
 
-from langchain_core.runnables import RunnableLambda
+from langchain_core.runnables import RunnableConfig
 from langgraph.checkpoint.base import BaseCheckpointSaver
 from langgraph.graph import END, START, StateGraph
 from langgraph.graph.state import CompiledStateGraph
+from langgraph.types import Overwrite
 
 from app.graph.state import AgentState
 from app.nodes.fallback import fallback
@@ -73,9 +74,25 @@ def _route_after_intent(state: AgentState) -> str:
 # ============================================================
 
 
-def _business_update(state: AgentState) -> dict[str, Any]:
-    """子图只读历史；避免将旧历史回传给父图的 add reducer 再累加一次。"""
-    return {key: value for key, value in state.items() if key != "history_messages"}
+def _as_subgraph_node(
+    graph: CompiledStateGraph,
+) -> Callable[[AgentState, RunnableConfig], Awaitable[dict[str, Any]]]:
+    """让父图直接接收子图已经合并完成的 reducer 字段。"""
+
+    async def run(state: AgentState, config: RunnableConfig) -> dict[str, Any]:
+        result = await graph.ainvoke(state, config=config)
+        updates: dict[str, Any] = dict(result)
+        for key in ("trace", "history_messages"):
+            if key in result:
+                updates[key] = Overwrite(result[key])
+        return updates
+
+    return run
+
+
+def _reset_turn_trace(_: AgentState) -> dict[str, Any]:
+    """新 turn 开始时清空上一轮 trace。"""
+    return {"trace": Overwrite([])}
 
 
 def build_main_graph(
@@ -85,13 +102,11 @@ def build_main_graph(
     """组装并编译主图（DSL v2 拓扑）。
 
     流程：
-        START -> ingest -> [route_entry]
-            quick_inquiry | existing_command_query -> persist
-            pre_route -> intent_route -> swap | option | option_close | fallback
-                -> persist_intent -> persist
-        persist -> render -> record_history -> END
-
-    FastAPI lifespan injects message_client_factory to enable message persistence.
+        START → reset_turn_trace → ingest → [route_entry] →
+            quick_inquiry | existing_command_query          （前置分支,直达 persist）
+          | pre_route → intent_route → [route_after_intent] →
+                swap | option | option_close | fallback
+        → persist → render → END
 
     cascade 防御：
     - intent_route 写 state['error'] → 跳 fallback
@@ -99,21 +114,23 @@ def build_main_graph(
     """
     g: StateGraph = StateGraph(AgentState)
 
+    g.add_node("reset_turn_trace", _reset_turn_trace)
     g.add_node("ingest", ingest)
     g.add_node("quick_inquiry", quick_inquiry)
     g.add_node("existing_command_query", existing_command_query)
     g.add_node("pre_route", pre_route)
     g.add_node("intent_route", intent_route)
-    g.add_node("swap", build_swap_graph() | RunnableLambda(_business_update))
-    g.add_node("option", build_option_graph() | RunnableLambda(_business_update))
-    g.add_node("option_close", build_close_graph() | RunnableLambda(_business_update))
+    g.add_node("swap", _as_subgraph_node(build_swap_graph()))
+    g.add_node("option", _as_subgraph_node(build_option_graph()))
+    g.add_node("option_close", _as_subgraph_node(build_close_graph()))
     g.add_node("fallback", fallback)
     g.add_node("persist_intent", RunnableLambda(make_persist_intent(message_client_factory)))
     g.add_node("persist", persist)
     g.add_node("render", render)
     g.add_node("record_history", record_history)
 
-    g.add_edge(START, "ingest")
+    g.add_edge(START, "reset_turn_trace")
+    g.add_edge("reset_turn_trace", "ingest")
     g.add_conditional_edges(
         "ingest",
         _route_entry,

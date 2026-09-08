@@ -79,6 +79,9 @@ async def test_main_graph_e2e_swap_keyword(
             "room_id": "r-smoke",
             "message_id": 1,
             "message_content": "做一笔互换 100 手",
+            "history_messages": [
+                {"role": "user", "content": "上一轮消息"},
+            ],
         }
     )
 
@@ -96,6 +99,10 @@ async def test_main_graph_e2e_swap_keyword(
     assert required.issubset(set(trace_nodes)), (
         f"missing nodes: {required - set(trace_nodes)} in {trace_nodes}"
     )
+    assert trace_nodes.count("ingest") == 1
+    assert trace_nodes.count("pre_route") == 1
+    assert trace_nodes.count("intent_route") == 1
+    assert len(final["history_messages"]) == 1
 
     assert final.get("product_type") == "swap"
     assert final.get("intent") == "place_order_request"
@@ -137,6 +144,41 @@ async def test_main_graph_e2e_unknown_routes_to_fallback(
     assert "fallback" in trace_nodes
     assert "_swap_stub" not in trace_nodes
     assert final.get("product_type") == "unknown"
+
+
+@pytest.mark.asyncio
+async def test_main_graph_trace_is_isolated_per_turn(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """同一会话的下一轮只返回当轮 trace，不重复携带上一轮节点。"""
+    from langgraph.checkpoint.memory import InMemorySaver
+
+    from app.nodes import intent_route as intent_route_module
+
+    async def fake_classify(text: str, quote_content: str | None = None) -> str:
+        return "unknown"
+
+    monkeypatch.setattr(intent_route_module, "_classify_with_llm", fake_classify)
+
+    graph = build_main_graph(InMemorySaver())
+    config = {"configurable": {"thread_id": "trace-turns"}}
+    base = {
+        "conversation_id": "trace-turns",
+        "user_id": "u-smoke",
+        "room_id": "r-smoke",
+    }
+    first = await graph.ainvoke(
+        {**base, "raw_text": "第一轮", "message_id": 1, "message_content": "第一轮"},
+        config=config,
+    )
+    second = await graph.ainvoke(
+        {**base, "raw_text": "第二轮", "message_id": 2, "message_content": "第二轮"},
+        config=config,
+    )
+
+    expected = ["ingest", "pre_route", "intent_route", "fallback", "persist", "render"]
+    assert [entry.node for entry in first["trace"]] == expected
+    assert [entry.node for entry in second["trace"]] == expected
 
 
 @pytest.mark.asyncio
