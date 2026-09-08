@@ -88,6 +88,9 @@ python scripts/ai_test_langgraph/automation_runner_server.py
   同一会话；支持引用 LangGraph 回复、模拟 `@机器人`，并展示完整 `outputs`。
 - “回归队列”可选择多个仓库内 JSONL 数据集，任务按加入顺序串行执行。
 
+开发环境启用 LangFuse 后，用例详情会在 `conversation_id` 右侧显示每次请求对应的
+可点击 `tracing_id`；多轮用例会显示多个独立 Trace。
+
 自由对话的连接和身份配置在会话建立后锁定，点击“新对话”即可重新配置。页面不会
 在服务端保存对话记录。使用 `--no-open` 可禁止自动打开浏览器，使用 `--port` 可修改
 端口。

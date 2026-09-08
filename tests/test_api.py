@@ -8,6 +8,7 @@ from uuid import UUID
 import pytest
 from fastapi.testclient import TestClient
 
+import app.api.routes as api_routes
 from app.graph.state import TraceEntry
 from app.main import app
 from app.subgraphs.option import backend as option_backend
@@ -145,6 +146,33 @@ def test_workflows_run_returns_conversation_id_and_answer_at_top_level(
     assert body["conversationId"] == "c-top-level-001"
     assert isinstance(body["answer"], str)
     assert body["answer"] == body["data"]["outputs"]["reply_text"]
+
+
+def test_development_response_exposes_matching_langfuse_trace_link(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    handler = object()
+
+    async def fake_trace_context(trace_id: str) -> tuple[object, str]:
+        return handler, f"https://langfuse.test/project/p/traces/{trace_id}"
+
+    monkeypatch.setattr(api_routes, "_development_langfuse_trace", fake_trace_context)
+
+    response = client.post(
+        "/v1/workflows/run",
+        json={
+            "inputs": {"raw_content": "测试", "message_id": 1},
+            "response_mode": "blocking",
+            "user": "test-user",
+        },
+    )
+
+    outputs = response.json()["data"]["outputs"]
+    assert outputs["trace_url"].endswith(outputs["trace_id"])
+    graph = client.app.state.main_graph
+    assert graph.config is not None
+    assert graph.config["callbacks"] == [handler]
 
 
 def test_streaming_mode_rejected(client: TestClient) -> None:

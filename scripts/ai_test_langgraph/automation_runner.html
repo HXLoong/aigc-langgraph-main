@@ -1434,8 +1434,9 @@
 
     .case-summary {
       display: grid;
-      grid-template-columns: minmax(110px, .55fr) minmax(280px, 1.8fr) auto;
+      grid-template-columns: minmax(110px, .55fr) repeat(2, minmax(280px, 1.8fr));
       align-items: center;
+      justify-items: start;
       gap: 12px 24px;
       padding: 15px 20px;
       border-bottom: 1px solid var(--line);
@@ -1464,6 +1465,13 @@
       text-overflow: ellipsis;
       white-space: nowrap;
     }
+
+    .case-summary-value a {
+      color: var(--accent);
+      text-decoration: none;
+    }
+
+    .case-summary-value a:hover { text-decoration: underline; }
 
     .case-summary-action {
       display: flex;
@@ -2611,6 +2619,39 @@
       return item;
     }
 
+    function makeTraceSummaryItem(turns) {
+      const item = document.createElement("div");
+      item.className = "case-summary-item";
+      const name = document.createElement("span");
+      name.className = "case-summary-label";
+      name.textContent = "tracing_id";
+      const content = document.createElement("span");
+      content.className = "case-summary-value";
+      const traces = turns
+        .map((turn) => ({id: turn.outputs?.trace_id, url: turn.outputs?.trace_url}))
+        .filter((trace) => trace.id);
+      if (!traces.length) {
+        content.textContent = "-";
+      } else {
+        traces.forEach((trace, index) => {
+          if (index) content.append(" / ");
+          if (trace.url) {
+            const link = document.createElement("a");
+            link.href = trace.url;
+            link.target = "_blank";
+            link.rel = "noopener";
+            link.title = "查看 LangFuse Trace";
+            link.textContent = trace.id;
+            content.appendChild(link);
+          } else {
+            content.append(trace.id);
+          }
+        });
+      }
+      item.append(name, content);
+      return item;
+    }
+
     function renderCaseFilters(container, job) {
       const selected = caseFilters.get(job.job_id) || "all";
       const filters = [["all", "全部"], ["success", "成功"], ["failed", "失败"], ["active", "进行中 / 等待"]];
@@ -2776,11 +2817,13 @@
 
       const body = $("case-dialog-body");
       body.replaceChildren();
+      const turns = result.turns || [];
       const summary = document.createElement("div");
       summary.className = "case-summary";
       summary.append(
         makeCaseSummaryItem("耗时", `${Number(result.duration || 0).toFixed(2)}s`),
-        makeCaseSummaryItem("conversation_id", result.conversation_id || "-")
+        makeCaseSummaryItem("conversation_id", result.conversation_id || "-"),
+        makeTraceSummaryItem(turns)
       );
       if (result.conversation_url) {
         const action = document.createElement("div");
@@ -2805,7 +2848,6 @@
 
       const turnList = document.createElement("div");
       turnList.className = "turn-list";
-      const turns = result.turns || [];
       if (!turns.length) {
         const empty = document.createElement("div");
         empty.className = "case-detail-empty";

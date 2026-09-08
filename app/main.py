@@ -58,6 +58,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     app.state.main_graph = build_main_graph(
         checkpointer=checkpointer,
         message_client_factory=message_client_factory,
+        attach_langfuse_callbacks=settings.environment != "development",
     )
     logger.info("main graph compiled")
 
