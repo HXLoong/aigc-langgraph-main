@@ -3,8 +3,7 @@ from __future__ import annotations
 
 import pytest
 
-from app.nodes.render import _ZERO_HIT_TMPL, render
-
+from app.nodes.render import render
 
 # ============================================================
 # Bug2: make_initial_state 默认值 tickers=[] / place_params={} 不应触发零命中
@@ -62,6 +61,52 @@ async def test_render_option_place_order_does_not_show_swap_params() -> None:
     assert "互换订单参数" not in reply, (
         f"option place_order 不应走互换渲染，实际: {reply!r}"
     )
+
+
+@pytest.mark.asyncio
+async def test_option_inquiry_without_backend_result_never_fabricates_quote() -> None:
+    state: dict = {
+        "product_type": "option",
+        "intent": "new_inquiry",
+        "tickers": [{"windCode": "300773.SZ", "insShtDesc": "拉卡拉"}],
+        "place_params": {
+            "expected_action": "inquiry",
+            "orderList": [
+                {
+                    "stockCode": "300773.SZ",
+                    "optionType": "欧式看涨",
+                    "tenor": None,
+                    "strikePercentage": 80.0,
+                }
+            ],
+        },
+    }
+
+    update = await render(state)  # type: ignore[arg-type]
+    reply = update["reply_text"]
+
+    assert reply == "期权服务未返回有效结果，本次未生成报价，请稍后重试或联系交易员。"
+    assert "6.9%" not in reply
+    assert "场外期权询价详情" not in reply
+
+
+@pytest.mark.asyncio
+async def test_option_backend_result_has_priority_and_is_passed_through_exactly() -> None:
+    card = "-----场外期权询价详情-----\n单号：Q-001\n期限：【待补充】"
+    state: dict = {
+        "product_type": "option",
+        "intent": "new_inquiry",
+        "tickers": [],
+        "ticker_hitl_candidates": [
+            {"keyword": "拉卡拉", "candidates": [{"windCode": "300773.SZ"}]}
+        ],
+        "place_params": {"expected_action": "inquiry", "orderList": []},
+        "api_result": card,
+    }
+
+    update = await render(state)  # type: ignore[arg-type]
+
+    assert update["reply_text"] == card
 
 
 # ============================================================

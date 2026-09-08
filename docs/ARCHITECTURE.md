@@ -146,4 +146,4 @@ golden 三桶（B 业务种子 / C 对抗改写 / D 客户真实输入,350+ 条�
   （+ 可选 LangFuse）
 
 更多决策沿革见 `docs/adr/`（ADR 0000–0021），健康度基线见
-`docs/architecture-maturity-review-2026-08.md`。
+`docs/archive/reports/architecture-maturity-review-2026-08.md`。

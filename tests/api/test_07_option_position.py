@@ -1,7 +1,7 @@
 """07. 可平仓合约列表  POST /api/internal/agent/option/position"""
 from __future__ import annotations
 
-from _utils import check, post, report, COM_AID, COM_SUB
+from _utils import COM_AID, COM_SUB, check, post, report
 
 print("07. 可平仓合约列表  POST /api/internal/agent/option/position")
 

@@ -10,8 +10,6 @@ from __future__ import annotations
 
 import math
 
-import pytest
-
 from app.observability.alerts import (
     THRESHOLDS,
     AlertContext,
@@ -21,7 +19,6 @@ from app.observability.alerts import (
     evaluate,
     parse_prometheus_metrics,
 )
-
 
 # ============================================================
 # _extract_le

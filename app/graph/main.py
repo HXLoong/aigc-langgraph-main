@@ -25,11 +25,14 @@ from app.nodes.fast_query import (
 from app.nodes.ingest import ingest
 from app.nodes.intent_route import intent_route
 from app.nodes.persist import persist
+from app.nodes.persist_intent import make_persist_intent
 from app.nodes.pre_route import pre_route
+from app.nodes.record_history import record_history
 from app.nodes.render import render
 from app.subgraphs.close import build_close_graph
 from app.subgraphs.option import build_option_graph
 from app.subgraphs.swap import build_swap_graph
+from app.tools.message_client import MessageClient
 
 # ============================================================
 # 路由函数（含 cascade 防御 + unknown 兜底）
@@ -94,6 +97,7 @@ def _reset_turn_trace(_: AgentState) -> dict[str, Any]:
 
 def build_main_graph(
     checkpointer: BaseCheckpointSaver | None = None,
+    message_client_factory: Callable[[], MessageClient] | None = None,
 ) -> CompiledStateGraph:
     """组装并编译主图（DSL v2 拓扑）。
 
@@ -120,8 +124,10 @@ def build_main_graph(
     g.add_node("option", _as_subgraph_node(build_option_graph()))
     g.add_node("option_close", _as_subgraph_node(build_close_graph()))
     g.add_node("fallback", fallback)
+    g.add_node("persist_intent", RunnableLambda(make_persist_intent(message_client_factory)))
     g.add_node("persist", persist)
     g.add_node("render", render)
+    g.add_node("record_history", record_history)
 
     g.add_edge(START, "reset_turn_trace")
     g.add_edge("reset_turn_trace", "ingest")
@@ -145,17 +151,14 @@ def build_main_graph(
             "fallback": "fallback",
         },
     )
-    for sub in (
-        "swap",
-        "option",
-        "option_close",
-        "fallback",
-        "quick_inquiry",
-        "existing_command_query",
-    ):
+    for sub in ("swap", "option", "option_close", "fallback"):
+        g.add_edge(sub, "persist_intent")
+    for sub in ("quick_inquiry", "existing_command_query"):
         g.add_edge(sub, "persist")
+    g.add_edge("persist_intent", "persist")
     g.add_edge("persist", "render")
-    g.add_edge("render", END)
+    g.add_edge("render", "record_history")
+    g.add_edge("record_history", END)
 
     if checkpointer is not None:
         compiled = g.compile(checkpointer=checkpointer)

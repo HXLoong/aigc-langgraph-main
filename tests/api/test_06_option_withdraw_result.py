@@ -1,7 +1,7 @@
 """06. 期权撤单结果查询  GET /api/internal/agent/option/order/withdrawResult"""
 from __future__ import annotations
 
-from _utils import check, get, report, OPT_AID, OPT_SUB
+from _utils import OPT_AID, OPT_SUB, check, get, report
 
 print("06. 期权撤单结果查询  GET /api/internal/agent/option/order/withdrawResult")
 

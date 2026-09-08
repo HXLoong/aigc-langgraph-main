@@ -55,6 +55,38 @@ class TestBuildUserMessage:
 
 @pytest.mark.asyncio
 class TestOptionIntentNode:
+    @pytest.mark.parametrize("card_marker", [
+        "询价详情", "如需下单", "名义本金", "期权费率", "标的代码",
+        "已收到您的下单指令", "请引用本消息",
+    ])
+    async def test_inquiry_tenor_followup_keeps_new_inquiry(
+        self, monkeypatch: pytest.MonkeyPatch, card_marker: str,
+    ) -> None:
+        _patch_llm(monkeypatch, "new_inquiry")
+        result = await option_intent({
+            "raw_text": "1M",
+            "quote_content": f"{card_marker}\nQ-20260907-000001\n请补充期限",
+        })
+        assert result["intent"] == "new_inquiry"
+
+    @pytest.mark.parametrize("raw,intent", [
+        ("200万 市价", "place_order_from_quote"),
+        ("确认", "confirm_order"),
+        ("取消", "cancel_order_request"),
+        ("撤销 OPT-20260907-000001", "request_cancel_order"),
+        ("确认撤销", "confirm_cancel_order"),
+        ("限价改为10", "place_order_from_quote"),
+        ("确认修改", "place_order_from_quote"),
+    ])
+    async def test_quoted_inquiry_card_preserves_semantic_intent(
+        self, monkeypatch: pytest.MonkeyPatch, raw: str, intent: str,
+    ) -> None:
+        _patch_llm(monkeypatch, intent)
+        result = await option_intent({
+            "raw_text": raw, "quote_content": "询价详情 Q-20260907-000001 如需下单请引用本消息",
+        })
+        assert result["intent"] == intent
+
     async def test_classifies_new_inquiry(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:

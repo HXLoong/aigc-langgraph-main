@@ -40,6 +40,14 @@ def _patch(
     fake_base = MagicMock()
     fake_base.with_structured_output = MagicMock(return_value=fake_llm)
     monkeypatch.setattr(module, fn, lambda: fake_base)
+    if hasattr(module, "call_close_backend"):
+        monkeypatch.setattr(
+            module,
+            "call_close_backend",
+            AsyncMock(
+                return_value={"api_code": 0, "api_result": "backend reply"}
+            ),
+        )
 
 
 @pytest.mark.asyncio

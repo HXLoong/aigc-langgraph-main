@@ -132,3 +132,9 @@ secrets/
 
 # 本地练手目录(培训 Day 4 练习产物,不入库)
 aka/
+
+# ===== 其他 =====
+场外交易-hxl-zjh.yml
+Dify与LangGraph期权平仓流程差异及重构方案.md
+LangGraph期权开仓重构实施计划.md
+/.pytest-tmp/

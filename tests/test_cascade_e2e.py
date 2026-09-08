@@ -24,7 +24,6 @@ from app.subgraphs.option import intent as option_intent_module
 from app.subgraphs.swap import build_swap_graph
 from app.subgraphs.swap import intent as swap_intent_module
 
-
 # ============================================================
 # Helpers
 # ============================================================

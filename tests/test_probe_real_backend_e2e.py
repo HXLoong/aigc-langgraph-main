@@ -35,7 +35,6 @@ from scripts.probe_real_backend_e2e import (  # noqa: E402
     write_outputs,
 )
 
-
 # ============================================================
 # CASES 库基本约束
 # ============================================================
@@ -209,7 +208,7 @@ def _run(*args: str, env_extra: dict | None = None, timeout: int = 30) -> subpro
     env.pop("EVAL_ROOM_ID", None)
     env.update(env_extra or {})
     return subprocess.run(
-        ["python3", str(SCRIPT), *args],
+        [sys.executable, str(SCRIPT), *args],
         cwd=ROOT, env=env, capture_output=True, text=True, timeout=timeout,
     )
 

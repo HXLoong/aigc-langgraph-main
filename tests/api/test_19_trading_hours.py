@@ -1,7 +1,7 @@
 """19. 互换交易时间配置查询  GET /api/uniweb/rpa/trs/tradingHoursConfig"""
 from __future__ import annotations
 
-from _utils import check, get, report, COM_AID, COM_SUB
+from _utils import COM_AID, COM_SUB, check, get, report
 
 print("19. 互换交易时间配置查询  GET /api/uniweb/rpa/trs/tradingHoursConfig")
 

@@ -36,6 +36,7 @@ AUDIT_LOG="${PROJECT_DIR}/.rollback-audit.log"
 METRICS_URL_DEFAULT="http://localhost:8000/metrics"
 WAIT_SECONDS_DEFAULT=30
 NON_CANARY_TOLERANCE_DEFAULT=5  # 30s 内 canary 流量增量超过此值 → 警告
+PYTHON_BIN="${PYTHON_BIN:-python3}"
 
 REASON=""
 METRICS_URL="$METRICS_URL_DEFAULT"
@@ -137,7 +138,7 @@ confirm() {
 # 用 python 解析 prometheus 文本（避免 bash grep/awk 处理 label 脆弱）
 parse_canary_counts() {
     local url="$1"
-    python3 - "$url" <<'PY' 2>&1
+    "$PYTHON_BIN" - "$url" <<'PY' 2>&1
 import sys
 import urllib.request
 import urllib.error

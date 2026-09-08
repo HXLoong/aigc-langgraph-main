@@ -1,8 +1,9 @@
 """POST /v1/workflows/run — 兼容 Dify Workflow Run API（ADR 0001 D3）。
 
 设计要点：
-- Body: {inputs: {...}, response_mode: "blocking", user: "<conversation_id>"}
-- Response: Dify 协议形态 — {workflow_run_id, task_id, data: {outputs, status, ...}}
+- Body: {conversation_id?: "...", inputs: {...}, response_mode: "blocking", user: "..."}
+- Response: Dify 协议形态 + Java 顶层字段
+  {workflow_run_id, task_id, conversationId, answer, data: {outputs, status, ...}}
 - 仅支持 blocking 模式（Java StockBotMessageServiceImpl.java:1646 写死 blocking）
 - inputs 字段透传 9 个机器人上下文 + raw_text
 - outputs 字段含 intent / product_type / 业务对象（M1 阶段含 stub 数据）
@@ -33,8 +34,11 @@ class DifyWorkflowRunRequest(BaseModel):
     model_config = ConfigDict(extra="allow")
 
     inputs: dict[str, Any] = Field(default_factory=dict)
+    conversation_id: str | None = Field(
+        default=None, description="Java 会话 ID；非空时原样复用，兼容 inputs 中的两种别名",
+    )
     response_mode: Literal["blocking", "streaming"] = "blocking"
-    user: str  # Java 侧传 conversation_id
+    user: str  # 调用方的稳定用户标识；不作为 LangGraph conversation_id
 
 
 class DifyWorkflowRunData(BaseModel):
@@ -57,10 +61,12 @@ class DifyWorkflowRunData(BaseModel):
 class DifyWorkflowRunResponse(BaseModel):
     """Dify Workflow Run API 响应。"""
 
-    model_config = ConfigDict(extra="allow")
+    model_config = ConfigDict(extra="allow", populate_by_name=True)
 
     workflow_run_id: str
     task_id: str
+    conversation_id: str = Field(alias="conversationId")
+    answer: str
     data: DifyWorkflowRunData
 
 
@@ -69,7 +75,11 @@ class DifyWorkflowRunResponse(BaseModel):
 # ============================================================
 
 
-@router.post("/v1/workflows/run", response_model=DifyWorkflowRunResponse)
+@router.post(
+    "/v1/workflows/run",
+    response_model=DifyWorkflowRunResponse,
+    responses={502: {"description": "消息会话与意图写回 Java 失败，不返回正常 answer"}},
+)
 async def run_workflow(
     req: DifyWorkflowRunRequest, request: Request
 ) -> DifyWorkflowRunResponse:
@@ -85,18 +95,33 @@ async def run_workflow(
     if graph is None:
         raise HTTPException(status_code=503, detail="Main graph not initialized")
 
+    # 把 inputs 解构成 AgentState（按 contracts §2.1 §3.1 的 9 个机器人上下文字段）
+    try:
+        initial_state = _inputs_to_state(req.inputs)
+        conversation_id = _resolve_conversation_id(req)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    # 所有兼容位置均为空才生成一次纯 UUID；已有 ID 不做任何格式转换。
+    if conversation_id is None:
+        conversation_id = str(uuid.uuid4())
+    initial_state["conversation_id"] = conversation_id
+
     workflow_run_id = str(uuid.uuid4())
     task_id = str(uuid.uuid4())
     created_at = int(time.time())
 
-    # 把 inputs 解构成 AgentState（按 contracts §2.1 §3.1 的 9 个机器人上下文字段）
-    initial_state = _inputs_to_state(req.inputs, fallback_conversation_id=req.user)
+    # Dify 顶层 user 会成为工作流内的 sys.user_id；Java 业务接口也把它
+    # 作为客户唯一 ID。显式 inputs.userId/user_id 非空时仍保持最高优先级。
+    user_id = str(initial_state.get("user_id") or "").strip()
+    if not user_id:
+        initial_state["user_id"] = req.user.strip()
 
     # ADR 0004/#156：单次调用关联 ID——node_trace.trace_id 与 LangFuse trace metadata 同源
     trace_id = uuid.uuid4().hex
     initial_state["trace_id"] = trace_id
 
-    config = _build_run_config(conversation_id=req.user, trace_id=trace_id)
+    config = _build_run_config(conversation_id=conversation_id, trace_id=trace_id)
 
     t0 = time.perf_counter()
     try:
@@ -122,6 +147,14 @@ async def run_workflow(
     )
     finished_at = int(time.time())
 
+    # 必须等图完成：persist 已记录 set-intent 的失败 trace 后才返回 502。
+    # 使用固定文案，不透传后端响应、URL、鉴权信息或异常堆栈。
+    error = final_state.get("error")
+    if error is not None and error.node == "persist_intent":
+        raise HTTPException(
+            status_code=502, detail="消息会话与意图持久化失败，请稍后重试。",
+        )
+
     outputs = _state_to_outputs(final_state)
 
     data = DifyWorkflowRunData(
@@ -135,7 +168,11 @@ async def run_workflow(
         finished_at=finished_at,
     )
     return DifyWorkflowRunResponse(
-        workflow_run_id=workflow_run_id, task_id=task_id, data=data
+        workflow_run_id=workflow_run_id,
+        task_id=task_id,
+        conversation_id=conversation_id,
+        answer=final_state.get("reply_text") or "",
+        data=data,
     )
 
 
@@ -159,59 +196,64 @@ def _build_run_config(conversation_id: str, trace_id: str) -> dict:
 
 
 # Dify inputs 字段名（Java 透传）→ AgentState 字段名 映射
-# DSL v2（2026-08 主干工作流 start 节点）新增:fast_query / at_bot /
-# existing_command / bot_name / operator_user_id / option_counterparties /
-# swap_counterparties;旧 9 字段保留兼容（userId/messageContent 仍接受）。
-_INPUT_FIELD_MAP = {
-    "rawContent": "raw_text",
-    "raw_content": "raw_text",
-    "conversationId": "conversation_id",
-    "conversation_id": "conversation_id",
-    "messageId": "message_id",
-    "message_id": "message_id",
-    "userId": "user_id",
-    "roomId": "room_id",
-    "room_id": "room_id",
-    "guid": "guid",
-    "messageContent": "message_content",
-    "quoteContent": "quote_content",
-    "quote_content": "quote_content",
-    "quoteAppinfo": "quote_appinfo",
-    "quote_appinfo": "quote_appinfo",
-    # -------- DSL v2 新入参 --------
-    "fast_query": "fast_query",
-    "fastQuery": "fast_query",
-    "at_bot": "at_bot",
-    "atBot": "at_bot",
-    "existing_command": "existing_command",
-    "existingCommand": "existing_command",
-    "bot_name": "bot_name",
-    "botName": "bot_name",
-    "operator_user_id": "operator_user_id",
-    "operatorUserId": "operator_user_id",
-    # 对手预查 JSON 串（pre_route 解析成精简列表）
-    "option_counterparties": "option_counterparties_raw",
-    "optionCounterparties": "option_counterparties_raw",
-    "swap_counterparties": "swap_counterparties_raw",
-    "swapCounterparties": "swap_counterparties_raw",
-    # 输入文件（Dify sys.files 等价物;全图片/全 Excel 分流互换多模态链）
-    "files": "input_files",
-    "sysFiles": "input_files",
+_INPUT_FIELD_ALIASES = {
+    "raw_text": ("rawContent", "raw_content"),
+    "message_id": ("messageId", "message_id"),
+    "user_id": ("userId", "user_id"),
+    "room_id": ("roomId", "room_id"),
+    "guid": ("guid",),
+    "message_content": ("messageContent", "message_content"),
+    "quote_content": ("quoteContent", "quote_content"),
+    "quote_appinfo": ("quoteAppinfo", "quote_appinfo"),
+    "fast_query": ("fast_query", "fastQuery"),
+    "at_bot": ("at_bot", "atBot"),
+    "existing_command": ("existing_command", "existingCommand"),
+    "bot_name": ("bot_name", "botName"),
+    "operator_user_id": ("operator_user_id", "operatorUserId"),
+    "option_counterparties_raw": ("option_counterparties", "optionCounterparties"),
+    "swap_counterparties_raw": ("swap_counterparties", "swapCounterparties"),
+    "input_files": ("files", "sysFiles"),
 }
 
 
-def _inputs_to_state(
-    inputs: dict[str, Any], fallback_conversation_id: str
-) -> AgentState:
+def _resolve_conversation_id(req: DifyWorkflowRunRequest) -> str | None:
+    """会话 ID 为不透明字符串：仅判空，非空值按原文比较并保留。"""
+    resolved: str | None = None
+    for location, value in (
+        ("conversation_id", req.conversation_id),
+        ("inputs.conversationId", req.inputs.get("conversationId")),
+        ("inputs.conversation_id", req.inputs.get("conversation_id")),
+    ):
+        if value is None:
+            continue
+        if not isinstance(value, str):
+            raise ValueError(f"conversation_id 必须为字符串: {location}")
+        if not value.strip():
+            continue
+        if resolved is not None and value != resolved:
+            raise ValueError("conversation_id 的非空值冲突")
+        resolved = value
+    return resolved
+
+
+def _inputs_to_state(inputs: dict[str, Any]) -> AgentState:
     """把 Dify inputs 转成 AgentState（接受 camelCase 和 snake_case 两种）。"""
     state: dict[str, Any] = {}
-    for src, dst in _INPUT_FIELD_MAP.items():
-        if src in inputs:
-            state[dst] = inputs[src]
+    for target, aliases in _INPUT_FIELD_ALIASES.items():
+        provided = [(alias, inputs[alias]) for alias in aliases if alias in inputs]
+        if not provided:
+            continue
 
-    # 补默认值
-    if "conversation_id" not in state:
-        state["conversation_id"] = fallback_conversation_id
+        first_alias, first_value = provided[0]
+        conflicting_aliases = [
+            alias for alias, value in provided[1:] if value != first_value
+        ]
+        if conflicting_aliases:
+            alias_names = ", ".join([first_alias, *conflicting_aliases])
+            raise ValueError(f"输入字段 {target} 的别名值冲突: {alias_names}")
+
+        state[target] = first_value
+
     if "raw_text" not in state and "message_content" in state:
         state["raw_text"] = state["message_content"]
     return state  # type: ignore[return-value]

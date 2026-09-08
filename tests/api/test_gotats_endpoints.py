@@ -6,7 +6,6 @@
 from __future__ import annotations
 
 import hashlib
-import json
 import sys
 import time
 from datetime import datetime
@@ -80,7 +79,7 @@ def main():
     results: list[Result] = []
 
     print("=" * 70)
-    print(f"GOATS 全接口连通性测试")
+    print("GOATS 全接口连通性测试")
     print(f"时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
     print("=" * 70)
 
