@@ -82,7 +82,7 @@ Dify 主干工作流 2026-08 版重写了一级路由,本 ADR 的分层结构随
 
 ## 多轮引用语境修正（2026-08-28 二次修订，#167 客户反馈 bug）
 
-客户反馈意图识别 bug；评估（`docs/intent-recognition-assessment-2026-08.md`）定位为 DSL v2 1:1 移植
+客户反馈意图识别 bug；评估（`docs/archive/reports/intent-recognition-assessment-2026-08.md`）定位为 DSL v2 1:1 移植
 丢失了旧 quote_marker 层的多轮工程修复。本次在规则层叠加三处**工程增强**（偏离 DSL 源，特此登记）：
 
 1. **期权语境让位**（`_has_option_context`）：口语化平仓(step2)与互换下单特征(step4)原本不看
