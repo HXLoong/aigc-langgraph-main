@@ -1,4 +1,5 @@
 """swap 子图路由测试 · place_order_request → swap_place_order。"""
+
 from __future__ import annotations
 
 from unittest.mock import AsyncMock, MagicMock
@@ -6,6 +7,7 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from app.graph.state import TickerCandidate
+from app.subgraphs.swap import backend as swap_backend_module
 from app.subgraphs.swap import build_swap_graph
 from app.subgraphs.swap import intent as intent_module
 from app.subgraphs.swap import place_order as po_module
@@ -38,14 +40,23 @@ def _patch(
     monkeypatch.setattr(module, fn, lambda: fake_base)
 
 
+def _patch_backend(monkeypatch: pytest.MonkeyPatch) -> None:
+    fake_client = MagicMock()
+    fake_client.operate = AsyncMock(return_value=MagicMock(code=0, data={}, msg=""))
+    monkeypatch.setattr(swap_backend_module, "SwapClientHttpx", lambda: fake_client)
+
+
 @pytest.mark.asyncio
 async def test_place_order_request_routes_to_place_order_node(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """place_order_request → swap_place_order 真节点（不再走 todo）。"""
-    _patch_resolver(monkeypatch, [
-        TickerCandidate(windCode="00700.HK", insShtDesc="腾讯控股", from_goats=True),
-    ])
+    _patch_resolver(
+        monkeypatch,
+        [
+            TickerCandidate(windCode="00700.HK", insShtDesc="腾讯控股", from_goats=True),
+        ],
+    )
     _patch(
         monkeypatch,
         intent_module,
@@ -64,11 +75,7 @@ async def test_place_order_request_routes_to_place_order_node(
         ),
         fn="get_qwen_complex",
     )
-    monkeypatch.setattr(
-        po_module,
-        "call_swap_backend",
-        AsyncMock(return_value={"api_code": 0, "api_result": {}}),
-    )
+    _patch_backend(monkeypatch)
 
     graph = build_swap_graph()
     final = await graph.ainvoke(

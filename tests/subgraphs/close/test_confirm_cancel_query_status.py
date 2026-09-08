@@ -26,7 +26,7 @@ def _patch_llm(
     monkeypatch.setattr(module, "get_qwen_thinking", lambda: fake_base)
     monkeypatch.setattr(
         module,
-        "call_option_backend",
+        "call_close_backend",
         AsyncMock(return_value={"api_code": 0, "api_result": "backend reply"}),
     )
     return fake_llm.ainvoke

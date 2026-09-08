@@ -1,0 +1,1628 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "GOATS Mock API",
+    "description": "模拟 GOATS 对客机器人全部 20 个后端接口，供 Apifox 本地调试使用。\n\n全局 Header 参数（每个接口都需要）：\n- clientid: TL_AGENT\n- clientsecret: tltest\n- signature: clientid+timestamp+clientsalt (MD5 16位大写)\n- timestamp: 当前时间戳ms\n\n模拟错误：任意接口追加 ?_error=1 返回 400",
+    "version": "1.0.0",
+    "contact": {}
+  },
+  "servers": [
+    {
+      "url": "http://localhost:8099",
+      "description": "Mock 本地服务"
+    }
+  ],
+  "security": [
+    {
+      "ApiKeyAuth": []
+    }
+  ],
+  "components": {
+    "securitySchemes": {
+      "ApiKeyAuth": {
+        "type": "apiKey",
+        "in": "header",
+        "name": "clientid",
+        "description": "全局认证：clientid + clientsecret + signature + timestamp"
+      }
+    },
+    "schemas": {
+      "ErrCode": {
+        "type": "object",
+        "properties": {
+          "code": { "type": "integer", "example": 200 },
+          "chs": { "type": "string", "example": "成功" },
+          "eng": { "type": "string", "example": "success" }
+        }
+      },
+      "OptionRfqRequest": {
+        "type": "object",
+        "required": ["chatType", "chatInstrument", "productType", "productSubtypeList", "tenor", "strike", "participateRate", "knockInPrice", "knockOutPrice", "estimateMargin"],
+        "properties": {
+          "chatType": { "type": "string", "example": "json", "description": "响应类型，固定传json" },
+          "chatInstrument": { "type": "string", "example": "快速询价：欧式看涨，688472.SH，100，6M", "description": "询价指令内容" },
+          "productType": { "type": "string", "example": "EUROPEAN_VANILLA", "description": "产品结构：AUTOCALL/PARTICIPATORY/EUROPEAN_VANILLA" },
+          "productSubtypeList": { "type": "array", "items": { "type": "string" }, "example": [] },
+          "fuzzyCodeList": { "type": "array", "items": { "type": "string" }, "example": ["688472.SH"], "description": "wind代码列表" },
+          "tenor": { "type": "array", "items": { "type": "string" }, "example": [] },
+          "strike": { "type": "array", "items": { "type": "number" }, "example": [] },
+          "participateRate": { "type": "array", "items": { "type": "number" }, "example": [] },
+          "knockInPrice": { "type": "array", "items": { "type": "number" }, "example": [] },
+          "knockOutPrice": { "type": "array", "items": { "type": "number" }, "example": [] },
+          "estimateMargin": { "type": "array", "items": { "type": "number" }, "example": [] }
+        }
+      },
+      "OptionRfqResult": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "integer", "example": 34743226 },
+          "productType": { "type": "string", "example": "EUROPEAN_VANILLA" },
+          "productSubtype": { "type": "string", "nullable": true },
+          "windName": { "type": "string", "example": "阿特斯" },
+          "windCode": { "type": "string", "example": "688472.SH" },
+          "currency": { "type": "string", "example": "CNY" },
+          "callPut": { "type": "string", "example": "CALL" },
+          "tenor": { "type": "string", "example": "1M" },
+          "strike": { "type": "number", "example": 0.8 },
+          "participateRate": { "type": "number", "example": 1 },
+          "structure": { "type": "string", "nullable": true },
+          "price": { "type": "number", "example": 0.206 },
+          "initialObservationDate": { "type": "string", "nullable": true },
+          "knockOutPrice": { "type": "number", "nullable": true },
+          "knockInPrice": { "type": "number", "nullable": true },
+          "maximumLossLevel": { "type": "number", "nullable": true },
+          "estimateMargin": { "type": "number", "nullable": true },
+          "annualizedCouponRate": { "type": "number", "nullable": true },
+          "stepDown": { "type": "number", "nullable": true },
+          "insFamily": { "type": "string", "example": "EQUITY" },
+          "exchange": { "type": "string", "example": "SSE" },
+          "crossCurrencyType": { "type": "string", "nullable": true },
+          "settlementCurrency": { "type": "string", "nullable": true },
+          "balance": { "type": "integer", "example": 500 }
+        }
+      },
+      "OptionOrderRequest": {
+        "type": "object",
+        "required": ["id", "contractType", "direction", "tradeDirection", "openPositionType", "collateralNotional"],
+        "properties": {
+          "id": { "type": "integer", "example": 34176993, "description": "询价ID" },
+          "contractType": { "type": "string", "example": "PARTICIPATORY", "description": "期权类型：EUROPEAN_VANILLA/AUTOCALL/PARTICIPATORY" },
+          "direction": { "type": "string", "example": "CALL", "description": "期权方向" },
+          "tradeDirection": { "type": "string", "example": "BUY", "description": "交易方向" },
+          "quotationOrderType": { "type": "string", "example": "QUOTATION_FILE", "description": "下单方式" },
+          "openPositionType": { "type": "string", "example": "MARKET_PRICE", "description": "建仓方式：LIMIT_PRICE/MARKET_PRICE/TWAP/POV" },
+          "initialUnderlyingPriceOrder": { "type": "number", "example": 8.8, "description": "限定价格" },
+          "collateralNotional": { "type": "number", "example": 1000000, "description": "下单金额" },
+          "algorithmOrderVol": { "type": "number", "nullable": true, "description": "POV比例 0.01-0.25" },
+          "algorithmOrderStartTime": { "type": "string", "nullable": true, "example": "2025-08-26 08:00:00" },
+          "algorithmOrderEndTime": { "type": "string", "nullable": true, "example": "2025-08-26 20:00:00" },
+          "shortName": { "type": "string", "nullable": true, "description": "交易对手简称" }
+        }
+      },
+      "OptionOrderResponse": {
+        "type": "object",
+        "properties": {
+          "orderId": { "type": "integer", "example": 1746499200000 },
+          "orderCode": { "type": "string", "example": "OPT202605060001" },
+          "status": { "type": "string", "example": "SUBMITTED" },
+          "submitTime": { "type": "string", "example": "2026-05-06 12:00:00" }
+        }
+      },
+      "OptionOrderStatusRequest": {
+        "type": "object",
+        "properties": {
+          "orderId": { "type": "string", "example": "1689eeab08334a348ebf91ceea13096c", "description": "订单ID" }
+        }
+      },
+      "OptionOrderResultRequest": {
+        "type": "object",
+        "required": ["filter", "pageNum", "pageSize"],
+        "properties": {
+          "filter": {
+            "type": "object",
+            "required": ["contractType", "keyStockOrderId"],
+            "properties": {
+              "contractType": { "type": "string", "example": "EUROPEAN_VANILLA" },
+              "keyStockOrderId": { "type": "integer", "example": 973409 }
+            }
+          },
+          "pageNum": { "type": "integer", "example": 1 },
+          "pageSize": { "type": "integer", "example": 100 }
+        }
+      },
+      "OptionCancelRequest": {
+        "type": "object",
+        "required": ["keyStockOrderId"],
+        "properties": {
+          "keyStockOrderId": { "type": "integer", "example": 271473, "description": "订单ID" }
+        }
+      },
+      "OptionPositionRequest": {
+        "type": "object",
+        "required": ["filter", "pageNum", "pageSize"],
+        "properties": {
+          "filter": {
+            "type": "object",
+            "required": ["allowCloseOut"],
+            "properties": {
+              "keyCtptyIdList": { "type": "array", "items": { "type": "integer" } },
+              "insFamilyList": { "type": "array", "items": { "type": "string" } },
+              "contractTypeList": { "type": "array", "items": { "type": "string" }, "example": ["EUROPEAN_VANILLA"] },
+              "contractSubTypeList": { "type": "array", "items": { "type": "string" } },
+              "internalTradeIdList": { "type": "array", "items": { "type": "string" } },
+              "internalTradeId": { "type": "string", "example": "OPT-xxxx" },
+              "keyOTCTradeId": { "type": "integer", "example": 111111 },
+              "allowCloseOut": { "type": "boolean", "example": true }
+            }
+          },
+          "pageNum": { "type": "integer", "example": 1 },
+          "pageSize": { "type": "integer", "example": 0 }
+        }
+      },
+      "OptionCloseOrderRequest": {
+        "type": "object",
+        "required": ["notionalDelta", "algoType", "price", "contractCode"],
+        "properties": {
+          "notionalDelta": { "type": "number", "example": 10000, "description": "平仓名义本金" },
+          "algoType": { "type": "string", "example": "LIMIT", "description": "平仓价格方式：LIMIT/MARKET/POV/TWAP" },
+          "price": { "type": "number", "example": 15.1, "description": "价格" },
+          "povRatio": { "type": "number", "nullable": true },
+          "algoStartTime": { "type": "string", "nullable": true },
+          "algoEndTime": { "type": "string", "nullable": true },
+          "contractCode": { "type": "string", "example": "OPTG-SZZSCF20250030", "description": "合约编号" }
+        }
+      },
+      "OptionCloseOrderQueryRequest": {
+        "type": "object",
+        "required": ["filter", "pageNum", "pageSize"],
+        "properties": {
+          "filter": {
+            "type": "object",
+            "required": ["tradeDate"],
+            "properties": {
+              "contractType": { "type": "string", "example": "EUROPEAN_VANILLA" },
+              "tradeDate": { "type": "string", "example": "2026-02-04" }
+            }
+          },
+          "pageNum": { "type": "integer", "example": 1 },
+          "pageSize": { "type": "integer", "example": 100 }
+        }
+      },
+      "TrsOrderRequest": {
+        "type": "object",
+        "required": ["transactionType", "orderType", "quantity", "windCode", "priceType", "orderDirection", "shortName"],
+        "properties": {
+          "transactionType": { "type": "string", "example": "US_STOCK", "description": "交易品种" },
+          "orderType": { "type": "string", "example": "BY_QTY", "description": "按数量BY_QTY/按金额BY_NOTIONAL" },
+          "quantity": { "type": "integer", "example": 200 },
+          "windCode": { "type": "string", "example": "TSLA.O", "description": "标的代码" },
+          "price": { "type": "number", "example": 1 },
+          "priceType": { "type": "string", "example": "LimitOrder" },
+          "orderDirection": { "type": "string", "example": "BUY" },
+          "shortName": { "type": "string", "example": "11125测试短名（张天琪专用）" },
+          "premarket": { "type": "boolean", "example": true },
+          "maxVol": { "type": "number", "example": 0.01 },
+          "algorithmType": { "type": "string", "example": "TWAP" },
+          "startTime": { "type": "string", "example": "2026-04-13 17:00:00" },
+          "endTime": { "type": "string", "example": "2026-04-14 04:00:00" },
+          "fixPrice": { "type": "number", "example": 100 },
+          "notional": { "type": "number", "nullable": true },
+          "notionalCurrency": { "type": "string", "nullable": true, "example": "HKD" },
+          "currency": { "type": "string", "nullable": true, "example": "HKD" }
+        }
+      },
+      "TrsOrderStatusRequest": {
+        "type": "object",
+        "properties": {
+          "keyOrderId": { "type": "integer", "example": 972871, "description": "订单ID" }
+        }
+      },
+      "TrsOrderResultRequest": {
+        "type": "object",
+        "properties": {
+          "ultraContractCode": { "type": "string", "example": "CSC-CST-多空组合-0004", "description": "大合约编号" },
+          "keyOrderIdList": { "type": "array", "items": { "type": "integer" }, "example": [972871] },
+          "orderCode": { "type": "string", "example": "TRS-CSC202509190003" }
+        }
+      },
+      "TrsCancelRequest": {
+        "type": "object",
+        "required": ["orderList"],
+        "properties": {
+          "orderList": { "type": "array", "items": { "type": "integer" }, "example": [972873], "description": "订单ID列表" }
+        }
+      },
+      "TrsReplaceRequest": {
+        "type": "object",
+        "required": ["orderList"],
+        "properties": {
+          "orderList": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": ["keyOrderId", "priceType", "quantity", "price", "algorithmType", "startTime", "endTime"],
+              "properties": {
+                "keyOrderId": { "type": "integer", "example": 972871 },
+                "priceType": { "type": "string", "example": "LimitOrder" },
+                "quantity": { "type": "integer", "example": 2300 },
+                "price": { "type": "number", "example": 19 },
+                "algorithmType": { "type": "string", "example": "TWAP" },
+                "fixPriceType": { "type": "string", "example": "BidPrice_5" },
+                "povPercent": { "type": "number", "example": 0.1 },
+                "displayQty": { "type": "integer", "example": 100 },
+                "startTime": { "type": "string", "example": "2025-09-19 11:00:00" },
+                "endTime": { "type": "string", "example": "2025-09-19 14:00:00" }
+              }
+            }
+          }
+        }
+      },
+      "TrsReplaceStatusRequest": {
+        "type": "object",
+        "required": ["orderList"],
+        "properties": {
+          "orderList": { "type": "array", "items": { "type": "integer" }, "example": [973746], "description": "订单ID列表" }
+        }
+      },
+      "DifyRerankRequest": {
+        "type": "object",
+        "required": ["inputs", "user", "response_mode"],
+        "properties": {
+          "inputs": {
+            "type": "object",
+            "required": ["list", "keyword"],
+            "properties": {
+              "list": { "type": "string", "example": "[{\"windCode\":\"0200.HK\",\"insShtDesc\":\"新濠国际发展\",\"insLngDesc\":\"新濠国际发展\",\"insFamily\":\"EQUITY\",\"currency\":\"HKD\",\"exchange\":\"HKEX\"}]", "description": "JSON序列化的标的列表" },
+              "keyword": { "type": "string", "example": "0200.hk", "description": "搜索关键词" }
+            }
+          },
+          "user": { "type": "string", "example": "ai-trading-assistant" },
+          "response_mode": { "type": "string", "example": "blocking", "description": "响应模式" }
+        }
+      },
+      "SuccessResponse": {
+        "type": "object",
+        "properties": {
+          "errMsg": { "type": "string", "nullable": true, "example": null },
+          "errCode": { "$ref": "#/components/schemas/ErrCode" },
+          "data": {}
+        }
+      },
+      "ErrorResponse": {
+        "type": "object",
+        "properties": {
+          "errMsg": { "type": "string", "example": "模拟错误" },
+          "errCode": {
+            "type": "object",
+            "properties": {
+              "code": { "type": "integer", "example": 400 },
+              "chs": { "type": "string", "example": "模拟错误" },
+              "eng": { "type": "string", "example": "FAIL_REQUEST" }
+            }
+          },
+          "data": { "type": "string", "nullable": true, "example": null }
+        }
+      },
+      "BackendSuccess": {
+        "type": "object",
+        "description": "OTC Backend 统一成功响应",
+        "properties": {
+          "code": { "type": "integer", "example": 0, "description": "0=成功" },
+          "data": { "nullable": true, "example": "操作成功", "description": "响应数据（字符串/对象/null）" },
+          "msg": { "type": "string", "example": "success" }
+        }
+      },
+      "BackendError": {
+        "type": "object",
+        "description": "OTC Backend 统一错误响应",
+        "properties": {
+          "code": { "type": "integer", "example": 400, "description": "非0=业务错误" },
+          "data": { "type": "null", "example": null },
+          "msg": { "type": "string", "example": "参数校验失败" }
+        }
+      },
+      "SwapOperateRequest": {
+        "type": "object",
+        "description": "互换订单操作（下单/撤单/改单/确认/查询）",
+        "required": ["type", "conversationId", "messageId", "userId", "roomId", "guid", "rawContent", "messageContent", "orderList"],
+        "properties": {
+          "conversationId": { "type": "string", "example": "ww185513268893732" },
+          "messageId": { "type": "string", "example": "msg-001" },
+          "messageContent": { "type": "string", "example": "确认下单 H-20260304-ABCD12345678" },
+          "rawContent": { "type": "string", "example": "确认下单 H-20260304-ABCD12345678" },
+          "quoteContent": { "type": "string", "nullable": true },
+          "quoteAppinfo": { "type": "string", "nullable": true },
+          "userId": { "type": "string", "example": "user-001" },
+          "roomId": { "type": "string", "example": "room-001" },
+          "guid": { "type": "string", "example": "guid-001" },
+          "type": {
+            "type": "string",
+            "example": "confirm_order",
+            "description": "操作类型：place_order_request/confirm_order/cancel_order_request/confirm_cancel_order/confirm_modify_order/query_order_status"
+          },
+          "orderList": {
+            "type": "array",
+            "items": { "type": "object" },
+            "description": "订单参数列表"
+          }
+        }
+      },
+      "FinancialOrdersOperateRequest": {
+        "type": "object",
+        "description": "期权/平仓统一操作（询价/下单/撤单/持仓查询）",
+        "properties": {
+          "type": { "type": "string", "example": "new_inquiry", "description": "操作类型" },
+          "conversationId": { "type": "string", "example": "ww185513268893732" },
+          "messageId": { "type": "string", "example": "msg-001" },
+          "userId": { "type": "string", "example": "user-001" },
+          "roomId": { "type": "string", "example": "room-001" },
+          "guid": { "type": "string", "example": "guid-001" },
+          "rawContent": { "type": "string" },
+          "messageContent": { "type": "string" },
+          "orderList": { "type": "array", "items": { "type": "object" } },
+          "orderIds": { "type": "array", "items": { "type": "string" } },
+          "quoteContent": { "type": "string", "nullable": true },
+          "quoteAppinfo": { "type": "string", "nullable": true }
+        }
+      },
+      "ConversationOrdersRequest": {
+        "type": "object",
+        "required": ["conversationId", "userId", "roomId"],
+        "properties": {
+          "conversationId": { "type": "string", "example": "ww185513268893732" },
+          "userId": { "type": "string", "example": "user-001" },
+          "roomId": { "type": "string", "example": "room-001" }
+        }
+      },
+      "SetIntentRequest": {
+        "type": "object",
+        "description": "意图审计写入（无固定字段，由业务决定）",
+        "properties": {
+          "conversationId": { "type": "string", "example": "ww185513268893732" },
+          "messageId": { "type": "string", "example": "msg-001" },
+          "productType": { "type": "string", "example": "swap" },
+          "intent": { "type": "string", "example": "place_order_request" }
+        }
+      }
+    },
+    "headers": {
+      "AgentType": {
+        "schema": { "type": "string", "example": "WECHAT" },
+        "description": "智能体对客类型"
+      },
+      "AgentId": {
+        "schema": { "type": "string", "example": "10955866372569317@tl" },
+        "description": "智能体对客身份ID（群ID）"
+      },
+      "AgentSubId": {
+        "schema": { "type": "string", "example": "1688856778752437" },
+        "description": "智能体对客身份子ID（用户ID）"
+      },
+      "ClientId": {
+        "schema": { "type": "string", "example": "TL_AGENT" },
+        "description": "全局认证 clientid"
+      },
+      "ClientSecret": {
+        "schema": { "type": "string", "example": "tltest" },
+        "description": "全局认证 clientsecret"
+      },
+      "Signature": {
+        "schema": { "type": "string", "example": "ABCD1234EFGH5678" },
+        "description": "MD5签名，16位大写，clientid+timestamp+clientsalt"
+      },
+      "Timestamp": {
+        "schema": { "type": "string", "example": "1111111111111" },
+        "description": "当前时间戳ms"
+      }
+    },
+    "parameters": {
+      "ErrorSimulation": {
+        "name": "_error",
+        "in": "query",
+        "schema": { "type": "string", "enum": ["1", "true"] },
+        "description": "设为1或true模拟返回400错误",
+        "required": false
+      }
+    }
+  },
+  "paths": {
+    "/api/internal/agent/get_option_rfq": {
+      "post": {
+        "tags": ["场外期权"],
+        "summary": "期权询价查询",
+        "operationId": "optionRfqQuery",
+        "parameters": [
+          { "$ref": "#/components/parameters/ErrorSimulation" }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/OptionRfqRequest" }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    { "$ref": "#/components/schemas/SuccessResponse" },
+                    {
+                      "properties": {
+                        "data": {
+                          "type": "object",
+                          "properties": {
+                            "chatType": { "type": "string", "example": "json" },
+                            "chatResult": {
+                              "type": "array",
+                              "items": { "$ref": "#/components/schemas/OptionRfqResult" }
+                            }
+                          }
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/internal/agent/option_order": {
+      "post": {
+        "tags": ["场外期权"],
+        "summary": "场外期权下单",
+        "operationId": "optionOrder",
+        "parameters": [
+          { "$ref": "#/components/parameters/ErrorSimulation" }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/OptionOrderRequest" }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    { "$ref": "#/components/schemas/SuccessResponse" },
+                    {
+                      "properties": {
+                        "data": { "$ref": "#/components/schemas/OptionOrderResponse" }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/internal/agent/option_order_status": {
+      "post": {
+        "tags": ["场外期权"],
+        "summary": "期权下单状态查询 [轮询]",
+        "operationId": "optionOrderStatus",
+        "parameters": [
+          { "$ref": "#/components/parameters/ErrorSimulation" }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/OptionOrderStatusRequest" }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    { "$ref": "#/components/schemas/SuccessResponse" },
+                    {
+                      "properties": {
+                        "data": {
+                          "type": "object",
+                          "properties": {
+                            "orderId": { "type": "integer" },
+                            "orderCode": { "type": "string" },
+                            "orderStatus": { "type": "string", "example": "FILLED" },
+                            "filledQty": { "type": "integer" },
+                            "avgPrice": { "type": "number" },
+                            "execAmount": { "type": "integer" },
+                            "statusUpdateTime": { "type": "string" }
+                          }
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/internal/agent/option_order_result": {
+      "post": {
+        "tags": ["场外期权"],
+        "summary": "期权下单结果查询",
+        "operationId": "optionOrderResult",
+        "parameters": [
+          { "$ref": "#/components/parameters/ErrorSimulation" }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/OptionOrderResultRequest" }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    { "$ref": "#/components/schemas/SuccessResponse" },
+                    {
+                      "properties": {
+                        "data": {
+                          "type": "object",
+                          "properties": {
+                            "orderId": { "type": "integer" },
+                            "orderCode": { "type": "string" },
+                            "orderStatus": { "type": "string", "example": "FILLED" },
+                            "filledQty": { "type": "integer" },
+                            "avgPrice": { "type": "number" },
+                            "execAmount": { "type": "integer" },
+                            "currency": { "type": "string" },
+                            "updatedDateTime": { "type": "string" }
+                          }
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/internal/agent/option_cancel": {
+      "post": {
+        "tags": ["场外期权"],
+        "summary": "场外期权撤单",
+        "operationId": "optionCancel",
+        "parameters": [
+          { "$ref": "#/components/parameters/ErrorSimulation" }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/OptionCancelRequest" }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    { "$ref": "#/components/schemas/SuccessResponse" },
+                    {
+                      "properties": {
+                        "data": {
+                          "type": "object",
+                          "properties": {
+                            "cancelId": { "type": "integer" },
+                            "orderCode": { "type": "string" },
+                            "cancelStatus": { "type": "string", "example": "SUBMITTED" },
+                            "submitTime": { "type": "string" }
+                          }
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/internal/agent/option_cancel_result": {
+      "post": {
+        "tags": ["场外期权"],
+        "summary": "场外期权撤单结果查询 [轮询]",
+        "operationId": "optionCancelResult",
+        "parameters": [
+          { "$ref": "#/components/parameters/ErrorSimulation" }
+        ],
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    { "$ref": "#/components/schemas/SuccessResponse" },
+                    {
+                      "properties": {
+                        "data": {
+                          "type": "object",
+                          "properties": {
+                            "cancelId": { "type": "integer" },
+                            "orderCode": { "type": "string" },
+                            "cancelStatus": { "type": "string", "example": "CANCELLED" },
+                            "cancelTime": { "type": "string" }
+                          }
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/internal/agent/option/position": {
+      "post": {
+        "tags": ["场外期权"],
+        "summary": "可平仓合约列表查询",
+        "operationId": "optionPosition",
+        "parameters": [
+          { "$ref": "#/components/parameters/ErrorSimulation" }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/OptionPositionRequest" }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    { "$ref": "#/components/schemas/SuccessResponse" },
+                    {
+                      "properties": {
+                        "data": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "keyCapAcctId": { "type": "integer" },
+                              "keyOrderId": { "type": "integer" },
+                              "orderCode": { "type": "string" },
+                              "orderDate": { "type": "string" },
+                              "entrustTime": { "type": "string" },
+                              "keyCtptyId": { "type": "integer" },
+                              "ctptyShortName": { "type": "string" },
+                              "windCode": { "type": "string", "example": "0700.HK" },
+                              "insShtDesc": { "type": "string", "example": "腾讯控股" },
+                              "quantity": { "type": "integer" },
+                              "orderDirection": { "type": "string", "example": "BUY" },
+                              "orderStatus": { "type": "string", "example": "WORKING" },
+                              "currency": { "type": "string", "example": "HKD" },
+                              "transactionType": { "type": "string", "example": "HK_STOCK" }
+                            }
+                          }
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/internal/agent/option_close_order": {
+      "post": {
+        "tags": ["场外期权"],
+        "summary": "场外期权平仓",
+        "operationId": "optionCloseOrder",
+        "parameters": [
+          { "$ref": "#/components/parameters/ErrorSimulation" }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/OptionCloseOrderRequest" }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    { "$ref": "#/components/schemas/SuccessResponse" },
+                    {
+                      "properties": {
+                        "data": {
+                          "type": "object",
+                          "properties": {
+                            "closeOrderId": { "type": "integer" },
+                            "orderCode": { "type": "string" },
+                            "closeStatus": { "type": "string", "example": "SUBMITTED" },
+                            "submitTime": { "type": "string" }
+                          }
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/internal/agent/option_close_order_query": {
+      "post": {
+        "tags": ["场外期权"],
+        "summary": "期权平仓订单查询",
+        "operationId": "optionCloseOrderQuery",
+        "parameters": [
+          { "$ref": "#/components/parameters/ErrorSimulation" }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/OptionCloseOrderQueryRequest" }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    { "$ref": "#/components/schemas/SuccessResponse" },
+                    {
+                      "properties": {
+                        "data": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "keyOrderId": { "type": "integer" },
+                              "orderCode": { "type": "string" },
+                              "orderDate": { "type": "string" },
+                              "entrustTime": { "type": "string" },
+                              "windCode": { "type": "string", "example": "0700.HK" },
+                              "insShtDesc": { "type": "string" },
+                              "quantity": { "type": "integer" },
+                              "orderDirection": { "type": "string", "example": "SELL" },
+                              "orderStatus": { "type": "string", "example": "FILLED" },
+                              "filledQty": { "type": "integer" },
+                              "avgPrice": { "type": "number" },
+                              "execAmount": { "type": "integer" },
+                              "currency": { "type": "string" },
+                              "transactionType": { "type": "string" }
+                            }
+                          }
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/internal/agent/option_close_cancel": {
+      "post": {
+        "tags": ["场外期权"],
+        "summary": "场外期权平仓撤单",
+        "operationId": "optionCloseCancel",
+        "parameters": [
+          { "$ref": "#/components/parameters/ErrorSimulation" }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["keyStockOrderId"],
+                "properties": {
+                  "keyStockOrderId": { "type": "integer", "example": 1150076 }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    { "$ref": "#/components/schemas/SuccessResponse" },
+                    {
+                      "properties": {
+                        "data": {
+                          "type": "object",
+                          "properties": {
+                            "cancelId": { "type": "integer" },
+                            "orderCode": { "type": "string" },
+                            "cancelStatus": { "type": "string", "example": "SUBMITTED" },
+                            "submitTime": { "type": "string" }
+                          }
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/internal/agent/option_close_cancel_result": {
+      "post": {
+        "tags": ["场外期权"],
+        "summary": "场外期权平仓撤单结果查询 [轮询]",
+        "operationId": "optionCloseCancelResult",
+        "parameters": [
+          { "$ref": "#/components/parameters/ErrorSimulation" }
+        ],
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    { "$ref": "#/components/schemas/SuccessResponse" },
+                    {
+                      "properties": {
+                        "data": {
+                          "type": "object",
+                          "properties": {
+                            "cancelId": { "type": "integer" },
+                            "orderCode": { "type": "string" },
+                            "cancelStatus": { "type": "string", "example": "CANCELLED" },
+                            "cancelTime": { "type": "string" }
+                          }
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/internal/agent/trs_order": {
+      "post": {
+        "tags": ["收益互换"],
+        "summary": "收益互换下单",
+        "operationId": "trsOrder",
+        "parameters": [
+          { "$ref": "#/components/parameters/ErrorSimulation" }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/TrsOrderRequest" }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    { "$ref": "#/components/schemas/SuccessResponse" },
+                    {
+                      "properties": {
+                        "data": {
+                          "type": "object",
+                          "properties": {
+                            "orderId": { "type": "integer" },
+                            "orderCode": { "type": "string" },
+                            "status": { "type": "string", "example": "SUBMITTED" },
+                            "submitTime": { "type": "string" }
+                          }
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/internal/agent/trs_order_status": {
+      "post": {
+        "tags": ["收益互换"],
+        "summary": "收益互换下单状态查询 [轮询]",
+        "operationId": "trsOrderStatus",
+        "parameters": [
+          { "$ref": "#/components/parameters/ErrorSimulation" }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/TrsOrderStatusRequest" }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    { "$ref": "#/components/schemas/SuccessResponse" },
+                    {
+                      "properties": {
+                        "data": {
+                          "type": "object",
+                          "properties": {
+                            "orderId": { "type": "integer" },
+                            "orderCode": { "type": "string" },
+                            "orderStatus": { "type": "string", "example": "FILLED" },
+                            "filledQty": { "type": "integer" },
+                            "avgPrice": { "type": "number" },
+                            "execAmount": { "type": "integer" },
+                            "currency": { "type": "string" },
+                            "statusUpdateTime": { "type": "string" }
+                          }
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/internal/agent/trs_order_result": {
+      "post": {
+        "tags": ["收益互换"],
+        "summary": "收益互换下单/撤单结果查询 [轮询]",
+        "operationId": "trsOrderResult",
+        "parameters": [
+          { "$ref": "#/components/parameters/ErrorSimulation" }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/TrsOrderResultRequest" }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    { "$ref": "#/components/schemas/SuccessResponse" },
+                    {
+                      "properties": {
+                        "data": {
+                          "type": "object",
+                          "properties": {
+                            "orderId": { "type": "integer" },
+                            "orderCode": { "type": "string" },
+                            "orderStatus": { "type": "string", "example": "FILLED" },
+                            "filledQty": { "type": "integer" },
+                            "avgPrice": { "type": "number" },
+                            "execAmount": { "type": "integer" },
+                            "currency": { "type": "string" },
+                            "updatedDateTime": { "type": "string" }
+                          }
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/internal/agent/trs_cancel": {
+      "post": {
+        "tags": ["收益互换"],
+        "summary": "收益互换撤单",
+        "operationId": "trsCancel",
+        "parameters": [
+          { "$ref": "#/components/parameters/ErrorSimulation" }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/TrsCancelRequest" }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    { "$ref": "#/components/schemas/SuccessResponse" },
+                    {
+                      "properties": {
+                        "data": {
+                          "type": "object",
+                          "properties": {
+                            "cancelId": { "type": "integer" },
+                            "orderCode": { "type": "string" },
+                            "cancelStatus": { "type": "string", "example": "SUBMITTED" },
+                            "submitTime": { "type": "string" }
+                          }
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/internal/agent/trs_replace": {
+      "post": {
+        "tags": ["收益互换"],
+        "summary": "收益互换改单",
+        "operationId": "trsReplace",
+        "parameters": [
+          { "$ref": "#/components/parameters/ErrorSimulation" }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/TrsReplaceRequest" }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    { "$ref": "#/components/schemas/SuccessResponse" },
+                    {
+                      "properties": {
+                        "data": {
+                          "type": "object",
+                          "properties": {
+                            "replaceId": { "type": "integer" },
+                            "originOrderCode": { "type": "string" },
+                            "newOrderCode": { "type": "string" },
+                            "replaceStatus": { "type": "string", "example": "SUBMITTED" },
+                            "submitTime": { "type": "string" }
+                          }
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/internal/agent/trs_replace_status": {
+      "post": {
+        "tags": ["收益互换"],
+        "summary": "收益互换改单状态查询 [轮询]",
+        "operationId": "trsReplaceStatus",
+        "parameters": [
+          { "$ref": "#/components/parameters/ErrorSimulation" }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/TrsReplaceStatusRequest" }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    { "$ref": "#/components/schemas/SuccessResponse" },
+                    {
+                      "properties": {
+                        "data": {
+                          "type": "object",
+                          "properties": {
+                            "replaceId": { "type": "integer" },
+                            "originOrderCode": { "type": "string" },
+                            "newOrderCode": { "type": "string" },
+                            "replaceStatus": { "type": "string", "example": "ACCEPTED" },
+                            "statusUpdateTime": { "type": "string" }
+                          }
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/internal/agent/getCtptyListByChatRoomId": {
+      "get": {
+        "tags": ["交易对手"],
+        "summary": "企微群绑定交易对手查询",
+        "operationId": "getCtptyListByChatRoomId",
+        "parameters": [
+          {
+            "name": "type",
+            "in": "query",
+            "required": true,
+            "schema": { "type": "string", "example": "TRS" },
+            "description": "业务类型：TRS-互换 / OPTION-期权"
+          },
+          { "$ref": "#/components/parameters/ErrorSimulation" }
+        ],
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    { "$ref": "#/components/schemas/SuccessResponse" },
+                    {
+                      "properties": {
+                        "data": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "ctptyId": { "type": "integer", "example": 10049 },
+                              "shortName": { "type": "string", "example": "临沂阿凡提" },
+                              "longName": { "type": "string", "example": "上海猎鲸志投资管理有限公司" },
+                              "groupFlag": { "type": "string", "example": "N", "description": "是否账户组：Y-是/N-否" },
+                              "transactionTypeList": {
+                                "type": "array",
+                                "items": { "type": "string" },
+                                "example": ["HK_STOCK", "US_STOCK", "JP_STOCK"]
+                              }
+                            }
+                          }
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/uniweb/rpa/trs/tradingHoursConfig": {
+      "get": {
+        "tags": ["投管系统"],
+        "summary": "互换交易时间配置查询",
+        "operationId": "tradingHoursConfig",
+        "parameters": [
+          { "$ref": "#/components/parameters/ErrorSimulation" }
+        ],
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    { "$ref": "#/components/schemas/SuccessResponse" },
+                    {
+                      "properties": {
+                        "data": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "transactionType": { "type": "string", "example": "HK_STOCK" },
+                              "tradingHoursStart": { "type": "string", "example": "2026-04-30 08:30:00" },
+                              "tradingHoursEnd": { "type": "string", "example": "2026-04-30 20:10:00" },
+                              "region": { "type": "string", "nullable": true, "example": null },
+                              "exchangeList": { "type": "array", "items": { "type": "string" }, "nullable": true },
+                              "premarketTradingHoursStart": { "type": "string", "nullable": true, "example": "2026-04-30 21:30:00" }
+                            }
+                          }
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/workflows/run": {
+      "post": {
+        "tags": ["DIFY"],
+        "summary": "大模型rerank标的列表",
+        "operationId": "difyRerank",
+        "parameters": [
+          { "$ref": "#/components/parameters/ErrorSimulation" }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/DifyRerankRequest" }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "task_id": { "type": "string", "example": "556a6022-7a4d-4e43-be8c-f12136e769b9" },
+                    "workflow_run_id": { "type": "string", "example": "f44f69db-ad29-431b-a985-e8983c9e2ea8" },
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "id": { "type": "string" },
+                        "workflow_id": { "type": "string" },
+                        "status": { "type": "string", "example": "succeeded" },
+                        "outputs": {
+                          "type": "object",
+                          "properties": {
+                            "result": { "type": "array", "items": { "type": "string" }, "example": ["0200.HK"] }
+                          }
+                        },
+                        "error": { "type": "string", "nullable": true },
+                        "elapsed_time": { "type": "number", "example": 2.783889 },
+                        "total_tokens": { "type": "integer", "example": 1999 },
+                        "total_steps": { "type": "integer", "example": 6 },
+                        "created_at": { "type": "integer", "example": 1777535594 },
+                        "finished_at": { "type": "integer", "example": 1777535597 }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin-api/swap-order/operate": {
+      "post": {
+        "tags": ["OTC Backend"],
+        "summary": "互换订单操作（下单/撤单/改单/确认/查询）",
+        "operationId": "swapOrderOperate",
+        "parameters": [
+          { "$ref": "#/components/parameters/ErrorSimulation" }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/SwapOperateRequest" }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    { "$ref": "#/components/schemas/BackendSuccess" },
+                    {
+                      "properties": {
+                        "data": { "type": "string", "example": "[mock] 互换confirm_order操作已受理，订单号 TRS-20260506-0001" }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "业务错误",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/BackendError" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin-api/financial-orders/operate": {
+      "post": {
+        "tags": ["OTC Backend"],
+        "summary": "期权/平仓统一操作（询价/下单/撤单/持仓查询）",
+        "operationId": "financialOrdersOperate",
+        "parameters": [
+          { "$ref": "#/components/parameters/ErrorSimulation" }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/FinancialOrdersOperateRequest" }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    { "$ref": "#/components/schemas/BackendSuccess" },
+                    {
+                      "properties": {
+                        "data": { "type": "string", "example": "[mock] 期权平仓new_inquiry操作已受理，单号 OPT-20260506-0001" }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "业务错误",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/BackendError" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin-api/counterparty/info/list": {
+      "get": {
+        "tags": ["OTC Backend"],
+        "summary": "交易对手列表查询",
+        "operationId": "counterpartyList",
+        "parameters": [
+          { "$ref": "#/components/parameters/ErrorSimulation" }
+        ],
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    { "$ref": "#/components/schemas/BackendSuccess" },
+                    {
+                      "properties": {
+                        "data": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "id": { "type": "integer", "example": 10049 },
+                              "shortName": { "type": "string", "example": "临沂阿凡提" },
+                              "longName": { "type": "string", "example": "上海猎鲸志投资管理有限公司" },
+                              "groupFlag": { "type": "string", "example": "N" }
+                            }
+                          }
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin-api/swap-order/get-conversation-orders": {
+      "post": {
+        "tags": ["OTC Backend"],
+        "summary": "会话历史订单查询",
+        "operationId": "conversationOrders",
+        "parameters": [
+          { "$ref": "#/components/parameters/ErrorSimulation" }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/ConversationOrdersRequest" }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    { "$ref": "#/components/schemas/BackendSuccess" },
+                    {
+                      "properties": {
+                        "data": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "orderId": { "type": "string", "example": "TRS-20260506-0001" },
+                              "windCode": { "type": "string", "example": "0700.HK" },
+                              "insShtDesc": { "type": "string", "example": "腾讯控股" },
+                              "quantity": { "type": "integer", "example": 1000 },
+                              "direction": { "type": "string", "example": "BUY" },
+                              "status": { "type": "string", "example": "FILLED" },
+                              "createTime": { "type": "string", "example": "2026-05-06 12:00:00" }
+                            }
+                          }
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin-api/business/config/bot/name/list": {
+      "post": {
+        "tags": ["OTC Backend"],
+        "summary": "Bot 名称列表查询",
+        "operationId": "botNameList",
+        "parameters": [
+          { "$ref": "#/components/parameters/ErrorSimulation" }
+        ],
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    { "$ref": "#/components/schemas/BackendSuccess" },
+                    {
+                      "properties": {
+                        "data": {
+                          "type": "string",
+                          "example": "[\"otc-agent\", \"交易助手\", \"OTC小助手\"]",
+                          "description": "JSON 字符串格式的 Bot 名列表"
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin-api/openapi/xbot/message/set-intent": {
+      "post": {
+        "tags": ["OTC Backend"],
+        "summary": "意图审计写入",
+        "operationId": "setIntent",
+        "parameters": [
+          { "$ref": "#/components/parameters/ErrorSimulation" }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/SetIntentRequest" }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    { "$ref": "#/components/schemas/BackendSuccess" },
+                    {
+                      "properties": {
+                        "data": { "type": "null", "example": null }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "tags": [
+    { "name": "场外期权", "description": "期权询价、下单、撤单、平仓等 11 个接口" },
+    { "name": "收益互换", "description": "互换下单、撤单、改单、查询等 6 个接口" },
+    { "name": "交易对手", "description": "企微群绑定交易对手查询 1 个接口" },
+    { "name": "投管系统", "description": "互换交易时间配置查询 1 个接口" },
+    { "name": "DIFY", "description": "大模型 rerank 标的列表 1 个接口" },
+    { "name": "OTC Backend", "description": "后端业务 API：互换/期权/平仓操作 + 交易对手/订单/配置查询 6 个接口" }
+  ]
+}

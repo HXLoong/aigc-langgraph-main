@@ -121,10 +121,7 @@ async def run_workflow(
     trace_id = uuid.uuid4().hex
     initial_state["trace_id"] = trace_id
 
-    config = {
-        "configurable": {"thread_id": conversation_id},
-        "metadata": {"trace_id": trace_id},
-    }
+    config = _build_run_config(conversation_id=conversation_id, trace_id=trace_id)
 
     t0 = time.perf_counter()
     try:
@@ -184,6 +181,20 @@ async def run_workflow(
 # ============================================================
 
 
+#: 图递归上限(架构体检 2026-08 改进 A):现图均为 DAG,50 为防御纵深上限;
+#: 未来引入循环子图时按 CLAUDE.md 指引单独收紧(复杂子图 25)
+GRAPH_RECURSION_LIMIT = 50
+
+
+def _build_run_config(conversation_id: str, trace_id: str) -> dict:
+    """构造 graph.ainvoke 的 RunnableConfig(thread 绑定 + trace 关联 + 递归上限)。"""
+    return {
+        "configurable": {"thread_id": conversation_id},
+        "metadata": {"trace_id": trace_id},
+        "recursion_limit": GRAPH_RECURSION_LIMIT,
+    }
+
+
 # Dify inputs 字段名（Java 透传）→ AgentState 字段名 映射
 _INPUT_FIELD_ALIASES = {
     "raw_text": ("rawContent", "raw_content"),
@@ -194,6 +205,14 @@ _INPUT_FIELD_ALIASES = {
     "message_content": ("messageContent", "message_content"),
     "quote_content": ("quoteContent", "quote_content"),
     "quote_appinfo": ("quoteAppinfo", "quote_appinfo"),
+    "fast_query": ("fast_query", "fastQuery"),
+    "at_bot": ("at_bot", "atBot"),
+    "existing_command": ("existing_command", "existingCommand"),
+    "bot_name": ("bot_name", "botName"),
+    "operator_user_id": ("operator_user_id", "operatorUserId"),
+    "option_counterparties_raw": ("option_counterparties", "optionCounterparties"),
+    "swap_counterparties_raw": ("swap_counterparties", "swapCounterparties"),
+    "input_files": ("files", "sysFiles"),
 }
 
 

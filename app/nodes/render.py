@@ -7,6 +7,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from app.config import get_settings
 from app.graph.safe_node import safe_node
 from app.graph.state import AgentState
 from app.observability.metrics import emit_fallback, emit_hitl
@@ -21,7 +22,8 @@ _ZERO_HIT_TMPL = (
     "能换一种更标准的说法吗？"
     "（例如：证券代码如 600519.SH，或完整名称如 贵州茅台）"
 )
-_ERROR_REPLY = "我没完全理解你的意思，能换种说法重新告诉我吗？"
+# DSL v2 env.default_reply 等价物:统一兜底文案从配置读(现场可改不发版)
+_ERROR_REPLY = get_settings().default_reply
 _UNREACHABLE_REPLY = "系统暂时不可用，请稍后再试。若紧急需求请联系交易员或运营。"
 _OPTION_MISSING_CONTEXT_REPLY = (
     "请求信息不完整，暂时无法调用期权服务，请重新发送原消息或联系运营。"

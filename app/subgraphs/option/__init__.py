@@ -1,20 +1,21 @@
 """option 子图（期权基础意图，不含平仓）。
 
-ADR 0001 D5/D6 + ADR 0011 二次修订 + grill-with-docs 第 2 决策：
-6 节点 = 1 intent + 5 extract（不含 close_order_*，归 close 子图）。
+Dify DSL v2 迁移（分支 feature/dify-dsl-migration，P2 option 域）：
+8 节点 = 1 intent + 7 extract（不含 close_order_*，归 close 子图；不再含独立
+改单流程——期权对已有订单的参数修改统一归 place_order_from_quote）。
 
-当前已实施：
-- option.intent · 期权 10 个基础意图分类（new_inquiry / place_order_from_quote /
-  request_modify_order / request_cancel_order / cancel_order_request /
-  confirm_order / confirm_cancel_order / confirm_modify_order /
-  query_order_status / unknown_intent）
-
-待实施（M2 后续 PR，每节点一 PR）：
-- option.extract_inquiry · 询价参数提取
-- option.extract_place_or_modify · 下单/改单参数（共用 schema）
-- option.extract_cancel · 撤单参数
-- option.extract_confirm · 3 种确认参数（合并版）
-- option.extract_query · 查询参数
+已实施：
+- option.intent · 期权 7 个基础意图分类 + unknown_intent（new_inquiry /
+  place_order_from_quote / confirm_order / cancel_order_request /
+  request_cancel_order / confirm_cancel_order / query_order_status /
+  unknown_intent）
+- option.extract_inquiry · 询价参数提取（new_inquiry）
+- option.extract_place · 请求下单参数提取（place_order_from_quote）
+- option.extract_confirm_place · 确认下单订单号+补参提取（confirm_order）
+- option.extract_cancel_place · 取消下单订单号提取（cancel_order_request）
+- option.extract_cancel · 请求撤单订单号提取（request_cancel_order）
+- option.extract_confirm_cancel · 确认撤单订单号提取（confirm_cancel_order）
+- option.extract_query · 查询参数提取（query_order_status）
 """
 from app.subgraphs.option.graph import build_option_graph
 

@@ -6,27 +6,27 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from app.subgraphs.swap import intent as intent_module
-from app.subgraphs.swap.intent import _build_user_message, _format_history, swap_intent
+from app.subgraphs.swap.intent import _build_user_message, _format_shortname_list, swap_intent
 from app.subgraphs.swap.models import SwapIntentOutput
 
 # ============================================================
-# 辅助函数 _format_history
+# 辅助函数 _format_shortname_list
 # ============================================================
 
 
-class TestFormatHistory:
-    def test_empty_history(self) -> None:
-        assert _format_history(None) == ""
-        assert _format_history([]) == ""
+class TestFormatShortnameList:
+    def test_empty_or_none(self) -> None:
+        assert _format_shortname_list(None) == ""
+        assert _format_shortname_list([]) == ""
 
-    def test_dict_history(self) -> None:
-        history = [
-            {"role": "user", "content": "做一笔互换"},
-            {"role": "assistant", "content": "请提供标的"},
+    def test_joins_shortnames(self) -> None:
+        counterparties = [
+            {"ctptyId": "1", "shortName": "临沂阿凡提", "longName": "临沂阿凡提有限公司", "sort": "A"},
+            {"ctptyId": "2", "shortName": "测试111", "longName": "测试有限公司", "sort": "B"},
         ]
-        result = _format_history(history)  # type: ignore[arg-type]
-        assert "user: 做一笔互换" in result
-        assert "assistant: 请提供标的" in result
+        result = _format_shortname_list(counterparties)
+        assert "临沂阿凡提" in result
+        assert "测试111" in result
 
 
 # ============================================================
@@ -35,23 +35,22 @@ class TestFormatHistory:
 
 
 class TestBuildUserMessage:
-    def test_includes_all_four_dify_inputs(self) -> None:
+    def test_includes_three_dsl_v2_inputs(self) -> None:
         msg = _build_user_message(
             {
                 "raw_text": "做一笔招商银行的 TRS",
                 "quote_content": "（无引用）",
-                "history_messages": [],
+                "swap_counterparties": [{"shortName": "打火机", "sort": "A"}],
             }
         )
-        assert "raw_content: 做一笔招商银行的 TRS" in msg
-        assert "quote_content:" in msg
-        assert "history_query_str:" in msg
-        assert "bot_name_list:" in msg
+        assert "raw_content：做一笔招商银行的 TRS" in msg
+        assert "quote_content：" in msg
+        assert "shortname_list：打火机" in msg
 
     def test_handles_empty_state(self) -> None:
         msg = _build_user_message({})
-        assert "raw_content:" in msg
-        assert "bot_name_list:" in msg
+        assert "raw_content：" in msg
+        assert "shortname_list：" in msg
 
 
 # ============================================================
@@ -99,7 +98,7 @@ class TestSwapIntentNode:
         assert trace[0].node == "swap_intent"
         assert "intent=cancel_order_request" in trace[0].decision
 
-    async def test_passes_quote_and_history_to_llm(
+    async def test_passes_quote_and_counterparties_to_llm(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         ainvoke = _patch_llm(monkeypatch, "confirm_order")
@@ -107,14 +106,15 @@ class TestSwapIntentNode:
             {
                 "raw_text": "确认",
                 "quote_content": "互换订单 H-20260304-0001 已生成",
-                "history_messages": [],
+                "swap_counterparties": [{"shortName": "打火机", "sort": "A"}],
             }
         )
-        # LLM 被调一次，user message 含 quote_content
+        # LLM 被调一次，user message 含 quote_content + shortname_list
         assert ainvoke.call_count == 1
         messages = ainvoke.call_args[0][0]
         user_msg_content = messages[-1][1]
         assert "互换订单 H-20260304-0001 已生成" in user_msg_content
+        assert "打火机" in user_msg_content
 
     async def test_safe_node_catches_llm_error(
         self, monkeypatch: pytest.MonkeyPatch

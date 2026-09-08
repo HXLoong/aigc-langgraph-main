@@ -2,7 +2,7 @@
 # F4.0 演练 smoke 脚本 · 不注入故障，仅串联 6 件套验证可用性。
 #
 # 用途：
-#   1. Tony 首次 walkthrough docs/m3-f4.0-oncall-drill.md 前，本地干跑确认
+#   1. Tony 首次 walkthrough docs/archive/m3/m3-f4.0-oncall-drill.md 前，本地干跑确认
 #      6 件套工具的命令、退出码、输出格式都正常。
 #   2. 演练当天 Scene 1（基线确认）可直接调本脚本替代手敲多条命令。
 #
@@ -305,7 +305,7 @@ print_summary() {
         "$PASSED" "$FAILED" "$TOTAL" "$rate"
 
     if [ "$FAILED" -eq 0 ]; then
-        printf "${GREEN}=== 演练基线 OK · 可执行 docs/m3-f4.0-oncall-drill.md ===${NC}\n"
+        printf "${GREEN}=== 演练基线 OK · 可执行 docs/archive/m3/m3-f4.0-oncall-drill.md ===${NC}\n"
         return 0
     fi
     printf "${RED}=== 演练基线异常 · 修复后再演练 ===${NC}\n"

@@ -16,11 +16,11 @@ from harness.case_generator import (
 def test_node_registry_contains_p0_nodes() -> None:
     """P0 横切 + 三链路核心节点必须在注册表里。"""
     must_have = {
-        "ticker.react_agent",
+        "ticker.resolver",
         "swap.intent",
         "swap.place_order",
         "option.intent",
-        "option.extract_place_or_modify",
+        "option.extract_place",
         "close.intent",
         "close.place_close",
     }
@@ -54,7 +54,7 @@ def test_close_intent_has_six_close_order_intents() -> None:
 
 def test_ticker_has_no_intent() -> None:
     """ticker 子图输出 list[TickerCandidate]，无 intent 字段。"""
-    spec = NODE_REGISTRY["ticker.react_agent"]
+    spec = NODE_REGISTRY["ticker.resolver"]
     assert spec.intent_values == []
     assert spec.product_type == "ticker"
 
@@ -82,8 +82,8 @@ def test_render_template_custom_slot_count() -> None:
 
 
 def test_render_template_includes_sample_inputs() -> None:
-    md = render_seed_template("ticker.react_agent")
-    spec = NODE_REGISTRY["ticker.react_agent"]
+    md = render_seed_template("ticker.resolver")
+    spec = NODE_REGISTRY["ticker.resolver"]
     for sample in spec.sample_inputs:
         assert sample in md
 

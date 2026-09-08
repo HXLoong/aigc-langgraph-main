@@ -19,7 +19,7 @@
 |------|------|---|
 | 保留 | `app/prompts/`（现 **37 个**业务 .md）· `app/checkpointer/factory.py` · `dify/sync.py` + `dify/yaml/` · `tests/fixtures/golden.jsonl` | `app/llm/clients.py` 保留路径、**内容已按 [ADR 0020](./0020-unify-all-llm-on-deepseek-v4-pro.md) 重写**为 vendor 适配层 |
 | ~~保留~~ 已下线 | `mock_api/server.py` | 2026-05-13 随"切换真实后端环境"删除（commit `4ac9f0b`），单测改 AsyncMock、e2e 走 `scripts/probe_*_e2e.py` 真后端探针 |
-| 重写 | `app/state.py` · `app/graphs/` · `app/subgraphs/` · `app/nodes/` · `app/tools/` · `app/api/routes.py` · `tests/` · `scripts/` | `app/state.py` 与 `app/graphs/main_graph.py` 现仅剩兼容 shim，真源在 `app/graph/` |
+| 重写 | `app/state.py` · `app/graphs/` · `app/subgraphs/` · `app/nodes/` · `app/tools/` · `app/api/routes.py` · `tests/` · `scripts/` | `app/state.py` 现仅剩兼容 shim（`app/graphs/` shim 已于 2026-08-28 清理删除），真源在 `app/graph/` |
 | 新增 | `harness/` 顶层目录（评测台，与 `app/` 解耦） | 已建成，模块清单见 [ADR 0002](./0002-comprehensive-runtime-harness.md) |
 
 ### D2 · `tools/` 层的契约策略（落地与蓝图一致）
@@ -60,8 +60,10 @@
 |------|------|---|
 | **合并** | 互换 3 个"确认 X"节点 → 1 个 `swap.confirm(expected_action)`，新写统一 confirm 提示词（`app/subgraphs/swap/confirm.py`） | 本 ADR |
 | **拆分** | 期权 intent_extract（2870 行单节点）→ 1 intent + 5 extract（`extract_inquiry` / `extract_place_or_modify` / `extract_cancel` / `extract_confirm` / `extract_query`；close_order_* 归独立 close 子图） | [ADR 0011](./0011-split-option-intent-and-extraction.md) 二次修订 |
-| **询价补参修复** | `option/intent.md`：期限补充归 `new_inquiry`，建仓补参/确认/撤单按动作和业务阶段判断，删除引用卡片关键词强制改写意图的后处理；`extract_inquiry.md` 增加可选原单号 `orderId`；`extract_place_or_modify.md` 保留可选期限 `tenor`，原单号与新增期限同传，缺省参数由 Java 合并；保留冻结的 `intent_extract.md` | 2026-09-07 用户明确授权；两轮 HTTP + checkpoint + Java HTTP 请求回归，见 [API 契约](../api-contracts/java-backend.md) |
-| **瘦身** | `app/prompts/swap/place_order.md`：Dify 原版 3059 行 / 152,546 字符 → **2249 行 / 126,171 字符**（删冗余示例、压缩重复规则，保留语义；原版存为 `place_order.dify_original.md`） | 2026-05-12 grill 授权，M2/M3 执行，本次补登记 |
+| **询价补参修复** | `option/intent.md`：期限补充归 `new_inquiry`，建仓补参/确认/撤单按动作和业务阶段判断，删除引用卡片关键词强制改写意图的后处理；`extract_inquiry.md` 增加可选原单号 `orderId`；`extract_place.md` 保留可选期限 `tenor`，原单号与新增期限同传，缺省参数由 Java 合并；保留冻结的 `intent_extract.md` | 2026-09-07 用户明确授权；两轮 HTTP + checkpoint + Java HTTP 请求回归，见 [API 契约](../api-contracts/java-backend.md) |
+| **瘦身** | `app/prompts/swap/place_order.md`：Dify 原版 3059 行 / 152,546 字符 → **2249 行 / 126,171 字符**（删冗余示例、压缩重复规则，保留语义；原版存为 `place_order.dify_original.md`）。注：DSL v2（2026-08）Dify 侧已自行重写该提示词，旧瘦身版随迁移被替换 | 2026-05-12 grill 授权，M2/M3 执行，本次补登记 |
+| **瘦身 P0 批（2026-08-28）** | 客户反馈提示词冗长/规则写死损害泛化性，全量评估见 `docs/swap-prompt-slimming-assessment.md`。P0 零风险档产出 4 个 v2 共存文件：`swap/{intent,image_extract,excel_extract,image_ocr}_v2.md`——只删死重（JSON 格式禁令，structured output 已强制）、悬空规则（bot_name_list/shortname_list/序号/total 等未注入变量）、重复陈述（同一规则 2~9 遍收敛为 1 处权威表述）、自相矛盾的补丁修订史（"POV 空格"）；**业务规则语义不变**。灰度经 `_versions.yaml`/env 控制，默认 0 流量，eval PASS ≥ v1 基线后方可放量（ADR 0003） | 本 ADR + 评估报告 |
+| **去 LLM 化（2026-08-28 瘦身 P1）** | swap 撤单/查单/三确认共 5 个节点的唯一任务是提取 `H-` 订单号，改为确定性提取（`app/subgraphs/swap/order_id.py`，来源优先级 1:1 对照原提示词规约）；省 5 次 LLM 调用（≈4.8K tokens/请求）与幻觉面。5 个提示词转非活跃资产保留。二次校验/后端调用/输出形状不变 | 本 ADR + 评估报告 |
 | **保持** | 其他 Dify LLM 节点 1:1 复刻，提示词照搬 | — |
 
 **节点数：蓝图 24 → 主干落地 20**（与 CLAUDE.md / README 口径一致）：
@@ -131,7 +133,7 @@ harness/                       # 评测台（模块清单见 ADR 0002）
 |--------|------|---|
 | M1 · 骨架 | 新 graph/state + 3 Protocol + harness MVP | ✅（30 条 golden 全 PASS，历史退出门）|
 | M2 · 子图实现 | 主干节点逐个实现 + golden 扩张 | ✅（PR #41；mock baseline 92.5% / 真 LLM 84.6%——**Qwen 口径，已被 ADR 0020 作废待重建**）|
-| M3 · 工程联调闭环（[ADR 0016](./0016-m3-scope-engineering-loop-not-shadow.md) 重定义，非 shadow 双跑）| 真后端联调 + 真 LLM 评测 + 灰度工具链 | M3.1/M3.2 ✅，M3.3 进行中（Issue #82-#87）|
+| M3 · 工程联调闭环（[ADR 0016](./0016-m3-scope-engineering-loop-not-shadow.md) 重定义，非 shadow 双跑）| 真后端联调 + 真 LLM 评测 + 灰度工具链 | M3.1/M3.2 ✅；历史 #82-#87 已关闭，M3.3 是否满足退出门以当前 DeepSeek 评估与验收证据为准 |
 | M4 · 金丝雀切换 | 按群组切流 + F4.1 shadow 第二意见 | 工具链就绪，未启动（[ADR 0017](./0017-m4-canary-quantitative-exit-gate.md) / [0019](./0019-incident-severity-thresholds.md)）|
 
 ### D9 · M2 节点实现优先级（历史记录）
@@ -147,7 +149,7 @@ P0（swap.place_order / option intent+extract / close.place_close / ticker）→
 | ~~D9.1 `--mock-ticker` 开关~~ | ✅ #160 裁决：**承诺撤销**——CI 回归由 pytest + mock LLM 承担（977 collected），harness golden 人工/评估触发；D9.1 该段转历史 |
 | ~~harness 依赖面超纪律 3~~ | ✅ #160 裁决：**纪律放宽**为"harness 仅依赖三个稳定入口：`app.graph.main` / `app.config` / `app.llm.clients`"——现状即合规，新增依赖需回本表登记 |
 
-关联的 checkpointer 未接线问题记录在 [ADR 0009](./0009-mysql-version-and-tdsql-compatibility.md)（裁决 [#153](https://github.com/GZTL-AI/aigc-langgraph/issues/153)）。
+关联的 checkpointer 未接线问题已由 [ADR 0021](./0021-text-confirm-replaces-interrupt.md) / [#153](https://github.com/GZTL-AI/aigc-langgraph/issues/153) 修复；数据库兼容边界见 [ADR 0009](./0009-mysql-version-and-tdsql-compatibility.md)。
 
 ## 备选方案（历史论证，保留）
 

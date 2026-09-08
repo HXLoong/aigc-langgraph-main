@@ -15,10 +15,17 @@ from langgraph.graph.state import CompiledStateGraph
 
 from app.graph.state import AgentState
 from app.nodes.fallback import fallback
+from app.nodes.fast_query import (
+    existing_command_query,
+    is_existing_command,
+    is_fast_query,
+    quick_inquiry,
+)
 from app.nodes.ingest import ingest
 from app.nodes.intent_route import intent_route
 from app.nodes.persist import persist
 from app.nodes.persist_intent import make_persist_intent
+from app.nodes.pre_route import pre_route
 from app.nodes.record_history import record_history
 from app.nodes.render import render
 from app.subgraphs.close import build_close_graph
@@ -31,12 +38,26 @@ from app.tools.message_client import MessageClient
 # ============================================================
 
 
+def _route_entry(state: AgentState) -> str:
+    """ingest 后的前置分流（DSL v2「判断快速询价」if-else）。
+
+    1. fast_query == "1" → 快速询价链（GOATS rfq parser → 期权快速询价）
+    2. existing_command == "1" 且 at_bot == "0" → 存量兼容交易查询
+    3. 其他 → pre_route（对手/候选提取）→ intent_route 一级路由
+    """
+    if is_fast_query(state):
+        return "quick_inquiry"
+    if is_existing_command(state):
+        return "existing_command_query"
+    return "pre_route"
+
+
 def _route_after_intent(state: AgentState) -> str:
     """intent_route 节点后的路由。
 
     优先级：
     1. state['error'] 存在 → fallback（cascade 防御，CLAUDE.md 核心原则第 8 条）
-    2. product_type == "unknown" → fallback（ADR 0015 第 3 层兜底）
+    2. product_type == "unknown" → fallback（DSL v2 一级分支 false 落兜底）
     3. 否则按 product_type 选子图
     """
     if state.get("error") is not None:
@@ -61,14 +82,16 @@ def build_main_graph(
     checkpointer: BaseCheckpointSaver | None = None,
     message_client_factory: Callable[[], MessageClient] | None = None,
 ) -> CompiledStateGraph:
-    """组装并编译主图。
+    """组装并编译主图（DSL v2 拓扑）。
 
     流程：
-        START → ingest → intent_route → [route_after_intent] →
-            swap | option | option_close | fallback → persist_intent → persist → render →
-            record_history → END
+        START -> ingest -> [route_entry]
+            quick_inquiry | existing_command_query -> persist
+            pre_route -> intent_route -> swap | option | option_close | fallback
+                -> persist_intent -> persist
+        persist -> render -> record_history -> END
 
-    message_client_factory 未注入时不写外部消息表；FastAPI lifespan 显式注入。
+    FastAPI lifespan injects message_client_factory to enable message persistence.
 
     cascade 防御：
     - intent_route 写 state['error'] → 跳 fallback
@@ -77,6 +100,9 @@ def build_main_graph(
     g: StateGraph = StateGraph(AgentState)
 
     g.add_node("ingest", ingest)
+    g.add_node("quick_inquiry", quick_inquiry)
+    g.add_node("existing_command_query", existing_command_query)
+    g.add_node("pre_route", pre_route)
     g.add_node("intent_route", intent_route)
     g.add_node("swap", build_swap_graph() | RunnableLambda(_business_update))
     g.add_node("option", build_option_graph() | RunnableLambda(_business_update))
@@ -88,7 +114,16 @@ def build_main_graph(
     g.add_node("record_history", record_history)
 
     g.add_edge(START, "ingest")
-    g.add_edge("ingest", "intent_route")
+    g.add_conditional_edges(
+        "ingest",
+        _route_entry,
+        {
+            "quick_inquiry": "quick_inquiry",
+            "existing_command_query": "existing_command_query",
+            "pre_route": "pre_route",
+        },
+    )
+    g.add_edge("pre_route", "intent_route")
     g.add_conditional_edges(
         "intent_route",
         _route_after_intent,
@@ -101,6 +136,8 @@ def build_main_graph(
     )
     for sub in ("swap", "option", "option_close", "fallback"):
         g.add_edge(sub, "persist_intent")
+    for sub in ("quick_inquiry", "existing_command_query"):
+        g.add_edge(sub, "persist")
     g.add_edge("persist_intent", "persist")
     g.add_edge("persist", "render")
     g.add_edge("render", "record_history")

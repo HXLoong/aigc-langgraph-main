@@ -16,6 +16,7 @@ from __future__ import annotations
 from typing import Any
 
 from app.graph.state import AgentState
+from app.subgraphs.swap.prewash import sanitize_order_list
 from app.tools.swap_client import (
     SwapClientHttpx,
     SwapIntentionType,
@@ -44,6 +45,10 @@ def _context(state: AgentState) -> dict[str, Any]:
         "userId": state.get("user_id", "") or "",
         "roomId": state.get("room_id", "") or "",
         "guid": state.get("guid"),
+        # DSL v2「互换开仓」新增字段：操作者（替代旧 userId 语义，见
+        # app/graph/state.py operator_user_id docstring）；state 未填时留空串，
+        # SwapOrderOpenApiSaveReqVO 是 extra="allow"，透传给后端即可。
+        "operatorUserId": state.get("operator_user_id", "") or "",
     }
 
 
@@ -88,11 +93,15 @@ async def call_swap_backend(
     ):
         return {}
 
+    # 互换开仓-前置清洗（DSL v2）：字面量 "null" 字符串 → None，list 中的 None
+    # 元素丢弃；只清洗 orderList，顶层 type 不清洗（见 prewash.py docstring）。
+    cleaned_order_list = sanitize_order_list(order_list)
+
     req = SwapOrderOpenApiSaveReqVO(
         type=SwapIntentionType(intent),
         orderList=[
             SwapOrderOpenApiBaseSaveReqVO.model_validate(item)
-            for item in (order_list or [])
+            for item in cleaned_order_list
         ],
         **_context(state),
     )

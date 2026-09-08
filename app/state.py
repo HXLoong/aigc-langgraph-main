@@ -27,7 +27,6 @@ def make_initial_state(wechat_input: dict) -> dict[str, Any]:
         "history_messages": [],
         "conversation_orders": [],
         "counterparty_list": [],
-        "product_type": "unknown",
         "intent": None,
         "fast_query": False,
         "at_bot": False,

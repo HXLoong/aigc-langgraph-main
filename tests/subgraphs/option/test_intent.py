@@ -75,8 +75,8 @@ class TestOptionIntentNode:
         ("取消", "cancel_order_request"),
         ("撤销 OPT-20260907-000001", "request_cancel_order"),
         ("确认撤销", "confirm_cancel_order"),
-        ("限价改为10", "request_modify_order"),
-        ("确认修改", "confirm_modify_order"),
+        ("限价改为10", "place_order_from_quote"),
+        ("确认修改", "place_order_from_quote"),
     ])
     async def test_quoted_inquiry_card_preserves_semantic_intent(
         self, monkeypatch: pytest.MonkeyPatch, raw: str, intent: str,

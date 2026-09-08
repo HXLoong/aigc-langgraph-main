@@ -1,7 +1,7 @@
 # 互换-节点-撤单
 
 - **node_id**: `1776161179315`
-- **model**: `internal-qwen3-30b-a3b`
+- **model**: `external-deepseek-v4-flash-non-thinking`
 
 ## [system]
 
@@ -16,18 +16,15 @@
 
 1. **raw_content**: 用户的原始消息内容
 2. **quote_content**: 用户引用的群消息内容(可能为空)
-3. **history_query_str**: 历史对话字符串
 
 【orderId提取规则】
 
-- **订单ID格式**: 必须以"H-"开头，后跟日期和编号（编号部分可以是数字或字母数字混合），如"H-20250115-000001"或"H-20260304-ABCD12345678"
+- **订单ID格式**: "H-YYYYMMDD-XXXXXXXXXX" (如"H-20250115-000001")，必须以"H-"开头
 - **提取优先级**(按顺序尝试):
   1. **从quote_content中提取**(最高优先级):
-     * 查找"单号:H-..."格式
-     * 查找"互换订单H-..."格式
-  2. **从history_query_str中提取**:
-     * 查找最近一次LLM识别结果中的orderId字段(非null值)
-  3. **从raw_content中提取**:
+     * 查找"单号:H-YYYYMMDD-XXXXXXXXXX"格式
+     * 查找"互换订单H-YYYYMMDD-XXXXXXXXXX"格式
+ 2. **从raw_content中提取**:
      * 用户明确指定的订单号(如"H-20250115-000001")
 - 如果无法提取到orderId，则为null
 
@@ -42,7 +39,6 @@
 - **绝对禁止**在JSON前后添加任何Markdown代码块标记(如```json或```)
 - **绝对禁止**在JSON前后添加任何说明文字或注释
 - **必须直接输出**纯JSON字符串,不带任何包装
-- **输出必须包含orderList数组**,禁止只输出orderId字段。正确格式:{"orderList":[{"orderId":"H-..."}]},错误格式:{"orderId":"H-..."}
 
 【输出格式】
 
@@ -51,7 +47,7 @@
   "type": "cancel_order_request",
   "orderList": [
     {
-      "orderId": "H-YYYYMMDD-XXXXXX"
+      "orderId": "H-XXXXXXXX-XXXXXXXXXX"
     }
   ]
 }
@@ -59,21 +55,13 @@
 
 - type 固定为 "cancel_order_request"
 - orderList 中包含需要撤销的订单的 orderId
-- orderId 从 raw_content、quote_content 或 history_query_str 中提取，未找到则为 null
+- orderId 从 raw_content、quote_content 中提取，未找到则为 null
 
 【示例】
 
 用户:取消下单
 输出:
 {"type": "cancel_order_request", "orderList": [{"orderId": null}]}
-
-用户:撤 H-20260304-0000001
-输出:
-{"type": "cancel_order_request", "orderList": [{"orderId": "H-20260304-0000001"}]}
-
-用户:互换撤单 撤销订单 H-20260304-ABCD12345678
-输出:
-{"type": "cancel_order_request", "orderList": [{"orderId": "H-20260304-ABCD12345678"}]}
 
 用户:撤单(引用了包含订单号的消息)
 输出:
@@ -90,5 +78,4 @@
 ```
 raw_content：{{#1755072621769.raw_content#}}
 quote_content：{{#1755072621769.quote_content#}}
-history_query_str： {{#1756283976410.history_query_str#}}
 ```

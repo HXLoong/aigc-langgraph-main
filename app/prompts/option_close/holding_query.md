@@ -1,7 +1,7 @@
 # 期权平仓-持仓查询参数提取
 
 - **node_id**: `1772614623517`
-- **model**: `internal-qwen3-30b-a3b`
+- **model**: `external-deepseek-v4-flash-non-thinking`
 
 ## [system]
 

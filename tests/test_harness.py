@@ -1,4 +1,5 @@
 """harness/ 单元测试 — golden / differ / runner / reporter / cli."""
+
 from __future__ import annotations
 
 import pytest

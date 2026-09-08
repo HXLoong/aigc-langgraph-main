@@ -38,7 +38,7 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
 from langgraph.checkpoint.memory import InMemorySaver
-from app.graphs.main_graph import build_main_graph
+from app.graph.main import build_main_graph
 from app.prompts import load_prompt
 from app.state import WechatInput, make_initial_state
 

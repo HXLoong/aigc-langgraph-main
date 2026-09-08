@@ -21,8 +21,9 @@ from app.graph.safe_node import safe_node
 from app.graph.state import AgentState, TraceEntry
 from app.llm.clients import get_qwen_thinking
 from app.prompts import load_prompt
+from app.subgraphs.close.aggregate import build_close_order_req_vo
+from app.subgraphs.close.backend import call_close_backend
 from app.subgraphs.close.models import HoldingQueryParams
-from app.subgraphs.option.backend import call_option_backend
 
 
 def _build_user_message(state: AgentState) -> str:
@@ -61,12 +62,21 @@ async def close_holding_query(state: AgentState) -> dict[str, Any]:
         f" trades={len(result.internalTradeIdList)}"
     )
 
-    # close_order_query 是 read 类语义（持仓查询），用 LLM 提取的过滤条件作为 orderList
-    # 占位（真后端按 closeOrderReqVO 字段解析）。空列表也合法 —— 表示查询所有。
-    backend = await call_option_backend(
+    # close_order_query 是 read 类语义（持仓查询），过滤条件走 closeOrderReqVO.contractQuery
+    # （对齐 Dify 期权平仓-参数聚合），不是 orderList（那是 option 域字段）。
+    req_vo = build_close_order_req_vo(
+        ins_family_list=result.insFamilyList,
+        contract_type_list=result.contractTypeList,
+        closeable_only=result.closeable_only,
+        internal_trade_id_list=result.internalTradeIdList,
+        key_ctpty_id_list=result.keyCtptyIdList,
+        underlying_ins_id_list=result.underlyingInsIdList,
+        underlying_ins_name_list=result.underlyingInsNameList,
+    )
+    backend = await call_close_backend(
         state,
         intent="close_order_query",
-        order_list=[],
+        close_order_req_vo=req_vo,
     )
 
     return {

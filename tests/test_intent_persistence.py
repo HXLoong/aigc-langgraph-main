@@ -13,7 +13,7 @@ from langgraph.checkpoint.memory import InMemorySaver
 import app.main as app_main
 from app.config import get_settings
 from app.graph.main import build_main_graph
-from app.nodes.intent_route import ProductTypeOutput
+from app.nodes.intent_route import UnknownIntentOutput
 from app.tools.message_client import MessageClientHttpx
 from app.tools.models import CommonResult
 
@@ -30,7 +30,7 @@ def isolated_workflow(monkeypatch: pytest.MonkeyPatch) -> AsyncMock:
     monkeypatch.setenv("ENABLE_LANGFUSE", "false")
     llm = MagicMock()
     llm.with_structured_output.return_value.ainvoke = AsyncMock(
-        return_value=ProductTypeOutput(product_type="unknown")
+        return_value=UnknownIntentOutput(label="unknown")
     )
     monkeypatch.setattr("app.nodes.intent_route.get_qwen_thinking", lambda: llm)
     write_trace = AsyncMock()
@@ -112,13 +112,13 @@ def test_business_branch_persists_latest_intent_after_operate(
     product_type: str, intent: str, product_number: int, raw: str,
 ) -> None:
     from app.subgraphs.close.models import CloseIntentOutput, QueryStatusParams
-    from app.subgraphs.option.models import OptionExtractQueryParams, OptionIntentOutput
-    from app.subgraphs.swap.models import SwapIntentOutput, SwapQueryParams
+    from app.subgraphs.option.models import OptionIntentOutput, OptionQueryParams
+    from app.subgraphs.swap.models import SwapIntentOutput
 
     llm_outputs = {
         "option": {
             "app.subgraphs.option.intent.get_qwen_structured": OptionIntentOutput(type="query_order_status"),
-            "app.subgraphs.option.extract_query.get_qwen_thinking": OptionExtractQueryParams(),
+            "app.subgraphs.option.extract_query.get_qwen_thinking": OptionQueryParams(),
         },
         "option_close": {
             "app.subgraphs.close.intent.get_qwen_thinking": CloseIntentOutput(type="close_order_order_query"),
@@ -126,7 +126,6 @@ def test_business_branch_persists_latest_intent_after_operate(
         },
         "swap": {
             "app.subgraphs.swap.intent.get_qwen_thinking": SwapIntentOutput(type="query_order_status"),
-            "app.subgraphs.swap.query_order.get_qwen_thinking": SwapQueryParams(),
         },
     }
     for factory, value in llm_outputs[product_type].items():
@@ -145,6 +144,7 @@ def test_business_branch_persists_latest_intent_after_operate(
             return CommonResult(code=0, data="BACKEND_CARD")
 
     monkeypatch.setattr("app.subgraphs.option.backend.OptionClientHttpx", BusinessClient)
+    monkeypatch.setattr("app.subgraphs.close.backend.OptionClientHttpx", BusinessClient)
     monkeypatch.setattr("app.subgraphs.swap.backend.SwapClientHttpx", BusinessClient)
 
     def handler(request: httpx.Request) -> httpx.Response:

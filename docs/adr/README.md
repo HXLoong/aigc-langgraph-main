@@ -10,21 +10,21 @@
 |---|---|---|---|
 | [0000](./0000-migrate-from-dify-to-langgraph.md) | 从 Dify 工作流迁移到 LangGraph | 已采纳（元 ADR） | — |
 | [0001](./0001-rewrite-app-with-harness-first.md) | 推倒重写 `app/`，Harness-first 范式 | 已采纳（重写已完成） | 4 项偏离 → [#154](https://github.com/GZTL-AI/aigc-langgraph/issues/154)/[#160](https://github.com/GZTL-AI/aigc-langgraph/issues/160) |
-| [0002](./0002-comprehensive-runtime-harness.md) | 综合运行时 Harness（三位一体） | 已采纳（Phase 1-3 ✅ / 4 🔄） | — |
-| [0003](./0003-prompt-versioning-by-file-coexistence.md) | 提示词版本化：同目录文件并存 | 已采纳 | 3 项偏离 → [#156](https://github.com/GZTL-AI/aigc-langgraph/issues/156)/[#159](https://github.com/GZTL-AI/aigc-langgraph/issues/159) |
-| [0004](./0004-trace-granularity-node-level-with-langsmith.md) | Trace 颗粒度：节点级入库 + 完整 I/O 关联 | 已采纳 | trace 后台被 **0014** 修订（LangSmith→LangFuse）；3 项偏离 → [#156](https://github.com/GZTL-AI/aigc-langgraph/issues/156) |
-| [0005](./0005-annotation-roles-judge-plus-business-spotcheck.md) | 标注闭环：LLM judge + 业务方抽检 | 已采纳（Phase 4 运营未立项） | 平台随 **0014** 定为 LangFuse；2 项偏离 → [#159](https://github.com/GZTL-AI/aigc-langgraph/issues/159) |
+| [0002](./0002-comprehensive-runtime-harness.md) | 综合运行时 Harness（三位一体） | 已采纳（Phase 2 因 `node_trace` schema 缺失为 🟡 / 4 🔄） | — |
+| [0003](./0003-prompt-versioning-by-file-coexistence.md) | 提示词版本化：同目录文件并存 | 已采纳 | #156/#159 已裁决；同步防覆盖已落地 |
+| [0004](./0004-trace-granularity-node-level-with-langsmith.md) | Trace 颗粒度：节点级入库 + 完整 I/O 关联 | 已采纳（写入代码已落地，schema 未入库） | trace 后台被 **0014** 修订（LangSmith→LangFuse）；#156 已裁决 |
+| [0005](./0005-annotation-roles-judge-plus-business-spotcheck.md) | 标注闭环：LLM judge + 业务方抽检 | 已采纳（Phase 4 运营未立项） | 平台随 **0014** 定为 LangFuse；judge 版本化已由 #159 修复 |
 | [0006](./0006-hitl-interrupt-boundary.md) | HITL interrupt 边界：写 + 资金双轴 | interrupt 部分被 **0021** 取代；风险象限规则沿用 | #153 已裁决 |
 | [0007](./0007-subgraph-vs-intent-scope-rule.md) | 独立子图 vs 新意图：四条触发规则 | 已采纳 | 1 项偏离 → [#160](https://github.com/GZTL-AI/aigc-langgraph/issues/160) |
 | [0008](./0008-ticker-resolution-as-react-agent.md) | 标的识别采用 ReAct Agent | ⚠️ 已采纳但**生产为确定性 resolver，ReAct 为死代码** | 去向裁决 → [#154](https://github.com/GZTL-AI/aigc-langgraph/issues/154) |
 | [0009](./0009-mysql-version-and-tdsql-compatibility.md) | MySQL 协议 + TDSQL 生产环境 | 已采纳 | checkpointer 已随 **0021** 接线（#153 修复） |
 | [0010](./0010-llm-model-selection-rules.md) | Qwen 三型号分工 | **历史背景**（被 **0020** 取代） | 强制规则从未执行 → [#158](https://github.com/GZTL-AI/aigc-langgraph/issues/158) |
-| [0011](./0011-split-option-intent-and-extraction.md) | option 拆分 intent 与 extraction | 已采纳（拆分已完成） | 3 项偏离 → [#159](https://github.com/GZTL-AI/aigc-langgraph/issues/159) |
+| [0011](./0011-split-option-intent-and-extraction.md) | option 拆分 intent 与 extraction | 已采纳（DSL v2：7 意图 → 7 extract） | 旧 1+5 形态已被 DSL v2 演进取代；#159/#113 已关闭 |
 | [0012](./0012-restore-backend-http-for-securities-instrument.md) | 标的查询恢复走后端 HTTP | 已采纳（完整落地） | — |
-| [0013](./0013-load-dynamic-inference-prompt-fragment.md) | 加载后端动态 prompt 片段 | 已采纳（主链路落地） | 2 项 trace 护栏缺口 → [#156](https://github.com/GZTL-AI/aigc-langgraph/issues/156) |
+| [0013](./0013-load-dynamic-inference-prompt-fragment.md) | 加载后端动态 prompt 片段 | 已采纳（主链路落地） | #156 已追认结构化日志 + metrics 方案 |
 | [0014](./0014-langfuse-as-harness-backend.md) | LangFuse 作为 Harness 后台 | 已采纳 | 修订 **0004**/**0005**；例外决策 + 硬闸门已落地（#155） |
-| [0015](./0015-intent-route-rules-first-llm-fallback.md) | 一级路由：规则前置 + LLM 兜底 | 已采纳（已演进为四层） | 1 项偏离 → [#158](https://github.com/GZTL-AI/aigc-langgraph/issues/158) |
-| [0016](./0016-m3-scope-engineering-loop-not-shadow.md) | M3 范围重定义：工程联调闭环 | 已采纳（M3.3 进行中） | 修订 **0001** D8/D9 |
+| [0015](./0015-intent-route-rules-first-llm-fallback.md) | 一级路由：规则前置 + LLM 兜底 | 已采纳（DSL v2：规则层 + unknown LLM） | #158 已追认工厂语义；当前演进见文末修订 |
+| [0016](./0016-m3-scope-engineering-loop-not-shadow.md) | M3 范围重定义：工程联调闭环 | 已采纳（#82-#87 已关闭；量化退出门须看当前评估证据） | 修订 **0001** D8/D9 |
 | [0017](./0017-m4-canary-quantitative-exit-gate.md) | M4 金丝雀退出门量化指标 | 已采纳 | 测量缺口已修复（#157）；展示层后置 #162；阈值待 DeepSeek 重测 |
 | [0018](./0018-dev-qwen-prod-deepseek-llm-split.md) | 开发 Qwen / 现场 DeepSeek 双模型分立 | **已被 0020 取代**（历史存根） | — |
 | [0019](./0019-incident-severity-thresholds.md) | 故障升级阈值 P0/P1/P2 | 已采纳 | 互补 **0017**；3 项偏离已修复（#157） |
@@ -63,12 +63,13 @@
 **卫生检查**（定期跑 `scripts/check_adr_refs.py`，落地任务 [#161](https://github.com/GZTL-AI/aigc-langgraph/issues/161)；建议每 5 个新 ADR 一次，F4 切流与 M4 退出门前必跑）：
 
 1. ADR 互引完整性——引用的编号必须存在，无虚悬引用
-2. ADR 引用的代码路径有效性——检查时跳过 `~~删除线~~` 标注的过期段
+2. ADR 中以 Markdown 链接书写的代码路径有效性——检查时跳过 `~~删除线~~` 标注的过期段
 3. 孤儿 ADR 检测——无任何入引的篇目需评估归档
 
 **审计边界**（沿承 2026-05-13 一致性审计的约定）：
 
 - ADR 的**论证逻辑**是否仍成立需人（Tony）判断，工具只核事实性声明
+- 反引号中的裸路径（如 `sql/schema.sql`）目前不在脚本覆盖范围，须人工核对；不要把脚本绿灯解释为全部代码路径存在
 - 头部字段格式的历史差异属背景包袱，统一一次即可、不逐篇追溯 git 历史
 - 对 Java 侧（`aigc/api` 仓）的跨仓库引用无法自动校验，改动 Java 契约时人工核对 `docs/api-contracts/`
 

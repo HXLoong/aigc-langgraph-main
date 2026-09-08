@@ -17,7 +17,7 @@ from app.config import get_settings
 from app.subgraphs.option.models import (
     OptionInquiryParams,
     OptionIntentOutput,
-    OptionPlaceOrModifyParams,
+    OptionPlaceParams,
 )
 from app.tools.message_client import MessageClientHttpx
 from app.tools.option_client import OptionClientHttpx
@@ -61,10 +61,18 @@ def inquiry_workflow(
     monkeypatch.setattr(app_main, "close_checkpointer", AsyncMock())
     monkeypatch.setattr("app.nodes.persist._write_to_mysql", AsyncMock())
 
-    # 保留真实 tokenizer / resolver / ticker HTTP 序列化，业务词的 LLM 推断返回空。
+    # 保留真实 tokenizer / resolver / ticker HTTP，仅替换外部 LLM。
+    async def ticker_llm_response(messages):
+        content = messages[-1].content
+        result = {"300773.SZ": ["300773.SZ"]} if "300773" in content else {}
+        return MagicMock(content=json.dumps(result))
+
     infer_llm = MagicMock()
-    infer_llm.invoke.return_value.content = ""
-    monkeypatch.setattr("app.subgraphs.ticker.tools.make_qwen_thinking", lambda: infer_llm)
+    infer_llm.ainvoke = AsyncMock(side_effect=ticker_llm_response)
+    monkeypatch.setattr("app.subgraphs.ticker.tools.get_qwen_standard", lambda: infer_llm)
+    from app.nodes.intent_route import UnknownIntentOutput
+    _patch_llm(monkeypatch, "app.nodes.intent_route.get_qwen_thinking",
+               UnknownIntentOutput, [{"label": "\u671f\u6743-\u6587\u672c"}] * 3)
     calls: list[tuple[str, dict[str, Any]]] = []
 
     def handler(request: httpx.Request) -> httpx.Response:
@@ -89,6 +97,9 @@ def inquiry_workflow(
 
     transport = httpx.MockTransport(handler)
     monkeypatch.setattr("app.subgraphs.option.backend.OptionClientHttpx", lambda: OptionClientHttpx(
+        base_url="https://java.invalid", token="", transport=transport, dry_run=False,
+    ))
+    monkeypatch.setattr("app.subgraphs.close.backend.OptionClientHttpx", lambda: OptionClientHttpx(
         base_url="https://java.invalid", token="", transport=transport, dry_run=False,
     ))
     monkeypatch.setattr(app_main, "MessageClientHttpx", lambda: MessageClientHttpx(
@@ -196,8 +207,8 @@ def test_order_extraction_preserves_tenor_for_backend_intent_correction(
     client, calls = inquiry_workflow
     _patch_llm(monkeypatch, "app.subgraphs.option.intent.get_qwen_structured",
                OptionIntentOutput, [{"type": "place_order_from_quote"}])
-    _patch_llm(monkeypatch, "app.subgraphs.option.extract_place_or_modify.get_qwen_thinking",
-               OptionPlaceOrModifyParams,
+    _patch_llm(monkeypatch, "app.subgraphs.option.extract_place.get_qwen_thinking",
+               OptionPlaceParams,
                [{"orderList": [{"orderId": "Q-20260907-000001", "tenor": "1M"}]}])
     response = client.post("/v1/workflows/run", json={
         "conversation_id": "backend-corrects-intent",
@@ -213,7 +224,7 @@ def test_order_extraction_preserves_tenor_for_backend_intent_correction(
 
 @pytest.mark.parametrize("product,raw", [
     ("option", "期权查订单"), ("swap", "互换查订单"),
-    ("option_close", "查询 CO-20260907-000001"),
+    ("option_close", "查询 CO-20260907-00000001"),
 ])
 def test_business_subgraphs_do_not_duplicate_checkpoint_history(
     monkeypatch: pytest.MonkeyPatch,
@@ -221,22 +232,23 @@ def test_business_subgraphs_do_not_duplicate_checkpoint_history(
     product: str, raw: str,
 ) -> None:
     from app.subgraphs.close.models import CloseIntentOutput, QueryStatusParams
-    from app.subgraphs.option.models import OptionExtractQueryParams
-    from app.subgraphs.swap.models import SwapIntentOutput, SwapQueryParams
+    from app.subgraphs.option.models import OptionQueryParams
+    from app.subgraphs.swap.models import SwapIntentOutput
 
     cases = {
         "option": ("option", OptionIntentOutput, "query_order_status",
-                   "extract_query", OptionExtractQueryParams, "get_qwen_structured"),
+                   "extract_query", OptionQueryParams, "get_qwen_structured"),
         "swap": ("swap", SwapIntentOutput, "query_order_status",
-                 "query_order", SwapQueryParams, "get_qwen_thinking"),
+                 "query_order", None, "get_qwen_thinking"),
         "option_close": ("close", CloseIntentOutput, "close_order_order_query",
                          "query_status", QueryStatusParams, "get_qwen_thinking"),
     }
     category, intent_schema, intent, extract_node, extract_schema, intent_factory = cases[product]
     _patch_llm(monkeypatch, f"app.subgraphs.{category}.intent.{intent_factory}",
                intent_schema, [{"type": intent}] * 3)
-    _patch_llm(monkeypatch, f"app.subgraphs.{category}.{extract_node}.get_qwen_thinking",
-               extract_schema, [{}] * 3)
+    if extract_schema is not None:
+        _patch_llm(monkeypatch, f"app.subgraphs.{category}.{extract_node}.get_qwen_thinking",
+                   extract_schema, [{}] * 3)
     client, calls = inquiry_workflow
     expected_history = []
     for message_id in range(1, 4):

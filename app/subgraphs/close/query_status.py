@@ -15,8 +15,9 @@ from app.graph.safe_node import safe_node
 from app.graph.state import AgentState, TraceEntry
 from app.llm.clients import get_qwen_thinking
 from app.prompts import load_prompt
+from app.subgraphs.close.aggregate import build_close_order_req_vo
+from app.subgraphs.close.backend import call_close_backend
 from app.subgraphs.close.models import QueryStatusParams
-from app.subgraphs.option.backend import call_option_backend
 
 
 def _build_user_message(state: AgentState) -> str:
@@ -38,11 +39,11 @@ async def close_query_status(state: AgentState) -> dict[str, Any]:
         ]
     )
 
-    order_list = [{"orderId": oid} for oid in result.queryOrderNoList]
-    backend = await call_option_backend(
+    req_vo = build_close_order_req_vo(query_order_no_list=result.queryOrderNoList)
+    backend = await call_close_backend(
         state,
         intent="close_order_order_query",
-        order_list=order_list,
+        close_order_req_vo=req_vo,
     )
 
     return {

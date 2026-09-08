@@ -10,8 +10,8 @@ from app.graph.state import TickerCandidate
 from app.subgraphs.option import extract_inquiry as ei_module
 from app.subgraphs.option.extract_inquiry import option_extract_inquiry
 from app.subgraphs.option.models import (
-    OptionInquiryItem,
     OptionInquiryParams,
+    OptionOrderItem,
 )
 from app.subgraphs.ticker.resolver import TickerResolution
 
@@ -43,43 +43,49 @@ def _patch_llm(
 
 
 # ============================================================
-# OptionInquiryItem 模型
+# OptionOrderItem 模型（询价场景用法）
 # ============================================================
 
 
-class TestOptionInquiryItem:
+class TestOptionOrderItemForInquiry:
     def test_minimal_all_none(self) -> None:
-        item = OptionInquiryItem()
+        item = OptionOrderItem()
         assert item.stockCode is None
         assert item.optionType is None
 
     def test_full_item(self) -> None:
-        item = OptionInquiryItem(
+        item = OptionOrderItem(
             stockCode="腾讯控股",
             optionType="欧式看涨",
             tenor="1M",
             strikePercentage=100.0,
-            notionalAmount=10000000,
+            notionalAmount="10000000",
             participationRate=None,
         )
         assert item.optionType == "欧式看涨"
 
     def test_invalid_option_type_rejected(self) -> None:
         with pytest.raises(ValidationError):
-            OptionInquiryItem(optionType="美式看涨")  # type: ignore[arg-type]
+            OptionOrderItem(optionType="美式看涨")  # type: ignore[arg-type]
+
+    def test_removed_option_types_rejected(self) -> None:
+        """Dify DSL v2 收窄：不再支持 欧式看跌/气囊。"""
+        for removed in ("欧式看跌", "气囊"):
+            with pytest.raises(ValidationError):
+                OptionOrderItem(optionType=removed)  # type: ignore[arg-type]
 
     def test_extra_fields_ignored(self) -> None:
-        params = OptionInquiryItem.model_validate(
+        params = OptionOrderItem.model_validate(
             {"stockCode": "腾讯", "garbage": "x"}
         )
         assert params.stockCode == "腾讯"
 
     @pytest.mark.parametrize(
         "valid_type",
-        ["欧式看涨", "欧式看跌", "雪球", "气囊", "参与型看涨"],
+        ["欧式看涨", "雪球", "参与型看涨"],
     )
     def test_all_valid_option_types(self, valid_type: str) -> None:
-        item = OptionInquiryItem(optionType=valid_type)  # type: ignore[arg-type]
+        item = OptionOrderItem(optionType=valid_type)  # type: ignore[arg-type]
         assert item.optionType == valid_type
 
 
@@ -99,7 +105,7 @@ class TestOptionExtractInquiryNode:
         ])
         params = OptionInquiryParams(
             orderList=[
-                OptionInquiryItem(
+                OptionOrderItem(
                     stockCode="腾讯",
                     optionType="欧式看涨",
                     tenor="1M",
@@ -126,7 +132,7 @@ class TestOptionExtractInquiryNode:
         _patch_resolver(monkeypatch, [])
         params = OptionInquiryParams(
             orderList=[
-                OptionInquiryItem(stockCode="某不存在的标的", tenor="1M")
+                OptionOrderItem(stockCode="某不存在的标的", tenor="1M")
             ]
         )
         _patch_llm(monkeypatch, params)
@@ -161,8 +167,8 @@ class TestOptionExtractInquiryNode:
         )
         params = OptionInquiryParams(
             orderList=[
-                OptionInquiryItem(stockCode="茅台", optionType="雪球"),
-                OptionInquiryItem(stockCode="腾讯", optionType="雪球"),
+                OptionOrderItem(stockCode="茅台", optionType="雪球"),
+                OptionOrderItem(stockCode="腾讯", optionType="雪球"),
             ]
         )
         _patch_llm(monkeypatch, params)
@@ -181,7 +187,7 @@ class TestOptionExtractInquiryNode:
         ])
         params = OptionInquiryParams(
             orderList=[
-                OptionInquiryItem(stockCode="腾讯", optionType="雪球"),
+                OptionOrderItem(stockCode="腾讯", optionType="雪球"),
             ]
         )
         _patch_llm(monkeypatch, params)
@@ -194,6 +200,18 @@ class TestOptionExtractInquiryNode:
         assert "action=inquiry" in decision
         assert "orders=1" in decision
         assert "tickers=1" in decision
+
+    async def test_null_literal_participation_rate_sanitized(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """LLM 偶发把 notionalAmount 吐成字面量字符串 "null" → sanitize 清成 None。"""
+        _patch_resolver(monkeypatch, [])
+        params = OptionInquiryParams(
+            orderList=[OptionOrderItem(stockCode="腾讯", notionalAmount="null")]
+        )
+        _patch_llm(monkeypatch, params)
+        result = await option_extract_inquiry({"raw_text": "腾讯询价"})
+        assert result["place_params"]["orderList"][0]["notionalAmount"] is None
 
     async def test_safe_node_catches_llm_error(
         self, monkeypatch: pytest.MonkeyPatch
