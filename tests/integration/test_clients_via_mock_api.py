@@ -201,7 +201,7 @@ def test_client_with_transport_passes_through(option_client) -> None:
 
 
 async def test_goats_agent_parse_rfq_instrument(goats_agent_client) -> None:
-    """快速询价 RFQ 解析：200 → code=0，裸 JSON 结构可直接喂 optionRfq。"""
+    """快速询价 RFQ 解析：业务 200 → code=0，仅解包后的 data 可喂 optionRfq。"""
     out = await goats_agent_client.parse_rfq_instrument(
         "快速询价：欧式看涨，600519.SH，100，1M", "room-int-1", "user-int-1"
     )
@@ -210,6 +210,8 @@ async def test_goats_agent_parse_rfq_instrument(goats_agent_client) -> None:
     obj = out["api_data_result_obj"]
     assert obj is not None
     assert "productType" in obj  # GoatsOptionRfqReqVO 最低消费字段
+    assert "errCode" not in obj
+    assert "data" not in obj
 
 
 async def test_goats_agent_query_instruction(goats_agent_client) -> None:

@@ -51,7 +51,7 @@ async def parse_rfq_instrument(chat_instrument: str) -> dict[str, Any] | None:
         return None
 
     ts = str(int(time.time() * 1000))
-    url = f"{base_url.rstrip('/')}/api/internal/agent/option_rfq_instrument_parser"
+    url = f"{base_url.rstrip('/')}/internal/agent/option_rfq_instrument_parser"
     headers = {
         "agenttype": "WECHAT",
         "agentid": agent_id,
@@ -63,7 +63,7 @@ async def parse_rfq_instrument(chat_instrument: str) -> dict[str, Any] | None:
     }
 
     try:
-        async with httpx.AsyncClient(timeout=15.0) as client:
+        async with httpx.AsyncClient(timeout=15.0, trust_env=False) as client:
             resp = await client.post(url, headers=headers, json={"chatInstrument": chat_instrument})
     except Exception:  # noqa: BLE001  网络异常 → fall back
         return None

@@ -6,10 +6,10 @@ from __future__ import annotations
 
 from decimal import Decimal
 from enum import Enum
-from typing import Protocol
+from typing import Any, Protocol
 
 import httpx
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from app.tools.models import (
     CommonResult,
@@ -83,7 +83,7 @@ class CloseOrderReqVO(BaseModel):
 
 
 class GoatsOptionRfqReqVO(BaseModel):
-    """期权询价 / 雪球存量参数（占位，M2 阶段细化）。"""
+    """期权询价 / 雪球参数；GOATS 数值数组在请求边界转成字符串数组。"""
 
     model_config = ConfigDict(extra="allow")
 
@@ -95,6 +95,23 @@ class GoatsOptionRfqReqVO(BaseModel):
     knockInPrice: list[str] | None = None
     knockOutPrice: list[str] | None = None
     estimateMargin: list[str] | None = None
+    participateRate: list[str] | None = None
+
+    @field_validator(
+        "strike", "knockInPrice", "knockOutPrice", "estimateMargin", "participateRate",
+        mode="before",
+    )
+    @classmethod
+    def normalize_numeric_arrays(cls, value: Any) -> Any:
+        # 保持 0.8 的比例语义，只转换类型；字符串、空值及扩展字段原样保留。
+        if isinstance(value, list):
+            return [
+                str(item)
+                if isinstance(item, (int, float, Decimal)) and not isinstance(item, bool)
+                else item
+                for item in value
+            ]
+        return value
 
 
 class FinancialOrderOpenApiSaveReqVO(BaseModel):
