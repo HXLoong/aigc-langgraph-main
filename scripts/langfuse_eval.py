@@ -11,6 +11,7 @@ import asyncio
 import json
 import os
 import re
+import secrets
 import sys
 import time
 import uuid
@@ -67,7 +68,7 @@ def _fmt_trace(trace_entries) -> str:
 async def _run_graph_once(graph, config, raw_content, has_mention=True, turn=1, quote_content=None):
     wx = WechatInput(
         conversation_id=config["configurable"]["thread_id"],
-        message_id=f"m-{config['configurable']['thread_id']}-t{turn}",
+        message_id=secrets.randbelow(900_000_000_000_000) + 100_000_000_000_000,
         room_id=os.environ.get("EVAL_ROOM_ID", "eval-room"),
         user_id=os.environ.get("EVAL_USER_ID", "eval-user"),
         guid="",
