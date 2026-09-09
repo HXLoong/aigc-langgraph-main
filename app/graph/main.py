@@ -8,7 +8,7 @@ from __future__ import annotations
 from collections.abc import Awaitable, Callable
 from typing import Any
 
-from langchain_core.runnables import RunnableConfig
+from langchain_core.runnables import RunnableConfig, RunnableLambda
 from langgraph.checkpoint.base import BaseCheckpointSaver
 from langgraph.graph import END, START, StateGraph
 from langgraph.graph.state import CompiledStateGraph
@@ -98,6 +98,7 @@ def _reset_turn_trace(_: AgentState) -> dict[str, Any]:
 def build_main_graph(
     checkpointer: BaseCheckpointSaver | None = None,
     message_client_factory: Callable[[], MessageClient] | None = None,
+    attach_langfuse_callbacks: bool = True,
 ) -> CompiledStateGraph:
     """组装并编译主图（DSL v2 拓扑）。
 
@@ -160,11 +161,12 @@ def build_main_graph(
     g.add_edge("render", "record_history")
     g.add_edge("record_history", END)
 
-    if checkpointer is not None:
-        compiled = g.compile(checkpointer=checkpointer)
-    else:
-        compiled = g.compile()
-    return _attach_langfuse_callbacks(compiled)
+    compiled = (
+        g.compile(checkpointer=checkpointer)
+        if checkpointer is not None
+        else g.compile()
+    )
+    return _attach_langfuse_callbacks(compiled) if attach_langfuse_callbacks else compiled
 
 
 def _attach_langfuse_callbacks(compiled: CompiledStateGraph) -> CompiledStateGraph:

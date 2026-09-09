@@ -50,8 +50,15 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
             "生产环境必须启用 MySQL checkpointer（USE_MYSQL_CHECKPOINTER=true，"
             "见 ADR 0021 / issue #153）"
         )
+    message_client_factory = (
+        None if settings.environment == "development" else MessageClientHttpx
+    )
+    if message_client_factory is None:
+        logger.info("development environment: intent persistence disabled")
     app.state.main_graph = build_main_graph(
-        checkpointer=checkpointer, message_client_factory=MessageClientHttpx,
+        checkpointer=checkpointer,
+        message_client_factory=message_client_factory,
+        attach_langfuse_callbacks=settings.environment != "development",
     )
     logger.info("main graph compiled")
 
