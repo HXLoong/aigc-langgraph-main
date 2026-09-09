@@ -162,12 +162,16 @@ async def close_place_close(state: AgentState) -> dict[str, Any]:
     )
     if "正常挂单" in combined and not _has_explicit_type:
         for leg in close_list:
+            if leg.confirmFullClose:
+                continue
             leg.closeOrderType = "市价单" if _no_tracking else "POV"
 
     # "最大跟量"/"拉满跟量" → POV 25%
     _pov_max_kw = ("最大跟量", "拉满跟量", "全跟量", "跟量拉满", "全部最大")
     if any(k in combined for k in _pov_max_kw):
         for leg in close_list:
+            if leg.confirmFullClose:
+                continue
             if not leg.closeOrderType:
                 leg.closeOrderType = "POV"
             leg.closeOrderPovRatio = 25
@@ -178,6 +182,8 @@ async def close_place_close(state: AgentState) -> dict[str, Any]:
         _pov_val = int(_pov_match.group(1))
         if 1 <= _pov_val <= 100:
             for leg in close_list:
+                if leg.confirmFullClose:
+                    continue
                 if not leg.closeOrderType:
                     leg.closeOrderType = "POV"
                 leg.closeOrderPovRatio = _pov_val
@@ -197,36 +203,60 @@ async def close_place_close(state: AgentState) -> dict[str, Any]:
     _seq_iter = re.finditer(r"序号\s*[:：]?\s*(\d+)|第\s*(\d+)\s*笔", combined)
     _seq_list = [int(m.group(1) or m.group(2)) for m in _seq_iter]
 
-    def _is_placeholder_oid(oid: str | None) -> bool:
+    def _is_valid_order_id(oid: str | None) -> bool:
         if not oid:
-            return True
-        s = oid.upper().strip()
-        if re.fullmatch(r"CO-\d{8}-[A-Z0-9]{4,16}", s):
             return False
-        if re.fullmatch(r"OPTG?-[A-Z]+\d{0,10}", s):
-            return False
-        return True
+        return bool(re.fullmatch(r"CO-\d{8}-[A-Z0-9]{4,16}", oid.upper().strip()))
+
+    def _is_placeholder_oid(oid: str | None) -> bool:
+        return not _is_valid_order_id(oid)
+
+    # 首次按单个合约平仓时，query-close-orders 不负责创建 orderId；用户原文中的
+    # OPT-/OPTG- 合约编号是 operate 创建平仓申请所需的确定性身份。
+    if len(parsed["contractCodes"]) == 1 and len(close_list) == 1:
+        direct_leg = close_list[0]
+        direct_leg.internalTradeId = parsed["contractCodes"][0]
+        if not _is_valid_order_id(direct_leg.orderId):
+            direct_leg.orderId = None
 
     for _i, _leg in enumerate(close_list):
-        if not _is_placeholder_oid(_leg.orderId):
+        if not _is_placeholder_oid(_leg.orderId) or _i >= len(_seq_list):
             continue
-        _seq = _seq_list[_i] if _i < len(_seq_list) else (_i + 1)
+        _seq = _seq_list[_i]
         _idx = _seq - 1
         _resolved = False
         if order_data and 0 <= _idx < len(order_data):
             _real = order_data[_idx]
             _real_oid = _real.get("orderId")
+            _real_contract_code = _real.get("contractCode")
             if _real_oid:
                 _leg.orderId = _real_oid
-                _leg.internalTradeId = _real_oid
                 _order_lookup[_real_oid] = _real
-                _resolved = True
+            else:
+                _leg.orderId = None
+            if _real_contract_code:
+                _leg.internalTradeId = _real_contract_code
+            _resolved = bool(_real_oid or _real_contract_code)
         if not _resolved:
-            # 无可用持仓数据 → 清空 LLM 占位文字，避免发给真后端污染 closeOrderList
+            # 查询阶段可能尚无 orderId；只清除 LLM 订单号占位文字，保留首次平仓的合约编号。
             _leg.orderId = None
-            _leg.internalTradeId = None
 
     # === 客户端预校验（fail-fast，不调用真后端；不属于"掩盖后端响应"——是拒绝提交）===
+    close_order_list_dump = [item.model_dump() for item in close_list]
+    if any(not item.orderId and not item.internalTradeId for item in close_list):
+        return {
+            "close_params": validated_close_params(closeOrderList=close_order_list_dump),
+            "error": "未能识别平仓目标，请提供合约编号或持仓序号。",
+            "intent": "close_order_request",
+            "trace": [
+                TraceEntry(
+                    node="close_place_close",
+                    decision="missing_close_order_identity",
+                    llm_output=result.model_dump(),
+                )
+            ],
+        }
+
     _validation_errors: list[str] = []
     for _leg in close_list:
         _amt = _leg.closeOrderNotionalDelta
@@ -247,8 +277,6 @@ async def close_place_close(state: AgentState) -> dict[str, Any]:
             _pov = _leg.closeOrderPovRatio
             if not (1 <= _pov <= 100):
                 _validation_errors.append(f"POV比例{_pov}%超出合法范围(1-100%)")
-
-    close_order_list_dump = [item.model_dump() for item in close_list]
 
     if _validation_errors:
         _err_msg = "参数校验不通过：" + "；".join(set(_validation_errors))

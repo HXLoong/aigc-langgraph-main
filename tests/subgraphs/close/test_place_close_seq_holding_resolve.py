@@ -86,6 +86,135 @@ def _sent_close_order_list(captured: MagicMock) -> list[dict[str, Any]]:
 
 
 @pytest.mark.asyncio
+class TestDirectContractResolution:
+    async def test_contract_id_preserved_when_query_has_no_order_id(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """首次按合约平仓时，orderId 由 operate 创建，查询阶段允许为空。"""
+        contract_code = "OPT-SZZSCF20260001"
+        _patch_query_close_orders(
+            monkeypatch,
+            [{"orderId": None, "contractCode": contract_code}],
+        )
+        captured = _patch_operate(monkeypatch)
+        _patch_llm(
+            monkeypatch,
+            ClosePlaceParams(
+                closeOrderList=[
+                    CloseOrderItem(orderId=None, internalTradeId=contract_code)
+                ]
+            ),
+        )
+
+        result = await close_place_close(
+            _full_context(f"我想平掉 {contract_code}")
+        )
+
+        assert result.get("error") is None
+        sent = _sent_close_order_list(captured)
+        assert sent[0]["orderId"] is None
+        assert sent[0]["internalTradeId"] == contract_code
+
+    async def test_explicit_contract_restored_when_llm_uses_placeholder_order_id(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """单合约首次平仓以用户原文为准，不向后端发送 LLM 订单号占位文字。"""
+        contract_code = "OPT-SZZSCF20260001"
+        _patch_query_close_orders(
+            monkeypatch,
+            [{"orderId": None, "contractCode": contract_code}],
+        )
+        captured = _patch_operate(monkeypatch)
+        _patch_llm(
+            monkeypatch,
+            ClosePlaceParams(
+                closeOrderList=[
+                    CloseOrderItem(
+                        orderId="ORDER_ID_FROM_CONTRACT_QUERY",
+                        internalTradeId=None,
+                    )
+                ]
+            ),
+        )
+
+        result = await close_place_close(
+            _full_context(f"我想平掉 {contract_code}")
+        )
+
+        assert result.get("error") is None
+        sent = _sent_close_order_list(captured)
+        assert sent[0]["orderId"] is None
+        assert sent[0]["internalTradeId"] == contract_code
+
+    async def test_contract_id_preserved_when_sequence_query_has_no_order_id(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """序号查询尚无 orderId 时，也不能清空已有的合法合约编号。"""
+        contract_code = "OPT-SZZSCF20260001"
+        _patch_query_close_orders(
+            monkeypatch,
+            [{"orderId": None, "contractCode": contract_code}],
+        )
+        captured = _patch_operate(monkeypatch)
+        _patch_llm(
+            monkeypatch,
+            ClosePlaceParams(
+                closeOrderList=[
+                    CloseOrderItem(
+                        orderId="ORDER_ID_FROM_HOLDING_MAP_WITH_SEQ_1",
+                        internalTradeId=contract_code,
+                        closeOrderNotionalDelta="2000000",
+                    )
+                ]
+            ),
+        )
+
+        result = await close_place_close(
+            _full_context("序号1平200万，合约编号 OPT-SZZSCF20260001")
+        )
+
+        assert result.get("error") is None
+        sent = _sent_close_order_list(captured)
+        assert sent[0]["orderId"] is None
+        assert sent[0]["internalTradeId"] == contract_code
+
+    async def test_full_close_preserves_llm_execution_values(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """全平 leg 不追加默认值，也不清空 LLM 已识别的执行参数。"""
+        contract_code = "OPT-SZZSCF20260001"
+        _patch_query_close_orders(
+            monkeypatch,
+            [{"orderId": None, "contractCode": contract_code}],
+        )
+        captured = _patch_operate(monkeypatch)
+        _patch_llm(
+            monkeypatch,
+            ClosePlaceParams(
+                closeOrderList=[
+                    CloseOrderItem(
+                        orderId=None,
+                        internalTradeId=contract_code,
+                        closeOrderType="POV",
+                        closeOrderPovRatio=25,
+                        confirmFullClose=True,
+                    )
+                ]
+            ),
+        )
+
+        result = await close_place_close(
+            _full_context(f"{contract_code} 全平")
+        )
+
+        assert result.get("error") is None
+        sent = _sent_close_order_list(captured)
+        assert sent[0]["closeOrderType"] == "POV"
+        assert sent[0]["closeOrderPovRatio"] == 25
+        assert sent[0]["confirmFullClose"] is True
+
+
+@pytest.mark.asyncio
 class TestSeqHoldingResolution:
     """序号 X → 持仓数据按位置（seq 1-indexed）解析。"""
 
@@ -125,11 +254,41 @@ class TestSeqHoldingResolution:
         assert sent[0]["orderId"] == "CO-20260506-85AB8526", (
             f"应使用持仓中 seq=1 的真单号提交后端，实际提交:\n{sent}"
         )
+        assert sent[0]["internalTradeId"] == "OPT-LYAFT20260001"
         assert "ORDER_ID_FROM_HOLDING_MAP" not in str(sent), (
             f"LLM 占位 placeholder 必须被覆盖，实际提交:\n{sent}"
         )
         # P0：后端真实响应逐字节透传，不做本地二次加工
         assert result.get("api_result") == "mock-backend-result"
+
+    async def test_sequence_uses_contract_id_when_query_has_no_order_id(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """按序号首次平仓时，查询结果中的合约编号足以提交 operate。"""
+        contract_code = "OPT-LYAFT20260001"
+        _patch_query_close_orders(
+            monkeypatch,
+            [{"orderId": None, "contractCode": contract_code}],
+        )
+        captured = _patch_operate(monkeypatch)
+        _patch_llm(
+            monkeypatch,
+            ClosePlaceParams(
+                closeOrderList=[
+                    CloseOrderItem(
+                        orderId="ORDER_ID_FROM_HOLDING_MAP_WITH_SEQ_1",
+                        closeOrderNotionalDelta="2000000",
+                    )
+                ]
+            ),
+        )
+
+        result = await close_place_close(_full_context("序号1平200万"))
+
+        assert result.get("error") is None
+        sent = _sent_close_order_list(captured)
+        assert sent[0]["orderId"] is None
+        assert sent[0]["internalTradeId"] == contract_code
 
     async def test_seq2_uses_second_holding(
         self, monkeypatch: pytest.MonkeyPatch
@@ -189,11 +348,11 @@ class TestSeqHoldingResolution:
         sent = _sent_close_order_list(captured)
         assert sent[0]["orderId"] == "CO-20260506-XXXX0001"
 
-    async def test_placeholder_blanked_when_no_holding_data(
+    async def test_unresolved_placeholder_does_not_call_backend(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """无可用持仓数据时 → LLM placeholder 必须被清空，不能污染发给后端的请求。"""
-        _patch_query_close_orders(monkeypatch, [])  # 后端返回空持仓
+        """序号无法解析且无合约编号时，不得向后端提交无身份平仓明细。"""
+        _patch_query_close_orders(monkeypatch, [])
         captured = _patch_operate(monkeypatch)
 
         params = ClosePlaceParams(
@@ -209,12 +368,9 @@ class TestSeqHoldingResolution:
         _patch_llm(monkeypatch, params)
 
         result = await close_place_close(_full_context("序号1平300万pov25"))
-        assert result.get("error") is None
-        sent = _sent_close_order_list(captured)
-        assert sent[0]["orderId"] is None, (
-            f"无持仓数据时 placeholder 必须被清空，实际提交:\n{sent}"
-        )
-        assert "ORDER_ID_FROM_HOLDING_MAP" not in str(sent)
+
+        assert result.get("error") is not None
+        captured.assert_not_called()
 
     async def test_multi_seq_legs_resolved_independently(
         self, monkeypatch: pytest.MonkeyPatch
@@ -246,5 +402,10 @@ class TestSeqHoldingResolution:
         )
         assert result.get("error") is None
         sent = _sent_close_order_list(captured)
-        sent_ids = {leg["orderId"] for leg in sent}
-        assert sent_ids == {"CO-20260506-FIRST0001", "CO-20260506-SECND0002"}
+        sent_by_id = {leg["orderId"]: leg for leg in sent}
+        assert set(sent_by_id) == {"CO-20260506-FIRST0001", "CO-20260506-SECND0002"}
+        assert sent_by_id["CO-20260506-FIRST0001"]["closeOrderType"] == "POV"
+        assert sent_by_id["CO-20260506-FIRST0001"]["closeOrderPovRatio"] == 25
+        assert sent_by_id["CO-20260506-SECND0002"]["confirmFullClose"] is True
+        assert sent_by_id["CO-20260506-SECND0002"]["closeOrderType"] is None
+        assert sent_by_id["CO-20260506-SECND0002"]["closeOrderPovRatio"] is None
