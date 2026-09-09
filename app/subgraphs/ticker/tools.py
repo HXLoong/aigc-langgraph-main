@@ -70,6 +70,7 @@ _EMBEDDED_DIGIT_RE = re.compile(r"(\d{4,6})")
 #: Round D 续修：百分比形式（如"200%" "80%/50%10%"）被 GOATS 模糊匹配成 002001.SZ 等
 #: 无关股票，opt-016 反案例链式失败 → 加百分比模式过滤
 _NON_TICKER_PATTERNS = (
+    re.compile(r"^\d+(?:\.\d+)?[DWMY]$", re.IGNORECASE),  # 1M / 2w / 0.5Y
     re.compile(r"^\d+\s*(个)?\s*(月|年|周|日|天)$"),  # 1个月 / 3年 / 6周 / 2天
     re.compile(r"^(行权价|执行价|敲入|敲出|期限|名义本金|本金|期权费|参与率|价格)$"),
     # 数字+百分号开头的 token 都不是标的（80% / 25.5% / 50%10% / 70/103 等）

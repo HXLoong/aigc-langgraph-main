@@ -1,7 +1,23 @@
 """D2.4 真后端联调发现：tokenize 时间词/业务术语过滤（Issue #76）。"""
 from __future__ import annotations
 
+import pytest
+
 from app.subgraphs.ticker.tools import tokenize
+
+
+@pytest.mark.parametrize("tenors", ["1M/2M", "1d/2W/3m/0.5y", "1.5M/2.25W", "1个月/2个月"])
+def test_compact_tenors_are_not_ticker_candidates(tenors) -> None:
+    assert tokenize.invoke({"raw_text": f"600519.SH,{tenors},80%"}) == ["600519.SH", "600519"]
+
+
+@pytest.mark.parametrize("ticker", ["600519.SH", "MMM.N", "AAPL.O", "M2409.DCE", "3M.N", "Moutai"])
+def test_tenor_filter_preserves_instrument_tokens(ticker) -> None:
+    assert ticker in tokenize.invoke({"raw_text": ticker})
+
+
+def test_tenor_filter_preserves_existing_bare_future_tokenization() -> None:
+    assert tokenize.invoke({"raw_text": "M2409"}) == ["2409", "M"]
 
 
 def test_tenor_words_excluded() -> None:

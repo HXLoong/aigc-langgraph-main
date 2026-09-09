@@ -65,9 +65,55 @@ def _patch_goats(monkeypatch: pytest.MonkeyPatch, results: list) -> None:
 
 
 @pytest.mark.asyncio
+async def test_same_instrument_merges_only_input_source_keywords(monkeypatch) -> None:
+    _patch_llm_batches(monkeypatch, infer={
+        "茅台": ["600519.SH"],
+        "600519": ["600519.SH"],
+        "invented-alias": ["600519.SH"],
+    })
+    _patch_goats(monkeypatch, [_FakeInstrument("600519.SH", "贵州茅台")])
+
+    resolution = await resolve_ticker_full("茅台 600519")
+
+    assert len(resolution.resolved) == 1
+    ticker = resolution.resolved[0]
+    assert ticker.windCode == "600519.SH"
+    assert ticker.from_goats is True
+    assert ticker.sourceKeywords == ["茅台", "600519"]
+
+
+def test_old_ticker_checkpoint_defaults_to_no_source_keywords() -> None:
+    from app.graph.state import TickerCandidate
+
+    ticker = TickerCandidate.model_validate({"windCode": "600519.SH", "from_goats": True})
+    assert ticker.sourceKeywords == []
+
+
+@pytest.mark.asyncio
 async def test_empty_raw_text_returns_empty_resolution() -> None:
     resolution = await resolve_ticker_full("")
     assert resolution == TickerResolution(resolved=[], hitl_pending=[])
+
+
+@pytest.mark.asyncio
+async def test_tenors_never_reach_inference_or_goats(monkeypatch) -> None:
+    _patch_llm_batches(monkeypatch, infer={
+        "600519.SH": ["600519.SH"], "600519": ["600519.SH"],
+    })
+    _patch_goats(monkeypatch, [_FakeInstrument("600519.SH")])
+
+    result = await resolve_ticker_full("600519.SH,1M/2M,0.5y,80%")
+
+    for batch in (resolver_mod.infer_code_batch, resolver_mod.split_ticker_keywords,
+                  resolver_mod.judge_ticker_type):
+        batch.assert_awaited_once_with(["600519.SH", "600519"])
+    calls = resolver_mod._make_client().search_securities_instrument.call_args_list
+    assert calls
+    assert all(
+        item.keyword == "600519.SH"
+        for call in calls for item in call.args[0].keywordItems
+    )
+    assert [ticker.windCode for ticker in result.resolved] == ["600519.SH"]
 
 
 @pytest.mark.asyncio

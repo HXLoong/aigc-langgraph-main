@@ -141,10 +141,17 @@ async def option_extract_inquiry(state: AgentState) -> dict[str, Any]:
     resolution = await resolve_ticker_full(raw_text)
     tickers = resolution.resolved
     order_list = sanitize_order_list([item.model_dump() for item in params.orderList])
-    backend_order_list = [
-        _with_resolved_ticker(dict(item), tickers, idx)
-        for idx, item in enumerate(order_list)
-    ]
+    backend_order_list = []
+    ticker_bindings = []
+    for index, item in enumerate(order_list):
+        backend_order, match_result = _with_resolved_ticker(dict(item), tickers)
+        backend_order_list.append(backend_order)
+        ticker_bindings.append({
+            "order_index": index,
+            "original_stock_code": item.get("stockCode"),
+            "backend_stock_code": backend_order.get("stockCode"),
+            "result": match_result,
+        })
 
     types = [item.optionType for item in params.orderList if item.optionType]
     decision = (
@@ -173,6 +180,7 @@ async def option_extract_inquiry(state: AgentState) -> dict[str, Any]:
                     "params": params.model_dump(),
                     "tickers_count": len(tickers),
                     "hitl_count": len(resolution.hitl_pending),
+                    "ticker_bindings": ticker_bindings,
                 },
             )
         ],

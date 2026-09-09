@@ -35,6 +35,10 @@ class TickerCandidate(BaseModel):
     insLngDesc: str | None = None
     relevanceScore: int | None = None
     transactionTypeLists: list[str] = Field(default_factory=list)
+    sourceKeywords: list[str] = Field(
+        default_factory=list,
+        description="本次输入中解析为该 GOATS 标的的原始候选词",
+    )
     from_goats: bool = Field(
         default=False,
         description="必须 True 才允许出现在 LangGraph 输出中（CLAUDE.md 硬约束）",

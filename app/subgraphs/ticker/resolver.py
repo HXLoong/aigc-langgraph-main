@@ -187,7 +187,8 @@ async def _resolve_pipeline(raw_text: str) -> TickerResolution:
 
     client = _make_client()
     resolved: list[TickerCandidate] = []
-    seen_codes: set[str] = set()
+    by_code: dict[str, TickerCandidate] = {}
+    input_candidates = set(candidates)
 
     for item in merged:
         org_str = item["orgStr"]
@@ -197,7 +198,13 @@ async def _resolve_pipeline(raw_text: str) -> TickerResolution:
         winner = await _resolve_one_org_item(client, org_str, keywords, predicted_family)
         if winner is None:
             continue
-        if winner.windCode in seen_codes:
+        code_key = winner.windCode.strip().upper()
+        source_keywords = [org_str] if org_str in input_candidates else []
+        if code_key in by_code:
+            existing = by_code[code_key]
+            for keyword in source_keywords:
+                if keyword not in existing.sourceKeywords:
+                    existing.sourceKeywords.append(keyword)
             continue
 
         resolved.append(
@@ -207,10 +214,11 @@ async def _resolve_pipeline(raw_text: str) -> TickerResolution:
                 insLngDesc=winner.insLngDesc,
                 relevanceScore=winner.relevanceScore,
                 transactionTypeLists=winner.transactionTypeLists,
+                sourceKeywords=source_keywords,
                 from_goats=True,
             )
         )
-        seen_codes.add(winner.windCode)
+        by_code[code_key] = resolved[-1]
 
     return TickerResolution(resolved=resolved, hitl_pending=[])
 
