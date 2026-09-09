@@ -14,44 +14,46 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from app.wire_model import WireModel
 
-class PlaceParams(BaseModel):
+
+class PlaceParams(WireModel):
     """下单/改单/询价参数信封（swap.place_order / option.extract_*）。"""
 
     model_config = ConfigDict(extra="forbid")
 
     expected_action: str = ""
-    orderList: list[dict[str, Any]] = Field(default_factory=list)
+    order_list: list[dict[str, Any]] = Field(alias="orderList", default_factory=list)
 
 
-class CancelParams(BaseModel):
+class CancelParams(WireModel):
     """撤单参数信封（swap 用 orderList；close 用 cancelOrderNoList）。"""
 
     model_config = ConfigDict(extra="forbid")
 
     expected_action: str = ""
-    orderList: list[dict[str, Any]] = Field(default_factory=list)
-    cancelOrderNoList: list[str] = Field(default_factory=list)
+    order_list: list[dict[str, Any]] = Field(alias="orderList", default_factory=list)
+    cancel_order_no_list: list[str] = Field(alias="cancelOrderNoList", default_factory=list)
 
 
-class ConfirmResult(BaseModel):
+class ConfirmResult(WireModel):
     """确认结果信封（合并 confirm 节点输出，ADR 0001 D5）。"""
 
     model_config = ConfigDict(extra="forbid")
 
     action: str = ""
-    orderList: list[dict[str, Any]] = Field(default_factory=list)
-    confirmOrderNoList: list[str] = Field(default_factory=list)
-    confirmCancelOrderNoList: list[str] = Field(default_factory=list)
+    order_list: list[dict[str, Any]] = Field(alias="orderList", default_factory=list)
+    confirm_order_no_list: list[str] = Field(alias="confirmOrderNoList", default_factory=list)
+    confirm_cancel_order_no_list: list[str] = Field(alias="confirmCancelOrderNoList", default_factory=list)
 
 
-class QueryFilter(BaseModel):
+class QueryFilter(WireModel):
     """查询过滤信封（swap/option 用 orderList；close 用 queryOrderNoList）。"""
 
     model_config = ConfigDict(extra="forbid")
 
-    orderList: list[dict[str, Any]] = Field(default_factory=list)
-    queryOrderNoList: list[str] = Field(default_factory=list)
+    order_list: list[dict[str, Any]] = Field(alias="orderList", default_factory=list)
+    query_order_no_list: list[str] = Field(alias="queryOrderNoList", default_factory=list)
 
 
 class CloseParams(BaseModel):
@@ -66,7 +68,7 @@ class CloseParams(BaseModel):
 
 def _validated(model_cls: type[BaseModel], kw: dict[str, Any]) -> dict[str, Any]:
     """经模型校验后只回吐调用方提供的键（输出与直接写 dict 等价）。"""
-    return model_cls(**kw).model_dump(include=set(kw))
+    return model_cls(**kw).model_dump(exclude_unset=True)
 
 
 def validated_place_params(**kw: Any) -> dict[str, Any]:

@@ -4,17 +4,19 @@
 """
 from __future__ import annotations
 
-from enum import Enum
+from enum import StrEnum
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
+
+from app.wire_model import WireModel
 
 # ============================================================
 # Goats 共用枚举（contracts §5）
 # ============================================================
 
 
-class GoatsOrderDirection(str, Enum):
+class GoatsOrderDirection(StrEnum):
     """交易方向（SwapEnum.java:148）。"""
 
     BUY = "BUY"
@@ -23,14 +25,14 @@ class GoatsOrderDirection(str, Enum):
     SHORT_CLOSE = "SHORT_CLOSE"
 
 
-class GoatsPriceType(str, Enum):
+class GoatsPriceType(StrEnum):
     """价格类型（SwapEnum.java:182）。"""
 
     LIMIT_ORDER = "LimitOrder"
     MARKET_ORDER = "MarketOrder"
 
 
-class GoatsAlgoType(str, Enum):
+class GoatsAlgoType(StrEnum):
     """算法类型（SwapEnum.java:213）。"""
 
     POV = "POV"
@@ -40,7 +42,7 @@ class GoatsAlgoType(str, Enum):
     SNIPER = "SNIPER"
 
 
-class GoatsTransactionType(str, Enum):
+class GoatsTransactionType(StrEnum):
     """交易品种类型（SwapEnum.java:59）。"""
 
     A_SHARE = "A_SHARE"
@@ -52,7 +54,7 @@ class GoatsTransactionType(str, Enum):
     CROSS_FUTURE = "CROSS_FUTURE"
 
 
-class GoatsOrderStatus(str, Enum):
+class GoatsOrderStatus(StrEnum):
     """订单状态（SwapEnum.java:287，部分常用值）。"""
 
     DRAFT = "DRAFT"
@@ -64,7 +66,7 @@ class GoatsOrderStatus(str, Enum):
     PENDING_CANCEL = "PENDING_CANCEL"
 
 
-class GoatsCurrency(str, Enum):
+class GoatsCurrency(StrEnum):
     """币种（SwapEnum.java:381）。"""
 
     CNY = "CNY"
@@ -81,19 +83,19 @@ class GoatsCurrency(str, Enum):
 # ============================================================
 
 
-class MachineContext(BaseModel):
+class MachineContext(WireModel):
     """企微机器人消息上下文，由 ingest 节点从 Dify inputs 解析后塞进 ReqVO。"""
 
     model_config = ConfigDict(extra="allow")
 
-    conversationId: str
-    messageId: int
-    messageContent: str
-    rawContent: str
-    userId: str
-    roomId: str
-    quoteContent: str | None = None
-    quoteAppinfo: str | None = None
+    conversation_id: str = Field(alias="conversationId")
+    message_id: int = Field(alias="messageId")
+    message_content: str = Field(alias="messageContent")
+    raw_content: str = Field(alias="rawContent")
+    user_id: str = Field(alias="userId")
+    room_id: str = Field(alias="roomId")
+    quote_content: str | None = Field(default=None, alias="quoteContent")
+    quote_appinfo: str | None = Field(default=None, alias="quoteAppinfo")
     guid: str | None = None
 
 

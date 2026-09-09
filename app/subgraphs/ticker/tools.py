@@ -556,15 +556,15 @@ async def rank_candidates(
         return []
     payload = [
         {
-            "windCode": r.windCode,
-            "insShtDesc": r.insShtDesc,
-            "insLngDesc": r.insLngDesc,
+            "windCode": r.wind_code,
+            "insShtDesc": r.ins_sht_desc,
+            "insLngDesc": r.ins_lng_desc,
             "insFamily": getattr(r, "insFamily", None),
             "currency": getattr(r, "currency", None),
             "exchange": getattr(r, "exchange", None),
             "tradableNow": getattr(r, "tradableNow", None),
             "hasPermission": getattr(r, "hasPermission", None),
-            "transactionTypes": getattr(r, "transactionTypeLists", None),
+            "transactionTypes": getattr(r, 'transaction_type_lists', None),
         }
         for r in results
     ]

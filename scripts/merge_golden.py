@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import json
 import sys
+from copy import deepcopy
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -160,6 +161,8 @@ def infer_option_category(item: dict) -> str:
 
 def convert_golden(item: dict) -> dict:
     """golden.jsonl → unified schema。"""
+    if "conversation" in item:
+        return deepcopy(item)
     raw = item["raw_content"]
     category = normalize_golden_category(item)
     conversation = [{"raw_content": raw, "quote_desc": ""}]
@@ -241,31 +244,55 @@ def sort_by_id(results: list[dict]) -> list[dict]:
     return sorted(results, key=key)
 
 
+def merge_archive(archive: list[dict], sources: list[tuple[str, list[dict]]]) -> list[dict]:
+    """保留历史记录与编号，追加新内容；来源编号冲突时分配新编号并记录来源。"""
+    results = deepcopy(archive)
+    counters: dict[str, int] = {}
+    for item in results:
+        prefix, number = item["id"].rsplit("-", 1)
+        counters[prefix] = max(counters.get(prefix, 0), int(number))
+
+    def content_key(item: dict) -> str:
+        return json.dumps(
+            {k: v for k, v in item.items() if k not in {"id", "source_case_id", "source_fixture"}},
+            sort_keys=True, ensure_ascii=False,
+        )
+
+    known = {content_key(item) for item in results}
+    for filename, cases in sources:
+        for case in cases:
+            key = content_key(case)
+            if key in known:
+                continue
+            item = deepcopy(case)
+            prefix = item["id"].split("-", 1)[0]
+            if prefix not in {"swap", "opt", "close", "unknown"}:
+                product = item.get("expected", {}).get("product_type", "unknown")
+                prefix = {"option": "opt", "option_close": "close"}.get(product, product)
+            counters[prefix] = counters.get(prefix, 0) + 1
+            item.update(
+                id=f"{prefix}-{counters[prefix]:03d}",
+                source_case_id=case["id"], source_fixture=filename,
+            )
+            results.append(item)
+            known.add(key)
+    return results
+
+
 def main() -> None:
     golden_path = ROOT / "tests" / "fixtures" / "golden.jsonl"
     option_path = ROOT / "tests" / "fixtures" / "option_golden.jsonl"
     out_path = ROOT / "tests" / "fixtures" / "unified_golden.jsonl"
 
-    results: list[dict] = []
+    def load(path: Path) -> list[dict]:
+        return [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
 
-    # golden.jsonl
-    with golden_path.open() as f:
-        for line in f:
-            line = line.strip()
-            if not line or line.startswith("#"):
-                continue
-            results.append(convert_golden(json.loads(line)))
-
-    # option_golden.jsonl
-    with option_path.open() as f:
-        for line in f:
-            line = line.strip()
-            if not line or line.startswith("#"):
-                continue
-            results.append(convert_option(json.loads(line)))
-
-    assign_ids(results)
-    results = sort_by_id(results)
+    anchors_path = golden_path.with_name("golden_rule_anchors.jsonl")
+    results = merge_archive(load(out_path), [
+        (golden_path.name, [convert_golden(case) for case in load(golden_path)]),
+        (option_path.name, [convert_option(case) for case in load(option_path)]),
+        (anchors_path.name, [convert_golden(case) for case in load(anchors_path)]),
+    ])
 
     # 写出
     with out_path.open("w", encoding="utf-8") as f:

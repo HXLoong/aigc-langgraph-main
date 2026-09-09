@@ -58,20 +58,20 @@ async def close_holding_query(state: AgentState) -> dict[str, Any]:
 
     decision = (
         f"closeable_only={result.closeable_only},"
-        f" tickers={len(result.underlyingInsNameList) + len(result.underlyingInsIdList)},"
-        f" trades={len(result.internalTradeIdList)}"
+        f" tickers={len(result.underlying_ins_name_list) + len(result.underlying_ins_id_list)},"
+        f" trades={len(result.internal_trade_id_list)}"
     )
 
     # close_order_query 是 read 类语义（持仓查询），过滤条件走 closeOrderReqVO.contractQuery
     # （对齐 Dify 期权平仓-参数聚合），不是 orderList（那是 option 域字段）。
     req_vo = build_close_order_req_vo(
-        ins_family_list=result.insFamilyList,
-        contract_type_list=result.contractTypeList,
+        ins_family_list=result.ins_family_list,
+        contract_type_list=result.contract_type_list,
         closeable_only=result.closeable_only,
-        internal_trade_id_list=result.internalTradeIdList,
-        key_ctpty_id_list=result.keyCtptyIdList,
-        underlying_ins_id_list=result.underlyingInsIdList,
-        underlying_ins_name_list=result.underlyingInsNameList,
+        internal_trade_id_list=result.internal_trade_id_list,
+        key_ctpty_id_list=result.key_ctpty_id_list,
+        underlying_ins_id_list=result.underlying_ins_id_list,
+        underlying_ins_name_list=result.underlying_ins_name_list,
     )
     backend = await call_close_backend(
         state,

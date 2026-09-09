@@ -3,17 +3,13 @@
 字段命名严格对齐 Java enum `SwapIntentionType`（7 值，ADR 0001 D2）。
 LLM 输出统一用 `type` 字段（与 Dify 原 prompt 约定一致）。
 """
-# ruff: noqa: N815
-# 说明：本文件字段名逐字对齐 Dify structured_output / Java DTO 的 camelCase 原文
-# （orderId / placeOrderWindCode / hasSignal 等），改成 snake_case 会破坏与 Dify
-# prompt JSON schema、Java 后端字段名的 1:1 映射（详见 CLAUDE.md「提示词不硬编码」
-# 纪律 + docs/api-contracts/java-backend.md）。全文件统一豁免这条命名检查，比在
-# 40 多处字段逐行加豁免注释更清晰。
 from __future__ import annotations
 
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
+
+from app.wire_model import WireModel
 
 # ============================================================
 # 意图分类（swap.intent）
@@ -85,7 +81,7 @@ SwapNotionalCurrency = Literal[
 ]
 
 
-class SwapOrderItem(BaseModel):
+class SwapOrderItem(WireModel):
     """swap orderList 中的单个订单条目（与 DSL v2 互换-节点-下单.md 字段对齐）。
 
     全部字段 Optional —— prompt 允许 null 表示"用户未提供"。
@@ -106,35 +102,35 @@ class SwapOrderItem(BaseModel):
 
     model_config = ConfigDict(extra="ignore")
 
-    orderId: str | None = None
-    placeOrderUltraContractCode: str | None = None
-    placeOrderWindCode: str | None = None
-    placeOrderTransactionType: SwapTransactionType | None = None
-    placeOrderQuantity: int | None = None
-    placeOrderQuantityHand: int | None = None  # 旧字段，见 docstring
-    placeOrderQuantityUnit: SwapQuantityUnit | None = None
-    placeOrderOrderDirection: SwapOrderDirection | None = None
-    placeOrderPriceType: SwapPriceType | None = None
-    placeOrderAlgorithmType: SwapAlgorithmType | None = None
-    placeOrderPrice: float | int | None = None
-    placeOrderPovPercent: float | int | None = None
-    placeOrderTotalPovPercent: float | int | None = None
-    placeOrderDisplayQty: int | None = None
-    placeOrderMaxVol: float | int | None = None
-    placeOrderStartTime: str | None = None
-    placeOrderEndTime: str | None = None
-    placeOrderRelativeTimeMinutes: float | int | None = None
-    placeOrderShortname: str | None = None
-    placeOrderQuantityTotal: int | None = None
-    placeOrderPremarket: bool | None = None
-    placeOrderNotional: float | int | None = None
-    placeOrderNotionalCurrency: SwapNotionalCurrency | None = None
-    placeOrderEntrustRatio: float | int | None = None
-    placeOrderCloseIntent: bool | None = None
-    hasFastExecutionIntent: bool | None = None
+    order_id: str | None = Field(default=None, alias="orderId")
+    place_order_ultra_contract_code: str | None = Field(default=None, alias="placeOrderUltraContractCode")
+    place_order_wind_code: str | None = Field(default=None, alias="placeOrderWindCode")
+    place_order_transaction_type: SwapTransactionType | None = Field(default=None, alias="placeOrderTransactionType")
+    place_order_quantity: int | None = Field(default=None, alias="placeOrderQuantity")
+    place_order_quantity_hand: int | None = Field(default=None, alias="placeOrderQuantityHand")  # 旧字段，见 docstring
+    place_order_quantity_unit: SwapQuantityUnit | None = Field(default=None, alias="placeOrderQuantityUnit")
+    place_order_order_direction: SwapOrderDirection | None = Field(default=None, alias="placeOrderOrderDirection")
+    place_order_price_type: SwapPriceType | None = Field(default=None, alias="placeOrderPriceType")
+    place_order_algorithm_type: SwapAlgorithmType | None = Field(default=None, alias="placeOrderAlgorithmType")
+    place_order_price: float | int | None = Field(default=None, alias="placeOrderPrice")
+    place_order_pov_percent: float | int | None = Field(default=None, alias="placeOrderPovPercent")
+    place_order_total_pov_percent: float | int | None = Field(default=None, alias="placeOrderTotalPovPercent")
+    place_order_display_qty: int | None = Field(default=None, alias="placeOrderDisplayQty")
+    place_order_max_vol: float | int | None = Field(default=None, alias="placeOrderMaxVol")
+    place_order_start_time: str | None = Field(default=None, alias="placeOrderStartTime")
+    place_order_end_time: str | None = Field(default=None, alias="placeOrderEndTime")
+    place_order_relative_time_minutes: float | int | None = Field(default=None, alias="placeOrderRelativeTimeMinutes")
+    place_order_shortname: str | None = Field(default=None, alias="placeOrderShortname")
+    place_order_quantity_total: int | None = Field(default=None, alias="placeOrderQuantityTotal")
+    place_order_premarket: bool | None = Field(default=None, alias="placeOrderPremarket")
+    place_order_notional: float | int | None = Field(default=None, alias="placeOrderNotional")
+    place_order_notional_currency: SwapNotionalCurrency | None = Field(default=None, alias="placeOrderNotionalCurrency")
+    place_order_entrust_ratio: float | int | None = Field(default=None, alias="placeOrderEntrustRatio")
+    place_order_close_intent: bool | None = Field(default=None, alias="placeOrderCloseIntent")
+    has_fast_execution_intent: bool | None = Field(default=None, alias="hasFastExecutionIntent")
 
 
-class SwapPlaceOrderParams(BaseModel):
+class SwapPlaceOrderParams(WireModel):
     """swap.place_order 节点 LLM 输出。
 
     与 Dify prompt 顶层结构一致：`{"type": "place_order_request", "orderList": [...]}`。
@@ -143,7 +139,7 @@ class SwapPlaceOrderParams(BaseModel):
 
     model_config = ConfigDict(extra="ignore")
 
-    orderList: list[SwapOrderItem] = Field(default_factory=list)
+    order_list: list[SwapOrderItem] = Field(alias="orderList", default_factory=list)
 
 
 # ============================================================
@@ -154,38 +150,38 @@ class SwapPlaceOrderParams(BaseModel):
 # ============================================================
 
 
-class SwapOrderRefItem(BaseModel):
+class SwapOrderRefItem(WireModel):
     """轻量订单引用（与 Dify swap/confirm/cancel/query 输出 schema 对齐）。"""
 
     model_config = ConfigDict(extra="ignore")
 
-    orderId: str | None = None
+    order_id: str | None = Field(default=None, alias="orderId")
 
 
-class SwapConfirmParams(BaseModel):
+class SwapConfirmParams(WireModel):
     """swap.confirm 合并版输出（confirm_order + confirm_cancel_order +
     confirm_modify_order 三子意图共用，靠 expected_action 区分）。
     """
 
     model_config = ConfigDict(extra="ignore")
 
-    orderList: list[SwapOrderRefItem] = Field(default_factory=list)
+    order_list: list[SwapOrderRefItem] = Field(alias="orderList", default_factory=list)
 
 
-class SwapCancelParams(BaseModel):
+class SwapCancelParams(WireModel):
     """swap.cancel 输出（cancel_order_request 意图）。"""
 
     model_config = ConfigDict(extra="ignore")
 
-    orderList: list[SwapOrderRefItem] = Field(default_factory=list)
+    order_list: list[SwapOrderRefItem] = Field(alias="orderList", default_factory=list)
 
 
-class SwapQueryParams(BaseModel):
+class SwapQueryParams(WireModel):
     """swap.query_order 输出（query_order_status 意图）。"""
 
     model_config = ConfigDict(extra="ignore")
 
-    orderList: list[SwapOrderRefItem] = Field(default_factory=list)
+    order_list: list[SwapOrderRefItem] = Field(alias="orderList", default_factory=list)
 
 
 # ============================================================
@@ -197,16 +193,16 @@ class SwapQueryParams(BaseModel):
 # ============================================================
 
 
-class SwapTickerPick(BaseModel):
+class SwapTickerPick(WireModel):
     """互换-选择标的 单条指针（对齐 candidate_list 定位 + candidates.seq）。"""
 
     model_config = ConfigDict(extra="ignore")
 
-    orderId: str | None = None
-    orderSeq: int | None = None
+    order_id: str | None = Field(default=None, alias="orderId")
+    order_seq: int | None = Field(default=None, alias="orderSeq")
     idx: int | None = None
     seq: int | None = None
-    directRef: str | None = None
+    direct_ref: str | None = Field(default=None, alias="directRef")
 
 
 class SwapSelectTickerOutput(BaseModel):
@@ -217,25 +213,25 @@ class SwapSelectTickerOutput(BaseModel):
     picks: list[SwapTickerPick] = Field(default_factory=list)
 
 
-class SwapCounterpartyPick(BaseModel):
+class SwapCounterpartyPick(WireModel):
     """互换-选择交易对手 单条指针（letter/ordinal/directName 三选一）。"""
 
     model_config = ConfigDict(extra="ignore")
 
-    orderId: str | None = None
-    orderSeq: int | None = None
+    order_id: str | None = Field(default=None, alias="orderId")
+    order_seq: int | None = Field(default=None, alias="orderSeq")
     idx: int | None = None
     letter: str | None = None
     ordinal: int | None = None
-    directName: str | None = None
+    direct_name: str | None = Field(default=None, alias="directName")
 
 
-class SwapSelectCounterpartyOutput(BaseModel):
+class SwapSelectCounterpartyOutput(WireModel):
     """swap.select_counterparty 节点 LLM 输出：hasSignal=False 时无对手选择信号。"""
 
     model_config = ConfigDict(extra="ignore")
 
-    hasSignal: bool = False
+    has_signal: bool = Field(default=False, alias="hasSignal")
     picks: list[SwapCounterpartyPick] = Field(default_factory=list)
 
 

@@ -146,7 +146,7 @@ async def _resolve_one_org_item(
     if not ranked_codes:
         return None
 
-    by_code = {(r.windCode or "").upper(): r for r in results}
+    by_code = {(r.wind_code or "").upper(): r for r in results}
     for code in ranked_codes:
         hit = by_code.get((code or "").upper())
         if hit is not None:
@@ -198,22 +198,22 @@ async def _resolve_pipeline(raw_text: str) -> TickerResolution:
         winner = await _resolve_one_org_item(client, org_str, keywords, predicted_family)
         if winner is None:
             continue
-        code_key = winner.windCode.strip().upper()
+        code_key = winner.wind_code.strip().upper()
         source_keywords = [org_str] if org_str in input_candidates else []
         if code_key in by_code:
             existing = by_code[code_key]
             for keyword in source_keywords:
-                if keyword not in existing.sourceKeywords:
-                    existing.sourceKeywords.append(keyword)
+                if keyword not in existing.source_keywords:
+                    existing.source_keywords.append(keyword)
             continue
 
         resolved.append(
             TickerCandidate(
-                windCode=winner.windCode,
-                insShtDesc=winner.insShtDesc,
-                insLngDesc=winner.insLngDesc,
-                relevanceScore=winner.relevanceScore,
-                transactionTypeLists=winner.transactionTypeLists,
+                windCode=winner.wind_code,
+                insShtDesc=winner.ins_sht_desc,
+                insLngDesc=winner.ins_lng_desc,
+                relevanceScore=winner.relevance_score,
+                transactionTypeLists=winner.transaction_type_lists,
                 sourceKeywords=source_keywords,
                 from_goats=True,
             )

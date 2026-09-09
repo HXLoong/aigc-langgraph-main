@@ -12,7 +12,7 @@ from app.nodes.render import render
 class TestBackendReplyPassthrough:
     async def test_pool_rejection_is_not_modified(self) -> None:
         ticker = SimpleNamespace(
-            windCode="399006.SZ", insShtDesc="创业板指", from_goats=True
+            wind_code="399006.SZ", ins_sht_desc="创业板指", from_goats=True
         )
         rejection = "399006.SZ不在标的池内，请联系对口销售或交易员。"
         state: dict = {
@@ -26,7 +26,7 @@ class TestBackendReplyPassthrough:
 
     async def test_quote_not_exist_is_not_modified(self) -> None:
         ticker = SimpleNamespace(
-            windCode="000016.SH", insShtDesc="上证50", from_goats=True
+            wind_code="000016.SH", ins_sht_desc="上证50", from_goats=True
         )
         rejection = "000016.SH报价不存在，请联系对口销售或交易员。"
         state: dict = {
@@ -52,7 +52,7 @@ class TestBackendReplyPassthrough:
     async def test_normal_api_result_not_augmented(self) -> None:
         """正常的 api_result（含订单详情）不该被附加。"""
         ticker = SimpleNamespace(
-            windCode="600519.SH", insShtDesc="贵州茅台", from_goats=True
+            wind_code="600519.SH", ins_sht_desc="贵州茅台", from_goats=True
         )
         state: dict = {
             "product_type": "option",

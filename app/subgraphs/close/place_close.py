@@ -132,7 +132,7 @@ async def close_place_close(state: AgentState) -> dict[str, Any]:
     )
 
     # 步骤 5：平仓参数提取-合并输出[code]
-    llm_orders_dump = [item.model_dump() for item in result.closeOrderList]
+    llm_orders_dump = [item.model_dump() for item in result.close_order_list]
     merged = merge_close_orders(parsed["messageType"], parsed["successOrders"], llm_orders_dump)
 
     # 空列表 → 返回错误（避免无意义地调用真后端 + render 无回复）
@@ -162,15 +162,15 @@ async def close_place_close(state: AgentState) -> dict[str, Any]:
     )
     if "正常挂单" in combined and not _has_explicit_type:
         for leg in close_list:
-            leg.closeOrderType = "市价单" if _no_tracking else "POV"
+            leg.close_order_type = "市价单" if _no_tracking else "POV"
 
     # "最大跟量"/"拉满跟量" → POV 25%
     _pov_max_kw = ("最大跟量", "拉满跟量", "全跟量", "跟量拉满", "全部最大")
     if any(k in combined for k in _pov_max_kw):
         for leg in close_list:
-            if not leg.closeOrderType:
-                leg.closeOrderType = "POV"
-            leg.closeOrderPovRatio = 25
+            if not leg.close_order_type:
+                leg.close_order_type = "POV"
+            leg.close_order_pov_ratio = 25
 
     # "pov25"/"POV25" 等 → 提取数字作为 POV 比例
     _pov_match = re.search(r"pov\s*(\d{1,3})", combined, re.IGNORECASE)
@@ -178,9 +178,9 @@ async def close_place_close(state: AgentState) -> dict[str, Any]:
         _pov_val = int(_pov_match.group(1))
         if 1 <= _pov_val <= 100:
             for leg in close_list:
-                if not leg.closeOrderType:
-                    leg.closeOrderType = "POV"
-                leg.closeOrderPovRatio = _pov_val
+                if not leg.close_order_type:
+                    leg.close_order_type = "POV"
+                leg.close_order_pov_ratio = _pov_val
 
     # === 序号 X / 第 X 笔 → 持仓位置映射（覆盖 LLM 凭空生成的 placeholder orderId）===
     # Round 3 eval 暴露：raw_text 用 "序号1平300万" 引用持仓时，LLM 可能没有可靠的
@@ -203,12 +203,10 @@ async def close_place_close(state: AgentState) -> dict[str, Any]:
         s = oid.upper().strip()
         if re.fullmatch(r"CO-\d{8}-[A-Z0-9]{4,16}", s):
             return False
-        if re.fullmatch(r"OPTG?-[A-Z]+\d{0,10}", s):
-            return False
-        return True
+        return not re.fullmatch(r"OPTG?-[A-Z]+\d{0,10}", s)
 
     for _i, _leg in enumerate(close_list):
-        if not _is_placeholder_oid(_leg.orderId):
+        if not _is_placeholder_oid(_leg.order_id):
             continue
         _seq = _seq_list[_i] if _i < len(_seq_list) else (_i + 1)
         _idx = _seq - 1
@@ -217,19 +215,19 @@ async def close_place_close(state: AgentState) -> dict[str, Any]:
             _real = order_data[_idx]
             _real_oid = _real.get("orderId")
             if _real_oid:
-                _leg.orderId = _real_oid
-                _leg.internalTradeId = _real_oid
+                _leg.order_id = _real_oid
+                _leg.internal_trade_id = _real_oid
                 _order_lookup[_real_oid] = _real
                 _resolved = True
         if not _resolved:
             # 无可用持仓数据 → 清空 LLM 占位文字，避免发给真后端污染 closeOrderList
-            _leg.orderId = None
-            _leg.internalTradeId = None
+            _leg.order_id = None
+            _leg.internal_trade_id = None
 
     # === 客户端预校验（fail-fast，不调用真后端；不属于"掩盖后端响应"——是拒绝提交）===
     _validation_errors: list[str] = []
     for _leg in close_list:
-        _amt = _leg.closeOrderNotionalDelta
+        _amt = _leg.close_order_notional_delta
         if _amt is not None:
             try:
                 _amt_val = float(_amt)
@@ -240,11 +238,11 @@ async def close_place_close(state: AgentState) -> dict[str, Any]:
             except (ValueError, TypeError):
                 pass
 
-        if _leg.closeOrderType == "限价单" and _leg.closeOrderPrice is None:
+        if _leg.close_order_type == "限价单" and _leg.close_order_price is None:
             _validation_errors.append("限价单必须填写限定价格")
 
-        if _leg.closeOrderType == "POV" and _leg.closeOrderPovRatio is not None:
-            _pov = _leg.closeOrderPovRatio
+        if _leg.close_order_type == "POV" and _leg.close_order_pov_ratio is not None:
+            _pov = _leg.close_order_pov_ratio
             if not (1 <= _pov <= 100):
                 _validation_errors.append(f"POV比例{_pov}%超出合法范围(1-100%)")
 
@@ -276,8 +274,8 @@ async def close_place_close(state: AgentState) -> dict[str, Any]:
     )
 
     # trace
-    types = [item.closeOrderType for item in close_list if item.closeOrderType]
-    full_closes = sum(1 for item in close_list if item.confirmFullClose)
+    types = [item.close_order_type for item in close_list if item.close_order_type]
+    full_closes = sum(1 for item in close_list if item.confirm_full_close)
     decision = f"orders={len(close_list)}, types={types}, full_close={full_closes}"
 
     return {

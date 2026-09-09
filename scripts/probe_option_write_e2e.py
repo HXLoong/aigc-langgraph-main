@@ -63,8 +63,8 @@ def _summarize_state(state: dict[str, Any]) -> dict[str, Any]:
     tickers = state.get("tickers") or []
     summary["tickers"] = [
         {
-            "windCode": getattr(t, "windCode", None) or (t.get("windCode") if isinstance(t, dict) else None),
-            "insShtDesc": getattr(t, "insShtDesc", None) or (t.get("insShtDesc") if isinstance(t, dict) else None),
+            "windCode": getattr(t, 'wind_code', None) or (t.get("windCode") if isinstance(t, dict) else None),
+            "insShtDesc": getattr(t, 'ins_sht_desc', None) or (t.get("insShtDesc") if isinstance(t, dict) else None),
             "from_goats": getattr(t, "from_goats", None) or (t.get("from_goats") if isinstance(t, dict) else None),
         }
         for t in tickers[:3]

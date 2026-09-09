@@ -81,7 +81,7 @@ class TestMultiTurnReplyTextNoLeak:
         # 用 mock LLM 避免真实调用，构造一个稳定的 2 轮场景
         # 简化：直接验证 ingest 在第二轮调用时输出 reset 字段
         cp = InMemorySaver()
-        graph = build_main_graph(cp)
+        build_main_graph(cp)
 
         # 模拟先有 state 里残留的 reply_text
         # 直接构造一个 state（不走完整图，因为 mock LLM 太复杂）

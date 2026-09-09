@@ -5,24 +5,25 @@
 from __future__ import annotations
 
 from decimal import Decimal
-from enum import Enum
+from enum import StrEnum
 from typing import Any, Protocol
 
 import httpx
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import ConfigDict, Field, field_validator
 
 from app.tools.models import (
     CommonResult,
     GoatsOrderDirection,
     GoatsPriceType,
 )
+from app.wire_model import WireModel
 
 # ============================================================
 # 期权意图枚举（StockEnum.java:42-79，16 值）
 # ============================================================
 
 
-class OptionIntentionType(str, Enum):
+class OptionIntentionType(StrEnum):
     """对应 Java `stockOptionIntentionType`（contracts §2.1，16 值，Java 后端真实契约）。
 
     注意：`REQUEST_MODIFY_ORDER` / `CONFIRM_MODIFY_ORDER` 在 Dify DSL v2 迁移后
@@ -57,48 +58,48 @@ class OptionIntentionType(str, Enum):
 # ============================================================
 
 
-class FinancialOrderOpenApiBaseSaveReqVO(BaseModel):
+class FinancialOrderOpenApiBaseSaveReqVO(WireModel):
     """期权下单/操作的单个订单参数（Java DTO 1:1）。"""
 
     model_config = ConfigDict(extra="allow")
 
-    placeOrderWindCode: str | None = None
-    placeOrderPrice: Decimal | None = None
-    placeOrderQuantity: int | None = None
-    placeOrderOrderType: str | None = None  # BY_QTY / BY_AMOUNT
-    placeOrderOrderDirection: GoatsOrderDirection | None = None
-    placeOrderPriceType: GoatsPriceType | None = None
-    notionalAmount: Decimal | None = None  # 下单金额（向 Goats 发送前要 truncate(2)）
-    orderId: str | None = None  # 改单/撤单时填
+    place_order_wind_code: str | None = Field(default=None, alias="placeOrderWindCode")
+    place_order_price: Decimal | None = Field(default=None, alias="placeOrderPrice")
+    place_order_quantity: int | None = Field(default=None, alias="placeOrderQuantity")
+    place_order_order_type: str | None = Field(default=None, alias="placeOrderOrderType")  # BY_QTY / BY_AMOUNT
+    place_order_order_direction: GoatsOrderDirection | None = Field(default=None, alias="placeOrderOrderDirection")
+    place_order_price_type: GoatsPriceType | None = Field(default=None, alias="placeOrderPriceType")
+    notional_amount: Decimal | None = Field(default=None, alias="notionalAmount")  # 下单金额（向 Goats 发送前要 truncate(2)）
+    order_id: str | None = Field(default=None, alias="orderId")  # 改单/撤单时填
 
 
-class CloseOrderReqVO(BaseModel):
+class CloseOrderReqVO(WireModel):
     """平仓请求参数。"""
 
     model_config = ConfigDict(extra="allow")
 
-    contractCode: str | None = None
+    contract_code: str | None = Field(default=None, alias="contractCode")
     qty: int | None = None
     price: Decimal | None = None
 
 
-class GoatsOptionRfqReqVO(BaseModel):
+class GoatsOptionRfqReqVO(WireModel):
     """期权询价 / 雪球参数；GOATS 数值数组在请求边界转成字符串数组。"""
 
     model_config = ConfigDict(extra="allow")
 
-    chatType: str | None = None
-    chatInstrument: str | None = None
-    productType: str | None = None
+    chat_type: str | None = Field(default=None, alias="chatType")
+    chat_instrument: str | None = Field(default=None, alias="chatInstrument")
+    product_type: str | None = Field(default=None, alias="productType")
     tenor: list[str] | None = None
     strike: list[str] | None = None
-    knockInPrice: list[str] | None = None
-    knockOutPrice: list[str] | None = None
-    estimateMargin: list[str] | None = None
-    participateRate: list[str] | None = None
+    knock_in_price: list[str] | None = Field(default=None, alias="knockInPrice")
+    knock_out_price: list[str] | None = Field(default=None, alias="knockOutPrice")
+    estimate_margin: list[str] | None = Field(default=None, alias="estimateMargin")
+    participate_rate: list[str] | None = Field(default=None, alias="participateRate")
 
     @field_validator(
-        "strike", "knockInPrice", "knockOutPrice", "estimateMargin", "participateRate",
+        "strike", 'knock_in_price', 'knock_out_price', 'estimate_margin', 'participate_rate',
         mode="before",
     )
     @classmethod
@@ -114,7 +115,7 @@ class GoatsOptionRfqReqVO(BaseModel):
         return value
 
 
-class FinancialOrderOpenApiSaveReqVO(BaseModel):
+class FinancialOrderOpenApiSaveReqVO(WireModel):
     """`POST /admin-api/financial-orders/operate` 请求体（Java DTO 1:1）。
 
     字段对齐 Dify DSL v2 code 节点「期权开仓」（spec/code_nodes/期权开仓.py）
@@ -128,22 +129,22 @@ class FinancialOrderOpenApiSaveReqVO(BaseModel):
     operate: str | None = None  # 操作（不强制，与 type 同义但不全等）
     type: OptionIntentionType  # 意图（必填）
 
-    orderList: list[FinancialOrderOpenApiBaseSaveReqVO] = Field(default_factory=list)
-    closeOrderReqVO: CloseOrderReqVO | None = None
-    optionRfq: GoatsOptionRfqReqVO | None = None
+    order_list: list[FinancialOrderOpenApiBaseSaveReqVO] = Field(alias="orderList", default_factory=list)
+    close_order_req_vo: CloseOrderReqVO | None = Field(default=None, alias="closeOrderReqVO")
+    option_rfq: GoatsOptionRfqReqVO | None = Field(default=None, alias="optionRfq")
 
     # 机器人上下文（9 个，由 MachineContext 提供，必填）
-    conversationId: str
-    messageId: int
-    messageContent: str
-    rawContent: str
-    userId: str
-    roomId: str
-    quoteContent: str | None = None
-    quoteAppinfo: str | None = None
+    conversation_id: str = Field(alias="conversationId")
+    message_id: int = Field(alias="messageId")
+    message_content: str = Field(alias="messageContent")
+    raw_content: str = Field(alias="rawContent")
+    user_id: str = Field(alias="userId")
+    room_id: str = Field(alias="roomId")
+    quote_content: str | None = Field(default=None, alias="quoteContent")
+    quote_appinfo: str | None = Field(default=None, alias="quoteAppinfo")
     guid: str | None = None
     #: 人工兜底代客操作人（本人操作时为空）；对齐 Dify `operator_user_id` 变量
-    operatorUserId: str | None = None
+    operator_user_id: str | None = Field(default=None, alias="operatorUserId")
 
 
 # ============================================================

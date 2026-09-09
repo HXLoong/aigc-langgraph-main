@@ -96,7 +96,7 @@ async def test_place_order_request_routes_to_place_order_node(
     assert final.get("place_params", {}).get("expected_action") == "place"
     # ticker 集成验证
     tickers = final.get("tickers", [])
-    assert any("700" in t.windCode and t.windCode.endswith(".HK") for t in tickers)
+    assert any("700" in t.wind_code and t.wind_code.endswith(".HK") for t in tickers)
 
 
 @pytest.mark.asyncio

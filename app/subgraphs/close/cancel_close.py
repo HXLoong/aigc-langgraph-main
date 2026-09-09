@@ -48,7 +48,7 @@ async def close_cancel_close(state: AgentState) -> dict[str, Any]:
         ]
     )
 
-    order_nos = list(result.cancelOrderNoList)
+    order_nos = list(result.cancel_order_no_list)
 
     # 正则兜底：LLM 未提取到时从消息中搜订单号
     if not order_nos:

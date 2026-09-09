@@ -58,7 +58,7 @@ async def option_extract_query(state: AgentState) -> dict[str, Any]:
             ("user", user_message),
         ]
     )
-    order_list = sanitize_order_list([item.model_dump() for item in result.orderList])
+    order_list = sanitize_order_list([item.model_dump() for item in result.order_list])
     backend = await call_option_backend(
         state,
         intent="query_order_status",
@@ -71,7 +71,7 @@ async def option_extract_query(state: AgentState) -> dict[str, Any]:
         "trace": [
             TraceEntry(
                 node="option_extract_query",
-                decision=f"orders={len(result.orderList)}",
+                decision=f"orders={len(result.order_list)}",
                 llm_output=result.model_dump(),
             )
         ],

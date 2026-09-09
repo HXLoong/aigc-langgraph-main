@@ -82,7 +82,7 @@ def _params_update(params: SwapPlaceOrderParams, node: str, decision: str) -> di
     return {
         "place_params": {
             "expected_action": action,
-            "orderList": [item.model_dump() for item in params.orderList],
+            "orderList": [item.model_dump() for item in params.order_list],
         },
         "intent": "place_order_request",
         "trace": [TraceEntry(node=node, decision=decision)],

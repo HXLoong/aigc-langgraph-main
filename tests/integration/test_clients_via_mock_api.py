@@ -149,7 +149,7 @@ async def test_ticker_search_by_keyword(ticker_client) -> None:
     assert isinstance(rows, list)
     # mock_api 返回至少一条命中（"腾讯"在白名单内）
     assert len(rows) > 0
-    assert all(hasattr(r, "windCode") for r in rows)
+    assert all(hasattr(r, 'wind_code') for r in rows)
 
 
 async def test_ticker_search_by_full_code(ticker_client) -> None:

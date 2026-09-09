@@ -36,7 +36,7 @@ async def _run_one(raw_text: str) -> None:
         return
     latency = int((time.monotonic() - t0) * 1000)
     resolved_summary = ", ".join(
-        f"{c.windCode}({c.insShtDesc})" for c in resolution.resolved[:3]
+        f"{c.wind_code}({c.ins_sht_desc})" for c in resolution.resolved[:3]
     )
     if len(resolution.resolved) > 3:
         resolved_summary += f", ...({len(resolution.resolved)} total)"

@@ -50,8 +50,8 @@ def _patch_llm(
 class TestOptionOrderItemForInquiry:
     def test_minimal_all_none(self) -> None:
         item = OptionOrderItem()
-        assert item.stockCode is None
-        assert item.optionType is None
+        assert item.stock_code is None
+        assert item.option_type is None
 
     def test_full_item(self) -> None:
         item = OptionOrderItem(
@@ -62,7 +62,7 @@ class TestOptionOrderItemForInquiry:
             notionalAmount="10000000",
             participationRate=None,
         )
-        assert item.optionType == "欧式看涨"
+        assert item.option_type == "欧式看涨"
 
     def test_invalid_option_type_rejected(self) -> None:
         with pytest.raises(ValidationError):
@@ -78,7 +78,7 @@ class TestOptionOrderItemForInquiry:
         params = OptionOrderItem.model_validate(
             {"stockCode": "腾讯", "garbage": "x"}
         )
-        assert params.stockCode == "腾讯"
+        assert params.stock_code == "腾讯"
 
     @pytest.mark.parametrize(
         "valid_type",
@@ -86,7 +86,7 @@ class TestOptionOrderItemForInquiry:
     )
     def test_all_valid_option_types(self, valid_type: str) -> None:
         item = OptionOrderItem(optionType=valid_type)  # type: ignore[arg-type]
-        assert item.optionType == valid_type
+        assert item.option_type == valid_type
 
 
 # ============================================================
@@ -121,8 +121,8 @@ async def test_case_026_backend_orders_keep_their_ticker(monkeypatch, codes) -> 
         "room_id": "test-room", "user_id": "test-user",
     })
     operate.assert_awaited_once()
-    orders = operate.call_args.args[0].orderList
-    assert [(o.stockCode, o.tenor, o.strikePercentage) for o in orders] == [
+    orders = operate.call_args.args[0].order_list
+    assert [(o.model_dump()["stockCode"], o.tenor, o.model_dump()["strikePercentage"]) for o in orders] == [
         ("600519.SH", "1M", 80.0), ("600519.SH", "2M", 80.0),
     ]
     assert [o["stockCode"] for o in result["place_params"]["orderList"]] == [
@@ -161,7 +161,7 @@ async def test_inquiry_binds_by_unique_identity_and_preserves_unresolved_values(
         "600519.SH", "600519.SH", "unknown", "shared", None, "unverified", "000858.SZ", "茅",
     ]
     assert [order["stockCode"] for order in sent] == expected
-    assert [order["tenor"] for order in sent] == [item.tenor for item in params.orderList]
+    assert [order["tenor"] for order in sent] == [item.tenor for item in params.order_list]
     assert [order["stockCode"] for order in result["place_params"]["orderList"]] == originals
     bindings = result["trace"][0].llm_output["ticker_bindings"]
     assert [binding["backend_stock_code"] for binding in bindings] == expected
@@ -210,7 +210,7 @@ class TestOptionExtractInquiryNode:
         assert result["place_params"]["orderList"][0]["stockCode"] == "腾讯"
         tickers = result.get("tickers", [])
         assert len(tickers) >= 1
-        assert any("700" in t.windCode and t.windCode.endswith(".HK") for t in tickers)
+        assert any("700" in t.wind_code and t.wind_code.endswith(".HK") for t in tickers)
         assert all(t.from_goats for t in tickers)
 
     async def test_inquiry_with_unknown_ticker(
@@ -263,7 +263,7 @@ class TestOptionExtractInquiryNode:
         result = await option_extract_inquiry(
             {"raw_text": "雪球询价 茅台 和 腾讯 1Y"}
         )
-        wind_codes = {t.windCode for t in result["tickers"]}
+        wind_codes = {t.wind_code for t in result["tickers"]}
         assert "600519.SH" in wind_codes
         assert "00700.HK" in wind_codes
 

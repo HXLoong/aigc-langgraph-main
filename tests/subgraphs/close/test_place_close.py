@@ -33,9 +33,9 @@ def _patch_llm(
 class TestCloseOrderItem:
     def test_all_optional_fields_default_none(self) -> None:
         item = CloseOrderItem()
-        assert item.orderId is None
-        assert item.closeOrderType is None
-        assert item.confirmFullClose is None
+        assert item.order_id is None
+        assert item.close_order_type is None
+        assert item.confirm_full_close is None
 
     def test_market_order(self) -> None:
         item = CloseOrderItem(
@@ -43,7 +43,7 @@ class TestCloseOrderItem:
             closeOrderNotionalDelta="2000000",
             closeOrderType="市价单",
         )
-        assert item.closeOrderType == "市价单"
+        assert item.close_order_type == "市价单"
 
     def test_limit_order_with_price(self) -> None:
         item = CloseOrderItem(
@@ -51,7 +51,7 @@ class TestCloseOrderItem:
             closeOrderType="限价单",
             closeOrderPrice=10.5,
         )
-        assert item.closeOrderPrice == 10.5
+        assert item.close_order_price == 10.5
 
     def test_pov_order_with_ratio(self) -> None:
         item = CloseOrderItem(
@@ -59,7 +59,7 @@ class TestCloseOrderItem:
             closeOrderType="POV",
             closeOrderPovRatio=25,
         )
-        assert item.closeOrderPovRatio == 25
+        assert item.close_order_pov_ratio == 25
 
     def test_twap_order_with_time_range(self) -> None:
         item = CloseOrderItem(
@@ -68,11 +68,11 @@ class TestCloseOrderItem:
             closeOrderAlgoStartTime="13:00",
             closeOrderAlgoEndTime="14:00",
         )
-        assert item.closeOrderAlgoStartTime == "13:00"
+        assert item.close_order_algo_start_time == "13:00"
 
     def test_full_close_confirmation(self) -> None:
         item = CloseOrderItem(orderId="CO-1", confirmFullClose=True)
-        assert item.confirmFullClose is True
+        assert item.confirm_full_close is True
 
     def test_invalid_close_type_rejected(self) -> None:
         with pytest.raises(ValidationError):
@@ -82,7 +82,7 @@ class TestCloseOrderItem:
         item = CloseOrderItem.model_validate(
             {"orderId": "CO-1", "garbage": "x"}
         )
-        assert item.orderId == "CO-1"
+        assert item.order_id == "CO-1"
 
 
 # ============================================================
@@ -93,7 +93,7 @@ class TestCloseOrderItem:
 class TestClosePlaceParams:
     def test_default_empty_list(self) -> None:
         p = ClosePlaceParams()
-        assert p.closeOrderList == []
+        assert p.close_order_list == []
 
     def test_with_multiple_orders(self) -> None:
         p = ClosePlaceParams(
@@ -103,13 +103,13 @@ class TestClosePlaceParams:
                                closeOrderPrice=10),
             ]
         )
-        assert len(p.closeOrderList) == 2
+        assert len(p.close_order_list) == 2
 
     def test_extra_field_ignored(self) -> None:
         params = ClosePlaceParams.model_validate(
             {"closeOrderList": [], "garbage": "x"}
         )
-        assert params.closeOrderList == []
+        assert params.close_order_list == []
 
 
 # ============================================================

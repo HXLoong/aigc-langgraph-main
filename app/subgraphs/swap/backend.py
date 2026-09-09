@@ -61,7 +61,7 @@ def _with_resolved_ticker(
     """
     if index < len(tickers):
         ticker = tickers[index]
-        wind_code = getattr(ticker, "windCode", None)
+        wind_code = getattr(ticker, 'wind_code', None)
         if wind_code is None and isinstance(ticker, dict):
             wind_code = ticker.get("windCode")
         if wind_code:

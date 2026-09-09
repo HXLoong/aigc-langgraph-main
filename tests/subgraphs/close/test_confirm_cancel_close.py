@@ -45,35 +45,35 @@ def _patch_llm(
 class TestParamsModels:
     def test_confirm_close_params_default_empty_list(self) -> None:
         params = ConfirmCloseParams()
-        assert params.confirmOrderNoList == []
+        assert params.confirm_order_no_list == []
 
     def test_confirm_close_params_with_orders(self) -> None:
         params = ConfirmCloseParams(
             confirmOrderNoList=["CO-20260304-4FE9C941", "CO-20260304-E2BA7501"]
         )
-        assert len(params.confirmOrderNoList) == 2
+        assert len(params.confirm_order_no_list) == 2
 
     def test_cancel_close_params_default_empty_list(self) -> None:
         params = CancelCloseParams()
-        assert params.cancelOrderNoList == []
+        assert params.cancel_order_no_list == []
 
     def test_cancel_close_params_with_orders(self) -> None:
         params = CancelCloseParams(
             cancelOrderNoList=["CO-20260304-759125AD"]
         )
-        assert params.cancelOrderNoList == ["CO-20260304-759125AD"]
+        assert params.cancel_order_no_list == ["CO-20260304-759125AD"]
 
     def test_confirm_close_extra_fields_ignored(self) -> None:
         params = ConfirmCloseParams.model_validate(
             {"confirmOrderNoList": [], "garbage": "x"}
         )
-        assert params.confirmOrderNoList == []
+        assert params.confirm_order_no_list == []
 
     def test_cancel_close_extra_fields_ignored(self) -> None:
         params = CancelCloseParams.model_validate(
             {"cancelOrderNoList": [], "garbage": "x"}
         )
-        assert params.cancelOrderNoList == []
+        assert params.cancel_order_no_list == []
 
 
 # ============================================================
@@ -237,8 +237,8 @@ class TestCloseCancelCloseNode:
         assert len(captured) == 1
         req = captured[0]
         assert req.type.value == "close_order_cancel_request"
-        assert req.orderList == []
-        assert req.closeOrderReqVO.model_dump()["cancelOrderNoList"] == [
+        assert req.order_list == []
+        assert req.close_order_req_vo.model_dump()["cancelOrderNoList"] == [
             "CO-20260304-759125AD"
         ]
         # P0：真后端响应逐字节透传

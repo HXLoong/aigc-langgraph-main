@@ -51,7 +51,7 @@ def inquiry_workflow(
     from langgraph.checkpoint.memory import InMemorySaver
 
     settings = get_settings().model_copy(update={
-        "environment": "development", "use_mysql_checkpointer": True,
+        "environment": "staging", "use_mysql_checkpointer": True,
         "enable_langfuse": False,
     })
     monkeypatch.setattr("app.config.get_settings", lambda: settings)

@@ -448,7 +448,7 @@ def test_top_level_user_fills_missing_backend_user_id(
     assert response.status_code == 200, response.text
     assert response.json()["data"]["status"] == "succeeded"
     assert captured_request is not None
-    assert captured_request.userId == "dify-user-1"
+    assert captured_request.user_id == "dify-user-1"
 
 
 def test_workflows_run_rejects_conflicting_input_aliases(

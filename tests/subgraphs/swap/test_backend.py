@@ -38,7 +38,7 @@ def test_message_id_no_digits_returns_zero() -> None:
 
 def test_with_resolved_ticker_writes_wind_code() -> None:
     ticker = MagicMock()
-    ticker.windCode = "600519.SH"
+    ticker.wind_code = "600519.SH"
     order: dict = {}
     result = _with_resolved_ticker(order, [ticker], 0)
     assert result["placeOrderWindCode"] == "600519.SH"

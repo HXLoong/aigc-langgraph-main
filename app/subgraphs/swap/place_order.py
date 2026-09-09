@@ -84,7 +84,7 @@ def _expected_action(params: SwapPlaceOrderParams) -> str:
     - 任一订单有 orderId → "modify"
     - 全部 orderId=null → "place"
     """
-    if any(item.orderId for item in params.orderList):
+    if any(item.order_id for item in params.order_list):
         return "modify"
     return "place"
 
@@ -126,7 +126,7 @@ async def swap_place_order(state: AgentState) -> dict[str, Any]:
     tickers = resolution.resolved
 
     action = _expected_action(params)
-    order_list = [item.model_dump() for item in params.orderList]
+    order_list = [item.model_dump() for item in params.order_list]
     order_list = [
         _with_resolved_ticker(dict(item), tickers, idx)
         for idx, item in enumerate(order_list)
@@ -134,7 +134,7 @@ async def swap_place_order(state: AgentState) -> dict[str, Any]:
 
     decision = (
         f"action={action},"
-        f" orders={len(params.orderList)},"
+        f" orders={len(params.order_list)},"
         f" tickers={len(tickers)},"
         f" hitl={len(resolution.hitl_pending)}"
     )
