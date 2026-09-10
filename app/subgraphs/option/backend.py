@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import logging
+import re
 from typing import Any
 
 from app.graph.state import AgentState
@@ -59,16 +60,41 @@ def _context(state: AgentState) -> dict[str, Any]:
 
 
 def _with_resolved_ticker(
-    order: dict[str, Any], tickers: list[Any], index: int
-) -> dict[str, Any]:
-    if index < len(tickers):
-        ticker = tickers[index]
-        wind_code = getattr(ticker, "windCode", None)
-        if wind_code is None and isinstance(ticker, dict):
-            wind_code = ticker.get("windCode")
-        if wind_code:
+    order: dict[str, Any], tickers: list[Any]
+) -> tuple[dict[str, Any], str]:
+    """Normalize an order by identity; return the order and its binding outcome."""
+    stock_code = (order.get("stockCode") or "").strip().upper()
+    if not stock_code:
+        return order, "missing"
+    verified = []
+    for ticker in tickers:
+        data = ticker if isinstance(ticker, dict) else ticker.model_dump()
+        wind_code = data.get("windCode") or ""
+        if data.get("from_goats") is not True or not wind_code.strip():
+            continue
+        verified.append(data)
+        if wind_code.strip().upper() == stock_code:
             order["stockCode"] = wind_code
-    return order
+            return order, "matched_code"
+
+    # A qualified code must never be reinterpreted as another instrument's alias,
+    # including an unknown exchange suffix that GOATS needs to validate itself.
+    if re.fullmatch(r"[A-Z0-9][A-Z0-9._-]*\.[A-Z][A-Z0-9]*", stock_code):
+        return order, "unmatched"
+
+    matches: dict[str, str] = {}
+    for data in verified:
+        aliases = [data.get("insShtDesc"), data.get("insLngDesc")]
+        aliases.extend(data.get("sourceKeywords") or [])
+        if any(isinstance(alias, str) and alias.strip().upper() == stock_code for alias in aliases):
+            wind_code = data["windCode"]
+            matches[wind_code.strip().upper()] = wind_code
+    if len(matches) == 1:
+        order["stockCode"] = next(iter(matches.values()))
+        return order, "matched_alias"
+    if matches:
+        return order, "ambiguous"
+    return order, "unmatched"
 
 
 def _is_empty_backend_result(value: Any) -> bool:

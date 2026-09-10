@@ -102,7 +102,14 @@ async def test_main_graph_e2e_swap_keyword(
     assert trace_nodes.count("ingest") == 1
     assert trace_nodes.count("pre_route") == 1
     assert trace_nodes.count("intent_route") == 1
-    assert len(final["history_messages"]) == 1
+    from app.graph.state import Message
+
+    history = [Message.model_validate(message) for message in final["history_messages"]]
+    assert [(message.role, message.content) for message in history] == [
+        ("user", "上一轮消息"),
+        ("user", "做一笔互换 100 手"),
+        ("assistant", final["reply_text"]),
+    ]
 
     assert final.get("product_type") == "swap"
     assert final.get("intent") == "place_order_request"
@@ -176,9 +183,17 @@ async def test_main_graph_trace_is_isolated_per_turn(
         config=config,
     )
 
-    expected = ["ingest", "pre_route", "intent_route", "fallback", "persist", "render"]
+    expected = [
+        "ingest", "pre_route", "intent_route", "fallback", "persist_intent", "persist", "render",
+    ]
     assert [entry.node for entry in first["trace"]] == expected
     assert [entry.node for entry in second["trace"]] == expected
+    assert first["trace"][4].decision == "skipped"
+    assert second["trace"][4].decision == "skipped"
+    assert [(message.role, message.content) for message in second["history_messages"]] == [
+        ("user", "第一轮"), ("assistant", first["reply_text"]),
+        ("user", "第二轮"), ("assistant", second["reply_text"]),
+    ]
 
 
 @pytest.mark.asyncio

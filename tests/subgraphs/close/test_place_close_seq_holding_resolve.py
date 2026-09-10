@@ -82,7 +82,7 @@ def _full_context(raw_text: str) -> dict[str, Any]:
 
 def _sent_close_order_list(captured: MagicMock) -> list[dict[str, Any]]:
     req = captured.call_args[0][0]
-    return req.closeOrderReqVO.model_dump()["closeOrderList"]
+    return req.close_order_req_vo.model_dump()["closeOrderList"]
 
 
 @pytest.mark.asyncio

@@ -63,7 +63,7 @@ async def option_extract_confirm_place(state: AgentState) -> dict[str, Any]:
         ]
     )
 
-    order_list = sanitize_order_list([item.model_dump() for item in result.orderList])
+    order_list = sanitize_order_list([item.model_dump() for item in result.order_list])
     backend = await call_option_backend(
         state,
         intent="confirm_order",
@@ -76,7 +76,7 @@ async def option_extract_confirm_place(state: AgentState) -> dict[str, Any]:
         "trace": [
             TraceEntry(
                 node="option_extract_confirm_place",
-                decision=f"action=place,orders={len(result.orderList)}",
+                decision=f"action=place,orders={len(result.order_list)}",
                 llm_output=result.model_dump(),
             )
         ],

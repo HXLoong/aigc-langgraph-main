@@ -53,7 +53,7 @@ async def close_confirm_close(state: AgentState) -> dict[str, Any]:
 
     # regex 兜底：LLM 抽不到时直接从 raw_text + quote_content 抠 CO-YYYYMMDD-XXX 单号
     # （结构化字符串抽取,与 swap.place_order 抠 H-YYYYMMDD-N 同款思路）
-    confirm_ids = list(result.confirmOrderNoList)
+    confirm_ids = list(result.confirm_order_no_list)
     if not confirm_ids:
         import re as _re_co
         raw = (state.get("raw_text") or "") + "\n" + (state.get("quote_content") or "")

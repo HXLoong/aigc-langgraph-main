@@ -144,10 +144,10 @@ async def run_langgraph_pipeline(*, item, **kwargs):
             tickers_raw = rs.get("tickers") or []
             tickers_simple = []
             for tk in tickers_raw:
-                if hasattr(tk, "windCode"):
+                if hasattr(tk, 'wind_code'):
                     tickers_simple.append({
-                        "wind": tk.windCode,
-                        "desc": getattr(tk, "insShtDesc", None),
+                        "wind": tk.wind_code,
+                        "desc": getattr(tk, 'ins_sht_desc', None),
                         "goats": getattr(tk, "from_goats", None),
                     })
                 elif isinstance(tk, dict):

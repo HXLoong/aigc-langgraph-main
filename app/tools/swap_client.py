@@ -7,11 +7,11 @@ from __future__ import annotations
 
 from datetime import datetime
 from decimal import Decimal
-from enum import Enum
+from enum import StrEnum
 from typing import Protocol
 
 import httpx
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import ConfigDict, Field, field_validator
 
 from app.tools.models import (
     CommonResult,
@@ -20,13 +20,14 @@ from app.tools.models import (
     GoatsPriceType,
     GoatsTransactionType,
 )
+from app.wire_model import WireModel
 
 # ============================================================
 # 互换意图枚举（SwapEnum.java:20-43，7 值）
 # ============================================================
 
 
-class SwapIntentionType(str, Enum):
+class SwapIntentionType(StrEnum):
     """对应 Java `SwapIntentionType`。"""
 
     PLACE_ORDER_REQUEST = "place_order_request"  # 请求下单/改单（合一）
@@ -43,24 +44,24 @@ class SwapIntentionType(str, Enum):
 # ============================================================
 
 
-class SwapOrderOpenApiBaseSaveReqVO(BaseModel):
+class SwapOrderOpenApiBaseSaveReqVO(WireModel):
     """互换下单/操作的单个订单参数（Java DTO 1:1）。"""
 
     model_config = ConfigDict(extra="allow")
 
-    placeOrderWindCode: str | None = None
-    placeOrderTransactionType: GoatsTransactionType | None = None
-    placeOrderQuantity: int | None = None
-    placeOrderQuantityHand: int | None = None
-    placeOrderOrderDirection: GoatsOrderDirection | None = None
-    placeOrderPriceType: GoatsPriceType | None = None
-    placeOrderPrice: Decimal | None = None
-    placeOrderAlgorithmType: GoatsAlgoType | None = None
-    placeOrderStartTime: datetime | None = None
-    placeOrderEndTime: datetime | None = None
-    orderId: str | None = None  # 改单时填
+    place_order_wind_code: str | None = Field(default=None, alias="placeOrderWindCode")
+    place_order_transaction_type: GoatsTransactionType | None = Field(default=None, alias="placeOrderTransactionType")
+    place_order_quantity: int | None = Field(default=None, alias="placeOrderQuantity")
+    place_order_quantity_hand: int | None = Field(default=None, alias="placeOrderQuantityHand")
+    place_order_order_direction: GoatsOrderDirection | None = Field(default=None, alias="placeOrderOrderDirection")
+    place_order_price_type: GoatsPriceType | None = Field(default=None, alias="placeOrderPriceType")
+    place_order_price: Decimal | None = Field(default=None, alias="placeOrderPrice")
+    place_order_algorithm_type: GoatsAlgoType | None = Field(default=None, alias="placeOrderAlgorithmType")
+    place_order_start_time: datetime | None = Field(default=None, alias="placeOrderStartTime")
+    place_order_end_time: datetime | None = Field(default=None, alias="placeOrderEndTime")
+    order_id: str | None = Field(default=None, alias="orderId")  # 改单时填
 
-    @field_validator("placeOrderStartTime", "placeOrderEndTime", mode="before")
+    @field_validator('place_order_start_time', 'place_order_end_time', mode="before")
     @classmethod
     def _coerce_short_time(cls, v):  # type: ignore[no-untyped-def]
         """LLM 常输出"HH:MM"/"HH:MM:SS"短时间（算法窗口） → 补今天日期为 datetime。
@@ -84,24 +85,24 @@ class SwapOrderOpenApiBaseSaveReqVO(BaseModel):
         return v
 
 
-class SwapOrderOpenApiSaveReqVO(BaseModel):
+class SwapOrderOpenApiSaveReqVO(WireModel):
     """`POST /admin-api/swap-order/operate` 请求体（Java DTO 1:1）。"""
 
     model_config = ConfigDict(extra="allow")
 
     type: SwapIntentionType  # 意图（必填，互换无 operate 字段）
 
-    orderList: list[SwapOrderOpenApiBaseSaveReqVO] = Field(default_factory=list)
+    order_list: list[SwapOrderOpenApiBaseSaveReqVO] = Field(alias="orderList", default_factory=list)
 
     # 机器人上下文（9 个）
-    conversationId: str
-    messageId: int
-    messageContent: str
-    rawContent: str
-    userId: str
-    roomId: str
-    quoteContent: str | None = None
-    quoteAppinfo: str | None = None
+    conversation_id: str = Field(alias="conversationId")
+    message_id: int = Field(alias="messageId")
+    message_content: str = Field(alias="messageContent")
+    raw_content: str = Field(alias="rawContent")
+    user_id: str = Field(alias="userId")
+    room_id: str = Field(alias="roomId")
+    quote_content: str | None = Field(default=None, alias="quoteContent")
+    quote_appinfo: str | None = Field(default=None, alias="quoteAppinfo")
     guid: str | None = None
 
 

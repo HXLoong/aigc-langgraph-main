@@ -80,7 +80,7 @@ async def test_no_hitl_does_not_write_ticker_hitl_candidates(
 
     assert "ticker_hitl_candidates" not in result
     assert len(result.get("tickers", [])) == 1
-    assert result["tickers"][0].windCode == "600900.SH"
+    assert result["tickers"][0].wind_code == "600900.SH"
 
 
 @pytest.mark.asyncio

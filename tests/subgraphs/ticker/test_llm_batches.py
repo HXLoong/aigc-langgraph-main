@@ -145,11 +145,11 @@ async def test_judge_ticker_type_parses_plain_json(monkeypatch: pytest.MonkeyPat
 
 class _FakeCandidate:
     def __init__(self, wind_code: str, sht: str = "") -> None:
-        self.windCode = wind_code
-        self.insShtDesc = sht
-        self.insLngDesc = sht
-        self.relevanceScore = 0
-        self.transactionTypeLists: list[str] = []
+        self.wind_code = wind_code
+        self.ins_sht_desc = sht
+        self.ins_lng_desc = sht
+        self.relevance_score = 0
+        self.transaction_type_lists: list[str] = []
 
 
 @pytest.mark.asyncio

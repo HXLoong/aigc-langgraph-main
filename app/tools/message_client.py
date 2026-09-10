@@ -5,22 +5,23 @@ import asyncio
 from typing import Literal, Protocol
 
 import httpx
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import ConfigDict, Field
 
 from app.tools.auth import get_goats_auth_headers
 from app.tools.models import CommonResult
+from app.wire_model import WireModel
 
 
-class SetIntentRequest(BaseModel):
+class SetIntentRequest(WireModel):
     """保留 Java camelCase 字段；会话 ID 为不透明字符串。"""
 
     model_config = ConfigDict(extra="forbid", strict=True)
 
-    conversationId: str  # noqa: N815 - Java DTO 字段名
-    messageId: str  # noqa: N815
+    conversation_id: str = Field(alias="conversationId")
+    message_id: str = Field(alias="messageId")
     intent: str
-    productType: Literal[0, 1]  # noqa: N815
-    orderIds: list[str] = Field(default_factory=list, max_length=0)  # noqa: N815
+    product_type: Literal[0, 1] = Field(alias="productType")
+    order_ids: list[str] = Field(alias="orderIds", default_factory=list, max_length=0)
 
 
 class SetIntentError(RuntimeError):

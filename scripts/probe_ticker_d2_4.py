@@ -41,7 +41,7 @@ async def run_case(raw_text: str) -> int:
     print(f"  latency:        {lat}ms")
     print(f"  resolved:       {len(resolution.resolved)}")
     for c in resolution.resolved[:5]:
-        print(f"    - {c.windCode}  ({c.insShtDesc})  from_goats={c.from_goats}  score={c.relevanceScore}")
+        print(f"    - {c.wind_code}  ({c.ins_sht_desc})  from_goats={c.from_goats}  score={c.relevance_score}")
     print(f"  hitl_pending:   {len(resolution.hitl_pending)}")
     for item in resolution.hitl_pending:
         print(f"    keyword={item['keyword']!r}  candidates={len(item['candidates'])}")
@@ -79,7 +79,7 @@ async def run_hitl_flow() -> int:
     print(f"  latency:               {lat1}ms")
     print(f"  product_type:          {result1.get('product_type')}")
     print(f"  intent:                {result1.get('intent')}")
-    print(f"  tickers:               {[t.windCode for t in result1.get('tickers') or []]}")
+    print(f"  tickers:               {[t.wind_code for t in result1.get('tickers') or []]}")
     print(f"  ticker_hitl_candidates:{len(hitl1)} group(s)")
     for group in hitl1:
         print(f"    keyword={group['keyword']!r}  候选 {len(group['candidates'])} 条")
@@ -103,7 +103,7 @@ async def run_hitl_flow() -> int:
     print(f"  latency:               {lat2}ms")
     print(f"  product_type:          {result2.get('product_type')}")
     print(f"  intent:                {result2.get('intent')}")
-    print(f"  tickers:               {[t.windCode for t in result2.get('tickers') or []]}")
+    print(f"  tickers:               {[t.wind_code for t in result2.get('tickers') or []]}")
     print(f"  ticker_hitl_candidates:{len(result2.get('ticker_hitl_candidates') or [])}")
     print(f"  reply_text 摘要:        {(result2.get('reply_text') or '')[:120]!r}")
     return 0
@@ -146,7 +146,7 @@ async def run_fixture() -> int:
 
         try:
             resolution = await resolve_ticker_full(raw)
-            resolved_codes = [c.windCode for c in resolution.resolved]
+            resolved_codes = [c.wind_code for c in resolution.resolved]
             needs_hitl = bool(resolution.hitl_pending)
             winner = resolved_codes[0] if resolved_codes else None
             actual["winner"] = winner

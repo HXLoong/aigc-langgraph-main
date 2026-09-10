@@ -27,11 +27,11 @@ class _FakeInstrument:
         score: int = 0,
         tx_types: list[str] | None = None,
     ) -> None:
-        self.windCode = wind_code
-        self.insShtDesc = sht
-        self.insLngDesc = lng
-        self.relevanceScore = score
-        self.transactionTypeLists = tx_types or []
+        self.wind_code = wind_code
+        self.ins_sht_desc = sht
+        self.ins_lng_desc = lng
+        self.relevance_score = score
+        self.transaction_type_lists = tx_types or []
 
 
 def _patch_llm_batches(
@@ -65,9 +65,59 @@ def _patch_goats(monkeypatch: pytest.MonkeyPatch, results: list) -> None:
 
 
 @pytest.mark.asyncio
+async def test_same_instrument_merges_only_input_source_keywords(monkeypatch) -> None:
+    _patch_llm_batches(monkeypatch, infer={
+        "茅台": ["600519.SH"],
+        "600519": ["600519.SH"],
+        "invented-alias": ["600519.SH"],
+    })
+    _patch_goats(monkeypatch, [_FakeInstrument("600519.SH", "贵州茅台")])
+
+    resolution = await resolve_ticker_full("茅台 600519")
+
+    assert len(resolution.resolved) == 1
+    ticker = resolution.resolved[0]
+    assert ticker.wind_code == "600519.SH"
+    assert ticker.from_goats is True
+    assert ticker.source_keywords == ["茅台", "600519"]
+
+
+def test_old_ticker_checkpoint_defaults_to_no_source_keywords() -> None:
+    from app.graph.state import TickerCandidate
+
+    ticker = TickerCandidate.model_validate({"windCode": "600519.SH", "from_goats": True})
+    assert ticker.source_keywords == []
+
+
+@pytest.mark.asyncio
 async def test_empty_raw_text_returns_empty_resolution() -> None:
     resolution = await resolve_ticker_full("")
     assert resolution == TickerResolution(resolved=[], hitl_pending=[])
+
+
+@pytest.mark.asyncio
+async def test_tenors_never_reach_inference_or_goats(monkeypatch) -> None:
+    _patch_llm_batches(monkeypatch, infer={
+        "600519.SH": ["600519.SH"], "600519": ["600519.SH"],
+    })
+    _patch_goats(monkeypatch, [_FakeInstrument("600519.SH")])
+
+    result = await resolve_ticker_full("600519.SH,1M/2M,0.5y,80%")
+
+    for batch in (resolver_mod.infer_code_batch, resolver_mod.split_ticker_keywords,
+                  resolver_mod.judge_ticker_type):
+        batch.assert_awaited_once_with(["600519.SH", "600519"])
+    calls = resolver_mod._make_client().search_securities_instrument.call_args_list
+    assert calls
+    keywords = {
+        item.keyword
+        for call in calls for item in call.args[0].keyword_items
+    }
+    assert keywords
+    assert keywords <= {"600519.SH", "600519"}
+    assert keywords.isdisjoint({"1M", "2M", "1M/2M", "0.5y", "80%"})
+    assert [ticker.wind_code for ticker in result.resolved] == ["600519.SH"]
+    assert all(ticker.from_goats for ticker in result.resolved)
 
 
 @pytest.mark.asyncio
@@ -107,7 +157,7 @@ async def test_single_goats_hit_skips_rank_and_resolves(
     resolution = await resolve_ticker_full("贵州茅台")
 
     assert len(resolution.resolved) == 1
-    assert resolution.resolved[0].windCode == "600519.SH"
+    assert resolution.resolved[0].wind_code == "600519.SH"
     assert resolution.resolved[0].from_goats is True
     rank_mock.assert_not_called()
 
@@ -134,7 +184,7 @@ async def test_multi_hit_uses_rank_to_pick_winner(monkeypatch: pytest.MonkeyPatc
     resolution = await resolve_ticker_full("腾讯")
 
     assert len(resolution.resolved) == 1
-    assert resolution.resolved[0].windCode == "00700.HK"
+    assert resolution.resolved[0].wind_code == "00700.HK"
     assert resolution.resolved[0].from_goats is True
 
 
@@ -218,7 +268,7 @@ async def test_dedup_across_org_items_same_wind_code(
     resolution = await resolve_ticker_full("贵州茅台 600519")
 
     assert len(resolution.resolved) == 1
-    assert resolution.resolved[0].windCode == "600519.SH"
+    assert resolution.resolved[0].wind_code == "600519.SH"
 
 
 # ============================================================
@@ -259,5 +309,5 @@ async def test_resolve_ticker_returns_resolved_list_only(
     tickers = await resolve_ticker("贵州茅台")
 
     assert len(tickers) == 1
-    assert tickers[0].windCode == "600519.SH"
+    assert tickers[0].wind_code == "600519.SH"
     assert tickers[0].from_goats is True
