@@ -121,17 +121,12 @@ async def option_rfq_query():
 async def option_rfq_instrument_parser(request: Request):
     """1b. 快速询价指令解析（DSL v2 fast_query 前置分支，2026-08 新增）。
 
-    真实端点返回**裸 JSON 结构**（无 {errMsg, errCode, data} 信封），
-    client 直接把响应体作为 api_data_result_obj 喂给 optionRfq
-    （GoatsOptionRfqReqVO，extra=allow）。
-
-    双前缀挂载：app/tools/goats_rfq.py 拼 {base}/api/...，
-    app/tools/goats_agent_client.py 拼 {base}/...——同一 goats_base_url
-    两种拼法（业务代码待澄清的矛盾），mock 两种都接住。
+    返回真实端点的 {errCode, errMsg, data} 信封，客户端在业务成功后
+    解包 data 作为 optionRfq。双前缀挂载保留对旧测试地址的兼容。
     """
     body = await request.json()
     chat = body.get("chatInstrument", "")
-    return {
+    data = {
         "chatType": "json",
         "chatInstrument": chat,
         "productType": "EUROPEAN_VANILLA",
@@ -144,6 +139,7 @@ async def option_rfq_instrument_parser(request: Request):
         "knockOutPrice": [],
         "estimateMargin": [],
     }
+    return {"errCode": {"code": 200}, "errMsg": "", "data": data}
 
 
 @app.post("/api/internal/agent/instruction/query")
@@ -151,7 +147,7 @@ async def option_rfq_instrument_parser(request: Request):
 async def instruction_query(request: Request):
     """1c. 存量兼容交易查询（DSL v2 fast_query 前置分支，2026-08 新增）。
 
-    与 rfq parser 同样返回裸 JSON；client 侧 errMsg 恒为静默哨兵，
+    返回查询 JSON；client 侧 errMsg 恒为静默哨兵，
     响应体只作为 api_data_result_obj 透传。
     """
     body = await request.json()

@@ -5,6 +5,7 @@
 """
 from __future__ import annotations
 
+import contextlib
 from typing import Any
 
 from app.config import get_settings
@@ -62,17 +63,13 @@ def _extract_swap_extras_from_text(raw_text: str, wind: str | None) -> dict[str,
     # 委托金额：先抓"X万/Xw/Xkw"，再抓"X元/X 元"。
     m_wan = _re.search(r"(\d+(?:\.\d+)?)\s*(?:万|w|W)(?![A-Za-z])", raw_text)
     if m_wan:
-        try:
+        with contextlib.suppress(ValueError, OverflowError):
             out["notional"] = f"{int(float(m_wan.group(1)) * 10000):,}.00"
-        except (ValueError, OverflowError):
-            pass
     if "notional" not in out:
         m_yuan = _re.search(r"(\d{3,})\s*(?:元|USD|HKD|CNY|JPY|EUR)", raw_text)
         if m_yuan:
-            try:
+            with contextlib.suppress(ValueError, OverflowError):
                 out["notional"] = f"{int(m_yuan.group(1)):,}.00"
-            except (ValueError, OverflowError):
-                pass
 
     # 币种：USD/HKD/CNY/JPY/EUR 大写词；默认 CNY。
     # 不用 \b，因 "\d+USD" 中 0→U 没有 word-boundary（都是 \w）。
@@ -115,7 +112,7 @@ def _render_swap_order(o: dict[str, Any], state: AgentState, place: dict[str, An
     LLM 提取的字段填值；缺失字段用"待补充"占位；额外字段（委托金额/币种/交易品种/
     交易对手）从 raw_text 用 regex 抽取补全（_extract_swap_extras_from_text）。
     """
-    _PLACEHOLDER = "待补充"
+    _placeholder = "待补充"
     raw_text = state.get("raw_text", "") or ""
     wind = o.get("placeOrderWindCode")
 
@@ -123,9 +120,9 @@ def _render_swap_order(o: dict[str, Any], state: AgentState, place: dict[str, An
     stock_name = ""
     if wind:
         for t in (state.get("tickers") or []):
-            wc = t.windCode if hasattr(t, "windCode") else t.get("windCode", "")
+            wc = t.wind_code if hasattr(t, 'wind_code') else t.get("windCode", "")
             if wc == wind:
-                desc = t.insShtDesc if hasattr(t, "insShtDesc") else t.get("insShtDesc", "")
+                desc = t.ins_sht_desc if hasattr(t, 'ins_sht_desc') else t.get("insShtDesc", "")
                 stock_name = desc or ""
                 break
 
@@ -135,12 +132,12 @@ def _render_swap_order(o: dict[str, Any], state: AgentState, place: dict[str, An
     direction = (
         "买入" if direction_raw == "BUY"
         else "卖出" if direction_raw == "SELL"
-        else _PLACEHOLDER
+        else _placeholder
     )
     qty = o.get("placeOrderQuantity") or o.get("placeOrderQuantityHand")
     qty_unit = "手" if o.get("placeOrderQuantityHand") else "股"
     price = o.get("placeOrderPrice")
-    price_type = o.get("placeOrderPriceType") or _PLACEHOLDER
+    price_type = o.get("placeOrderPriceType") or _placeholder
 
     # 数量/价格混淆纠正（Round 14 eval 暴露）：raw_text 有"X元/万"委托金额 +
     # 一个独立小数字，LLM 容易把那个小数字当数量。如"买入100000元 18.12" → LLM 数量=18,
@@ -158,7 +155,7 @@ def _render_swap_order(o: dict[str, Any], state: AgentState, place: dict[str, An
             if notional_val > qty * 100:  # 委托金额至少比 LLM 数量大两个数量级 → 强信号 LLM 混淆
                 price = qty  # 原 LLM 数量实际是价格
                 qty = int(notional_val / price) if price > 0 else None
-                price_type = "LimitOrder" if price_type == _PLACEHOLDER else price_type
+                price_type = "LimitOrder" if price_type == _placeholder else price_type
         except (ValueError, TypeError, ZeroDivisionError):
             pass
     # qty 缺失但 notional + price 可用 → 计算 qty = notional / price
@@ -169,36 +166,36 @@ def _render_swap_order(o: dict[str, Any], state: AgentState, place: dict[str, An
                 qty = int(notional_val / float(price))
         except (ValueError, TypeError, ZeroDivisionError):
             pass
-    qty_str = f"{qty}{qty_unit}" if qty else _PLACEHOLDER
+    qty_str = f"{qty}{qty_unit}" if qty else _placeholder
     algo = o.get("placeOrderAlgorithmType")
     if algo and o.get("placeOrderPovPercent"):
         algo_str = f"{algo} {o['placeOrderPovPercent']}%"
     elif algo:
         algo_str = str(algo)
     else:
-        algo_str = _PLACEHOLDER
+        algo_str = _placeholder
     start = o.get("placeOrderStartTime")
     end = o.get("placeOrderEndTime")
-    time_str = f"{start} - {end}" if (start and end) else _PLACEHOLDER
+    time_str = f"{start} - {end}" if (start and end) else _placeholder
 
     # 单号：优先从 state.api_result（后端生成）抽取，否则 placeholder
-    single_no = o.get("orderId") or _PLACEHOLDER
+    single_no = o.get("orderId") or _placeholder
 
     lines = [
         "-----互换订单参数-----",
         f"单号: {single_no}",
-        f"标的代码: {wind or _PLACEHOLDER}",
-        f"标的名称: {stock_name or _PLACEHOLDER}",
-        f"交易品种: {extras.get('trading_kind') or _PLACEHOLDER}",
+        f"标的代码: {wind or _placeholder}",
+        f"标的名称: {stock_name or _placeholder}",
+        f"交易品种: {extras.get('trading_kind') or _placeholder}",
         f"委托方向: {direction}",
         f"数量: {qty_str}",
-        f"委托金额: {extras.get('notional') or _PLACEHOLDER}",
-        f"币种: {extras.get('currency') or _PLACEHOLDER}",
+        f"委托金额: {extras.get('notional') or _placeholder}",
+        f"币种: {extras.get('currency') or _placeholder}",
         f"价格类型: {price_type}",
-        f"限定价格: {price if price is not None else _PLACEHOLDER}",
+        f"限定价格: {price if price is not None else _placeholder}",
         f"算法: {algo_str}",
         f"时间: {time_str}",
-        f"交易对手: {extras.get('counterparty') or _PLACEHOLDER}",
+        f"交易对手: {extras.get('counterparty') or _placeholder}",
     ]
     # 提示：根据缺失字段提供具体指引（让 Judge 看到我们识别了哪些缺失）
     missing: list[str] = []
@@ -206,7 +203,7 @@ def _render_swap_order(o: dict[str, Any], state: AgentState, place: dict[str, An
         missing.append("交易对手")
     if not extras.get("notional") and not qty:
         missing.append("委托金额")
-    if not direction or direction == _PLACEHOLDER:
+    if not direction or direction == _placeholder:
         missing.append("委托方向")
     if price is None and (price_type or "").startswith("Limit"):
         missing.append("限定价格")
@@ -214,9 +211,8 @@ def _render_swap_order(o: dict[str, Any], state: AgentState, place: dict[str, An
     if algo and (algo in ("POV", "TWAP", "VWAP")) and (start is None or end is None):
         missing.append("算法时间")
     # 限价委托但价格缺失（即使 LLM 没填 priceType="LimitOrder"）
-    if "限价" in raw_text and price is None:
-        if "限定价格" not in missing:
-            missing.append("限定价格")
+    if "限价" in raw_text and price is None and "限定价格" not in missing:
+        missing.append("限定价格")
 
     # 不支持的币种检测（OTC 场外业务只受理 CNY/USD/HKD 三种）→ 直接拒绝，不展示订单卡。
     # 这是**业务约束规则**，非映射字典——不同于硬编码"名→代码"映射，符合 P0 红线
@@ -247,28 +243,28 @@ def _render_close_card(o: dict[str, Any], state: AgentState) -> str:
     import datetime as _dt
     import re as _re
 
-    _PLACEHOLDER = "待补充"
-    order_id = o.get("orderId") or _PLACEHOLDER
+    _placeholder = "待补充"
+    order_id = o.get("orderId") or _placeholder
     contract_no = o.get("internalTradeId") or order_id  # 合约编号兜底用 orderId
-    notional = o.get("closeOrderNotionalDelta") or _PLACEHOLDER
-    close_type = o.get("closeOrderType") or _PLACEHOLDER
+    notional = o.get("closeOrderNotionalDelta") or _placeholder
+    close_type = o.get("closeOrderType") or _placeholder
     price = o.get("closeOrderPrice")
     pov = o.get("closeOrderPovRatio")
 
     # 从 state.tickers 取标的代码 + 中文名
     tickers = state.get("tickers") or []
-    stock_code = _PLACEHOLDER
-    stock_name = _PLACEHOLDER
+    stock_code = _placeholder
+    stock_name = _placeholder
     if tickers:
         t0 = tickers[0]
-        stock_code = (getattr(t0, "windCode", None) or
-                      (t0.get("windCode") if isinstance(t0, dict) else None)) or _PLACEHOLDER
-        stock_name = (getattr(t0, "insShtDesc", None) or
-                      (t0.get("insShtDesc") if isinstance(t0, dict) else None)) or _PLACEHOLDER
+        stock_code = (getattr(t0, 'wind_code', None) or
+                      (t0.get("windCode") if isinstance(t0, dict) else None)) or _placeholder
+        stock_name = (getattr(t0, 'ins_sht_desc', None) or
+                      (t0.get("insShtDesc") if isinstance(t0, dict) else None)) or _placeholder
 
     # 从 quote_content 抠期权类型（regex 匹配"欧式看涨/看跌/雪球/障碍/气囊/参与型"）
     quote = state.get("quote_content") or ""
-    option_type = _PLACEHOLDER
+    option_type = _placeholder
     m = _re.search(r"(欧式看涨|欧式看跌|雪球|障碍|气囊|参与型|看涨|看跌)", quote)
     if m:
         option_type = m.group(1)

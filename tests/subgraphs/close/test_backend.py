@@ -59,8 +59,8 @@ class TestCallCloseBackend:
         assert len(captured) == 1
         req = captured[0]
         # payload 语义对齐 Dify 期权平仓[code]：orderList 恒为 []
-        assert req.orderList == []
-        assert req.closeOrderReqVO.model_dump()["confirmOrderNoList"] == ["CO-A"]
+        assert req.order_list == []
+        assert req.close_order_req_vo.model_dump()["confirmOrderNoList"] == ["CO-A"]
         assert req.type.value == "close_order_confirm"
 
     async def test_sanitizes_null_literal_before_sending(
@@ -71,7 +71,7 @@ class TestCallCloseBackend:
         await call_close_backend(
             FULL_STATE, intent="close_order_order_query", close_order_req_vo=req_vo
         )
-        dumped = captured[0].closeOrderReqVO.model_dump()
+        dumped = captured[0].close_order_req_vo.model_dump()
         assert dumped["queryOrderNoList"] == ["CO-B"]
 
     async def test_success_returns_code_and_data_verbatim(
@@ -104,10 +104,10 @@ class TestCallCloseBackend:
             FULL_STATE, intent="close_order_query", close_order_req_vo={}
         )
         req = captured[0]
-        assert req.conversationId == "conv-1"
-        assert req.userId == "u-1"
-        assert req.roomId == "r-1"
-        assert req.rawContent == "平 CO-1 全部"
+        assert req.conversation_id == "conv-1"
+        assert req.user_id == "u-1"
+        assert req.room_id == "r-1"
+        assert req.raw_content == "平 CO-1 全部"
 
 
 __all__: list[str] = []

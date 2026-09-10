@@ -25,7 +25,7 @@ for name in FILES:
         capture_output=True, text=True,
     )
     # 最后一行是结果
-    lines = [l for l in r.stdout.strip().split("\n") if l.strip()]
+    lines = [line for line in r.stdout.strip().split("\n") if line.strip()]
     last = lines[-1] if lines else ""
     if "[OK]" in last:
         passed += 1

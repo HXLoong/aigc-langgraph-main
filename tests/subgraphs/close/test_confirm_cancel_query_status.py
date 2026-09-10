@@ -40,37 +40,37 @@ def _patch_llm(
 class TestConfirmCancelParams:
     def test_default_empty_list(self) -> None:
         params = ConfirmCancelParams()
-        assert params.confirmCancelOrderNoList == []
+        assert params.confirm_cancel_order_no_list == []
 
     def test_with_orders(self) -> None:
         params = ConfirmCancelParams(
             confirmCancelOrderNoList=["CO-20260304-AAAA", "CO-20260304-BBBB"]
         )
-        assert len(params.confirmCancelOrderNoList) == 2
+        assert len(params.confirm_cancel_order_no_list) == 2
 
     def test_extra_fields_ignored(self) -> None:
         params = ConfirmCancelParams.model_validate(
             {"confirmCancelOrderNoList": [], "garbage": "x"}
         )
-        assert params.confirmCancelOrderNoList == []
+        assert params.confirm_cancel_order_no_list == []
 
 
 class TestQueryStatusParams:
     def test_default_empty_list(self) -> None:
         params = QueryStatusParams()
-        assert params.queryOrderNoList == []
+        assert params.query_order_no_list == []
 
     def test_with_orders(self) -> None:
         params = QueryStatusParams(
             queryOrderNoList=["CO-20260305-59772C14"]
         )
-        assert params.queryOrderNoList == ["CO-20260305-59772C14"]
+        assert params.query_order_no_list == ["CO-20260305-59772C14"]
 
     def test_extra_fields_ignored(self) -> None:
         params = QueryStatusParams.model_validate(
             {"queryOrderNoList": [], "garbage": "x"}
         )
-        assert params.queryOrderNoList == []
+        assert params.query_order_no_list == []
 
 
 # ============================================================

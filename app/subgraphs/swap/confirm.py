@@ -104,14 +104,14 @@ async def swap_confirm(state: AgentState) -> dict[str, Any]:
     order_list = [{"orderId": oid} for oid in order_ids]
 
     # action → SwapIntentionType 映射
-    _ACTION_INTENT = {
+    _action_intent = {
         "place": "confirm_order",
         "cancel": "confirm_cancel_order",
         "modify": "confirm_modify_order",
     }
     backend = await call_swap_backend(
         state,
-        intent=_ACTION_INTENT.get(action, "confirm_order"),
+        intent=_action_intent.get(action, "confirm_order"),
         order_list=order_list,
     )
 

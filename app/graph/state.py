@@ -12,6 +12,8 @@ from typing import Annotated, Any, Literal, TypedDict
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
+from app.wire_model import WireModel
+
 # ============================================================
 # 子模型
 # ============================================================
@@ -26,15 +28,19 @@ class Message(BaseModel):
     ts: str | None = None
 
 
-class TickerCandidate(BaseModel):
+class TickerCandidate(WireModel):
     """ticker 子图输出的候选标的（对齐 Java SecuritiesInstrumentOpenApiRespVO）。"""
 
     model_config = ConfigDict(extra="allow")
-    windCode: str = Field(description="标的代码，如 600989.SH")
-    insShtDesc: str | None = None
-    insLngDesc: str | None = None
-    relevanceScore: int | None = None
-    transactionTypeLists: list[str] = Field(default_factory=list)
+    wind_code: str = Field(alias="windCode", description="标的代码，如 600989.SH")
+    ins_sht_desc: str | None = Field(default=None, alias="insShtDesc")
+    ins_lng_desc: str | None = Field(default=None, alias="insLngDesc")
+    relevance_score: int | None = Field(default=None, alias="relevanceScore")
+    transaction_type_lists: list[str] = Field(alias="transactionTypeLists", default_factory=list)
+    source_keywords: list[str] = Field(alias="sourceKeywords",
+        default_factory=list,
+        description="本次输入中解析为该 GOATS 标的的原始候选词",
+    )
     from_goats: bool = Field(
         default=False,
         description="必须 True 才允许出现在 LangGraph 输出中（CLAUDE.md 硬约束）",

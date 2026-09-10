@@ -20,7 +20,7 @@ from app.nodes.render import render
 class TestCloseCardEnriched:
     """平仓申请卡完整字段渲染。"""
 
-    async def test_close_card_contains_orderId(self) -> None:
+    async def test_close_card_contains_order_id(self) -> None:
         """closeOrderList[0].orderId → 卡里有单号字段。"""
         state: dict = {
             "product_type": "option_close",
@@ -42,7 +42,7 @@ class TestCloseCardEnriched:
         state: dict = {
             "product_type": "option_close",
             "intent": "close_order_request",
-            "tickers": [SimpleNamespace(windCode="600519.SH", insShtDesc="贵州茅台")],
+            "tickers": [SimpleNamespace(wind_code="600519.SH", ins_sht_desc="贵州茅台")],
             "close_params": {
                 "closeOrderList": [{
                     "orderId": "OPT-20260514-0002",

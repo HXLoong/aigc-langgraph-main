@@ -53,14 +53,14 @@ async def quick_inquiry(state: AgentState) -> dict[str, Any]:
     """
     query = state.get("raw_text", "") or ""
     room_id = state.get("room_id") or ""
-    user_id = state.get("operator_user_id") or state.get("user_id")
+    user_id = state.get("user_id")  # Dify sys.user_id，同时用于 GOATS 和后端
 
     rfq = await _make_agent_client().parse_rfq_instrument(query, room_id, user_id)
-    if rfq.get("errMsg"):
+    if rfq.get("code") != 0 or rfq.get("errMsg"):
         return {
-            "api_code": 500,
-            "api_result": rfq["errMsg"],
-            "reply_text": rfq["errMsg"],
+            "api_code": rfq.get("code", 500),
+            "api_result": rfq.get("errMsg") or "",
+            "reply_text": rfq.get("errMsg") or "",
             "trace": [TraceEntry(node="quick_inquiry", decision="rfq_parser_error")],
         }
 

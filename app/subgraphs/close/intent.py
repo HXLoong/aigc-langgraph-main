@@ -89,9 +89,8 @@ async def close_intent(state: AgentState) -> dict[str, Any]:
     if "确认撤单" in raw:
         intent = "close_order_cancel_confirm"
     # "取消" + quote 中有撤单上下文 → confirm_cancel
-    if "取消" in raw:
-        if "撤单" in quote or "撤单请求" in quote:
-            intent = "close_order_confirm_cancel"
+    if "取消" in raw and ("撤单" in quote or "撤单请求" in quote):
+        intent = "close_order_confirm_cancel"
     # "序号N" + 平仓动作词 → close_order_request
     import re as _re2
     if _re2.search(r"序号\s*\d", raw):
@@ -99,9 +98,8 @@ async def close_intent(state: AgentState) -> dict[str, Any]:
         if any(kw in raw.lower() for kw in close_kw):
             intent = "close_order_request"
     # "拉满跟量"/"全部最大" + 金额 → close_order_request
-    if any(kw in raw for kw in ("拉满跟量", "全部最大", "全跟量")):
-        if _re2.search(r"\d+\s*万", raw):
-            intent = "close_order_request"
+    if any(kw in raw for kw in ("拉满跟量", "全部最大", "全跟量")) and _re2.search(r"\d+\s*万", raw):
+        intent = "close_order_request"
 
     return {
         "intent": intent,

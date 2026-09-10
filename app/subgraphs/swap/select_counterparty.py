@@ -76,7 +76,7 @@ async def swap_select_counterparty(state: AgentState) -> dict[str, Any]:
 
     apply_counterparty(
         order_list,
-        result.hasSignal,
+        result.has_signal,
         [p.model_dump() for p in result.picks],
         trs_list,
     )
@@ -89,7 +89,7 @@ async def swap_select_counterparty(state: AgentState) -> dict[str, Any]:
         "trace": [
             TraceEntry(
                 node="swap_select_counterparty",
-                decision=f"hasSignal={result.hasSignal},picks={len(result.picks)}",
+                decision=f"hasSignal={result.has_signal},picks={len(result.picks)}",
                 llm_output=result.model_dump(),
             )
         ],

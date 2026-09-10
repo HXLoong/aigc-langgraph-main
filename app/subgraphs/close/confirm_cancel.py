@@ -44,7 +44,7 @@ async def close_confirm_cancel(state: AgentState) -> dict[str, Any]:
     )
 
     req_vo = build_close_order_req_vo(
-        confirm_cancel_order_no_list=result.confirmCancelOrderNoList
+        confirm_cancel_order_no_list=result.confirm_cancel_order_no_list
     )
     backend = await call_close_backend(
         state,
@@ -53,12 +53,12 @@ async def close_confirm_cancel(state: AgentState) -> dict[str, Any]:
     )
 
     return {
-        "confirm": validated_confirm(action="cancel_close", confirmCancelOrderNoList=result.confirmCancelOrderNoList),
+        "confirm": validated_confirm(action="cancel_close", confirmCancelOrderNoList=result.confirm_cancel_order_no_list),
         **backend,
         "trace": [
             TraceEntry(
                 node="close_confirm_cancel",
-                decision=f"orders={len(result.confirmCancelOrderNoList)}",
+                decision=f"orders={len(result.confirm_cancel_order_no_list)}",
                 llm_output=result.model_dump(),
             )
         ],

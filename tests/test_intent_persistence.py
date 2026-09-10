@@ -21,7 +21,7 @@ from app.tools.models import CommonResult
 @pytest.fixture()
 def isolated_workflow(monkeypatch: pytest.MonkeyPatch) -> AsyncMock:
     settings = get_settings().model_copy(update={
-        "environment": "development",
+        "environment": "staging",
         "use_mysql_checkpointer": False,
         "enable_langfuse": False,
     })
@@ -36,6 +36,25 @@ def isolated_workflow(monkeypatch: pytest.MonkeyPatch) -> AsyncMock:
     write_trace = AsyncMock()
     monkeypatch.setattr("app.nodes.persist._write_to_mysql", write_trace)
     return write_trace
+
+
+def test_development_http_workflow_does_not_write_messages(
+    monkeypatch: pytest.MonkeyPatch, isolated_workflow: AsyncMock,
+) -> None:
+    settings = app_main.get_settings().model_copy(update={"environment": "development"})
+    monkeypatch.setattr("app.config.get_settings", lambda: settings)
+    monkeypatch.setattr(app_main, "get_settings", lambda: settings)
+    factory = MagicMock(side_effect=AssertionError("development must not create a message client"))
+    monkeypatch.setattr(app_main, "MessageClientHttpx", factory)
+    with TestClient(app_main.app) as client:
+        response = client.post("/v1/workflows/run", json={
+            "inputs": {"raw_content": "你好", "message_id": 42}, "user": "stable-user",
+        })
+    assert response.status_code == 200, response.text
+    assert response.json()["answer"]
+    factory.assert_not_called()
+    trace = isolated_workflow.call_args.args[0]
+    assert any(entry.node == "persist_intent" and entry.decision == "skipped" for entry in trace)
 
 
 def test_first_turn_persists_generated_conversation_id_and_followup_reuses_it(
@@ -169,7 +188,7 @@ def test_business_branch_persists_latest_intent_after_operate(
     assert response.json()["data"]["outputs"]["product_type"] == product_type
     assert response.json()["answer"] == "BACKEND_CARD"
     assert events == ["operate", "set-intent"]
-    assert operate_requests[0].messageId == 75  # /operate 仍使用整数
+    assert operate_requests[0].message_id == 75  # /operate 仍使用整数
     assert saved_requests == [{
         "conversationId": "(\\existing-id\\\\)", "messageId": "75",
         "intent": intent, "productType": product_number, "orderIds": [],

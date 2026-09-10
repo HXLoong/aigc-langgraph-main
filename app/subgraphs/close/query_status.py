@@ -39,7 +39,7 @@ async def close_query_status(state: AgentState) -> dict[str, Any]:
         ]
     )
 
-    req_vo = build_close_order_req_vo(query_order_no_list=result.queryOrderNoList)
+    req_vo = build_close_order_req_vo(query_order_no_list=result.query_order_no_list)
     backend = await call_close_backend(
         state,
         intent="close_order_order_query",
@@ -47,12 +47,12 @@ async def close_query_status(state: AgentState) -> dict[str, Any]:
     )
 
     return {
-        "query_filter": validated_query_filter(queryOrderNoList=result.queryOrderNoList),
+        "query_filter": validated_query_filter(queryOrderNoList=result.query_order_no_list),
         **backend,
         "trace": [
             TraceEntry(
                 node="close_query_status",
-                decision=f"orders={len(result.queryOrderNoList)}",
+                decision=f"orders={len(result.query_order_no_list)}",
                 llm_output=result.model_dump(),
             )
         ],

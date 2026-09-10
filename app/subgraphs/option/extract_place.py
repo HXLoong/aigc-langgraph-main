@@ -66,9 +66,9 @@ async def option_extract_place(state: AgentState) -> dict[str, Any]:
         ]
     )
 
-    types = [item.orderType for item in result.orderList if item.orderType]
-    order_list = sanitize_order_list([item.model_dump() for item in result.orderList])
-    decision = f"action=place, orders={len(result.orderList)}, types={types}"
+    types = [item.order_type for item in result.order_list if item.order_type]
+    order_list = sanitize_order_list([item.model_dump() for item in result.order_list])
+    decision = f"action=place, orders={len(result.order_list)}, types={types}"
     backend = await call_option_backend(
         state,
         intent="place_order_from_quote",

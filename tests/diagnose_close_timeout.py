@@ -28,9 +28,9 @@ async def test_model(name, llm_factory, model_name):
         )
         elapsed = time.monotonic() - t0
         print(f"OK latency={elapsed:.1f}s")
-        print(f"  orders={len(result.closeOrderList)}")
-        for o in result.closeOrderList[:2]:
-            print(f"  - orderId={o.orderId}, type={o.closeOrderType}, amt={o.closeOrderNotionalDelta}")
+        print(f"  orders={len(result.close_order_list)}")
+        for o in result.close_order_list[:2]:
+            print(f"  - orderId={o.order_id}, type={o.close_order_type}, amt={o.close_order_notional_delta}")
     except TimeoutError:
         elapsed = time.monotonic() - t0
         print(f"TIMEOUT after {elapsed:.1f}s (>120s)")

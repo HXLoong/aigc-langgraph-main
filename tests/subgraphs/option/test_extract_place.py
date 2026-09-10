@@ -36,7 +36,7 @@ def _patch_llm(
 class TestOptionPlaceParams:
     def test_default_empty_list(self) -> None:
         p = OptionPlaceParams()
-        assert p.orderList == []
+        assert p.order_list == []
 
     def test_with_multiple_orders(self) -> None:
         p = OptionPlaceParams(
@@ -45,12 +45,12 @@ class TestOptionPlaceParams:
                 OptionOrderItemWithFastExec(orderId="Q-B", orderType="POV", povRatio=25),
             ]
         )
-        assert len(p.orderList) == 2
+        assert len(p.order_list) == 2
 
     def test_plain_dict_defaults_fast_exec_to_none(self) -> None:
         """orderList item 类型是 OptionOrderItemWithFastExec，普通 dict 仍可校验通过。"""
         p = OptionPlaceParams.model_validate({"orderList": [{"orderId": "Q-1"}]})
-        assert p.orderList[0].hasFastExecutionIntent is None
+        assert p.order_list[0].has_fast_execution_intent is None
 
     def test_invalid_order_type_rejected(self) -> None:
         with pytest.raises(ValidationError):

@@ -60,7 +60,7 @@ class TestSwapRenderCompleteFields:
                     "placeOrderEndTime": "15:00",
                 }],
             },
-            "tickers": [SimpleNamespace(windCode="600519.SH", insShtDesc="贵州茅台")],
+            "tickers": [SimpleNamespace(wind_code="600519.SH", ins_sht_desc="贵州茅台")],
         }
         update = await render(state)  # type: ignore[arg-type]
         reply = update.get("reply_text") or ""

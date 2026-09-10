@@ -13,6 +13,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import time
 from typing import Any, Protocol
 
@@ -21,7 +22,7 @@ import httpx
 RFQ_PARSER_PATH = "/internal/agent/option_rfq_instrument_parser"
 INSTRUCTION_QUERY_PATH = "/internal/agent/instruction/query"
 
-#: 存量兼容分支的静默哨兵(Java 机器人层看到即不回复用户)
+#: 存量兼容分支及 GOATS 50001 的静默哨兵(Java 机器人层看到即不回复用户)
 IGNORE_REPLY_SENTINEL = "IGNORE_REQUEST_NOT_REPLY_USER"
 
 _RFQ_UNAVAILABLE_MSG = "快速询价暂不可用,请检查网络"
@@ -95,7 +96,8 @@ class GoatsAgentClientHttpx:
         """返回 (http_status, response);网络异常 → (None, None)。"""
         try:
             async with httpx.AsyncClient(
-                timeout=timeout, transport=self._transport
+                # 内网 GOATS 直连，避免 Windows 系统代理返回 502。
+                timeout=timeout, transport=self._transport, trust_env=False
             ) as client:
                 resp = await client.post(
                     self._base_url + path,
@@ -130,10 +132,29 @@ class GoatsAgentClientHttpx:
         if status != 200:
             return base
         try:
-            data = resp.json()
+            body = resp.json()
         except ValueError:
             return base
-        return {**base, "code": 0, "errMsg": "", "api_data_result_obj": data}
+        if not isinstance(body, dict):
+            return base
+        err_code = body.get("errCode")
+        if not isinstance(err_code, dict) or not isinstance(err_code.get("code"), int):
+            return base
+        code = err_code["code"]
+        if code == 50001:
+            return {**base, "code": code, "errMsg": IGNORE_REPLY_SENTINEL}
+        if code != 200:
+            return {**base, "code": code, "errMsg": body.get("errMsg")}
+        data = body.get("data")
+        if not isinstance(data, dict):
+            return base
+        return {
+            **base,
+            "code": 0,
+            "errMsg": "",
+            "api_data_result_obj": data,
+            "api_data_result_str": json.dumps(data, ensure_ascii=False),
+        }
 
     async def query_instruction(
         self, query: str, room_id: str, user_id: str | None
