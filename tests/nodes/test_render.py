@@ -137,8 +137,9 @@ async def test_render_close_confirm_returns_reply() -> None:
 
 
 @pytest.mark.asyncio
-async def test_render_swap_place_order_still_shows_swap_params() -> None:
-    """swap place：product_type=swap + place_params.expected_action=place → 仍应走互换渲染。"""
+async def test_render_swap_backend_result_has_priority_and_is_passed_through_exactly() -> None:
+    """swap place 已调用 operate 时，后端卡片是用户回复的唯一来源。"""
+    card = "-----互换下单确认-----\n订单号: H-20260910-0000000001\n后端原始内容"
     state: dict = {
         "product_type": "swap",
         "place_params": {
@@ -149,9 +150,88 @@ async def test_render_swap_place_order_still_shows_swap_params() -> None:
             }],
         },
         "raw_text": "200万买入茅台",
+        "api_result": card,
     }
+
     update = await render(state)  # type: ignore[arg-type]
-    reply = update.get("reply_text") or ""
-    assert "互换订单参数" in reply, (
-        f"swap place_order 应走互换渲染，实际: {reply!r}"
+
+    assert update["reply_text"] == card
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("error_type", "expected_reply"),
+    [
+        (
+            "MissingBackendContextError",
+            "请求信息不完整，暂时无法调用互换服务，请重新发送原消息或联系运营。",
+        ),
+        (
+            "EmptyBackendResultError",
+            "互换服务未返回有效结果，本次未生成业务回执，请稍后重试或联系交易员。",
+        ),
+    ],
+)
+async def test_render_swap_backend_error_never_fabricates_order_card(
+    error_type: str,
+    expected_reply: str,
+) -> None:
+    """operate 失败后只能返回系统提示，不能使用旧业务状态拼卡片。"""
+    state: dict = {
+        "product_type": "swap",
+        "place_params": {
+            "expected_action": "place",
+            "orderList": [{
+                "placeOrderWindCode": "600519.SH",
+                "placeOrderOrderDirection": "BUY",
+            }],
+        },
+        "tickers": [],
+        "ticker_hitl_candidates": [
+            {"keyword": "茅台", "candidates": [{"windCode": "600519.SH"}]}
+        ],
+        "raw_text": "200万买入茅台",
+        "error": {
+            "node": "swap_place_order_submit",
+            "type": error_type,
+            "message": "swap backend error",
+        },
+    }
+
+    update = await render(state)  # type: ignore[arg-type]
+
+    assert update["reply_text"] == expected_reply
+    assert "互换订单参数" not in update["reply_text"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "intent",
+    [
+        "place_order_request",
+        "confirm_order",
+        "cancel_order_request",
+        "confirm_cancel_order",
+        "confirm_modify_order",
+        "query_order_status",
+    ],
+)
+async def test_render_swap_operate_intent_without_backend_result_never_fabricates_success(
+    intent: str,
+) -> None:
+    """应调用 operate 的互换意图缺少结果时，只能返回技术失败提示。"""
+    order_list = [{"orderId": "H-20260910-0000000001"}]
+    state: dict = {
+        "product_type": "swap",
+        "intent": intent,
+        "place_params": {"expected_action": "place", "orderList": order_list},
+        "confirm": {"action": "place", "orderList": order_list},
+        "cancel_params": {"orderList": order_list},
+        "query_filter": {"orderList": order_list},
+    }
+
+    update = await render(state)  # type: ignore[arg-type]
+
+    assert update["reply_text"] == (
+        "互换服务未返回有效结果，本次未生成业务回执，请稍后重试或联系交易员。"
     )

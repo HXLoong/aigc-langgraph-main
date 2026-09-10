@@ -201,7 +201,7 @@ class TestQuoteContentRouting:
     async def test_quote_contains_swap_order_routes_to_swap(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """quote_content 含 '互换订单参数' → 路由 swap，不调 LLM。"""
+        """quote_content 含后端互换下单卡 → 路由 swap，不调 LLM。"""
         llm_called = []
 
         async def fake_classify(text: str, quote_content: str | None = None) -> str:
@@ -212,7 +212,7 @@ class TestQuoteContentRouting:
 
         result = await intent_route({
             "raw_text": "确认",
-            "quote_content": "-----互换订单参数-----\n标的: 600519.SH\n方向: 买入",
+            "quote_content": "-----互换下单确认-----\n标的: 600519.SH\n方向: 买入",
         })
         assert result["product_type"] == "swap", (
             f"quote 含互换标记应路由 swap，实际: {result['product_type']}"
