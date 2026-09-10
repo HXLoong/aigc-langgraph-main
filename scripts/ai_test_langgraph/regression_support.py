@@ -165,6 +165,9 @@ def _fixture_case(case: dict[str, Any], path: Path, line_number: int) -> dict[st
         converted = {
             "name": str(case["id"]),
             "caseNo": str(case["id"]),
+            "category": case.get("category"),
+            "type": case.get("type"),
+            "source": case.get("source"),
             "scene": str(case.get("category") or "主场景"),
             "send_text": str(turns[0]["raw_content"]),
             "sub_scenes": [
@@ -183,6 +186,9 @@ def _fixture_case(case: dict[str, Any], path: Path, line_number: int) -> dict[st
         converted = {
             "name": str(case["id"]),
             "caseNo": str(case["id"]),
+            "category": case.get("category"),
+            "type": case.get("type"),
+            "source": case.get("source"),
             "scene": str(case.get("category") or "Ticker 场景"),
             "send_text": str(case["raw_content"]),
             "expected": case.get("expected", {}),

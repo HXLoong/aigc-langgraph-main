@@ -22,7 +22,21 @@
 
 当前主集已由历史的 `g` 编号、单轮平铺结构迁移为产品编号和 `conversation` 结构。恢复独立锚点文件，避免为了满足旧检查而覆盖当前主集或改写其编号。快照用于历史追溯，不代表其中所有旧意图仍适用于当前业务契约。
 
-## 3. 一致性要求
+## 3. 测试工作台兼容性
+
+`scripts/ai_test_langgraph` 会扫描本目录下的 JSONL 文件，并兼容三种记录：
+
+- 当前黄金集的 `id + conversation[]` 格式：按顺序执行全部 `raw_content`；后续轮次的
+  `quote_desc` 非空时引用上一轮实际回复。
+- 标的集的 `id + raw_content` 单轮格式。
+- 历史回归的 `name + send_text + sub_scenes[]` 格式，可为每轮配置独立断言。
+
+工作台当前确定性校验 `expected.product_type`、`expected.intent`、`winner/winners`、
+`needs_hitl` 以及 `response_contains`、`response_not_contains` 等文本规则；
+`expected.output` 仅保留为人工或 Judge 评估说明。常用格式和示例见
+[LangGraph 自动化测试工具](../../scripts/ai_test_langgraph/README.md)。
+
+## 4. 一致性要求
 
 - 所有文件必须存在、非空，编号唯一且符合各自命名约定。
 - `unified_golden.jsonl` 的首轮输入集合必须覆盖当前 `golden.jsonl` 和规则锚点集。
@@ -30,7 +44,7 @@
 - 合并脚本保留已有归档，只追加内容变化的记录；当前多轮消息及预期完整保留，不按首轮输入去重。
 - 追加记录用 `source_fixture` 和 `source_case_id` 记录来源；分配归档编号以避免与历史记录冲突。重复执行同步不产生新记录。
 
-## 4. 更新与检查
+## 5. 更新与检查
 
 ```powershell
 $env:PYTHONUTF8 = '1'

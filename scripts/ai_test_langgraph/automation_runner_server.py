@@ -534,6 +534,7 @@ def build_job(payload: dict[str, Any], *, job_id: str | None = None) -> Job:
     ]
     for dataset_arg in dataset_args:
         command.extend(["--data", dataset_arg])
+    command.extend(["--task-name", task_name])
     command.append("--runner-events")
     filters = append_filters(command, payload)
     if payload.get("shuffle") is True:

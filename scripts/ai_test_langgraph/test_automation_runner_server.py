@@ -69,6 +69,26 @@ class RunnerConfigTests(unittest.TestCase):
         multi_turn = next(case for case in cases if case.get("sub_scenes"))
 
         self.assertIn("quote_previous", multi_turn["sub_scenes"][0])
+        self.assertTrue(multi_turn["category"])
+        self.assertTrue(multi_turn["source"])
+
+    def test_job_passes_task_name_to_case_trace(self) -> None:
+        payload = {
+            "task_name": "互换回归",
+            "dataset": "tests/fixtures/golden.jsonl",
+            "run_langgraph": True,
+            "push_wecom": False,
+            "limit": 1,
+            "user_id": "1688857726396147",
+            "room_id": "10821094351495088",
+            "option_counterparties": "[]",
+            "swap_counterparties": "[]",
+        }
+
+        job = runner.build_job(payload, job_id="a" * 32)
+        command = job.commands[0][1]
+
+        self.assertEqual(command[command.index("--task-name") + 1], "互换回归")
 
     def test_test_identity_falls_back_to_langgraph_dotenv(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

@@ -40,6 +40,32 @@ ENVIRONMENT=development
 是 JSON 数组；未配置时沿用 Dify 回归工具的开发环境默认候选。为兼容已有 `.env`，
 对应的 `DIFY_*` 名称仍可作为后备值读取。
 
+## 支持的用例编写格式
+
+用例文件必须是 UTF-8 编码的 JSONL：一行一个完整 JSON 对象，不能把同一个对象拆成
+多行。最常用的是当前黄金集的 `id + conversation` 格式：
+
+```json
+{"id":"swap-confirm-001","category":"swap/confirm","expected":{"product_type":"swap","intent":"place_order_request"},"conversation":[{"raw_content":"000001 买入5000股 限价18.12","quote_desc":""},{"raw_content":"确认下单","quote_desc":"引用上一轮订单卡片"}]}
+```
+
+- `id`：必填且在文件内唯一，同时作为用例名称和 `caseNo`。
+- `conversation`：按数组顺序执行全部 `raw_content`，所有轮次共用一个
+  `conversation_id`。
+- `quote_desc`：内容只作为人工说明和引用开关，不会发送给 LangGraph。后续轮次中
+  只要该值非空，脚本就自动把上一轮 LangGraph 的真实回复填入本轮
+  `quote_content`；空值表示不引用。
+- `expected`：确定性断言支持 `product_type`、`intent`、`winners`（或
+  `winner`）及 `needs_hitl`；`output` 仅作为黄金预期说明，当前工作台不判断其语义。
+- `category`、`type`、`source`：用于分类、筛选和追溯，不参与断言。
+
+任一轮请求或断言失败后，该用例停止执行剩余轮次；不同顶层 JSONL 用例之间不会共享
+`conversation_id` 或引用内容。
+
+此外仍兼容 Ticker 的 `id + raw_content` 单轮格式，以及历史
+`name + send_text + sub_scenes` 回归格式；后者可为每轮配置 `expected`、
+`response_contains` 和 `response_not_contains` 等独立断言。
+
 ## 命令行回归
 
 在 `aigc-langgraph/` 仓库根目录运行：
@@ -88,8 +114,9 @@ python scripts/ai_test_langgraph/automation_runner_server.py
   同一会话；支持引用 LangGraph 回复、模拟 `@机器人`，并展示完整 `outputs`。
 - “回归队列”可选择多个仓库内 JSONL 数据集，任务按加入顺序串行执行。
 
-开发环境启用 LangFuse 后，用例详情会在 `conversation_id` 右侧显示每次请求对应的
-可点击 `tracing_id`；多轮用例会显示多个独立 Trace。
+开发环境启用 LangFuse 后，用例详情会在 `conversation_id` 右侧显示可点击的
+`tracing_id`。每条顶层用例生成一个名为“测试任务名称-用例 ID”的父 Trace，
+多轮请求作为其子链路；自由对话仍按每次请求生成独立 Trace。
 
 自由对话的连接和身份配置在会话建立后锁定，点击“新对话”即可重新配置。页面不会
 在服务端保存对话记录。使用 `--no-open` 可禁止自动打开浏览器，使用 `--port` 可修改

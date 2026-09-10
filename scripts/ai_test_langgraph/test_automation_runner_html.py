@@ -30,6 +30,7 @@ class AutomationRunnerHtmlContractTest(unittest.TestCase):
             'id="task-queue"',
             'id="case-log-dialog"',
             'turn.outputs?.trace_url',
+            'result.trace_url',
             '查看 LangFuse Trace',
             'data-action="pause"',
             'makeButton("恢复", "resume"',

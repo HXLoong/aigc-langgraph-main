@@ -12,7 +12,8 @@ import time
 import urllib.error
 import urllib.request
 import uuid
-from collections.abc import Sequence
+from collections.abc import Iterator, Sequence
+from contextlib import contextmanager
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any
@@ -63,6 +64,8 @@ class CaseResult:
     passed: bool
     duration: float
     conversation_id: str
+    trace_id: str = ""
+    trace_url: str = ""
     error: str = ""
     turns: list[TurnResult] = field(default_factory=list)
 
@@ -168,6 +171,7 @@ class LangGraphClient:
         conversation_id: str,
         quote_content: str = "",
         at_bot: bool = True,
+        traceparent: str = "",
     ) -> tuple[str, str, str, float]:
         payload = self.build_payload(
             query,
@@ -175,10 +179,13 @@ class LangGraphClient:
             quote_content=quote_content,
             at_bot=at_bot,
         )
+        headers = {"Content-Type": "application/json"}
+        if traceparent:
+            headers["traceparent"] = traceparent
         request = urllib.request.Request(
             f"{self.base_url}/v1/workflows/run",
             data=json.dumps(payload, ensure_ascii=False).encode("utf-8"),
-            headers={"Content-Type": "application/json"},
+            headers=headers,
             method="POST",
         )
         context = None
@@ -237,6 +244,7 @@ def run_case(
     scenario: dict[str, Any],
     *,
     ignore_leading_mentions: bool,
+    traceparent: str = "",
 ) -> CaseResult:
     name = str(scenario["name"])
     case_no = str(scenario.get("caseNo") or "")
@@ -277,6 +285,7 @@ def run_case(
                     else ""
                 ),
                 at_bot=at_bot,
+                traceparent=traceparent,
             )
             assertion = evaluate_response(
                 answer,
@@ -324,6 +333,7 @@ def run_case_isolated(
     scenario: dict[str, Any],
     *,
     ignore_leading_mentions: bool,
+    traceparent: str = "",
 ) -> CaseResult:
     started = time.monotonic()
     try:
@@ -331,6 +341,7 @@ def run_case_isolated(
             client,
             scenario,
             ignore_leading_mentions=ignore_leading_mentions,
+            traceparent=traceparent,
         )
     except Exception as exc:  # noqa: BLE001 - keep the remaining dataset running
         return CaseResult(
@@ -341,6 +352,225 @@ def run_case_isolated(
             conversation_id="",
             error=f"用例执行异常（{type(exc).__name__}: {exc}）",
         )
+
+
+@dataclass
+class CaseTrace:
+    trace_id: str
+    trace_url: str
+    traceparent: str
+    span: Any
+
+
+def _case_turns(scenario: dict[str, Any]) -> list[dict[str, Any]]:
+    return [
+        scenario,
+        *[
+            turn
+            for turn in scenario.get("sub_scenes") or []
+            if isinstance(turn, dict)
+        ],
+    ]
+
+
+def build_case_trace_metadata(
+    task_name: str, scenario: dict[str, Any]
+) -> dict[str, str]:
+    case_name = str(scenario.get("name") or "")
+    return {
+        "task_name": task_name,
+        "dataset": str(scenario.get("_source") or ""),
+        "case_id": str(scenario.get("caseNo") or case_name or "未命名用例"),
+        "case_name": case_name,
+        "category": str(scenario.get("category") or ""),
+        "case_type": str(scenario.get("type") or ""),
+        "source": str(scenario.get("source") or ""),
+    }
+
+
+def build_case_trace_input(scenario: dict[str, Any]) -> dict[str, Any]:
+    turns = []
+    for index, turn in enumerate(_case_turns(scenario), 1):
+        if index == 1 or turn.get("quote_previous") is False:
+            quote_source = "none"
+        elif turn.get("quote_previous") is True:
+            quote_source = "previous"
+        else:
+            quote_source = "main"
+        item = {
+            "turn": index,
+            "scene": str(turn.get("scene") or ("主场景" if index == 1 else f"子场景{index - 1}")),
+            "query": str(turn.get("send_text") or ""),
+            "quote_source": quote_source,
+        }
+        assertions = {
+            key: turn[key]
+            for key in (
+                "expected",
+                "response_contains",
+                "response_contains_any",
+                "response_not_contains",
+            )
+            if turn.get(key) not in (None, "", [])
+        }
+        if assertions:
+            item["assertions"] = assertions
+        turns.append(item)
+    return {"turns": turns}
+
+
+def _ticker_codes(outputs: dict[str, Any]) -> list[str]:
+    return [
+        str(ticker.get("windCode") or ticker.get("wind_code"))
+        for ticker in outputs.get("tickers") or []
+        if isinstance(ticker, dict)
+        and (ticker.get("windCode") or ticker.get("wind_code"))
+    ]
+
+
+def build_case_trace_output(
+    scenario: dict[str, Any], result: CaseResult
+) -> dict[str, Any]:
+    planned_turns = _case_turns(scenario)
+    failed_assertion = next(
+        (
+            (index, turn)
+            for index, turn in enumerate(result.turns, 1)
+            if not turn.assertion.passed
+        ),
+        None,
+    )
+    failure = None
+    if result.error:
+        failed_turn = min(len(result.turns) + 1, len(planned_turns))
+        failed_spec = planned_turns[failed_turn - 1] if planned_turns else {}
+        failure = {
+            "turn": failed_turn,
+            "scene": str(failed_spec.get("scene") or ""),
+            "kind": "execution",
+            "messages": [result.error],
+        }
+    elif failed_assertion:
+        failed_turn, turn = failed_assertion
+        failure = {
+            "turn": failed_turn,
+            "scene": turn.scene,
+            "kind": "assertion",
+            "messages": list(turn.assertion.failures),
+        }
+
+    turn_outputs = []
+    structured_keys = (
+        "place_params",
+        "cancel_params",
+        "confirm",
+        "query_filter",
+        "close_params",
+    )
+    for index, turn in enumerate(result.turns, 1):
+        outputs = turn.outputs
+        turn_outputs.append(
+            {
+                "turn": index,
+                "scene": turn.scene,
+                "workflow_run_id": turn.workflow_run_id,
+                "product_type": outputs.get("product_type"),
+                "intent": outputs.get("intent"),
+                "ticker_codes": _ticker_codes(outputs),
+                "needs_hitl": bool(outputs.get("ticker_hitl_candidates")),
+                "structured_output": {
+                    key: outputs[key]
+                    for key in structured_keys
+                    if outputs.get(key) not in (None, {}, [])
+                },
+                "assertion_passed": turn.assertion.passed,
+                "assertion_failures": list(turn.assertion.failures),
+                "reply_preview": turn.answer[:500],
+            }
+        )
+
+    status = "passed" if result.passed else "execution_error" if result.error else "assertion_failed"
+    return {
+        "status": status,
+        "passed": result.passed,
+        "conversation_id": result.conversation_id,
+        "progress": {
+            "executed": len(result.turns),
+            "total": len(planned_turns),
+            "stopped_early": len(result.turns) < len(planned_turns),
+        },
+        "failure": failure,
+        "turns": turn_outputs,
+    }
+
+
+def build_langfuse_client(values: dict[str, str]) -> Any | None:
+    """按仓库 .env 创建测试用 LangFuse 客户端；不可用时不阻断回归。"""
+    if env_value(values, "ENVIRONMENT", default="development") != "development":
+        return None
+    enabled = env_value(values, "ENABLE_LANGFUSE", default="false").lower()
+    public_key = env_value(values, "LANGFUSE_PUBLIC_KEY")
+    secret_key = env_value(values, "LANGFUSE_SECRET_KEY")
+    if enabled not in {"1", "true", "yes", "on"} or not public_key or not secret_key:
+        return None
+    try:
+        from langfuse import Langfuse
+
+        return Langfuse(
+            public_key=public_key,
+            secret_key=secret_key,
+            base_url=env_value(
+                values,
+                "LANGFUSE_BASE_URL",
+                "LANGFUSE_HOST",
+                default="https://cloud.langfuse.com",
+            ),
+        )
+    except Exception as exc:  # noqa: BLE001 - tracing 失败不阻断回归
+        print(f"[WARN] LangFuse 用例 Trace 不可用：{exc}", file=sys.stderr)
+        return None
+
+
+@contextmanager
+def open_case_trace(
+    client: Any | None,
+    *,
+    task_name: str,
+    scenario: dict[str, Any],
+) -> Iterator[CaseTrace | None]:
+    """为一条顶层测试用例创建父 Trace，所有对话轮次挂到该 Trace 下。"""
+    if client is None:
+        yield None
+        return
+    metadata = build_case_trace_metadata(task_name, scenario)
+    try:
+        observation = client.start_as_current_observation(
+            name=f"{task_name}-{metadata['case_id']}",
+            as_type="chain",
+            input=build_case_trace_input(scenario),
+            metadata=metadata,
+        )
+        span = observation.__enter__()
+    except Exception as exc:  # noqa: BLE001 - tracing 失败不阻断回归
+        print(f"[WARN] LangFuse 用例 Trace 创建失败：{exc}", file=sys.stderr)
+        yield None
+        return
+    trace_id = str(span.trace_id)
+    span_id = str(span.id)
+    try:
+        trace_url = client.get_trace_url(trace_id=trace_id) or ""
+    except Exception as exc:  # noqa: BLE001 - 链接失败不影响 trace 上报
+        print(f"[WARN] LangFuse Trace 链接不可用：{exc}", file=sys.stderr)
+        trace_url = ""
+    try:
+        yield CaseTrace(
+            trace_id=trace_id,
+            trace_url=trace_url,
+            traceparent=f"00-{trace_id}-{span_id}-01",
+            span=span,
+        )
+    finally:
+        observation.__exit__(*sys.exc_info())
 
 
 def emit_runner_event(enabled: bool, event_type: str, **payload: Any) -> None:
@@ -404,6 +634,7 @@ def write_reports(
                 f"## [{status}] {result.case_no or result.name}",
                 "",
                 f"- conversation_id: `{result.conversation_id}`",
+                f"- tracing_id: `{result.trace_id or '-'}`",
                 f"- duration: `{result.duration:.2f}s`",
             ]
         )
@@ -446,6 +677,7 @@ def build_parser() -> argparse.ArgumentParser:
         description="直接调用 aigc-langgraph，并用确定性规则校验 JSONL 用例"
     )
     parser.add_argument("--data", action="append", default=[])
+    parser.add_argument("--task-name", default="")
     parser.add_argument("--name", action="append", default=[])
     parser.add_argument("--case-no", action="append", default=[])
     parser.add_argument("--keyword", default="")
@@ -522,7 +754,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     if args.self_test:
         return run_self_test()
     try:
-        cases = load_cases(resolve_paths(args.data))
+        dataset_paths = resolve_paths(args.data)
+        cases = load_cases(dataset_paths)
         selected = select_cases(
             cases,
             names=args.name,
@@ -568,15 +801,37 @@ def main(argv: Sequence[str] | None = None) -> int:
             throttle_ms=args.throttle_ms,
             verify_tls=not args.insecure,
         )
+        langfuse_client = build_langfuse_client(dotenv)
+        task_name = args.task_name.strip() or dataset_paths[0].stem
         emit_runner_event(args.runner_events, "run_started", total=len(selected))
         results = []
         for index, scenario in enumerate(selected, 1):
             emit_runner_event(args.runner_events, "case_started", index=index, total=len(selected))
-            result = run_case_isolated(
-                client,
-                scenario,
-                ignore_leading_mentions=not args.keep_expected_mentions,
-            )
+            with open_case_trace(
+                langfuse_client, task_name=task_name, scenario=scenario
+            ) as case_trace:
+                result = run_case_isolated(
+                    client,
+                    scenario,
+                    ignore_leading_mentions=not args.keep_expected_mentions,
+                    traceparent=case_trace.traceparent if case_trace else "",
+                )
+                if case_trace:
+                    result.trace_id = case_trace.trace_id
+                    result.trace_url = case_trace.trace_url
+                    try:
+                        case_trace.span.update(
+                            metadata={
+                                **build_case_trace_metadata(task_name, scenario),
+                                "conversation_id": result.conversation_id,
+                            },
+                            output=build_case_trace_output(scenario, result),
+                        )
+                    except Exception as exc:  # noqa: BLE001 - tracing 不改变回归结果
+                        print(
+                            f"[WARN] LangFuse 用例结果写入失败：{exc}",
+                            file=sys.stderr,
+                        )
             results.append(result)
             emit_runner_event(
                 args.runner_events,
@@ -596,6 +851,11 @@ def main(argv: Sequence[str] | None = None) -> int:
             print(f"Markdown report: {md_path}")
             print(f"JSON report: {json_path}")
         passed = sum(result.passed for result in results)
+        if langfuse_client is not None:
+            try:
+                langfuse_client.flush()
+            except Exception as exc:  # noqa: BLE001 - tracing 不改变回归结果
+                print(f"[WARN] LangFuse Trace 刷新失败：{exc}", file=sys.stderr)
         emit_runner_event(
             args.runner_events,
             "run_completed",

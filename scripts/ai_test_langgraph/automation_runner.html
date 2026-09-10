@@ -2619,7 +2619,7 @@
       return item;
     }
 
-    function makeTraceSummaryItem(turns) {
+    function makeTraceSummaryItem(result) {
       const item = document.createElement("div");
       item.className = "case-summary-item";
       const name = document.createElement("span");
@@ -2627,9 +2627,11 @@
       name.textContent = "tracing_id";
       const content = document.createElement("span");
       content.className = "case-summary-value";
-      const traces = turns
-        .map((turn) => ({id: turn.outputs?.trace_id, url: turn.outputs?.trace_url}))
-        .filter((trace) => trace.id);
+      const traces = result.trace_id
+        ? [{id: result.trace_id, url: result.trace_url}]
+        : (result.turns || [])
+          .map((turn) => ({id: turn.outputs?.trace_id, url: turn.outputs?.trace_url}))
+          .filter((trace) => trace.id);
       if (!traces.length) {
         content.textContent = "-";
       } else {
@@ -2823,7 +2825,7 @@
       summary.append(
         makeCaseSummaryItem("耗时", `${Number(result.duration || 0).toFixed(2)}s`),
         makeCaseSummaryItem("conversation_id", result.conversation_id || "-"),
-        makeTraceSummaryItem(turns)
+        makeTraceSummaryItem(result)
       );
       if (result.conversation_url) {
         const action = document.createElement("div");
