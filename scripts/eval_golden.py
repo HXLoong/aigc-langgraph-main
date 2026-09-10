@@ -14,6 +14,7 @@ import asyncio
 import json
 import sys
 import time
+import uuid
 from collections import defaultdict
 from pathlib import Path
 
@@ -25,7 +26,7 @@ async def run_one_case(
 ) -> dict:
     """发送一条 case 到 /v1/message 并对比 expected。"""
     payload = {
-        "conversation_id": f"eval-{case['id']}",
+        "conversation_id": str(uuid.uuid4()),
         "message_id": f"m-{case['id']}",
         "room_id": "eval-room",
         "user_id": "eval-user",

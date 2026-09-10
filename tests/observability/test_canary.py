@@ -4,7 +4,7 @@ from __future__ import annotations
 import pytest
 
 from app.observability import canary as canary_mod
-from app.observability import metrics as M
+from app.observability import metrics
 
 
 @pytest.fixture
@@ -17,9 +17,9 @@ def restore_canary_state(monkeypatch: pytest.MonkeyPatch):
 
 @pytest.fixture(autouse=True)
 def reset_metrics_collector():
-    M.get_collector().reset()
+    metrics.get_collector().reset()
     yield
-    M.get_collector().reset()
+    metrics.get_collector().reset()
 
 
 # ============================================================
@@ -82,21 +82,21 @@ def test_get_canary_room_ids_returns_frozenset(restore_canary_state, monkeypatch
 
 
 def test_emit_canary_metric_for_canary_room() -> None:
-    M.emit_canary_traffic(is_canary=True)
-    coll = M.get_collector()
+    metrics.emit_canary_traffic(is_canary=True)
+    coll = metrics.get_collector()
     assert (
-        coll.get_counter(M.METRIC_CANARY_TRAFFIC_TOTAL, {"is_canary": "true"}) == 1
+        coll.get_counter(metrics.METRIC_CANARY_TRAFFIC_TOTAL, {"is_canary": "true"}) == 1
     )
     assert (
-        coll.get_counter(M.METRIC_CANARY_TRAFFIC_TOTAL, {"is_canary": "false"}) == 0
+        coll.get_counter(metrics.METRIC_CANARY_TRAFFIC_TOTAL, {"is_canary": "false"}) == 0
     )
 
 
 def test_emit_canary_metric_for_non_canary_room() -> None:
-    M.emit_canary_traffic(is_canary=False)
-    coll = M.get_collector()
+    metrics.emit_canary_traffic(is_canary=False)
+    coll = metrics.get_collector()
     assert (
-        coll.get_counter(M.METRIC_CANARY_TRAFFIC_TOTAL, {"is_canary": "false"}) == 1
+        coll.get_counter(metrics.METRIC_CANARY_TRAFFIC_TOTAL, {"is_canary": "false"}) == 1
     )
 
 
@@ -115,9 +115,9 @@ async def test_ingest_emits_canary_metric_canary_room(
     canary_mod.reload_canary_room_ids()
     await ingest({"room_id": "r-canary-1"})  # type: ignore[arg-type]
 
-    coll = M.get_collector()
-    assert coll.get_counter(M.METRIC_CANARY_TRAFFIC_TOTAL, {"is_canary": "true"}) == 1
-    assert coll.get_counter(M.METRIC_CANARY_TRAFFIC_TOTAL, {"is_canary": "false"}) == 0
+    coll = metrics.get_collector()
+    assert coll.get_counter(metrics.METRIC_CANARY_TRAFFIC_TOTAL, {"is_canary": "true"}) == 1
+    assert coll.get_counter(metrics.METRIC_CANARY_TRAFFIC_TOTAL, {"is_canary": "false"}) == 0
 
 
 @pytest.mark.asyncio
@@ -131,8 +131,8 @@ async def test_ingest_emits_metric_for_non_canary_room(
     canary_mod.reload_canary_room_ids()
     await ingest({"room_id": "r-leaked-prod-room"})  # type: ignore[arg-type]
 
-    coll = M.get_collector()
-    assert coll.get_counter(M.METRIC_CANARY_TRAFFIC_TOTAL, {"is_canary": "false"}) == 1
+    coll = metrics.get_collector()
+    assert coll.get_counter(metrics.METRIC_CANARY_TRAFFIC_TOTAL, {"is_canary": "false"}) == 1
 
 
 # ============================================================
@@ -165,7 +165,7 @@ otc_agent_canary_traffic_total{is_canary="false"} 3
 
 def test_alerts_evaluate_non_canary_fires_on_any_traffic() -> None:
     """≥ 1 条 non-canary 流量即触发（sustain_seconds=0 即时）。"""
-    from app.observability.alerts import AlertContext, AlertState, evaluate
+    from app.observability.alerts import AlertContext, evaluate
 
     # 第一次评估只记 snapshot
     ctx1 = AlertContext(

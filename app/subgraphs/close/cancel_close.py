@@ -10,12 +10,14 @@ from __future__ import annotations
 
 from typing import Any
 
+from app.graph.business_params import validated_cancel_params
 from app.graph.safe_node import safe_node
 from app.graph.state import AgentState, TraceEntry
 from app.llm.clients import get_qwen_thinking
 from app.prompts import load_prompt
+from app.subgraphs.close.aggregate import build_close_order_req_vo
+from app.subgraphs.close.backend import call_close_backend
 from app.subgraphs.close.models import CancelCloseParams
-from app.graph.business_params import validated_cancel_params
 
 
 def _build_user_message(state: AgentState) -> str:
@@ -46,7 +48,7 @@ async def close_cancel_close(state: AgentState) -> dict[str, Any]:
         ]
     )
 
-    order_nos = list(result.cancelOrderNoList)
+    order_nos = list(result.cancel_order_no_list)
 
     # 正则兜底：LLM 未提取到时从消息中搜订单号
     if not order_nos:
@@ -71,8 +73,18 @@ async def close_cancel_close(state: AgentState) -> dict[str, Any]:
             if _last_oid:
                 order_nos = [_last_oid]
 
+    # 真后端调用（Dify 全 6 分支均汇入 期权平仓-参数聚合 → 期权平仓[code]，
+    # cancel_close 此前遗漏了这一跳——P0 payload 对齐项，见 close/backend.py）
+    req_vo = build_close_order_req_vo(cancel_order_no_list=order_nos)
+    backend = await call_close_backend(
+        state,
+        intent="close_order_cancel_request",
+        close_order_req_vo=req_vo,
+    )
+
     return {
         "cancel_params": validated_cancel_params(cancelOrderNoList=order_nos),
+        **backend,
         "trace": [
             TraceEntry(
                 node="close_cancel_close",

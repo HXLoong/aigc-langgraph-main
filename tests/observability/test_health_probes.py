@@ -14,11 +14,11 @@ from app.observability.health_probes import ProbeResult, run_all_probes
 
 @pytest.fixture(autouse=True)
 def reset_collector() -> None:
-    from app.observability import metrics as M
+    from app.observability import metrics
 
-    M.get_collector().reset()
+    metrics.get_collector().reset()
     yield
-    M.get_collector().reset()
+    metrics.get_collector().reset()
 
 
 # ============================================================
@@ -122,7 +122,7 @@ def test_ready_llm_timeout_returns_503() -> None:
 
 
 def test_ready_emits_health_check_metric() -> None:
-    from app.observability import metrics as M
+    from app.observability import metrics
 
     with (
         patch.object(hp, "probe_mysql", _stub_probe("mysql")),
@@ -133,7 +133,7 @@ def test_ready_emits_health_check_metric() -> None:
     ):
         client.get("/ready")
 
-    coll = M.get_collector()
+    coll = metrics.get_collector()
     assert (
         coll.get_counter("otc_agent_health_check_total", {"target": "mysql", "status": "ok"}) == 1
     )

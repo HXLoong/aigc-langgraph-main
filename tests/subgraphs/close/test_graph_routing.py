@@ -1,4 +1,5 @@
 """close 子图路由测试 · intent → conditional → holding_query / todo。"""
+
 from __future__ import annotations
 
 from unittest.mock import AsyncMock, MagicMock
@@ -9,6 +10,19 @@ from app.subgraphs.close import build_close_graph
 from app.subgraphs.close import holding_query as hq_module
 from app.subgraphs.close import intent as intent_module
 from app.subgraphs.close.models import CloseIntentOutput, HoldingQueryParams
+from app.tools.models import CommonResult
+
+
+def _patch_close_backend(monkeypatch: pytest.MonkeyPatch) -> None:
+    """close/backend.py 调用的 OptionClientHttpx.operate 不打真网络（路由测试关注
+    路由本身，不关注真后端联调，真联调见 scripts/probe_close_write_e2e.py）。"""
+
+    async def _fake_operate(self, req):  # type: ignore[no-untyped-def]
+        return CommonResult(code=0, msg="ok", data="mock-backend-result")
+
+    monkeypatch.setattr(
+        "app.tools.option_client.OptionClientHttpx.operate", _fake_operate
+    )
 
 
 def _patch_intent(monkeypatch: pytest.MonkeyPatch, intent_type: str) -> None:
@@ -20,14 +34,17 @@ def _patch_intent(monkeypatch: pytest.MonkeyPatch, intent_type: str) -> None:
     monkeypatch.setattr(intent_module, "get_qwen_thinking", lambda: fake_base)
 
 
-def _patch_holding_query(
-    monkeypatch: pytest.MonkeyPatch, params: HoldingQueryParams
-) -> None:
+def _patch_holding_query(monkeypatch: pytest.MonkeyPatch, params: HoldingQueryParams) -> None:
     fake_llm = MagicMock()
     fake_llm.ainvoke = AsyncMock(return_value=params)
     fake_base = MagicMock()
     fake_base.with_structured_output = MagicMock(return_value=fake_llm)
     monkeypatch.setattr(hq_module, "get_qwen_thinking", lambda: fake_base)
+    monkeypatch.setattr(
+        hq_module,
+        "call_close_backend",
+        AsyncMock(return_value={"api_code": 0, "api_result": "backend reply"}),
+    )
 
 
 @pytest.mark.asyncio
@@ -40,6 +57,7 @@ async def test_close_query_routes_to_holding_query(
         monkeypatch,
         HoldingQueryParams(closeable_only=False),
     )
+    _patch_close_backend(monkeypatch)
     graph = build_close_graph()
     final = await graph.ainvoke(
         {
@@ -90,13 +108,9 @@ async def test_close_intent_error_routes_to_todo_not_holding_query(
     """intent 节点 LLM 失败 → state['error'] → 走 todo（不进 holding_query）。"""
     fake_llm = MagicMock()
     fake_llm.with_structured_output = MagicMock(
-        return_value=MagicMock(
-            ainvoke=AsyncMock(side_effect=RuntimeError("LLM down"))
-        )
+        return_value=MagicMock(ainvoke=AsyncMock(side_effect=RuntimeError("LLM down")))
     )
-    monkeypatch.setattr(
-        intent_module, "get_qwen_thinking", lambda: fake_llm
-    )
+    monkeypatch.setattr(intent_module, "get_qwen_thinking", lambda: fake_llm)
     graph = build_close_graph()
     final = await graph.ainvoke(
         {

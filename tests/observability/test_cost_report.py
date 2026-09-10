@@ -5,14 +5,25 @@ from unittest.mock import patch
 
 import pytest
 
-from app.observability import metrics as M
+from app.observability import metrics
+from scripts.llm_cost_report import (
+    TokenBucket,
+    _parse_labels,
+    aggregate_by_model,
+    aggregate_by_node,
+    build_report,
+    compute_growth,
+    estimate_cost_usd,
+    load_prices,
+    parse_token_buckets,
+)
 
 
 @pytest.fixture(autouse=True)
 def reset_collector() -> None:
-    M.get_collector().reset()
+    metrics.get_collector().reset()
     yield
-    M.get_collector().reset()
+    metrics.get_collector().reset()
 
 
 # ============================================================
@@ -21,49 +32,49 @@ def reset_collector() -> None:
 
 
 def test_emit_llm_tokens_basic() -> None:
-    M.emit_llm_tokens("deepseek-v4-pro", prompt_tokens=1500, completion_tokens=800)
-    coll = M.get_collector()
-    assert coll.get_counter(M.METRIC_LLM_TOKENS, {"direction": "prompt", "model": "deepseek-v4-pro"}) == 1500
-    assert coll.get_counter(M.METRIC_LLM_TOKENS, {"direction": "completion", "model": "deepseek-v4-pro"}) == 800
+    metrics.emit_llm_tokens("deepseek-v4-pro", prompt_tokens=1500, completion_tokens=800)
+    coll = metrics.get_collector()
+    assert coll.get_counter(metrics.METRIC_LLM_TOKENS, {"direction": "prompt", "model": "deepseek-v4-pro"}) == 1500
+    assert coll.get_counter(metrics.METRIC_LLM_TOKENS, {"direction": "completion", "model": "deepseek-v4-pro"}) == 800
 
 
 def test_emit_llm_tokens_with_node() -> None:
-    M.emit_llm_tokens(
+    metrics.emit_llm_tokens(
         "qwen3-30b-a3b",
         prompt_tokens=500,
         completion_tokens=200,
         node="swap.intent",
     )
-    coll = M.get_collector()
+    coll = metrics.get_collector()
     assert coll.get_counter(
-        M.METRIC_LLM_TOKENS,
+        metrics.METRIC_LLM_TOKENS,
         {"direction": "prompt", "model": "qwen3-30b-a3b", "node": "swap.intent"},
     ) == 500
 
 
 def test_emit_llm_tokens_ignores_negative() -> None:
     """负数 token 应被忽略，不污染计数器。"""
-    M.emit_llm_tokens("deepseek-v4-pro", -100, 50)
-    coll = M.get_collector()
+    metrics.emit_llm_tokens("deepseek-v4-pro", -100, 50)
+    coll = metrics.get_collector()
     # 计数器应该为 0（不应被任何值写入）
     assert coll.get_counter(
-        M.METRIC_LLM_TOKENS, {"direction": "prompt", "model": "deepseek-v4-pro"}
+        metrics.METRIC_LLM_TOKENS, {"direction": "prompt", "model": "deepseek-v4-pro"}
     ) == 0
 
 
 def test_emit_llm_tokens_zero_ok() -> None:
     """0 token 是合法的（如纯 system prompt）。"""
-    M.emit_llm_tokens("deepseek-v4-pro", 0, 100)
-    coll = M.get_collector()
+    metrics.emit_llm_tokens("deepseek-v4-pro", 0, 100)
+    coll = metrics.get_collector()
     assert coll.get_counter(
-        M.METRIC_LLM_TOKENS, {"direction": "completion", "model": "deepseek-v4-pro"}
+        metrics.METRIC_LLM_TOKENS, {"direction": "completion", "model": "deepseek-v4-pro"}
     ) == 100
 
 
 def test_emit_llm_tokens_renders_to_prometheus() -> None:
     """渲染到 /metrics 端点格式正确。"""
-    M.emit_llm_tokens("deepseek-v4-pro", 1000, 500, node="render")
-    output = M.get_collector().render_prometheus()
+    metrics.emit_llm_tokens("deepseek-v4-pro", 1000, 500, node="render")
+    output = metrics.get_collector().render_prometheus()
     assert "otc_agent_llm_tokens_total" in output
     assert 'model="deepseek-v4-pro"' in output
     assert 'direction="prompt"' in output
@@ -76,17 +87,7 @@ def test_emit_llm_tokens_renders_to_prometheus() -> None:
 # ============================================================
 
 
-from scripts.llm_cost_report import (
-    TokenBucket,
-    _parse_labels,
-    aggregate_by_model,
-    aggregate_by_node,
-    build_report,
-    compute_growth,
-    estimate_cost_usd,
-    load_prices,
-    parse_token_buckets,
-)
+
 
 
 def test_parse_labels_basic() -> None:

@@ -11,39 +11,40 @@ import httpx
 from pydantic import BaseModel, ConfigDict, Field
 
 from app.tools.models import CommonResult
+from app.wire_model import WireModel
 
 # ============================================================
 # Pydantic 模型
 # ============================================================
 
 
-class KeywordItem(BaseModel):
+class KeywordItem(WireModel):
     """关键词查询项。"""
 
     keyword: str
-    isFull: bool = False
+    is_full: bool = Field(default=False, alias="isFull")
 
 
-class SecuritiesInstrumentReqVO(BaseModel):
+class SecuritiesInstrumentReqVO(WireModel):
     """`GET /admin-api/integration/securities-instrument/select` 请求体（带 Body 的 GET）。"""
 
     model_config = ConfigDict(extra="allow")
 
-    placeOrderWindCode: str | None = None
-    keywordItems: list[KeywordItem] = Field(default_factory=list)
-    transactionTypeList: list[str] | None = None
+    place_order_wind_code: str | None = Field(default=None, alias="placeOrderWindCode")
+    keyword_items: list[KeywordItem] = Field(alias="keywordItems", default_factory=list)
+    transaction_type_list: list[str] | None = Field(default=None, alias="transactionTypeList")
 
 
-class SecuritiesInstrumentRespVO(BaseModel):
+class SecuritiesInstrumentRespVO(WireModel):
     """对齐 Java `SecuritiesInstrumentOpenApiRespVO`。"""
 
     model_config = ConfigDict(extra="allow")
 
-    windCode: str
-    insShtDesc: str | None = None
-    insLngDesc: str | None = None
-    relevanceScore: int | None = None
-    transactionTypeLists: list[str] = Field(default_factory=list)
+    wind_code: str = Field(alias="windCode")
+    ins_sht_desc: str | None = Field(default=None, alias="insShtDesc")
+    ins_lng_desc: str | None = Field(default=None, alias="insLngDesc")
+    relevance_score: int | None = Field(default=None, alias="relevanceScore")
+    transaction_type_lists: list[str] = Field(alias="transactionTypeLists", default_factory=list)
 
 
 class CounterpartyVO(BaseModel):

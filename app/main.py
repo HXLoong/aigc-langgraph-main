@@ -8,8 +8,8 @@ from __future__ import annotations
 
 import logging
 import os
+from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
-from typing import AsyncGenerator
 
 from fastapi import FastAPI, Request
 from fastapi.responses import PlainTextResponse
@@ -21,6 +21,7 @@ from app.checkpointer.factory import close_checkpointer, init_checkpointer
 from app.config import get_settings
 from app.graph.main import build_main_graph
 from app.observability.metrics import emit_http_response, get_collector
+from app.tools.message_client import MessageClientHttpx
 
 logger = logging.getLogger(__name__)
 
@@ -49,7 +50,16 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
             "生产环境必须启用 MySQL checkpointer（USE_MYSQL_CHECKPOINTER=true，"
             "见 ADR 0021 / issue #153）"
         )
-    app.state.main_graph = build_main_graph(checkpointer=checkpointer)
+    message_client_factory = (
+        None if settings.environment == "development" else MessageClientHttpx
+    )
+    if message_client_factory is None:
+        logger.info("development environment: intent persistence disabled")
+    app.state.main_graph = build_main_graph(
+        checkpointer=checkpointer,
+        message_client_factory=message_client_factory,
+        attach_langfuse_callbacks=settings.environment != "development",
+    )
     logger.info("main graph compiled")
 
     if _is_enabled("ENABLE_LANGFUSE"):

@@ -154,7 +154,7 @@ class TestSwapRenderEnriched:
                 "expected_action": "place",
                 "orderList": [{"placeOrderWindCode": "600519.SH"}],
             },
-            "tickers": [SimpleNamespace(windCode="600519.SH", insShtDesc="贵州茅台")],
+            "tickers": [SimpleNamespace(wind_code="600519.SH", ins_sht_desc="贵州茅台")],
         }
         reply = (await render(state)).get("reply_text") or ""
         assert "标的名称" in reply

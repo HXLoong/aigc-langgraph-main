@@ -11,13 +11,14 @@ from __future__ import annotations
 
 from typing import Any
 
+from app.graph.business_params import validated_confirm
 from app.graph.safe_node import safe_node
 from app.graph.state import AgentState, TraceEntry
 from app.llm.clients import get_qwen_thinking
 from app.prompts import load_prompt
+from app.subgraphs.close.aggregate import build_close_order_req_vo
+from app.subgraphs.close.backend import call_close_backend
 from app.subgraphs.close.models import ConfirmCloseParams
-from app.subgraphs.option.backend import call_option_backend
-from app.graph.business_params import validated_confirm
 
 
 def _build_user_message(state: AgentState) -> str:
@@ -52,20 +53,18 @@ async def close_confirm_close(state: AgentState) -> dict[str, Any]:
 
     # regex 兜底：LLM 抽不到时直接从 raw_text + quote_content 抠 CO-YYYYMMDD-XXX 单号
     # （结构化字符串抽取,与 swap.place_order 抠 H-YYYYMMDD-N 同款思路）
-    confirm_ids = list(result.confirmOrderNoList)
+    confirm_ids = list(result.confirm_order_no_list)
     if not confirm_ids:
         import re as _re_co
         raw = (state.get("raw_text") or "") + "\n" + (state.get("quote_content") or "")
         confirm_ids = list(dict.fromkeys(_re_co.findall(r"CO-\d{8}-[A-Z0-9]+", raw)))
 
-    # 真后端调用：把 confirm 列表映射为 closeOrderReqVO，按 close_order_confirm 意图
-    order_list = [
-        {"orderId": oid} for oid in confirm_ids
-    ]
-    backend = await call_option_backend(
+    # 真后端调用：confirmOrderNoList 进 closeOrderReqVO（不是 option 域的 orderList）
+    req_vo = build_close_order_req_vo(confirm_order_no_list=confirm_ids)
+    backend = await call_close_backend(
         state,
         intent="close_order_confirm",
-        order_list=order_list,
+        close_order_req_vo=req_vo,
     )
 
     return {

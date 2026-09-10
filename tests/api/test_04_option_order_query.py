@@ -1,7 +1,7 @@
 """04. 期权下单结果查询  POST /api/internal/agent/option/order/query"""
 from __future__ import annotations
 
-from _utils import check, post, report, OPT_AID, OPT_SUB
+from _utils import OPT_AID, OPT_SUB, check, post, report
 
 print("04. 期权下单结果查询  POST /api/internal/agent/option/order/query")
 

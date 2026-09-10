@@ -46,8 +46,8 @@ def _patch_llm(
 class TestSwapOrderItem:
     def test_minimal_all_none(self) -> None:
         item = SwapOrderItem()
-        assert item.orderId is None
-        assert item.placeOrderWindCode is None
+        assert item.order_id is None
+        assert item.place_order_wind_code is None
 
     def test_full_buy_order(self) -> None:
         item = SwapOrderItem(
@@ -61,16 +61,16 @@ class TestSwapOrderItem:
             placeOrderPovPercent=25,
             placeOrderShortname="ACCOUNT_L",
         )
-        assert item.placeOrderTransactionType == "HK_STOCK"
-        assert item.placeOrderOrderDirection == "BUY"
-        assert item.placeOrderAlgorithmType == "POV"
+        assert item.place_order_transaction_type == "HK_STOCK"
+        assert item.place_order_order_direction == "BUY"
+        assert item.place_order_algorithm_type == "POV"
 
     def test_modify_order_with_order_id(self) -> None:
         item = SwapOrderItem(
             orderId="H-20260304-0001",
             placeOrderPrice=350,
         )
-        assert item.orderId == "H-20260304-0001"
+        assert item.order_id == "H-20260304-0001"
 
     @pytest.mark.parametrize(
         "tx_type",
@@ -79,7 +79,7 @@ class TestSwapOrderItem:
     )
     def test_all_transaction_types(self, tx_type: str) -> None:
         item = SwapOrderItem(placeOrderTransactionType=tx_type)  # type: ignore[arg-type]
-        assert item.placeOrderTransactionType == tx_type
+        assert item.place_order_transaction_type == tx_type
 
     def test_invalid_direction_rejected(self) -> None:
         with pytest.raises(ValidationError):
@@ -94,7 +94,7 @@ class TestSwapOrderItem:
         item = SwapOrderItem.model_validate(
             {"orderId": None, "garbage_field": "x"}
         )
-        assert item.orderId is None
+        assert item.order_id is None
         # garbage_field 被丢弃
 
 
@@ -106,14 +106,14 @@ class TestSwapOrderItem:
 class TestSwapPlaceOrderParams:
     def test_default_empty_list(self) -> None:
         p = SwapPlaceOrderParams()
-        assert p.orderList == []
+        assert p.order_list == []
 
     def test_accepts_top_level_type_field(self) -> None:
         """LLM 输出的顶层 'type' 字段被 ignore。"""
         p = SwapPlaceOrderParams.model_validate(
             {"type": "place_order_request", "orderList": []}
         )
-        assert p.orderList == []
+        assert p.order_list == []
         # type 字段被丢弃，不在 model 上
 
 
@@ -178,7 +178,7 @@ class TestSwapPlaceOrderNode:
         assert result["place_params"]["expected_action"] == "place"
         assert result["place_params"]["orderList"][0]["placeOrderQuantity"] == 1000
         tickers = result.get("tickers", [])
-        assert any("700" in t.windCode and t.windCode.endswith(".HK") for t in tickers)
+        assert any("700" in t.wind_code and t.wind_code.endswith(".HK") for t in tickers)
         assert all(t.from_goats for t in tickers)
 
     async def test_modify_when_order_id_present(
@@ -215,7 +215,7 @@ class TestSwapPlaceOrderNode:
         result = await swap_place_order(
             {"raw_text": "互换下单 贵州茅台 腾讯 各 100 股"}
         )
-        wind_codes = {t.windCode for t in result["tickers"]}
+        wind_codes = {t.wind_code for t in result["tickers"]}
         assert "600519.SH" in wind_codes
         assert any("700" in wc and wc.endswith(".HK") for wc in wind_codes)
 

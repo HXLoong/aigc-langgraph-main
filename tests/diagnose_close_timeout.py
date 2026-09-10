@@ -1,6 +1,9 @@
 """诊断 close_place_close 超时：直接调 LLM，测延迟。"""
-import asyncio, time, sys
+import asyncio
+import sys
+import time
 from pathlib import Path
+
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from app.llm.clients import get_qwen_standard, get_qwen_thinking
@@ -25,10 +28,10 @@ async def test_model(name, llm_factory, model_name):
         )
         elapsed = time.monotonic() - t0
         print(f"OK latency={elapsed:.1f}s")
-        print(f"  orders={len(result.closeOrderList)}")
-        for o in result.closeOrderList[:2]:
-            print(f"  - orderId={o.orderId}, type={o.closeOrderType}, amt={o.closeOrderNotionalDelta}")
-    except asyncio.TimeoutError:
+        print(f"  orders={len(result.close_order_list)}")
+        for o in result.close_order_list[:2]:
+            print(f"  - orderId={o.order_id}, type={o.close_order_type}, amt={o.close_order_notional_delta}")
+    except TimeoutError:
         elapsed = time.monotonic() - t0
         print(f"TIMEOUT after {elapsed:.1f}s (>120s)")
     except Exception as e:

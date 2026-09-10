@@ -106,7 +106,7 @@
 
 | 任务 ID | 内容 | Owner | 估时 |
 |---|---|---|---|
-| **C1.9** | ✅ 客户环境调研报告**模板** `docs/customer-env-assessment.md` 已交付（2026-05-12，14 节 + 风险登记 + 联系人通讯录）→ Tony 在客户现场填实际值；阶段 2 D2.1 启动前必须完成填写 | Tony + #25 | 1d 模板 + 0.5d 现场填写 |
+| **C1.9** | ✅ 客户环境调研报告**模板** `docs/customer/customer-env-assessment.md` 已交付（2026-05-12，14 节 + 风险登记 + 联系人通讯录）→ Tony 在客户现场填实际值；阶段 2 D2.1 启动前必须完成填写 | Tony + #25 | 1d 模板 + 0.5d 现场填写 |
 | **C1.10** | 大模型方案（**已确认**，2026-05-12）：<br>· 开发测试：Qwen（`qwen3-30B-A3B` standard / `qwen-max-latest` thinking / `qwen-vl-max-latest` VL，沿用 ADR 0010）<br>· 客户现场：**外部云 DeepSeek-v4-pro**（OpenAI 兼容接口，可访问公网）<br>· **开发期 API key 我方提供，现场 key 由 Tony 与客户对齐**（在 C1.9 客户环境调研中收集）<br>· 上下文窗口：DeepSeek-v4-pro 假设 ≥ 128K（Tony 待最终确认）<br>· 见 ADR 0018 | Tony | ✅ 主要决策已落 |
 | **C1.11** | LangFuse self-hosted 客户内网部署：docker-compose + image 拉取 + 数据持久化 | #25 | 1-2d |
 | **C1.12** | `.env.customer.template` + 私有化部署文档 `docs/deploy/customer-private.md` | #25 | 1d |
@@ -303,8 +303,8 @@ A0.1 PR#41 修绿  →  A0.2 merge
 - **ADR 0018** · 开发期 Qwen / 客户现场 DeepSeek-v4-pro 双模型分立
 - **ADR 0001 D9** · 原 M3 阶段定义（被 ADR 0016 修订）
 - **ADR 0008 / 0013 / 0014** · ticker / 动态 prompt / LangFuse 后端
-- **`docs/m2-real-llm-final-report.md`** · M2 92.5% pass rate baseline
-- **`docs/SHADOW_COMPARE_GUIDE.md`** · Shadow 工具（M4 使用）
+- **`docs/archive/m2/m2-real-llm-final-report.md`** · M2 92.5% pass rate baseline
+- **`docs/deploy/SHADOW_COMPARE_GUIDE.md`** · Shadow 工具（M4 使用）
 - **GitHub Epic** · #33（客户验证）/ #34（M3 v2）/ #35-#37（二期）
 
 ---

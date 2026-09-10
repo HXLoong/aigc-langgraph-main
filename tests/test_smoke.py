@@ -4,6 +4,7 @@ ADR 0001 D1 + ADR 0015：M1 smoke 已升级为含 intent_route 的端到端验�
 - ingest → intent_route（规则层）→ swap/option/option_close stub → persist → render
 - unknown / cascade 路径走 fallback
 """
+
 from __future__ import annotations
 
 import pytest
@@ -22,7 +23,8 @@ async def test_main_graph_compiles() -> None:
 async def test_main_graph_e2e_swap_keyword(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """ADR 0015 第 2 层：'互换' 关键词 → swap 子图 → place_order_request → swap_place_order 真节点。"""
+    """ADR 0015 第 2 层：'互换' 关键词 → swap 子图 → place_order_request →
+    swap_place_order + swap_place_order_submit 真节点链。"""
     from unittest.mock import AsyncMock, MagicMock
 
     from app.subgraphs.swap import intent as swap_intent_module
@@ -32,15 +34,22 @@ async def test_main_graph_e2e_swap_keyword(
         SwapOrderItem,
         SwapPlaceOrderParams,
     )
+    from app.subgraphs.ticker.resolver import TickerResolution
+    from app.tools.models import CommonResult
 
-    def _patch(
-        module: object, value: object, fn: str = "get_qwen_thinking"
-    ) -> None:
+    def _patch(module: object, value: object, fn: str = "get_qwen_thinking") -> None:
         fake_llm = MagicMock()
         fake_llm.ainvoke = AsyncMock(return_value=value)
         fake_base = MagicMock()
         fake_base.with_structured_output = MagicMock(return_value=fake_llm)
         monkeypatch.setattr(module, fn, lambda: fake_base)
+
+    async def _fake_operate(self, req):  # type: ignore[no-untyped-def]
+        return CommonResult(code=0, msg="ok", data={"orderId": "H-20260828-0000000001"})
+
+    monkeypatch.setattr(
+        "app.tools.swap_client.SwapClientHttpx.operate", _fake_operate
+    )
 
     _patch(swap_intent_module, SwapIntentOutput(type="place_order_request"))
     _patch(
@@ -55,6 +64,11 @@ async def test_main_graph_e2e_swap_keyword(
         ),
         fn="get_qwen_complex",
     )
+    monkeypatch.setattr(
+        swap_po_module,
+        "resolve_ticker_full",
+        AsyncMock(return_value=TickerResolution(resolved=[], hitl_pending=[])),
+    )
 
     graph = build_main_graph()
     final = await graph.ainvoke(
@@ -65,6 +79,9 @@ async def test_main_graph_e2e_swap_keyword(
             "room_id": "r-smoke",
             "message_id": 1,
             "message_content": "做一笔互换 100 手",
+            "history_messages": [
+                {"role": "user", "content": "上一轮消息"},
+            ],
         }
     )
 
@@ -82,14 +99,24 @@ async def test_main_graph_e2e_swap_keyword(
     assert required.issubset(set(trace_nodes)), (
         f"missing nodes: {required - set(trace_nodes)} in {trace_nodes}"
     )
+    assert trace_nodes.count("ingest") == 1
+    assert trace_nodes.count("pre_route") == 1
+    assert trace_nodes.count("intent_route") == 1
+    from app.graph.state import Message
+
+    history = [Message.model_validate(message) for message in final["history_messages"]]
+    assert [(message.role, message.content) for message in history] == [
+        ("user", "上一轮消息"),
+        ("user", "做一笔互换 100 手"),
+        ("assistant", final["reply_text"]),
+    ]
 
     assert final.get("product_type") == "swap"
     assert final.get("intent") == "place_order_request"
     intent_route_entries = [e for e in final["trace"] if e.node == "intent_route"]
-    # E3.4 trace 增强：decision 格式从 "rule:keyword→swap" 改为 "rule:keyword[kw:互换]→swap"
+    # DSL v2 路由：decision 格式为 "rule→<DSL 标签>"（规则层标签见 route_rules.py）
     assert any(
-        e.decision.startswith("rule:keyword[") and e.decision.endswith("→swap")
-        for e in intent_route_entries
+        e.decision == "rule→互换-文本" for e in intent_route_entries
     )
     # 验证 swap.place_order 真节点写入了 place_params
     assert final.get("place_params", {}).get("expected_action") == "place"
@@ -105,9 +132,7 @@ async def test_main_graph_e2e_unknown_routes_to_fallback(
     async def fake_classify(text: str, quote_content: str | None = None) -> str:
         return "unknown"
 
-    monkeypatch.setattr(
-        intent_route_module, "_classify_with_llm", fake_classify
-    )
+    monkeypatch.setattr(intent_route_module, "_classify_with_llm", fake_classify)
 
     graph = build_main_graph()
     final = await graph.ainvoke(
@@ -129,6 +154,49 @@ async def test_main_graph_e2e_unknown_routes_to_fallback(
 
 
 @pytest.mark.asyncio
+async def test_main_graph_trace_is_isolated_per_turn(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """同一会话的下一轮只返回当轮 trace，不重复携带上一轮节点。"""
+    from langgraph.checkpoint.memory import InMemorySaver
+
+    from app.nodes import intent_route as intent_route_module
+
+    async def fake_classify(text: str, quote_content: str | None = None) -> str:
+        return "unknown"
+
+    monkeypatch.setattr(intent_route_module, "_classify_with_llm", fake_classify)
+
+    graph = build_main_graph(InMemorySaver())
+    config = {"configurable": {"thread_id": "trace-turns"}}
+    base = {
+        "conversation_id": "trace-turns",
+        "user_id": "u-smoke",
+        "room_id": "r-smoke",
+    }
+    first = await graph.ainvoke(
+        {**base, "raw_text": "第一轮", "message_id": 1, "message_content": "第一轮"},
+        config=config,
+    )
+    second = await graph.ainvoke(
+        {**base, "raw_text": "第二轮", "message_id": 2, "message_content": "第二轮"},
+        config=config,
+    )
+
+    expected = [
+        "ingest", "pre_route", "intent_route", "fallback", "persist_intent", "persist", "render",
+    ]
+    assert [entry.node for entry in first["trace"]] == expected
+    assert [entry.node for entry in second["trace"]] == expected
+    assert first["trace"][4].decision == "skipped"
+    assert second["trace"][4].decision == "skipped"
+    assert [(message.role, message.content) for message in second["history_messages"]] == [
+        ("user", "第一轮"), ("assistant", first["reply_text"]),
+        ("user", "第二轮"), ("assistant", second["reply_text"]),
+    ]
+
+
+@pytest.mark.asyncio
 async def test_main_graph_e2e_option_close_order_no(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -142,6 +210,7 @@ async def test_main_graph_e2e_option_close_order_no(
         CloseOrderItem,
         ClosePlaceParams,
     )
+    from app.tools.models import CommonResult
 
     def _patch(module: object, value: object, fn: str = "get_qwen_thinking") -> None:
         fake_llm = MagicMock()
@@ -149,6 +218,20 @@ async def test_main_graph_e2e_option_close_order_no(
         fake_base = MagicMock()
         fake_base.with_structured_output = MagicMock(return_value=fake_llm)
         monkeypatch.setattr(module, fn, lambda: fake_base)
+
+    async def _fake_query_close_orders(self, order_ids=None, contract_codes=None):  # type: ignore[no-untyped-def]
+        return CommonResult(code=0, msg="ok", data=[])
+
+    async def _fake_operate(self, req):  # type: ignore[no-untyped-def]
+        return CommonResult(code=0, msg="ok", data="mock-backend-result")
+
+    monkeypatch.setattr(
+        "app.tools.option_client.OptionClientHttpx.query_close_orders",
+        _fake_query_close_orders,
+    )
+    monkeypatch.setattr(
+        "app.tools.option_client.OptionClientHttpx.operate", _fake_operate
+    )
 
     _patch(close_intent_module, CloseIntentOutput(type="close_order_request"))
     _patch(
@@ -193,16 +276,12 @@ async def test_main_graph_e2e_option_close_order_no(
     assert final.get("intent") == "close_order_request"
     intent_route_entries = [e for e in final["trace"] if e.node == "intent_route"]
     assert any(
-        e.decision == "rule:order_no→option_close"
-        for e in intent_route_entries
+        e.decision == "rule→期权平仓-文本" for e in intent_route_entries
     )
     # 验证 close.place_close 输出确实写入 state['close_params']
     close_params = final.get("close_params", {})
     assert close_params.get("closeOrderList")
-    assert (
-        close_params["closeOrderList"][0]["orderId"]
-        == "CO-20260304-ABCD1234"
-    )
+    assert close_params["closeOrderList"][0]["orderId"] == "CO-20260304-ABCD1234"
 
 
 @pytest.mark.asyncio

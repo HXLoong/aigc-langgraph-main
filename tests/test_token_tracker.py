@@ -8,7 +8,6 @@ from langchain_core.outputs import ChatGeneration, LLMResult
 
 from harness.token_tracker import TokenTracker, TokenUsage, aggregate
 
-
 # ============================================================
 # TokenUsage.merge · 跨 case 聚合
 # ============================================================

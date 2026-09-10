@@ -55,19 +55,24 @@ app/
 │   ├── state.py             # AgentState（按业务对象聚合）
 │   ├── safe_node.py         # @safe_node 装饰器
 │   ├── cascade.py           # cascade fallback（error → 友好降级）
-│   └── main.py              # 主图组装入口（也见 graphs/main_graph.py）
-├── graphs/main_graph.py     # 兼容 shim → 真源 app/graph/main.py（一级路由 _route_after_intent）
-├── nodes/                   # ingest / intent_route / persist / render / fallback
-├── subgraphs/
-│   ├── swap/                # intent / place_order / cancel / confirm / query_order / hand_to_share（+ backend / graph / models）
-│   ├── option/              # intent + 5 extract（inquiry / place_or_modify / cancel / confirm / query）
-│   ├── close/               # intent / place_close / cancel_close / confirm_close / confirm_cancel / holding_query / query_status
-│   └── ticker/              # ReAct Agent（react_agent / resolver / tools / graph）
+│   └── main.py              # 主图组装入口（build_main_graph;旧 graphs/ shim 已删）
+├── nodes/                   # ingest / pre_route（对手+候选提取）/ route_rules + intent_route（DSL v2 两层路由）
+│                            # / fast_query（快速询价+存量兼容前置分支）/ persist / render / fallback
+├── subgraphs/               # —— 2026-08 Dify DSL v2 迁移后结构 ——
+│   ├── swap/                # intent / place_order(+submit) / select_counterparty / select_ticker
+│   │                        # / confirm(三提示词+二次校验) / cancel / query_order / multimodal(图片+Excel)
+│   │                        # （+ quote_hints / aggregate / prewash / backend / graph / models;手转股已删）
+│   ├── option/              # intent + 7 extract（inquiry / place / confirm_place / cancel_place /
+│   │                        # confirm_cancel / cancel / query）+ sanitize + backend
+│   ├── close/               # intent / place_close(5 步引用解析链) / cancel_close / confirm_close /
+│   │                        # confirm_cancel / holding_query / query_status + reference_parser/merge/aggregate/backend
+│   └── ticker/              # resolver 确定性管线（候选格式化 → 3 路 LLM → merge_and_validate → GOATS+rank;ReAct 已退役）
 ├── tools/
 │   ├── models.py            # Java DTO 对应 Pydantic
 │   ├── option_client.py     # OptionClient Protocol（POST /financial-orders/operate）
 │   ├── swap_client.py       # SwapClient Protocol（POST /swap-order/operate）
 │   ├── ticker_client.py     # TickerClient Protocol（GET /securities-instrument/select）
+│   ├── goats_agent_client.py # GOATS /internal/agent/*（快速询价 rfq parser + 存量兼容,md5-16 签名）
 │   ├── auth.py / exceptions.py
 ├── llm/clients.py           # LLM 统一工厂：全量 DeepSeek-V4-pro（ADR 0020，thinking 关闭 + structured output 走 function_calling 适配）
 ├── checkpointer/factory.py  # AIOMySQLSaver

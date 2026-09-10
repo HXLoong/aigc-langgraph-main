@@ -1,15 +1,14 @@
 """render 节点：从 final state 生成 reply_text（Issue #20 M2 实现）。
 
-三路输出优先级：
-1. ticker_hitl_candidates → 多命中消歧卡片（列出候选请用户确认）
-2. tickers == [] 且 place_params 存在 → 0 命中友好提示
-3. error → 通用兜底提示（"我没完全理解..."）
-4. 其他 → 不写 reply_text（API 层从业务字段构造输出）
+期权业务卡片以 api_result 为唯一来源并原样透传；本地只生成消歧、错误提示及
+不含报价数据的操作类回复。
 """
 from __future__ import annotations
 
+import contextlib
 from typing import Any
 
+from app.config import get_settings
 from app.graph.safe_node import safe_node
 from app.graph.state import AgentState
 from app.observability.metrics import emit_fallback, emit_hitl
@@ -24,8 +23,15 @@ _ZERO_HIT_TMPL = (
     "能换一种更标准的说法吗？"
     "（例如：证券代码如 600519.SH，或完整名称如 贵州茅台）"
 )
-_ERROR_REPLY = "我没完全理解你的意思，能换种说法重新告诉我吗？"
+# DSL v2 env.default_reply 等价物:统一兜底文案从配置读(现场可改不发版)
+_ERROR_REPLY = get_settings().default_reply
 _UNREACHABLE_REPLY = "系统暂时不可用，请稍后再试。若紧急需求请联系交易员或运营。"
+_OPTION_MISSING_CONTEXT_REPLY = (
+    "请求信息不完整，暂时无法调用期权服务，请重新发送原消息或联系运营。"
+)
+_OPTION_NO_RESULT_REPLY = (
+    "期权服务未返回有效结果，本次未生成报价，请稍后重试或联系交易员。"
+)
 
 
 def _format_hitl_card(hitl_candidates: list[dict[str, Any]]) -> str:
@@ -44,35 +50,6 @@ def _format_hitl_card(hitl_candidates: list[dict[str, Any]]) -> str:
     return _HITL_HEADER + "\n" + "\n".join(lines)
 
 
-#: 后端拒绝消息的特征关键字（不在池/报价不存在等），命中即视为"识别成功但不可报价"。
-_BACKEND_REJECTION_MARKERS = ("不在标的池", "报价不存在", "不支持的标的")
-
-
-def _augment_with_ticker_recognition(raw_reply: str, state: AgentState) -> str:
-    """后端拒绝消息 + 已 resolved tickers → 前置追加"已识别为 [windCode insShtDesc]"。
-
-    Why: 当 backend 标的池不收某些代码（如指数 399006.SZ）时，回复只显示"X 不在标的池内"，
-    Judge 看不到我们其实识别成功了，会判"未识别"。此函数在拒绝消息前面附加识别详情，
-    确保下游（Judge / 用户）能看到 ticker 识别已成功。
-
-    其他类型的 api_result（正常订单回执 / 询价卡）不附加，保持原样。
-    """
-    if not any(m in raw_reply for m in _BACKEND_REJECTION_MARKERS):
-        return raw_reply
-    tickers = state.get("tickers") or []
-    parts: list[str] = []
-    for t in tickers:
-        wc = t.windCode if hasattr(t, "windCode") else t.get("windCode")
-        desc = t.insShtDesc if hasattr(t, "insShtDesc") else t.get("insShtDesc")
-        if not wc:
-            continue
-        parts.append(f"{wc} {desc}" if desc else wc)
-    if not parts:
-        return raw_reply
-    prefix = "已识别为 " + "、".join(parts) + "；\n"
-    return prefix + raw_reply
-
-
 def _extract_swap_extras_from_text(raw_text: str, wind: str | None) -> dict[str, str]:
     """从 raw_text 抽取 Judge 关心但 LLM 常漏的 swap 字段（**通用字符串结构化抽取**）。
 
@@ -86,17 +63,13 @@ def _extract_swap_extras_from_text(raw_text: str, wind: str | None) -> dict[str,
     # 委托金额：先抓"X万/Xw/Xkw"，再抓"X元/X 元"。
     m_wan = _re.search(r"(\d+(?:\.\d+)?)\s*(?:万|w|W)(?![A-Za-z])", raw_text)
     if m_wan:
-        try:
+        with contextlib.suppress(ValueError, OverflowError):
             out["notional"] = f"{int(float(m_wan.group(1)) * 10000):,}.00"
-        except (ValueError, OverflowError):
-            pass
     if "notional" not in out:
         m_yuan = _re.search(r"(\d{3,})\s*(?:元|USD|HKD|CNY|JPY|EUR)", raw_text)
         if m_yuan:
-            try:
+            with contextlib.suppress(ValueError, OverflowError):
                 out["notional"] = f"{int(m_yuan.group(1)):,}.00"
-            except (ValueError, OverflowError):
-                pass
 
     # 币种：USD/HKD/CNY/JPY/EUR 大写词；默认 CNY。
     # 不用 \b，因 "\d+USD" 中 0→U 没有 word-boundary（都是 \w）。
@@ -139,7 +112,7 @@ def _render_swap_order(o: dict[str, Any], state: AgentState, place: dict[str, An
     LLM 提取的字段填值；缺失字段用"待补充"占位；额外字段（委托金额/币种/交易品种/
     交易对手）从 raw_text 用 regex 抽取补全（_extract_swap_extras_from_text）。
     """
-    _PLACEHOLDER = "待补充"
+    _placeholder = "待补充"
     raw_text = state.get("raw_text", "") or ""
     wind = o.get("placeOrderWindCode")
 
@@ -147,9 +120,9 @@ def _render_swap_order(o: dict[str, Any], state: AgentState, place: dict[str, An
     stock_name = ""
     if wind:
         for t in (state.get("tickers") or []):
-            wc = t.windCode if hasattr(t, "windCode") else t.get("windCode", "")
+            wc = t.wind_code if hasattr(t, 'wind_code') else t.get("windCode", "")
             if wc == wind:
-                desc = t.insShtDesc if hasattr(t, "insShtDesc") else t.get("insShtDesc", "")
+                desc = t.ins_sht_desc if hasattr(t, 'ins_sht_desc') else t.get("insShtDesc", "")
                 stock_name = desc or ""
                 break
 
@@ -159,12 +132,12 @@ def _render_swap_order(o: dict[str, Any], state: AgentState, place: dict[str, An
     direction = (
         "买入" if direction_raw == "BUY"
         else "卖出" if direction_raw == "SELL"
-        else _PLACEHOLDER
+        else _placeholder
     )
     qty = o.get("placeOrderQuantity") or o.get("placeOrderQuantityHand")
     qty_unit = "手" if o.get("placeOrderQuantityHand") else "股"
     price = o.get("placeOrderPrice")
-    price_type = o.get("placeOrderPriceType") or _PLACEHOLDER
+    price_type = o.get("placeOrderPriceType") or _placeholder
 
     # 数量/价格混淆纠正（Round 14 eval 暴露）：raw_text 有"X元/万"委托金额 +
     # 一个独立小数字，LLM 容易把那个小数字当数量。如"买入100000元 18.12" → LLM 数量=18,
@@ -173,7 +146,6 @@ def _render_swap_order(o: dict[str, Any], state: AgentState, place: dict[str, An
     # - 则 swap：price = qty；qty 改为 notional / price（取整）
     # 这是**结构化数值大小关系判断**，不依赖具体业务字典；和 close place_close
     # "X万vs Y元 magnitude 比较"同样思路（参 prompt: Ex26）。
-    import re as _re_qp
     if (qty and price is None
             and extras.get("notional")
             and not o.get("placeOrderQuantityHand")
@@ -183,7 +155,7 @@ def _render_swap_order(o: dict[str, Any], state: AgentState, place: dict[str, An
             if notional_val > qty * 100:  # 委托金额至少比 LLM 数量大两个数量级 → 强信号 LLM 混淆
                 price = qty  # 原 LLM 数量实际是价格
                 qty = int(notional_val / price) if price > 0 else None
-                price_type = "LimitOrder" if price_type == _PLACEHOLDER else price_type
+                price_type = "LimitOrder" if price_type == _placeholder else price_type
         except (ValueError, TypeError, ZeroDivisionError):
             pass
     # qty 缺失但 notional + price 可用 → 计算 qty = notional / price
@@ -194,36 +166,36 @@ def _render_swap_order(o: dict[str, Any], state: AgentState, place: dict[str, An
                 qty = int(notional_val / float(price))
         except (ValueError, TypeError, ZeroDivisionError):
             pass
-    qty_str = f"{qty}{qty_unit}" if qty else _PLACEHOLDER
+    qty_str = f"{qty}{qty_unit}" if qty else _placeholder
     algo = o.get("placeOrderAlgorithmType")
     if algo and o.get("placeOrderPovPercent"):
         algo_str = f"{algo} {o['placeOrderPovPercent']}%"
     elif algo:
         algo_str = str(algo)
     else:
-        algo_str = _PLACEHOLDER
+        algo_str = _placeholder
     start = o.get("placeOrderStartTime")
     end = o.get("placeOrderEndTime")
-    time_str = f"{start} - {end}" if (start and end) else _PLACEHOLDER
+    time_str = f"{start} - {end}" if (start and end) else _placeholder
 
     # 单号：优先从 state.api_result（后端生成）抽取，否则 placeholder
-    single_no = o.get("orderId") or _PLACEHOLDER
+    single_no = o.get("orderId") or _placeholder
 
     lines = [
         "-----互换订单参数-----",
         f"单号: {single_no}",
-        f"标的代码: {wind or _PLACEHOLDER}",
-        f"标的名称: {stock_name or _PLACEHOLDER}",
-        f"交易品种: {extras.get('trading_kind') or _PLACEHOLDER}",
+        f"标的代码: {wind or _placeholder}",
+        f"标的名称: {stock_name or _placeholder}",
+        f"交易品种: {extras.get('trading_kind') or _placeholder}",
         f"委托方向: {direction}",
         f"数量: {qty_str}",
-        f"委托金额: {extras.get('notional') or _PLACEHOLDER}",
-        f"币种: {extras.get('currency') or _PLACEHOLDER}",
+        f"委托金额: {extras.get('notional') or _placeholder}",
+        f"币种: {extras.get('currency') or _placeholder}",
         f"价格类型: {price_type}",
-        f"限定价格: {price if price is not None else _PLACEHOLDER}",
+        f"限定价格: {price if price is not None else _placeholder}",
         f"算法: {algo_str}",
         f"时间: {time_str}",
-        f"交易对手: {extras.get('counterparty') or _PLACEHOLDER}",
+        f"交易对手: {extras.get('counterparty') or _placeholder}",
     ]
     # 提示：根据缺失字段提供具体指引（让 Judge 看到我们识别了哪些缺失）
     missing: list[str] = []
@@ -231,7 +203,7 @@ def _render_swap_order(o: dict[str, Any], state: AgentState, place: dict[str, An
         missing.append("交易对手")
     if not extras.get("notional") and not qty:
         missing.append("委托金额")
-    if not direction or direction == _PLACEHOLDER:
+    if not direction or direction == _placeholder:
         missing.append("委托方向")
     if price is None and (price_type or "").startswith("Limit"):
         missing.append("限定价格")
@@ -239,9 +211,8 @@ def _render_swap_order(o: dict[str, Any], state: AgentState, place: dict[str, An
     if algo and (algo in ("POV", "TWAP", "VWAP")) and (start is None or end is None):
         missing.append("算法时间")
     # 限价委托但价格缺失（即使 LLM 没填 priceType="LimitOrder"）
-    if "限价" in raw_text and price is None:
-        if "限定价格" not in missing:
-            missing.append("限定价格")
+    if "限价" in raw_text and price is None and "限定价格" not in missing:
+        missing.append("限定价格")
 
     # 不支持的币种检测（OTC 场外业务只受理 CNY/USD/HKD 三种）→ 直接拒绝，不展示订单卡。
     # 这是**业务约束规则**，非映射字典——不同于硬编码"名→代码"映射，符合 P0 红线
@@ -272,28 +243,28 @@ def _render_close_card(o: dict[str, Any], state: AgentState) -> str:
     import datetime as _dt
     import re as _re
 
-    _PLACEHOLDER = "待补充"
-    order_id = o.get("orderId") or _PLACEHOLDER
+    _placeholder = "待补充"
+    order_id = o.get("orderId") or _placeholder
     contract_no = o.get("internalTradeId") or order_id  # 合约编号兜底用 orderId
-    notional = o.get("closeOrderNotionalDelta") or _PLACEHOLDER
-    close_type = o.get("closeOrderType") or _PLACEHOLDER
+    notional = o.get("closeOrderNotionalDelta") or _placeholder
+    close_type = o.get("closeOrderType") or _placeholder
     price = o.get("closeOrderPrice")
     pov = o.get("closeOrderPovRatio")
 
     # 从 state.tickers 取标的代码 + 中文名
     tickers = state.get("tickers") or []
-    stock_code = _PLACEHOLDER
-    stock_name = _PLACEHOLDER
+    stock_code = _placeholder
+    stock_name = _placeholder
     if tickers:
         t0 = tickers[0]
-        stock_code = (getattr(t0, "windCode", None) or
-                      (t0.get("windCode") if isinstance(t0, dict) else None)) or _PLACEHOLDER
-        stock_name = (getattr(t0, "insShtDesc", None) or
-                      (t0.get("insShtDesc") if isinstance(t0, dict) else None)) or _PLACEHOLDER
+        stock_code = (getattr(t0, 'wind_code', None) or
+                      (t0.get("windCode") if isinstance(t0, dict) else None)) or _placeholder
+        stock_name = (getattr(t0, 'ins_sht_desc', None) or
+                      (t0.get("insShtDesc") if isinstance(t0, dict) else None)) or _placeholder
 
     # 从 quote_content 抠期权类型（regex 匹配"欧式看涨/看跌/雪球/障碍/气囊/参与型"）
     quote = state.get("quote_content") or ""
-    option_type = _PLACEHOLDER
+    option_type = _placeholder
     m = _re.search(r"(欧式看涨|欧式看跌|雪球|障碍|气囊|参与型|看涨|看跌)", quote)
     if m:
         option_type = m.group(1)
@@ -319,43 +290,50 @@ def _render_close_card(o: dict[str, Any], state: AgentState) -> str:
     return "\n".join(lines)
 
 
-def _resolve_stock_display(stock_code: str, state: AgentState) -> str:
-    """用 ticker resolver 结果拼接 windCode + 中文名。"""
-    tickers = state.get("tickers") or []
-    for t in tickers:
-        wc = t.windCode if hasattr(t, "windCode") else t.get("windCode", "")
-        desc = t.insShtDesc if hasattr(t, "insShtDesc") else t.get("insShtDesc", "")
-        # 匹配：stockCode 是中文名，insShtDesc 也含中文名
-        if stock_code and desc and (stock_code in desc or desc in stock_code):
-            return f"{wc}{desc}"
-        # 匹配：stockCode 本身就是 windCode
-        if stock_code and wc and stock_code == wc:
-            return f"{wc}{desc or ''}"
-    return stock_code
-
-
 @safe_node
 async def render(state: AgentState) -> dict[str, Any]:
     """生成 reply_text，供 API 层透传企微。
 
     优先级：
     1. 子图已生成 reply_text → 透传
-    2. ticker_hitl_candidates → 多命中消歧卡片（互换下单/改单除外）
-    3. 互换下单/改单 → 订单参数（含 HITL 场景，orderList 已提取）
-    4. 0 命中（期权询价） → 0 命中友好提示
-    5. api_result → 后端返回透传
-    6. error → 通用兜底提示
-    7. product_type == unknown → 引导提示
-    8. 结构化参数 → 互换确认/撤单/查询、期权询价/平仓/撤单
-    9. 兜底 → {}（API 层从业务字段构造）
+    2. 期权 api_result → 后端返回原样透传
+    3. 期权后端上下文/空结果错误 → 明确错误提示
+    4. ticker_hitl_candidates → 多命中消歧卡片（互换下单/改单除外）
+    5. 互换下单/改单 → 订单参数（含 HITL 场景，orderList 已提取）
+    6. 0 命中（期权询价） → 0 命中友好提示
+    7. 其他 api_result → 后端返回原样透传
+    8. error → 通用兜底提示
+    9. product_type == unknown → 引导提示
+    10. 结构化参数 → 互换确认/撤单/查询、期权平仓/撤单
+    11. 兜底 → {}（API 层从业务字段构造）
     """
     # 1. 子图已生成 reply_text → 透传
     if state.get("reply_text"):
         return {}
 
     place = state.get("place_params") or {}
+    product_type = state.get("product_type")
+    api_result = state.get("api_result")
+    is_option = product_type in ("option", "option_close")
 
-    # 2. HITL 消歧（互换下单/改单除外——此时已有 orderList，应优先展示订单参数）
+    # 期权业务卡片与拒绝消息均由后端生成，优先于本地 HITL/零命中状态且不改写。
+    if is_option and api_result is not None:
+        return {"reply_text": str(api_result)}
+
+    err = state.get("error")
+    err_type = None
+    if err is not None and not isinstance(err, str):
+        err_type = err.type if hasattr(err, "type") else (
+            err.get("type") if isinstance(err, dict) else None
+        )
+    if is_option and err_type == "MissingBackendContextError":
+        emit_fallback(reason="option_backend_missing_context")
+        return {"reply_text": _OPTION_MISSING_CONTEXT_REPLY}
+    if is_option and err_type == "EmptyBackendResultError":
+        emit_fallback(reason="option_backend_empty_result")
+        return {"reply_text": _OPTION_NO_RESULT_REPLY}
+
+    # HITL 消歧（互换下单/改单除外——此时已有 orderList，应优先展示订单参数）
     hitl = state.get("ticker_hitl_candidates")
     if hitl:
         emit_hitl(node="render")
@@ -377,20 +355,15 @@ async def render(state: AgentState) -> dict[str, Any]:
         raw_text = (state.get("raw_text") or "")[:40]
         return {"reply_text": _ZERO_HIT_TMPL.format(raw_text=raw_text)}
 
-    # 5. api_result 来自后端
-    if state.get("api_result"):
-        raw_reply = str(state["api_result"])
-        return {"reply_text": _augment_with_ticker_recognition(raw_reply, state)}
+    # 其他产品的 api_result 也只做透传。
+    if api_result is not None:
+        return {"reply_text": str(api_result)}
 
-    # 5. error → 区分不可达 vs 一般 cascade fail
-    err = state.get("error")
+    # error → 区分不可达 vs 一般 cascade fail
     if err is not None:
         # 节点直接写字符串 error（如 option_extract_inquiry invalid_ticker）→ 当 reply 用
         if isinstance(err, str):
             return {"reply_text": err}
-        err_type = err.type if hasattr(err, "type") else (
-            err.get("type") if isinstance(err, dict) else None
-        )
         if err_type == "BackendUnreachableError":
             emit_fallback(reason="backend_unreachable")
             return {"reply_text": _UNREACHABLE_REPLY}
@@ -451,21 +424,10 @@ async def render(state: AgentState) -> dict[str, Any]:
             return {"reply_text": f"已收到查询请求，订单号: {', '.join(ids)}"}
         return {"reply_text": "已收到查询请求。"}
 
-    # 8d. 期权询价
-    if place.get("expected_action") == "inquiry":
-        orders = place.get("orderList", [])
-        if orders:
-            o = orders[0]
-            stock_code = _resolve_stock_display(o.get("stockCode", "N/A"), state)
-            return {"reply_text": (
-                f"-----场外期权询价详情-----\n"
-                f"标的代码: {stock_code}\n"
-                f"期权类型: {o.get('optionType', 'N/A')}\n"
-                f"期限: {o.get('tenor', 'N/A')}\n"
-                f"执行价格: {o.get('strikePercentage', 'N/A')}%\n"
-                f"期权费率: 6.9%\n名义本金: 待补充\n建仓指令: 待补充\n交易对手: 待补充\n\n"
-                f"如需下单，请引用本消息补充【交易对手】【名义本金】【建仓指令】。"
-            )}
+    # 期权询价没有后端结果时绝不本地拼装报价卡片。
+    if product_type == "option" and place.get("expected_action") == "inquiry":
+        emit_fallback(reason="option_backend_no_result")
+        return {"reply_text": _OPTION_NO_RESULT_REPLY}
 
     if close.get("closeOrderList"):
         return {"reply_text": _render_close_card(close["closeOrderList"][0], state)}

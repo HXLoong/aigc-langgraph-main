@@ -10,8 +10,9 @@ from __future__ import annotations
 from operator import add
 from typing import Annotated, Any, Literal, TypedDict
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
+from app.wire_model import WireModel
 
 # ============================================================
 # 子模型
@@ -27,23 +28,50 @@ class Message(BaseModel):
     ts: str | None = None
 
 
-class TickerCandidate(BaseModel):
+class TickerCandidate(WireModel):
     """ticker 子图输出的候选标的（对齐 Java SecuritiesInstrumentOpenApiRespVO）。"""
 
     model_config = ConfigDict(extra="allow")
-    windCode: str = Field(description="标的代码，如 600989.SH")
-    insShtDesc: str | None = None
-    insLngDesc: str | None = None
-    relevanceScore: int | None = None
-    transactionTypeLists: list[str] = Field(default_factory=list)
+    wind_code: str = Field(alias="windCode", description="标的代码，如 600989.SH")
+    ins_sht_desc: str | None = Field(default=None, alias="insShtDesc")
+    ins_lng_desc: str | None = Field(default=None, alias="insLngDesc")
+    relevance_score: int | None = Field(default=None, alias="relevanceScore")
+    transaction_type_lists: list[str] = Field(alias="transactionTypeLists", default_factory=list)
+    source_keywords: list[str] = Field(alias="sourceKeywords",
+        default_factory=list,
+        description="本次输入中解析为该 GOATS 标的的原始候选词",
+    )
     from_goats: bool = Field(
         default=False,
         description="必须 True 才允许出现在 LangGraph 输出中（CLAUDE.md 硬约束）",
     )
 
 
+#: trace 内单个字符串值的长度上限(架构体检 2026-08 改进 C)。
+#: trace 是 add-reducer 累积字段,每个 checkpoint 携带全部历史 trace——
+#: llm_output 若存完整 LLM 输出(如 OCR 全文),长会话 checkpoint 线性膨胀。
+TRACE_TEXT_LIMIT = 500
+
+_TRUNC_MARK = "…[已截断]"
+
+
+def _truncate_trace_value(value: Any) -> Any:
+    """递归截断超长字符串;结构、数字、短值原样保留。"""
+    if isinstance(value, str) and len(value) > TRACE_TEXT_LIMIT:
+        return value[:TRACE_TEXT_LIMIT] + _TRUNC_MARK
+    if isinstance(value, dict):
+        return {k: _truncate_trace_value(v) for k, v in value.items()}
+    if isinstance(value, list):
+        return [_truncate_trace_value(v) for v in value]
+    return value
+
+
 class TraceEntry(BaseModel):
-    """每节点决策痕迹（供 harness 失败定位 + ADR 0014 D7 失败报告）。"""
+    """每节点决策痕迹（供 harness 失败定位 + ADR 0014 D7 失败报告）。
+
+    llm_output / llm_input_excerpt 在写入时统一截断(TRACE_TEXT_LIMIT),
+    防止累积 trace 撑大 checkpoint;完整 LLM I/O 由 LangFuse 侧保留。
+    """
 
     model_config = ConfigDict(extra="allow")
     node: str
@@ -51,6 +79,11 @@ class TraceEntry(BaseModel):
     elapsed_ms: int | None = None
     llm_input_excerpt: str | None = None
     llm_output: dict[str, Any] | None = None
+
+    @field_validator("llm_output", "llm_input_excerpt", mode="before")
+    @classmethod
+    def _truncate_long_text(cls, v: Any) -> Any:
+        return _truncate_trace_value(v)
 
 
 class ErrorInfo(BaseModel):
@@ -96,6 +129,27 @@ class AgentState(TypedDict, total=False):
     message_content: str  # messageContent（原始 + 引用）
     quote_content: str | None  # quoteContent
     quote_appinfo: str | None  # quoteAppinfo（已弃用但保留兼容）
+
+    # -------- 入口·DSL v2 新增（主干工作流 start 节点 2026-08 版）--------
+    fast_query: str | None  # fast_query：快速询价标记（参与型看涨/雪球前置分支）
+    at_bot: bool | None  # at_bot：是否 @ 机器人
+    existing_command: str | None  # existing_command：存量兼容-交易查询指令
+    bot_name: str | None  # bot_name：机器人名称（替代旧 bot_name_list 获取）
+    operator_user_id: str | None  # operator_user_id：操作者（替代旧 userId 语义）
+
+    # -------- 对手方与引用候选（路由前置提取，DSL v2「交易对手、候选标的提取」）--------
+    # 入口原始 JSON 串（Java 侧 option/trs 预查结果，ingest 透传，pre_route 解析）
+    option_counterparties_raw: str | None
+    swap_counterparties_raw: str | None
+    # 后端预查对手精简列表：[{ctptyId, shortName, longName, sort}]
+    option_counterparties: list[dict[str, Any]]
+    swap_counterparties: list[dict[str, Any]]
+    # 引用消息解析出的候选标的块：[{orderId, orderSeq, candidates: [{seq, code, name}]}]
+    quote_ticker_candidates: list[dict[str, Any]]
+
+    # -------- 输入文件（DSL v2:全图片→互换-图片链,全 Excel→互换-Excel 链）--------
+    input_files: list[dict[str, Any]] | None  # [{type, extension, mime_type, url/base64...}]
+    swap_input_mode: str | None  # text | image | excel（intent_route 写入,swap 子图分流）
 
     # -------- 历史 --------
     history_messages: Annotated[list[Message], add]

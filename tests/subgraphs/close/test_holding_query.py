@@ -21,6 +21,11 @@ def _patch_llm(
         return_value=fake_llm_with_schema
     )
     monkeypatch.setattr(hq_module, "get_qwen_thinking", lambda: fake_base_llm)
+    monkeypatch.setattr(
+        hq_module,
+        "call_close_backend",
+        AsyncMock(return_value={"api_code": 0, "api_result": "backend reply"}),
+    )
     return fake_llm_with_schema.ainvoke
 
 
@@ -33,8 +38,8 @@ class TestHoldingQueryParams:
     def test_minimal_with_only_required_field(self) -> None:
         params = HoldingQueryParams(closeable_only=False)
         assert params.closeable_only is False
-        assert params.internalTradeIdList == []
-        assert params.underlyingInsNameList == []
+        assert params.internal_trade_id_list == []
+        assert params.underlying_ins_name_list == []
 
     def test_full_fields(self) -> None:
         params = HoldingQueryParams(
@@ -47,7 +52,7 @@ class TestHoldingQueryParams:
             contractTypeList=["AUTOCALL"],
         )
         assert params.closeable_only is True
-        assert params.keyCtptyIdList == [10049]
+        assert params.key_ctpty_id_list == [10049]
 
     def test_invalid_ins_family_rejected(self) -> None:
         with pytest.raises(ValidationError):

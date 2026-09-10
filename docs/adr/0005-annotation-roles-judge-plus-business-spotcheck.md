@@ -33,14 +33,14 @@
 - **仅 LLM judge**：领域常识不足，偏差累积污染基线。
 - **业务方 + judge 混合（已选）**：业务方时间花在 judge 最不确定的 case 上，平衡规模和权威性。
 
-## 实现偏离（裁决见 [#159](https://github.com/GZTL-AI/aigc-langgraph/issues/159)）
+## 实现偏离与裁决（[#159](https://github.com/GZTL-AI/aigc-langgraph/issues/159)）
 
 | 偏离 | 现状 |
 |---|---|
-| **judge 提示词硬编码在脚本里** | `langfuse_eval.py` 内 Python 字符串常量，不在 `app/prompts/`、不走 `load_prompt`、无版本号——违背本 ADR 自身"judge 提示词纳入 [ADR 0003](./0003-prompt-versioning-by-file-coexistence.md) 版本化（改动 → 历史评分作废 → 重跑批次）"的要求，改动不留痕 |
+| ~~judge 提示词硬编码在脚本里~~ | ✅ #159 已修复：正文迁至 `app/prompts/judge/option_judge.md`，评估脚本统一通过 `load_prompt("judge", "option_judge")` 加载；`tests/test_prompt_governance.py` 防回归 |
 | **golden 的"标注来源"字段被占用** | `golden.jsonl` 的 `source` 字段 535/535 全是数据出处路径（`csv/…/rowN`）；本 ADR 要求的标注权威性维度（judge / business / engineer）无处可放，Phase 4 回流前需另起字段（如 `annotation_source`） |
 
 ## 后果
 
 - 业务方每周 30 分钟是 Phase 4 硬依赖，立项前须与业务方明确承诺。
-- judge 模型是软依赖可替换；但提示词版本化缺口（见上）必须先补，否则评分批次不可比。
+- judge 模型是软依赖可替换；提示词已纳入文件版本治理，评分批次仍须记录实际 prompt 版本以保持可比。

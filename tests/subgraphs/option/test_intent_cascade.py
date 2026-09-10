@@ -98,9 +98,11 @@ async def test_option_subgraph_intent_error_routes_to_option_unknown(
     assert "option_unknown" in trace_nodes
     for unexpected in (
         "option_extract_inquiry",
-        "option_extract_place_or_modify",
+        "option_extract_place",
+        "option_extract_confirm_place",
+        "option_extract_cancel_place",
         "option_extract_cancel",
-        "option_extract_confirm",
+        "option_extract_confirm_cancel",
         "option_extract_query",
     ):
         assert unexpected not in trace_nodes

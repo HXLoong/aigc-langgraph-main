@@ -9,22 +9,22 @@
 - 节点同步调用 resolve_ticker(raw_text) 拿 from_goats=True 候选
 - 写到 state['tickers']，供下游审计 / 后端调用使用
 
-LLM：standard 模型 + with_structured_output（ADR 0010）。
-prompt：app/prompts/option/extract_inquiry.md。
+LLM：thinking 模型 + with_structured_output（ADR 0010）。
+prompt：app/prompts/option/extract_inquiry.md（Dify DSL v2 同步版）。
 """
 from __future__ import annotations
 
 from typing import Any
 
+from app.graph.business_params import validated_place_params
 from app.graph.safe_node import safe_node
 from app.graph.state import AgentState, Message, TraceEntry
 from app.llm.clients import get_qwen_thinking
 from app.prompts import load_prompt
 from app.subgraphs.option.backend import _with_resolved_ticker, call_option_backend
 from app.subgraphs.option.models import OptionInquiryParams
+from app.subgraphs.option.sanitize import sanitize_order_list
 from app.subgraphs.ticker.resolver import resolve_ticker, resolve_ticker_full
-from app.graph.business_params import validated_place_params
-
 
 #: 快速询价 / 雪球 / 参与型识别关键词（命中则不走 LLM，直传 GOATS instrument parser）
 _FAST_INQUIRY_MARKERS = ("快速询价", "雪球", "参与型", "敲入", "敲出")
@@ -126,7 +126,7 @@ async def option_extract_inquiry(state: AgentState) -> dict[str, Any]:
                 "trace": [TraceEntry(node="option_extract_inquiry", decision="invalid_ticker")],
             }
 
-    # 1. LLM 提取询价参数（standard 模型 + structured output）
+    # 1. LLM 提取询价参数（thinking 模型 + structured output）
     prompt = load_prompt("option", "extract_inquiry")
     llm = get_qwen_thinking().with_structured_output(OptionInquiryParams)
     user_message = _build_user_message(state)
@@ -140,16 +140,23 @@ async def option_extract_inquiry(state: AgentState) -> dict[str, Any]:
     # 2. ticker resolver 识别标的（含 HITL 信号）
     resolution = await resolve_ticker_full(raw_text)
     tickers = resolution.resolved
-    order_list = [item.model_dump() for item in params.orderList]
-    backend_order_list = [
-        _with_resolved_ticker(dict(item), tickers, idx)
-        for idx, item in enumerate(order_list)
-    ]
+    order_list = sanitize_order_list([item.model_dump() for item in params.order_list])
+    backend_order_list = []
+    ticker_bindings = []
+    for index, item in enumerate(order_list):
+        backend_order, match_result = _with_resolved_ticker(dict(item), tickers)
+        backend_order_list.append(backend_order)
+        ticker_bindings.append({
+            "order_index": index,
+            "original_stock_code": item.get("stockCode"),
+            "backend_stock_code": backend_order.get("stockCode"),
+            "result": match_result,
+        })
 
-    types = [item.optionType for item in params.orderList if item.optionType]
+    types = [item.option_type for item in params.order_list if item.option_type]
     decision = (
         f"action=inquiry,"
-        f" orders={len(params.orderList)},"
+        f" orders={len(params.order_list)},"
         f" tickers={len(tickers)},"
         f" types={types},"
         f" hitl={len(resolution.hitl_pending)}"
@@ -173,6 +180,7 @@ async def option_extract_inquiry(state: AgentState) -> dict[str, Any]:
                     "params": params.model_dump(),
                     "tickers_count": len(tickers),
                     "hitl_count": len(resolution.hitl_pending),
+                    "ticker_bindings": ticker_bindings,
                 },
             )
         ],

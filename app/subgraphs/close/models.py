@@ -5,6 +5,7 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from app.wire_model import WireModel
 
 # ============================================================
 # 意图分类（close.intent）
@@ -48,7 +49,7 @@ ContractType = Literal[
 ]
 
 
-class HoldingQueryParams(BaseModel):
+class HoldingQueryParams(WireModel):
     """close.holding_query 节点的 LLM 输出 schema（与 Dify holding_query.md 字段对齐）。
 
     驼峰命名匹配 Java DTO；`closeable_only` 是 snake_case 例外（与 prompt 一致）。
@@ -57,12 +58,12 @@ class HoldingQueryParams(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
     closeable_only: bool
-    internalTradeIdList: list[str] = Field(default_factory=list)
-    keyCtptyIdList: list[int] = Field(default_factory=list)
-    underlyingInsNameList: list[str] = Field(default_factory=list)
-    underlyingInsIdList: list[str] = Field(default_factory=list)
-    insFamilyList: list[InsFamily] = Field(default_factory=list)
-    contractTypeList: list[ContractType] = Field(default_factory=list)
+    internal_trade_id_list: list[str] = Field(alias="internalTradeIdList", default_factory=list)
+    key_ctpty_id_list: list[int] = Field(alias="keyCtptyIdList", default_factory=list)
+    underlying_ins_name_list: list[str] = Field(alias="underlyingInsNameList", default_factory=list)
+    underlying_ins_id_list: list[str] = Field(alias="underlyingInsIdList", default_factory=list)
+    ins_family_list: list[InsFamily] = Field(alias="insFamilyList", default_factory=list)
+    contract_type_list: list[ContractType] = Field(alias="contractTypeList", default_factory=list)
 
 
 # ============================================================
@@ -70,7 +71,7 @@ class HoldingQueryParams(BaseModel):
 # ============================================================
 
 
-class ConfirmCloseParams(BaseModel):
+class ConfirmCloseParams(WireModel):
     """close.confirm_close 节点 LLM 输出（与 Dify confirm_close.md 字段对齐）。
 
     字段名 confirmOrderNoList 驼峰对齐 Java DTO。空列表表示"引用消息中没有
@@ -79,7 +80,7 @@ class ConfirmCloseParams(BaseModel):
 
     model_config = ConfigDict(extra="ignore")
 
-    confirmOrderNoList: list[str] = Field(default_factory=list)
+    confirm_order_no_list: list[str] = Field(alias="confirmOrderNoList", default_factory=list)
 
 
 # ============================================================
@@ -87,7 +88,7 @@ class ConfirmCloseParams(BaseModel):
 # ============================================================
 
 
-class CancelCloseParams(BaseModel):
+class CancelCloseParams(WireModel):
     """close.cancel_close 节点 LLM 输出（与 Dify cancel_close.md 字段对齐）。
 
     字段名 cancelOrderNoList 驼峰对齐 Java DTO。
@@ -95,7 +96,7 @@ class CancelCloseParams(BaseModel):
 
     model_config = ConfigDict(extra="ignore")
 
-    cancelOrderNoList: list[str] = Field(default_factory=list)
+    cancel_order_no_list: list[str] = Field(alias="cancelOrderNoList", default_factory=list)
 
 
 # ============================================================
@@ -107,7 +108,7 @@ class CancelCloseParams(BaseModel):
 ClosePriceType = Literal["市价单", "限价单", "POV", "TWAP"]
 
 
-class CloseOrderItem(BaseModel):
+class CloseOrderItem(WireModel):
     """closeOrderList 中的单个平仓订单条目（9 字段）。
 
     与 Dify place_close.md JSON schema 完全对齐。allow null 在所有字段
@@ -116,20 +117,20 @@ class CloseOrderItem(BaseModel):
 
     model_config = ConfigDict(extra="ignore")
 
-    orderId: str | None = None
-    internalTradeId: str | None = None
+    order_id: str | None = Field(default=None, alias="orderId")
+    internal_trade_id: str | None = Field(default=None, alias="internalTradeId")
     #: 平仓金额（字符串数字，"全部" 时由后端语义而非此字段）
-    closeOrderNotionalDelta: str | None = None
-    closeOrderType: ClosePriceType | None = None
-    closeOrderPrice: float | int | None = None
-    closeOrderPovRatio: int | None = None
+    close_order_notional_delta: str | None = Field(default=None, alias="closeOrderNotionalDelta")
+    close_order_type: ClosePriceType | None = Field(default=None, alias="closeOrderType")
+    close_order_price: float | int | None = Field(default=None, alias="closeOrderPrice")
+    close_order_pov_ratio: int | None = Field(default=None, alias="closeOrderPovRatio")
     #: TWAP 起始时间，格式 "HH:MM"
-    closeOrderAlgoStartTime: str | None = None
-    closeOrderAlgoEndTime: str | None = None
-    confirmFullClose: bool | None = None
+    close_order_algo_start_time: str | None = Field(default=None, alias="closeOrderAlgoStartTime")
+    close_order_algo_end_time: str | None = Field(default=None, alias="closeOrderAlgoEndTime")
+    confirm_full_close: bool | None = Field(default=None, alias="confirmFullClose")
 
 
-class ClosePlaceParams(BaseModel):
+class ClosePlaceParams(WireModel):
     """close.place_close 节点 LLM 输出。
 
     顶层结构 `{"closeOrderList": [...]}` 与 Dify prompt 输出契约一致。
@@ -138,7 +139,7 @@ class ClosePlaceParams(BaseModel):
 
     model_config = ConfigDict(extra="ignore")
 
-    closeOrderList: list[CloseOrderItem] = Field(default_factory=list)
+    close_order_list: list[CloseOrderItem] = Field(alias="closeOrderList", default_factory=list)
 
 
 # ============================================================
@@ -146,12 +147,12 @@ class ClosePlaceParams(BaseModel):
 # ============================================================
 
 
-class ConfirmCancelParams(BaseModel):
+class ConfirmCancelParams(WireModel):
     """close.confirm_cancel 节点 LLM 输出。"""
 
     model_config = ConfigDict(extra="ignore")
 
-    confirmCancelOrderNoList: list[str] = Field(default_factory=list)
+    confirm_cancel_order_no_list: list[str] = Field(alias="confirmCancelOrderNoList", default_factory=list)
 
 
 # ============================================================
@@ -159,12 +160,12 @@ class ConfirmCancelParams(BaseModel):
 # ============================================================
 
 
-class QueryStatusParams(BaseModel):
+class QueryStatusParams(WireModel):
     """close.query_status 节点 LLM 输出。"""
 
     model_config = ConfigDict(extra="ignore")
 
-    queryOrderNoList: list[str] = Field(default_factory=list)
+    query_order_no_list: list[str] = Field(alias="queryOrderNoList", default_factory=list)
 
 
 __all__ = [

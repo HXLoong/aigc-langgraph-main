@@ -2,7 +2,7 @@
 # F4.0 演练 smoke 脚本 · 不注入故障，仅串联 6 件套验证可用性。
 #
 # 用途：
-#   1. Tony 首次 walkthrough docs/m3-f4.0-oncall-drill.md 前，本地干跑确认
+#   1. Tony 首次 walkthrough docs/archive/m3/m3-f4.0-oncall-drill.md 前，本地干跑确认
 #      6 件套工具的命令、退出码、输出格式都正常。
 #   2. 演练当天 Scene 1（基线确认）可直接调本脚本替代手敲多条命令。
 #
@@ -37,6 +37,7 @@ METRICS_URL="$METRICS_URL_DEFAULT"
 READY_URL="$READY_URL_DEFAULT"
 SKIP_DEPLOY=0
 JSON_OUTPUT=0
+PYTHON_BIN="${PYTHON_BIN:-python3}"
 
 # 检查结果累计
 TOTAL=0
@@ -159,7 +160,9 @@ check_tools_syntax() {
     for s in "${pyscripts[@]}"; do
         local f="${PROJECT_DIR}/$s"
         [ ! -f "$f" ] && continue
-        if ! python3 -c "import ast; ast.parse(open('$f').read())" 2>/dev/null; then
+        if ! "$PYTHON_BIN" -c \
+            "import ast, pathlib, sys; ast.parse(pathlib.Path(sys.argv[1]).read_text(encoding='utf-8'))" \
+            "$f" 2>/dev/null; then
             errs+=("$s [py syntax]")
         fi
     done
@@ -204,7 +207,7 @@ check_ready() {
 check_metrics_snapshot() {
     section "Check 4/6 · metrics_snapshot.py 可跑"
     local out rc
-    out=$(python3 "${PROJECT_DIR}/scripts/metrics_snapshot.py" --url "$METRICS_URL" 2>&1)
+    out=$("$PYTHON_BIN" "${PROJECT_DIR}/scripts/metrics_snapshot.py" --url "$METRICS_URL" 2>&1)
     rc=$?
     if [ "$rc" -ne 0 ]; then
         record_check "metrics_snapshot 退出码" fail "exit=$rc · $(echo "$out" | head -2 | tr '\n' '|')"
@@ -229,7 +232,7 @@ check_metrics_snapshot() {
 check_canary_status() {
     section "Check 5/6 · canary_status.py 状态"
     local out rc
-    out=$(python3 "${PROJECT_DIR}/scripts/canary_status.py" --url "$METRICS_URL" 2>&1)
+    out=$("$PYTHON_BIN" "${PROJECT_DIR}/scripts/canary_status.py" --url "$METRICS_URL" 2>&1)
     rc=$?
     # canary_status 退出码 0=正常 1=is_breach 2=metrics 不可达
     case "$rc" in
@@ -302,7 +305,7 @@ print_summary() {
         "$PASSED" "$FAILED" "$TOTAL" "$rate"
 
     if [ "$FAILED" -eq 0 ]; then
-        printf "${GREEN}=== 演练基线 OK · 可执行 docs/m3-f4.0-oncall-drill.md ===${NC}\n"
+        printf "${GREEN}=== 演练基线 OK · 可执行 docs/archive/m3/m3-f4.0-oncall-drill.md ===${NC}\n"
         return 0
     fi
     printf "${RED}=== 演练基线异常 · 修复后再演练 ===${NC}\n"
@@ -312,6 +315,16 @@ print_summary() {
         [ "$st" = "fail" ] && echo "    · $name${detail:+ — $detail}"
     done
     return 1
+}
+
+json_escape() {
+    local value="$1"
+    value=${value//\\/\\\\}
+    value=${value//\"/\\\"}
+    value=${value//$'\n'/\\n}
+    value=${value//$'\r'/\\r}
+    value=${value//$'\t'/\\t}
+    printf '%s' "$value"
 }
 
 print_json() {
@@ -327,10 +340,9 @@ print_json() {
     for line in "${CHECK_RESULTS[@]}"; do
         IFS='|' read -r name st detail <<<"$line"
         [ "$first" = "1" ] && first=0 || echo ","
-        # 简单 JSON 转义：双引号
         local name_e detail_e
-        name_e=${name//\"/\\\"}
-        detail_e=${detail//\"/\\\"}
+        name_e=$(json_escape "$name")
+        detail_e=$(json_escape "$detail")
         printf '    {"name": "%s", "status": "%s", "detail": "%s"}' \
             "$name_e" "$st" "$detail_e"
     done

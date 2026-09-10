@@ -1,4 +1,5 @@
 """close 子图路由扩展测试 · 验证新增 confirm_close / cancel_close 路径。"""
+
 from __future__ import annotations
 
 from unittest.mock import AsyncMock, MagicMock
@@ -14,6 +15,18 @@ from app.subgraphs.close.models import (
     CloseIntentOutput,
     ConfirmCloseParams,
 )
+from app.tools.models import CommonResult
+
+
+def _patch_close_backend(monkeypatch: pytest.MonkeyPatch) -> None:
+    """close/backend.py 调用的 OptionClientHttpx.operate 不打真网络。"""
+
+    async def _fake_operate(self, req):  # type: ignore[no-untyped-def]
+        return CommonResult(code=0, msg="ok", data="mock-backend-result")
+
+    monkeypatch.setattr(
+        "app.tools.option_client.OptionClientHttpx.operate", _fake_operate
+    )
 
 
 def _patch(
@@ -27,6 +40,14 @@ def _patch(
     fake_base = MagicMock()
     fake_base.with_structured_output = MagicMock(return_value=fake_llm)
     monkeypatch.setattr(module, fn, lambda: fake_base)
+    if hasattr(module, "call_close_backend"):
+        monkeypatch.setattr(
+            module,
+            "call_close_backend",
+            AsyncMock(
+                return_value={"api_code": 0, "api_result": "backend reply"}
+            ),
+        )
 
 
 @pytest.mark.asyncio
@@ -41,6 +62,7 @@ async def test_close_order_confirm_routes_to_confirm_close(
         ConfirmCloseParams(confirmOrderNoList=["CO-20260304-ABCD"]),
         fn="get_qwen_thinking",
     )
+    _patch_close_backend(monkeypatch)
 
     graph = build_close_graph()
     final = await graph.ainvoke(
@@ -77,6 +99,7 @@ async def test_close_order_cancel_request_routes_to_cancel_close(
         cancel_module,
         CancelCloseParams(cancelOrderNoList=["CO-20260304-XYZ"]),
     )
+    _patch_close_backend(monkeypatch)
 
     graph = build_close_graph()
     final = await graph.ainvoke(
@@ -92,9 +115,7 @@ async def test_close_order_cancel_request_routes_to_cancel_close(
     trace_nodes = [e.node for e in final.get("trace", [])]
     assert "close_cancel_close" in trace_nodes
     assert "close_todo" not in trace_nodes
-    assert final.get("cancel_params", {}).get("cancelOrderNoList") == [
-        "CO-20260304-XYZ"
-    ]
+    assert final.get("cancel_params", {}).get("cancelOrderNoList") == ["CO-20260304-XYZ"]
 
 
 @pytest.mark.asyncio

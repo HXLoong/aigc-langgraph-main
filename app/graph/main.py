@@ -5,23 +5,52 @@ M2 阶段：intent_route 已实现真三层路由（ADR 0015）；子图逐一�
 """
 from __future__ import annotations
 
+from collections.abc import Awaitable, Callable
+from typing import Any
+
+from langchain_core.runnables import RunnableConfig, RunnableLambda
 from langgraph.checkpoint.base import BaseCheckpointSaver
 from langgraph.graph import END, START, StateGraph
 from langgraph.graph.state import CompiledStateGraph
+from langgraph.types import Overwrite
 
 from app.graph.state import AgentState
 from app.nodes.fallback import fallback
+from app.nodes.fast_query import (
+    existing_command_query,
+    is_existing_command,
+    is_fast_query,
+    quick_inquiry,
+)
 from app.nodes.ingest import ingest
 from app.nodes.intent_route import intent_route
 from app.nodes.persist import persist
+from app.nodes.persist_intent import make_persist_intent
+from app.nodes.pre_route import pre_route
+from app.nodes.record_history import record_history
 from app.nodes.render import render
 from app.subgraphs.close import build_close_graph
 from app.subgraphs.option import build_option_graph
 from app.subgraphs.swap import build_swap_graph
+from app.tools.message_client import MessageClient
 
 # ============================================================
 # 路由函数（含 cascade 防御 + unknown 兜底）
 # ============================================================
+
+
+def _route_entry(state: AgentState) -> str:
+    """ingest 后的前置分流（DSL v2「判断快速询价」if-else）。
+
+    1. fast_query == "1" → 快速询价链（GOATS rfq parser → 期权快速询价）
+    2. existing_command == "1" 且 at_bot == "0" → 存量兼容交易查询
+    3. 其他 → pre_route（对手/候选提取）→ intent_route 一级路由
+    """
+    if is_fast_query(state):
+        return "quick_inquiry"
+    if is_existing_command(state):
+        return "existing_command_query"
+    return "pre_route"
 
 
 def _route_after_intent(state: AgentState) -> str:
@@ -29,7 +58,7 @@ def _route_after_intent(state: AgentState) -> str:
 
     优先级：
     1. state['error'] 存在 → fallback（cascade 防御，CLAUDE.md 核心原则第 8 条）
-    2. product_type == "unknown" → fallback（ADR 0015 第 3 层兜底）
+    2. product_type == "unknown" → fallback（DSL v2 一级分支 false 落兜底）
     3. 否则按 product_type 选子图
     """
     if state.get("error") is not None:
@@ -45,14 +74,40 @@ def _route_after_intent(state: AgentState) -> str:
 # ============================================================
 
 
+def _as_subgraph_node(
+    graph: CompiledStateGraph,
+) -> Callable[[AgentState, RunnableConfig], Awaitable[dict[str, Any]]]:
+    """让父图直接接收子图已经合并完成的 reducer 字段。"""
+
+    async def run(state: AgentState, config: RunnableConfig) -> dict[str, Any]:
+        result = await graph.ainvoke(state, config=config)
+        updates: dict[str, Any] = dict(result)
+        for key in ("trace", "history_messages"):
+            if key in result:
+                updates[key] = Overwrite(result[key])
+        return updates
+
+    return run
+
+
+def _reset_turn_trace(_: AgentState) -> dict[str, Any]:
+    """新 turn 开始时清空上一轮 trace。"""
+    return {"trace": Overwrite([])}
+
+
 def build_main_graph(
     checkpointer: BaseCheckpointSaver | None = None,
+    message_client_factory: Callable[[], MessageClient] | None = None,
+    attach_langfuse_callbacks: bool = True,
 ) -> CompiledStateGraph:
-    """组装并编译主图。
+    """组装并编译主图（DSL v2 拓扑）。
 
     流程：
-        START → ingest → intent_route → [route_after_intent] →
-            swap | option | option_close | fallback → persist → render → END
+        START → reset_turn_trace → ingest → [route_entry] →
+            quick_inquiry | existing_command_query          （前置分支,直达 persist）
+          | pre_route → intent_route → [route_after_intent] →
+                swap | option | option_close | fallback
+        → persist → render → END
 
     cascade 防御：
     - intent_route 写 state['error'] → 跳 fallback
@@ -60,17 +115,33 @@ def build_main_graph(
     """
     g: StateGraph = StateGraph(AgentState)
 
+    g.add_node("reset_turn_trace", _reset_turn_trace)
     g.add_node("ingest", ingest)
+    g.add_node("quick_inquiry", quick_inquiry)
+    g.add_node("existing_command_query", existing_command_query)
+    g.add_node("pre_route", pre_route)
     g.add_node("intent_route", intent_route)
-    g.add_node("swap", build_swap_graph())
-    g.add_node("option", build_option_graph())
-    g.add_node("option_close", build_close_graph())
+    g.add_node("swap", _as_subgraph_node(build_swap_graph()))
+    g.add_node("option", _as_subgraph_node(build_option_graph()))
+    g.add_node("option_close", _as_subgraph_node(build_close_graph()))
     g.add_node("fallback", fallback)
+    g.add_node("persist_intent", RunnableLambda(make_persist_intent(message_client_factory)))
     g.add_node("persist", persist)
     g.add_node("render", render)
+    g.add_node("record_history", record_history)
 
-    g.add_edge(START, "ingest")
-    g.add_edge("ingest", "intent_route")
+    g.add_edge(START, "reset_turn_trace")
+    g.add_edge("reset_turn_trace", "ingest")
+    g.add_conditional_edges(
+        "ingest",
+        _route_entry,
+        {
+            "quick_inquiry": "quick_inquiry",
+            "existing_command_query": "existing_command_query",
+            "pre_route": "pre_route",
+        },
+    )
+    g.add_edge("pre_route", "intent_route")
     g.add_conditional_edges(
         "intent_route",
         _route_after_intent,
@@ -82,15 +153,20 @@ def build_main_graph(
         },
     )
     for sub in ("swap", "option", "option_close", "fallback"):
+        g.add_edge(sub, "persist_intent")
+    for sub in ("quick_inquiry", "existing_command_query"):
         g.add_edge(sub, "persist")
+    g.add_edge("persist_intent", "persist")
     g.add_edge("persist", "render")
-    g.add_edge("render", END)
+    g.add_edge("render", "record_history")
+    g.add_edge("record_history", END)
 
-    if checkpointer is not None:
-        compiled = g.compile(checkpointer=checkpointer)
-    else:
-        compiled = g.compile()
-    return _attach_langfuse_callbacks(compiled)
+    compiled = (
+        g.compile(checkpointer=checkpointer)
+        if checkpointer is not None
+        else g.compile()
+    )
+    return _attach_langfuse_callbacks(compiled) if attach_langfuse_callbacks else compiled
 
 
 def _attach_langfuse_callbacks(compiled: CompiledStateGraph) -> CompiledStateGraph:

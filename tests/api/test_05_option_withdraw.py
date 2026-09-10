@@ -3,7 +3,7 @@
 """
 from __future__ import annotations
 
-from _utils import check, get, post, report, COM_AID, COM_SUB, OPT_AID, OPT_SUB
+from _utils import COM_AID, COM_SUB, OPT_AID, OPT_SUB, check, get, post, report
 
 print("05. 期权撤单  POST /api/internal/agent/option/order/withdraw")
 

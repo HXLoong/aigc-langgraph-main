@@ -9,7 +9,7 @@ dependencies:
 - current_identifier: null
   type: package
   value:
-    plugin_unique_identifier: langgenius/openai_api_compatible:0.0.22@88c295aff1ea52ea6ab56e3869ee37702d91f7b678c547254cf2b48271c8e81f
+    plugin_unique_identifier: langgenius/openai_api_compatible:0.0.55-1@d6b094b3217748ebfc992562cb1865eac85835935d0b30eeecc93722bdf13a60
     version: null
 kind: app
 version: 0.5.0
@@ -154,7 +154,25 @@ workflow:
           required: true
           type: text-input
           variable: keyword
-      height: 135
+        - default: ''
+          hint: ''
+          label: predictedInsFamily
+          max_length: 64
+          options: []
+          placeholder: ''
+          required: false
+          type: text-input
+          variable: predictedInsFamily
+        - default: ''
+          hint: ''
+          label: expectedTransactionType
+          max_length: 64
+          options: []
+          placeholder: ''
+          required: false
+          type: text-input
+          variable: expectedTransactionType
+      height: 186
       id: '1775820020667'
       position:
         x: -175.7549260970028
@@ -175,7 +193,9 @@ workflow:
           \ return false;\n                if (seen.has(item.windCode)) return false;\n\
           \                seen.add(item.windCode);\n                return true;\n\
           \            });\n        }\n    } catch (e) {\n        result = [];\n \
-          \   }\n    return { result: JSON.stringify(result) };\n}\n"
+          \   }\n    const date = new Date().toLocaleString(\"zh-CN\", { timeZone:\
+          \ \"Asia/Shanghai\" });\n    return { result: JSON.stringify(result), date\
+          \ };\n}\n"
         code_language: javascript
         default_value:
         - key: result
@@ -183,10 +203,13 @@ workflow:
           value: '[]'
         error_strategy: default-value
         outputs:
+          date:
+            children: null
+            type: string
           result:
             children: null
             type: string
-        selected: false
+        selected: true
         title: 列表格式化
         type: code
         variables:
@@ -195,19 +218,19 @@ workflow:
           - list
           value_type: string
           variable: list
-      height: 88
+      height: 87
       id: '1775820054722'
       position:
-        x: 125.51242612008713
+        x: 126.52295531084798
         y: 280
       positionAbsolute:
-        x: 125.51242612008713
+        x: 126.52295531084798
         y: 280
-      selected: false
+      selected: true
       sourcePosition: right
       targetPosition: left
       type: custom
-      width: 242
+      width: 241
     - data:
         context:
           enabled: false
@@ -217,17 +240,19 @@ workflow:
             enable_thinking: false
             temperature: 0.1
           mode: chat
-          name: external-kimi-k2.5
+          name: external-deepseek-v4-pro-non-thinking
           provider: langgenius/openai_api_compatible/openai_api_compatible
         prompt_template:
         - id: b6d68799-b1d4-4000-8879-c2ae9de610ef
           role: system
-          text: "你是一个金融标的相关性排序助手。\n\n## 任务\n根据用户输入的关键字，对给定的标的列表进行过滤和相关性排序。\n\n标的列表是一个\
-            \ JSON 数组，每个元素包含以下字段：\n- windCode：标的代码（如 0700.HK、ZN_S.SHF）\n- insShtDesc：标的简称（如\
-            \ TENCENT、SHFE锌次活跃）\n- insLngDesc：标的长名（如 SHFE锌次活跃）\n- insFamily：标的类型（如\
-            \ EQUITY、FUTURE、FUND）\n- currency：币种（如 CNY、HKD）\n- exchange：交易所（如 HKEX、DCE、OTC）\n\
-            \n## 重要前提\n标的列表来自数据库模糊搜索，搜索条件是从关键字中提取的子串（数字片段、名称片段等）对 windCode、insShtDesc\
-            \ 等字段做子串匹配。因此列表中很多标的仅仅是因为代码或名称碰巧包含了某个子串而出现，并不代表它们与用户的搜索意图相关。你的核心职责是识别并过滤掉这些巧合匹配，只保留与用户搜索意图真正相关的标的。\n\
+          text: "你是一个金融标的相关性排序助手。\n\n当前日期：{{#1775820054722.date#}}\n\n## 任务\n根据用户输入的关键字，对给定的标的列表进行过滤和相关性排序。\n\
+            \n标的列表是一个 JSON 数组，每个元素包含以下字段：\n- windCode：标的代码（如 0700.HK、ZN_S.SHF）\n-\
+            \ insShtDesc：标的简称（如 TENCENT、SHFE锌次活跃）\n- insLngDesc：标的长名（如 SHFE锌次活跃）\n\
+            - insFamily：标的类型（如 EQUITY、FUTURE、FUND）\n- currency：币种（如 CNY、HKD）\n- exchange：交易所（如\
+            \ HKEX、DCE、OTC）\n- tradableNow：该标的当前是否处于可交易时段（true=所属市场当前开盘，false=休市或未知）\n\
+            - hasPermission：当前交易对手/群是否有该标的品种的交易权限（false=无此品种交易权限）\n- transactionTypes：该标的可交易的交易品种列表（中文名，如\
+            \ [A股、港股通]），用于匹配用户期望品种\n\n## 重要前提\n标的列表来自数据库模糊搜索，搜索条件是从关键字中提取的子串（数字片段、名称片段等）对\
+            \ windCode、insShtDesc 等字段做子串匹配。因此列表中很多标的仅仅是因为代码或名称碰巧包含了某个子串而出现，并不代表它们与用户的搜索意图相关。你的核心职责是识别并过滤掉这些巧合匹配，只保留与用户搜索意图真正相关的标的。\n\
             \n## 第一步：理解用户搜索意图\n\n在评估任何标的之前，先分析关键字的完整语义，确定用户真正要找的是什么。\n\n关键字可能包含多个组成部分，需要综合理解：\n\
             - 品种/公司名称：如\"螺纹钢\"、\"腾讯\"、\"贵州茅台\"\n- 标的代码：如\"0700\"、\"AAPL\"、\"600519.SH\"\
             \n- 期货合约月份标识，有两种格式：\n  - **月份字母+YY格式**（优先级更高）：如\"Z26\"表示2026年12月，\"N26\"\
@@ -247,34 +272,61 @@ workflow:
             \ \"A2503.DCE\"（豆一期货2503合约） → 合约月份碰巧相同，但品种是豆一不是螺纹钢\n- 关键字\"2503螺纹钢\"，标的\
             \ windCode \"250301.OF\"（某基金） → \"2503\"只是基金代码的前缀巧合\n- 关键字\"沪铜2601\"，标的\
             \ windCode \"2601.HK\"（某港股） → 用户找的是沪铜期货，该港股与铜无关\n\n判断原则：仅有数字子串的巧合重合，而标的的品种/公司/行业与关键字的核心意图无关\
-            \ → 过滤。标的的品种/公司/行业与核心意图存在实质关联 → 即使代码不匹配也保留。\n\n## 第三步：过滤与排序\n\n### 代码直接匹配优先规则\n\
-            \n如果关键字（或关键字中提取出的代码部分）能直接匹配到列表中某个标的的 windCode（去掉交易所后缀后比较，忽略大小写），则该标的极大可能就是用户要找的目标：\n\
+            \ → 过滤。一般语义查询中，标的的品种/公司/行业与核心意图存在实质关联 → 即使代码不匹配也可保留；但「名称 + 代码片段」复合查询必须按下方规则同时满足名称侧和代码侧，不能只靠名称或只靠代码保留。\n\
+            \n## 第三步：过滤与排序\n\n### 代码直接匹配优先规则\n\n先判断关键字属于「纯代码/完整代码查询」还是「名称 + 代码片段的复合查询」，两类处理不同。\n\
+            \n纯代码/完整代码查询：如果关键字整体就是代码，或关键字含完整带后缀代码（如 `0013.HK`、`600519.SH`、`AAPL.O`、`CU2601.SHF`），或只有代码加市场/交易品种修饰语（如\
+            \ \"0883 港股\"、\"600519 A股\"），则代码是唯一核心意图。关键字能直接匹配到列表中某个标的的 windCode（去掉交易所后缀后比较，忽略大小写）时，该标的极大可能就是用户要找的目标：\n\
             - 匹配时忽略前导零差异：如关键字\"00700\"应能匹配 windCode \"0700.HK\"，关键字\"0700\"也应能匹配 windCode\
             \ \"00700.HK\"\n- 若只匹配到一个标的：直接返回该标的，过滤掉其他所有标的\n- 若同一代码在多个交易所上市（如港股和A股都有）：返回该代码所有交易所的标的，过滤掉其他不相关标的\n\
-            - 此规则优先级最高——代码直接匹配代表用户明确知道自己要找什么\n- 若关键字含**完整带后缀代码**（如 `0013.HK`、`600519.SH`、`AAPL.O`、`CU2601.SHF`）或可与某\
-            \ windCode 精确匹配的代码片段，即使关键字同时含有概念词、行业词、修饰语（如\"沪港通\"、\"新能源\"、\"主力合约\"），也以**代码**为唯一核心意图：\n\
-            \  - 概念词仅视为用户对该代码所属标的的描述性补充，不作为独立搜索意图\n  - 即便代码所指标的与概念词在语义上不完全吻合（如该股不在该概念名单内），仍以代码为准\n\
-            \  - 仅返回该代码对应的标的，过滤掉所有\"仅与概念词相关、与该代码无关\"的其他标的\n\n### 同品种合约格式去重（临时补丁）\n\
-            \n当列表中同时存在同一品种的\"月份字母+YY\"格式代码（如 CLN26.NYM）和\"YYMM\"格式代码（如 CL2607.NYM），优先保留\"\
-            月份字母+YY\"格式的标的，过滤掉对应的\"YYMM\"格式标的。因为\"月份字母+YY\"格式是国际期货市场的标准活跃合约代码，代表更高的流动性和交易活跃度。\n\
-            \n### 结果精简原则\n\n尽量返回最少数量的高相关标的，避免返回大量模糊相关的候选：\n- 当能明确判定某个标的就是用户要找的，只返回该标的（或同代码多交易所的情况）\n\
+            - 此规则优先级最高（**高于下方「结果精简 / 全部保留」**）——纯代码/完整代码查询代表用户明确知道自己要找什么；即便候选里有同一公司的跨市场版本，只要关键字给了精确代码，也只返回该代码对应标的、过滤掉其它市场的同名标的\n\
+            - 若关键字同时含有概念词、行业词、修饰语（如\"沪港通\"、\"主力合约\"），且没有明确公司/品种名称，先判断这些词是否能与候选标的名称形成直接匹配：如果能直接匹配候选的\
+            \ insShtDesc/insLngDesc，则按下方「名称/概念 + 代码片段」复合查询处理；如果不能直接匹配，只是宽泛描述性补充，才不作为独立搜索意图，仍仅返回该代码对应标的\n\
+            \n名称/概念 + 代码片段的复合查询：如果关键字同时包含明确的公司/集团/品种名称、产品词、行业/概念词和数字代码片段，则必须从标的列表中找「名称侧符合」且「代码侧符合」的候选；只满足一侧的一律过滤，宁愿输出空数组也不要错选。\n\
+            - 代码侧符合：windCode 去掉交易所后缀、忽略前导零后，与代码片段精确相等；或 windCode 主体包含该代码片段且结合名称侧可判定不是巧合；windCode\
+            \ 中的字母前缀不妨碍匹配；同一底层资产的不同交易币种/柜台/后缀证券（如 -R）也可视为代码侧符合\n- 名称侧符合：insShtDesc\
+            \ 或 insLngDesc 与名称片段直接匹配，或是明确的简称/全称/同一底层资产/同集团核心业务强相关表达；行业/概念词只要在 insShtDesc\
+            \ 或 insLngDesc 中作为连续子串出现，也视为名称侧直接符合\n- 同时满足名称侧和代码侧的候选才进入结果；其中代码精确匹配排第一，其它双侧符合候选按相关性排序\n\
+            - 仅代码侧符合但名称侧无关 → 过滤；仅名称侧符合但代码侧无关 → 过滤；代码或名称任一侧不确定时也过滤\n- 用户期望类型 predictedInsFamily\
+            \ 只能作为排序信号，不能过滤掉名称侧和代码侧都符合的候选\n\n### 同品种合约格式去重（临时补丁）\n\n当列表中同时存在同一品种的\"\
+            月份字母+YY\"格式代码（如 CLN26.NYM）和\"YYMM\"格式代码（如 CL2607.NYM），优先保留\"月份字母+YY\"\
+            格式的标的，过滤掉对应的\"YYMM\"格式标的。因为\"月份字母+YY\"格式是国际期货市场的标准活跃合约代码，代表更高的流动性和交易活跃度。\n\
+            \n### 结果精简原则\n\n尽量返回最少数量的高相关标的，避免返回大量模糊相关的候选：\n- 当与用户核心意图相关的有效证券确实**只有一只**时，才只返回该标的；同代码多交易所、或**同一公司且同一交易品种**的多只有效证券都不算「只有一只」，须按下一条全部返回\n\
+            - **「精简」只用于过滤掉与核心意图无关的巧合标的 / 不同公司或品种的标的。「全部保留」仅针对【同一公司且同一交易品种】的多只有效证券**——即核心名称相同（去掉\
+            \ -U / -W / -WR 等份额/板块后缀后一致）、且**交易品种相同**的不同证券（不同 windCode / 特殊代码，如「XX-U」与「XX」、同板块下同一核心名对应多个\
+            \ windCode），它们都是用户要找的，**绝不可因后缀或 windCode 不同就当重复精简、只留一只**。\n  - **跨市场 /\
+            \ 跨品种的同名标的不在「全部保留」范围**：① 纯代码/完整代码查询时，严格按上方『代码直接匹配优先』——只返回该代码对应标的，其它市场/品种的同名标的一律过滤（即便是同一公司）；②\
+            \ 名称 + 代码片段的复合查询时，只保留名称侧和代码侧都符合的候选，精确代码命中的标的排第一；③ 用户只给名称、未给代码时，按相关度与用户期望品种排序，不同品种的同名标的不强制全留。\n\
             - 不要因为\"可能相关\"就大量保留，只保留有较高信心确认相关的标的\n\n### 过滤规则\n- 仅因代码中的数字子串与关键字中的数字巧合重合而出现，但标的本身（品种、公司、行业）与核心搜索意图无关\
             \ → 过滤\n- 标的属于完全不同的品种、公司或行业，与关键字不存在合理的关联路径 → 过滤\n- 当关键字的核心意图明确时（如包含具体品种名称或公司名称），以语义匹配为主要判据，不被表面的字符串重合误导\n\
             - 当关键字较模糊时（如纯数字\"2601\"且无品种名称修饰），对字符串匹配给予更多权重\n- 如果你对某个标的是否与核心意图相关存在合理的不确定性（如可能的产业链关联），保留该标的\n\
             \n### 排序规则\n对保留的标的按相关性从高到低排序：\n- windCode 完全匹配 > 部分匹配（前提是匹配有实质意义）\n- 品种/公司名称完全匹配\
             \ > 语义关联\n- 期货合约代码中使用月份字母+YY格式（如GCZ26.CMX）的匹配优先级高于YYMM纯数字格式（如GC2612.CMX）\n\
             - 期货标的中，带有具体合约月份的合约（如 CU2609.SHF、RBZ26.SHF）排在不带日期的主力/次活跃合约（如 CU_M.SHF、CU_S.SHF）之前；主合约通常无法下单，仅在没有任何带日期合约时才保留\n\
-            - 当关键字不含任何日期/合约月份信息，且列表中同时存在期货标的与非期货标的时，非期货标的优先排在期货标的之前\n- 多个维度同时匹配的排在前面\n\
-            \n## 输出格式\n\n分两步输出：\n\n第一步：在 <analysis> 标签内，用极简格式输出核心判断（不要逐个标的分析，只写关键决策）：\n\
-            - 第一行：核心意图（一句话）\n- 若有代码直接匹配：写明匹配了哪个\n- 若有同品种格式去重（字母格式 vs YYMM格式）：写明保留哪个、过滤哪个\n\
-            - 最后一行：概括过滤结果（如\"其余N个无关，过滤\"）\n\n第二步：在 <result> 标签内，输出纯 JSON 数组（不要 ```json\
-            \ 包裹），只包含过滤并排序后的 windCode。\n\n示例：\n\n<analysis>\n意图: 沪铜期货2026年9月\n匹配:\
-            \ CU2609.SHF ✓\n其余2个与沪铜无关，过滤\n</analysis>\n<result>\n[\"CU2609.SHF\"]\n\
-            </result>\n\n输出要求：\n- <result> 内只输出 windCode 字符串数组\n- 过滤掉与核心搜索意图不相关的标的\n\
-            - 相关性最高的排在最前面\n- 如果列表中没有任何标的与关键字的核心搜索意图真正相关，输出空数组 []\n"
+            - 当关键字不含任何日期/合约月份信息，且列表中同时存在期货标的与非期货标的时，非期货标的优先排在期货标的之前\n- **关键字未指定具体到期月份时（仅给出品种/交易所名等，无月份或日期信息），同品种的多个期货合约按合约到期日相对「当前日期」排序**：\n\
+            \  1. 先解析每个合约代码（或简称末尾）的到期年月：月份字母+YY 或 YYMM 格式，月份字母码见上文 F=1月…Z=12月；两位年份按「当前日期」就近补全为四位。\n\
+            \  2. 到期月份严格晚于「当前日期」所在月（即次月及以后）的合约为高优先级，按到期日由近到远升序排列——次月合约排第一，之后逐月顺延，跨年后继续顺延到下一年更晚的月份，**严禁在排完次月后回跳到年初月份**。\n\
+            \  3. 到期月份等于当前月或更早（含已过期）的合约为低优先级，整体排在全部高优先级合约之后，组内同样按到期日由早到晚升序排列。\n  4.\
+            \ 代码中不含具体到期月份的主连/连续合约（如简称无年月数字）保留但排在最末。\n- 当关键字未指明市场（未含「A股/港股/美股/港股通/深港通/沪港通」等市场词）、且存在多个分属不同市场但相关性相当的候选时，tradableNow=true（当前市场开盘）的标的优先于同等相关、tradableNow=false\
+            \ 的标的。这是「市场不确定」时的次要消歧信号，绝不能因 tradableNow=false 就把明确匹配用户意图的标的下沉或过滤——相关性永远是首要排序依据\n\
+            - 当存在 hasPermission=false（当前对手/群无此品种交易权限）的候选时，把它们排在所有 hasPermission=true\
+            \ 的同等相关候选之后；这只是次要信号，绝不能因 hasPermission=false 就过滤掉该标的、或把明确匹配用户意图的标的下沉到无关标的之后——相关性永远是首要排序依据\n\
+            - 当输入提供了「用户期望品种」（用户显式给出的交易品种，如 A股/港股/港股通/美股等）时，在相关度相当的多个候选间，优先 transactionTypes\
+            \ 包含该期望品种的候选；其优先级高于下面的「用户期望类型」和上面的市场消歧（用户显式说的品种 > 模型猜的类型、> 当前是否开盘），但仍低于代码精确匹配与名称匹配——相关度永远是首要主键；用户给了明确代码时以代码为准、期望品种不覆盖代码；期望品种为空则忽略本条\n\
+            - 当输入提供了「用户期望类型」（取值 EQUITY=股票/FUND=基金或ETF/FUTURE=期货/INDEX=指数）、且候选里并存多种\
+            \ insFamily 时，与期望类型一致的候选优先（次要信号，相关度仍主键；期望类型为空则忽略本条）。**【仅排序、绝不过滤】期望类型只决定同相关度候选之间的先后顺序：绝不能因某候选的\
+            \ insFamily 与期望类型不一致，就把它过滤/删除——类型不符但与搜索意图相关的候选仍必须保留在结果数组里，只是排在类型一致的候选之后。相关性永远是首要排序依据。**\n\
+            - 多个维度同时匹配的排在前面\n\n## 输出格式\n\n**只输出结果，不做分析。** 直接在 <result> 标签内输出纯 JSON\
+            \ 数组（不要 ```json 包裹），只包含过滤并排序后的 windCode。不要输出 <analysis> 标签或任何分析、解释、思考过程文字，直接给出结果以提升响应速度。\n\
+            \n示例：\n\n<result>\n[\"CU2609.SHF\"]\n</result>\n\n输出要求：\n- <result> 内只输出\
+            \ windCode 字符串数组\n- 不要输出 <analysis> 或任何额外文字\n- 过滤掉与核心搜索意图不相关的标的\n- 相关性最高的排在最前面\n\
+            - 如果列表中没有任何标的与关键字的核心搜索意图真正相关，输出空数组 []\n"
         - id: e298a1d0-0c22-4aa3-9ad2-874394390413
           role: user
           text: '关键字：{{#1775820020667.keyword#}}
+
+            用户期望类型：{{#1775820020667.predictedInsFamily#}}
+
+            用户期望品种：{{#1775820020667.expectedTransactionType#}}
 
             标的列表：{{#1775820054722.result#}}
 
@@ -286,7 +338,7 @@ workflow:
         type: llm
         vision:
           enabled: false
-      height: 88
+      height: 87
       id: '1775820432797'
       position:
         x: 811.860326362583
@@ -294,11 +346,11 @@ workflow:
       positionAbsolute:
         x: 811.860326362583
         y: 280
-      selected: true
+      selected: false
       sourcePosition: right
       targetPosition: left
       type: custom
-      width: 242
+      width: 241
     - data:
         code: "function main({text}) {\n    try {\n        const match = typeof text\
           \ === 'string' ? text.match(/<result>\\s*([\\s\\S]*?)\\s*<\\/result>/) :\
@@ -325,7 +377,7 @@ workflow:
           - text
           value_type: string
           variable: text
-      height: 88
+      height: 87
       id: '1775821455184'
       position:
         x: 1122.5929741454931
@@ -337,7 +389,7 @@ workflow:
       sourcePosition: right
       targetPosition: left
       type: custom
-      width: 242
+      width: 241
     - data:
         outputs:
         - value_selector:
@@ -348,7 +400,7 @@ workflow:
         selected: false
         title: 输出
         type: end
-      height: 89
+      height: 87
       id: '1775821541827'
       position:
         x: 1427.416453210158
@@ -360,7 +412,7 @@ workflow:
       sourcePosition: right
       targetPosition: left
       type: custom
-      width: 242
+      width: 241
     - data:
         cases:
         - case_id: 'true'
@@ -377,7 +429,7 @@ workflow:
         selected: false
         title: 条件分支
         type: if-else
-      height: 124
+      height: 123
       id: '1775821827780'
       position:
         x: 436.53384853348217
@@ -389,7 +441,7 @@ workflow:
       sourcePosition: right
       targetPosition: left
       type: custom
-      width: 242
+      width: 241
     - data:
         outputs:
         - value_selector:
@@ -400,7 +452,7 @@ workflow:
         selected: false
         title: 输出 2
         type: end
-      height: 89
+      height: 87
       id: '1775821851332'
       position:
         x: 811.860326362583
@@ -412,9 +464,9 @@ workflow:
       sourcePosition: right
       targetPosition: left
       type: custom
-      width: 242
+      width: 241
     viewport:
-      x: -90.34185445677917
-      y: 462.9992028749607
-      zoom: 0.7580918247304753
+      x: 187.48135572637872
+      y: 161.3758968392327
+      zoom: 0.6094227336439394
   rag_pipeline_variables: []

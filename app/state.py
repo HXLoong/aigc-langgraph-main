@@ -1,9 +1,10 @@
 """兼容层：重定向到 M2 新位置 app.graph.state。"""
-from app.graph.state import AgentState, Message, TickerCandidate  # noqa: F401
-
 # M2 用 AgentState TypedDict + 直接构造，不再有 WechatInput/make_initial_state
 # 给 eval 提供兼容包装
 from typing import Any
+
+from app.graph.state import AgentState, Message, TickerCandidate  # noqa: F401
+
 
 class WechatInput(dict):
     """兼容 M1 的 WechatInput TypedDict。"""
@@ -26,7 +27,6 @@ def make_initial_state(wechat_input: dict) -> dict[str, Any]:
         "history_messages": [],
         "conversation_orders": [],
         "counterparty_list": [],
-        "product_type": "unknown",
         "intent": None,
         "fast_query": False,
         "at_bot": False,

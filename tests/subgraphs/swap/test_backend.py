@@ -14,7 +14,6 @@ from app.subgraphs.swap.backend import (
 from app.tools.exceptions import BackendUnreachableError
 from app.tools.models import CommonResult
 
-
 # ============================================================
 # _message_id
 # ============================================================
@@ -39,7 +38,7 @@ def test_message_id_no_digits_returns_zero() -> None:
 
 def test_with_resolved_ticker_writes_wind_code() -> None:
     ticker = MagicMock()
-    ticker.windCode = "600519.SH"
+    ticker.wind_code = "600519.SH"
     order: dict = {}
     result = _with_resolved_ticker(order, [ticker], 0)
     assert result["placeOrderWindCode"] == "600519.SH"
@@ -169,18 +168,55 @@ async def test_call_swap_backend_supports_all_swap_intents(
 
 # ============================================================
 # 节点端到端：mock LLM + mock SwapClient
+#
+# DSL v2 拆分后，后端提交从 swap_place_order 移到独立的
+# swap_place_order_submit 节点（swap.place_order 只做提取，见
+# app/subgraphs/swap/place_order.py 模块 docstring）。
 # ============================================================
 
 
 @pytest.mark.asyncio
-async def test_place_order_node_writes_api_code(
+async def test_place_order_submit_node_writes_api_code(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """swap_place_order 节点端到端：state 含上下文 → 调真客户端 → api_code 写回。"""
+    """swap_place_order_submit 节点：state['place_params'] 就绪 → 调真客户端 → api_code 写回。"""
     from app.subgraphs.swap import place_order as po_module
-    from app.subgraphs.swap.models import SwapPlaceOrderParams, SwapOrderItem
 
-    # mock LLM
+    fake_client = MagicMock()
+    fake_client.operate = AsyncMock(
+        return_value=CommonResult(code=0, msg="ok", data={"orderId": "S001"})
+    )
+    monkeypatch.setattr(backend_mod, "SwapClientHttpx", lambda: fake_client)
+
+    result = await po_module.swap_place_order_submit(
+        {
+            "place_params": {
+                "expected_action": "place",
+                "orderList": [
+                    {"placeOrderWindCode": "00700.HK", "placeOrderQuantity": 1000}
+                ],
+            },
+            "conversation_id": "c1",
+            "message_id": 100,
+            "user_id": "u1",
+            "room_id": "r1",
+        }
+    )
+    assert result["api_code"] == 0
+    assert result["api_result"] == {"orderId": "S001"}
+    assert result["place_params"]["expected_action"] == "place"
+    # 后端返回真订单号 → 回写到 orderList[0].orderId
+    assert result["place_params"]["orderList"][0]["orderId"] == "S001"
+
+
+@pytest.mark.asyncio
+async def test_place_order_node_no_backend_call(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """swap_place_order 提取节点单独调用时不触发后端调用（职责已拆到 submit 节点）。"""
+    from app.subgraphs.swap import place_order as po_module
+    from app.subgraphs.swap.models import SwapOrderItem, SwapPlaceOrderParams
+
     params = SwapPlaceOrderParams(
         orderList=[SwapOrderItem(placeOrderWindCode="腾讯", placeOrderQuantity=1000)]
     )
@@ -190,11 +226,8 @@ async def test_place_order_node_writes_api_code(
     fake_base.with_structured_output = MagicMock(return_value=fake_llm)
     monkeypatch.setattr(po_module, "get_qwen_complex", lambda: fake_base)
 
-    # mock SwapClient
     fake_client = MagicMock()
-    fake_client.operate = AsyncMock(
-        return_value=CommonResult(code=0, msg="ok", data={"orderId": "S001"})
-    )
+    fake_client.operate = AsyncMock(side_effect=AssertionError("不应调用后端"))
     monkeypatch.setattr(backend_mod, "SwapClientHttpx", lambda: fake_client)
 
     result = await po_module.swap_place_order(
@@ -206,6 +239,6 @@ async def test_place_order_node_writes_api_code(
             "room_id": "r1",
         }
     )
-    assert result["api_code"] == 0
-    assert result["api_result"] == {"orderId": "S001"}
+    assert "api_code" not in result
+    fake_client.operate.assert_not_called()
     assert result["place_params"]["expected_action"] == "place"

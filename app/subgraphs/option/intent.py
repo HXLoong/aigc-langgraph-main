@@ -1,13 +1,14 @@
 """option.intent 节点 · 期权基础意图分类（不含平仓）。
 
-ADR 0011 二次修订：从原"意图识别+参数提取"巨型 prompt 拆出独立分类节点。
-当前节点仅做意图分类（10 个基础意图），参数提取由 5 个 extract 节点处理。
+Dify DSL v2 迁移（分支 feature/dify-dsl-migration，P2 option 域）：意图枚举收窄为
+7 个基础意图 + unknown_intent（不再含 request_modify_order / confirm_modify_order
+——期权无独立改单流程，改参数统一归 place_order_from_quote）。
 
 输入：raw_text / quote_content / history_messages
-输出：state['intent'] = OptionIntentType 之一（10 值）
+输出：state['intent'] = OptionIntentType 之一（8 值）
 
 LLM：get_qwen_structured 工厂 + with_structured_output（工厂语义现状见 ADR 0020 §4）。
-prompt：`app/prompts/option/intent.md`（拆分后的轻量版，~80 行）。
+prompt：`app/prompts/option/intent.md`（Dify DSL v2 同步版，node_id=1755073106378）。
 """
 from __future__ import annotations
 
@@ -33,17 +34,30 @@ def _format_history(history: list[Message] | None) -> str:
 
 
 def _build_user_message(state: AgentState) -> str:
-    """组装 user message（4 个 Dify 输入变量）。"""
+    """组装 user message（4 个既有 Dify 输入变量 + shortname_list）。
+
+    `shortname_list`（交易对手简称候选列表，Dify DSL v2 源
+    `1772773805306.optionListStr`）取自 pre_route 解析的
+    state["option_counterparties"]（后端预查对手精简列表）。
+    `bot_name_list` 取 state["bot_name"]（DSL v2 start 入参）。
+    """
     raw_content = state.get("raw_text", "") or ""
     quote_content = state.get("quote_content") or ""
     history_str = _format_history(state.get("history_messages"))
-    bot_name_list: list[str] = []
+    bot_name = state.get("bot_name")
+    bot_name_list: list[str] = [bot_name] if bot_name else []
+    shortname_list: list[str] = [
+        cp.get("shortName")
+        for cp in (state.get("option_counterparties") or [])
+        if cp.get("shortName")
+    ]
 
     return (
         f"raw_content: {raw_content}\n\n"
         f"quote_content: {quote_content}\n\n"
         f"history_query_str:\n{history_str}\n\n"
-        f"bot_name_list: {bot_name_list}"
+        f"bot_name_list: {bot_name_list}\n\n"
+        f"shortname_list: {shortname_list}"
     )
 
 
@@ -87,22 +101,6 @@ async def option_intent(state: AgentState) -> dict[str, Any]:
     )
 
     intent = result.type
-    # === 后处理规则修正 ===
-    _combined = f"{raw} {quote}"
-    _from_inquiry = any(kw in _combined for kw in (
-        "询价详情", "如需下单", "名义本金", "期权费率", "标的代码",
-        "已收到您的下单指令", "请引用本消息",
-    ))
-    if _from_inquiry and intent in ("new_inquiry", "unknown", ""):
-        if any(kw in raw for kw in ("确认", "好的", "可以", "行", "下单")):
-            intent = "confirm_order"
-        elif any(kw in raw for kw in ("撤消", "取消", "不要", "算了")):
-            intent = "cancel_order_request"
-        elif any(kw in raw for kw in ("下单", "市价", "限价", "POV", "TWAP", "改")):
-            intent = "place_order_from_quote"
-        else:
-            intent = "place_order_from_quote"
-
     return {
         "intent": intent,
         "trace": [

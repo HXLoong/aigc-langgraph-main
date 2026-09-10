@@ -7,24 +7,33 @@ from __future__ import annotations
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
-from pydantic import ValidationError
 
 from app.subgraphs.close import cancel_close as cancel_module
 from app.subgraphs.close import confirm_close as confirm_module
 from app.subgraphs.close.cancel_close import close_cancel_close
 from app.subgraphs.close.confirm_close import close_confirm_close
 from app.subgraphs.close.models import CancelCloseParams, ConfirmCloseParams
+from app.tools.models import CommonResult
 
 
 def _patch_llm(
     monkeypatch: pytest.MonkeyPatch, module: object, return_value: object,
     fn: str = "get_qwen_thinking",
+    mock_backend: bool = True,
 ) -> AsyncMock:
     fake_llm = MagicMock()
     fake_llm.ainvoke = AsyncMock(return_value=return_value)
     fake_base = MagicMock()
     fake_base.with_structured_output = MagicMock(return_value=fake_llm)
     monkeypatch.setattr(module, fn, lambda: fake_base)
+    if mock_backend and hasattr(module, "call_close_backend"):
+        monkeypatch.setattr(
+            module,
+            "call_close_backend",
+            AsyncMock(
+                return_value={"api_code": 0, "api_result": "backend reply"}
+            ),
+        )
     return fake_llm.ainvoke
 
 
@@ -36,35 +45,35 @@ def _patch_llm(
 class TestParamsModels:
     def test_confirm_close_params_default_empty_list(self) -> None:
         params = ConfirmCloseParams()
-        assert params.confirmOrderNoList == []
+        assert params.confirm_order_no_list == []
 
     def test_confirm_close_params_with_orders(self) -> None:
         params = ConfirmCloseParams(
             confirmOrderNoList=["CO-20260304-4FE9C941", "CO-20260304-E2BA7501"]
         )
-        assert len(params.confirmOrderNoList) == 2
+        assert len(params.confirm_order_no_list) == 2
 
     def test_cancel_close_params_default_empty_list(self) -> None:
         params = CancelCloseParams()
-        assert params.cancelOrderNoList == []
+        assert params.cancel_order_no_list == []
 
     def test_cancel_close_params_with_orders(self) -> None:
         params = CancelCloseParams(
             cancelOrderNoList=["CO-20260304-759125AD"]
         )
-        assert params.cancelOrderNoList == ["CO-20260304-759125AD"]
+        assert params.cancel_order_no_list == ["CO-20260304-759125AD"]
 
     def test_confirm_close_extra_fields_ignored(self) -> None:
         params = ConfirmCloseParams.model_validate(
             {"confirmOrderNoList": [], "garbage": "x"}
         )
-        assert params.confirmOrderNoList == []
+        assert params.confirm_order_no_list == []
 
     def test_cancel_close_extra_fields_ignored(self) -> None:
         params = CancelCloseParams.model_validate(
             {"cancelOrderNoList": [], "garbage": "x"}
         )
-        assert params.cancelOrderNoList == []
+        assert params.cancel_order_no_list == []
 
 
 # ============================================================
@@ -195,3 +204,43 @@ class TestCloseCancelCloseNode:
         )
         assert result.get("error") is not None
         assert result["error"].node == "close_cancel_close"
+
+    async def test_calls_real_backend_when_context_present(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """P0 payload 对齐：close_order_cancel_request 此前遗漏了真后端调用这一跳
+        （Dify 全 6 分支均汇入 期权平仓-参数聚合 → 期权平仓[code]）。"""
+        params = CancelCloseParams(cancelOrderNoList=["CO-20260304-759125AD"])
+        _patch_llm(monkeypatch, cancel_module, params, mock_backend=False)
+
+        captured: list[object] = []
+
+        async def _fake_operate(self, req):  # type: ignore[no-untyped-def]
+            captured.append(req)
+            return CommonResult(code=0, msg="ok", data="撤单请求已提交")
+
+        monkeypatch.setattr(
+            "app.tools.option_client.OptionClientHttpx.operate",
+            _fake_operate,
+        )
+
+        result = await close_cancel_close(
+            {
+                "raw_text": "撤销第一笔",
+                "quote_content": "1. CO-20260304-759125AD",
+                "conversation_id": "t",
+                "user_id": "u",
+                "room_id": "r",
+                "message_id": 1,
+            }
+        )
+        assert len(captured) == 1
+        req = captured[0]
+        assert req.type.value == "close_order_cancel_request"
+        assert req.order_list == []
+        assert req.close_order_req_vo.model_dump()["cancelOrderNoList"] == [
+            "CO-20260304-759125AD"
+        ]
+        # P0：真后端响应逐字节透传
+        assert result.get("api_result") == "撤单请求已提交"
+        assert result.get("api_code") == 0

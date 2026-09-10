@@ -3949,8 +3949,8 @@ OTC_API_BASE_URL=http://localhost:8099 python -m harness run
 | `docs/adr/0014-langfuse-as-harness-backend.md` | ★★★★ LangFuse 接入 + harness 后端 |
 | `docs/adr/0015-intent-route-rules-first-llm-fallback.md` | ★★★★ 一级路由三层规则 |
 | `docs/api-contracts/java-backend.md` | ★★★★★ Java 后端契约（写 Pydantic 必看） |
-| `docs/DIFY_MIGRATION.md` | ★★★ 迁移工作流总览 |
-| `docs/SHADOW_COMPARE_GUIDE.md` | ★★★ shadow 双跑操作 |
+| `docs/archive/history/DIFY_MIGRATION.md` | ★★★ 迁移工作流总览 |
+| `docs/deploy/SHADOW_COMPARE_GUIDE.md` | ★★★ shadow 双跑操作 |
 | `.claude/rules/git-workflow.md` | ★★★ git 工作流 |
 | `.claude/rules/python-style.md` | ★★★ Python 编码规范 |
 | `.claude/rules/langgraph-patterns.md` | ★★★★★ LangGraph 项目模式 |

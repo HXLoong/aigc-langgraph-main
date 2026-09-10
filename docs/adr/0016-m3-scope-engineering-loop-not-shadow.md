@@ -1,6 +1,6 @@
 # ADR 0016 · M3 范围重定义：工程联调闭环（非 shadow 双跑）
 
-- 状态：已采纳（决策有效；进度与术语按 2026-08-27 现状更新）
+- 状态：已采纳（范围决策有效；历史 E3 tickets 已关闭，DeepSeek 量化退出门是否满足仍需用评估报告证明）
 - 日期：2026-05-11
 - 起源：grill-with-docs 复盘 M2 → M3 转场；修订 ADR 0001 D9 的"M3 = Shadow 双跑"
 - 修订：2026-08-27 深度改写为现状口径（wayfinder map #138 / 核查 #143）
@@ -22,9 +22,9 @@ ADR 0001 D9 原定义 M3 = Shadow 双跑（退出门 `主要意图 diff < 5%；�
 
 | 阶段 | 内容 | 退出门与状态 |
 |---|---|---|
-| M3.1 · Mock 跑通 | LangGraph 全链路 → mock 后端 → 端到端 | ✅ 完成。真 LLM 84.6%——**未达 85% 阈值**，按 3/4 链路达标 + swap 82% known limitation 放行（详见 `docs/m2-real-llm-final-report.md`；原文"达成 84.6%"与自身阈值矛盾，本次订正）|
+| M3.1 · Mock 跑通 | LangGraph 全链路 → mock 后端 → 端到端 | ✅ 完成。真 LLM 84.6%——**未达 85% 阈值**，按 3/4 链路达标 + swap 82% known limitation 放行（详见 `docs/archive/m2/m2-real-llm-final-report.md`；原文"达成 84.6%"与自身阈值矛盾，本次订正）|
 | M3.2 · 真后端联调 | `.env` 切真后端域名，read 先 / write 后分批 | ✅ 完成。真后端 `otcoms-test.gf.com.cn` 已联通，roadmap 阶段 2 D2.1–D2.6 全部 closed（原文"⏳ 等 VPN"已过期）|
-| M3.3 · 真后端 golden 回归 | B/C/D 桶分别评估 + 错例修 P0/P1 + 业务方 sign-off | ⏳ 进行中（Issue #82–#87 全 OPEN）。⚠️ 退出门原对照值（mock 92.5% / 真 LLM 84.6%）为 Qwen 口径，已被 [ADR 0020](./0020-unify-all-llm-on-deepseek-v4-pro.md) 作废——**须在 DeepSeek-V4-pro 上重跑 `scripts/langfuse_eval.py` 重建 baseline 后，退出门才有有效对照** |
+| M3.3 · 真后端 golden 回归 | B/C/D 桶分别评估 + 错例修 P0/P1 + 业务方 sign-off | #82–#87 当前均已关闭；但关闭状态本身不能证明量化退出门。原对照值（mock 92.5% / 真 LLM 84.6%）为 Qwen 口径，已被 [ADR 0020](./0020-unify-all-llm-on-deepseek-v4-pro.md) 作废；是否完成应以 DeepSeek-V4-pro 评估报告与验收证据为准 |
 
 M3.x 与 roadmap 阶段号映射（两套编号并行，此处显式对上）：M3.1 = 阶段 1 收尾；M3.2 = 阶段 2（D2.*）；M3.3 = 阶段 3（E3.*）。
 
@@ -43,8 +43,8 @@ M3.x 与 roadmap 阶段号映射（两套编号并行，此处显式对上）：
 ### 中性 / 风险
 
 - 没有"vs Dify diff 数字"作对外材料，业务方预期需管理。
-- swap 链路 known limitation（短指令 quote 利用不足）需在 M3.3 真后端 + DeepSeek 口径下重测。
-- baseline 重建（0020）插入在 M3.3 中段，是当前退出门的前置阻塞。
+- swap 链路 known limitation（短指令 quote 利用不足）是否仍存在，应以 DSL v2 + DeepSeek 当前评估为准。
+- baseline 重建是退出门证据要求；不得用历史 Issue 的关闭状态替代。
 
 ### 工程层产出（M3 启动期记录，含后续演变订正）
 
@@ -57,4 +57,4 @@ M3.x 与 roadmap 阶段号映射（两套编号并行，此处显式对上）：
 
 - [ADR 0000](./0000-migrate-from-dify-to-langgraph.md) · 迁移动机 / [ADR 0001](./0001-rewrite-app-with-harness-first.md) D8-D9 · 原阶段定义（被本 ADR 修订）
 - [ADR 0020](./0020-unify-all-llm-on-deepseek-v4-pro.md) · baseline 作废与重建
-- `docs/m3-m4-roadmap.md` · 分阶段任务图 / `docs/m2-real-llm-final-report.md` · M2 收尾报告
+- `docs/m3-m4-roadmap.md` · 分阶段任务图 / `docs/archive/m2/m2-real-llm-final-report.md` · M2 收尾报告

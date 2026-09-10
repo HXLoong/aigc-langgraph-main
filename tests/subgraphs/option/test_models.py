@@ -1,4 +1,4 @@
-"""OptionIntentOutput Pydantic 模型测试。"""
+"""OptionIntentOutput Pydantic 模型测试（Dify DSL v2：7 基础意图 + unknown_intent）。"""
 from __future__ import annotations
 
 import pytest
@@ -6,9 +6,9 @@ from pydantic import ValidationError
 
 from app.subgraphs.option.models import OptionIntentOutput
 
-
 # ============================================================
-# 10 个合法 type 值（ADR 0011 二次修订，不含 close_order_*）
+# 8 个合法 type 值（Dify DSL v2：7 基础意图 + unknown_intent，不含 close_order_*，
+# 不再含 request_modify_order / confirm_modify_order）
 # ============================================================
 
 
@@ -17,19 +17,27 @@ from app.subgraphs.option.models import OptionIntentOutput
     [
         "new_inquiry",
         "place_order_from_quote",
-        "request_modify_order",
-        "request_cancel_order",
-        "cancel_order_request",
         "confirm_order",
+        "cancel_order_request",
+        "request_cancel_order",
         "confirm_cancel_order",
-        "confirm_modify_order",
         "query_order_status",
         "unknown_intent",
     ],
 )
-def test_all_ten_intent_types_accepted(intent_type: str) -> None:
+def test_all_eight_intent_types_accepted(intent_type: str) -> None:
     obj = OptionIntentOutput(type=intent_type)  # type: ignore[arg-type]
     assert obj.type == intent_type
+
+
+@pytest.mark.parametrize(
+    "removed_intent",
+    ["request_modify_order", "confirm_modify_order"],
+)
+def test_removed_modify_intents_rejected(removed_intent: str) -> None:
+    """Dify DSL v2：期权无独立改单流程，这两个旧枚举值必须被拒绝。"""
+    with pytest.raises(ValidationError):
+        OptionIntentOutput(type=removed_intent)  # type: ignore[arg-type]
 
 
 @pytest.mark.parametrize(

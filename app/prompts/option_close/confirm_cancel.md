@@ -1,7 +1,7 @@
 # 确认撤单参数提取
 
 - **node_id**: `1772617956918`
-- **model**: `internal-qwen3-30b-a3b-think`
+- **model**: `external-deepseek-v4-flash-non-thinking`
 
 ## [system]
 

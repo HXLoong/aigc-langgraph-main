@@ -12,7 +12,6 @@ from scripts.canary_status import (
     _parse_canary_counters,
 )
 
-
 # ============================================================
 # _parse_canary_counters
 # ============================================================

@@ -54,7 +54,7 @@
 1. 改 `app/observability/alerts.py:THRESHOLDS`
 2. 改本 ADR §1/§2
 3. 改 `docs/on-call-runbook.md` §3
-4. 改 `docs/m3-f4.0-oncall-drill.md` Scene 2（文本叙述，人工修订，不在自动 lint 范围）
+4. 改 `docs/archive/m3/m3-f4.0-oncall-drill.md` Scene 2（文本叙述，人工修订，不在自动 lint 范围）
 5. **（新增）runbook §3 P0 行的 `non_canary_traffic` 条目已入 lint 校验范围**（#157 豁免解除），随第 3 步一并同步
 
 CI lint ✅：`scripts/check_alert_threshold_consistency.py`（PR #106，25 测试 + CI step，本次核查实跑"三处阈值全部对齐"）。
@@ -79,4 +79,4 @@ CI lint ✅：`scripts/check_alert_threshold_consistency.py`（PR #106，25 测�
 ## 关联
 
 - [ADR 0017](./0017-m4-canary-quantitative-exit-gate.md) · 退出门（互补）/ [ADR 0020](./0020-unify-all-llm-on-deepseek-v4-pro.md) · LLM 依赖与 baseline
-- `app/observability/alerts.py` · 阈值代码 / `docs/on-call-runbook.md` §3-§5 / `docs/m3-f4.0-oncall-drill.md` / `scripts/rollback_canary.sh`
+- `app/observability/alerts.py` · 阈值代码 / `docs/on-call-runbook.md` §3-§5 / `docs/archive/m3/m3-f4.0-oncall-drill.md` / `scripts/rollback_canary.sh`
