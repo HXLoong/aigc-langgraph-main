@@ -105,10 +105,15 @@ docs/testing/test-reports/YYYYMMDD/
 ## 本地任务页面
 
 ```bash
+# 仅允许本机访问
 python scripts/ai_test_langgraph/automation_runner_server.py
+
+# 监听所有网络接口，并允许回归任务访问隔离环境中的非 dev 地址
+python scripts/ai_test_langgraph/automation_runner_server.py --no-open --allow-non-dev --host 0.0.0.0 --port 9000
 ```
 
-默认打开 `http://127.0.0.1:9001`。页面提供两种测试方式：
+默认打开 `http://127.0.0.1:9001`。监听 `0.0.0.0` 时，请使用服务器的实际 IP 和端口访问，
+并只在可信网络中开放对应防火墙端口。页面提供两种测试方式：
 
 - “自由对话”可直接发送自定义指令，首轮自动建立 `conversation_id`，后续消息沿用
   同一会话；支持引用 LangGraph 回复、模拟 `@机器人`，并展示完整 `outputs`。
@@ -119,8 +124,9 @@ python scripts/ai_test_langgraph/automation_runner_server.py
 多轮请求作为其子链路；自由对话仍按每次请求生成独立 Trace。
 
 自由对话的连接和身份配置在会话建立后锁定，点击“新对话”即可重新配置。页面不会
-在服务端保存对话记录。使用 `--no-open` 可禁止自动打开浏览器，使用 `--port` 可修改
-端口。
+在服务端保存对话记录。使用 `--no-open` 可禁止自动打开浏览器，使用 `--host` 可修改
+监听地址，使用 `--port` 可修改端口。仅在确认目标隔离测试环境安全时使用
+`--allow-non-dev`，它会让回归队列访问非 localhost/已知 dev 地址。
 
 ## 企微报告
 
