@@ -1581,7 +1581,8 @@
     }
 
     .log-block pre,
-    #task-raw-log {
+    #task-raw-log,
+    .message-outputs {
       max-height: clamp(180px, 38dvh, 360px);
       margin: 0;
       overflow: auto;
@@ -1685,6 +1686,14 @@
     .structured-body { padding: 12px; }
 
     .structured-body .log-block pre { max-height: clamp(220px, 45dvh, 430px); }
+
+    .message-outputs {
+      width: 100%;
+      max-width: 100%;
+      overflow-x: auto;
+      white-space: pre;
+      overflow-wrap: normal;
+    }
 
     .structured-error {
       margin: 0 15px 15px;

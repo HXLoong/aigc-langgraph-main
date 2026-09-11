@@ -52,6 +52,15 @@ class AutomationRunnerHtmlContractTest(unittest.TestCase):
         self.assertIn("const pageScroll = {left: window.scrollX, top: window.scrollY};", body)
         self.assertIn("window.scrollTo(pageScroll.left, pageScroll.top);", body)
 
+    def test_free_chat_outputs_scroll_horizontally(self) -> None:
+        styles = style_block(LANGGRAPH_HTML.read_text(encoding="utf-8"))
+
+        self.assertRegex(
+            styles,
+            r"\.message-outputs\s*\{[^}]*width: 100%;[^}]*overflow-x: auto;"
+            r"[^}]*white-space: pre;[^}]*overflow-wrap: normal;",
+        )
+
 
 if __name__ == "__main__":
     unittest.main()
