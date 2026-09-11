@@ -169,8 +169,8 @@ async def swap_place_order_submit(state: AgentState) -> dict[str, Any]:
     汇总 swap_place_order（+ 可选 swap_select_counterparty / swap_select_ticker
     覆盖后）的 state['place_params']，调真后端 POST
     /admin-api/swap-order/operate，并把后端返回的真实订单号回写到
-    orderList[i].orderId（供 render 渲染卡显示真单号，下一轮 confirm 才能从
-    quote 抠到）。
+    orderList[i].orderId，供结构化 state、trace 和输出观测使用。用户可见回复始终
+    原样透传 api_result，不使用回写后的参数重新渲染。
     """
     place_params = state.get("place_params") or {}
     action = place_params.get("expected_action", "")

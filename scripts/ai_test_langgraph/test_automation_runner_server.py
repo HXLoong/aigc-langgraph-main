@@ -53,6 +53,46 @@ class TerminateProcessTests(unittest.TestCase):
         process.terminate.assert_called_once_with()
 
 
+class RunnerCliTests(unittest.TestCase):
+    def test_host_argument_controls_server_bind_address(self) -> None:
+        with (
+            patch.object(runner, "ThreadingHTTPServer") as server_class,
+            patch.object(runner, "make_handler") as make_handler,
+            patch.object(runner.webbrowser, "open") as open_browser,
+        ):
+            result = runner.main(
+                [
+                    "--no-open",
+                    "--allow-non-dev",
+                    "--host",
+                    "0.0.0.0",
+                    "--port",
+                    "9000",
+                ]
+            )
+
+        self.assertEqual(result, 0)
+        self.assertEqual(server_class.call_args.args[0], ("0.0.0.0", 9000))
+        self.assertTrue(make_handler.call_args.kwargs["allow_non_dev"])
+        open_browser.assert_not_called()
+
+    def test_allow_non_dev_is_forwarded_to_regression_command(self) -> None:
+        job = runner.build_job(
+            {
+                "dataset": "tests/fixtures/categories/golden_option_close_case_multiturn.jsonl",
+                "run_langgraph": True,
+                "push_wecom": False,
+                "user_id": "test-user",
+                "room_id": "10821094351495088",
+                "option_counterparties": "[]",
+                "swap_counterparties": "[]",
+            },
+            allow_non_dev=True,
+        )
+
+        self.assertIn("--allow-non-dev", job.commands[0][1])
+
+
 class RunnerConfigTests(unittest.TestCase):
     def test_discovers_langgraph_fixture_datasets(self) -> None:
         datasets = {item["path"]: item["cases"] for item in runner.discover_datasets()}
