@@ -184,6 +184,19 @@ async def test_single_candidate_does_not_fill_unrelated_order(monkeypatch, stock
 
 @pytest.mark.asyncio
 class TestOptionExtractInquiryNode:
+    async def test_invalid_ticker_is_a_handled_business_reply(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """标的未命中是可预期业务结果，不应污染工程错误状态。"""
+        _patch_resolver(monkeypatch, [])
+
+        result = await option_extract_inquiry(
+            {"raw_text": "600519.SH，欧式看涨,1M，80%"}
+        )
+
+        assert result.get("error") is None
+        assert "不在标的池内" in result["reply_text"]
+
     async def test_inquiry_with_known_ticker(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
