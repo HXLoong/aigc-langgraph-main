@@ -33,7 +33,9 @@ Dify 旧主干把期权意图分类和完整参数抽取塞进一个 2870 行提
 
 DSL v2 删除了独立 `request_modify_order` / `confirm_modify_order`：已有订单的参数修改统一归 `place_order_from_quote`。这取代了旧版“9 个业务意图合并到 5 个 extract”的实现形态，但不改变“两阶段拆分”的核心决策。
 
-2026-09-08 合并会话续接修复：保留 7 个提取节点，询价尚未完成时补期限仍归 `new_inquiry`；不恢复依据引用卡片关键词强制改为下单的后处理。`OptionOrderItem` 的可选 `orderId` 与 `tenor` 同时用于询价和下单分支，仅携带原单号及本轮新增参数，缺省参数由 Java 合并。旧 `extract_place_or_modify` 的补参约束迁入 `extract_place`，处置登记见 [ADR 0001 D5](./0001-rewrite-app-with-harness-first.md)。
+2026-09-08 合并会话续接修复：保留 7 个提取节点，询价尚未完成时补期限仍归 `new_inquiry`；不恢复依据引用卡片关键词强制改为下单的后处理。`OptionOrderItem` 的可选 `orderId` 与 `tenor` 同时用于询价和下单分支，仅携带原单号及本轮新增参数，缺省参数由 Java 合并。旧 `extract_place_or_modify` 的补参约束迁入 `extract_place`。
+
+2026-09-11 按用户明确要求，`option/intent.md`、`option/extract_inquiry.md`、`option/extract_place.md` 的 system/user 提示词重新完整同步为 `dify/yaml/场外交易-test.yml` 对应节点原文；上述 2026-09-08 本地提示词增补不再单独保留，当前分类与提取规则以该 YAML 为准。两阶段和 1+7 节点结构不变，处置登记见 [ADR 0001 D5](./0001-rewrite-app-with-harness-first.md)。
 
 ## 历史偏离与裁决
 

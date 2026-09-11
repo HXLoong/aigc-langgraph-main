@@ -5,12 +5,46 @@
 """
 from __future__ import annotations
 
+from functools import lru_cache
 from pathlib import Path
 
 from app.prompts import clear_cache, load_prompt
-from scripts.export_dify_prompts import save_prompt_as_md
+from scripts.export_dify_prompts import extract_prompts_from_yaml, save_prompt_as_md
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
+DIFY_WORKFLOW = PROJECT_ROOT / "dify" / "yaml" / "场外交易-test.yml"
+SYNCED_PROMPTS = (
+    ("1755073106378", "option", "intent"),
+    ("1779330004958", "option", "extract_inquiry"),
+    ("17793301871440", "option", "extract_place"),
+    ("1776159951508", "swap", "intent"),
+    ("1776160580437", "swap", "place_order"),
+    ("1780652808839", "swap", "select_counterparty"),
+    ("1780652892832", "swap", "select_ticker"),
+)
+
+
+@lru_cache(maxsize=1)
+def _dify_prompt_templates() -> dict[str, dict[str, str]]:
+    return {
+        str(prompt["node_id"]): {
+            message["role"]: message["text"].strip()
+            for message in prompt["messages"]
+        }
+        for prompt in extract_prompts_from_yaml(DIFY_WORKFLOW)
+    }
+
+
+def test_synced_prompts_match_dify_workflow() -> None:
+    templates = _dify_prompt_templates()
+
+    for node_id, category, name in SYNCED_PROMPTS:
+        expected = templates[node_id]
+        clear_cache()
+        prompt = load_prompt(category, name)
+
+        assert prompt.system == expected.get("system", ""), name
+        assert prompt.user_template == expected.get("user", ""), name
 
 
 class TestJudgePromptExtracted:
