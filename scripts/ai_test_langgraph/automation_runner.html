@@ -2766,6 +2766,7 @@
     }
 
     function renderQueue(payload) {
+      const pageScroll = {left: window.scrollX, top: window.scrollY};
       const scrollPositions = captureCaseScrollPositions();
       queueState = payload;
       queueElement.replaceChildren();
@@ -2790,6 +2791,7 @@
       $("summary-passed").textContent = String(jobs.reduce((sum, job) => sum + Number(job.progress?.passed || 0), 0));
       $("summary-failed").textContent = String(jobs.reduce((sum, job) => sum + Number(job.progress?.failed || 0), 0));
       $("queue-updated").textContent = `更新于 ${new Date().toLocaleTimeString("zh-CN", {hour12: false})}`;
+      window.scrollTo(pageScroll.left, pageScroll.top);
     }
 
     async function refreshQueue() {

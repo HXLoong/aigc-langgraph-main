@@ -39,6 +39,19 @@ class AutomationRunnerHtmlContractTest(unittest.TestCase):
         ):
             self.assertIn(marker, langgraph)
 
+    def test_queue_refresh_preserves_page_scroll_position(self) -> None:
+        langgraph = LANGGRAPH_HTML.read_text(encoding="utf-8")
+
+        render_queue = re.search(
+            r"function renderQueue\(payload\) \{(?P<body>.*?)\n    \}",
+            langgraph,
+            re.DOTALL,
+        )
+        self.assertIsNotNone(render_queue)
+        body = render_queue.group("body")
+        self.assertIn("const pageScroll = {left: window.scrollX, top: window.scrollY};", body)
+        self.assertIn("window.scrollTo(pageScroll.left, pageScroll.top);", body)
+
 
 if __name__ == "__main__":
     unittest.main()
