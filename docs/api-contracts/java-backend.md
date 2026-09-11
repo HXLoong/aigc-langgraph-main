@@ -225,6 +225,11 @@ class SwapOrderOpenApiSaveReqVO:
 
 > **重要差异**：互换的"下单 vs 改单"靠 `orderList` 内容区分（含 `orderId` 即改单），不靠 `type` 字段。LangGraph 子图设计要照此处理。
 
+- **出参**：`CommonResult<String>`。`code == 0` 时以 `data` 作为最终回复；
+  `code != 0` 时以 `msg` 作为最终回复。Java 返回的互换卡片或拒绝消息原样写入
+  `answer` 和 `data.outputs.reply_text`，`render` 不根据本地结构化参数重建、补写或
+  改写业务内容。后端结果为空时只返回系统失败提示，不生成本地成功回执。
+
 - **`orderList` 元素** `SwapOrderOpenApiBaseSaveReqVO` 字段：
   - `placeOrderWindCode: str`
   - `placeOrderTransactionType: GoatsTransactionType`（A_SHARE / HK_STOCK / US_STOCK / ...）
