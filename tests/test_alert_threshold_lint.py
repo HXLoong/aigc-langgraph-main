@@ -11,6 +11,7 @@
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -195,7 +196,8 @@ def test_compare_ignores_alert_only_in_one_source() -> None:
 def _run_cli(*args: str) -> subprocess.CompletedProcess:
     return subprocess.run(
         [sys.executable, str(SCRIPT), *args],
-        capture_output=True, text=True, timeout=15,
+        capture_output=True, text=True, encoding="utf-8", timeout=15,
+        env={**os.environ, "PYTHONIOENCODING": "utf-8"},
     )
 
 
