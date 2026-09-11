@@ -38,6 +38,7 @@ from langchain_core.tools import tool
 
 from app.config import get_settings
 from app.llm.clients import get_qwen_standard
+from app.subgraphs.ticker.context import mask_order_context
 from app.tools.ticker_client import TickerClientHttpx
 
 logger = logging.getLogger(__name__)
@@ -121,7 +122,11 @@ def _extract_embedded_codes(token: str) -> list[str]:
 
 
 @tool
-def tokenize(raw_text: Annotated[str, "用户原话"]) -> list[str]:
+def tokenize(
+    raw_text: Annotated[str, "用户原话"],
+    filter_order_context: bool = False,
+    counterparty_shortnames: list[str] | None = None,
+) -> list[str]:
     """把用户原话拆分为标的关键词候选 list（去重保持顺序）。
 
     规则（ADR 0008 b：保守提取，不做证券识别）：
@@ -130,6 +135,9 @@ def tokenize(raw_text: Annotated[str, "用户原话"]) -> list[str]:
     3. 4-6 位独立数字识别为代码 keyword
     4. 名称中嵌入 4-6 位数字 → 拆出数字 + 剩余文本
     5. 不调 LLM、不映射名称↔代码、不脑补完整信息
+
+    filter_order_context 默认关闭；启用时先按字符位置遮蔽订单值及
+    counterparty_shortnames 中完整匹配的对手片段，不改调用方的原始消息。
 
     例：
     >>> tokenize("买 02513智谱 1000 股")
@@ -141,6 +149,9 @@ def tokenize(raw_text: Annotated[str, "用户原话"]) -> list[str]:
     """
     if not raw_text or not raw_text.strip():
         return []
+
+    if filter_order_context:
+        raw_text = mask_order_context(raw_text, counterparty_shortnames or [])
 
     raw_tokens = [t for t in _DELIM_RE.split(raw_text) if t]
 

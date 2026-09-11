@@ -4,8 +4,9 @@
 1. ticker_hitl_candidates → 消歧卡片
 2. tickers==[] + place_params → 0 命中提示
 3. error → 通用兜底
-4. 正常路径 → 不写 reply_text
+4. 互换请求缺少后端结果 → 明确失败提示
 """
+
 from __future__ import annotations
 
 import pytest
@@ -117,12 +118,12 @@ async def test_error_state_produces_fallback_reply() -> None:
 
 
 # ============================================================
-# 4. 正常路径 → 不干预
+# 4. 互换请求缺少后端结果 → 明确失败提示
 # ============================================================
 
 
 @pytest.mark.asyncio
-async def test_normal_path_no_reply_text() -> None:
+async def test_swap_without_backend_result_reports_failure() -> None:
     from app.graph.state import TickerCandidate
 
     state = _state(
@@ -132,7 +133,9 @@ async def test_normal_path_no_reply_text() -> None:
         place_params={"expected_action": "place", "orderList": []},
     )
     result = await render(state)
-    assert not result.get("reply_text")
+    assert result["reply_text"] == (
+        "互换服务未返回有效结果，本次未生成业务回执，请稍后重试或联系交易员。"
+    )
 
 
 # ============================================================

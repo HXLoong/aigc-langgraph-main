@@ -8,7 +8,6 @@ import pytest
 from app.subgraphs.swap import backend as backend_mod
 from app.subgraphs.swap.backend import (
     _message_id,
-    _with_resolved_ticker,
     call_swap_backend,
 )
 from app.tools.exceptions import (
@@ -33,38 +32,6 @@ def test_message_id_digit_string() -> None:
 
 def test_message_id_no_digits_returns_zero() -> None:
     assert _message_id("no-digits-here") == 0
-
-
-# ============================================================
-# _with_resolved_ticker
-# ============================================================
-
-
-def test_with_resolved_ticker_writes_wind_code() -> None:
-    ticker = MagicMock()
-    ticker.wind_code = "600519.SH"
-    order: dict = {}
-    result = _with_resolved_ticker(order, [ticker], 0)
-    assert result["placeOrderWindCode"] == "600519.SH"
-
-
-def test_with_resolved_ticker_out_of_range_noop() -> None:
-    order: dict = {"existing": 1}
-    result = _with_resolved_ticker(order, [], 0)
-    assert result == {"existing": 1}
-
-
-def test_with_resolved_ticker_dict_ticker() -> None:
-    order: dict = {}
-    result = _with_resolved_ticker(order, [{"windCode": "00700.HK"}], 0)
-    assert result["placeOrderWindCode"] == "00700.HK"
-
-
-def test_with_resolved_ticker_no_wind_code_noop() -> None:
-    ticker = MagicMock(spec=[])  # 没 windCode 属性
-    order: dict = {"existing": 1}
-    result = _with_resolved_ticker(order, [ticker], 0)
-    assert result == {"existing": 1}
 
 
 # ============================================================
