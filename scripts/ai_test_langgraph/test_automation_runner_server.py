@@ -79,7 +79,7 @@ class RunnerCliTests(unittest.TestCase):
     def test_allow_non_dev_is_forwarded_to_regression_command(self) -> None:
         job = runner.build_job(
             {
-                "dataset": "tests/fixtures/categories/golden_option_close_case_multiturn.jsonl",
+                "dataset": "tests/fixtures/categories/golden_option_close_case.jsonl",
                 "run_langgraph": True,
                 "push_wecom": False,
                 "user_id": "test-user",
@@ -94,6 +94,15 @@ class RunnerCliTests(unittest.TestCase):
 
 
 class RunnerConfigTests(unittest.TestCase):
+    def test_default_counterparties_match_dify_workbench(self) -> None:
+        with patch.dict(runner.os.environ, {}, clear=True):
+            config = runner.build_public_config({})
+
+        option_ids = [item["ctptyId"] for item in json.loads(config["option_counterparties"])]
+        swap_ids = [item["ctptyId"] for item in json.loads(config["swap_counterparties"])]
+        self.assertEqual(option_ids, [10049, 11125, 15576])
+        self.assertEqual(swap_ids, [10049, 11125, 15576, 23971, 16502])
+
     def test_discovers_langgraph_fixture_datasets(self) -> None:
         datasets = {item["path"]: item["cases"] for item in runner.discover_datasets()}
 

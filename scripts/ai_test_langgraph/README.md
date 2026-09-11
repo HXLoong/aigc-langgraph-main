@@ -37,34 +37,53 @@ ENVIRONMENT=development
 
 可选配置为 `LANGGRAPH_BOT_NAME`、`LANGGRAPH_EVAL_GUID`、
 `LANGGRAPH_OPTION_COUNTERPARTIES` 和 `LANGGRAPH_SWAP_COUNTERPARTIES`。后两个值必须
-是 JSON 数组；未配置时沿用 Dify 回归工具的开发环境默认候选。为兼容已有 `.env`，
-对应的 `DIFY_*` 名称仍可作为后备值读取。
+是 JSON 数组；未配置时沿用 Dify 回归工具的开发环境默认候选（期权 3 个、互换 5 个）。
+为兼容已有 `.env`，对应的 `DIFY_*` 名称仍可作为后备值读取。
 
-## 支持的用例编写格式
+## 用例编写格式
 
-用例文件必须是 UTF-8 编码的 JSONL：一行一个完整 JSON 对象，不能把同一个对象拆成
-多行。最常用的是当前黄金集的 `id + conversation` 格式：
+用例文件必须是 UTF-8 编码的 JSONL：一行一个完整 JSON 对象，不能把同一个对象拆成多行。
+
+### 常用格式：分类回归用例
+
+```json
+{"id":"case-030","name":"case-030","caseNo":"case-030","category":"option_close/place","type":"positive","source":"json/golden_case_raw/期权平仓-查持仓后平仓","scene":"第 1 轮 - 查询可平持仓","send_text":"我想平仓","at_bot":true,"expected":{"product_type":"option_close","intent":"close_order_query"},"response_contains":["序号","单号","合约编号"],"response_not_contains":["互换订单"],"sub_scenes":[{"scene":"第 2 轮 - 选择第三笔限价全平","send_text":"第三笔，限价10，全平","at_bot":false,"quote_previous":true,"expected":{"product_type":"option_close","intent":"close_order_request"},"response_contains":["场外期权平仓","限价","10","确认平仓"],"response_not_contains":["互换订单"]}]}
+```
+
+- `name`、`send_text`：必填，分别表示用例名称和首轮输入。
+- `id`、`caseNo`：用于数据追溯和编号筛选，分类数据集通常与 `name` 保持一致。
+- `category`、`type`、`source`：用于分类和来源追溯。
+- `scene`、`at_bot`：描述当前轮次以及是否模拟 `@机器人`；`at_bot` 默认首轮为
+  `true`、后续轮次为 `false`。
+- `expected`：支持断言 `product_type`、`intent`、`winners`（或 `winner`）及
+  `needs_hitl`。
+- `response_contains`、`response_not_contains`：分别断言回复必须包含和不得包含的文本。
+- `sub_scenes`：按数组顺序执行后续轮次，每轮可独立配置上述字段；
+  `quote_previous: true` 引用紧邻上一轮回复，`false` 不引用，未填写时兼容为引用首轮
+  回复。
+
+任一轮请求或断言失败后，该用例停止执行剩余轮次；不同顶层 JSONL 用例之间不会共享
+`conversation_id` 或引用内容。
+
+### 支持格式：黄金集 conversation 用例
 
 ```json
 {"id":"swap-confirm-001","category":"swap/confirm","expected":{"product_type":"swap","intent":"place_order_request"},"conversation":[{"raw_content":"000001 买入5000股 限价18.12","quote_desc":""},{"raw_content":"确认下单","quote_desc":"引用上一轮订单卡片"}]}
 ```
 
-- `id`：必填且在文件内唯一，同时作为用例名称和 `caseNo`。
+- `id`：必填且在文件内唯一，加载后同时作为 `name` 和 `caseNo`。
 - `conversation`：按数组顺序执行全部 `raw_content`，所有轮次共用一个
   `conversation_id`。
-- `quote_desc`：内容只作为人工说明和引用开关，不会发送给 LangGraph。后续轮次中
-  只要该值非空，脚本就自动把上一轮 LangGraph 的真实回复填入本轮
-  `quote_content`；空值表示不引用。
-- `expected`：确定性断言支持 `product_type`、`intent`、`winners`（或
-  `winner`）及 `needs_hitl`；`output` 仅作为黄金预期说明，当前工作台不判断其语义。
-- `category`、`type`、`source`：用于分类、筛选和追溯，不参与断言。
+- `quote_desc`：只作为人工说明和引用开关，不会发送给 LangGraph；后续轮次中该值
+  非空时，脚本自动引用上一轮的实际回复。
+- 顶层 `expected` 只用于首轮断言；需要逐轮断言时应使用上面的常用格式。
+- `expected.output` 仅作为黄金预期说明，当前工作台不判断其语义。
 
-任一轮请求或断言失败后，该用例停止执行剩余轮次；不同顶层 JSONL 用例之间不会共享
-`conversation_id` 或引用内容。
+### 支持格式：Ticker 单轮用例
 
-此外仍兼容 Ticker 的 `id + raw_content` 单轮格式，以及历史
-`name + send_text + sub_scenes` 回归格式；后者可为每轮配置 `expected`、
-`response_contains` 和 `response_not_contains` 等独立断言。
+```json
+{"id":"tk001","category":"ticker/complete_code","raw_content":"00700.HK","expected":{"winner":"00700.HK","needs_hitl":false}}
+```
 
 ## 命令行回归
 

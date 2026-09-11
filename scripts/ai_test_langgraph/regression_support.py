@@ -12,8 +12,41 @@ from typing import Any
 
 DEFAULT_BOT_NAME = "A股场外交易助手"
 DEFAULT_GUID = ""
-DEFAULT_OPTION_COUNTERPARTIES: list[dict[str, Any]] = []
-DEFAULT_SWAP_COUNTERPARTIES: list[dict[str, Any]] = []
+DEFAULT_OPTION_COUNTERPARTIES: list[dict[str, Any]] = [
+    {
+        "ctptyId": 10049,
+        "shortName": "临沂阿凡提",
+        "longName": "上海猎鲸志投资管理有限公司",
+        "sort": "A",
+    },
+    {
+        "ctptyId": 11125,
+        "shortName": "11125测试短名（张天琪专用）",
+        "longName": "吕测试企业-Ukey",
+        "sort": "B",
+    },
+    {
+        "ctptyId": 15576,
+        "shortName": "测试111",
+        "longName": "生命二号zk22",
+        "sort": "C",
+    },
+]
+DEFAULT_SWAP_COUNTERPARTIES: list[dict[str, Any]] = [
+    *DEFAULT_OPTION_COUNTERPARTIES,
+    {
+        "ctptyId": 23971,
+        "shortName": "聚鸣价值精选",
+        "longName": "聚鸣价值精选私募证券投资基金",
+        "sort": "D",
+    },
+    {
+        "ctptyId": 16502,
+        "shortName": "23",
+        "longName": "323",
+        "sort": "E",
+    },
+]
 
 
 class RunnerError(RuntimeError):
