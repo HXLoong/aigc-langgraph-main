@@ -30,6 +30,7 @@ class AutomationRunnerHtmlContractTest(unittest.TestCase):
             'id="task-queue"',
             'id="case-log-dialog"',
             'turn.outputs?.trace_url',
+            'result.trace_url',
             '查看 LangFuse Trace',
             'data-action="pause"',
             'makeButton("恢复", "resume"',
@@ -37,6 +38,28 @@ class AutomationRunnerHtmlContractTest(unittest.TestCase):
             'makeButton("删除记录", "delete"',
         ):
             self.assertIn(marker, langgraph)
+
+    def test_queue_refresh_preserves_page_scroll_position(self) -> None:
+        langgraph = LANGGRAPH_HTML.read_text(encoding="utf-8")
+
+        render_queue = re.search(
+            r"function renderQueue\(payload\) \{(?P<body>.*?)\n    \}",
+            langgraph,
+            re.DOTALL,
+        )
+        self.assertIsNotNone(render_queue)
+        body = render_queue.group("body")
+        self.assertIn("const pageScroll = {left: window.scrollX, top: window.scrollY};", body)
+        self.assertIn("window.scrollTo(pageScroll.left, pageScroll.top);", body)
+
+    def test_free_chat_outputs_scroll_horizontally(self) -> None:
+        styles = style_block(LANGGRAPH_HTML.read_text(encoding="utf-8"))
+
+        self.assertRegex(
+            styles,
+            r"\.message-outputs\s*\{[^}]*width: 100%;[^}]*overflow-x: auto;"
+            r"[^}]*white-space: pre;[^}]*overflow-wrap: normal;",
+        )
 
 
 if __name__ == "__main__":

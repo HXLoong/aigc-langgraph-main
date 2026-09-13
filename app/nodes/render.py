@@ -152,7 +152,7 @@ async def render(state: AgentState) -> dict[str, Any]:
 
     err = state.get("error")
     err_type = None
-    if err is not None and not isinstance(err, str):
+    if err is not None:
         err_type = err.type if hasattr(err, "type") else (
             err.get("type") if isinstance(err, dict) else None
         )
@@ -188,9 +188,6 @@ async def render(state: AgentState) -> dict[str, Any]:
 
     # error → 区分不可达 vs 一般 cascade fail
     if err is not None:
-        # 节点直接写字符串 error（如 option_extract_inquiry invalid_ticker）→ 当 reply 用
-        if isinstance(err, str):
-            return {"reply_text": err}
         if err_type == "BackendUnreachableError":
             emit_fallback(reason="backend_unreachable")
             return {"reply_text": _UNREACHABLE_REPLY}

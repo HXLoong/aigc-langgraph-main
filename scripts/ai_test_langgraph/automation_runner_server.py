@@ -539,6 +539,7 @@ def build_job(
     ]
     for dataset_arg in dataset_args:
         command.extend(["--data", dataset_arg])
+    command.extend(["--task-name", task_name])
     command.append("--runner-events")
     if allow_non_dev:
         command.append("--allow-non-dev")

@@ -79,7 +79,7 @@ class RunnerCliTests(unittest.TestCase):
     def test_allow_non_dev_is_forwarded_to_regression_command(self) -> None:
         job = runner.build_job(
             {
-                "dataset": "tests/fixtures/categories/golden_option_close_case_multiturn.jsonl",
+                "dataset": "tests/fixtures/categories/golden_option_close_case.jsonl",
                 "run_langgraph": True,
                 "push_wecom": False,
                 "user_id": "test-user",
@@ -94,6 +94,15 @@ class RunnerCliTests(unittest.TestCase):
 
 
 class RunnerConfigTests(unittest.TestCase):
+    def test_default_counterparties_match_dify_workbench(self) -> None:
+        with patch.dict(runner.os.environ, {}, clear=True):
+            config = runner.build_public_config({})
+
+        option_ids = [item["ctptyId"] for item in json.loads(config["option_counterparties"])]
+        swap_ids = [item["ctptyId"] for item in json.loads(config["swap_counterparties"])]
+        self.assertEqual(option_ids, [10049, 11125, 15576])
+        self.assertEqual(swap_ids, [10049, 11125, 15576, 23971, 16502])
+
     def test_discovers_langgraph_fixture_datasets(self) -> None:
         datasets = {item["path"]: item["cases"] for item in runner.discover_datasets()}
 
@@ -109,6 +118,26 @@ class RunnerConfigTests(unittest.TestCase):
         multi_turn = next(case for case in cases if case.get("sub_scenes"))
 
         self.assertIn("quote_previous", multi_turn["sub_scenes"][0])
+        self.assertTrue(multi_turn["category"])
+        self.assertTrue(multi_turn["source"])
+
+    def test_job_passes_task_name_to_case_trace(self) -> None:
+        payload = {
+            "task_name": "互换回归",
+            "dataset": "tests/fixtures/golden.jsonl",
+            "run_langgraph": True,
+            "push_wecom": False,
+            "limit": 1,
+            "user_id": "1688857726396147",
+            "room_id": "10821094351495088",
+            "option_counterparties": "[]",
+            "swap_counterparties": "[]",
+        }
+
+        job = runner.build_job(payload, job_id="a" * 32)
+        command = job.commands[0][1]
+
+        self.assertEqual(command[command.index("--task-name") + 1], "互换回归")
 
     def test_test_identity_falls_back_to_langgraph_dotenv(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
