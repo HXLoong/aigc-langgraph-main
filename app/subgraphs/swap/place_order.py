@@ -40,6 +40,7 @@ from app.prompts import load_prompt, resolve_prompt_version
 from app.subgraphs.swap.backend import _with_resolved_ticker, call_swap_backend
 from app.subgraphs.swap.models import SwapPlaceOrderParams
 from app.subgraphs.swap.quote_hints import refine_quote_hints
+from app.subgraphs.ticker.context import TRAILING_PUNCTUATION, match_counterparty_shortnames
 from app.subgraphs.ticker.resolver import resolve_ticker_full
 
 
@@ -89,6 +90,59 @@ def _expected_action(params: SwapPlaceOrderParams) -> str:
     return "place"
 
 
+def _complete_counterparties(
+    state: AgentState, orders: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """新文本多单仅用唯一尾部 shortName 补空值，不修改 LLM 原始输出。"""
+    raw_text = state.get("raw_text") or ""
+    quote = (state.get("quote_content") or "").strip()
+    candidates = state.get("swap_counterparties") or []
+    matches = match_counterparty_shortnames(raw_text, [
+        c["shortName"] for c in candidates if isinstance(c.get("shortName"), str)
+    ])
+    matched_names = {match.shortname for match in matches}
+    trailing = [
+        match for match in matches
+        if TRAILING_PUNCTUATION.fullmatch(raw_text[match.end:])
+    ]
+    reason = "no_trailing_shortname"
+    if quote and quote.lower() != "null":
+        reason = "quoted_input"
+    elif any(order.get("orderId") for order in orders) or _ORDER_ID_PATTERN.search(raw_text):
+        reason = "existing_order"
+    elif state.get("swap_input_mode") not in (None, "text"):
+        reason = "not_text_input"
+    elif len(orders) < 2:
+        reason = "not_multiple_orders"
+    elif len(matched_names) > 1:
+        reason = "multiple_counterparties"
+    elif trailing:
+        # 同账户重复候选不构成歧义；无账户 ID 的多条记录不能证明属于同一账户。
+        accounts = {
+            ("id", str(c["ctptyId"])) if c.get("ctptyId") is not None else ("unknown", i)
+            for i, c in enumerate(candidates) if c.get("shortName") == trailing[0].shortname
+        }
+        reason = "unique_trailing_shortname" if len(accounts) == 1 else "ambiguous_accounts"
+
+    results = []
+    for index, order in enumerate(orders):
+        original = order.get("placeOrderShortname")
+        result = "skipped"
+        if original and original.strip():
+            result = "preserved"
+        elif reason == "unique_trailing_shortname":
+            order["placeOrderShortname"] = trailing[0].shortname
+            result = "filled"
+        results.append({
+            "order_index": index,
+            "original_shortname": original,
+            "resolved_shortname": order.get("placeOrderShortname"),
+            "result": result,
+            "reason": "existing_value" if result == "preserved" else reason,
+        })
+    return results
+
+
 @safe_node
 async def swap_place_order(state: AgentState) -> dict[str, Any]:
     """swap.place_order 节点（提取阶段，不调后端）。
@@ -122,15 +176,30 @@ async def swap_place_order(state: AgentState) -> dict[str, Any]:
 
     # 3. ticker resolver 识别标的（独立通道，含 HITL 信号；与 swap.select_ticker
     #    的候选标的切换互不冲突，resolver 先填，select_ticker 命中会再覆盖）
-    resolution = await resolve_ticker_full(raw_text)
+    resolution = await resolve_ticker_full(
+        raw_text,
+        filter_order_context=True,
+        counterparty_shortnames=[
+            c["shortName"] for c in state.get("swap_counterparties") or []
+            if isinstance(c.get("shortName"), str)
+        ],
+    )
     tickers = resolution.resolved
 
     action = _expected_action(params)
-    order_list = [item.model_dump() for item in params.order_list]
-    order_list = [
-        _with_resolved_ticker(dict(item), tickers, idx)
-        for idx, item in enumerate(order_list)
-    ]
+    order_list = []
+    ticker_bindings = []
+    for index, item in enumerate(params.order_list):
+        order, match_result = _with_resolved_ticker(item.model_dump(), tickers)
+        order_list.append(order)
+        ticker_bindings.append({
+            "order_index": index,
+            "original_wind_code": item.place_order_wind_code,
+            "resolved_wind_code": order.get("placeOrderWindCode"),
+            "result": match_result,
+        })
+
+    counterparty_completion = _complete_counterparties(state, order_list)
 
     decision = (
         f"action={action},"
@@ -150,6 +219,8 @@ async def swap_place_order(state: AgentState) -> dict[str, Any]:
                     "params": params.model_dump(),
                     "tickers_count": len(tickers),
                     "hitl_count": len(resolution.hitl_pending),
+                    "ticker_bindings": ticker_bindings,
+                    "counterparty_completion": counterparty_completion,
                 },
             )
         ],

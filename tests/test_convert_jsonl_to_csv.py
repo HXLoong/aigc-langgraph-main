@@ -231,44 +231,50 @@ def test_missing_and_empty_input_directories_report_failure(tmp_path: Path) -> N
 def test_real_categories_and_default_input_from_another_directory(tmp_path: Path) -> None:
     result = run_cli("--output-dir", tmp_path / "csv", cwd=tmp_path)
     assert result.returncode == 0, result.stderr
-    counts = {
-        "golden_option_close_case": 16,
-        "golden_option_inquiry_case": 4,
-        "golden_option_open_case": 18,
-        "golden_swap_place_order_case": 23,
-        "swap_prod_acceptance_data": 163,
-        "swap_prod_data": 123,
-        "swap_test_fuzzy_target_recog_data": 90,
-    }
-    all_rows = {}
-    case_count = 0
-    for name, expected_count in counts.items():
-        rows = read_rows(tmp_path / "csv" / f"{name}.csv")
-        all_rows[name] = rows
-        assert len(rows) == expected_count
+    sources = sorted(FIXTURES.glob("*.jsonl"))
+    assert sources
+    assert sorted(p.stem for p in (tmp_path / "csv").glob("*.csv")) == [p.stem for p in sources]
+    for source in sources:
+        rows = read_rows(tmp_path / "csv" / f"{source.stem}.csv")
         originals = [
             json.loads(line)
-            for line in (FIXTURES / f"{name}.jsonl")
-            .read_text(
-                encoding="utf-8-sig",
-            )
-            .splitlines()
+            for line in source.read_text(encoding="utf-8-sig").splitlines()
             if line.strip()
         ]
-        case_count += len(originals)
         expected_inputs = []
+        expected_ids = []
+        expected_numbers = []
+        expected_summaries = []
+        expected_steps = []
         for case in originals:
             if "conversation" in case:
-                expected_inputs.extend(t["raw_content"] for t in case["conversation"])
+                steps = case["conversation"]
+                expected_inputs.extend(t["raw_content"] for t in steps)
+                summary = case.get("expected")
             else:
-                expected_inputs.append(case["send_text"])
-                expected_inputs.extend(t["send_text"] for t in case.get("sub_scenes", []))
+                steps = [case, *case.get("sub_scenes", [])]
+                expected_inputs.extend(t["send_text"] for t in steps)
+                summary = None
+            expected_ids.extend([case.get("id", "")] * len(steps))
+            expected_numbers.extend(str(i) for i in range(1, len(steps) + 1))
+            expected_summaries.extend([summary] * len(steps))
+            expected_steps.extend(steps)
         assert [r["测试数据"] for r in rows] == expected_inputs
-    assert case_count == 403
-    assert sum(map(len, all_rows.values())) == 437
-    opened = [r for r in all_rows["golden_option_open_case"] if r["用例ID"] == "case-025"]
-    assert opened[2]["测试数据"] == "200万，交易对手选A"
-    closed = [r for r in all_rows["golden_option_close_case"] if r["用例ID"] == "case-030"]
-    assert len(closed) == 3
-    assert all("[第4轮]" in json.loads(r["用例级预期"])["output"] for r in closed)
-    assert all(r["步骤级预期"] == "" for r in closed)
+        assert [r["用例ID"] for r in rows] == expected_ids
+        assert [r["操作步骤序号"] for r in rows] == expected_numbers
+        assert [json.loads(r["用例级预期"]) if r["用例级预期"] else None for r in rows] == (
+            expected_summaries
+        )
+        for row, step in zip(rows, expected_steps, strict=True):
+            for key, column in (
+                ("expected", "步骤级预期"),
+                ("response_contains", "响应必须包含"),
+                ("response_contains_any", "响应包含任一"),
+                ("response_not_contains", "响应不得包含"),
+            ):
+                if key not in step:
+                    assert row[column] == ""
+                elif isinstance(step[key], str):
+                    assert row[column] == step[key]
+                else:
+                    assert json.loads(row[column]) == step[key]

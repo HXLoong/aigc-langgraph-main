@@ -15,9 +15,10 @@
 from __future__ import annotations
 
 import logging
+import re
 from typing import Any
 
-from app.graph.state import AgentState
+from app.graph.state import AgentState, TickerCandidate
 from app.subgraphs.swap.prewash import sanitize_order_list
 from app.tools.exceptions import EmptyBackendResultError, MissingBackendContextError
 from app.tools.swap_client import (
@@ -68,20 +69,54 @@ def _is_empty_backend_result(value: Any) -> bool:
 
 
 def _with_resolved_ticker(
-    order: dict[str, Any], tickers: list[Any], index: int
-) -> dict[str, Any]:
-    """把 ticker resolver 的 windCode 写回 orderList[i].placeOrderWindCode。
+    order: dict[str, Any], tickers: list[Any]
+) -> tuple[dict[str, Any], str]:
+    """按订单标的身份绑定唯一的已验证证券，无法确定时保留原值。"""
+    original_code = (order.get("placeOrderWindCode") or "").strip().upper()
+    if not original_code:
+        return order, "missing"
 
-    swap 用 placeOrderWindCode（与 option 的 stockCode 字段名不同）。
-    """
-    if index < len(tickers):
-        ticker = tickers[index]
-        wind_code = getattr(ticker, 'wind_code', None)
-        if wind_code is None and isinstance(ticker, dict):
-            wind_code = ticker.get("windCode")
-        if wind_code:
+    verified: list[dict[str, Any]] = []
+    for ticker in tickers:
+        if isinstance(ticker, TickerCandidate):
+            data = ticker.model_dump(by_alias=True)
+        elif isinstance(ticker, dict):
+            data = ticker
+        else:
+            continue
+        wind_code = data.get("windCode")
+        if (
+            data.get("from_goats") is not True
+            or not isinstance(wind_code, str)
+            or not wind_code.strip()
+        ):
+            continue
+        verified.append(data)
+        if wind_code.strip().upper() == original_code:
             order["placeOrderWindCode"] = wind_code
-    return order
+            return order, "matched_code"
+
+    # 已带后缀的代码不得再按其他证券的别名解释，交后端校验。
+    if re.fullmatch(r"[A-Z0-9][A-Z0-9._-]*\.[A-Z][A-Z0-9]*", original_code):
+        return order, "unmatched"
+
+    matches: dict[str, str] = {}
+    for data in verified:
+        wind_code = data["windCode"]
+        aliases = [
+            data.get("insShtDesc"), data.get("insLngDesc"),
+            wind_code.strip().rsplit(".", 1)[0],
+        ]
+        aliases.extend(data.get("sourceKeywords") or [])
+        if any(
+            isinstance(alias, str) and alias.strip().upper() == original_code
+            for alias in aliases
+        ):
+            matches[wind_code.strip().upper()] = wind_code
+    if len(matches) == 1:
+        order["placeOrderWindCode"] = next(iter(matches.values()))
+        return order, "matched_alias"
+    return order, "ambiguous" if matches else "unmatched"
 
 
 async def call_swap_backend(
