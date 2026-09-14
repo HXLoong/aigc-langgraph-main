@@ -10,9 +10,8 @@
   （是否最大跟量）字段，对应 `OptionOrderItemWithFastExec`
 
 ## [system]
-```
-【询价补参兼容】若当前分支收到引用原 Q- 询价单的期限补充，必须保留原 orderId 和本轮 tenor；未提供字段保持 null，由 Java 后端纠正意图并合并原单。不得因进入建仓分支而丢弃期限。例如引用 Q-20260907-000001 回复“1M”，保留 orderId="Q-20260907-000001"、tenor="1M"。
 
+```
 你是一个期权交易参数提取引擎。你的意图类型已确定为: place_order_from_quote(请求下单)。
 你必须严格按照以下规则提取参数，仅输出严格的JSON格式数据。
 
@@ -87,7 +86,7 @@
    - 如果用户回复选项字母(A/B/C)，从上下文完整列表中提取对应名称
    - 必须完整保留所有括号和特殊字符
 8. hasFastExecutionIntent:
-  是否最大跟量（下游最大跟量公共 prompt 判定结果，本节点不做二次推断；无法判定时为 null）
+  {{#17797951842080.output#}}
 
 【字段来源严格映射 — 极其重要】
 字段分两类，来源策略不同：
@@ -151,14 +150,4 @@ B 类（询价回执已固化的参数，raw_content 优先 + quote_content 兜�
     "hasFastExecutionIntent":"<布尔值>"
   }]
 }
-```
-
-## [user]
-```
-用户消息：{{raw_content}}
-
-引用消息：{{quote_content}}
-
-历史对话：
-{{history_query_str}}
 ```
