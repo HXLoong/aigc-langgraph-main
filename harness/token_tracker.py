@@ -3,7 +3,7 @@
 通过 LangChain BaseCallbackHandler 拦截每次 LLM 响应，把 usage_metadata
 累计到 TokenUsage（按模型分组），不侵入业务节点代码。
 
-集成点：harness/runner.py:run_case 注入 callback → RunResult.token_usage。
+集成点：以 callback 注入任意 graph；当前无生产消费方，保留供 harness 侧成本观测复用。
 
 为什么不用 app/observability/metrics.py:emit_llm_tokens：
   - emit_llm_tokens 是为生产 /metrics endpoint 设计（进程级 Counter）

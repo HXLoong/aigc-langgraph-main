@@ -7,7 +7,8 @@ from types import SimpleNamespace
 import anthropic
 import pytest
 
-from scripts.langfuse_eval import _run_graph_once, judge_by_deepseek
+from harness.golden import GoldenCase, TurnSpec
+from scripts.langfuse_eval import _LocalItem, _run_graph_once, judge_by_deepseek
 
 
 async def test_run_graph_once_uses_15_digit_numeric_message_id() -> None:
@@ -28,6 +29,23 @@ async def test_run_graph_once_uses_15_digit_numeric_message_id() -> None:
     message_id = captured_state["message_id"]
     assert isinstance(message_id, int)
     assert 100_000_000_000_000 <= message_id <= 999_999_999_999_999
+
+
+def test_local_item_uses_active_fixture_turns() -> None:
+    case = GoldenCase(
+        id="case-025",
+        category="option/place_from_quote",
+        turns=[
+            TurnSpec(send_text="询价", at_bot=True),
+            TurnSpec(send_text="市价下单", quote_previous=True),
+        ],
+        expected={"product_type": "option", "intent": "new_inquiry", "output": "judge"},
+        expected_output="judge",
+    )
+    item = _LocalItem(case)
+    assert [turn["send_text"] for turn in item.input["turns"]] == ["询价", "市价下单"]
+    assert item.input["turns"][1]["quote_previous"] is True
+    assert item.expected_output == "judge"
 
 
 def test_judge_does_not_return_json_parse_failure_after_truncation(

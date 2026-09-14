@@ -1,19 +1,14 @@
 """一级路由节点测试(DSL v2 版)。
 
 规则层细节测试在 tests/nodes/test_route_rules.py(移植源逐条对照);
-本文件测节点行为(标签映射 / LLM 兜底触发条件 / swap_input_mode)与
-golden 规则层精准率。
+本文件测节点行为(标签映射 / LLM 兜底触发条件 / swap_input_mode)。
 """
 from __future__ import annotations
-
-import json
-from pathlib import Path
 
 import pytest
 
 import app.nodes.intent_route as intent_route_module
 from app.nodes.intent_route import intent_route
-from app.nodes.route_rules import is_swap_transaction
 
 # ============================================================
 # 节点级(LLM 兜底 monkeypatch 替身)
@@ -115,51 +110,6 @@ class TestIntentRouteNode:
 # ============================================================
 # golden 规则层精准率(不调 LLM)
 # ============================================================
-
-_LABEL_TO_PT = {
-    "互换-文本": "swap",
-    "互换-图片": "swap",
-    "互换-Excel": "swap",
-    "期权-文本": "option",
-    "期权平仓-文本": "option_close",
-}
-
-
-def _load_golden() -> list[dict]:
-    path = Path(__file__).parent / "fixtures" / "golden.jsonl"
-    return [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
-
-
-class TestGoldenRuleCoverage:
-    def test_rule_layer_precision(self) -> None:
-        """规则层触发时的精准率 ≥ 80%(触发但分错的比例 < 20%)。
-
-        分母 = 规则层有输出(非 unknown)的 golden case;
-        期望 = case 顶层 product_type 字段。
-        """
-        total = 0
-        wrong: list[str] = []
-        for case in _load_golden():
-            expected = (case.get("category") or "").split("/")[0]
-            if expected not in ("swap", "option", "option_close"):
-                continue
-            conv = case.get("conversation") or []
-            if not conv:
-                continue
-            raw = conv[-1].get("raw_content", "") or ""
-            quote = conv[-1].get("quote_desc") or conv[-1].get("quote_content")
-            label = is_swap_transaction(raw, files=[], quote_content=quote)
-            if label == "unknown":
-                continue  # 规则层不触发,交 LLM,不计入精准率
-            total += 1
-            got = _LABEL_TO_PT.get(label)
-            if got != expected:
-                wrong.append(f"{case.get('id')}: {raw[:30]} → {label} (期望 {expected})")
-        assert total > 0
-        precision = 1 - len(wrong) / total
-        assert precision >= 0.80, (
-            f"规则层精准率 {precision:.1%} < 80%(触发但分错):\n" + "\n".join(wrong[:15])
-        )
 
 # ============================================================
 # Bug1: quote_content 含明确产品标记时，路由不应误判

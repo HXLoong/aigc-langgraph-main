@@ -1,101 +1,218 @@
-"""Golden case loader（ADR 0001 D7）。
-
-支持两种 schema：
-- golden.jsonl: 主 schema {id, category, raw_content, expected: {product_type, intent, ...}}
-- option_golden.jsonl: 业务 QA schema（含 conversation 数组）—— M2 阶段在 LangFuse Annotation Queue
-  做结构化标注后再用，M1 阶段不直接消费
-
-按 category 索引以支持子集运行（如 harness run --category swap/place_order）。
-"""
+"""Loader for the two active fixture dialects under tests/fixtures/categories."""
 from __future__ import annotations
 
 import json
 from collections import defaultdict
-from collections.abc import Iterable
+from collections.abc import Iterable, Sequence
 from pathlib import Path
-from typing import Any, Literal
+from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
 
-#: case 来源（grill-with-docs 2026-05-10 第 4 决策）
-#: - business_seed: 业务方手写种子（高质量基线，PASS 阈值 ≥ 90%）
-#: - llm_paraphrase: LLM 对抗式 paraphrase（C 来源，PASS 阈值 ≥ 80%）
-#: - production_log: 生产日志抽样（A 来源，M3 阶段累积）
-#: 注：aigc 主仓 excel-to-golden 导入的 case 带 "csv/<表名>/<行>" 溯源串，
-#: 不在上述三桶内——schema 放宽为任意 str，三桶字面量仅作阈值键与文档。
-CaseSource = Literal["business_seed", "llm_paraphrase", "production_log"]
 
-
-class ConversationTurn(BaseModel):
-    """单轮对话。"""
-
+class TurnSpec(BaseModel):
     model_config = ConfigDict(extra="allow")
 
-    raw_content: str = ""
-    quote_desc: str = ""
+    scene: str = ""
+    send_text: str
+    at_bot: bool = False
+    quote_previous: bool | None = None
+    expected: dict[str, Any] = Field(default_factory=dict)
+    response_contains: list[str] = Field(default_factory=list)
+    response_contains_any: list[str] = Field(default_factory=list)
+    response_not_contains: list[str] = Field(default_factory=list)
 
 
 class GoldenCase(BaseModel):
-    """主 golden schema（unified 格式）。"""
-
     model_config = ConfigDict(extra="allow")
 
     id: str
     category: str
+    type: str = ""
+    source: str = ""
+    name: str = ""
+    case_no: str = ""
+    scene: str = ""
+    turns: list[TurnSpec] = Field(default_factory=list)
     expected: dict[str, Any] = Field(default_factory=dict)
-    type: str = "正案例"
-    source: CaseSource | str = "business_seed"
-    conversation: list[ConversationTurn] = Field(default_factory=list)
-    # 兼容旧格式
-    raw_content: str = ""
-    quote_content: str | None = None
-    notes: str | None = None
+    expected_output: str = ""
+    source_path: str = ""
+    source_line: int = 0
 
 
-def load_golden(path: str | Path) -> list[GoldenCase]:
-    """加载 golden.jsonl（支持 unified 和旧两种格式）。"""
-    p = Path(path)
-    if not p.exists():
+def _assertion_lines(value: Any, *, origin: str, field_name: str) -> list[str]:
+    if value is None:
         return []
+    if isinstance(value, str):
+        return [line.strip() for line in value.splitlines() if line.strip()]
+    if isinstance(value, list) and all(isinstance(item, str) for item in value):
+        return [item.strip() for item in value if item.strip()]
+    raise ValueError(f"{origin}: {field_name} must be a string or list[str]")
+
+
+def _turn_from_object(
+    obj: dict[str, Any], *, origin: str, default_at_bot: bool
+) -> TurnSpec:
+    send_text = obj.get("send_text")
+    if not isinstance(send_text, str) or not send_text.strip():
+        raise ValueError(f"{origin}: send_text is required")
+    expected = obj.get("expected") or {}
+    if not isinstance(expected, dict):
+        raise ValueError(f"{origin}: expected must be an object")
+    return TurnSpec(
+        scene=str(obj.get("scene") or ""),
+        send_text=send_text,
+        at_bot=obj.get("at_bot", default_at_bot),
+        quote_previous=obj.get("quote_previous"),
+        expected=expected,
+        response_contains=_assertion_lines(
+            obj.get("response_contains"), origin=origin, field_name="response_contains"
+        ),
+        response_contains_any=_assertion_lines(
+            obj.get("response_contains_any"),
+            origin=origin,
+            field_name="response_contains_any",
+        ),
+        response_not_contains=_assertion_lines(
+            obj.get("response_not_contains"),
+            origin=origin,
+            field_name="response_not_contains",
+        ),
+    )
+
+
+def normalize_case(obj: dict[str, Any], *, origin: str) -> GoldenCase:
+    legacy = {key for key in ("conversation", "raw_content") if key in obj}
+    if legacy:
+        raise ValueError(f"{origin}: legacy fields are not supported: {sorted(legacy)}")
+
+    case_id = obj.get("id") or obj.get("caseNo")
+    if not isinstance(case_id, str) or not case_id.strip():
+        raise ValueError(f"{origin}: id or caseNo is required")
+    name = str(obj.get("name") or case_id)
+    case_no = str(obj.get("caseNo") or case_id)
+    origin_path, _, origin_line = origin.rpartition(":")
+    category = str(obj.get("category") or Path(origin_path).stem)
+    expected = obj.get("expected") or {}
+    if not isinstance(expected, dict):
+        raise ValueError(f"{origin}: expected must be an object")
+
+    turns = [_turn_from_object(obj, origin=origin, default_at_bot=True)]
+    sub_scenes = obj.get("sub_scenes") or []
+    if not isinstance(sub_scenes, list):
+        raise ValueError(f"{origin}: sub_scenes must be a list")
+    for index, sub_scene in enumerate(sub_scenes):
+        if not isinstance(sub_scene, dict):
+            raise ValueError(f"{origin}: sub_scenes[{index}] must be an object")
+        turns.append(
+            _turn_from_object(
+                sub_scene,
+                origin=f"{origin}:sub_scenes[{index}]",
+                default_at_bot=False,
+            )
+        )
+
+    return GoldenCase(
+        id=case_id,
+        category=category,
+        type=str(obj.get("type") or ""),
+        source=str(obj.get("source") or ""),
+        name=name,
+        case_no=case_no,
+        scene=str(obj.get("scene") or ""),
+        turns=turns,
+        expected=expected,
+        expected_output=str(expected.get("output") or ""),
+        source_path=origin_path,
+        source_line=int(origin_line),
+    )
+
+
+def build_overview(case: GoldenCase) -> str:
+    """生成 case 概览文本（LangFuse metadata / 本地预览共用）。"""
+    expected = case.expected
+    lines = [
+        f"ID: {case.id}",
+        f"类别: {case.category}",
+        f"用例类型: {case.type}",
+        f"来源: {case.source}",
+        f"期望路由: product_type={expected.get('product_type', '')}, intent={expected.get('intent', '')}",
+        "对话:",
+    ]
+    for i, turn in enumerate(case.turns, 1):
+        if i > 1 and turn.quote_previous is not False:
+            lines.append(f"  第{i}轮: send_text={turn.send_text}; 引用上一轮机器人回复")
+        else:
+            lines.append(f"  第{i}轮: send_text={turn.send_text}; 无引用")
+    return "\n".join(lines)
+
+
+def discover_fixtures(root: Path = Path("tests/fixtures")) -> list[Path]:
+    categories = root / "categories" if root.name != "categories" else root
+    return sorted(categories.glob("*.jsonl"))
+
+
+def load_golden(
+    paths: Sequence[Path] | Path | None = None,
+    *,
+    root: Path = Path("tests/fixtures"),
+) -> list[GoldenCase]:
+    if paths is None:
+        fixture_paths = discover_fixtures(root)
+    else:
+        raw_paths = [paths] if isinstance(paths, Path) else list(paths)
+        fixture_paths: list[Path] = []
+        for path in raw_paths:
+            fixture_paths.extend(sorted(path.glob("*.jsonl")) if path.is_dir() else [path])
+
     cases: list[GoldenCase] = []
-    with p.open("r", encoding="utf-8") as f:
-        for lineno, line in enumerate(f, start=1):
-            line = line.strip()
-            if not line or line.startswith("#"):
-                continue
-            try:
-                obj = json.loads(line)
-            except json.JSONDecodeError as e:
-                raise ValueError(f"{p}:{lineno} invalid JSON: {e}") from e
-            # unified 格式：raw_content 从 conversation 提取
-            if obj.get("conversation") and not obj.get("raw_content"):
-                obj["raw_content"] = obj["conversation"][0].get("raw_content", "")
-            if obj.get("conversation") and not obj.get("quote_content"):
-                obj["quote_content"] = obj["conversation"][0].get("quote_desc", "") or None
-            cases.append(GoldenCase.model_validate(obj))
+    for path in fixture_paths:
+        with path.open(encoding="utf-8") as stream:
+            for line_number, raw_line in enumerate(stream, start=1):
+                line = raw_line.strip()
+                if not line or line.startswith("#"):
+                    continue
+                origin = f"{path}:{line_number}"
+                try:
+                    payload = json.loads(line)
+                except json.JSONDecodeError as exc:
+                    raise ValueError(f"{origin}: invalid JSON: {exc}") from exc
+                if not isinstance(payload, dict):
+                    raise ValueError(f"{origin}: case must be an object")
+                cases.append(normalize_case(payload, origin=origin))
     return cases
 
 
+def validate_case(case: GoldenCase, origin: str = "fixture") -> list[str]:
+    errors: list[str] = []
+    if not case.id.strip():
+        errors.append(f"{origin}: id is empty")
+    if not case.category.strip():
+        errors.append(f"{origin}: category is empty")
+    if not case.turns:
+        errors.append(f"{origin}: turns is empty")
+    return errors
+
+
 def index_by_category(cases: Iterable[GoldenCase]) -> dict[str, list[GoldenCase]]:
-    """按 category 分组（子集运行用）。"""
-    out: dict[str, list[GoldenCase]] = defaultdict(list)
-    for c in cases:
-        out[c.category].append(c)
-    return dict(out)
+    grouped: dict[str, list[GoldenCase]] = defaultdict(list)
+    for case in cases:
+        grouped[case.category].append(case)
+    return dict(grouped)
 
 
 def filter_by_category(
     cases: Iterable[GoldenCase], category_prefix: str | None
 ) -> list[GoldenCase]:
-    """按 category 前缀过滤（如 'swap/' 命中 'swap/place_order' 等）。"""
-    if not category_prefix:
-        return list(cases)
-    return [c for c in cases if c.category.startswith(category_prefix)]
+    return [
+        case
+        for case in cases
+        if not category_prefix or case.category.startswith(category_prefix)
+    ]
 
 
 def filter_by_ids(cases: Iterable[GoldenCase], ids: list[str] | None) -> list[GoldenCase]:
-    """按 case ID 精确过滤（如 ['g042', 'g001']）。"""
     if not ids:
         return list(cases)
-    id_set = set(ids)
-    return [c for c in cases if c.id in id_set]
+    wanted = set(ids)
+    return [case for case in cases if case.id in wanted]

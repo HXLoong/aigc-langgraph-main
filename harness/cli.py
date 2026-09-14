@@ -1,196 +1,243 @@
-"""Harness CLI — `python -m harness <cmd>`（ADR 0014 D5）。
-
-子命令：
-- run [--category <prefix>] [--out <dir>]     跑 case，输出 JSON + markdown 报告
-- eval                                         (M2) 在 LangFuse Dataset 上跑评估
-- diff <run-a> <run-b>                         (M3) 比对 shadow 双跑
-- sync-golden                                  (M2) golden.jsonl ↔ LangFuse Dataset 同步
-- promote-prompt <name>                        (D3) 从 LangFuse 演练区晋升到 git
-"""
+"""Command line entry point for categories-based HTTP regression."""
 from __future__ import annotations
 
 import argparse
 import asyncio
 import json
-import logging
+import os
 import sys
+import time
 from pathlib import Path
 from typing import Any
 
-from harness.differ import diff_fields, is_pass
-from harness.golden import filter_by_category, filter_by_ids, load_golden
-from harness.reporter import (
-    render_markdown,
-    summarize,
-    write_failure_json,
-)
-from harness.runner import run_case
+import httpx
 
-logger = logging.getLogger(__name__)
+from harness.differ import FieldDiff, check_structured_assertions, check_text_assertions
+from harness.golden import GoldenCase, filter_by_category, filter_by_ids, load_golden
+from harness.multi_turn import MultiTurnResult, run_case_multi
 
 
-DEFAULT_GOLDEN_PATHS = [
-    # 4c274b0 主集重命名 unified_golden.jsonl → golden.jsonl，CLI 当时漏改；
-    # 旧名保留作兜底（本地若还有旧文件也能吃到）。
-    Path("tests/fixtures/golden.jsonl"),
-    Path("tests/fixtures/unified_golden.jsonl"),
-]
+def _paths(values: list[str] | None) -> list[Path] | Path | None:
+    if not values:
+        return None
+    paths = [Path(value) for value in values]
+    return paths[0] if len(paths) == 1 else paths
 
 
-# ============================================================
-# run
-# ============================================================
+def _turn_diffs(case: GoldenCase, result: MultiTurnResult) -> dict[int, list[FieldDiff]]:
+    diffs: dict[int, list[FieldDiff]] = {}
+    for outcome, spec in zip(result.turns, case.turns, strict=False):
+        turn_diffs = check_text_assertions(outcome.reply_text, spec)
+        turn_diffs.extend(check_structured_assertions(outcome.outputs, spec.expected))
+        diffs[outcome.index] = turn_diffs
+    if result.failure and not result.turns:
+        diffs[result.failure["turn"]] = [
+            FieldDiff(path="runtime", expected="successful HTTP response", actual=result.failure)
+        ]
+    return diffs
 
 
-async def cmd_run(args: argparse.Namespace) -> int:
-    cases = []
-    for p in DEFAULT_GOLDEN_PATHS:
-        cases.extend(load_golden(p))
-    if not cases:
-        print("ERROR: no golden cases found", file=sys.stderr)
+def _report_case(case: GoldenCase, result: MultiTurnResult, diffs: dict[int, list[FieldDiff]]) -> dict[str, Any]:
+    return {
+        "case_id": case.id,
+        "category": case.category,
+        "source_path": case.source_path,
+        "source_line": case.source_line,
+        "conversation_id": result.conversation_id,
+        "passed": not any(diffs.values()) and (
+            not result.failure or result.failure.get("kind") == "business_reject"
+        ),
+        "failure": result.failure,
+        "turns": [
+            {
+                "turn": outcome.index,
+                "scene": outcome.scene,
+                "raw": outcome.send_text,
+                "reply": outcome.reply_text,
+                "quote_passed": outcome.quote_passed,
+                "product_type": outcome.product_type,
+                "intent": outcome.intent,
+                "tickers": outcome.tickers,
+                "place_params": outcome.place_params,
+                "api_code": outcome.api_code,
+                "api_result": outcome.api_result,
+                "error": outcome.error,
+                "trace": outcome.trace,
+                "diff": [item.model_dump() for item in diffs.get(outcome.index, [])],
+            }
+            for outcome in result.turns
+        ],
+    }
+
+
+def _render_markdown(reports: list[dict[str, Any]]) -> str:
+    passed = sum(1 for report in reports if report["passed"])
+    lines = [
+        "# Harness Regression Report",
+        "",
+        f"- PASS: {passed}",
+        f"- FAIL: {len(reports) - passed}",
+        f"- TOTAL: {len(reports)}",
+        "",
+        "| case | category | status | failure |",
+        "|---|---|---|---|",
+    ]
+    for report in reports:
+        status = "PASS" if report["passed"] else "FAIL"
+        lines.append(
+            f"| `{report['case_id']}` | `{report['category']}` | {status} | "
+            f"{report.get('failure') or ''} |"
+        )
+    return "\n".join(lines) + "\n"
+
+
+async def _doctor(base_url: str, checkpoint: str = "none") -> int:
+    async with httpx.AsyncClient(base_url=base_url.rstrip("/"), timeout=10.0) as client:
+        try:
+            health = await client.get("/health")
+            ready = await client.get("/ready")
+        except httpx.HTTPError as exc:
+            print(f"ERROR: uvicorn unavailable: {exc}", file=sys.stderr)
+            return 2
+    print(f"base_url={base_url}")
+    print(f"health={health.status_code}")
+    print(f"ready={ready.status_code} {ready.text[:500]}")
+    if not health.is_success:
         return 2
-
-    case_ids: list[str] | None = args.case if args.case else None
-    cases = filter_by_ids(cases, case_ids)
-    cases = filter_by_category(cases, args.category)
-    if not cases:
-        filter_desc = f"case={case_ids!r}" if case_ids else f"category={args.category!r}"
-        print(f"ERROR: no cases match {filter_desc}", file=sys.stderr)
-        return 2
-
-    print(f"running {len(cases)} cases ...")
-
-    results: list[tuple[Any, list[Any]]] = []
-    for case in cases:
-        r = await run_case(case)
-        diffs = diff_fields(case.expected, r.final_state)
-        results.append((r, diffs))
-        marker = "PASS" if is_pass(diffs) else "FAIL"
-        print(f"  [{marker}] {case.id} ({case.category})")
-
-    out_dir = Path(args.out)
-    out_dir.mkdir(parents=True, exist_ok=True)
-
-    # 写每条失败 case 的 JSON 报告
-    failures_dir = out_dir / "failures"
-    for r, diffs in results:
-        if not is_pass(diffs):
-            write_failure_json(r, diffs, failures_dir)
-
-    # 写汇总
-    s = summarize(results)
-    (out_dir / "summary.json").write_text(
-        json.dumps(s, ensure_ascii=False, indent=2), encoding="utf-8"
-    )
-    (out_dir / "summary.md").write_text(render_markdown(results), encoding="utf-8")
-
-    print()
-    print(
-        f"PASS: {s['passed']} / FAIL: {s['failed']} / TOTAL: {s['total']} "
-        f"(pass rate: {s['pass_rate']:.1%})"
-    )
-    print(f"reports → {out_dir}")
-    return 0 if s["failed"] == 0 else 1
-
-
-# ============================================================
-# stub for M2/M3
-# ============================================================
-
-
-def cmd_stub(name: str) -> int:
-    print(f"`{name}` is a stub for M2/M3 (not implemented in M1).", file=sys.stderr)
-    return 64
-
-
-def _delegate_to_promote_prompt(args) -> int:  # type: ignore[no-untyped-def]
-    """委托给 scripts/promote_langfuse_prompt.py（ADR 0014 D3）。"""
-    # Lazy import 避免 langfuse SDK 在 harness 启动时强加载
-    import subprocess
-    script = Path(__file__).resolve().parents[1] / "scripts" / "promote_langfuse_prompt.py"
-    cmd = [sys.executable, str(script), args.name]
-    if args.version is not None:
-        cmd += ["--version", str(args.version)]
-    if args.force:
-        cmd.append("--force")
-    if args.dry_run:
-        cmd.append("--dry-run")
-    return subprocess.call(cmd)
-
-
-# ============================================================
-# entry
-# ============================================================
-
-
-def build_parser() -> argparse.ArgumentParser:
-    p = argparse.ArgumentParser(prog="harness")
-    sub = p.add_subparsers(dest="cmd", required=True)
-
-    run = sub.add_parser("run", help="跑 golden case")
-    run.add_argument(
-        "--all", action="store_true", help="跑所有 case（与 --category 互斥）"
-    )
-    run.add_argument(
-        "--case",
-        action="append",
-        metavar="ID",
-        default=None,
-        help="按 case ID 精确过滤，可多次指定（如 --case g042 --case g001）",
-    )
-    run.add_argument(
-        "--category", default=None, help="按 category 前缀过滤（如 swap/place_order）"
-    )
-    run.add_argument(
-        "--out",
-        default=".harness-runs/latest",
-        help="报告输出目录（默认 .harness-runs/latest）",
-    )
-    sub.add_parser("eval", help="(M2) LangFuse Dataset 上跑评估")
-    diff = sub.add_parser("diff", help="(M3) shadow 双跑比对")
-    diff.add_argument("run_a")
-    diff.add_argument("run_b")
-    sub.add_parser("sync-golden", help="(M2) golden ↔ LangFuse Dataset")
-    pp = sub.add_parser("promote-prompt", help="(ADR 0014 D3) 从 LangFuse 晋升到 git")
-    pp.add_argument("name", help="格式 category.name，如 swap.intent")
-    pp.add_argument(
-        "--version",
-        type=int,
-        default=None,
-        help="强制指定输出版本号（默认 = 现有最大版本 + 1）",
-    )
-    pp.add_argument(
-        "--force",
-        action="store_true",
-        help="目标文件已存在时覆盖（默认拒绝）",
-    )
-    pp.add_argument(
-        "--dry-run",
-        action="store_true",
-        help="不写文件，仅打印目标路径 + 内容前 500 字符",
-    )
-
-    return p
-
-
-def main(argv: list[str] | None = None) -> int:
-    logging.basicConfig(
-        level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s"
-    )
-    parser = build_parser()
-    args = parser.parse_args(argv)
-
-    if args.cmd == "run":
-        return asyncio.run(cmd_run(args))
-    if args.cmd in ("eval", "sync-golden"):
-        return cmd_stub(args.cmd)
-    if args.cmd == "diff":
-        return cmd_stub("diff")
-    if args.cmd == "promote-prompt":
-        return _delegate_to_promote_prompt(args)
-    parser.print_help()
+    if ready.is_success:
+        return 0
+    if checkpoint == "none":
+        try:
+            checks = ready.json().get("checks", {})
+        except ValueError:
+            return 2
+        non_checkpoint_failures = {
+            name: status for name, status in checks.items() if name != "mysql" and status == "fail"
+        }
+        return 0 if not non_checkpoint_failures else 2
     return 2
 
 
+def _dotenv_values() -> dict[str, str]:
+    """读 repo 根 .env 的 KEY=VALUE（忽略注释 / 空行）。"""
+    path = Path(__file__).resolve().parents[1] / ".env"
+    if not path.exists():
+        return {}
+    values: dict[str, str] = {}
+    for line in path.read_text(encoding="utf-8").splitlines():
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#") or "=" not in stripped:
+            continue
+        key, _, value = stripped.partition("=")
+        values[key.strip()] = value.strip().strip('"').strip("'")
+    return values
+
+
+def _resolve_eval_ids(user_id: str | None, room_id: str | None) -> tuple[str, str]:
+    """显式传参优先；缺省回读 repo 根 .env 的 EVAL_USER_ID / EVAL_ROOM_ID。"""
+    if user_id and room_id:
+        return user_id, room_id
+    values = _dotenv_values()
+    return user_id or values.get("EVAL_USER_ID", ""), room_id or values.get("EVAL_ROOM_ID", "")
+
+
+async def _run(args: argparse.Namespace) -> int:
+    gate = await _doctor(args.base_url, args.checkpoint)
+    if args.check_backend or gate != 0:
+        return gate
+    if args.backend == "dry-run":
+        print("WARNING: dry-run must be configured in the already running uvicorn process")
+    user_id, room_id = _resolve_eval_ids(args.user_id, args.room_id)
+    if not user_id or not room_id:
+        print(
+            "ERROR: --user-id and --room-id are required (or EVAL_USER_ID / EVAL_ROOM_ID in .env)",
+            file=sys.stderr,
+        )
+        return 2
+    cases = filter_by_ids(
+        filter_by_category(load_golden(_paths(args.data)), args.category), args.case
+    )
+    if args.limit is not None:
+        cases = cases[: args.limit]
+    if not cases:
+        print("ERROR: no cases selected", file=sys.stderr)
+        return 2
+
+    print(f"base_url={args.base_url} backend={args.backend} checkpoint={args.checkpoint}")
+    print(f"running {len(cases)} cases; write-side effects are enabled by server configuration")
+    reports: list[dict[str, Any]] = []
+    for case in cases:
+        result = await run_case_multi(
+            case,
+            base_url=args.base_url,
+            user_id=user_id,
+            room_id=room_id,
+            turn_interval=args.turn_interval,
+        )
+        diffs = _turn_diffs(case, result)
+        report = _report_case(case, result, diffs)
+        reports.append(report)
+        print(f"[{'PASS' if report['passed'] else 'FAIL'}] {case.id} ({case.category})")
+        if args.stop_on_fail and not report["passed"]:
+            break
+
+    out_dir = Path(args.out or ".harness-runs") / f"probe-{time.strftime('%Y%m%d-%H%M%S')}"
+    failures = out_dir / "failures"
+    failures.mkdir(parents=True, exist_ok=True)
+    for report in reports:
+        if not report["passed"]:
+            (failures / f"{report['case_id']}.json").write_text(
+                json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8"
+            )
+    passed = sum(1 for report in reports if report["passed"])
+    summary = {
+        "total": len(reports),
+        "passed": passed,
+        "failed": len(reports) - passed,
+        "pass_rate": passed / len(reports) if reports else 0.0,
+        "backend": args.backend,
+        "checkpoint": args.checkpoint,
+        "base_url": args.base_url,
+        "reports": reports,
+    }
+    (out_dir / "summary.json").write_text(
+        json.dumps(summary, ensure_ascii=False, indent=2), encoding="utf-8"
+    )
+    (out_dir / "report.md").write_text(_render_markdown(reports), encoding="utf-8")
+    print(f"reports -> {out_dir}")
+    return 0 if passed == len(reports) else 1
+
+
+def build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(prog="harness")
+    subparsers = parser.add_subparsers(dest="command", required=True)
+    run = subparsers.add_parser("run")
+    run.add_argument("--data", action="append")
+    run.add_argument("--base-url", default="http://127.0.0.1:8000")
+    run.add_argument("--backend", choices=("real", "mock", "dry-run"), default="real")
+    run.add_argument("--checkpoint", choices=("none", "mysql"), default="none")
+    run.add_argument("--check-backend", action="store_true")
+    run.add_argument("--turn-interval", type=float, default=0.0)
+    run.add_argument("--stop-on-fail", action="store_true")
+    run.add_argument("--limit", type=int)
+    run.add_argument("--case", action="append")
+    run.add_argument("--category")
+    run.add_argument("--out")
+    run.add_argument("--user-id", default=os.getenv("EVAL_USER_ID", ""))
+    run.add_argument("--room-id", default=os.getenv("EVAL_ROOM_ID", ""))
+    doctor = subparsers.add_parser("doctor")
+    doctor.add_argument("--base-url", default="http://127.0.0.1:8000")
+    doctor.add_argument("--checkpoint", choices=("none", "mysql"), default="none")
+    doctor.set_defaults(check_backend=True)
+    return parser
+
+
+def main(argv: list[str] | None = None) -> int:
+    args = build_parser().parse_args(argv)
+    if args.command == "doctor":
+        return asyncio.run(_doctor(args.base_url, args.checkpoint))
+    return asyncio.run(_run(args))
+
+
 if __name__ == "__main__":
-    sys.exit(main())
+    raise SystemExit(main())

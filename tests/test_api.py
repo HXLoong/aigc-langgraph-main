@@ -38,6 +38,8 @@ class _CapturingGraph:
             "intent": "place_order_request",
             "reply_text": "BACKEND_CARD",
             "tickers": [],
+            "api_code": 0,
+            "api_result": "BACKEND_OK",
             "trace": [TraceEntry(node="ingest", decision="ok")],
         }
 
@@ -121,6 +123,10 @@ def test_workflows_run_returns_dify_compatible_schema(
     outputs = data["outputs"]
     assert outputs["product_type"] == "swap"  # M1 默认
     assert outputs["intent"] is not None
+    # 核销凭据（plan0909 R2）：HTTP 形态下状态码 / 后端结果 / 节点链可判定
+    assert outputs["api_code"] == 0
+    assert outputs["api_result"] == "BACKEND_OK"
+    assert outputs["trace"] == "ingest[ok]"
 
 
 def test_workflows_run_returns_conversation_id_and_answer_at_top_level(

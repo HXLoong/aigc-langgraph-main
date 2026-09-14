@@ -346,6 +346,18 @@ def _inputs_to_state(inputs: dict[str, Any]) -> AgentState:
     return state  # type: ignore[return-value]
 
 
+def _format_trace(trace: list[Any]) -> str:
+    """把逐节点 trace 压成 `node[decision] → ...` 单行字符串。"""
+    parts: list[str] = []
+    for entry in trace:
+        if isinstance(entry, dict):
+            node, decision = entry.get("node", "?"), entry.get("decision")
+        else:
+            node, decision = getattr(entry, "node", "?"), getattr(entry, "decision", None)
+        parts.append(f"{node}[{decision}]" if decision else str(node))
+    return " → ".join(parts)
+
+
 def _state_to_outputs(state: AgentState) -> dict[str, Any]:
     """把 final state 渲染成 Dify outputs schema。"""
     outputs: dict[str, Any] = {
@@ -355,6 +367,7 @@ def _state_to_outputs(state: AgentState) -> dict[str, Any]:
             t.model_dump() if hasattr(t, "model_dump") else t
             for t in state.get("tickers", [])
         ],
+        "trace": _format_trace(state.get("trace", [])),
     }
     # M1 阶段：业务对象用 dict 占位，直接 dump
     for key in (
@@ -365,6 +378,8 @@ def _state_to_outputs(state: AgentState) -> dict[str, Any]:
         "close_params",
         "ticker_hitl_candidates",
         "reply_text",
+        "api_code",
+        "api_result",
     ):
         v = state.get(key)
         if v is not None:
