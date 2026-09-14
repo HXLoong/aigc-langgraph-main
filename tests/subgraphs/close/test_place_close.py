@@ -147,6 +147,8 @@ class TestClosePlaceCloseNode:
         _patch_llm(monkeypatch, ClosePlaceParams())
         result = await close_place_close({"raw_text": "x"})
         assert result["close_params"]["closeOrderList"] == []
+        assert result.get("error") is None
+        assert result["reply_text"] == "未能识别平仓参数，请提供订单号或持仓序号。"
 
     async def test_full_close_confirmation(
         self, monkeypatch: pytest.MonkeyPatch

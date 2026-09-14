@@ -9,6 +9,7 @@
 - 报告渲染 + 输出文件创建
 - webhook 触发条件
 """
+
 from __future__ import annotations
 
 import json
@@ -109,9 +110,9 @@ def test_classify_status_state_error_unreachable() -> None:
 
 def test_classify_status_no_api_code_with_fallback_reply() -> None:
     """ticker 类只 read，无 api_code；reply_text 含 fallback → exception。"""
-    assert _classify_status(
-        {"reply_text": "我没完全理解你的意思，能换种说法吗"}, None
-    ) == "exception"
+    assert (
+        _classify_status({"reply_text": "我没完全理解你的意思，能换种说法吗"}, None) == "exception"
+    )
 
 
 def test_classify_status_no_api_code_clean_reply() -> None:
@@ -126,8 +127,13 @@ def test_classify_status_no_api_code_clean_reply() -> None:
 
 def _r(case_id: str, target: str, status: str, api_code: int | None = None) -> ProbeResult:
     return ProbeResult(
-        case_id=case_id, target=target, raw_text="x", notes="x",
-        latency_ms=100, status=status, api_code=api_code,
+        case_id=case_id,
+        target=target,
+        raw_text="x",
+        notes="x",
+        latency_ms=100,
+        status=status,
+        api_code=api_code,
     )
 
 
@@ -201,15 +207,22 @@ def test_write_outputs_creates_files(tmp_path: Path) -> None:
 # ============================================================
 
 
-def _run(*args: str, env_extra: dict | None = None, timeout: int = 30) -> subprocess.CompletedProcess:
-    env = {**os.environ}
+def _run(
+    *args: str, env_extra: dict | None = None, timeout: int = 30
+) -> subprocess.CompletedProcess:
+    env = {**os.environ, "PYTHONIOENCODING": "utf-8"}
     # 清掉 EVAL_*，让默认前置校验生效
     env.pop("EVAL_USER_ID", None)
     env.pop("EVAL_ROOM_ID", None)
     env.update(env_extra or {})
     return subprocess.run(
         [sys.executable, str(SCRIPT), *args],
-        cwd=ROOT, env=env, capture_output=True, text=True, timeout=timeout,
+        cwd=ROOT,
+        env=env,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        timeout=timeout,
     )
 
 

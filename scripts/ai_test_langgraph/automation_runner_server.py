@@ -502,7 +502,12 @@ def append_filters(command: list[str], payload: dict[str, Any]) -> dict[str, Any
     return summary
 
 
-def build_job(payload: dict[str, Any], *, job_id: str | None = None) -> Job:
+def build_job(
+    payload: dict[str, Any],
+    *,
+    job_id: str | None = None,
+    allow_non_dev: bool = False,
+) -> Job:
     """校验页面参数并构造多数据集、单配置任务。"""
     datasets = payload_datasets(payload)
     try:
@@ -534,7 +539,10 @@ def build_job(payload: dict[str, Any], *, job_id: str | None = None) -> Job:
     ]
     for dataset_arg in dataset_args:
         command.extend(["--data", dataset_arg])
+    command.extend(["--task-name", task_name])
     command.append("--runner-events")
+    if allow_non_dev:
+        command.append("--allow-non-dev")
     filters = append_filters(command, payload)
     if payload.get("shuffle") is True:
         seed = parse_int(
@@ -1151,6 +1159,8 @@ def make_handler(
     queue: list[str],
     condition: threading.Condition,
     runner_token: str,
+    *,
+    allow_non_dev: bool = False,
 ) -> type[BaseHTTPRequestHandler]:
     class Handler(BaseHTTPRequestHandler):
         server_version = "LangGraphAutomationQueue/2.1"
@@ -1286,7 +1296,9 @@ def make_handler(
                     return
 
                 if path == "/api/jobs":
-                    job = build_job(self.read_payload())
+                    job = build_job(
+                        self.read_payload(), allow_non_dev=allow_non_dev
+                    )
                     with condition:
                         add_job_to_queue(jobs, queue, job)
                         payload = serialize_job(job, jobs, queue, include_log=True)
@@ -1671,8 +1683,14 @@ def run_self_test() -> int:
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="启动 LangGraph 自动化测试任务队列页面")
+    parser.add_argument("--host", default="127.0.0.1", help="页面服务监听地址")
     parser.add_argument("--port", type=int, default=9001, help="本地页面端口")
     parser.add_argument("--no-open", action="store_true", help="启动后不自动打开浏览器")
+    parser.add_argument(
+        "--allow-non-dev",
+        action="store_true",
+        help="允许回归任务访问非 localhost/已知 dev 地址（仅限隔离测试环境）",
+    )
     parser.add_argument("--self-test", action="store_true", help="运行离线自检后退出")
     return parser
 
@@ -1699,10 +1717,16 @@ def main(argv: Sequence[str] | None = None) -> int:
     worker.start()
     runner_token = secrets.token_urlsafe(32)
     server = ThreadingHTTPServer(
-        ("127.0.0.1", args.port),
-        make_handler(jobs, queue, condition, runner_token),
+        (args.host, args.port),
+        make_handler(
+            jobs,
+            queue,
+            condition,
+            runner_token,
+            allow_non_dev=args.allow_non_dev,
+        ),
     )
-    url = f"http://127.0.0.1:{args.port}"
+    url = f"http://{args.host}:{args.port}"
     print(f"自动化测试任务队列：{url}")
     print("按 Ctrl+C 停止服务。")
     if not args.no_open:

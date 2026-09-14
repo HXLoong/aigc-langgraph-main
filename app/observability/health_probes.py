@@ -14,8 +14,10 @@ logger = logging.getLogger(__name__)
 
 ProbeStatus = Literal["ok", "fail", "disabled"]
 
-PROBE_TIMEOUT_SECONDS = 1.5
-READY_TOTAL_TIMEOUT_SECONDS = 3.0
+# 单个依赖的探测上限；3 秒可容纳冷启动时的首次连接、握手和查询开销。
+PROBE_TIMEOUT_SECONDS = 3
+# 4 个并行探测的整体上限；额外余量用于模块导入、任务调度和取消收尾。
+READY_TOTAL_TIMEOUT_SECONDS = 8
 
 
 @dataclass(frozen=True)

@@ -25,6 +25,7 @@ import pytest
 
 from app.subgraphs.option import backend as option_backend
 from app.subgraphs.swap import backend as swap_backend
+from app.tools.exceptions import MissingBackendContextError
 from mock_api.server import app as mock_app
 
 # ============================================================
@@ -107,16 +108,23 @@ async def test_swap_backend_real_path_via_mock_api(
 async def test_swap_backend_missing_context_short_circuits(
     monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """state 缺 conversation_id → 不调真 client（fail-safe），但不应崩。"""
-    monkeypatch.setattr(
-        swap_backend, "SwapClientHttpx",
-        _make_real_swap_client_with_mock_api,
-    )
-    result = await swap_backend.call_swap_backend(
-        {"raw_text": "x"},  # 缺 conversation_id / room_id / user_id
-        intent="place_order_request",
-    )
-    assert result == {}
+    """缺机器人上下文时不构造 client，并显式报告后端调用未发生。"""
+    backend_factory_called = False
+
+    def backend_factory():
+        nonlocal backend_factory_called
+        backend_factory_called = True
+        return _make_real_swap_client_with_mock_api()
+
+    monkeypatch.setattr(swap_backend, "SwapClientHttpx", backend_factory)
+
+    with pytest.raises(MissingBackendContextError):
+        await swap_backend.call_swap_backend(
+            {"raw_text": "x"},
+            intent="place_order_request",
+        )
+
+    assert not backend_factory_called
 
 
 # ============================================================

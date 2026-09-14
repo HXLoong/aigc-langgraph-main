@@ -8,10 +8,13 @@ import pytest
 from app.subgraphs.swap import backend as backend_mod
 from app.subgraphs.swap.backend import (
     _message_id,
-    _with_resolved_ticker,
     call_swap_backend,
 )
-from app.tools.exceptions import BackendUnreachableError
+from app.tools.exceptions import (
+    BackendUnreachableError,
+    EmptyBackendResultError,
+    MissingBackendContextError,
+)
 from app.tools.models import CommonResult
 
 # ============================================================
@@ -32,38 +35,6 @@ def test_message_id_no_digits_returns_zero() -> None:
 
 
 # ============================================================
-# _with_resolved_ticker
-# ============================================================
-
-
-def test_with_resolved_ticker_writes_wind_code() -> None:
-    ticker = MagicMock()
-    ticker.wind_code = "600519.SH"
-    order: dict = {}
-    result = _with_resolved_ticker(order, [ticker], 0)
-    assert result["placeOrderWindCode"] == "600519.SH"
-
-
-def test_with_resolved_ticker_out_of_range_noop() -> None:
-    order: dict = {"existing": 1}
-    result = _with_resolved_ticker(order, [], 0)
-    assert result == {"existing": 1}
-
-
-def test_with_resolved_ticker_dict_ticker() -> None:
-    order: dict = {}
-    result = _with_resolved_ticker(order, [{"windCode": "00700.HK"}], 0)
-    assert result["placeOrderWindCode"] == "00700.HK"
-
-
-def test_with_resolved_ticker_no_wind_code_noop() -> None:
-    ticker = MagicMock(spec=[])  # 没 windCode 属性
-    order: dict = {"existing": 1}
-    result = _with_resolved_ticker(order, [ticker], 0)
-    assert result == {"existing": 1}
-
-
-# ============================================================
 # call_swap_backend
 # ============================================================
 
@@ -79,19 +50,28 @@ def _full_state() -> dict:
 
 
 @pytest.mark.asyncio
-async def test_call_swap_backend_missing_context_returns_empty() -> None:
-    """state 缺 conversation/room/user_id → 不调真后端（fail-safe）。"""
-    result = await call_swap_backend({"raw_text": "x"}, intent="place_order_request")
-    assert result == {}
+async def test_call_swap_backend_missing_context_raises_explicit_error() -> None:
+    """缺机器人上下文时不得静默跳过后端并伪造业务回复。"""
+    with pytest.raises(MissingBackendContextError) as exc_info:
+        await call_swap_backend({"raw_text": "x"}, intent="place_order_request")
+
+    assert exc_info.value.target == "swap"
+    assert exc_info.value.missing_fields == (
+        "conversation_id",
+        "room_id",
+        "user_id",
+        "message_id",
+    )
 
 
 @pytest.mark.asyncio
 async def test_call_swap_backend_ok_returns_api_code(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    card = "-----互换下单确认-----\n新单号: H-20260910-0000000001"
     fake_client = MagicMock()
     fake_client.operate = AsyncMock(
-        return_value=CommonResult(code=0, msg="ok", data={"orderId": "S001"})
+        return_value=CommonResult(code=0, msg="ok", data=card)
     )
     monkeypatch.setattr(backend_mod, "SwapClientHttpx", lambda: fake_client)
 
@@ -100,8 +80,7 @@ async def test_call_swap_backend_ok_returns_api_code(
         intent="place_order_request",
         order_list=[{"placeOrderQuantity": 1000}],
     )
-    assert result["api_code"] == 0
-    assert result["api_result"] == {"orderId": "S001"}
+    assert result == {"api_code": 0, "api_result": card}
 
 
 @pytest.mark.asyncio
@@ -118,6 +97,24 @@ async def test_call_swap_backend_business_reject_returns_msg(
     result = await call_swap_backend(_full_state(), intent="place_order_request")
     assert result["api_code"] == 400
     assert result["api_result"] == "缺少必填字段"
+
+
+@pytest.mark.asyncio
+async def test_call_swap_backend_empty_result_raises_explicit_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """成功码携带空 data 时不得回落到本地业务回复。"""
+    fake_client = MagicMock()
+    fake_client.operate = AsyncMock(
+        return_value=CommonResult(code=0, msg="ok", data="")
+    )
+    monkeypatch.setattr(backend_mod, "SwapClientHttpx", lambda: fake_client)
+
+    with pytest.raises(EmptyBackendResultError) as exc_info:
+        await call_swap_backend(_full_state(), intent="place_order_request")
+
+    assert exc_info.value.target == "swap"
+    assert exc_info.value.code == 0
 
 
 @pytest.mark.asyncio
@@ -154,7 +151,7 @@ async def test_call_swap_backend_supports_all_swap_intents(
     """6 个 SwapIntentionType 都能正常构造请求。"""
     fake_client = MagicMock()
     fake_client.operate = AsyncMock(
-        return_value=CommonResult(code=0, msg="ok", data=None)
+        return_value=CommonResult(code=0, msg="ok", data="backend reply")
     )
     monkeypatch.setattr(backend_mod, "SwapClientHttpx", lambda: fake_client)
 
@@ -182,9 +179,10 @@ async def test_place_order_submit_node_writes_api_code(
     """swap_place_order_submit 节点：state['place_params'] 就绪 → 调真客户端 → api_code 写回。"""
     from app.subgraphs.swap import place_order as po_module
 
+    card = "-----互换下单确认-----\n新单号: H-20260910-0000000001"
     fake_client = MagicMock()
     fake_client.operate = AsyncMock(
-        return_value=CommonResult(code=0, msg="ok", data={"orderId": "S001"})
+        return_value=CommonResult(code=0, msg="ok", data=card)
     )
     monkeypatch.setattr(backend_mod, "SwapClientHttpx", lambda: fake_client)
 
@@ -203,10 +201,10 @@ async def test_place_order_submit_node_writes_api_code(
         }
     )
     assert result["api_code"] == 0
-    assert result["api_result"] == {"orderId": "S001"}
+    assert result["api_result"] == card
     assert result["place_params"]["expected_action"] == "place"
-    # 后端返回真订单号 → 回写到 orderList[0].orderId
-    assert result["place_params"]["orderList"][0]["orderId"] == "S001"
+    # 后端返回真订单号 → 回写到 orderList[0].orderId，但不改写 api_result
+    assert result["place_params"]["orderList"][0]["orderId"] == "H-20260910-0000000001"
 
 
 @pytest.mark.asyncio

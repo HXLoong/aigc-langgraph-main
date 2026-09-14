@@ -4,8 +4,7 @@
 
 - 业务子图节点（swap.place_order / option.extract_inquiry / close.place_close）
   通过 `await resolve_ticker_full(raw_text)` 拿 TickerResolution，对底层实现无感
-- **对外签名与返回类型保持不变**：`resolve_ticker_full(raw_text: str) -> TickerResolution`
-  / `resolve_ticker(raw_text: str) -> list[TickerCandidate]`
+- 默认解析行为与返回类型不变；互换可通过 keyword-only 参数启用订单上下文过滤。
 - 内部管线已切换为新 DSL 12 节点版本（见 tools.py 顶部说明）：
     候选提取(tokenize) -> 格式化(format_candidate_list) -> 空短路
     -> asyncio.gather(infer_code_batch, split_ticker_keywords, judge_ticker_type)
@@ -25,6 +24,7 @@ import logging
 from typing import Any, NamedTuple
 
 from app.graph.state import TickerCandidate
+from app.subgraphs.ticker.context import mask_order_context
 from app.subgraphs.ticker.tools import (
     _filter_noise_candidates,
     _make_client,
@@ -70,8 +70,16 @@ class TickerResolution(NamedTuple):
 # ============================================================
 
 
-async def resolve_ticker_full(raw_text: str) -> TickerResolution:
+async def resolve_ticker_full(
+    raw_text: str,
+    *,
+    filter_order_context: bool = False,
+    counterparty_shortnames: list[str] | None = None,
+) -> TickerResolution:
     """标的识别（新管线入口，含 HITL 信号占位，Issue #20）。
+
+    filter_order_context 默认关闭；互换显式启用，仅清洗标的识别文本副本。
+    counterparty_shortnames 是本轮候选短名，供完整片段匹配。
 
     Returns:
         TickerResolution(resolved, hitl_pending)
@@ -80,6 +88,8 @@ async def resolve_ticker_full(raw_text: str) -> TickerResolution:
         return TickerResolution(resolved=[], hitl_pending=[])
 
     try:
+        if filter_order_context:
+            raw_text = mask_order_context(raw_text, counterparty_shortnames or [])
         return await _resolve_pipeline(raw_text)
     except Exception as exc:  # noqa: BLE001
         logger.warning("ticker resolver 异常: %s (raw=%r)", exc, raw_text[:60])

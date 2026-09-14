@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import sys
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 from uuid import UUID
 
@@ -154,8 +156,11 @@ def test_development_response_exposes_matching_langfuse_trace_link(
 ) -> None:
     handler = object()
 
-    async def fake_trace_context(trace_id: str) -> tuple[object, str]:
-        return handler, f"https://langfuse.test/project/p/traces/{trace_id}"
+    async def fake_trace_context(
+        trace_id: str, traceparent: str | None
+    ) -> tuple[object, str, str]:
+        assert traceparent is None
+        return handler, f"https://langfuse.test/project/p/traces/{trace_id}", trace_id
 
     monkeypatch.setattr(api_routes, "_development_langfuse_trace", fake_trace_context)
 
@@ -173,6 +178,116 @@ def test_development_response_exposes_matching_langfuse_trace_link(
     graph = client.app.state.main_graph
     assert graph.config is not None
     assert graph.config["callbacks"] == [handler]
+
+
+def test_test_workbench_request_joins_case_trace(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    parent_trace_id = "1" * 32
+    parent_span_id = "2" * 16
+    traceparent = f"00-{parent_trace_id}-{parent_span_id}-01"
+    captured: dict[str, str | None] = {}
+
+    async def fake_trace_context(
+        trace_id: str, incoming_traceparent: str | None
+    ) -> tuple[object, str, str]:
+        captured["request_trace_id"] = trace_id
+        captured["traceparent"] = incoming_traceparent
+        return object(), "https://langfuse.test/case", parent_trace_id
+
+    monkeypatch.setattr(api_routes, "_development_langfuse_trace", fake_trace_context)
+
+    response = client.post(
+        "/v1/workflows/run",
+        headers={"traceparent": traceparent},
+        json={
+            "conversation_id": "ai-test-case-1",
+            "inputs": {"raw_content": "第二轮", "message_id": 2},
+            "response_mode": "blocking",
+            "user": "test-user",
+        },
+    )
+
+    outputs = response.json()["data"]["outputs"]
+    assert captured["traceparent"] == traceparent
+    assert captured["request_trace_id"] != parent_trace_id
+    assert outputs["trace_id"] == parent_trace_id
+
+
+def test_non_workbench_request_cannot_inject_case_trace(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured: dict[str, str | None] = {}
+
+    async def fake_trace_context(
+        trace_id: str, incoming_traceparent: str | None
+    ) -> tuple[object, str, str]:
+        captured["traceparent"] = incoming_traceparent
+        return object(), "https://langfuse.test/request", trace_id
+
+    monkeypatch.setattr(api_routes, "_development_langfuse_trace", fake_trace_context)
+
+    client.post(
+        "/v1/workflows/run",
+        headers={"traceparent": f"00-{'1' * 32}-{'2' * 16}-01"},
+        json={
+            "conversation_id": "business-conversation-1",
+            "inputs": {"raw_content": "测试", "message_id": 3},
+            "response_mode": "blocking",
+            "user": "test-user",
+        },
+    )
+
+    assert captured["traceparent"] is None
+
+
+@pytest.mark.asyncio
+async def test_development_trace_handler_uses_parent_trace_context(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured: dict[str, object] = {}
+
+    class FakeLangfuse:
+        def __init__(self, **kwargs: object) -> None:
+            captured["client"] = kwargs
+
+    class FakeCallbackHandler:
+        def __init__(self, **kwargs: object) -> None:
+            captured["handler"] = kwargs
+
+    monkeypatch.setattr(
+        api_routes,
+        "get_settings",
+        lambda: SimpleNamespace(
+            environment="development",
+            enable_langfuse=True,
+            langfuse_public_key="public",
+            langfuse_secret_key="secret",
+            langfuse_base_url="https://langfuse.test",
+        ),
+    )
+    monkeypatch.setitem(sys.modules, "langfuse", SimpleNamespace(Langfuse=FakeLangfuse))
+    monkeypatch.setitem(
+        sys.modules,
+        "langfuse.langchain",
+        SimpleNamespace(CallbackHandler=FakeCallbackHandler),
+    )
+    trace_id = "1" * 32
+    span_id = "2" * 16
+
+    handler, trace_url, actual_trace_id = await api_routes._development_langfuse_trace(
+        "3" * 32, f"00-{trace_id}-{span_id}-01"
+    )
+
+    assert isinstance(handler, FakeCallbackHandler)
+    assert trace_url is None
+    assert actual_trace_id == trace_id
+    assert captured["handler"] == {
+        "public_key": "public",
+        "trace_context": {"trace_id": trace_id, "parent_span_id": span_id},
+    }
 
 
 def test_streaming_mode_rejected(client: TestClient) -> None:

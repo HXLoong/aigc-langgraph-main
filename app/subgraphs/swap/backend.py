@@ -4,25 +4,31 @@
 到真后端 POST /admin-api/swap-order/operate。
 
 行为：
-- 提取 state 的 conversation_id / room_id / user_id 作为机器人上下文
+- 校验并提取 state 的机器人上下文，缺失时显式报错
 - 把 LLM 提取出的 orderList + ticker 解析结果合并
 - 调 SwapClientHttpx().operate(req) → 返回 {api_code, api_result}
-- 不可达异常（BackendUnreachableError，D2.3）由调用方 @safe_node 捕获 → render 文案
+- code=0 取 data，code!=0 取 msg；空结果显式报错，非空结果不改写
+- 后端异常由调用方 @safe_node 捕获，交给 render 输出系统失败提示
 
 注：swap 的 4 个意图共用 SwapClient.operate endpoint，按 SwapIntentionType.type 区分。
 """
 from __future__ import annotations
 
+import logging
+import re
 from typing import Any
 
-from app.graph.state import AgentState
+from app.graph.state import AgentState, TickerCandidate
 from app.subgraphs.swap.prewash import sanitize_order_list
+from app.tools.exceptions import EmptyBackendResultError, MissingBackendContextError
 from app.tools.swap_client import (
     SwapClientHttpx,
     SwapIntentionType,
     SwapOrderOpenApiBaseSaveReqVO,
     SwapOrderOpenApiSaveReqVO,
 )
+
+logger = logging.getLogger(__name__)
 
 
 def _message_id(value: Any) -> int:
@@ -52,21 +58,65 @@ def _context(state: AgentState) -> dict[str, Any]:
     }
 
 
-def _with_resolved_ticker(
-    order: dict[str, Any], tickers: list[Any], index: int
-) -> dict[str, Any]:
-    """把 ticker resolver 的 windCode 写回 orderList[i].placeOrderWindCode。
+def _is_empty_backend_result(value: Any) -> bool:
+    if value is None:
+        return True
+    if isinstance(value, str):
+        return not value.strip()
+    if isinstance(value, (dict, list, tuple, set)):
+        return not value
+    return False
 
-    swap 用 placeOrderWindCode（与 option 的 stockCode 字段名不同）。
-    """
-    if index < len(tickers):
-        ticker = tickers[index]
-        wind_code = getattr(ticker, 'wind_code', None)
-        if wind_code is None and isinstance(ticker, dict):
-            wind_code = ticker.get("windCode")
-        if wind_code:
+
+def _with_resolved_ticker(
+    order: dict[str, Any], tickers: list[Any]
+) -> tuple[dict[str, Any], str]:
+    """按订单标的身份绑定唯一的已验证证券，无法确定时保留原值。"""
+    original_code = (order.get("placeOrderWindCode") or "").strip().upper()
+    if not original_code:
+        return order, "missing"
+
+    verified: list[dict[str, Any]] = []
+    for ticker in tickers:
+        if isinstance(ticker, TickerCandidate):
+            data = ticker.model_dump(by_alias=True)
+        elif isinstance(ticker, dict):
+            data = ticker
+        else:
+            continue
+        wind_code = data.get("windCode")
+        if (
+            data.get("from_goats") is not True
+            or not isinstance(wind_code, str)
+            or not wind_code.strip()
+        ):
+            continue
+        verified.append(data)
+        if wind_code.strip().upper() == original_code:
             order["placeOrderWindCode"] = wind_code
-    return order
+            return order, "matched_code"
+
+    # 已带后缀的代码不得再按其他证券的别名解释，交后端校验。
+    if re.fullmatch(r"[A-Z0-9][A-Z0-9._-]*\.[A-Z][A-Z0-9]*", original_code):
+        return order, "unmatched"
+
+    matches: dict[str, str] = {}
+    for data in verified:
+        wind_code = data["windCode"]
+        aliases = [
+            data.get("insShtDesc"), data.get("insLngDesc"),
+            wind_code.strip().rsplit(".", 1)[0],
+        ]
+        aliases.extend(data.get("sourceKeywords") or [])
+        if any(
+            isinstance(alias, str) and alias.strip().upper() == original_code
+            for alias in aliases
+        ):
+            matches[wind_code.strip().upper()] = wind_code
+    if len(matches) == 1:
+        order["placeOrderWindCode"] = next(iter(matches.values()))
+        return order, "matched_alias"
+    return order, "ambiguous" if matches else "unmatched"
 
 
 async def call_swap_backend(
@@ -83,15 +133,24 @@ async def call_swap_backend(
         order_list: LLM 提取的订单列表（已用 ticker 解析填好 windCode）
 
     Returns:
-        partial state update：{"api_code": int, "api_result": ... | None}
-        若 state 缺关键上下文（conversation/room/user_id），返回空 dict（不调后端）。
+        partial state update：{"api_code": int, "api_result": ...}
+
+    Raises:
+        MissingBackendContextError: 缺少调用后端必需的机器人上下文字段。
     """
-    if (
-        not state.get("conversation_id")
-        or not state.get("room_id")
-        or not state.get("user_id")
-    ):
-        return {}
+    missing_fields = [
+        field
+        for field in ("conversation_id", "room_id", "user_id")
+        if not state.get(field)
+    ]
+    if _message_id(state.get("message_id")) <= 0:
+        missing_fields.append("message_id")
+    if missing_fields:
+        logger.error(
+            "swap backend call blocked: missing_fields=%s",
+            ",".join(missing_fields),
+        )
+        raise MissingBackendContextError("swap", missing_fields)
 
     # 互换开仓-前置清洗（DSL v2）：字面量 "null" 字符串 → None，list 中的 None
     # 元素丢弃；只清洗 orderList，顶层 type 不清洗（见 prewash.py docstring）。
@@ -106,15 +165,19 @@ async def call_swap_backend(
         **_context(state),
     )
     result = await SwapClientHttpx().operate(req)
+    backend_result = result.data if result.code == 0 else result.msg
+    if _is_empty_backend_result(backend_result):
+        raise EmptyBackendResultError("swap", result.code)
     return {
         "api_code": result.code,
-        "api_result": result.data if result.code == 0 else result.msg,
+        "api_result": backend_result,
     }
 
 
 __all__ = [
     "call_swap_backend",
     "_with_resolved_ticker",
+    "_is_empty_backend_result",
     "_context",
     "_message_id",
 ]

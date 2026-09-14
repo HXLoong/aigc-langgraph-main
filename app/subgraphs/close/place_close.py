@@ -139,7 +139,7 @@ async def close_place_close(state: AgentState) -> dict[str, Any]:
     if not merged:
         return {
             "close_params": validated_close_params(closeOrderList=[]),
-            "error": "未能识别平仓参数，请提供订单号或持仓序号。",
+            "reply_text": "未能识别平仓参数，请提供订单号或持仓序号。",
             "intent": "close_order_request",
             "trace": [
                 TraceEntry(
@@ -246,7 +246,7 @@ async def close_place_close(state: AgentState) -> dict[str, Any]:
     if any(not item.order_id and not item.internal_trade_id for item in close_list):
         return {
             "close_params": validated_close_params(closeOrderList=close_order_list_dump),
-            "error": "未能识别平仓目标，请提供合约编号或持仓序号。",
+            "reply_text": "未能识别平仓目标，请提供合约编号或持仓序号。",
             "intent": "close_order_request",
             "trace": [
                 TraceEntry(

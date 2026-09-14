@@ -1581,7 +1581,8 @@
     }
 
     .log-block pre,
-    #task-raw-log {
+    #task-raw-log,
+    .message-outputs {
       max-height: clamp(180px, 38dvh, 360px);
       margin: 0;
       overflow: auto;
@@ -1685,6 +1686,14 @@
     .structured-body { padding: 12px; }
 
     .structured-body .log-block pre { max-height: clamp(220px, 45dvh, 430px); }
+
+    .message-outputs {
+      width: 100%;
+      max-width: 100%;
+      overflow-x: auto;
+      white-space: pre;
+      overflow-wrap: normal;
+    }
 
     .structured-error {
       margin: 0 15px 15px;
@@ -2619,7 +2628,7 @@
       return item;
     }
 
-    function makeTraceSummaryItem(turns) {
+    function makeTraceSummaryItem(result) {
       const item = document.createElement("div");
       item.className = "case-summary-item";
       const name = document.createElement("span");
@@ -2627,9 +2636,11 @@
       name.textContent = "tracing_id";
       const content = document.createElement("span");
       content.className = "case-summary-value";
-      const traces = turns
-        .map((turn) => ({id: turn.outputs?.trace_id, url: turn.outputs?.trace_url}))
-        .filter((trace) => trace.id);
+      const traces = result.trace_id
+        ? [{id: result.trace_id, url: result.trace_url}]
+        : (result.turns || [])
+          .map((turn) => ({id: turn.outputs?.trace_id, url: turn.outputs?.trace_url}))
+          .filter((trace) => trace.id);
       if (!traces.length) {
         content.textContent = "-";
       } else {
@@ -2764,6 +2775,7 @@
     }
 
     function renderQueue(payload) {
+      const pageScroll = {left: window.scrollX, top: window.scrollY};
       const scrollPositions = captureCaseScrollPositions();
       queueState = payload;
       queueElement.replaceChildren();
@@ -2788,6 +2800,7 @@
       $("summary-passed").textContent = String(jobs.reduce((sum, job) => sum + Number(job.progress?.passed || 0), 0));
       $("summary-failed").textContent = String(jobs.reduce((sum, job) => sum + Number(job.progress?.failed || 0), 0));
       $("queue-updated").textContent = `更新于 ${new Date().toLocaleTimeString("zh-CN", {hour12: false})}`;
+      window.scrollTo(pageScroll.left, pageScroll.top);
     }
 
     async function refreshQueue() {
@@ -2823,7 +2836,7 @@
       summary.append(
         makeCaseSummaryItem("耗时", `${Number(result.duration || 0).toFixed(2)}s`),
         makeCaseSummaryItem("conversation_id", result.conversation_id || "-"),
-        makeTraceSummaryItem(turns)
+        makeTraceSummaryItem(result)
       );
       if (result.conversation_url) {
         const action = document.createElement("div");

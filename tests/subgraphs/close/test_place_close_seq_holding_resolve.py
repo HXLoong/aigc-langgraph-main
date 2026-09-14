@@ -369,7 +369,8 @@ class TestSeqHoldingResolution:
 
         result = await close_place_close(_full_context("序号1平300万pov25"))
 
-        assert result.get("error") is not None
+        assert result.get("error") is None
+        assert result["reply_text"] == "未能识别平仓目标，请提供合约编号或持仓序号。"
         captured.assert_not_called()
 
     async def test_multi_seq_legs_resolved_independently(
