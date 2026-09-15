@@ -17,6 +17,9 @@
     无调用点的 [user] 段字符数
   - max_system_chars 预算（manifest 可选字段）超出 → fail
   - gray 条目 expires 到期未转正 → 警告
+  - 上游漂移告警（ADR 0022 D1）：manifest `dify: {file, node_id, system_sha256}` 记录上次同步时
+    Dify YAML 节点 system 的 sha；YAML 该节点变化 → 警告"上游有更新待人工 diff 合入"；
+    YAML 里存在但 manifest 未映射的 llm 节点 → 警告；映射的 node 不存在 → 错误
   - --strict：悬空占位符（system 中未在 injects 登记的 {{#...#}}）与 structured output
     节点（有 output_model）里的 JSON 格式禁令 → fail（ADR 0022 D5 目标态，逐步收敛）
 
@@ -248,6 +251,68 @@ def check_gray_expiry(manifest: dict[str, dict[str, Any]], today: str) -> list[s
     return warns
 
 
+def text_sha256(text: str) -> str:
+    return hashlib.sha256(text.strip().encode("utf-8")).hexdigest()
+
+
+def load_dify_llm_nodes(yaml_path: Path) -> dict[str, dict[str, str]]:
+    """Dify 工作流 YAML → {node_id: {title, system}}（只取 llm 节点的 system 段）。"""
+    import yaml
+
+    data = yaml.safe_load(yaml_path.read_text(encoding="utf-8")) or {}
+    nodes = (((data.get("workflow") or {}).get("graph") or {}).get("nodes")) or []
+    out: dict[str, dict[str, str]] = {}
+    for node in nodes:
+        ndata = node.get("data") or {}
+        if ndata.get("type") != "llm":
+            continue
+        system = ""
+        for msg in ndata.get("prompt_template") or []:
+            if msg.get("role") == "system":
+                system = msg.get("text", "") or ""
+        out[str(node.get("id"))] = {"title": ndata.get("title", ""), "system": system}
+    return out
+
+
+def check_upstream(yaml_dir: Path, manifest: dict[str, dict[str, Any]]) -> list[str]:
+    """上游（Dify YAML）漂移告警：返回警告/错误文本列表；除"节点不存在"外均为告警不阻断。"""
+    msgs: list[str] = []
+    by_file: dict[str, dict[str, dict[str, str]]] = {}
+    mapped: dict[str, set[str]] = {}
+    for key, entry in manifest.items():
+        dify = (entry or {}).get("dify")
+        if not dify:
+            continue
+        fname = str(dify.get("file", ""))
+        if fname not in by_file:
+            path = yaml_dir / fname
+            if not path.exists():
+                msgs.append(f"❌ {key} 的 dify.file {fname} 不存在于 {yaml_dir}")
+                by_file[fname] = {}
+                continue
+            by_file[fname] = load_dify_llm_nodes(path)
+        node_id = str(dify.get("node_id", ""))
+        mapped.setdefault(fname, set()).add(node_id)
+        node = by_file[fname].get(node_id)
+        if node is None:
+            msgs.append(f"❌ {key} 映射的上游节点 {node_id} 不存在于 {fname}")
+            continue
+        current = text_sha256(node["system"])
+        if current != dify.get("system_sha256"):
+            msgs.append(
+                f"⚠️ {key} 的上游 Dify 节点 {node_id}「{node['title']}」自上次同步后有更新，"
+                f"待人工 diff 合入（合入后更新 dify.system_sha256={current[:12]}…）"
+            )
+    for fname, nodes in by_file.items():
+        for node_id, node in nodes.items():
+            if node_id not in mapped.get(fname, set()):
+                msgs.append(
+                    f"⚠️ {fname} 中 llm 节点 {node_id}「{node['title']}」未映射到任何 manifest 条目"
+                    "（新增节点待迁移，或已去 LLM 化 → 在 manifest 用 inactive 条目记录）"
+                )
+    return msgs
+
+
 # ============================================================
 # 字符预算
 # ============================================================
@@ -389,6 +454,9 @@ def main() -> int:
     from datetime import date
 
     warns = check_gray_expiry(manifest, args.today or date.today().isoformat())
+    upstream = check_upstream(PROJECT_ROOT / "dify" / "yaml", manifest)
+    errs += [m for m in upstream if m.startswith("❌")]
+    warns += [m for m in upstream if m.startswith("⚠️")]
     if not args.check:
         rows = build_inventory(PROMPTS_DIR, manifest)
         print(json.dumps(rows, ensure_ascii=False, indent=1) if args.json else render_markdown(rows))

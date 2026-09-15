@@ -120,7 +120,7 @@ tests/fixtures/              # golden.jsonl（350+ 条）+ golden_ticker_2026-05
    - 写测试 → 跑到 RED（测试失败） → 写最小修复代码 → 跑到 GREEN → 全量回归
    - 禁止先改代码再补测试，也禁止跳过 RED 验证
    - `/test-driven-development` skill 包含完整 workflow，修改代码前调用
-6. **Dify 原始提示词在重构期内可改写** —— ADR 0001 D5：合并 3 个"确认 X"节点 + option 拆 1 intent + 5 extract（不含 close）；M2 阶段已按需对 swap/render 等做参数对齐与提示词瘦身。M3 工程联调期间仍可改写，但每次改写须在 ADR 0001 D5 的"处置表"中登记；M4 全量上线后恢复"只读资产"纪律
+6. **git 里的提示词是唯一真源，Dify 只是上游输入**（ADR 0022 D1，2026-09-15）—— 改活跃提示词走 ADR 0022 D4 分档：零风险档直接改 v1，低风险 / 需业务确认档走 `*_v2.md` 灰度 + eval 门；每次改动在 `app/prompts/_manifest.yaml` 该条目 `changelog` 登记，`prompt(<scope>)` commit。Dify 侧更新由 `scripts/prompt_inventory.py --check` 告警后人工 diff 合入，不再一键覆盖
 7. **标的代码必须 from_goats=True** —— Ticker Agent 的绝对约束（ADR 0008）
 8. **节点失败必须 cascade 防御** —— 任一节点写入 `state['error']` 后，下游 conditional 路由必须检查并跳到 fallback render，禁止 cascade 失败。具体：主图 `_route_by_product` 与每子图首节点后的 conditional 都加 `if state.get('error'): return 'fallback'`。fallback 节点输出友好回复（"我没完全理解你的意思，能换种说法重新告诉我吗"）+ trace 记录原 fail 节点名。LLM 解析失败由 `with_structured_output` 自带 1 次重试 + `@safe_node` 兜底捕获 ValidationError 写入 error；不走 HITL（HITL 仅用于 ADR 0006 的业务参数二次确认场景）
 

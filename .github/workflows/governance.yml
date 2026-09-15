@@ -1,0 +1,42 @@
+name: governance
+
+# ADR 0022 步骤 0：提示词治理守护必须在每次 push / PR 自动跑（主 CI 自 2026-05-12 起仅手动触发）。
+# 目标 < 2 分钟：lint + 提示词清单一致性 + 提示词/意图路由测试。不跑全量 pytest。
+on:
+  push:
+  pull_request:
+
+jobs:
+  governance:
+    runs-on: ubuntu-latest
+    env:
+      ENABLE_LANGFUSE: "false"
+      # Settings 必填项用占位值（测试全部 mock LLM / 后端，不联网）
+      CHECKPOINT_MYSQL_URI: mysql://ci:ci@localhost:3306/ckpt
+      BUSINESS_MYSQL_URI: mysql://ci:ci@localhost:3306/biz
+      QWEN_API_BASE: http://localhost:9/v1
+      QWEN_API_KEY: ci-placeholder
+      OTC_API_BASE_URL: http://localhost:9
+      OTC_API_SECRET: ci-placeholder
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - name: Install
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
+      - name: ruff（app/ tests/ 零警告）
+        run: ruff check app/ tests/
+      - name: 提示词清单一致性（目录 ↔ manifest ↔ 加载点；v2 漂移；上游 Dify 告警）
+        run: python scripts/prompt_inventory.py --check --strict
+      - name: 提示词治理 + 意图路由测试
+        run: |
+          pytest -q -p no:cacheprovider \
+            tests/test_prompt_inventory.py tests/test_prompt_governance.py \
+            tests/test_prompt_loader.py tests/test_prompt_versioning.py \
+            tests/test_promote_langfuse_prompt.py tests/test_langfuse_prompt_gate.py \
+            tests/subgraphs/swap/test_intent.py tests/subgraphs/option/test_intent.py \
+            tests/subgraphs/close/test_intent.py tests/subgraphs/ticker/test_llm_batches.py

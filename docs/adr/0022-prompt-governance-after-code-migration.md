@@ -1,6 +1,6 @@
 # ADR 0022 · 代码迁移完成后的提示词治理模型
 
-- 状态：**部分采纳**（D2 / D3 / D6 已落地；D1 真源切换 与 D4 瘦身放量 需业务方 + 用户拍板）
+- 状态：**已采纳**（2026-09-15 用户拍板 D1 采用模型 B；D2 / D3 / D5 / D6 已落地；D4 零风险档已落 v1，低风险档与需业务确认档按报告第七节推进）
 - 日期：2026-09-15
 - 起源：客户反馈 Dify 迁移过来的提示词"太臃肿、冗余多"；专题评估见 [docs/prompt-maintainability-assessment.md](../prompt-maintainability-assessment.md)
 - 修订：[ADR 0003](./0003-prompt-versioning-by-file-coexistence.md)（删除第二种版本化形态）、[ADR 0001 D5](./0001-rewrite-app-with-harness-first.md)（处置表登记制改为 manifest + lint）
@@ -20,7 +20,7 @@
 
 ## 决策
 
-### D1 · 真源：git `.md` 是唯一生产真源，Dify 降为上游输入（**待拍板**）
+### D1 · 真源：git `.md` 是唯一生产真源，Dify 降为上游输入（**已采纳，2026-09-15**）
 
 两种模型的对比：
 
@@ -32,7 +32,13 @@
 | `test_prompt_governance.py` | 逐字锁定 7 文件 | 改为 **Dify 快照漂移告警**：登记 7 个 node_id 的 prompt sha，Dify YAML 变化时提示"上游有更新待合入"，不阻断本地修改 |
 | 客户诉求"瘦身" | 只能在灰度位实现，且 v2 会持续漂移 | 可以真正落地 |
 
-推荐 B。前提：业务方确认 Dify 工作流不再是生产路径（M4 全量切换后自然成立），在此之前维持 A，瘦身全部走 `*_v2.md`。切换动作只有一处：把 `test_prompt_governance.py` 的相等断言改为快照漂移告警。
+采用 B。落地方式：
+
+- manifest 每条镜像自 Dify 的条目登记 `dify: {file, node_id, system_sha256}`（上次同步时上游节点 system 的 sha）；`scripts/prompt_inventory.py` 的 `check_upstream` 在上游节点变化时输出「上游有更新待人工 diff 合入」告警、上游存在但未映射的 llm 节点告警（如 1786439000001「互换-全新下单交易对手识别」），映射的节点不存在才 fail
+- `tests/test_prompt_governance.py` 的逐字相等断言退役，改为「每个镜像条目都声明了 dify 映射且节点存在」+「本地修改不阻断」
+- 零风险瘦身直接落 v1（`manifest.changelog` 登记）；`swap/intent_v2` / `place_order_v2` 因已与 v1 产生业务规则代差且失去用途而删除，多模态三个 v2 保留待 eval
+- Dify 侧同步方向仍是单向（sync → export → 人工 diff）；`dify/sync.py` 对主干 app 的导出文件名改为 `场外交易-test.yml`（治理读取的那份），`主干工作流.yml` 冻结为 2026-08 拓扑参照
+- M4 全量切换后业务方书面同意 Dify 下线（roadmap 既有门），Dify 停止更新，上游告警自然归零
 
 ### D2 · `app/prompts/_manifest.yaml` 是活跃/灰度/非活跃的机器可读真源（已落地）
 
@@ -83,7 +89,7 @@
 
 - 正面：新增 / 删除 / 去 LLM 化提示词有机器守护；v2 漂移在 CI 可见；瘦身有明确档位与门槛；版本化只剩一种心智模型
 - 负面：每加一个 `.md` 多登记一次；D1 切换前 7 个锁定文件的瘦身只能走 v2，且 v2 需随 Dify 更新重做 diff
-- 未决：D1 的切换时点；D4 需业务确认档的逐条裁决；ticker 4 个提示词转 structured output（消除原文 JSON 解析与 `<result>` 标签指令）
+- 未决：D4 需业务确认档的逐条裁决（报告第七节步骤 5 的 10 个问题）；ticker 4 个提示词转 structured output（消除原文 JSON 解析与 `<result>` 标签指令）；governance CI job 是否作为 required check
 
 ## 关联
 

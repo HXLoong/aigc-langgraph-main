@@ -44,8 +44,8 @@ result = await llm.ainvoke([("system", p.system), ("user", user_message)])
 
 | 场景 | 做法 | 门槛 |
 |---|---|---|
-| 瘦身 / 修规则（ADR 0022 D4 三档） | 零风险档直接改；低风险档与需业务确认档走 `*_v2.md` 灰度位 | eval PASS ≥ v1 基线；`prompt(<scope>)` commit |
-| Dify 侧有更新 | `python dify/sync.py`（凭据只从 `DIFY_EMAIL` / `DIFY_PASSWORD` 环境变量读）→ `scripts/export_dify_prompts.py`（默认不覆盖已存在文件）→ 人工 diff 选择性合入 | 不要一键覆盖；被 `tests/test_prompt_governance.py` 锁定的 7 个文件见 ADR 0022 D1 |
+| 瘦身 / 修规则（ADR 0022 D4 三档） | 零风险档直接改 v1；低风险档与需业务确认档走 `*_v2.md` 灰度位；都在 manifest `changelog` 加一行 | eval PASS ≥ v1 基线；`prompt(<scope>)` commit |
+| Dify 侧有更新 | `python dify/sync.py`（凭据只从 `DIFY_EMAIL` / `DIFY_PASSWORD` 环境变量读）→ `scripts/export_dify_prompts.py`（默认不覆盖已存在文件）→ 人工 diff 选择性合入 | 不要一键覆盖；`prompt_inventory.py --check` 会按 manifest `dify.system_sha256` 告警哪些节点有上游更新，合入后更新该 sha |
 | 新 LLM 节点 | `.md` 放对目录 + Pydantic Output 模型 + `@safe_node` 节点 + manifest 登记 + golden case | `prompt_inventory.py --check` 通过 |
 
 ## 字符数 / 延迟

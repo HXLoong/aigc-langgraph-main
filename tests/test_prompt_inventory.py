@@ -310,3 +310,79 @@ def test_gray_expiry_warns(repo):
     manifest = {"demo/intent_v2": {"status": "gray", "base": "demo/intent", "base_system_sha256": "x", "expires": "2026-09-01"}}
     warns = inv.check_gray_expiry(manifest, today="2026-09-15")
     assert any("demo/intent_v2" in w for w in warns)
+
+
+# ============================================================
+# ADR 0022 D1（2026-09-15 拍板：git 为唯一真源，Dify 为上游输入）：上游快照漂移告警
+# ============================================================
+
+_YAML = """app:
+  name: demo
+workflow:
+  graph:
+    nodes:
+      - id: "111"
+        data:
+          type: llm
+          title: 节点甲
+          prompt_template:
+            - role: system
+              text: "{sys}"
+      - id: "222"
+        data:
+          type: llm
+          title: 节点乙
+          prompt_template:
+            - role: system
+              text: "乙的规则"
+      - id: "333"
+        data:
+          type: code
+          title: 代码节点
+"""
+
+
+def _write_yaml(root: Path, sys_text: str = "甲的规则") -> Path:
+    d = root / "dify" / "yaml"
+    d.mkdir(parents=True, exist_ok=True)
+    f = d / "demo.yml"
+    f.write_text(_YAML.replace("{sys}", sys_text), encoding="utf-8")
+    return f
+
+
+class TestUpstreamDrift:
+    def test_no_warning_when_snapshot_matches(self, tmp_path):
+        _write_yaml(tmp_path)
+        sha = inv.text_sha256("甲的规则")
+        manifest = {
+            "demo/a": {"status": "active", "loader": "x.py", "dify": {"file": "demo.yml", "node_id": "111", "system_sha256": sha}},
+            "demo/b": {"status": "active", "loader": "x.py", "dify": {"file": "demo.yml", "node_id": "222", "system_sha256": inv.text_sha256("乙的规则")}},
+        }
+        assert inv.check_upstream(tmp_path / "dify" / "yaml", manifest) == []
+
+    def test_warning_when_upstream_changed(self, tmp_path):
+        _write_yaml(tmp_path, sys_text="甲的新规则")
+        manifest = {"demo/a": {"status": "active", "loader": "x.py", "dify": {"file": "demo.yml", "node_id": "111", "system_sha256": inv.text_sha256("甲的规则")}}}
+        warns = inv.check_upstream(tmp_path / "dify" / "yaml", manifest)
+        assert any("demo/a" in w and "上游" in w for w in warns)
+
+    def test_warning_for_unmapped_upstream_llm_node(self, tmp_path):
+        _write_yaml(tmp_path)
+        manifest = {"demo/a": {"status": "active", "loader": "x.py", "dify": {"file": "demo.yml", "node_id": "111", "system_sha256": inv.text_sha256("甲的规则")}}}
+        warns = inv.check_upstream(tmp_path / "dify" / "yaml", manifest)
+        assert any("222" in w and "未映射" in w for w in warns)
+        assert not any("333" in w for w in warns)
+
+    def test_missing_node_is_error(self, tmp_path):
+        _write_yaml(tmp_path)
+        manifest = {"demo/a": {"status": "active", "loader": "x.py", "dify": {"file": "demo.yml", "node_id": "999", "system_sha256": "x"}}}
+        warns = inv.check_upstream(tmp_path / "dify" / "yaml", manifest)
+        assert any("999" in w and "不存在" in w for w in warns)
+
+    def test_real_repo_mappings_resolve(self):
+        """真实仓库：manifest 里每个 dify 映射的节点都必须存在于对应 YAML（漂移只告警，不 fail）。"""
+        manifest = inv.load_manifest(inv.MANIFEST)
+        mapped = [k for k, v in manifest.items() if (v or {}).get("dify")]
+        assert len(mapped) >= 25, "镜像自 Dify 的活跃提示词应全部登记 dify 映射"
+        warns = inv.check_upstream(inv.PROJECT_ROOT / "dify" / "yaml", manifest)
+        assert not [w for w in warns if "不存在" in w], warns

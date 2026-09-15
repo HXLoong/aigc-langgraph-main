@@ -32,7 +32,7 @@
 
 **已落地的管理层改进**（见第八节）：manifest 三态清单 + 四条不变量 lint 进 CI、v2 漂移防护（结构化 ack + expires）、版本化收敛为一种、晋升脚本产物契约修复、灰度节点 trace 写 prompt_name、规则页重写、去凭据。
 
-**下一步需要拍板的两件事**：① ADR 0022 D1 真源模型（推荐 git 为真源、Dify 降为上游输入，把逐字锁定改为漂移告警）；② 三处硬编码业务数据的替代判定方式（业务方）。
+**2026-09-15 用户拍板**：① ADR 0022 D1 采用模型 B（git 为真源、Dify 降为上游输入），逐字锁定测试已退役、上游漂移告警已上线；② 零风险瘦身批已直接落 v1（`--strict` 零违反），C-01 名称→代码清单已改格式占位；③ governance CI job 已加（push/PR 触发）。剩余：报告第七节步骤 5 的业务问题、步骤 1 的度量基线、步骤 4 的去 LLM 化。
 
 ## 二、全域盘点（`python scripts/prompt_inventory.py` 生成）
 
@@ -188,16 +188,16 @@
 
 | # | 发现 | 状态 |
 |---|---|---|
-| GOV-01 | 真源三方冲突（ADR 0014 git / 锁定测试 Dify / 客户瘦身） | **待拍板**（ADR 0022 D1） |
+| GOV-01 | 真源三方冲突（ADR 0014 git / 锁定测试 Dify / 客户瘦身） | **已拍板 B**：manifest `dify` 映射 + `check_upstream` 告警，锁定测试退役 |
 | GOV-02 | 锁定测试守的是文本相等，不是「提示词枚举 ⊆ Literal 且 Literal 每个值可达」 | 症状已修（SW-INC-01，核证员在 HEAD 上判 refuted）；守护待加 |
 | GOV-03 | `dify/sync.py` 硬编码内网账号密码；且 `DIFY_BASE` 是 `http://`，登录走明文 | 已删默认值；**密码需轮换**；明文 HTTP 需内网评估 |
-| GOV-04 | 所有治理守护挂在 05-12 起只能手动触发的 CI 上 | 待决定：建议拆 <2 分钟 governance job 并恢复 push/PR 触发 |
+| GOV-04 | 所有治理守护挂在 05-12 起只能手动触发的 CI 上 | 已加 `.github/workflows/governance.yml`（push/PR 触发，lint + strict 清单 + 提示词/意图测试） |
 | GOV-05 | `promote_langfuse_prompt.py` 产物 loader 解析不了、不登记 manifest；ADR 0014/0022「已落地」失实 | 已修 |
 | GOV-06 | 「占位符保留原样」规则在无渲染层的 LangGraph 里有害 | 规则已反转（prompt-management.md）；`--strict` 可见 |
 | GOV-07 | 5 个灰度位 4 个不写 `prompt_name`，违反 ADR 0003 硬前置 | 已修（place_order / multimodal） |
 | GOV-08 | `drift_acknowledged` 是永久静默开关 | 已改结构化 `{at_base_sha, note}` + `expires` |
-| GOV-09 | 哪份 Dify YAML 是生产无机器可读声明；上游新增 LLM 节点无提示 | 待业务方声明 app_id；manifest `dify:` 映射为后续项 |
-| GOV-10 | D5 手写处置表历史上三次漏登记、无机制 | 资产状态已由 manifest 接管；改写 changelog 为后续项 |
+| GOV-09 | 哪份 Dify YAML 是生产无机器可读声明；上游新增 LLM 节点无提示 | manifest `dify:` 映射已登记 31 条；`sync.py` 主干 app 导出名改为治理读取的 `场外交易-test.yml`；新增节点 1786439000001 现为常驻告警 |
+| GOV-10 | D5 手写处置表历史上两次漏登记、无机制 | 资产状态已由 manifest 接管；改写记录改为 manifest `changelog`（本批 18 条） |
 | GOV-11/12 | `.claude/rules` 教人做已废弃的事；ADR 0013 描述已删除链路 | 已重写 / 已改状态 |
 | GOV-13 | `.md` 契约 1/3 是运行时不消费的内容（`[user]`、model、node_id） | ADR 0022 D5 登记，随 D1 一并收缩 |
 | GOV-14 | lint 判定过弱 | 已收紧（真实加载调用 / loader_call / injects / --strict） |
@@ -221,10 +221,10 @@ Dify YAML（上游输入，sync.py 拉取）          │ lint: prompt_inventory
 
 | 步 | 内容 | 退出门 | 状态 |
 |---|---|---|---|
-| 0 | **让守护真正生效**：恢复 `ci.yml` push + pull_request 触发并拆一个 <2 分钟 governance job（ruff + `prompt_inventory --check` + `tests/test_prompt_*.py` + 各子图 `test_intent.py`）；修 `check_fixture_consistency.py` 指向 `categories/`；确认 eval 入口可跑 | 空 PR 上 CI 自动绿；`langfuse_eval.py --local tests/fixtures/unified_golden.jsonl --ids <swap confirm 子集>` 在现场跑通 | 代码已提交；CI 触发待决定 |
+| 0 ✅ | **让守护真正生效**：恢复 `ci.yml` push + pull_request 触发并拆一个 <2 分钟 governance job（ruff + `prompt_inventory --check` + `tests/test_prompt_*.py` + 各子图 `test_intent.py`）；修 `check_fixture_consistency.py` 指向 `categories/`；确认 eval 入口可跑 | 空 PR 上 CI 自动绿；`langfuse_eval.py --local tests/fixtures/unified_golden.jsonl --ids <swap confirm 子集>` 在现场跑通 | governance.yml 已加；主 CI 恢复触发与 fixture lint 修复待 plan0909 |
 | 1 | **建立度量基线**：`prompt_inventory` 增加按调用路径聚合的 tokens 报表（本次手算基线：互换文本 47.5K / 互换图片 62K / 期权询价 27K / 平仓下单 37.4K system tokens，含 ticker 三路）；`METRIC_LLM_TOKENS` 加 node 标签；`summarize_by_prompt_version` 对 5 个灰度位都能分桶；每个待瘦身 `.md` 能反查 ≥10 条命中它的 golden id | 仓库内有可复现基线文件；没有这一步，所有"eval 回归"门槛无载体 | 待做 |
-| 2 | **裁决真源**（一次拍板解锁全部瘦身）：ADR 0022 D1 写定 git 为唯一真源、Dify 为上游输入，前提证据挂到 roadmap「业务方书面同意 Dify 下线」邮件；业务方指明生产 Dify app_id，`sync.py` 只保留它；`test_prompt_governance.py` 改为漂移告警；manifest 补 `dify: {file, node_id, system_sha256}` | D1 状态改「已采纳」；本地改任一 v1 文件后测试仍通过（只告警）；上游未映射 LLM 节点（1786439000001）有告警 | 待拍板 |
-| 3 | **零风险瘦身批**：`--strict` 的 12 处（10 个悬空占位符整段删、structured output 节点 JSON 禁令）；option 机器人过滤块 ×7；重复陈述收敛；不可达 few-shot（TRJ-11 守卫测试）；`[user]` 段退出运行时契约；infer_code 硬编码日期锚点与范围段 | `--strict` 零违反并在 CI 默认开启；活跃 system 总字符降 ≥25%（互换文本 ≤38K tokens、平仓 ≤28K）；全量 eval PASS ≥ 步骤 1 基线且分桶无单桶下降 | 待 2 |
+| 2 ✅ | **裁决真源**（一次拍板解锁全部瘦身）：ADR 0022 D1 写定 git 为唯一真源、Dify 为上游输入，前提证据挂到 roadmap「业务方书面同意 Dify 下线」邮件；业务方指明生产 Dify app_id，`sync.py` 只保留它；`test_prompt_governance.py` 改为漂移告警；manifest 补 `dify: {file, node_id, system_sha256}` | D1 状态改「已采纳」；本地改任一 v1 文件后测试仍通过（只告警）；上游未映射 LLM 节点（1786439000001）有告警 | 已落地（2026-09-15） |
+| 3 ◐ | **零风险瘦身批**：`--strict` 的 12 处（10 个悬空占位符整段删、structured output 节点 JSON 禁令）；option 机器人过滤块 ×7；重复陈述收敛；不可达 few-shot（TRJ-11 守卫测试）；`[user]` 段退出运行时契约；infer_code 硬编码日期锚点与范围段 | `--strict` 零违反并在 CI 默认开启；活跃 system 总字符降 ≥25%（互换文本 ≤38K tokens、平仓 ≤28K）；全量 eval PASS ≥ 步骤 1 基线且分桶无单桶下降 | `--strict` 项与机器人过滤块、infer_code 范围段已落（活跃 system 293.5K → 279.7K）；重复陈述收敛与不可达 few-shot 待 eval 基线 |
 | 4 | **低风险档**：option 4 个 Q- 节点与 close 4 个 CO- 节点按 `swap/order_id.py` 去 LLM 化（先 `query_status`），先把 5 套 CO- 正则统一为一处；归一化下沉 validator；错例转 golden；示例压缩；`extract_confirm_place` 复用 `extract_place` | 每项先 RED 后 GREEN（含 `第一笔` 中文序数、多命中简写等本次发现的边界）；对应意图桶 PASS 不降；串行 LLM 调用数按 node 级 token 计数证明各 -1 | 待 3 |
 | 5 | **需业务确认档**（每项一个明确问题）：(1) infer_code 名称→代码示例与基金管理人名单改占位/删除（P0）；(2) option `intent.py` "撤单" 快路径 vs 提示词 request_cancel_order（operate 取消 vs 交易）留哪处；(3) place_close POV 默认 25 归后端还是网关；(4) `hasFastExecutionIntent` 是否下传（Dify 侧 schema 也无此字段）；(5) 全新单对手召回三实现选一；(6) 裸数字语义；(7) 测试账户/员工名示例匿名化；(8) 99999999 哨兵归代码常量；(9) `param_limit` 是否需要 ≤10 组合校验；(10) `intent_extract` 归档 | 每问在 ADR 0022 附录有「问题 / 答复 / 日期 / golden id」一行；答复转 ≥3 条 golden 后再改；纳入 M3.3 E3.7 sign-off 清单 | 待业务方 |
 | 6 | **治理固化**：manifest `changelog` + "改 `.md` 必须同步 manifest" 校验；`prompt(<scope>)` commit 类型 CI 检查；三条最重路径设 `max_system_chars` 冻结；一页提示词写作规范（语言、示例匿名、不写自检/JSON 骨架）；judge 迁 `harness/`；四套命名收敛 | 连续两次 Dify 上游同步后 `--strict` 持续零违反；manifest 无过期 gray；新人按规范能独立加一个节点 | 待 3 |
@@ -249,6 +249,9 @@ Dify YAML（上游输入，sync.py 拉取）          │ lint: prompt_inventory
 | `swap/place_order.py` / `multimodal.py` | trace 写 `prompt_name` | GOV-07 |
 | `.claude/rules/prompt-management.md` 重写、`testing.md`、ADR 0000/0001/0003/0013、`app/prompts/CLAUDE.md`、handbook | 陈旧口径与已删文件引用 | GOV-11/12, OPT-15 |
 | ADR 0022 + ADR README + ADR 0001 D5 登记 | 治理模型决策 | — |
+| **D1 落地**：manifest `dify:` 上游映射 ×31 + `check_upstream` 告警；`test_prompt_governance.py` 逐字锁定退役 | git 为唯一真源 | GOV-01/09 |
+| **零风险批**（18 条 manifest changelog）：烘焙 Dify 常量节点 keywords/output（5 处悬空占位符）、删 JSON 禁令、删 option 7 个机器人过滤块、infer_code 范围段 + C-01 事实清单改占位、image_ocr 对手列表渲染、删 `intent_v2`/`place_order_v2` | `--strict` 零违反 | C-01/07/08/09/27, OC-14, OPT-01/02 |
+| `.github/workflows/governance.yml` | push/PR 触发的 <2 分钟守护 | GOV-04 |
 | `.claude/skills/sync-dify-prompts/SKILL.md` 映射表、`docs/on-call-runbook.md` 热修口径、CLAUDE.md / README eval 入口 | 批评员补出的陈旧口径 | 第九节 |
 
 **未能在本环境完成**：eval 回归（无 LLM 密钥、golden 迁移中）——所有提示词相关改动（router 红线、holding_query 渲染）需现场用 `scripts/langfuse_eval.py` 补跑对应子集；Dify 账号密码轮换。

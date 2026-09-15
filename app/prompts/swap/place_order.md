@@ -25,7 +25,6 @@
 1. **数据来源唯一**：所有字段的语义来源只能是输入变量（`raw_content`/`quote_param_hints`补参摘要）；字符串类原文值按字符保留，数量、金额、比例的量词展开、时间补零与枚举映射按下文字段规则处理。本提示词中的示例仅用于演示格式与规则，**绝不是参考答案**，禁止把示例里的账户名/标的/数量当作输出。
 2. **字符保真**：提取的字符串与原文**逐字节一致**，禁止任何字符替换或变体——不做简繁转换、全半角转换、拼音替代、字形相似替换(0↔O)、语言转换，**禁止添加 emoji**（如把字母 I 误写成 🇮🇹）。金融英文缩写（UBS、UBC、S&P、MSCI、CBOT、CME、NASDAQ、NYSE、ETF、REIT、ADR 等）必须 100% 原样保留，大小写一致，不缩写化也不译成中文。
 3. **缺省即 null**：用户未明确提供的字段一律为 null，禁止默认值、禁止推断、禁止代码↔名称映射（如"茅台"↔"600519.SH"）、禁止外部知识。核心护栏6命中的 P 属于用户明确给出的价格，不是推断，不适用本条 null。
-4. **纯 JSON 输出**：直接以 `{` 开头、`}` 结尾，可被 `JSON.parse()` 直接解析；不加 ```json 标记、不加前后说明文字、不加注释。顶级字段固定为 `type` 与 `orderList`。
 5. **英文逗号整数预判（先于价格/数量识别）**：先扫描 raw_content 中所有「含英文逗号且不含小数点」的纯数字片段；默认先去掉全部英文逗号并锁定为整数委托数量候选。该原始片段及其逗号转小数形式均禁止写入 placeOrderPrice；**例外：若该数字紧邻核心护栏6定义的限价标签 K 之后，或属于 OTC「数量@价格」模式中的 `@` 后价格，则该数字是价格专用候选，去掉千分位逗号后写入 placeOrderPrice，并输出 placeOrderPriceType=LimitOrder；不得写入 placeOrderQuantity/placeOrderQuantityTotal。**该预判结果优先级高于后续普通价格/数量规则，后续步骤不得覆盖。
 6. **机械限价归槽（最高优先级，先于其他字段）**：先定义限价标签 K=`限价/限价委托/限定价格/价格/均价/均價/LimitOrder/挂单/挂单价/挂价/委托价/委托价格/报单价/报在/挂在`，逐个订单子句按以下顺序机械执行：
    0) **交易对手 token 前置遮蔽**：必须先执行核心护栏0.5；以下所有规则均只读取 masked_raw_content，禁止从 shortName 内拆取数值或括号内容。
@@ -319,7 +318,7 @@ user 消息中的 `<raw_content>`、`<quote_param_hints>`、`<counterparty_list>
 4. 标的候选：先找带后缀/字母代码、明确证券名称、名称+代码粘连等低歧义候选；只有找不到这些候选时才允许裸纯数字作 windCode。若 raw 同时有明确名称/代码和裸数字，裸数字不得进入 placeOrderWindCode，应归入价格/数量/比例/序号或忽略。最终 windCode 不得仅为市场词。
 5. 节点分工：裸 1～3 位整数/小数与选项字母默认不进 placeOrderWindCode/placeOrderShortname（候选切换、对手选择归专门节点）；raw 显式给出的代码形态 token/标的名称/列表命中对手名必须照常提取，发现误删要补回。
 6. 币种自检：placeOrderNotionalCurrency 只能来自 raw 金额短语里的币种词/符号/ISO 码；不能来自 placeOrderTransactionType、windCode 后缀或"港股/美股/A股"等市场词；"港股市价买100万京东"、"限价15买100万港股中国平安" 必须 currency=null。
-7. 数量互斥与完整性：quantity 与 notional **互斥**（最多一个非 null）、量词已展开且数值与原文一致（核心护栏第6条已命中的“数字+元”隐式单价只落 price；其余含币种词→AMOUNT 落 notional、含股/手→落 quantity）；orderList 订单数 = 摘要行数、orderId 逐字符匹配对应行；输出纯 JSON（`{` 开头 `}` 结尾，无任何额外文本）。
+7. 数量互斥与完整性：quantity 与 notional **互斥**（最多一个非 null）、量词已展开且数值与原文一致（核心护栏第6条已命中的“数字+元”隐式单价只落 price；其余含币种词→AMOUNT 落 notional、含股/手→落 quantity）；orderList 订单数 = 摘要行数、orderId 逐字符匹配对应行。
 8. 机械价格纠偏：先整体删除子句尾部由核心护栏0.5命中的完整 shortName 或唯一简写 token。若余下命中 `S+A+【委托数量：Q；数量单位：U】+P` 且 P 是唯一未归槽正数，则最终必须满足 `placeOrderWindCode=S`、`placeOrderQuantity=Q`、`placeOrderPriceType=LimitOrder`、`placeOrderPrice=P`；若命中 `S+A+Q+【价格类型：LimitOrder；限定价格：P】` 也执行同一校验。完整 shortName 或唯一简写 token 内数字、比例、时间、算法参数、合约月份、订单定位值均不得作为 P。
 9. 快速执行最终门禁：逐个检查 orderList[i] 自己的最小订单片段；片段中逐字命中闭集快速词才为 true，否则为 false。一处快速词除非受全体范围词修饰，否则只能使包含它的一笔订单为 true；后续订单片段里的快速词不得使任何前序订单为 true。
 10. 平仓选项卡最终门禁：补参摘要含「需要补充：大合约编号」及「第N笔：可平仓多头/空头」且 raw 命中有效选项时，最终必须同时输出该选项的大合约编号、对应方向和 placeOrderCloseIntent=true；用户只回序号也不能丢失平仓意图。

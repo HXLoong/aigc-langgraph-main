@@ -13,15 +13,6 @@ from scripts.export_dify_prompts import extract_prompts_from_yaml, save_prompt_a
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 DIFY_WORKFLOW = PROJECT_ROOT / "dify" / "yaml" / "场外交易-test.yml"
-SYNCED_PROMPTS = (
-    ("1755073106378", "option", "intent"),
-    ("1779330004958", "option", "extract_inquiry"),
-    ("17793301871440", "option", "extract_place"),
-    ("1776159951508", "swap", "intent"),
-    ("1776160580437", "swap", "place_order"),
-    ("1780652808839", "swap", "select_counterparty"),
-    ("1780652892832", "swap", "select_ticker"),
-)
 
 
 @lru_cache(maxsize=1)
@@ -35,16 +26,36 @@ def _dify_prompt_templates() -> dict[str, dict[str, str]]:
     }
 
 
-def test_synced_prompts_match_dify_workflow() -> None:
-    templates = _dify_prompt_templates()
+class TestDifyIsUpstreamNotTruth:
+    """ADR 0022 D1（2026-09-15 拍板）：git .md 是唯一生产真源，Dify YAML 降为上游输入。
 
-    for node_id, category, name in SYNCED_PROMPTS:
-        expected = templates[node_id]
-        clear_cache()
-        prompt = load_prompt(category, name)
+    2026-09-11 起曾按 node_id 把 7 个文件锁定为 YAML 逐字镜像；该锁定守的是文本相等而非
+    代码契约（回归时删掉 confirm_order 枚举、代码未同步，见评估 SW-INC-01），且阻断了活跃
+    27% 提示词的瘦身。现改为：manifest 登记 `dify: {file, node_id, system_sha256}`，
+    `scripts/prompt_inventory.py` 在上游节点 sha 变化时**告警**（待人工 diff 合入），不阻断本地修改。
+    """
 
-        assert prompt.system == expected.get("system", ""), name
-        assert prompt.user_template == expected.get("user", ""), name
+    def test_every_mirrored_prompt_declares_upstream_mapping(self) -> None:
+        from scripts import prompt_inventory as inv
+
+        manifest = inv.load_manifest(inv.MANIFEST)
+        templates = _dify_prompt_templates()
+        for key, entry in manifest.items():
+            entry = entry or {}
+            if entry.get("status") != "active" or key.startswith("judge/"):
+                continue
+            dify = entry.get("dify")
+            assert dify, f"{key} 为 active 但未登记 dify 映射（file/node_id/system_sha256）"
+            if dify["file"] == DIFY_WORKFLOW.name:
+                assert str(dify["node_id"]) in templates, f"{key} 映射的 node_id 不在 {DIFY_WORKFLOW.name}"
+
+    def test_local_edit_does_not_break_governance(self) -> None:
+        """锁定测试已退役：本地 .md 与 YAML 不相等只产生告警。"""
+        from scripts import prompt_inventory as inv
+
+        manifest = inv.load_manifest(inv.MANIFEST)
+        warns = inv.check_upstream(PROJECT_ROOT / "dify" / "yaml", manifest)
+        assert isinstance(warns, list)
 
 
 class TestJudgePromptExtracted:

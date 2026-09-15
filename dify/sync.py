@@ -21,7 +21,9 @@ from pathlib import Path
 DIFY_BASE = "http://agent.smart-zone-dev.gf.com.cn"
 
 WORKFLOWS: list[tuple[str, str]] = [
-    ("d6c0ea8b-c037-4d63-95b4-cb3f02940d23", "主干工作流"),
+    # 治理（app/prompts/_manifest.yaml 的 dify.file）读取的是这一份；旧文件名「主干工作流.yml」
+    # 为 2026-08 冻结的拓扑参照，不再更新（ADR 0022 D1）
+    ("d6c0ea8b-c037-4d63-95b4-cb3f02940d23", "场外交易-test"),
     ("07c56e04-2250-4f78-be36-768091d9939b", "标的智能化推断和分词工具"),
     ("d6a4f5e1-4ff0-4ac4-82c8-7bc63e327cc0", "标的相关性排序工具"),
     ("1f6dcea0-8765-4be0-b0af-1ba5cba54aa7", "场外交易-期权工具"),

@@ -15,13 +15,11 @@
   - 当前 8 个 inactive 资产（`option/intent_extract`、`option/param_limit`、swap 去 LLM 化的 5 个订单号
     节点 + `swap/confirm`）的保留理由与可删条件都写在 manifest 的 `reason` 里；ADR 0001 D5
     "重构期内可改写但需可回滚"纪律仍然有效，删除前先看 reason
-  - 5 个 `swap/*_v2.md` 是 2026-08-28 瘦身 P0 批灰度位（`docs/swap-prompt-slimming-assessment.md`），
-    由 `_versions.yaml` / `OTC_PROMPT_SWAP_*_VERSION` 控制，默认 0 流量；其中 `intent_v2` /
-    `place_order_v2` 的 v1 已在 2026-09-11 被 Dify 回归更新，manifest 已标 drift_acknowledged，
-    放量前须重做 diff（ADR 0003：eval PASS ≥ v1 基线后才允许放量，达标转正时 v2→v1 并删 v2）
-- **7 个提示词被 `tests/test_prompt_governance.py` 按 Dify node_id 锁定为与 `dify/yaml/场外交易-test.yml`
-  逐字一致**（option/{intent,extract_inquiry,extract_place}、swap/{intent,place_order,select_counterparty,
-  select_ticker}）——改这 7 个 v1 文件会让测试失败；瘦身走 `*_v2.md` 灰度位，或按 ADR 0022 调整锁定范围
+- **git `.md` 是唯一生产真源，Dify YAML 只是上游输入**（ADR 0022 D1，2026-09-15 拍板）：manifest 每条镜像条目有
+  `dify: {file, node_id, system_sha256}`；Dify 侧更新后 `prompt_inventory.py --check` 会告警「上游有更新待人工 diff 合入」，
+  合入后把 `system_sha256` 更新为新值。旧的 7 文件逐字锁定测试已退役。改 `.md` 请在该条目 `changelog` 加一行
+- 5 个 `swap/*_v2.md` 灰度位现只剩 image_extract / excel_extract / image_ocr 三个（intent_v2 / place_order_v2 已删），
+  由 `_versions.yaml` / `OTC_PROMPT_SWAP_*_VERSION` 控制、默认 0 流量；manifest 记录 v1 快照 sha，v1 再变必须重新 ack
 - `[user]` 段：所有节点只用 `prompt.system`，user 消息由节点代码拼装，`.md` 里的 `[user]` 段仅作 Dify
   原始输入形态的参照（ADR 0022）
 

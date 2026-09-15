@@ -61,6 +61,9 @@ def _image_urls(files: list[dict[str, Any]]) -> list[str]:
     return urls
 
 
+_OCR_COUNTERPARTY_PLACEHOLDER = "{{#1772773805306.optionListStr#}}"
+
+
 async def _extract_params(
     prompt_name: str, user_text: str, conversation_id: str | None = None
 ) -> tuple[SwapPlaceOrderParams, str]:
@@ -108,7 +111,13 @@ async def swap_image_order(state: AgentState) -> dict[str, Any]:
         "swap", resolve_prompt_version("swap", "image_ocr", state.get("conversation_id"))
     )
     vl = get_qwen_vl()
-    content: list[dict[str, Any]] = [{"type": "text", "text": ocr_prompt.system}]
+    # Dify 原 system 的 {{#1772773805306.optionListStr#}} 由 code 节点 json.dumps 注入；
+    # 互换图片链按同口径渲染为 state["swap_counterparties"]（ADR 0022 D5，评估 C-27）
+    ocr_system = ocr_prompt.system.replace(
+        _OCR_COUNTERPARTY_PLACEHOLDER,
+        json.dumps(state.get("swap_counterparties") or [], ensure_ascii=False),
+    )
+    content: list[dict[str, Any]] = [{"type": "text", "text": ocr_system}]
     for u in urls:
         content.append({"type": "image_url", "image_url": {"url": u}})
     ocr_result = await vl.ainvoke([{"role": "user", "content": content}])

@@ -471,3 +471,22 @@ class TestParamsUpdateShape:
         assert isinstance(order_list, list)
         assert isinstance(order_list[0], dict)
         assert order_list[0]["placeOrderQuantity"] == 100
+
+
+@pytest.mark.asyncio
+class TestOcrCounterpartyInjection:
+    """评估 C-27 / --strict：image_ocr.md 的 {{#1772773805306.optionListStr#}} 此前原样发给 VL
+    模型；现按 Dify code 节点同口径渲染为 state["swap_counterparties"] 的 JSON（ADR 0022 D5）。"""
+
+    async def test_placeholder_rendered(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        ocr_llm, _ = _mock_llm(monkeypatch, _PARAMS)
+        await swap_image_order(
+            {
+                "raw_text": "",
+                "input_files": [{"type": "image", "url": "http://img/1.png"}],
+                "swap_counterparties": [{"ctptyId": 7, "shortName": "对手甲", "longName": None, "sort": "A"}],
+            }
+        )
+        text = ocr_llm.ainvoke.call_args.args[0][0]["content"][0]["text"]
+        assert "{{#" not in text
+        assert "对手甲" in text

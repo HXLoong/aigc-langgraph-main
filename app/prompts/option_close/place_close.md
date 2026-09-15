@@ -266,7 +266,13 @@ Examples:
 - If `quote_content` (§C) provides clear disambiguation, §C takes precedence over Pattern B. Pattern A is structural and applies regardless of §C.
 
 ## hasFastExecutionIntent
-{{#17797951842080.output#}}
+输出一个布尔字段 hasFastExecutionIntent：
+- 先判断用户原始输入是否明确包含‘最大跟量’：包含时 → `hasFastExecutionIntent: true`；市价、限价、具体价格、POV/TWAP 或其他明确数字不改变该判断。
+- 当用户原始输入包含最大跟量、积极跟量、尽快成交、快点成交、要快、积极成交、全力成交这类明确最大参与或快速执行语义词语，且未出现具体跟量比例时 → `hasFastExecutionIntent: true`。
+- 仅出现普通‘跟量’或‘市价跟量’，且未出现‘最大跟量’或其他明确快速执行语义时 → `hasFastExecutionIntent: false`；普通跟量仍可独立识别 placeOrderAlgorithmType=POV，但不代表最大跟量。
+- 用户给出具体跟量比例（如跟量后紧跟数字或百分比）时 → `hasFastExecutionIntent: false`，让显式比例走原通路；若同时包含‘最大跟量’，按前一条判断为 true。
+- 其他情况 → `hasFastExecutionIntent: false`。
+- 判定范围：仅使用过滤机器人名称后的用户原始输入。
 
 ## POV Ratio (closeOrderPovRatio)
 - `POV25` / `POV 25%` / `pov15%` / `15%` / `20%` → extract number (bare % without notional-ratio context)

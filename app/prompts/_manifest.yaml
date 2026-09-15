@@ -19,43 +19,32 @@ prompts:
   # ---------- router ----------
   router/unknown_intent:
     status: active
+    changelog:
+      - {date: 2026-09-15, kind: slim, note: "C-02（P0 红线）：删港/美股代码括号内公司名（9e0a4f3）"}
+    dify: {file: "场外交易-test.yml", node_id: "1779435568671", system_sha256: 5135ca3f0ba515a98a2ed9959bb2fb54ba74696bdbcab84577b5750e22e67229}
     loader: app/nodes/intent_route.py
     output_model: UnknownIntentOutput
 
   # ---------- swap ----------
   swap/intent:
     status: active
+    changelog:
+      - {date: 2026-09-15, kind: slim, note: "零风险批：烘焙 Dify 常量节点 17797951842080 keywords；删 structured output 下的 JSON 格式禁令段"}
+    dify: {file: "场外交易-test.yml", node_id: "1776159951508", system_sha256: c8e66b52c7e2cf7f0fec7643053aac2d14bfaedbc2f04e5a4a283b9c17e5ecef}
     loader: app/subgraphs/swap/intent.py
     output_model: SwapIntentOutput
-  swap/intent_v2:
-    status: gray
-    base: swap/intent
-    since: 2026-08-28
-    base_system_sha256: f3fb7f42b19e6c8e31aa50d793cb0210de8902f57263f4e2ca02586794365cfd
-    drift_acknowledged:
-      at_base_sha: c8e66b52c7e2cf7f0fec7643053aac2d14bfaedbc2f04e5a4a283b9c17e5ecef
-      note: >-
-        2026-09-11 e72ee2d 把 v1 回归为 Dify 原文（场外交易-test.yml 1776159951508），v2 未同步且
-        意图闭集已不一致（v2 仍含 confirm_order）；评估结论：废弃本 v2，从新 v1 机械再生，
-        不得放量（docs/prompt-maintainability-assessment.md SW-INC-03）
-    expires: "2026-10-15"
   swap/place_order:
     status: active
+    changelog:
+      - {date: 2026-09-15, kind: slim, note: "零风险批：删 structured output 下的纯 JSON 输出规则条"}
+    dify: {file: "场外交易-test.yml", node_id: "1776160580437", system_sha256: 1fa3351de8ae9266c5c255dc9d161f5391a2cb47e64c51541cade14076281c05}
     loader: app/subgraphs/swap/place_order.py
     output_model: SwapPlaceOrderParams
-  swap/place_order_v2:
-    status: gray
-    base: swap/place_order
-    since: 2026-08-28
-    base_system_sha256: 85eba609ce9c6b979b201e90afd467a9119452a178dd9e79b9a81608721f1784
-    drift_acknowledged:
-      at_base_sha: 1fa3351de8ae9266c5c255dc9d161f5391a2cb47e64c51541cade14076281c05
-      note: >-
-        2026-09-11 e72ee2d 把 v1 回归为 Dify 原文（1776160580437，含护栏0.5 等 12 处新规则），
-        v2 未同步；评估结论：废弃本 v2，从新 v1 机械再生，不得放量（SW-INC-03）
-    expires: "2026-10-15"
   swap/image_extract:
     status: active
+    changelog:
+      - {date: 2026-09-15, kind: slim, note: "零风险批：删 JSON 格式禁令段与 15 处“纯JSON,不带标记”标签"}
+    dify: {file: "场外交易-test.yml", node_id: "1764841677781", system_sha256: 0712c89a18968019549e11aaedd6d8a273aaaa3609a251e3090e8813bb6afd0c}
     loader: app/subgraphs/swap/multimodal.py
     loader_call: _extract_params
     output_model: SwapPlaceOrderParams
@@ -64,9 +53,15 @@ prompts:
     base: swap/image_extract
     since: 2026-08-28
     base_system_sha256: 0712c89a18968019549e11aaedd6d8a273aaaa3609a251e3090e8813bb6afd0c
+    drift_acknowledged:
+      at_base_sha: 7d8c4fb63c221e37cafb1925e4a1cec7fe7a07ac434bff655dfe362ca003dad7
+      note: "2026-09-15 零风险批只删了 v1 的 JSON 格式禁令（v2 已含同类删除），无业务规则差异；放量前仍需多模态 eval"
     expires: "2026-10-15"
   swap/excel_extract:
     status: active
+    changelog:
+      - {date: 2026-09-15, kind: slim, note: "零风险批：删两处 JSON 格式禁令段与“零标记”条"}
+    dify: {file: "场外交易-test.yml", node_id: "1764752539169", system_sha256: fdaf20a624a2e43af2fb674d444c2713c21bdbd94b9e18672d97c2e0a1f7de27}
     loader: app/subgraphs/swap/multimodal.py
     loader_call: _extract_params
     output_model: SwapPlaceOrderParams
@@ -75,9 +70,14 @@ prompts:
     base: swap/excel_extract
     since: 2026-08-28
     base_system_sha256: fdaf20a624a2e43af2fb674d444c2713c21bdbd94b9e18672d97c2e0a1f7de27
+    drift_acknowledged:
+      at_base_sha: 4e1c771be0972ae204940570b984a6620cfd0b557fdb310b6da825fcc6921864
+      note: "2026-09-15 零风险批只删了 v1 的 JSON 格式禁令（v2 已含同类删除），无业务规则差异；放量前仍需多模态 eval"
     expires: "2026-10-15"
   swap/image_ocr:
     status: active
+    injects: ["{{#1772773805306.optionListStr#}}"]
+    dify: {file: "场外交易-test.yml", node_id: "1761213989319", system_sha256: 3167ee52ff41c6fa8521ffab07def349d9fdd10578d465ae96cb22232a22cfed}
     loader: app/subgraphs/swap/multimodal.py
   swap/image_ocr_v2:
     status: gray
@@ -87,24 +87,30 @@ prompts:
     expires: "2026-10-15"
   swap/select_counterparty:
     status: active
+    dify: {file: "场外交易-test.yml", node_id: "1780652808839", system_sha256: a9b61fce02b4a4518d4ae0fafdd784b0f208dffe56ad0cc588960c874053300f}
     loader: app/subgraphs/swap/select_counterparty.py
   swap/select_ticker:
     status: active
+    dify: {file: "场外交易-test.yml", node_id: "1780652892832", system_sha256: 91b9b3a2b9d76b35820374de5187725721c48d40cc9a04ac608ba711e399d3a1}
     loader: app/subgraphs/swap/select_ticker.py
   swap/cancel_order:
     status: inactive
+    dify: {file: "场外交易-test.yml", node_id: "1776161179315", system_sha256: 4a0b7eab1fb023d6e2d9e98c44e5a022904864c16c3de5eebd1572648a506565}
     reason: 2026-08-28 瘦身 P1 去 LLM 化（app/subgraphs/swap/order_id.py 确定性提取），保留为行为规约参照；M4 全量上线稳定 7 天后可删
   swap/query_order:
     status: inactive
+    dify: {file: "场外交易-test.yml", node_id: "1776161209987", system_sha256: 2635de7f0b34405b25443350942ba0efa4461dae3a92855a41f449e83080cc31}
     reason: 同 swap/cancel_order
   swap/confirm_order:
     status: inactive
     reason: 同 swap/cancel_order
   swap/confirm_cancel:
     status: inactive
+    dify: {file: "场外交易-test.yml", node_id: "1776161199939", system_sha256: 0d50e85119dd97fa187fd34e79ebdcdcbe4388112ce4ee6d99f1c9f938f059bf}
     reason: 同 swap/cancel_order
   swap/confirm_modify:
     status: inactive
+    dify: {file: "场外交易-test.yml", node_id: "1776161205019", system_sha256: 477b56e19249d7e075f88b385b0fa104bd3a9c1a163343114c647994ea1c1b6a}
     reason: 同 swap/cancel_order
   swap/confirm:
     status: inactive
@@ -113,27 +119,51 @@ prompts:
   # ---------- option ----------
   option/intent:
     status: active
+    changelog:
+      - {date: 2026-09-15, kind: slim, note: "零风险批：烘焙 17797951842080 keywords"}
+    dify: {file: "场外交易-test.yml", node_id: "1755073106378", system_sha256: 4ef7c227973113ded050f2205f3b18e501d67955b5f37845a3ebbf692edfaaad}
     loader: app/subgraphs/option/intent.py
   option/extract_inquiry:
     status: active
+    changelog:
+      - {date: 2026-09-15, kind: slim, note: "零风险批：删机器人过滤块与 query/bot_name_list 声明（代码不注入）"}
+    dify: {file: "场外交易-test.yml", node_id: "1779330004958", system_sha256: 3455776232a30a0d0e5f47b61dfcbdc2ff90122de8dd35fd810ad5c90e9ceed5}
     loader: app/subgraphs/option/extract_inquiry.py
   option/extract_place:
     status: active
+    changelog:
+      - {date: 2026-09-15, kind: slim, note: "零风险批：烘焙 17797951842080 output（hasFastExecutionIntent 规则本体，09-11 回归后丢失）；删机器人过滤块"}
+    dify: {file: "场外交易-test.yml", node_id: "17793301871440", system_sha256: 40cf4b71f59a72c96166c596550df5f2907da448f68cdf0c6e3e3ab7767b24aa}
     loader: app/subgraphs/option/extract_place.py
   option/extract_confirm_place:
     status: active
+    changelog:
+      - {date: 2026-09-15, kind: slim, note: "零风险批：删机器人过滤块与 query/bot_name_list 声明"}
+    dify: {file: "场外交易-test.yml", node_id: "17793301761160", system_sha256: d3bda44205402bbda059bab0f7e014fbd6f7170539018c773c345539d7b024f8}
     loader: app/subgraphs/option/extract_confirm_place.py
   option/extract_cancel_place:
     status: active
+    changelog:
+      - {date: 2026-09-15, kind: slim, note: "零风险批：删机器人过滤块与 query/bot_name_list 声明"}
+    dify: {file: "场外交易-test.yml", node_id: "17793301887260", system_sha256: e0bfea80c6f70e909a1a34be689306e2da3619e903fe06e36657d928d8b6eade}
     loader: app/subgraphs/option/extract_cancel_place.py
   option/extract_confirm_cancel:
     status: active
+    changelog:
+      - {date: 2026-09-15, kind: slim, note: "零风险批：删机器人过滤块与 query/bot_name_list 声明"}
+    dify: {file: "场外交易-test.yml", node_id: "17793301782150", system_sha256: a7a6630d10f48394c96659852a2edd5263701e4ee848560aa6d862d4fde28c5c}
     loader: app/subgraphs/option/extract_confirm_cancel.py
   option/extract_cancel:
     status: active
+    changelog:
+      - {date: 2026-09-15, kind: slim, note: "零风险批：删机器人过滤块与 query/bot_name_list 声明"}
+    dify: {file: "场外交易-test.yml", node_id: "17793301778710", system_sha256: 24725c9cd8b54416e24af82742b6a5a30001b57bc612030ee53d56602459cee9}
     loader: app/subgraphs/option/extract_cancel.py
   option/extract_query:
     status: active
+    changelog:
+      - {date: 2026-09-15, kind: slim, note: "零风险批：删机器人过滤块与 query/bot_name_list 声明"}
+    dify: {file: "场外交易-test.yml", node_id: "17793301774310", system_sha256: 7288250786477fc9d4bd70abd3b871c5be850535020e9d57174c1d9c70c76256}
     loader: app/subgraphs/option/extract_query.py
   option/intent_extract:
     status: inactive
@@ -145,44 +175,63 @@ prompts:
   # ---------- option_close（代码目录 app/subgraphs/close/）----------
   option_close/intent:
     status: active
+    changelog:
+      - {date: 2026-09-15, kind: slim, note: "零风险批：烘焙 17797951842080 keywords；删 system 内悬空的“用户输入”占位块"}
+    dify: {file: "场外交易-test.yml", node_id: "1772589205439", system_sha256: 2fea06ade08be009ce4b410bb13e6867c444e4d6a6d541be7d8ae1f05fd06c85}
     loader: app/subgraphs/close/intent.py
   option_close/place_close:
     status: active
+    changelog:
+      - {date: 2026-09-15, kind: slim, note: "零风险批：烘焙 17797951842080 output"}
+    dify: {file: "场外交易-test.yml", node_id: "1772602519902", system_sha256: 64df10f184b95d14eff16c5e661181518970458a2fbe47fd15d79cb9e8008920}
     loader: app/subgraphs/close/place_close.py
   option_close/cancel_close:
     status: active
+    dify: {file: "场外交易-test.yml", node_id: "1772616579608", system_sha256: 2d090ad1bc047b2cdc40ed72252c2da8de0fb42a67c54792e660e53155221203}
     loader: app/subgraphs/close/cancel_close.py
   option_close/confirm_close:
     status: active
+    dify: {file: "场外交易-test.yml", node_id: "1772615066119", system_sha256: b2e6ac46028924af9a8f792388c8267fba5e9644f38008a7f9d5ab6e06704f57}
     loader: app/subgraphs/close/confirm_close.py
   option_close/confirm_cancel:
     status: active
+    dify: {file: "场外交易-test.yml", node_id: "1772617956918", system_sha256: 371a5c27a18f36aa5107de8472afaef9c2beae33055774eadd270cce63073264}
     loader: app/subgraphs/close/confirm_cancel.py
   option_close/holding_query:
     status: active
+    changelog:
+      - {date: 2026-09-15, kind: slim, note: "零风险批：删 JSON 格式禁令句"}
+    dify: {file: "场外交易-test.yml", node_id: "1772614623517", system_sha256: a9d422d647bb15c0d8897ddaace9988a7562ac4544f243ef649d1fd300bd9b19}
     loader: app/subgraphs/close/holding_query.py
     output_model: HoldingQueryParams
     injects: ["{{#1772773805306.optionListStr#}}"]
   option_close/query_status:
     status: active
+    dify: {file: "场外交易-test.yml", node_id: "1772707335701", system_sha256: ca8b427f62a9e7725a86e3b2bf7948d88afd64718ddf5935ae2cb53e45c86e27}
     loader: app/subgraphs/close/query_status.py
 
   # ---------- ticker（原文 JSON 解析，非 structured output）----------
   ticker/infer_code:
     status: active
+    changelog:
+      - {date: 2026-09-15, kind: slim, note: "C-01（P0 红线）：示例区名称→windCode / 命名指数→ETF 事实清单改格式占位，基金管理人清单改通用规则；删从未注入的 transactionTypes/inferencePrompt 占位符与整段范围限制规则；主力回落示例改相对日期"}
+    dify: {file: "标的智能化推断和分词工具.yml", node_id: "1775735653728", system_sha256: 4a2f83954ba53040dbe0bd4465d2bcef62d6dea751ccccbd1e44dbe90f03c7d5}
     loader: app/subgraphs/ticker/tools.py
     loader_call: _call_ticker_llm
     injects: ["{{#1775913928411.date#}}"]
   ticker/tokenize:
     status: active
+    dify: {file: "标的智能化推断和分词工具.yml", node_id: "1775735672603", system_sha256: 644fbeaa703b52ebbcded47edee7c16b780da02fd3362b847f79d0f30a97fc65}
     loader: app/subgraphs/ticker/tools.py
     loader_call: _call_ticker_llm
   ticker/judge_type:
     status: active
+    dify: {file: "标的智能化推断和分词工具.yml", node_id: "1782200000003", system_sha256: 7f654381149a96838fcbcc09df9e2c717fecedde6ac4c0fa71deebd2c6d48f36}
     loader: app/subgraphs/ticker/tools.py
     loader_call: _call_ticker_llm
   ticker/rank:
     status: active
+    dify: {file: "标的相关性排序工具.yml", node_id: "1775820432797", system_sha256: 7524574645d0e14c24af31ae36d81123d8f30a6a0e44fa9646d3355cf74f6ea5}
     loader: app/subgraphs/ticker/tools.py
     loader_call: _call_ticker_llm
     injects: ["{{#1775820054722.date#}}"]
