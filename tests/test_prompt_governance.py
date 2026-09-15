@@ -88,3 +88,15 @@ class TestExportNoSilentOverwrite:
         target.write_text("旧版内容", encoding="utf-8")
         assert save_prompt_as_md(self._PROMPT, tmp_path, overwrite=True) is True
         assert "sys" in target.read_text(encoding="utf-8")
+
+
+class TestSyncScriptNoDefaultCredentials:
+    """提示词治理评估 GOV-03：dify/sync.py 曾把内网 Dify 账号密码写成 argparse 默认值
+    （CLAUDE.md「硬编码 API Key / Secret」P0 红线）。凭据只能来自环境变量或命令行。"""
+
+    def test_no_literal_credentials(self) -> None:
+        import re
+
+        text = (PROJECT_ROOT / "dify" / "sync.py").read_text(encoding="utf-8")
+        assert "wxzhoutao" not in text
+        assert re.search(r'os\.environ\.get\("DIFY_(EMAIL|PASSWORD)",\s*"[^"]+"\)', text) is None

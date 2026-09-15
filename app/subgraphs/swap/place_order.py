@@ -108,10 +108,8 @@ async def swap_place_order(state: AgentState) -> dict[str, Any]:
     hints = refine_quote_hints(quote_content, raw_text)
 
     # 2. LLM 提取下单参数
-    prompt = load_prompt(
-        "swap",
-        resolve_prompt_version("swap", "place_order", state.get("conversation_id")),
-    )
+    prompt_name = resolve_prompt_version("swap", "place_order", state.get("conversation_id"))
+    prompt = load_prompt("swap", prompt_name)
     llm = get_qwen_complex().with_structured_output(SwapPlaceOrderParams)
     user_message = _build_user_message(state, hints)
     params: Any = await llm.ainvoke(
@@ -161,6 +159,7 @@ async def swap_place_order(state: AgentState) -> dict[str, Any]:
                 node="swap_place_order",
                 decision=decision,
                 llm_output={
+                    "prompt_name": prompt_name,  # ADR 0003 灰度硬前置：reporter 按此分桶
                     "params": params.model_dump(),
                     "tickers_count": len(tickers),
                     "hitl_count": len(resolution.hitl_pending),

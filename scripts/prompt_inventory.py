@@ -8,17 +8,22 @@
   2. status=active 的条目：loader 文件存在且真的引用了该 name
   3. status=inactive 的条目：app/ 内零 load_prompt 引用，且登记了 reason
   4. status=gray（v2 灰度位）的条目：base（v1）自 v2 切出后未漂移
-     （base_system_sha256 快照）；漂移必须写 drift_acknowledged 说明，否则 fail
+     （base_system_sha256 快照）；漂移必须写结构化 drift_acknowledged
+     {at_base_sha: <确认时的 v1 sha>, note: ...}，v1 之后再变 → 必须重新 ack
 
 另外做报告项（不 fail）：
   - 每文件 system / user 字符数、估算 tokens（字符 ÷ 1.6，与 swap 瘦身评估同口径）
   - 死重扫描：structured output 下失效的 JSON 格式禁令行数、Dify {{#...#}} 占位符数、
     无调用点的 [user] 段字符数
   - max_system_chars 预算（manifest 可选字段）超出 → fail
+  - gray 条目 expires 到期未转正 → 警告
+  - --strict：悬空占位符（system 中未在 injects 登记的 {{#...#}}）与 structured output
+    节点（有 output_model）里的 JSON 格式禁令 → fail（ADR 0022 D5 目标态，逐步收敛）
 
 用法：
     python scripts/prompt_inventory.py            # 打印 markdown 清单 + lint 结果
     python scripts/prompt_inventory.py --check    # 仅 lint，退出码 0/1
+    python scripts/prompt_inventory.py --check --strict   # 加严：悬空占位符 / JSON 禁令也 fail
     python scripts/prompt_inventory.py --json     # 机器可读清单
 
 退出码：0 一致 / 1 有违反 / 2 manifest 缺失或解析失败
@@ -58,6 +63,7 @@ _LOAD_CALL_RE = re.compile(
 )
 
 VALID_STATUS = {"active", "gray", "inactive"}
+_DEFAULT_LOAD_CALLS = ("load_prompt", "resolve_prompt_version")
 CHARS_PER_TOKEN = 1.6
 
 
@@ -145,13 +151,21 @@ def check_orphans(prompts_dir: Path, manifest: dict[str, dict[str, Any]]) -> lis
 # ============================================================
 
 
+def _has_load_call(text: str, category: str, name: str, helper: str | None) -> bool:
+    """loader 文件里是否真的有对该提示词的加载调用（而非任意同名字面量）。"""
+    for fn in _DEFAULT_LOAD_CALLS:
+        if re.search(rf"{fn}\(\s*['\"]{re.escape(category)}['\"]\s*,\s*['\"]{re.escape(name)}['\"]", text):
+            return True
+    return bool(helper and re.search(rf"{re.escape(helper)}\(\s*['\"]{re.escape(name)}['\"]", text))
+
+
 def check_loaders(project_root: Path, manifest: dict[str, dict[str, Any]]) -> list[str]:
     errs: list[str] = []
     refs = _load_calls(project_root)
     for key, entry in manifest.items():
         entry = entry or {}
         status = entry.get("status")
-        name = key.rsplit("/", 1)[-1]
+        category, _, name = key.rpartition("/")
         if status == "active":
             loader = entry.get("loader")
             if not loader:
@@ -162,8 +176,11 @@ def check_loaders(project_root: Path, manifest: dict[str, dict[str, Any]]) -> li
                 errs.append(f"❌ {key} 的 loader 文件不存在：{loader}")
                 continue
             text = loader_path.read_text(encoding="utf-8", errors="ignore")
-            if f'"{name}"' not in text and f"'{name}'" not in text:
-                errs.append(f"❌ {key} 的 loader {loader} 未引用字面量 \"{name}\"（是否已改名/去 LLM 化？）")
+            if not _has_load_call(text, category, name, entry.get("loader_call")):
+                errs.append(
+                    f"❌ {key} 的 loader {loader} 未见 load_prompt/resolve_prompt_version(\"{category}\", \"{name}\")"
+                    f" 或 loader_call helper 调用（是否已改名/去 LLM 化？）"
+                )
         elif status == "inactive":
             if not entry.get("reason"):
                 errs.append(f"❌ {key} 为 inactive 但未写 reason（保留理由 / 可删条件）")
@@ -193,12 +210,42 @@ def check_gray_drift(prompts_dir: Path, manifest: dict[str, dict[str, Any]]) -> 
             errs.append(f"❌ {key} 的 base {base}.md 不存在")
             continue
         current = system_sha256(base_path)
-        if current != snapshot and not entry.get("drift_acknowledged"):
+        if current == snapshot:
+            continue
+        ack = entry.get("drift_acknowledged")
+        if ack is not None and not isinstance(ack, dict):
             errs.append(
-                f"❌ {key} 相对 base {base} 已漂移：v1 在 v2 切出后被修改，"
-                "v2 缺少这些变更；放量前须重做 diff，并在 manifest 写 drift_acknowledged 说明"
+                f"❌ {key} 的 drift_acknowledged 必须是 {{at_base_sha: <确认时 v1 sha>, note: ...}}，"
+                "字符串 ack 是永久静默开关，不接受"
+            )
+            continue
+        acked_sha = (ack or {}).get("at_base_sha")
+        if acked_sha == current:
+            continue
+        if acked_sha:
+            errs.append(
+                f"❌ {key} 的 base {base} 在上次 ack（at_base_sha={acked_sha[:8]}）之后再次被修改，"
+                "必须重新 diff 并把 at_base_sha 更新为当前 v1 sha"
+            )
+        else:
+            errs.append(
+                f"❌ {key} 相对 base {base} 已漂移：v1 在 v2 切出后被修改，v2 缺少这些变更；"
+                "放量前须重做 diff，并在 manifest 写 drift_acknowledged {at_base_sha, note}"
             )
     return errs
+
+
+def check_gray_expiry(manifest: dict[str, dict[str, Any]], today: str) -> list[str]:
+    """gray 条目 expires（ISO 日期）已过 → 警告（ADR 0003「>2 并存版本视为治理债」的可见化）。"""
+    warns: list[str] = []
+    for key, entry in manifest.items():
+        entry = entry or {}
+        if entry.get("status") != "gray":
+            continue
+        expires = entry.get("expires")
+        if expires and str(expires) < today:
+            warns.append(f"⚠️ {key} 灰度位已于 {expires} 到期仍未转正/删除（ADR 0003 治理债）")
+    return warns
 
 
 # ============================================================
@@ -239,12 +286,41 @@ def scan_dead_weight(md_path: Path) -> dict[str, Any]:
     }
 
 
+def dangling_placeholders(md_path: Path, entry: dict[str, Any]) -> list[str]:
+    """system 段里出现、但 manifest `injects` 未登记（即代码不会渲染）的 Dify 占位符。"""
+    system, _ = split_md(md_path.read_text(encoding="utf-8"))
+    found = set(_DIFY_PLACEHOLDER_RE.findall(system))
+    injected = set(entry.get("injects") or [])
+    return sorted(found - injected)
+
+
+def check_strict(prompts_dir: Path, manifest: dict[str, dict[str, Any]]) -> list[str]:
+    """--strict 加严项（ADR 0022 D5 目标态）：active 文件的悬空占位符 / structured output 下的 JSON 禁令。"""
+    errs: list[str] = []
+    for key, entry in manifest.items():
+        entry = entry or {}
+        if entry.get("status") != "active":
+            continue
+        p = prompts_dir / f"{key}.md"
+        if not p.exists():
+            continue
+        dangling = dangling_placeholders(p, entry)
+        if dangling:
+            errs.append(f"❌ {key} 有 {len(dangling)} 个悬空占位符（代码未注入、LLM 看到的是变量名）：{dangling}")
+        if entry.get("output_model"):
+            bans = scan_dead_weight(p)["json_format_ban_lines"]
+            if bans:
+                errs.append(f"❌ {key} 走 structured output（{entry['output_model']}）却仍有 {bans} 行 JSON 格式禁令（死重）")
+    return errs
+
+
 def build_inventory(prompts_dir: Path, manifest: dict[str, dict[str, Any]]) -> list[dict[str, Any]]:
     rows = []
     for key in list_md_keys(prompts_dir):
         entry = manifest.get(key) or {}
         row = {"key": key, "status": entry.get("status", "unregistered"), "loader": entry.get("loader", "")}
         row.update(scan_dead_weight(prompts_dir / f"{key}.md"))
+        row["dangling_placeholders"] = dangling_placeholders(prompts_dir / f"{key}.md", entry)
         if entry.get("status") == "gray":
             row["base"] = entry.get("base", "")
         if entry.get("status") == "inactive":
@@ -255,14 +331,14 @@ def build_inventory(prompts_dir: Path, manifest: dict[str, dict[str, Any]]) -> l
 
 def render_markdown(rows: list[dict[str, Any]]) -> str:
     lines = [
-        "| 提示词 | 状态 | 加载点 | system 字符 | ≈tokens | JSON 禁令行 | Dify 占位符 | user 段字符 |",
+        "| 提示词 | 状态 | 加载点 | system 字符 | ≈tokens | JSON 禁令行 | 占位符(悬空) | user 段字符 |",
         "|---|---|---|---:|---:|---:|---:|---:|",
     ]
     for r in rows:
         lines.append(
             f"| `{r['key']}` | {r['status']} | `{r['loader'] or r.get('base', '') or '-'}` | "
             f"{r['system_chars']:,} | {r['est_tokens']:,} | {r['json_format_ban_lines']} | "
-            f"{r['dify_placeholders']} | {r['user_chars']} |"
+            f"{r['dify_placeholders']}({len(r['dangling_placeholders'])}) | {r['user_chars']} |"
         )
     by_status: dict[str, int] = {}
     for r in rows:
@@ -294,6 +370,8 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="提示词清单 + 治理 lint（ADR 0022）")
     parser.add_argument("--check", action="store_true", help="只跑 lint，不打印清单")
     parser.add_argument("--json", action="store_true", help="输出机器可读清单")
+    parser.add_argument("--strict", action="store_true", help="悬空占位符 / JSON 禁令也 fail")
+    parser.add_argument("--today", default=None, help="ISO 日期，默认当天（测试用）")
     args = parser.parse_args()
 
     if not MANIFEST.exists():
@@ -306,10 +384,17 @@ def main() -> int:
         return 2
 
     errs = run_checks(PROJECT_ROOT, PROMPTS_DIR, manifest)
+    if args.strict:
+        errs += check_strict(PROMPTS_DIR, manifest)
+    from datetime import date
+
+    warns = check_gray_expiry(manifest, args.today or date.today().isoformat())
     if not args.check:
         rows = build_inventory(PROMPTS_DIR, manifest)
         print(json.dumps(rows, ensure_ascii=False, indent=1) if args.json else render_markdown(rows))
         print()
+    for w in warns:
+        print(w)
     for e in errs:
         print(e)
     if errs:

@@ -8,14 +8,14 @@
 from __future__ import annotations
 
 import argparse
+import http.cookiejar
 import json
 import os
 import ssl
 import subprocess
 import sys
 import urllib.request
-import http.cookiejar
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 DIFY_BASE = "http://agent.smart-zone-dev.gf.com.cn"
@@ -131,7 +131,7 @@ def git_push(target_branch: str = "feature-yaml") -> bool:
         print("无变更，跳过推送")
         return False
 
-    now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+    now = datetime.now(UTC).strftime("%Y-%m-%d %H:%M UTC")
     _git(["commit", "-m", f"chore: 同步 Dify 工作流 YAML ({now})"], repo_dir)
     _git(["push", "origin", target_branch], repo_dir)
     print(f"已推送到 origin/{target_branch}")
@@ -151,12 +151,12 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="同步 Dify 工作流 YAML")
     parser.add_argument(
         "--email",
-        default=os.environ.get("DIFY_EMAIL", "wxzhoutao@gfpartner.com.cn"),
+        default=os.environ.get("DIFY_EMAIL"),
         help="Dify 登录邮箱",
     )
     parser.add_argument(
         "--password",
-        default=os.environ.get("DIFY_PASSWORD", "wxzhoutao123"),
+        default=os.environ.get("DIFY_PASSWORD"),
         help="Dify 登录密码",
     )
     parser.add_argument(

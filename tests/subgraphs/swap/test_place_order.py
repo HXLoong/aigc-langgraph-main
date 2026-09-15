@@ -238,6 +238,8 @@ class TestSwapPlaceOrderNode:
         assert "action=place" in decision
         assert "orders=1" in decision
         assert "tickers=1" in decision
+        # ADR 0003 硬前置：进 _versions.yaml 灰度的节点必须在 trace 写实际加载的 prompt_name
+        assert trace[0].llm_output["prompt_name"] == "place_order"
 
     async def test_empty_orders_with_unknown_ticker(
         self, monkeypatch: pytest.MonkeyPatch

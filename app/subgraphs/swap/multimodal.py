@@ -63,8 +63,11 @@ def _image_urls(files: list[dict[str, Any]]) -> list[str]:
 
 async def _extract_params(
     prompt_name: str, user_text: str, conversation_id: str | None = None
-) -> SwapPlaceOrderParams:
-    """image_extract / excel_extract 共用的参数提取调用(走 _versions.yaml 灰度)。"""
+) -> tuple[SwapPlaceOrderParams, str]:
+    """image_extract / excel_extract 共用的参数提取调用(走 _versions.yaml 灰度)。
+
+    返回 (参数, 实际加载的 prompt name)——后者写进 trace（ADR 0003 灰度硬前置）。
+    """
     resolved = resolve_prompt_version("swap", prompt_name, conversation_id)
     prompt = load_prompt("swap", resolved)
     llm = get_qwen_structured().with_structured_output(SwapPlaceOrderParams)
@@ -74,10 +77,12 @@ async def _extract_params(
             ("user", user_text),
         ]
     )
-    return result
+    return result, resolved
 
 
-def _params_update(params: SwapPlaceOrderParams, node: str, decision: str) -> dict[str, Any]:
+def _params_update(
+    params: SwapPlaceOrderParams, node: str, decision: str, prompt_name: str | None = None
+) -> dict[str, Any]:
     action = _expected_action(params)
     return {
         "place_params": {
@@ -85,7 +90,9 @@ def _params_update(params: SwapPlaceOrderParams, node: str, decision: str) -> di
             "orderList": [item.model_dump() for item in params.order_list],
         },
         "intent": "place_order_request",
-        "trace": [TraceEntry(node=node, decision=decision)],
+        "trace": [
+            TraceEntry(node=node, decision=decision, llm_output={"prompt_name": prompt_name})
+        ],
     }
 
 
@@ -108,10 +115,10 @@ async def swap_image_order(state: AgentState) -> dict[str, Any]:
     ocr_text = getattr(ocr_result, "content", "") or ""
 
     user_text = f"图片识别内容:\n{ocr_text}\n\nraw_content: {state.get('raw_text', '') or ''}"
-    params = await _extract_params(
+    params, prompt_name = await _extract_params(
         "image_extract", user_text, state.get("conversation_id")
     )
-    return _params_update(params, "swap_image_order", f"images={len(urls)}")
+    return _params_update(params, "swap_image_order", f"images={len(urls)}", prompt_name)
 
 
 @safe_node
@@ -132,10 +139,10 @@ async def swap_excel_order(state: AgentState) -> dict[str, Any]:
     rows_text = json.dumps(rows, ensure_ascii=False, default=str)
 
     user_text = f"Excel 数据:\n{rows_text}\n\nraw_content: {state.get('raw_text', '') or ''}"
-    params = await _extract_params(
+    params, prompt_name = await _extract_params(
         "excel_extract", user_text, state.get("conversation_id")
     )
-    return _params_update(params, "swap_excel_order", f"rows={len(rows)}")
+    return _params_update(params, "swap_excel_order", f"rows={len(rows)}", prompt_name)
 
 
 __all__ = ["swap_image_order", "swap_excel_order", "parse_excel_rows"]

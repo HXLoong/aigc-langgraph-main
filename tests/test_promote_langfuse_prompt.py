@@ -109,8 +109,10 @@ def test_render_string_content() -> None:
     prompt = MagicMock()
     prompt.prompt = "Hello World"
     prompt.version = 3
+    from app.prompts import _parse_prompt_md  # type: ignore[attr-defined]
+
     md, v = ppm._render_markdown_from_langfuse(prompt, "x")
-    assert md == "Hello World\n"
+    assert _parse_prompt_md(md)[0] == "Hello World"
     assert v == 3
 
 
@@ -122,9 +124,11 @@ def test_render_message_list_with_system_and_user() -> None:
     ]
     prompt.version = 5
     md, v = ppm._render_markdown_from_langfuse(prompt, "x")
-    assert "你是助手" in md
-    assert "## User Template" in md
-    assert "raw: {{raw}}" in md
+    from app.prompts import _parse_prompt_md  # type: ignore[attr-defined]
+
+    system, user = _parse_prompt_md(md)
+    assert system == "你是助手"
+    assert user == "raw: {{raw}}"
     assert v == 5
 
 
@@ -132,9 +136,10 @@ def test_render_message_list_system_only() -> None:
     prompt = MagicMock()
     prompt.prompt = [{"role": "system", "content": "only system"}]
     prompt.version = 1
+    from app.prompts import _parse_prompt_md  # type: ignore[attr-defined]
+
     md, _ = ppm._render_markdown_from_langfuse(prompt, "x")
-    assert md == "only system\n"
-    assert "## User Template" not in md
+    assert _parse_prompt_md(md) == ("only system", "")
 
 
 def test_render_empty_system_exits() -> None:
@@ -271,3 +276,22 @@ def test_e2e_explicit_version_arg(
     assert rc == 0
     assert (tmp_path / "swap" / "intent_v5.md").exists()
     assert not (tmp_path / "swap" / "intent_v2.md").exists()
+
+
+# ============================================================
+# 治理评估 GOV-05：晋升产物必须登记为 manifest gray 条目（ADR 0022 D2/D3）
+# ============================================================
+
+
+def test_append_manifest_gray_entry(tmp_path: Path) -> None:
+    manifest = tmp_path / "_manifest.yaml"
+    manifest.write_text("prompts:\n  swap/intent:\n    status: active\n    loader: a.py\n", encoding="utf-8")
+    ppm.append_manifest_gray(manifest, "swap", "intent", 3, base_sha="abc", since="2026-09-15")
+    import yaml
+
+    data = yaml.safe_load(manifest.read_text(encoding="utf-8"))
+    entry = data["prompts"]["swap/intent_v3"]
+    assert entry["status"] == "gray"
+    assert entry["base"] == "swap/intent"
+    assert entry["base_system_sha256"] == "abc"
+    assert entry["since"] == "2026-09-15"

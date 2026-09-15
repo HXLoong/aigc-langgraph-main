@@ -77,7 +77,7 @@
 | option_close | 7 | 7（另有 unknown 兜底）| 与蓝图一致 |
 | ticker | 1（ReAct 子图）| 1 | ⚠️ 实为 resolver 确定性编排，见下"实现偏离" |
 
-补充事实：`intent_extract.md`（2870 行）已冻结为 diff 快照，非"当前最大提示词"——`place_order.dify_original.md`（3059 行）更大，两者均为非活跃资产（`app/prompts/CLAUDE.md`）。
+补充事实：`intent_extract.md`（2870 行）已冻结为 diff 快照，为非活跃资产；`place_order.dify_original.md` 已随 DSL v2 迁移（99a4c2f）删除。非活跃资产以 `app/prompts/_manifest.yaml` 为准（ADR 0022）。
 
 互换"下单 vs 改单"共用 `place_order_request`，靠 `orderList[i].orderId` 有无区分（`swap/place_order.py` 落地一致）。
 
@@ -108,7 +108,7 @@ app/
 ├── llm/clients.py             # LLM 统一工厂（ADR 0020 vendor 适配层）
 ├── checkpointer/factory.py    # AIOMySQLSaver（已随 ADR 0021/#153 接线，use_mysql_checkpointer）
 ├── observability/             # tracing / metrics / alerts / canary / health_probes
-└── prompts/                   # 37 个业务 .md + _versions.yaml
+└── prompts/                   # 41 个业务 .md + _versions.yaml + _manifest.yaml（ADR 0022）
 harness/                       # 评测台（模块清单见 ADR 0002）
 ```
 

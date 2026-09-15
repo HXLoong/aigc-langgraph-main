@@ -310,6 +310,7 @@ class TestImageOrder:
             {"raw_text": "", "input_files": [{"type": "image", "url": "http://i/1.png"}]}
         )
         assert out["trace"][0].node == "swap_image_order"
+        assert out["trace"][0].llm_output["prompt_name"] == "image_extract"
 
 
 # ============================================================
@@ -449,6 +450,7 @@ class TestExcelOrder:
         )
         assert out["trace"][0].node == "swap_excel_order"
         assert out["trace"][0].decision == "rows=2"
+        assert out["trace"][0].llm_output["prompt_name"] == "excel_extract"
 
 
 # ============================================================

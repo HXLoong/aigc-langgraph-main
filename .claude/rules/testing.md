@@ -49,7 +49,7 @@ for target in (
 
 - 所有新增意图必须在 `tests/fixtures/golden.jsonl` 加至少 2 条用例
 - golden 格式见文件顶部注释
-- 跑评估：`python scripts/eval_golden.py tests/fixtures/golden.jsonl`
+- 跑评估：`python scripts/langfuse_eval.py --local <fixture>`（`eval_golden.py` 为旧入口）
 
 ## 提交前自检
 
@@ -65,7 +65,7 @@ mypy app/                                     # 类型无错
 - ✅ 新增 Pydantic 模型 → 加字段校验测试
 - ✅ 新增业务逻辑分支 → 加 E2E 覆盖
 - ✅ 修 bug → 先写复现测试，再修
-- ⚠️ 改 Dify 原始提示词 → 不许，只能改加载逻辑，配合 golden set 回归
+- ⚠️ 改活跃提示词 → 走 ADR 0022 D4 分档 + eval 门（PASS ≥ 上一版），`prompt(<scope>)` commit；改 `.md` 必须同步 `app/prompts/_manifest.yaml`
 
 ## 跑慢测试的技巧
 
