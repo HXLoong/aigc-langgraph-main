@@ -17,9 +17,9 @@
 
 | 严重度 | 条数 | 其中本次已修 |
 |---|---:|---:|
-| P0 | 11 | 7（代码级 5 + 红线 2） |
-| P1 | 47 | 6（治理机制） |
-| P2 | 45 | 4（文档口径） |
+| P0 | 8（另 2 条经批评员裁决降为 P1） | 7（代码级 5 + 红线 2）；open 1（C-01 需业务确认改法） |
+| P1 | 49 | 8（治理机制） |
+| P2 | 45 | 6（文档口径） |
 
 **P0 的共性**：全部是"迁移丢东西"而非"提示词写得差"——
 
@@ -27,8 +27,8 @@
 2. **前置分流丢失**：09-11 回归 Dify 原文时 `swap/intent.md` 删掉了 `confirm_order` 枚举（Dify 靠 code 节点前置分流），app 未移植 → 互换确认下单链路不可达（SW-INC-01 / GOV-02，已修）
 3. **契约移交未同步**：09-11 版 `select_counterparty.md` 把简写唯一性交给代码，代码却按列表顺序取首项 → 多命中错配对手（SW-INC-06，已修）
 4. **代码规则层与提示词矛盾**：`close/intent.py` 写入枚举外的值落 `close_unknown`（OC-02，已修）
-5. **红线**：`dify/sync.py` 默认值里的内网账号密码（GOV-03，已删，**密码需轮换**）；`router/unknown_intent.md` / `ticker/infer_code.md` / `option_close/holding_query.md` 的 代码↔公司名 / 名称→windCode / 真实账户名（C-01/02/03，router 已删，其余需业务确认改法）
-6. **真源之争**：ADR 0014 说 git 是真源、`test_prompt_governance.py` 把 7 个最重文件锁成 Dify 逐字镜像、客户要瘦身——三者互斥（GOV-01，待用户拍板 ADR 0022 D1）
+5. **红线**：`dify/sync.py` 默认值里的内网账号密码（GOV-03，已删，**密码需轮换**）；`router/unknown_intent.md` 代码↔公司名（C-02，已删）；`ticker/infer_code.md` 名称→windCode / 命名指数→ETF 清单（C-01，唯一 open 的 P0，需业务确认改法）。`holding_query.md` 的真实账户名 / 契约魔数经批评员裁决为 P1（不是"会膨胀的业务字典"）
+6. **真源之争**：ADR 0014 说 git 是真源、`test_prompt_governance.py` 把 7 个最重文件锁成 Dify 逐字镜像、客户要瘦身——三者互斥（GOV-01；批评员裁决：无现存生产错误故为 P1，但是路线图第一道闸，待用户拍板 ADR 0022 D1）
 
 **已落地的管理层改进**（见第八节）：manifest 三态清单 + 四条不变量 lint 进 CI、v2 漂移防护（结构化 ack + expires）、版本化收敛为一种、晋升脚本产物契约修复、灰度节点 trace 写 prompt_name、规则页重写、去凭据。
 
@@ -217,19 +217,19 @@ Dify YAML（上游输入，sync.py 拉取）          │ lint: prompt_inventory
 
 切换前提只有一个需要业务方确认：M4 后 Dify 工作流不再是生产路径，并指明生产 app_id。在此之前维持现状，瘦身只能走 `*_v2.md`（且 v2 需随 v1 变化重新 ack）。
 
-## 七、实施路线（按风险递增）
+## 七、实施路线（完整性批评员精修版，按风险递增）
 
 | 步 | 内容 | 退出门 | 状态 |
 |---|---|---|---|
-| 0 | 五处代码级 P0 + 去凭据 + router 红线 | 单测 GREEN；现场跑 `langfuse_eval.py` 对应子集 ≥ 基线 | **已提交**（本 PR） |
-| 1 | 治理机制：manifest + lint + 漂移防护 + 晋升契约 + 规则页 | `prompt_inventory.py --check` 进 CI 且 CI 能触发（GOV-04） | 代码已提交；CI 触发待决定 |
-| 2 | 拍板 ADR 0022 D1；锁定测试改漂移告警；manifest 补 `dify:` 映射与「枚举 ⊆ Literal」守护 | 7 个锁定文件可本地改；上游更新有告警 | 待拍板 |
-| 3 | 零风险档：删 7 文件 10 个悬空占位符与相关段落、36 行 JSON 禁令、重复陈述、不可达 few-shot（TRJ-11 守卫测试）、`[user]` 段 | `--strict` 通过；eval PASS ≥ 基线 | 待 2 |
-| 4 | 低风险档：option 4 个 Q- 节点 + close 4 个 CO- 节点去 LLM 化（先 `query_status`）；统一 CO- 正则为一处；归一化下沉 validator；错例转 golden；示例压缩 | eval + 单测 + 抽样人工比对；每节点 -1 LLM 调用 | 待 3 |
-| 5 | 需业务确认档：三处硬编码业务数据改法；POV 默认值归属；`hasFastExecutionIntent` 是否下传；对手召回三实现选一；裸数字语义统一 | 业务方逐条裁决 + golden | 待业务方 |
-| 6 | 结构性：swap 三链共享规范；option place/confirm_place 合并；ticker 转 structured output；tokenize 单一实现；判定 `intent_extract` / `param_limit` 归档 | 每项独立 PR + eval | 待 4 |
+| 0 | **让守护真正生效**：恢复 `ci.yml` push + pull_request 触发并拆一个 <2 分钟 governance job（ruff + `prompt_inventory --check` + `tests/test_prompt_*.py` + 各子图 `test_intent.py`）；修 `check_fixture_consistency.py` 指向 `categories/`；确认 eval 入口可跑 | 空 PR 上 CI 自动绿；`langfuse_eval.py --local tests/fixtures/unified_golden.jsonl --ids <swap confirm 子集>` 在现场跑通 | 代码已提交；CI 触发待决定 |
+| 1 | **建立度量基线**：`prompt_inventory` 增加按调用路径聚合的 tokens 报表（本次手算基线：互换文本 47.5K / 互换图片 62K / 期权询价 27K / 平仓下单 37.4K system tokens，含 ticker 三路）；`METRIC_LLM_TOKENS` 加 node 标签；`summarize_by_prompt_version` 对 5 个灰度位都能分桶；每个待瘦身 `.md` 能反查 ≥10 条命中它的 golden id | 仓库内有可复现基线文件；没有这一步，所有"eval 回归"门槛无载体 | 待做 |
+| 2 | **裁决真源**（一次拍板解锁全部瘦身）：ADR 0022 D1 写定 git 为唯一真源、Dify 为上游输入，前提证据挂到 roadmap「业务方书面同意 Dify 下线」邮件；业务方指明生产 Dify app_id，`sync.py` 只保留它；`test_prompt_governance.py` 改为漂移告警；manifest 补 `dify: {file, node_id, system_sha256}` | D1 状态改「已采纳」；本地改任一 v1 文件后测试仍通过（只告警）；上游未映射 LLM 节点（1786439000001）有告警 | 待拍板 |
+| 3 | **零风险瘦身批**：`--strict` 的 12 处（10 个悬空占位符整段删、structured output 节点 JSON 禁令）；option 机器人过滤块 ×7；重复陈述收敛；不可达 few-shot（TRJ-11 守卫测试）；`[user]` 段退出运行时契约；infer_code 硬编码日期锚点与范围段 | `--strict` 零违反并在 CI 默认开启；活跃 system 总字符降 ≥25%（互换文本 ≤38K tokens、平仓 ≤28K）；全量 eval PASS ≥ 步骤 1 基线且分桶无单桶下降 | 待 2 |
+| 4 | **低风险档**：option 4 个 Q- 节点与 close 4 个 CO- 节点按 `swap/order_id.py` 去 LLM 化（先 `query_status`），先把 5 套 CO- 正则统一为一处；归一化下沉 validator；错例转 golden；示例压缩；`extract_confirm_place` 复用 `extract_place` | 每项先 RED 后 GREEN（含 `第一笔` 中文序数、多命中简写等本次发现的边界）；对应意图桶 PASS 不降；串行 LLM 调用数按 node 级 token 计数证明各 -1 | 待 3 |
+| 5 | **需业务确认档**（每项一个明确问题）：(1) infer_code 名称→代码示例与基金管理人名单改占位/删除（P0）；(2) option `intent.py` "撤单" 快路径 vs 提示词 request_cancel_order（operate 取消 vs 交易）留哪处；(3) place_close POV 默认 25 归后端还是网关；(4) `hasFastExecutionIntent` 是否下传（Dify 侧 schema 也无此字段）；(5) 全新单对手召回三实现选一；(6) 裸数字语义；(7) 测试账户/员工名示例匿名化；(8) 99999999 哨兵归代码常量；(9) `param_limit` 是否需要 ≤10 组合校验；(10) `intent_extract` 归档 | 每问在 ADR 0022 附录有「问题 / 答复 / 日期 / golden id」一行；答复转 ≥3 条 golden 后再改；纳入 M3.3 E3.7 sign-off 清单 | 待业务方 |
+| 6 | **治理固化**：manifest `changelog` + "改 `.md` 必须同步 manifest" 校验；`prompt(<scope>)` commit 类型 CI 检查；三条最重路径设 `max_system_chars` 冻结；一页提示词写作规范（语言、示例匿名、不写自检/JSON 骨架）；judge 迁 `harness/`；四套命名收敛 | 连续两次 Dify 上游同步后 `--strict` 持续零违反；manifest 无过期 gray；新人按规范能独立加一个节点 | 待 3 |
 
-**评估守护前置条件**：09-10 golden 迁到 `old_typing/` 后 `check_fixture_consistency.py` 恒 exit 2、`harness run` 跑在归档数据上（`plan0909.md` 正在重建）。第 3 步之前必须先有一条能自动跑的 eval 基线，否则「PASS ≥ 基线」无载体。
+**评估守护前置条件**：09-10 golden 迁到 `old_typing/` 后 `check_fixture_consistency.py` 恒 exit 2、`harness run` 跑在归档数据上（`plan0909.md` 正在重建）；本报告与 CLAUDE.md 的 eval 入口已改指 `unified_golden.jsonl`。第 3 步之前必须先有一条能自动跑的 eval 基线。
 
 ## 八、本次已落地的改进
 
@@ -249,8 +249,23 @@ Dify YAML（上游输入，sync.py 拉取）          │ lint: prompt_inventory
 | `swap/place_order.py` / `multimodal.py` | trace 写 `prompt_name` | GOV-07 |
 | `.claude/rules/prompt-management.md` 重写、`testing.md`、ADR 0000/0001/0003/0013、`app/prompts/CLAUDE.md`、handbook | 陈旧口径与已删文件引用 | GOV-11/12, OPT-15 |
 | ADR 0022 + ADR README + ADR 0001 D5 登记 | 治理模型决策 | — |
+| `.claude/skills/sync-dify-prompts/SKILL.md` 映射表、`docs/on-call-runbook.md` 热修口径、CLAUDE.md / README eval 入口 | 批评员补出的陈旧口径 | 第九节 |
 
 **未能在本环境完成**：eval 回归（无 LLM 密钥、golden 迁移中）——所有提示词相关改动（router 红线、holding_query 渲染）需现场用 `scripts/langfuse_eval.py` 补跑对应子集；Dify 账号密码轮换。
+
+## 九、完整性批评：六路评估都没覆盖的维度
+
+批评员对全部核证结果做了"缺什么"检查并自行到仓库核实，补出五个维度（均带证据）：
+
+| 维度 | 发现 | 处置 |
+|---|---|---|
+| **延迟 / 成本量化** | 仓库没有按节点的 token / 延迟计数器（`metrics.py` 的 `otc_agent_llm_tokens_total` 无 node 标签；reporter 只聚合整 run），瘦身收益无法被任何现有工具核算；路线图 05-12 以"128K 上下文够大"为由**跳过**了 C1.4 瘦身，而 `troubleshooting-sop.md` 仍把长 prompt 列为高风险——客户抱怨与团队"跳过"之间缺的正是一张按路径的 token 账 | 路线图步骤 1 |
+| **LangFuse 运行时路径** | `on-call-runbook.md` 与 roadmap F4.6 承诺"LangFuse 在线切版本热修"，但 `load_prompt` 在 production 硬闸门直接 raise；仓库没有任何把 `.md` 写入 LangFuse 的工具，LangFuse 提示词名不在 manifest 任何字段 | runbook 已改口径（本 PR）；上传工具与命名登记为后续项 |
+| **Dify 反向同步** | `dify/sync.py` 只有下载，不存在 git→Dify 通道——两种真源模型下"同步"都是单向人工；`sync-dify-prompts` skill 映射表 5 行指向非活跃文件、1 行指向已删文件、12 个活跃文件无映射；`sync.py --push` 在无 `feature-yaml` 分支时走 orphan + `git rm -rf .`，会删掉开发者工作树中全部已跟踪文件（默认关闭，但 CLAUDE.md 把它列为常规命令） | skill 映射已改指 manifest（本 PR）；`--push` 加脏树保护为后续项 |
+| **评估集对瘦身的守护能力** | 文档化的 eval 入口 `tests/fixtures/golden.jsonl` 已不存在（本 PR 改指 `unified_golden.jsonl`）；按意图回推的用例覆盖极不均衡（option cancel_order_request 1 条、query_order_status 1 条 vs swap place_order_request 265 条）；**最大的提示词 `image_extract`（活跃总量 23%）与 `excel_extract` 在 golden 里零图片/文件输入**，三个多模态 v2 灰度位到期前无法用 eval 证明等价；本环境无 LLM 密钥 | 路线图步骤 1 / 3 的前置 |
+| **团队协作流程** | `app/prompts` 22 次提交 6 位作者，用 `prompt(<scope>)` 类型的只有 2 次，影响最大的 e72ee2d 无类型前缀；无 CODEOWNERS；没有提示词写作规范（`place_close.md` 全英文 + 中文补丁块，其余 27 个活跃文件中文；示例用真实账户还是虚构、要不要写自检清单全凭作者习惯）——这是病灶随下一次同步长回来的机制性原因 | 路线图步骤 6 |
+
+批评员的**跨路仲裁**也改变了三处评级：`holding_query.md` 真实账户名 / 哨兵魔数从 P0 降 P1（不是"会膨胀的业务字典"）；GOV-01 真源之争降 P1 但列为第一道闸；`infer_code.md` 名称→代码清单维持 P0（严重度与"需业务确认"的风险档是两个维度）。另指出 option `intent.py` 还有第 4 条确定性快路径（单个 `-` 即确认下单）在提示词中零对应，且 `deterministic_cancel` 分支零测试——与 close 域已修的 OC-02 同型，option 域仍 open（步骤 5 问题 2）。
 
 ## 附录 A · 发现索引
 

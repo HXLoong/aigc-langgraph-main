@@ -35,31 +35,26 @@ done
 
 ### Step 3：准备映射表
 
-Dify YAML 节点标题 → 项目 prompt 路径的映射：
+Dify YAML 节点标题 → 项目 prompt 路径：**以 `app/prompts/_manifest.yaml` 为准**（ADR 0022），下表只列当前活跃映射；
+非活跃文件（swap 5 个订单号节点 / `swap/confirm.md` / `option/intent_extract.md` / `option/param_limit.md`）已去 LLM 化或归档，
+不再同步；`ticker/completeness.md` 已删除（确定性校验替代）。同步后跑 `python scripts/prompt_inventory.py --check`。
 
 | Dify 节点标题 | 项目路径 |
 |---|---|
+| unknown意图兜底识别 | `app/prompts/router/unknown_intent.md` |
 | 互换-节点-意图识别 | `app/prompts/swap/intent.md` |
 | 互换-节点-下单 | `app/prompts/swap/place_order.md` |
-| 互换-节点-确认下单 | `app/prompts/swap/confirm_order.md` |
-| 互换-节点-撤单 | `app/prompts/swap/cancel_order.md` |
-| 互换-节点-确认撤单 | `app/prompts/swap/confirm_cancel.md` |
-| 互换-节点-确认改单 | `app/prompts/swap/confirm_modify.md` |
-| 互换-节点-查询订单 | `app/prompts/swap/query_order.md` |
+| 互换-选择交易对手 / 互换-选择标的 | `app/prompts/swap/select_counterparty.md` / `select_ticker.md` |
 | Excel-互换-请求下单参数解析 | `app/prompts/swap/excel_extract.md` |
 | 图片-互换-请求下单参数解析 | `app/prompts/swap/image_extract.md` |
 | 互换-图片识别 | `app/prompts/swap/image_ocr.md` |
+| 期权-意图识别 | `app/prompts/option/intent.md` |
+| 期权-节点-询价 / 下单 / 确认下单 / 取消下单 / 确认撤单 / 撤单请求 / 查询订单状态 | `app/prompts/option/extract_{inquiry,place,confirm_place,cancel_place,confirm_cancel,cancel,query}.md` |
 | 期权平仓-意图识别 | `app/prompts/option_close/intent.md` |
 | 请求下单和确认全部平仓参数提取 | `app/prompts/option_close/place_close.md` |
 | 期权平仓-持仓查询参数提取 | `app/prompts/option_close/holding_query.md` |
-| 确认平仓 | `app/prompts/option_close/confirm_close.md` |
-| 撤单参数提取 | `app/prompts/option_close/cancel_close.md` |
-| 确认撤单参数提取 | `app/prompts/option_close/confirm_cancel.md` |
-| 平仓订单查询 | `app/prompts/option_close/query_status.md` |
-| 大模型推断对应标的代码 | `app/prompts/ticker/infer_code.md` |
-| 大模型识别标的完整性 | `app/prompts/ticker/completeness.md` |
-| 互换-标的代码和code的拆分 | `app/prompts/ticker/tokenize.md` |
-| 大模型排序并过滤 | `app/prompts/ticker/rank.md` |
+| 确认平仓 / 撤单参数提取 / 确认撤单参数提取 / 平仓订单查询 | `app/prompts/option_close/{confirm_close,cancel_close,confirm_cancel,query_status}.md` |
+| 大模型推断对应标的代码 / 标的代码和code的拆分 / 大模型判断标的类型 / 大模型排序并过滤 | `app/prompts/ticker/{infer_code,tokenize,judge_type,rank}.md` |
 
 ### Step 4：对每对做 diff
 

@@ -24,8 +24,8 @@ pytest tests/test_smoke.py -v                # 仅 smoke
 pytest -k "not e2e"                          # 跳过 e2e
 
 # 评估（M3 主用入口：DeepSeek Judge + per-turn 富集 JSON 写到 Langfuse Cloud）
-python scripts/langfuse_eval.py --local tests/fixtures/golden.jsonl --concurrency 4   # 全量 350+
-python scripts/langfuse_eval.py --local tests/fixtures/golden.jsonl --ids opt-001,opt-018 --concurrency 2
+python scripts/langfuse_eval.py --local tests/fixtures/unified_golden.jsonl --concurrency 4   # 全量 350+
+python scripts/langfuse_eval.py --local tests/fixtures/unified_golden.jsonl --ids opt-001,opt-018 --concurrency 2
 
 # Harness CLI（备用 / 本地快速 smoke，无 Judge）
 python -m harness run                        # 跑 golden 全集
@@ -204,7 +204,7 @@ tests/fixtures/              # golden.jsonl（350+ 条）+ golden_ticker_2026-05
 修完跑对应 case 确认：
 
 ```bash
-.venv/bin/python scripts/langfuse_eval.py --local tests/fixtures/golden.jsonl --ids opt-001,opt-018 --concurrency 2
+.venv/bin/python scripts/langfuse_eval.py --local tests/fixtures/unified_golden.jsonl --ids opt-001,opt-018 --concurrency 2
 ```
 
 ## 绝对禁止
