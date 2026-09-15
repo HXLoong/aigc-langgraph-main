@@ -1,6 +1,6 @@
 """ticker-only golden fixture 测试（#20 部分）。
 
-读 `tests/fixtures/golden_ticker_2026-05.jsonl`，验证：
+读 `tests/fixtures/old_typing/golden_ticker_2026-05.jsonl`，验证：
 - tokenize 输出符合 expected.tokens
 - 单独可校验的 case 也校验对应字段（is_complete / winner / needs_hitl 等）
 
@@ -20,6 +20,7 @@ from app.subgraphs.ticker.tools import tokenize
 GOLDEN_PATH = (
     Path(__file__).parent.parent.parent
     / "fixtures"
+    / "old_typing"
     / "golden_ticker_2026-05.jsonl"
 )
 

@@ -1,9 +1,13 @@
 # LangGraph 自动化测试工具
 
-这套工具直接读取本仓库 `tests/fixtures/*.jsonl`，并调用
+这套工具默认按文件名排序读取本仓库 `tests/fixtures/categories/` 直属的全部 JSONL，并调用
 `aigc-langgraph` 暴露的 `POST /v1/workflows/run`。同时兼容旧版
 `name/send_text` 回归 JSONL。它不依赖 Dify App ID、Service
 API Key 或 Console 账号，也不会执行部署、推送代码或修改工作流。
+
+当前默认分类数据为 6 份、389 条顶层用例。CLI 未传 `--data` 和工作台数据集发现
+均使用上述范围，不递归扫描子目录或 `old_typing/` 等历史归档。显式 `--data` 可重复
+传入多个文件，仍按传入顺序加载并兼容原有格式。
 
 | 文件 | 用途 |
 |---|---|
@@ -57,7 +61,9 @@ ENVIRONMENT=development
   `true`、后续轮次为 `false`。
 - `expected`：支持断言 `product_type`、`intent`、`winners`（或 `winner`）及
   `needs_hitl`。
-- `response_contains`、`response_not_contains`：分别断言回复必须包含和不得包含的文本。
+- `response_contains`：全部子串都必须包含；`response_not_contains`：全部子串都不得包含。
+- `response_contains_any`：候选子串中任一命中即通过；全部未命中只报告一次组级失败。
+  三类文本断言都接受换行字符串或列表，沿用去首尾空白、忽略空行的归一化；空候选不增加约束。
 - `sub_scenes`：按数组顺序执行后续轮次，每轮可独立配置上述字段；
   `quote_previous: true` 引用紧邻上一轮回复，`false` 不引用，未填写时兼容为引用首轮
   回复。
@@ -98,13 +104,13 @@ python scripts/ai_test_langgraph/langgraph_direct_regression.py --dry-run --limi
 
 # 运行一个数据集
 python scripts/ai_test_langgraph/langgraph_direct_regression.py \
-  --data tests/fixtures/golden.jsonl \
+  --data tests/fixtures/categories/swap_prod_acceptance_data.jsonl \
   --limit 3
 
 # 按传入顺序连续运行多个数据集
 python scripts/ai_test_langgraph/langgraph_direct_regression.py \
-  --data tests/fixtures/golden.jsonl \
-  --data tests/fixtures/golden_ticker_2026-05.jsonl
+  --data tests/fixtures/categories/golden_option_close_case.jsonl \
+  --data tests/fixtures/categories/swap_test_fuzzy_target_recog_data.jsonl
 ```
 
 仍支持 `--name`、`--case-no`、`--keyword`、`--shuffle --seed`、`--timeout`、
@@ -159,6 +165,22 @@ python scripts/ai_test_langgraph/wecom_dataset_push.py --limit 3
 `WECOM_BOT_WEBHOOK` 读取。也可用 `--report <markdown>` 推送已有报告。
 
 ## 离线验证
+
+联合验收覆盖业务测试与工作台脚本测试。Windows 命令如下；保留仓库对真实后端
+`tests/api` 的排除及现有条件跳过。离线通过表示本地自动化通过，真实模型准确率及
+真实业务交易仍需在对应环境中单独验收。
+
+```powershell
+$env:PYTHONUTF8 = '1'
+$env:ENABLE_LANGFUSE = 'false'
+.\.venv\Scripts\python.exe -m pytest tests/ scripts/ai_test_langgraph/ -v -W error -rs
+.\.venv\Scripts\python.exe -m ruff check app/ tests/ scripts/ai_test_langgraph/
+.\.venv\Scripts\python.exe scripts/ai_test_langgraph/langgraph_direct_regression.py --dry-run --limit 3
+.\.venv\Scripts\python.exe scripts/ai_test_langgraph/langgraph_direct_regression.py --self-test
+.\.venv\Scripts\python.exe scripts/ai_test_langgraph/automation_runner_server.py --self-test
+```
+
+各辅助入口也可分别自检：
 
 ```bash
 python scripts/ai_test_langgraph/test_langgraph_direct_regression.py

@@ -23,6 +23,7 @@ import time
 import uuid
 import webbrowser
 from collections.abc import Sequence
+from contextlib import suppress
 from dataclasses import dataclass, field
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -32,6 +33,7 @@ from urllib.parse import urlparse
 
 from langgraph_direct_regression import (
     DEFAULT_BOT_NAME,
+    DEFAULT_DATASET_DIR,
     DEFAULT_GUID,
     DEFAULT_OPTION_COUNTERPARTIES,
     DEFAULT_SWAP_COUNTERPARTIES,
@@ -53,7 +55,7 @@ LANGGRAPH_SCRIPT = SCRIPT_DIR / "langgraph_direct_regression.py"
 WECOM_SCRIPT = SCRIPT_DIR / "wecom_dataset_push.py"
 DOTENV_PATH = REPO_ROOT / ".env"
 LANGGRAPH_DOTENV_PATH = REPO_ROOT / ".env"
-DATASET_ROOT = REPO_ROOT / "tests/fixtures"
+DATASET_ROOT = DEFAULT_DATASET_DIR
 DEFAULT_LANGGRAPH_BASE = "http://127.0.0.1:8000"
 
 MAX_REQUEST_BYTES = 128 * 1024
@@ -141,11 +143,11 @@ def first_config(values: dict[str, str], *names: str, default: str = "") -> str:
 
 
 def discover_datasets() -> list[dict[str, Any]]:
-    """只返回确定性回归脚本能够直接执行的仓库内 JSONL。"""
+    """按文件名排序返回分类目录直属 JSONL，不扫描历史归档。"""
     datasets: list[dict[str, Any]] = []
     if not DATASET_ROOT.is_dir():
         return datasets
-    for path in sorted(DATASET_ROOT.rglob("*.jsonl")):
+    for path in sorted(DATASET_ROOT.glob("*.jsonl")):
         try:
             count = len(load_cases([path]))
         except (OSError, UnicodeError, RegressionRunnerError):
@@ -838,10 +840,8 @@ def terminate_process(process: subprocess.Popen[str]) -> None:
         else:
             process.terminate()
     except (AttributeError, OSError, ProcessLookupError):
-        try:
+        with suppress(OSError):
             process.terminate()
-        except OSError:
-            pass
 
 
 def pause_process(process: subprocess.Popen[str]) -> None:
@@ -1147,10 +1147,8 @@ def shutdown_jobs(
                 else:
                     process.kill()
             except (AttributeError, OSError, ProcessLookupError):
-                try:
+                with suppress(OSError):
                     process.kill()
-                except OSError:
-                    pass
             process.wait()
 
 
@@ -1389,8 +1387,8 @@ def make_handler(
 
 
 def run_self_test() -> int:
-    dataset = str(Path("tests/fixtures/golden.jsonl"))
-    second_dataset = str(Path("tests/fixtures/golden_ticker_2026-05.jsonl"))
+    dataset = str(Path("tests/fixtures/categories/golden_option_close_case.jsonl"))
+    second_dataset = str(Path("tests/fixtures/categories/golden_option_inquiry_case.jsonl"))
     base_payload = {
         "task_name": "队列自检",
         "dataset": dataset,
@@ -1425,8 +1423,9 @@ def run_self_test() -> int:
     discovered_paths = {item["path"] for item in discover_datasets()}
     checks.append(
         (
-            "页面只列出确定性回归可执行数据集",
-            dataset in discovered_paths and second_dataset in discovered_paths,
+            "页面只列出分类目录直属可执行数据集",
+            dataset in discovered_paths and second_dataset in discovered_paths
+            and all((REPO_ROOT / path).parent == DATASET_ROOT for path in discovered_paths),
         )
     )
     checks.append(("命令启用逐用例事件", "--runner-events" in command))

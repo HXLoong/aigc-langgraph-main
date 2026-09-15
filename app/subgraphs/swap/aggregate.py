@@ -189,6 +189,61 @@ def apply_counterparty(
             order_list[i]["placeOrderShortname"] = sn
 
 
+def unique_fresh_counterparty(
+    fresh_res: dict[str, Any], trs_list: list[dict[str, Any]], raw_content: str,
+) -> tuple[str | None, str]:
+    """移植 Dify 1780652971845 的名称/证据校验，附带原因供 trace 使用。
+
+    输入已经过结构化模型校验，无需 Dify 的 JSON 字符串解码适配。
+    不在代码中增加简称匹配、纯数字过滤或账户 ID 去重规则。
+    """
+    has_signal = fresh_res.get("hasSignal")
+    if has_signal is not True and not (
+        isinstance(has_signal, str) and has_signal.strip().lower() == "true"
+    ):
+        return None, "no_signal"
+    matches = fresh_res.get("matches")
+    if not isinstance(matches, list) or not matches:
+        return None, "no_matches"
+    allowed = {
+        str(t.get("shortName") or "").strip() for t in trs_list if isinstance(t, dict)
+    }
+    allowed.discard("")
+    raw = str(raw_content or "")
+    names = set()
+    for item in matches:
+        if not isinstance(item, dict):
+            return None, "invalid_match"
+        shortname = str(item.get("shortName") or "").strip()
+        evidence = str(item.get("evidence") or "").strip()
+        if not shortname or shortname not in allowed:
+            return None, "name_outside_candidates"
+        if not evidence or evidence not in raw:
+            return None, "invalid_evidence"
+        names.add(shortname)
+    if len(names) != 1:
+        return None, "ambiguous_names"
+    return next(iter(names)), "unique_name"
+
+
+def apply_fresh_counterparty(order_list: list[dict[str, Any]], shortname: str | None) -> str:
+    """Dify 整批补全：先检查所有原值；任一冲突即整批保持原样。"""
+    if not shortname:
+        return "no_shortname"
+    existing = set()
+    for order in order_list:
+        if not isinstance(order, dict):
+            return "invalid_order"
+        value = str(order.get("placeOrderShortname") or "").strip()
+        if value:
+            existing.add(value)
+    if existing - {shortname}:
+        return "existing_counterparty_conflict"
+    for order in order_list:
+        order["placeOrderShortname"] = shortname
+    return "applied"
+
+
 __all__ = [
     "build_id_to_seq",
     "match_order_index",
@@ -197,4 +252,6 @@ __all__ = [
     "shortname_from_pick",
     "apply_underlying",
     "apply_counterparty",
+    "unique_fresh_counterparty",
+    "apply_fresh_counterparty",
 ]

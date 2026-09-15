@@ -11,10 +11,12 @@ from langchain_core.messages import AIMessage
 from app.nodes.render import render
 from app.prompts import load_prompt
 from app.subgraphs.swap import backend, place_order
+from app.subgraphs.swap.fresh_counterparty import swap_recognize_fresh_counterparty
 from app.subgraphs.swap.models import SwapOrderItem, SwapPlaceOrderParams
 from app.subgraphs.ticker import resolver, tools
 from app.tools.swap_client import SwapClientHttpx
 from app.tools.ticker_client import TickerClientHttpx
+from tests.subgraphs.swap.test_fresh_counterparty import patch_recognition
 from tests.subgraphs.ticker.test_context_filter import REPORTS, SHORTNAME
 
 
@@ -46,6 +48,9 @@ async def test_swap_request_and_backend_reply_survive_real_http_chain(
     extract_llm = MagicMock()
     extract_llm.with_structured_output.return_value.ainvoke = AsyncMock(return_value=params)
     monkeypatch.setattr(place_order, "get_qwen_complex", lambda: extract_llm)
+    patch_recognition(monkeypatch, {"hasSignal": True, "matches": [
+        {"shortName": SHORTNAME, "evidence": SHORTNAME},
+    ]})
 
     llm_candidates = []
     async def ticker_reply(messages):
@@ -100,6 +105,9 @@ async def test_swap_request_and_backend_reply_survive_real_http_chain(
     extracted = await place_order.swap_place_order(state)
     assert not extracted.get("error"), extracted.get("error")
     state.update(extracted)
+    completed = await swap_recognize_fresh_counterparty(state)
+    assert not completed.get("error"), completed.get("error")
+    state.update(completed)
     submitted = await place_order.swap_place_order_submit(state)
     assert not submitted.get("error"), submitted.get("error")
     state.update(submitted)

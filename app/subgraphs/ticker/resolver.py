@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import re
 from typing import Any, NamedTuple
 
 from app.graph.state import TickerCandidate
@@ -44,6 +45,16 @@ from app.tools.ticker_client import (
 )
 
 logger = logging.getLogger(__name__)
+
+_EXPLICIT_CODE_RE = re.compile(
+    r"(?<![A-Za-z0-9_.])([A-Za-z0-9][A-Za-z0-9_-]*\.[A-Za-z][A-Za-z0-9]*)(?![A-Za-z0-9_.])"
+)
+
+
+def _code_identity(code: str) -> str:
+    """数字代码允许前导零格式差异，交易所后缀必须一致。"""
+    root, suffix = code.strip().upper().rsplit(".", 1)
+    return f"{root.lstrip('0') or '0'}.{suffix}" if root.isdigit() else f"{root}.{suffix}"
 
 
 # ============================================================
@@ -200,12 +211,45 @@ async def _resolve_pipeline(raw_text: str) -> TickerResolution:
     by_code: dict[str, TickerCandidate] = {}
     input_candidates = set(candidates)
 
+    # 完整代码先独立校验，禁止与 LLM 派生的裸数字/名称在同一请求中查询。
+    explicit = list(dict.fromkeys(_EXPLICIT_CODE_RE.findall(raw_text)))
+    exact_results: dict[str, SecuritiesInstrumentRespVO | None] = {}
+    guarded_roots: dict[str, list[SecuritiesInstrumentRespVO]] = {}
+    for code in explicit:
+        identity = _code_identity(code)
+        results = await _search_goats(client, [
+            {"keyword": keyword, "isFull": True}
+            for keyword in dict.fromkeys([code.upper(), identity])
+        ])
+        winner = next((item for item in results if _code_identity(item.wind_code) == identity), None)
+        exact_results[identity] = winner
+        root = code.split(".")[0]
+        if root.isdigit():
+            matches = guarded_roots.setdefault(root.lstrip("0") or "0", [])
+            if winner is not None:
+                matches.append(winner)
+    # 即使 LLM 漏掉完整代码，输入中的代码仍然接受权威校验；顺序不由 LLM 决定。
+    explicit_keys = {code.upper() for code in explicit}
+    merged = [{"orgStr": code, "keywords": []} for code in explicit] + [
+        item for item in merged if item["orgStr"].upper() not in explicit_keys
+    ]
+
     for item in merged:
         org_str = item["orgStr"]
         keywords = item["keywords"]
         predicted_family = str(ins_family.get(org_str) or "")
 
-        winner = await _resolve_one_org_item(client, org_str, keywords, predicted_family)
+        if _EXPLICIT_CODE_RE.fullmatch(org_str) and _code_identity(org_str) in exact_results:
+            winner = exact_results[_code_identity(org_str)]
+        elif org_str.isdigit() and (org_str.lstrip("0") or "0") in guarded_roots:
+            # 裸数字候选仅可补充已经验证成功的来源词，不再发起模糊查询。
+            matches = guarded_roots[org_str.lstrip("0") or "0"]
+            winner = matches[0] if len(matches) == 1 else None
+        else:
+            keywords = [k for k in keywords if not (
+                k["keyword"].isdigit() and (k["keyword"].lstrip("0") or "0") in guarded_roots
+            )]
+            winner = await _resolve_one_org_item(client, org_str, keywords, predicted_family)
         if winner is None:
             continue
         code_key = winner.wind_code.strip().upper()

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import unittest
 from unittest.mock import patch
 
@@ -224,16 +225,18 @@ class LangGraphClientContractTest(unittest.TestCase):
         )
 
     def test_case_trace_is_disabled_outside_development(self) -> None:
-        self.assertIsNone(
-            build_langfuse_client(
-                {
-                    "ENVIRONMENT": "production",
-                    "ENABLE_LANGFUSE": "true",
-                    "LANGFUSE_PUBLIC_KEY": "public",
-                    "LANGFUSE_SECRET_KEY": "secret",
-                }
+        # env_value 优先读取进程环境；隔离其他测试导入评估脚本时加载的本地 .env。
+        with patch.dict(os.environ, {}, clear=True):
+            self.assertIsNone(
+                build_langfuse_client(
+                    {
+                        "ENVIRONMENT": "production",
+                        "ENABLE_LANGFUSE": "true",
+                        "LANGFUSE_PUBLIC_KEY": "public",
+                        "LANGFUSE_SECRET_KEY": "secret",
+                    }
+                )
             )
-        )
 
     def test_multi_turn_case_reuses_case_traceparent(self) -> None:
         traceparents: list[str] = []

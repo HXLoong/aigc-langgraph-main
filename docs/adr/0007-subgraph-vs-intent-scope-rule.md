@@ -23,7 +23,7 @@
 - 意图枚举：在 `app/subgraphs/<product>/models.py` 的 `<Product>IntentType` Literal 加值（不是原文写的 `app/state.py`——它只剩兼容 shim；`app/graph/state.py` 的 `intent` 字段是裸 `str`）
 - 更新 `app/prompts/<product>/intent.md` 提示词；新增对应 extract 提示词文件
 - 子图加 `@safe_node` 节点函数 + **两处路由都要改**：`graph.py` 的 `_INTENT_TO_NODE` 路由表 **和** `add_conditional_edges` 的 path_map（漏一处会静默走 unknown 兜底）
-- `tests/fixtures/golden.jsonl` 至少 2 条 case（CI 的 `check_fixture_consistency.py` 会查）
+- `tests/fixtures/old_typing/golden.jsonl` 至少 2 条 case（CI 的 `check_fixture_consistency.py` 会查）
 
 **立独立子图**（额外）：
 

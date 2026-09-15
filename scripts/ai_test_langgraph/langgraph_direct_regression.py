@@ -39,7 +39,7 @@ from regression_support import (  # noqa: E402 - sibling script module
 
 __all__ = ["parse_dotenv_value"]
 
-DEFAULT_DATASET = REPO_ROOT / "tests/fixtures/golden.jsonl"
+DEFAULT_DATASET_DIR = REPO_ROOT / "tests/fixtures/categories"
 REPORT_ROOT = REPO_ROOT / "docs/testing/test-reports"
 DEFAULT_LANGGRAPH_BASE = "http://127.0.0.1:8000"
 RUNNER_EVENT_PREFIX = "@@LANGGRAPH_RUNNER_EVENT@@"
@@ -676,7 +676,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description="直接调用 aigc-langgraph，并用确定性规则校验 JSONL 用例"
     )
-    parser.add_argument("--data", action="append", default=[])
+    parser.add_argument("--data", action="append", default=[], help="JSONL 文件，可重复；缺省按文件名排序加载 tests/fixtures/categories/ 直属 JSONL")
     parser.add_argument("--task-name", default="")
     parser.add_argument("--name", action="append", default=[])
     parser.add_argument("--case-no", action="append", default=[])
@@ -703,7 +703,7 @@ def build_parser() -> argparse.ArgumentParser:
 
 def resolve_paths(raw_paths: Sequence[str]) -> list[Path]:
     if not raw_paths:
-        return [DEFAULT_DATASET]
+        return sorted(DEFAULT_DATASET_DIR.glob("*.jsonl"))
     return [
         path if path.is_absolute() else Path.cwd() / path
         for path in (Path(value).expanduser() for value in raw_paths)
@@ -743,6 +743,7 @@ def run_self_test() -> int:
             == ("ok", "run-1"),
         ),
         ("正确识别仓库根目录", (REPO_ROOT / "pyproject.toml").is_file()),
+        ("默认分类数据可以加载", bool(load_cases(resolve_paths([])))),
     ]
     for label, passed in checks:
         print(f"[{'PASS' if passed else 'FAIL'}] {label}")

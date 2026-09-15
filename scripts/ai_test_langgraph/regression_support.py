@@ -150,9 +150,9 @@ def evaluate_response(
     for line in _expected_lines(scenario.get("response_contains")):
         if line not in answer:
             failures.append(f"内容包含失败：未找到 {line!r}")
-    for line in _expected_lines(scenario.get("response_contains_any")):
-        if line not in answer:
-            failures.append(f"内容包含失败：未找到 {line!r}")
+    alternatives = _expected_lines(scenario.get("response_contains_any"))
+    if alternatives and not any(line in answer for line in alternatives):
+        failures.append(f"任一包含失败：均未找到 {alternatives!r}")
     for line in _expected_lines(scenario.get("response_not_contains")):
         if line in answer:
             failures.append(f"禁止包含失败：实际出现 {line!r}")
