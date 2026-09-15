@@ -17,7 +17,7 @@
 
 | 处置 | 内容 | 现状备注 |
 |------|------|---|
-| 保留 | `app/prompts/`（现 **37 个**业务 .md）· `app/checkpointer/factory.py` · `dify/sync.py` + `dify/yaml/` · `tests/fixtures/golden.jsonl` | `app/llm/clients.py` 保留路径、**内容已按 [ADR 0020](./0020-unify-all-llm-on-deepseek-v4-pro.md) 重写**为 vendor 适配层 |
+| 保留 | `app/prompts/`（现 **37 个**业务 .md）· `app/checkpointer/factory.py` · `dify/sync.py` + `dify/yaml/` · `tests/fixtures/old_typing/golden.jsonl` | `app/llm/clients.py` 保留路径、**内容已按 [ADR 0020](./0020-unify-all-llm-on-deepseek-v4-pro.md) 重写**为 vendor 适配层 |
 | ~~保留~~ 已下线 | `mock_api/server.py` | 2026-05-13 随"切换真实后端环境"删除（commit `4ac9f0b`），单测改 AsyncMock、e2e 走 `scripts/probe_*_e2e.py` 真后端探针 |
 | 重写 | `app/state.py` · `app/graphs/` · `app/subgraphs/` · `app/nodes/` · `app/tools/` · `app/api/routes.py` · `tests/` · `scripts/` | `app/state.py` 现仅剩兼容 shim（`app/graphs/` shim 已于 2026-08-28 清理删除），真源在 `app/graph/` |
 | 新增 | `harness/` 顶层目录（评测台，与 `app/` 解耦） | 已建成，模块清单见 [ADR 0002](./0002-comprehensive-runtime-harness.md) |

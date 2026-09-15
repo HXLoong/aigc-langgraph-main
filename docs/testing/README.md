@@ -26,6 +26,30 @@
 
 ## 二、命令速查
 
+### 本地联合回归验收（Windows）
+
+```powershell
+$env:PYTHONUTF8 = '1'
+$env:ENABLE_LANGFUSE = 'false'
+.\.venv\Scripts\python.exe -m pytest tests/ scripts/ai_test_langgraph/ -v -W error -rs
+.\.venv\Scripts\python.exe -m ruff check app/ tests/ scripts/ai_test_langgraph/
+.\.venv\Scripts\python.exe scripts/ai_test_langgraph/langgraph_direct_regression.py --dry-run --limit 3
+.\.venv\Scripts\python.exe scripts/ai_test_langgraph/langgraph_direct_regression.py --self-test
+.\.venv\Scripts\python.exe scripts/ai_test_langgraph/automation_runner_server.py --self-test
+```
+
+直接回归 CLI 未传 `--data` 时，按文件名排序加载 `tests/fixtures/categories/`
+直属的全部 JSONL；工作台默认发现范围相同，不扫描历史归档或嵌套目录。
+当前是 6 份、389 条顶层用例；可重复传入 `--data` 显式选择多个文件，兼容既有格式。
+详见 [工作台使用文档](../../scripts/ai_test_langgraph/README.md)。
+
+联合 pytest 保留 `tests/api` 的原有排除及 15 项条件跳过，不新增 skip/xfail，
+以零失败、零警告及 Ruff 零告警为通过条件。默认 dry-run 只验证数据加载与筛选；
+两项自检不执行真实交易。检查记录分别报告本地自动化和真实业务验收状态，
+真实模型准确率、客户 GOATS 业务闭环须另行取得证据。
+
+### 分层调试命令
+
 ```bash
 # 层 1 · 快速回归（提交前必跑）
 .venv/bin/python -m pytest tests/ -q -k "not e2e" --tb=line 2>&1 | tail -3
@@ -42,8 +66,8 @@ curl -X POST http://localhost:8000/v1/workflows/run \
        "response_mode": "blocking", "user": "t-1"}'
 
 # 层 4 · golden 批量评估（DeepSeek Judge 打分）
-.venv/bin/python scripts/langfuse_eval.py --local tests/fixtures/golden.jsonl --limit 20 --concurrency 5
-.venv/bin/python scripts/langfuse_eval.py --local tests/fixtures/golden.jsonl --ids opt-001 --no-judge  # 快速单条
+.venv/bin/python scripts/langfuse_eval.py --local tests/fixtures/old_typing/golden.jsonl --limit 20 --concurrency 5
+.venv/bin/python scripts/langfuse_eval.py --local tests/fixtures/old_typing/golden.jsonl --ids opt-001 --no-judge  # 显式选择历史基准
 
 # 层 5 · 真后端探针（需 VPN）
 .venv/bin/python scripts/probe_real_backend_e2e.py     # 通用连通性

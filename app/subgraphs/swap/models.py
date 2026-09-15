@@ -235,6 +235,24 @@ class SwapSelectCounterpartyOutput(WireModel):
     picks: list[SwapCounterpartyPick] = Field(default_factory=list)
 
 
+class SwapFreshCounterpartyMatch(WireModel):
+    """Dify 1786439000001：完整候选名称及原文证据，均必填。"""
+
+    model_config = ConfigDict(extra="forbid", strict=True)
+
+    short_name: str = Field(alias="shortName")
+    evidence: str
+
+
+class SwapFreshCounterpartyOutput(WireModel):
+    """全新下单召回结果，必填约束及额外字段限制对齐 Dify schema。"""
+
+    model_config = ConfigDict(extra="forbid", strict=True)
+
+    has_signal: bool = Field(alias="hasSignal")
+    matches: list[SwapFreshCounterpartyMatch]
+
+
 __all__ = [
     "SwapIntentType",
     "SwapIntentOutput",
@@ -254,4 +272,6 @@ __all__ = [
     "SwapSelectTickerOutput",
     "SwapCounterpartyPick",
     "SwapSelectCounterpartyOutput",
+    "SwapFreshCounterpartyMatch",
+    "SwapFreshCounterpartyOutput",
 ]

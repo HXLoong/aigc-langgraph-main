@@ -7,6 +7,7 @@ DSL v2 拓扑（互换-意图路由 true 分支）：
         → [quote_content 非空且非 "null"]
             → swap_select_counterparty → swap_select_ticker
               （互换-标的对手覆盖聚合[code] 的确定性查表覆盖，拆到两个节点里）
+        → [无引用] swap_recognize_fresh_counterparty（独立召回并校验交易对手）
         → swap_place_order_submit（本文件，互换开仓-前置清洗[code] → 互换开仓[code]）
 
 输入：raw_text + quote_content + swap_counterparties + history_messages
@@ -22,7 +23,7 @@ DSL v2 拓扑（互换-意图路由 true 分支）：
   负责"引用消息候选标的"的切换/选择，两者互不冲突，resolver 先跑、
   select_ticker 的确定性覆盖若命中则优先生效）
 - 后端调用（call_swap_backend）延后到 swap_place_order_submit，确保
-  select_counterparty / select_ticker 的覆盖已经落到 orderList 上再提交
+  引用选择链或全新对手识别的覆盖已经落到 orderList 上再提交
 
 LLM：complex 模型 + with_structured_output（ADR 0010）。
 prompt：app/prompts/swap/place_order.md（DSL v2 互换-节点-下单，最大节点）。
@@ -40,7 +41,6 @@ from app.prompts import load_prompt, resolve_prompt_version
 from app.subgraphs.swap.backend import _with_resolved_ticker, call_swap_backend
 from app.subgraphs.swap.models import SwapPlaceOrderParams
 from app.subgraphs.swap.quote_hints import refine_quote_hints
-from app.subgraphs.ticker.context import TRAILING_PUNCTUATION, match_counterparty_shortnames
 from app.subgraphs.ticker.resolver import resolve_ticker_full
 
 
@@ -88,59 +88,6 @@ def _expected_action(params: SwapPlaceOrderParams) -> str:
     if any(item.order_id for item in params.order_list):
         return "modify"
     return "place"
-
-
-def _complete_counterparties(
-    state: AgentState, orders: list[dict[str, Any]],
-) -> list[dict[str, Any]]:
-    """新文本多单仅用唯一尾部 shortName 补空值，不修改 LLM 原始输出。"""
-    raw_text = state.get("raw_text") or ""
-    quote = (state.get("quote_content") or "").strip()
-    candidates = state.get("swap_counterparties") or []
-    matches = match_counterparty_shortnames(raw_text, [
-        c["shortName"] for c in candidates if isinstance(c.get("shortName"), str)
-    ])
-    matched_names = {match.shortname for match in matches}
-    trailing = [
-        match for match in matches
-        if TRAILING_PUNCTUATION.fullmatch(raw_text[match.end:])
-    ]
-    reason = "no_trailing_shortname"
-    if quote and quote.lower() != "null":
-        reason = "quoted_input"
-    elif any(order.get("orderId") for order in orders) or _ORDER_ID_PATTERN.search(raw_text):
-        reason = "existing_order"
-    elif state.get("swap_input_mode") not in (None, "text"):
-        reason = "not_text_input"
-    elif len(orders) < 2:
-        reason = "not_multiple_orders"
-    elif len(matched_names) > 1:
-        reason = "multiple_counterparties"
-    elif trailing:
-        # 同账户重复候选不构成歧义；无账户 ID 的多条记录不能证明属于同一账户。
-        accounts = {
-            ("id", str(c["ctptyId"])) if c.get("ctptyId") is not None else ("unknown", i)
-            for i, c in enumerate(candidates) if c.get("shortName") == trailing[0].shortname
-        }
-        reason = "unique_trailing_shortname" if len(accounts) == 1 else "ambiguous_accounts"
-
-    results = []
-    for index, order in enumerate(orders):
-        original = order.get("placeOrderShortname")
-        result = "skipped"
-        if original and original.strip():
-            result = "preserved"
-        elif reason == "unique_trailing_shortname":
-            order["placeOrderShortname"] = trailing[0].shortname
-            result = "filled"
-        results.append({
-            "order_index": index,
-            "original_shortname": original,
-            "resolved_shortname": order.get("placeOrderShortname"),
-            "result": result,
-            "reason": "existing_value" if result == "preserved" else reason,
-        })
-    return results
 
 
 @safe_node
@@ -199,8 +146,6 @@ async def swap_place_order(state: AgentState) -> dict[str, Any]:
             "result": match_result,
         })
 
-    counterparty_completion = _complete_counterparties(state, order_list)
-
     decision = (
         f"action={action},"
         f" orders={len(params.order_list)},"
@@ -220,7 +165,6 @@ async def swap_place_order(state: AgentState) -> dict[str, Any]:
                     "tickers_count": len(tickers),
                     "hitl_count": len(resolution.hitl_pending),
                     "ticker_bindings": ticker_bindings,
-                    "counterparty_completion": counterparty_completion,
                 },
             )
         ],

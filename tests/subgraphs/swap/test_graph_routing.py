@@ -5,13 +5,13 @@
 路由函数（纯函数，直接调用）：
 - `_route_swap_entry`：text / image / excel 三入口分流
 - `_route_after_swap_intent`：6 个真实意图 + unknown 兜底 + cascade
-- `_route_after_place_order`：引用消息判空 → 选择链 / 直提提交 / cascade
+- `_route_after_place_order`：引用消息判空 → 选择链 / 全新对手识别 / cascade
 - `_route_after_select_counterparty` / `_route_after_select_ticker`：顺序推进 + cascade
 - `_route_after_multimodal`：图片/Excel 提取后 → 提交 / cascade
 - `_has_usable_quote`：quote_content 判空（None / "" / "null" / 空白）
 
 端到端（build_swap_graph().ainvoke，mock LLM + mock backend）：
-- place_order_request 无引用 → swap_place_order → submit
+- place_order_request 无引用 → swap_place_order → 全新对手识别 → submit
 - place_order_request 有引用 → swap_place_order → 选择对手 → 选择标的 → submit
 - image 入口 → swap_image_order → submit
 - unknown_intent → swap_unknown
@@ -202,11 +202,11 @@ class TestRouteAfterPlaceOrder:
         state = {"quote_content": "订单H-1（序号1）："}
         assert _route_after_place_order(state) == "swap_select_counterparty"
 
-    def test_no_quote_goes_straight_to_submit(self) -> None:
-        assert _route_after_place_order({}) == "swap_place_order_submit"
+    def test_no_quote_goes_to_fresh_counterparty(self) -> None:
+        assert _route_after_place_order({}) == "swap_recognize_fresh_counterparty"
 
-    def test_null_quote_goes_straight_to_submit(self) -> None:
-        assert _route_after_place_order({"quote_content": "null"}) == "swap_place_order_submit"
+    def test_null_quote_goes_to_fresh_counterparty(self) -> None:
+        assert _route_after_place_order({"quote_content": "null"}) == "swap_recognize_fresh_counterparty"
 
     def test_error_goes_to_unknown(self) -> None:
         state = {"quote_content": "订单H-1", "error": MagicMock()}
@@ -248,7 +248,7 @@ class TestSwapGraphEndToEnd:
     async def test_place_order_request_without_quote_runs_place_then_submit(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """无引用消息 → swap_place_order → submit（跳过选择链）。"""
+        """无引用消息 → swap_place_order → 全新对手识别 → submit。"""
         _patch_resolver(
             monkeypatch,
             [TickerCandidate(windCode="00700.HK", insShtDesc="腾讯控股", from_goats=True)],
@@ -268,7 +268,10 @@ class TestSwapGraphEndToEnd:
         final = await graph.ainvoke(dict(_BASE_STATE))
 
         trace_nodes = [e.node for e in final.get("trace", [])]
-        assert trace_nodes == ["swap_intent", "swap_place_order", "swap_place_order_submit"]
+        assert trace_nodes == [
+            "swap_intent", "swap_place_order", "swap_recognize_fresh_counterparty",
+            "swap_place_order_submit",
+        ]
         assert final.get("intent") == "place_order_request"
         assert final.get("place_params", {}).get("expected_action") == "place"
         assert "swap_todo" not in trace_nodes

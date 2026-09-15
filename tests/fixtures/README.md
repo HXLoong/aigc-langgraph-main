@@ -2,6 +2,9 @@
 
 ## 1. 职责矩阵
 
+下表中的历史基准文件已迁入 `old_typing/`；`unified_golden.jsonl` 仍在本目录。
+测试、合并脚本和一致性检查均读取迁移后的路径。
+
 | 文件 | 用途 | 编号 | 记录数 |
 | --- | --- | --- | ---: |
 | `golden.jsonl` | 当前业务回归主集，保留现有编号、输入和预期 | `swap-` / `opt-` / `opt_close-` / `query-` | 535 |
@@ -53,3 +56,15 @@ $env:PYTHONUTF8 = '1'
 ```
 
 新增或修改业务回归记录时，先更新当前主集，再执行同步与一致性检查。历史 QA 和业务种子快照保持可追溯，不用于覆盖当前业务预期。
+
+## 6. 全新交易对手节点回归集
+
+`golden_swap_fresh_counterparty.jsonl` 保存 6 条工程回归样例，覆盖完整名称／简称、
+单笔补全、多笔补全及已有相同名称的订单。它由
+`tests/subgraphs/swap/test_fresh_counterparty.py` 直接读取，运行真实节点及聚合校验。
+
+`initial_counterparty_names` 表示进入节点前各笔订单的对手，`llm_response` 是模拟的结构化
+模型响应，`expected.place_params` 是期望输出。测试通过既有 `fresh_state()` 提供唯一候选
+“聚鸣价值精选”，并同时验证其余订单字段和输入 State 不变。
+
+这组数据验证固定模型响应后的节点行为，不计入真实 LLM 准确率，也不代表真实后端验收。

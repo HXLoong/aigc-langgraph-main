@@ -7,7 +7,7 @@ ADR 0001 D5/D6 + grill-with-docs 第 1 决策 + DSL v2「主干工作流」互�
     START → swap_intent → [route_by_intent]
         → swap_place_order → [quote_content 非空且非 "null"?]
               ├─ 是 → swap_select_counterparty → swap_select_ticker → swap_place_order_submit
-              └─ 否 → swap_place_order_submit                                     ← P0 核心
+              └─ 否 → swap_recognize_fresh_counterparty → swap_place_order_submit
         → swap_confirm      (confirm_order / confirm_cancel_order /
                              confirm_modify_order，共用节点函数按 intent 切 prompt)
         → swap_cancel       (cancel_order_request)
@@ -16,7 +16,7 @@ ADR 0001 D5/D6 + grill-with-docs 第 1 决策 + DSL v2「主干工作流」互�
         → END
 
 cascade 防御（CLAUDE.md 核心原则第 8 条）：place_order 分支每一段 conditional
-都检查 `has_error`，任一环节（下单 LLM / 选择交易对手 / 选择标的）失败即跳
+都检查 `has_error`，任一环节（下单 / 全新对手识别 / 选择交易对手 / 选择标的）失败即跳
 swap_unknown，不让错误 cascade 到后端提交。
 
 DSL v2 相对旧 DSL 的变化：
@@ -35,6 +35,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from langchain_core.runnables import RunnableLambda
 from langgraph.graph import END, START, StateGraph
 from langgraph.graph.state import CompiledStateGraph
 
@@ -43,6 +44,7 @@ from app.graph.safe_node import safe_node
 from app.graph.state import AgentState, TraceEntry
 from app.subgraphs.swap.cancel import swap_cancel
 from app.subgraphs.swap.confirm import swap_confirm
+from app.subgraphs.swap.fresh_counterparty import swap_recognize_fresh_counterparty
 from app.subgraphs.swap.intent import swap_intent
 from app.subgraphs.swap.multimodal import swap_excel_order, swap_image_order
 from app.subgraphs.swap.place_order import swap_place_order, swap_place_order_submit
@@ -115,11 +117,19 @@ def _route_after_place_order(state: AgentState) -> str:
     """swap.place_order 后路由：互换-引用消息判空 if-else。
 
     quote_content 非空且非 "null" → 需要标的/对手候选选择链（select_counterparty
-    → select_ticker）；否则直接进提交节点（fresh 全新下单场景）。
+    → select_ticker）；否则先识别并校验全新下单交易对手，再提交。
     """
     if has_error(state):
         return "swap_unknown"
-    return "swap_select_counterparty" if _has_usable_quote(state) else "swap_place_order_submit"
+    return (
+        "swap_select_counterparty" if _has_usable_quote(state)
+        else "swap_recognize_fresh_counterparty"
+    )
+
+
+def _route_after_fresh_counterparty(state: AgentState) -> str:
+    """识别请求或结构化解析失败时停止提交，沿用错误兜底。"""
+    return "swap_unknown" if has_error(state) else "swap_place_order_submit"
 
 
 def _route_after_select_counterparty(state: AgentState) -> str:
@@ -137,6 +147,7 @@ def build_swap_graph() -> CompiledStateGraph:
     g: StateGraph = StateGraph(AgentState)
     g.add_node("swap_intent", swap_intent)
     g.add_node("swap_place_order", swap_place_order)
+    g.add_node("swap_recognize_fresh_counterparty", RunnableLambda(swap_recognize_fresh_counterparty))
     g.add_node("swap_select_counterparty", swap_select_counterparty)
     g.add_node("swap_select_ticker", swap_select_ticker)
     g.add_node("swap_place_order_submit", swap_place_order_submit)
@@ -181,6 +192,14 @@ def build_swap_graph() -> CompiledStateGraph:
         _route_after_place_order,
         {
             "swap_select_counterparty": "swap_select_counterparty",
+            "swap_recognize_fresh_counterparty": "swap_recognize_fresh_counterparty",
+            "swap_unknown": "swap_unknown",
+        },
+    )
+    g.add_conditional_edges(
+        "swap_recognize_fresh_counterparty",
+        _route_after_fresh_counterparty,
+        {
             "swap_place_order_submit": "swap_place_order_submit",
             "swap_unknown": "swap_unknown",
         },

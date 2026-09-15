@@ -106,15 +106,20 @@ class RunnerConfigTests(unittest.TestCase):
     def test_discovers_langgraph_fixture_datasets(self) -> None:
         datasets = {item["path"]: item["cases"] for item in runner.discover_datasets()}
 
-        self.assertEqual(datasets["tests\\fixtures\\golden.jsonl"], 535)
-        self.assertEqual(
-            datasets["tests\\fixtures\\golden_ticker_2026-05.jsonl"],
-            34,
-        )
-        self.assertTrue(all(path.startswith("tests\\fixtures\\") for path in datasets))
+        self.assertEqual(datasets, {
+            str(Path("tests/fixtures/categories") / name): count
+            for name, count in {
+                "golden_option_close_case.jsonl": 4,
+                "golden_option_inquiry_case.jsonl": 4,
+                "golden_option_open_case.jsonl": 5,
+                "swap_prod_acceptance_data.jsonl": 163,
+                "swap_prod_data.jsonl": 123,
+                "swap_test_fuzzy_target_recog_data.jsonl": 90,
+            }.items()
+        })
 
     def test_fixture_adapter_preserves_quote_semantics(self) -> None:
-        cases = runner.load_cases([runner.REPO_ROOT / "tests/fixtures/golden.jsonl"])
+        cases = runner.load_cases([runner.REPO_ROOT / "tests/fixtures/categories/golden_option_close_case.jsonl"])
         multi_turn = next(case for case in cases if case.get("sub_scenes"))
 
         self.assertIn("quote_previous", multi_turn["sub_scenes"][0])
@@ -124,7 +129,7 @@ class RunnerConfigTests(unittest.TestCase):
     def test_job_passes_task_name_to_case_trace(self) -> None:
         payload = {
             "task_name": "互换回归",
-            "dataset": "tests/fixtures/golden.jsonl",
+            "dataset": "tests/fixtures/categories/golden_option_close_case.jsonl",
             "run_langgraph": True,
             "push_wecom": False,
             "limit": 1,

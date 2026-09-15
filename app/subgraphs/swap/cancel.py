@@ -3,7 +3,7 @@
 瘦身 P1(docs/swap-prompt-slimming-assessment.md 病灶 2):原 LLM 调用的唯一
 任务是提取 H- 订单号,改为 app/subgraphs/swap/order_id.py 确定性提取——
 零幻觉、零成本、零延迟。原提示词 app/prompts/swap/cancel_order.md 保留为
-非活跃资产。行为约定 1:1 对照原提示词:raw 明确指定优先,否则 quote 全部。
+非活跃资产。保留 raw 指定的订单范围，范围无法解析时提示补充且不调用后端。
 
 输入:raw_text + quote_content
 输出:state['cancel_params'] = {orderList} + 后端调用结果
@@ -16,15 +16,24 @@ from app.graph.business_params import validated_cancel_params
 from app.graph.safe_node import safe_node
 from app.graph.state import AgentState, TraceEntry
 from app.subgraphs.swap.backend import call_swap_backend
-from app.subgraphs.swap.order_id import extract_for_cancel
+from app.subgraphs.swap.order_id import CancelScopeError, extract_for_cancel
 
 
 @safe_node
 async def swap_cancel(state: AgentState) -> dict[str, Any]:
     """swap.cancel 节点(确定性提取)。"""
-    order_ids = extract_for_cancel(
-        raw=state.get("raw_text"), quote=state.get("quote_content")
-    )
+    try:
+        order_ids = extract_for_cancel(
+            raw=state.get("raw_text"), quote=state.get("quote_content")
+        )
+    except CancelScopeError:
+        return {
+            "cancel_params": None,
+            "api_result": None,
+            "api_code": None,
+            "reply_text": "无法确定本次撤单范围，请补充完整订单号，或重新引用订单消息并指定要撤的订单。",
+            "trace": [TraceEntry(node="swap_cancel", decision="cancel_scope_unresolved")],
+        }
     order_list = [{"orderId": oid} for oid in order_ids]
 
     backend = await call_swap_backend(
