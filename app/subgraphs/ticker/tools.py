@@ -488,6 +488,33 @@ def _extract_json_list(content: str) -> list[Any]:
     return data if isinstance(data, list) else []
 
 
+#: infer_code / rank 的「当前日期」占位符。Dify 由 JS 节点注入
+#: `new Date().toLocaleString("zh-CN", {timeZone: "Asia/Shanghai"})`，迁移时丢失，
+#: 期货合约到期月推断与排序失锚（提示词治理评估 TRJ-01）。infer_code.md 原文是四重花括号。
+_DATE_PLACEHOLDERS: tuple[str, ...] = (
+    "{{{{#1775913928411.date#}}}}",
+    "{{#1775913928411.date#}}",
+    "{{#1775820054722.date#}}",
+)
+
+
+def current_date_str() -> str:
+    """Asia/Shanghai 当前时间，格式对齐 Dify `toLocaleString("zh-CN")`：2026/9/15 14:03:22。"""
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+
+    now = datetime.now(ZoneInfo("Asia/Shanghai"))
+    return f"{now.year}/{now.month}/{now.day} {now.hour:02d}:{now.minute:02d}:{now.second:02d}"
+
+
+def _render_system(system: str) -> str:
+    """把 Dify 日期占位符渲染为当前日期（ADR 0022 D5：占位符只允许出现在代码注入了值的位置）。"""
+    date_str = current_date_str()
+    for ph in _DATE_PLACEHOLDERS:
+        system = system.replace(ph, date_str)
+    return system
+
+
 async def _call_ticker_llm(prompt_name: str, user_message: str) -> str:
     """加载 `ticker/<prompt_name>.md` 静态 prompt，异步调用非 thinking 模型，返回原始文本。
 
@@ -498,7 +525,7 @@ async def _call_ticker_llm(prompt_name: str, user_message: str) -> str:
     prompt = load_prompt("ticker", prompt_name)
     llm = get_qwen_standard()
     messages = [
-        SystemMessage(content=prompt.system),
+        SystemMessage(content=_render_system(prompt.system)),
         HumanMessage(content=user_message),
     ]
     try:

@@ -133,3 +133,26 @@ class TestSwapIntentNode:
         assert result.get("error") is not None
         assert result["error"].node == "swap_intent"
         assert "LLM down" in result["error"].message
+
+
+@pytest.mark.asyncio
+class TestConfirmKeywordPreRoute:
+    """提示词治理评估 SW-INC-01：2026-09-11 回归 Dify 原文后，intent.md 的意图枚举不再含
+    confirm_order（Dify 把「确认下单」交给 code 节点 1755072896717 + if-else 1781200000774
+    前置分流），而 app 仍靠 LLM 输出 confirm_order 路由到 swap_confirm。这里移植同款
+    确定性前置：raw 含「确认下单/确定下单/确认订单/下单确认」→ confirm_order，不调 LLM。"""
+
+    @pytest.mark.parametrize("raw", ["确认下单", "确定下单 H-20260901-0000000001", "确认订单", "下单确认"])
+    async def test_confirm_keyword_routes_without_llm(
+        self, monkeypatch: pytest.MonkeyPatch, raw: str
+    ) -> None:
+        ainvoke = _patch_llm(monkeypatch, "place_order_request")  # LLM 若被调会误判
+        result = await swap_intent({"raw_text": raw, "quote_content": "互换订单 H-20260901-0000000001"})
+        assert result["intent"] == "confirm_order"
+        ainvoke.assert_not_called()
+
+    async def test_no_keyword_still_uses_llm(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        ainvoke = _patch_llm(monkeypatch, "place_order_request")
+        result = await swap_intent({"raw_text": "临沂阿凡提", "quote_content": "请回复【确认下单】"})
+        assert result["intent"] == "place_order_request"
+        ainvoke.assert_called_once()

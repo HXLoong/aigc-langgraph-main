@@ -337,3 +337,24 @@ class TestApplyCounterparty:
         orders = [{"placeOrderShortname": "OLD", "placeOrderQuantity": 100}]
         apply_counterparty(orders, True, [{"letter": "A"}], _TRS)
         assert orders[0]["placeOrderQuantity"] == 100
+
+
+class TestShortnameFromPickUniqueness:
+    """提示词治理评估 SW-INC-06：select_counterparty.md 2026-09-11 版把唯一性判断交给代码
+    （|M|=1 才是唯一简写，多命中不得按列表顺序取第一项），对齐 Dify code 节点 1780652971845
+    shortname_from_pick：精确 → 唯一连续子串 → None。"""
+
+    _AMBIGUOUS = [
+        {"ctptyId": "1", "shortName": "测试111", "longName": "测试一", "sort": "A"},
+        {"ctptyId": "2", "shortName": "测试222", "longName": "测试二", "sort": "B"},
+        {"ctptyId": "3", "shortName": "临沂阿凡提", "longName": "临沂阿凡提有限公司", "sort": "C"},
+    ]
+
+    def test_multi_match_returns_none_not_first(self) -> None:
+        assert shortname_from_pick({"directName": "测试"}, self._AMBIGUOUS) is None
+
+    def test_unique_substring_matches(self) -> None:
+        assert shortname_from_pick({"directName": "阿凡提"}, self._AMBIGUOUS) == "临沂阿凡提"
+
+    def test_exact_wins_over_substring(self) -> None:
+        assert shortname_from_pick({"directName": "测试111"}, self._AMBIGUOUS) == "测试111"

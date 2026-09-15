@@ -182,3 +182,36 @@ async def test_rank_candidates_single_result_still_calls_llm(
     ranked = await rank_candidates("贵州茅台", [_FakeCandidate("600519.SH")])
     assert ranked == ["600519.SH"]
     llm.ainvoke.assert_called_once()
+
+
+# ============================================================
+# 提示词治理评估 TRJ-01：当前日期必须由代码注入（Dify 由 JS 节点注入，迁移时丢失）
+# ============================================================
+
+
+def _today_zh() -> str:
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+
+    now = datetime.now(ZoneInfo("Asia/Shanghai"))
+    return f"{now.year}/{now.month}/{now.day}"
+
+
+@pytest.mark.asyncio
+async def test_infer_code_system_has_current_date(monkeypatch: pytest.MonkeyPatch) -> None:
+    llm = _fake_llm("<result>{}</result>")
+    monkeypatch.setattr(tools_mod, "get_qwen_standard", lambda: llm)
+    await infer_code_batch(["沪铜主力"])
+    system = llm.ainvoke.call_args.args[0][0].content
+    assert "1775913928411.date" not in system
+    assert _today_zh() in system
+
+
+@pytest.mark.asyncio
+async def test_rank_system_has_current_date(monkeypatch: pytest.MonkeyPatch) -> None:
+    llm = _fake_llm("<result>[]</result>")
+    monkeypatch.setattr(tools_mod, "get_qwen_standard", lambda: llm)
+    await rank_candidates("沪铜", [_FakeCandidate("CU2610.SHF")])
+    system = llm.ainvoke.call_args.args[0][0].content
+    assert "{{#1775820054722.date#}}" not in system
+    assert _today_zh() in system
