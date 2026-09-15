@@ -14,14 +14,12 @@
 from __future__ import annotations
 
 import json
-from typing import Literal
 
 from langchain_core.messages import HumanMessage, SystemMessage
 from pydantic import BaseModel, ConfigDict, Field
 
 from app.llm.clients import get_qwen_thinking
 from harness.golden import GoldenCase
-
 
 # ============================================================
 # Pydantic 输出 schema
@@ -33,8 +31,8 @@ class ParaphrasedCase(BaseModel):
 
     model_config = ConfigDict(extra="ignore")
 
-    raw_content: str
-    quote_content: str | None = None
+    send_text: str
+    quote_previous: bool | None = None
     notes: str = Field(description="变体类型说明，如 '缩写' / '口语化' / '错别字'")
 
 
@@ -104,9 +102,9 @@ async def paraphrase_case(
     llm = get_qwen_thinking().with_structured_output(ParaphraseBatch)
     user_msg = _USER_TEMPLATE.format(
         num_variants=num_variants,
-        raw_content=seed.raw_content,
+        raw_content=seed.turns[-1].send_text,
         expected=json.dumps(seed.expected, ensure_ascii=False),
-        quote_content=seed.quote_content or "(无)",
+        quote_content="(首轮无引用)",
     )
     result = await llm.ainvoke(
         [SystemMessage(content=_SYSTEM_PROMPT), HumanMessage(content=user_msg)]
@@ -123,8 +121,11 @@ def to_golden_dict(
     return {
         "id": new_id,
         "category": seed.category,
-        "raw_content": paraphrased.raw_content,
-        "quote_content": paraphrased.quote_content,
+        "send_text": paraphrased.send_text,
+        "at_bot": True,
+        "response_contains": [],
+        "response_not_contains": [],
+        "sub_scenes": [],
         "expected": seed.expected,
         "notes": f"LLM paraphrase: {paraphrased.notes} (seed={seed.id})",
         "source": "llm_paraphrase",
@@ -163,21 +164,16 @@ def render_review_markdown(
     for seed, variants in seed_with_paraphrases:
         lines.append(f"## 种子 {seed.id}（{seed.category}）")
         lines.append("")
-        lines.append(f"**原话**: {seed.raw_content}")
+        lines.append(f"**原话**: {seed.turns[-1].send_text}")
         lines.append(
             f"**expected**: `{json.dumps(seed.expected, ensure_ascii=False)}`"
         )
-        if seed.quote_content:
-            lines.append(f"**quote**: {seed.quote_content}")
         lines.append("")
         lines.append("### 候选变体")
         lines.append("")
         for idx, v in enumerate(variants, 1):
-            quote_part = (
-                f"\n  - quote: `{v.quote_content}`" if v.quote_content else ""
-            )
             lines.append(
-                f"- [ ] **{seed.id}-v{idx}** ({v.notes})\n  - raw: `{v.raw_content}`{quote_part}"
+                f"- [ ] **{seed.id}-v{idx}** ({v.notes})\n  - send_text: `{v.send_text}`"
             )
         lines.append("")
     return "\n".join(lines)

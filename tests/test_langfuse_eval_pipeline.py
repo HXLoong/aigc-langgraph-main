@@ -143,6 +143,6 @@ async def test_pipeline_stops_after_first_nonzero_api_code(
     output = await langfuse_eval.run_langgraph_pipeline(item=item)
 
     assert graph.calls == 1
-    assert output["failure"]["kind"] == "backend_error"
+    assert output["failure"]["kind"] == "business_reject"
     assert output["failure"]["api_code"] == 50301
     assert output["remaining_turns"] == 1

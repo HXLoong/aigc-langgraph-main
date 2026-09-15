@@ -1,10 +1,10 @@
-"""把本地 tests/fixtures/golden.jsonl 上传到 Langfuse `otc-option-golden` dataset。
+"""把本地 categories fixture 上传到 Langfuse `otc-option-golden` dataset。
 
 input/expected_output 格式与 scripts/langfuse_eval.py 的 _LocalItem 一致，
 确保上传后 cloud eval 与 local eval 行为完全一致：
 
-  input            = JSON 字符串 {"turns": [{raw_content, quote_desc}, ...]}
-  expected_output  = case["expected"]["output"]（自然语言期望）
+  input            = JSON 字符串 {"turns": [{send_text, at_bot, quote_previous}, ...]}
+  expected_output  = case.expected_output（自然语言期望）
   metadata         = {id, type, category, source, tags, turns, overview}
 
 用法：
@@ -12,6 +12,8 @@ input/expected_output 格式与 scripts/langfuse_eval.py 的 _LocalItem 一致�
     python scripts/upload_golden_to_langfuse.py                  # overwrite（默认）
     python scripts/upload_golden_to_langfuse.py --mode append    # 追加
 """
+# ruff: noqa: E402, I001
+
 from __future__ import annotations
 
 import argparse
@@ -22,7 +24,7 @@ from pathlib import Path
 
 _DOTENV = Path(__file__).resolve().parent.parent / ".env"
 if _DOTENV.exists():
-    for line in _DOTENV.read_text().splitlines():
+    for line in _DOTENV.read_text(encoding="utf-8").splitlines():
         line = line.strip()
         if not line or line.startswith("#") or "=" not in line:
             continue
@@ -33,55 +35,29 @@ if _DOTENV.exists():
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
-GOLDEN_PATH = PROJECT_ROOT / "tests" / "fixtures" / "golden.jsonl"
+GOLDEN_PATH = PROJECT_ROOT / "tests" / "fixtures" / "categories"
 DATASET_NAME = "otc-option-golden"
 
-
-def load_cases(path: Path) -> list[dict]:
-    cases: list[dict] = []
-    with open(path, encoding="utf-8") as f:
-        for line in f:
-            line = line.strip()
-            if not line or line.startswith("#"):
-                continue
-            cases.append(json.loads(line))
-    return cases
+from harness.golden import GoldenCase, build_overview, load_golden
 
 
-def _build_overview(case: dict) -> str:
-    expected = case.get("expected", {})
-    lines = [
-        f"ID: {case.get('id', '')}",
-        f"类别: {case.get('category', '')}",
-        f"用例类型: {case.get('type', '')}",
-        f"来源: {case.get('source', '')}",
-        f"期望路由: product_type={expected.get('product_type', '')}, intent={expected.get('intent', '')}",
-        "对话:",
-    ]
-    for i, turn in enumerate(case.get("conversation", []), 1):
-        raw = turn.get("raw_content", "")
-        quote = turn.get("quote_desc", "")
-        if quote:
-            lines.append(f"  第{i}轮: raw_content={raw}; 引用上一轮机器人回复")
-        else:
-            lines.append(f"  第{i}轮: raw_content={raw}; 无引用")
-    return "\n".join(lines)
-
-
-def build_input(case: dict) -> str:
-    conv = case.get("conversation", [])
+def build_input(case: GoldenCase) -> str:
     turns = [
         {
-            "raw_content": t.get("raw_content", ""),
-            "quote_desc": t.get("quote_desc", ""),
+            "send_text": turn.send_text,
+            "at_bot": turn.at_bot,
+            "quote_previous": turn.quote_previous,
         }
-        for t in conv
+        for turn in case.turns
     ]
     return json.dumps({"turns": turns}, ensure_ascii=False)
 
 
-def build_expected(case: dict) -> str:
-    return case.get("expected", {}).get("output", "")
+def build_expected(case: GoldenCase) -> str:
+    """评估层近似期望：expected_output 为空时拼接 response_contains（非业务语义）。"""
+    if case.expected_output:
+        return case.expected_output
+    return "\n".join(line for turn in case.turns for line in turn.response_contains)
 
 
 def main() -> int:
@@ -92,19 +68,19 @@ def main() -> int:
     parser.add_argument("--source", default=str(GOLDEN_PATH))
     args = parser.parse_args()
 
-    cases = load_cases(Path(args.source))
+    cases = load_golden(Path(args.source))
     print(f"加载 {len(cases)} 条 from {args.source}\n")
 
     if args.dry_run:
-        single = sum(1 for c in cases if len(c.get("conversation", [])) == 1)
+        single = sum(1 for c in cases if len(c.turns) == 1)
         multi = len(cases) - single
         print(f"单轮: {single}, 多轮: {multi}")
-        print(f"\n前 3 条预览:")
+        print("\n前 3 条预览:")
         for c in cases[:3]:
             inp = json.loads(build_input(c))
-            print(f"  {c['id']} [{c.get('category', '')}] turns={len(inp['turns'])}")
+            print(f"  {c.id} [{c.category}] turns={len(inp['turns'])}")
             for t in inp["turns"]:
-                print(f"    raw_content: {t['raw_content'][:80]}")
+                print(f"    send_text: {t['send_text'][:80]}")
             print(f"    expected: {build_expected(c)[:120]}\n")
         print(f"目标 dataset: {args.dataset_name} (mode={args.mode})")
         return 0
@@ -169,26 +145,26 @@ def main() -> int:
     for c in cases:
         try:
             lf.create_dataset_item(
-                id=c["id"],
+                id=c.id,
                 dataset_name=args.dataset_name,
                 input=build_input(c),
                 expected_output=build_expected(c),
                 metadata={
-                    "id": c.get("id", ""),
-                    "type": c.get("type", ""),
-                    "category": c.get("category", ""),
-                    "source": c.get("source", ""),
-                    "test_function": c.get("category", ""),
-                    "overview": _build_overview(c),
-                    "tags": [c.get("category", ""), c.get("source", "")],
-                    "turns": len(c.get("conversation", [])),
+                    "id": c.id,
+                    "type": c.type,
+                    "category": c.category,
+                    "source": c.source,
+                    "test_function": c.category,
+                    "overview": build_overview(c),
+                    "tags": [c.category, c.source],
+                    "turns": len(c.turns),
                 },
             )
             success += 1
             if success % 25 == 0:
                 print(f"  已上传 {success}/{len(cases)}...")
         except Exception as e:
-            failed.append((c.get("id", "?"), str(e)))
+            failed.append((c.id, str(e)))
 
     print(f"\n完成: {success}/{len(cases)} 上传到 {args.dataset_name}")
     if failed:

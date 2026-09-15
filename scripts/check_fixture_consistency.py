@@ -1,167 +1,99 @@
 #!/usr/bin/env python3
-"""tests/fixtures 一致性 CI lint。
-
-校验 README.md §3 的 3 个不变量：
-  1. unified_golden.jsonl 的 raw_content 集合 ⊇ golden.jsonl 的 raw_content 集合
-     （防止有人加 case 进 golden.jsonl 后忘了跑 merge_golden.py）
-  2. 独立历史锚点集中 g001-g030 全部存在，且被 unified 覆盖
-  3. 各 fixture 非空、id 唯一且命名遵循职责矩阵约定
-
-退出码：0 一致 / 1 有违反 / 2 文件缺失
-"""
+"""Validate the active categories fixture directory."""
 from __future__ import annotations
 
 import argparse
 import json
-import re
 import sys
 from collections import Counter
 from pathlib import Path
+from typing import Any
 
-PROJECT_ROOT = Path(__file__).resolve().parents[1]
-FIXTURES = PROJECT_ROOT / "tests" / "fixtures"
-
-FILES = {
-    "golden": FIXTURES / "golden.jsonl",
-    "unified": FIXTURES / "unified_golden.jsonl",
-    "option_qa": FIXTURES / "option_golden.jsonl",
-    "business_seeds_snapshot": FIXTURES / "golden_business_seeds_2026-05.jsonl",
-    "ticker": FIXTURES / "golden_ticker_2026-05.jsonl",
-    "rule_anchors": FIXTURES / "golden_rule_anchors.jsonl",
-}
-
-#: README.md §1 职责矩阵约定的 id 前缀正则
-ID_PATTERNS = {
-    "golden": re.compile(r"^(swap|opt|opt_close|query|close|unknown)-\d{3,4}$"),
-    "unified": re.compile(r"^(swap|opt|opt_close|query|close|unknown)-\d{3,4}$"),
-    "option_qa": re.compile(r"^opt-\d{3,4}$"),
-    "business_seeds_snapshot": re.compile(r"^g\d{3,4}$"),
-    "ticker": re.compile(r"^tk\d{3}$"),
-    "rule_anchors": re.compile(r"^g\d{3}$"),
-}
+ROOT = Path(__file__).resolve().parents[1]
 
 
-def _load_jsonl(p: Path) -> list[dict]:
-    return [json.loads(line) for line in p.read_text(encoding="utf-8").splitlines() if line.strip()]
+def _lines(value: Any) -> list[str] | None:
+    if isinstance(value, str):
+        return [line.strip() for line in value.splitlines() if line.strip()]
+    if isinstance(value, list) and all(isinstance(item, str) for item in value):
+        return [item.strip() for item in value if item.strip()]
+    return None
 
 
-def _extract_raw(case: dict) -> str:
-    """golden / unified 两种 schema 都能抽 raw_content。"""
-    if "raw_content" in case:
-        return case["raw_content"]
-    convo = case.get("conversation") or []
-    if convo and isinstance(convo, list):
-        return convo[0].get("raw_content", "")
-    return ""
-
-
-# ============================================================
-# 校验 1 · unified raw_content ⊇ golden raw_content
-# ============================================================
-
-
-def check_unified_is_superset(golden: list[dict], unified: list[dict]) -> list[str]:
-    g_raws = {_extract_raw(c) for c in golden if _extract_raw(c)}
-    u_raws = {_extract_raw(c) for c in unified if _extract_raw(c)}
-    missing = g_raws - u_raws
-    if not missing:
-        return []
-    errs = [
-        f"❌ unified_golden.jsonl 缺 {len(missing)} 条 golden.jsonl 的 raw_content",
-        "   修复：python scripts/merge_golden.py（参考 tests/fixtures/README.md §4）",
-        "   示例缺失:",
-    ]
-    for r in list(missing)[:3]:
-        errs.append(f"     - {r[:80]}")
-    return errs
-
-
-# ============================================================
-# 校验 2 · g001-g030 锚点全在
-# ============================================================
-
-
-def check_anchors_present(golden: list[dict]) -> list[str]:
-    """ADR 0015 规则层锚点必须存在。"""
-    ids = {c["id"] for c in golden}
-    required = {f"g{i:03d}" for i in range(1, 31)}
-    missing = required - ids
-    if not missing:
-        return []
-    return [
-        f"❌ golden_rule_anchors.jsonl 缺 ADR 0015 规则层锚点: {sorted(missing)}",
-        "   这些 case 保留原始 g001-g030 编号，不能删",
-        "   参考 ADR 0015 + tests/fixtures/README.md §1",
-    ]
-
-
-# ============================================================
-# 校验 3 · id 命名规范
-# ============================================================
-
-
-def check_id_naming(name: str, cases: list[dict]) -> list[str]:
-    if not cases:
-        return [f"❌ {name} 为空，不能用空文件代替基准数据"]
-    counts = Counter(c.get("id", "") for c in cases)
-    duplicates = [case_id for case_id, count in counts.items() if count > 1]
-    errors = [f"❌ {name} 存在重复 id: {duplicates}"] if duplicates else []
-    pattern = ID_PATTERNS[name]
-    bad = [c.get("id", "") for c in cases if not pattern.fullmatch(c.get("id", ""))]
-    if not bad:
-        return errors
-    return errors + [
-        f"❌ {name} ({FILES[name].name}) 中 {len(bad)} 个 id 不符命名规范 {pattern.pattern}",
-        f"   样本: {bad[:5]}",
-        "   参考 tests/fixtures/README.md §1 职责矩阵",
-    ]
-
-
-# ============================================================
-# 主流程
-# ============================================================
-
-
-def main() -> int:
-    parser = argparse.ArgumentParser(description="tests/fixtures 一致性 CI lint")
-    parser.add_argument("--verbose", "-v", action="store_true")
-    args = parser.parse_args()
-
-    # 文件存在性
-    missing_files = [name for name, p in FILES.items() if not p.exists()]
-    if missing_files:
-        for name in missing_files:
-            print(f"ERROR: 缺文件 {FILES[name]}", file=sys.stderr)
-        return 2
-
-    data = {name: _load_jsonl(p) for name, p in FILES.items()}
-
-    if args.verbose:
-        for name, cases in data.items():
-            print(f"  {name:30s} {len(cases):4d} cases  ({FILES[name].name})")
+def validate(root: Path, verbose: bool = False) -> list[str]:
+    categories = root / "categories" if root.name != "categories" else root
+    if not categories.is_dir():
+        return [f"missing fixture directory: {categories}"]
+    paths = sorted(categories.glob("*.jsonl"))
+    if not paths:
+        return [f"no JSONL fixtures found: {categories}"]
 
     errors: list[str] = []
-    errors.extend(check_unified_is_superset(data["golden"], data["unified"]))
-    errors.extend(check_anchors_present(data["rule_anchors"]))
-    errors.extend(check_unified_is_superset(data["rule_anchors"], data["unified"]))
-    for name in FILES:
-        errors.extend(check_id_naming(name, data[name]))
+    ids: list[str] = []
+    for path in paths:
+        lines = path.read_text(encoding="utf-8").splitlines()
+        if not lines:
+            errors.append(f"{path}: empty file")
+            continue
+        for line_number, raw_line in enumerate(lines, start=1):
+            line = raw_line.strip()
+            if not line or line.startswith("#"):
+                continue
+            origin = f"{path}:{line_number}"
+            try:
+                obj = json.loads(line)
+            except json.JSONDecodeError as exc:
+                errors.append(f"{origin}: invalid JSON: {exc}")
+                continue
+            if not isinstance(obj, dict):
+                errors.append(f"{origin}: case must be an object")
+                continue
+            legacy = {key for key in ("conversation", "raw_content") if key in obj}
+            if legacy:
+                errors.append(f"{origin}: legacy fields: {sorted(legacy)}")
+            case_id = obj.get("id") or obj.get("caseNo")
+            if not isinstance(case_id, str) or not case_id.strip():
+                errors.append(f"{origin}: missing id/caseNo")
+            else:
+                ids.append(case_id)
+            if not isinstance(obj.get("name", obj.get("caseNo")), str):
+                errors.append(f"{origin}: missing name/caseNo")
+            if not isinstance(obj.get("send_text"), str) or not obj["send_text"].strip():
+                errors.append(f"{origin}: missing send_text")
+            category = str(obj.get("category") or path.stem)
+            if not category.startswith(("swap", "option", "option_close")):
+                errors.append(f"{origin}: invalid category {category!r}")
+            for field_name in ("response_contains", "response_contains_any", "response_not_contains"):
+                if field_name in obj and _lines(obj[field_name]) is None:
+                    errors.append(f"{origin}: {field_name} must be string or list[str]")
+            sub_scenes = obj.get("sub_scenes", [])
+            if not isinstance(sub_scenes, list):
+                errors.append(f"{origin}: sub_scenes must be a list")
+            else:
+                for index, sub_scene in enumerate(sub_scenes):
+                    if not isinstance(sub_scene, dict) or not isinstance(sub_scene.get("send_text"), str) or not sub_scene["send_text"].strip():
+                        errors.append(f"{origin}: sub_scenes[{index}] missing send_text")
+    for duplicate, count in Counter(ids).items():
+        if count > 1:
+            errors.append(f"duplicate id {duplicate!r}: {count} occurrences")
+    if verbose:
+        print(f"validated {len(paths)} fixture files and {len(ids)} cases")
+    return errors
 
-    if not errors:
-        print(
-            f"✅ tests/fixtures 一致性 OK（{len(data)} 个 fixture · {sum(len(v) for v in data.values())} 总 cases）"
-        )
-        if args.verbose:
-            for name, cases in data.items():
-                print(f"   · {name}: {len(cases)} cases")
-        return 0
 
-    print(f"❌ 发现 {len([e for e in errors if e.startswith('❌')])} 项违反：")
-    print()
-    for e in errors:
-        print(e)
-    return 1
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--root", type=Path, default=ROOT / "tests" / "fixtures")
+    parser.add_argument("--verbose", action="store_true")
+    args = parser.parse_args(argv)
+    errors = validate(args.root, args.verbose)
+    if errors:
+        for error in errors:
+            print(f"ERROR: {error}", file=sys.stderr)
+        return 2 if any(error.startswith("missing fixture") or error.startswith("no JSONL") for error in errors) else 1
+    print("fixture consistency: PASS")
+    return 0
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    raise SystemExit(main())

@@ -56,14 +56,13 @@ class TestJudgePromptExtracted:
         assert "宽松原则" in p.system
         assert "反案例" in p.system
 
-    def test_eval_scripts_use_loader_not_literal(self) -> None:
-        """两个评估脚本都必须走 load_prompt，不允许硬编码 judge 正文。"""
-        for script in ("langfuse_eval.py", "langfuse_eval_clean.py"):
-            text = (PROJECT_ROOT / "scripts" / script).read_text(encoding="utf-8")
-            assert 'load_prompt("judge", "option_judge")' in text, script
-            assert "你是场外衍生品AI指令助手的测试审查员" not in text, (
-                f"{script} 仍硬编码 judge 提示词正文"
-            )
+    def test_eval_script_uses_loader_not_literal(self) -> None:
+        """评估脚本必须走 load_prompt，不允许硬编码 judge 正文。"""
+        text = (PROJECT_ROOT / "scripts" / "langfuse_eval.py").read_text(encoding="utf-8")
+        assert 'load_prompt("judge", "option_judge")' in text
+        assert "你是场外衍生品AI指令助手的测试审查员" not in text, (
+            "langfuse_eval.py 仍硬编码 judge 提示词正文"
+        )
 
 
 class TestExportNoSilentOverwrite:

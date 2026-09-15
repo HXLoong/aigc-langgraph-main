@@ -13,6 +13,8 @@ from fastapi.testclient import TestClient
 import app.api.routes as api_routes
 from app.graph.state import TraceEntry
 from app.main import app
+from app.observability import tracing as observability_tracing
+from app.observability.tracing import RequestTrace
 from app.subgraphs.option import backend as option_backend
 from app.subgraphs.swap import backend as swap_backend_module
 from app.subgraphs.swap import intent as swap_intent_module
@@ -38,6 +40,8 @@ class _CapturingGraph:
             "intent": "place_order_request",
             "reply_text": "BACKEND_CARD",
             "tickers": [],
+            "api_code": 0,
+            "api_result": "BACKEND_OK",
             "trace": [TraceEntry(node="ingest", decision="ok")],
         }
 
@@ -121,6 +125,10 @@ def test_workflows_run_returns_dify_compatible_schema(
     outputs = data["outputs"]
     assert outputs["product_type"] == "swap"  # M1 默认
     assert outputs["intent"] is not None
+    # 核销凭据（plan0909 R2）：HTTP 形态下状态码 / 后端结果 / 节点链可判定
+    assert outputs["api_code"] == 0
+    assert outputs["api_result"] == "BACKEND_OK"
+    assert outputs["trace"] == "ingest[ok]"
 
 
 def test_workflows_run_returns_conversation_id_and_answer_at_top_level(
@@ -155,14 +163,19 @@ def test_development_response_exposes_matching_langfuse_trace_link(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     handler = object()
+    langfuse_trace_id = "f" * 32
 
-    async def fake_trace_context(
-        trace_id: str, traceparent: str | None
-    ) -> tuple[object, str, str]:
+    async def fake_attach(
+        *, request_trace_id: str, traceparent: str | None
+    ) -> RequestTrace:
         assert traceparent is None
-        return handler, f"https://langfuse.test/project/p/traces/{trace_id}", trace_id
+        return RequestTrace(
+            handler=handler,
+            langfuse_trace_id=langfuse_trace_id,
+            url=f"https://langfuse.test/project/p/traces/{langfuse_trace_id}",
+        )
 
-    monkeypatch.setattr(api_routes, "_development_langfuse_trace", fake_trace_context)
+    monkeypatch.setattr(api_routes, "attach_request_trace", fake_attach)
 
     response = client.post(
         "/v1/workflows/run",
@@ -174,7 +187,11 @@ def test_development_response_exposes_matching_langfuse_trace_link(
     )
 
     outputs = response.json()["data"]["outputs"]
-    assert outputs["trace_url"].endswith(outputs["trace_id"])
+    # 业务审计 ID 恒定存在，且与 LangFuse 侧 ID 分离
+    assert len(outputs["trace_id"]) == 32
+    assert outputs["trace_id"] != outputs["langfuse_trace_id"]
+    assert outputs["langfuse_trace_id"] == langfuse_trace_id
+    assert outputs["trace_url"].endswith(outputs["langfuse_trace_id"])
     graph = client.app.state.main_graph
     assert graph.config is not None
     assert graph.config["callbacks"] == [handler]
@@ -189,14 +206,14 @@ def test_test_workbench_request_joins_case_trace(
     traceparent = f"00-{parent_trace_id}-{parent_span_id}-01"
     captured: dict[str, str | None] = {}
 
-    async def fake_trace_context(
-        trace_id: str, incoming_traceparent: str | None
-    ) -> tuple[object, str, str]:
-        captured["request_trace_id"] = trace_id
-        captured["traceparent"] = incoming_traceparent
-        return object(), "https://langfuse.test/case", parent_trace_id
+    async def fake_attach(
+        *, request_trace_id: str, traceparent: str | None
+    ) -> RequestTrace:
+        captured["request_trace_id"] = request_trace_id
+        captured["traceparent"] = traceparent
+        return RequestTrace(handler=object(), langfuse_trace_id=parent_trace_id)
 
-    monkeypatch.setattr(api_routes, "_development_langfuse_trace", fake_trace_context)
+    monkeypatch.setattr(api_routes, "attach_request_trace", fake_attach)
 
     response = client.post(
         "/v1/workflows/run",
@@ -212,53 +229,30 @@ def test_test_workbench_request_joins_case_trace(
     outputs = response.json()["data"]["outputs"]
     assert captured["traceparent"] == traceparent
     assert captured["request_trace_id"] != parent_trace_id
-    assert outputs["trace_id"] == parent_trace_id
+    # 父 Trace 不得覆盖业务审计 ID —— 本次重构的核心不变量
+    assert outputs["trace_id"] == captured["request_trace_id"]
+    assert outputs["langfuse_trace_id"] == parent_trace_id
 
 
-def test_non_workbench_request_cannot_inject_case_trace(
-    client: TestClient,
+def _patch_langfuse(
     monkeypatch: pytest.MonkeyPatch,
+    captured: dict[str, object],
 ) -> None:
-    captured: dict[str, str | None] = {}
-
-    async def fake_trace_context(
-        trace_id: str, incoming_traceparent: str | None
-    ) -> tuple[object, str, str]:
-        captured["traceparent"] = incoming_traceparent
-        return object(), "https://langfuse.test/request", trace_id
-
-    monkeypatch.setattr(api_routes, "_development_langfuse_trace", fake_trace_context)
-
-    client.post(
-        "/v1/workflows/run",
-        headers={"traceparent": f"00-{'1' * 32}-{'2' * 16}-01"},
-        json={
-            "conversation_id": "business-conversation-1",
-            "inputs": {"raw_content": "测试", "message_id": 3},
-            "response_mode": "blocking",
-            "user": "test-user",
-        },
-    )
-
-    assert captured["traceparent"] is None
-
-
-@pytest.mark.asyncio
-async def test_development_trace_handler_uses_parent_trace_context(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    captured: dict[str, object] = {}
-
-    class FakeLangfuse:
-        def __init__(self, **kwargs: object) -> None:
-            captured["client"] = kwargs
+    """把 tracing 模块的 langfuse 依赖替换成 fake。"""
 
     class FakeCallbackHandler:
         def __init__(self, **kwargs: object) -> None:
             captured["handler"] = kwargs
 
+    class FakeLangfuse:
+        def __init__(self, **kwargs: object) -> None:
+            captured["client"] = kwargs
+
+        def get_trace_url(self, *, trace_id: str) -> str:
+            return f"https://langfuse.test/project/p/traces/{trace_id}"
+
     monkeypatch.setattr(
-        api_routes,
+        observability_tracing,
         "get_settings",
         lambda: SimpleNamespace(
             environment="development",
@@ -268,26 +262,106 @@ async def test_development_trace_handler_uses_parent_trace_context(
             langfuse_base_url="https://langfuse.test",
         ),
     )
+    monkeypatch.setattr(observability_tracing, "_langfuse_client", None)
     monkeypatch.setitem(sys.modules, "langfuse", SimpleNamespace(Langfuse=FakeLangfuse))
     monkeypatch.setitem(
         sys.modules,
         "langfuse.langchain",
         SimpleNamespace(CallbackHandler=FakeCallbackHandler),
     )
-    trace_id = "1" * 32
-    span_id = "2" * 16
-
-    handler, trace_url, actual_trace_id = await api_routes._development_langfuse_trace(
-        "3" * 32, f"00-{trace_id}-{span_id}-01"
+    monkeypatch.setitem(
+        sys.modules, "langfuse.types", SimpleNamespace(TraceContext=dict)
     )
 
-    assert isinstance(handler, FakeCallbackHandler)
-    assert trace_url is None
-    assert actual_trace_id == trace_id
+
+@pytest.mark.asyncio
+async def test_self_created_trace_reuses_request_trace_id(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """自建 Trace 时 LangFuse trace id 复用业务 request_trace_id（ADR 0004/#156）。"""
+    captured: dict[str, object] = {}
+    _patch_langfuse(monkeypatch, captured)
+
+    trace = await observability_tracing.attach_request_trace(
+        request_trace_id="3" * 32, traceparent=None
+    )
+
+    assert trace.langfuse_trace_id == "3" * 32
+    assert trace.url == "https://langfuse.test/project/p/traces/" + "3" * 32
     assert captured["handler"] == {
         "public_key": "public",
-        "trace_context": {"trace_id": trace_id, "parent_span_id": span_id},
+        "trace_context": {"trace_id": "3" * 32},
     }
+
+
+@pytest.mark.asyncio
+async def test_parent_trace_context_used(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """development 环境接入调用方传入的父 Trace。"""
+    captured: dict[str, object] = {}
+    _patch_langfuse(monkeypatch, captured)
+    parent_trace_id = "1" * 32
+    span_id = "2" * 16
+
+    trace = await observability_tracing.attach_request_trace(
+        request_trace_id="3" * 32,
+        traceparent=f"00-{parent_trace_id}-{span_id}-01",
+    )
+
+    assert trace.langfuse_trace_id == parent_trace_id
+    assert trace.url is None  # 父 Trace 模式不查链接
+    assert captured["handler"] == {
+        "public_key": "public",
+        "trace_context": {"trace_id": parent_trace_id, "parent_span_id": span_id},
+    }
+
+
+@pytest.mark.asyncio
+async def test_traceparent_ignored_outside_development(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """非 development 环境忽略 traceparent —— 信任边界由 environment 门禁承担。"""
+    captured: dict[str, object] = {}
+    _patch_langfuse(monkeypatch, captured)
+    monkeypatch.setattr(
+        observability_tracing,
+        "get_settings",
+        lambda: SimpleNamespace(
+            environment="production",
+            enable_langfuse=True,
+            langfuse_public_key="public",
+            langfuse_secret_key="secret",
+            langfuse_base_url="https://langfuse.test",
+        ),
+    )
+
+    trace = await observability_tracing.attach_request_trace(
+        request_trace_id="3" * 32,
+        traceparent=f"00-{'1' * 32}-{'2' * 16}-01",
+    )
+
+    # 生产环境不启用请求级 trace：既不注入 handler，也不接受外部 trace id
+    assert trace.handler is None
+    assert trace.langfuse_trace_id is None
+
+
+@pytest.mark.asyncio
+async def test_trace_unavailable_degrades_without_raising(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """langfuse 不可用时返回空 RequestTrace —— 绝不阻断业务。"""
+    captured: dict[str, object] = {}
+    _patch_langfuse(monkeypatch, captured)
+    monkeypatch.setitem(sys.modules, "langfuse.langchain", None)
+
+    trace = await observability_tracing.attach_request_trace(
+        request_trace_id="3" * 32, traceparent=None
+    )
+
+    assert trace.handler is None
+    assert trace.langfuse_trace_id is None
+    assert trace.url is None
 
 
 def test_streaming_mode_rejected(client: TestClient) -> None:

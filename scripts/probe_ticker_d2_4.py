@@ -1,28 +1,23 @@
 #!/usr/bin/env python3
 """D2.4 ticker 真 GOATS 联调端到端验证（Issue #76）。
 
-3 个模式：
+2 个模式：
     --case <raw>      跑单个 case 看 resolver 输出 + 主图 HITL 信号
     --hitl-flow       完整 HITL 两轮交互：先发"中国平安看涨期权"看消歧卡片，
                       再发"选 1"模拟用户回复看 ticker 是否被填上
-    --fixture         跑全套 34 条 ticker fixture，输出 PASS rate（D2.4 退出门 ≥ 90%）
 
 不触发 write endpoint（绝不下单），仅 read GOATS。
 
 使用：
     python scripts/probe_ticker_d2_4.py --case "中国平安"
     python scripts/probe_ticker_d2_4.py --hitl-flow
-    python scripts/probe_ticker_d2_4.py --fixture
 """
 from __future__ import annotations
 
 import argparse
 import asyncio
-import json
 import sys
 import time
-from collections import Counter
-from pathlib import Path
 
 
 # ============================================================
@@ -110,84 +105,6 @@ async def run_hitl_flow() -> int:
 
 
 # ============================================================
-# 模式 3：34 条 ticker fixture 真后端 PASS rate
-# ============================================================
-
-
-async def run_fixture() -> int:
-    from app.subgraphs.ticker.resolver import resolve_ticker_full
-    from app.subgraphs.ticker.tools import tokenize
-
-    path = Path("tests/fixtures/golden_ticker_2026-05.jsonl")
-    if not path.exists():
-        print(f"fixture not found: {path}", file=sys.stderr)
-        return 2
-
-    cases = [json.loads(line) for line in path.read_text("utf-8").splitlines() if line.strip()]
-    print(f"=== ticker fixture 真后端跑 {len(cases)} 条 ===")
-
-    stats = Counter()
-    fails: list[tuple[str, str, dict, dict]] = []
-    by_cat = Counter()
-    pass_by_cat = Counter()
-
-    for case in cases:
-        cid = case["id"]
-        raw = case["raw_content"]
-        expected = case["expected"]
-        category = case["category"]
-        by_cat[category] += 1
-
-        actual: dict = {}
-        try:
-            actual["tokens"] = tokenize.invoke({"raw_text": raw})
-        except Exception as exc:  # noqa: BLE001
-            actual["tokens_err"] = f"{type(exc).__name__}: {exc}"
-
-        try:
-            resolution = await resolve_ticker_full(raw)
-            resolved_codes = [c.wind_code for c in resolution.resolved]
-            needs_hitl = bool(resolution.hitl_pending)
-            winner = resolved_codes[0] if resolved_codes else None
-            actual["winner"] = winner
-            actual["needs_hitl"] = needs_hitl
-        except Exception as exc:  # noqa: BLE001
-            actual["resolve_err"] = f"{type(exc).__name__}: {exc}"
-
-        # 判定：winner + needs_hitl 一致即 PASS（tokens 不强检，因为已有 32 条 tokenize 单测）
-        ok = (
-            actual.get("winner") == expected.get("winner")
-            and actual.get("needs_hitl") == expected.get("needs_hitl")
-        )
-        if ok:
-            stats["pass"] += 1
-            pass_by_cat[category] += 1
-        else:
-            stats["fail"] += 1
-            fails.append((cid, raw, expected, actual))
-
-    total = stats["pass"] + stats["fail"]
-    pct = 100.0 * stats["pass"] / total if total else 0.0
-
-    print(f"\nPASS: {stats['pass']}/{total} = {pct:.1f}% (D2.4 退出门 ≥ 90%)\n")
-    print("按 category:")
-    for cat, n in sorted(by_cat.items()):
-        p = pass_by_cat[cat]
-        print(f"  {cat:<40} {p}/{n}")
-
-    if fails:
-        print(f"\n失败 {len(fails)} 条：")
-        for cid, raw, exp, act in fails[:10]:
-            print(f"  {cid:<8} raw={raw[:30]!r:<32}")
-            print(f"           expected winner={exp.get('winner')} needs_hitl={exp.get('needs_hitl')}")
-            print(f"           actual   winner={act.get('winner')} needs_hitl={act.get('needs_hitl')}  err={act.get('resolve_err') or '-'}")
-        if len(fails) > 10:
-            print(f"  ... 还有 {len(fails) - 10} 条")
-
-    return 0 if pct >= 90.0 else 1
-
-
-# ============================================================
 # CLI
 # ============================================================
 
@@ -196,15 +113,12 @@ def cli() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--case", default=None, help="单 case raw_text")
     parser.add_argument("--hitl-flow", action="store_true", help="HITL 两轮模拟")
-    parser.add_argument("--fixture", action="store_true", help="跑 ticker fixture 全集")
     args = parser.parse_args()
 
     if args.case:
         return asyncio.run(run_case(args.case))
     if args.hitl_flow:
         return asyncio.run(run_hitl_flow())
-    if args.fixture:
-        return asyncio.run(run_fixture())
 
     parser.print_help()
     return 2
