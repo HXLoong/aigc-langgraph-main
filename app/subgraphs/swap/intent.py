@@ -18,7 +18,8 @@ from typing import Any
 from app.graph.safe_node import safe_node
 from app.graph.state import AgentState, TraceEntry
 from app.llm.clients import get_qwen_thinking
-from app.prompts import load_prompt, resolve_prompt_version
+from app.prompts import blocks
+from app.prompts.spec import PromptSpec, register
 from app.subgraphs.swap.models import SwapIntentOutput
 
 #: Dify code 节点 1755072896717 `has_confirmation_keyword` 同款词表；命中直接走 confirm_order。
@@ -33,25 +34,23 @@ def has_confirm_order_keyword(raw: str | None) -> bool:
     return any(word in text for word in CONFIRM_ORDER_KEYWORDS)
 
 
-def _format_shortname_list(counterparties: list[dict[str, Any]] | None) -> str:
-    """[{ctptyId,shortName,longName,sort}] → "shortName1, shortName2" 近似 Dify trsShortListStr。"""
-    items = counterparties or []
-    return ", ".join(
-        c.get("shortName", "") for c in items if isinstance(c, dict)
-    )
-
-
 def _build_user_message(state: AgentState) -> str:
-    """组装 user message（DSL v2 互换-节点-意图识别.md 的 3 个输入变量）。"""
-    raw_content = state.get("raw_text", "") or ""
-    quote_content = state.get("quote_content") or ""
-    shortname_list = _format_shortname_list(state.get("swap_counterparties"))
-
+    """DSL v2 互换-节点-意图识别.md 的 3 个输入变量；shortname_list 近似 Dify trsShortListStr。"""
     return (
-        f"raw_content：{raw_content}\n"
-        f"quote_content：{quote_content}\n"
-        f"shortname_list：{shortname_list}"
+        f"raw_content：{state.get('raw_text', '') or ''}\n"
+        f"quote_content：{state.get('quote_content') or ''}\n"
+        f"shortname_list：{', '.join(blocks.shortnames(state.get('swap_counterparties')))}"
     )
+
+
+SPEC = register(PromptSpec(
+    category="swap",
+    name="intent",
+    output_model=SwapIntentOutput,
+    inputs=("raw_text", "quote_content", "swap_counterparties", "conversation_id"),
+    user_builder=_build_user_message,
+    gray=True,
+))
 
 
 @safe_node
@@ -74,18 +73,9 @@ async def swap_intent(state: AgentState) -> dict[str, Any]:
             ],
         }
 
-    conversation_id = state.get("conversation_id")
-    prompt_name = resolve_prompt_version("swap", "intent", conversation_id)
-    prompt = load_prompt("swap", prompt_name)
+    messages, prompt_name = SPEC.build_messages(state)
     llm = get_qwen_thinking().with_structured_output(SwapIntentOutput)
-
-    user_message = _build_user_message(state)
-    result: Any = await llm.ainvoke(
-        [
-            ("system", prompt.system),
-            ("user", user_message),
-        ]
-    )
+    result: Any = await llm.ainvoke(messages)
 
     return {
         "intent": result.type,

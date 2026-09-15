@@ -33,7 +33,7 @@ class SwapIntentOutput(BaseModel):
 
     model_config = ConfigDict(extra="ignore")
 
-    type: SwapIntentType
+    type: SwapIntentType = Field(description="互换意图，取 7 个枚举值之一")
 
 
 # ============================================================
@@ -102,32 +102,32 @@ class SwapOrderItem(WireModel):
 
     model_config = ConfigDict(extra="ignore")
 
-    order_id: str | None = Field(default=None, alias="orderId")
-    place_order_ultra_contract_code: str | None = Field(default=None, alias="placeOrderUltraContractCode")
-    place_order_wind_code: str | None = Field(default=None, alias="placeOrderWindCode")
-    place_order_transaction_type: SwapTransactionType | None = Field(default=None, alias="placeOrderTransactionType")
-    place_order_quantity: int | None = Field(default=None, alias="placeOrderQuantity")
-    place_order_quantity_hand: int | None = Field(default=None, alias="placeOrderQuantityHand")  # 旧字段，见 docstring
-    place_order_quantity_unit: SwapQuantityUnit | None = Field(default=None, alias="placeOrderQuantityUnit")
-    place_order_order_direction: SwapOrderDirection | None = Field(default=None, alias="placeOrderOrderDirection")
-    place_order_price_type: SwapPriceType | None = Field(default=None, alias="placeOrderPriceType")
-    place_order_algorithm_type: SwapAlgorithmType | None = Field(default=None, alias="placeOrderAlgorithmType")
-    place_order_price: float | int | None = Field(default=None, alias="placeOrderPrice")
-    place_order_pov_percent: float | int | None = Field(default=None, alias="placeOrderPovPercent")
-    place_order_total_pov_percent: float | int | None = Field(default=None, alias="placeOrderTotalPovPercent")
-    place_order_display_qty: int | None = Field(default=None, alias="placeOrderDisplayQty")
-    place_order_max_vol: float | int | None = Field(default=None, alias="placeOrderMaxVol")
-    place_order_start_time: str | None = Field(default=None, alias="placeOrderStartTime")
-    place_order_end_time: str | None = Field(default=None, alias="placeOrderEndTime")
-    place_order_relative_time_minutes: float | int | None = Field(default=None, alias="placeOrderRelativeTimeMinutes")
-    place_order_shortname: str | None = Field(default=None, alias="placeOrderShortname")
-    place_order_quantity_total: int | None = Field(default=None, alias="placeOrderQuantityTotal")
-    place_order_premarket: bool | None = Field(default=None, alias="placeOrderPremarket")
-    place_order_notional: float | int | None = Field(default=None, alias="placeOrderNotional")
-    place_order_notional_currency: SwapNotionalCurrency | None = Field(default=None, alias="placeOrderNotionalCurrency")
-    place_order_entrust_ratio: float | int | None = Field(default=None, alias="placeOrderEntrustRatio")
-    place_order_close_intent: bool | None = Field(default=None, alias="placeOrderCloseIntent")
-    has_fast_execution_intent: bool | None = Field(default=None, alias="hasFastExecutionIntent")
+    order_id: str | None = Field(default=None, alias="orderId", description="互换订单号 H-YYYYMMDD-XXXXXXXXXX；改单 / 补参时来自引用消息，全新下单 → null")
+    place_order_ultra_contract_code: str | None = Field(default=None, alias="placeOrderUltraContractCode", description="合约代码（用户明确给出时）")
+    place_order_wind_code: str | None = Field(default=None, alias="placeOrderWindCode", description="标的原文（代码或名称片段，逐字保留；标准化由 ticker resolver 负责）")
+    place_order_transaction_type: SwapTransactionType | None = Field(default=None, alias="placeOrderTransactionType", description="交易品种：A_SHARE / HK_STOCK / US_STOCK / SZ_HK_CONNECT / SH_HK_CONNECT / CHN_FUTURE / CROSS_FUTURE")
+    place_order_quantity: int | None = Field(default=None, alias="placeOrderQuantity", description="委托数量（股 / 手系单位展开后的整数）")
+    place_order_quantity_hand: int | None = Field(default=None, alias="placeOrderQuantityHand", description="旧字段：按手表达的数量（新提示词不再要求填写）")  # 旧字段，见 docstring
+    place_order_quantity_unit: SwapQuantityUnit | None = Field(default=None, alias="placeOrderQuantityUnit", description="数量单位：HAND 手系 / SHARE 股系 / AMOUNT 金额（落 placeOrderNotional）")
+    place_order_order_direction: SwapOrderDirection | None = Field(default=None, alias="placeOrderOrderDirection", description="方向：BUY 买入 / SELL 卖出 / SHORT_OPEN 卖空 / SHORT_CLOSE 平空")
+    place_order_price_type: SwapPriceType | None = Field(default=None, alias="placeOrderPriceType", description="价格类型：LimitOrder 限价 / MarketOrder 市价")
+    place_order_algorithm_type: SwapAlgorithmType | None = Field(default=None, alias="placeOrderAlgorithmType", description="算法：POV / TWAP / VWAP / ICEBERG / SNIPER")
+    place_order_price: float | int | None = Field(default=None, alias="placeOrderPrice", description="限价价格（数字）")
+    place_order_pov_percent: float | int | None = Field(default=None, alias="placeOrderPovPercent", description="POV 跟量比例（数字，不带 %）")
+    place_order_total_pov_percent: float | int | None = Field(default=None, alias="placeOrderTotalPovPercent", description="总单 POV 比例（总单场景）")
+    place_order_display_qty: int | None = Field(default=None, alias="placeOrderDisplayQty", description="可见委托量（冰山单）")
+    place_order_max_vol: float | int | None = Field(default=None, alias="placeOrderMaxVol", description="最大成交量限制")
+    place_order_start_time: str | None = Field(default=None, alias="placeOrderStartTime", description="算法开始时间 HH:MM")
+    place_order_end_time: str | None = Field(default=None, alias="placeOrderEndTime", description="算法结束时间 HH:MM")
+    place_order_relative_time_minutes: float | int | None = Field(default=None, alias="placeOrderRelativeTimeMinutes", description="相对时间窗（分钟，如「30 分钟内」）")
+    place_order_shortname: str | None = Field(default=None, alias="placeOrderShortname", description="交易对手 shortName（完整匹配优先，唯一简写次之）")
+    place_order_quantity_total: int | None = Field(default=None, alias="placeOrderQuantityTotal", description="总量（总单场景）")
+    place_order_premarket: bool | None = Field(default=None, alias="placeOrderPremarket", description="是否盘前")
+    place_order_notional: float | int | None = Field(default=None, alias="placeOrderNotional", description="名义本金 / 金额（数量单位为 AMOUNT 时）")
+    place_order_notional_currency: SwapNotionalCurrency | None = Field(default=None, alias="placeOrderNotionalCurrency", description="名义本金币种：CNY / USD / HKD / EUR / GBP / JPY / AUD / NZD / CNH")
+    place_order_entrust_ratio: float | int | None = Field(default=None, alias="placeOrderEntrustRatio", description="委托比例（可与 placeOrderQuantity 同时非 null）")
+    place_order_close_intent: bool | None = Field(default=None, alias="placeOrderCloseIntent", description="是否平仓意图（减仓 / 平掉类表达）")
+    has_fast_execution_intent: bool | None = Field(default=None, alias="hasFastExecutionIntent", description="是否最大跟量 / 快速执行语义（按 system 规则判定）")
 
 
 class SwapPlaceOrderParams(WireModel):
@@ -139,7 +139,7 @@ class SwapPlaceOrderParams(WireModel):
 
     model_config = ConfigDict(extra="ignore")
 
-    order_list: list[SwapOrderItem] = Field(alias="orderList", default_factory=list)
+    order_list: list[SwapOrderItem] = Field(alias="orderList", default_factory=list, description="订单条目列表；每条对应用户一笔委托，未给出的字段为 null")
 
 
 # ============================================================

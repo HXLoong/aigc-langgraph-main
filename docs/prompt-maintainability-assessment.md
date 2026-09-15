@@ -251,6 +251,7 @@ Dify YAML（上游输入，sync.py 拉取）          │ lint: prompt_inventory
 | ADR 0022 + ADR README + ADR 0001 D5 登记 | 治理模型决策 | — |
 | **D1 落地**：manifest `dify:` 上游映射 ×31 + `check_upstream` 告警；`test_prompt_governance.py` 逐字锁定退役 | git 为唯一真源 | GOV-01/09 |
 | **零风险批**（18 条 manifest changelog）：烘焙 Dify 常量节点 keywords/output（5 处悬空占位符）、删 JSON 禁令、删 option 7 个机器人过滤块、infer_code 范围段 + C-01 事实清单改占位、image_ocr 对手列表渲染、删 `intent_v2`/`place_order_v2` | `--strict` 零违反 | C-01/07/08/09/27, OC-14, OPT-01/02 |
+| **ADR 0023 试点**：`app/prompts/spec.py` PromptSpec + `blocks.py` 积木；option 8 / option_close 2 / swap 2 节点迁移；69 个输出字段补 description；删 option 7 份 JSON 骨架与 close intent 代码内追加指令；`swap/place_order` user 规则文本迁回 `.md` | 高代码范式契约层（第十节） | C-18/25, OPT-04 |
 | `.github/workflows/governance.yml` | push/PR 触发的 <2 分钟守护 | GOV-04 |
 | `.claude/skills/sync-dify-prompts/SKILL.md` 映射表、`docs/on-call-runbook.md` 热修口径、CLAUDE.md / README eval 入口 | 批评员补出的陈旧口径 | 第九节 |
 
@@ -269,6 +270,43 @@ Dify YAML（上游输入，sync.py 拉取）          │ lint: prompt_inventory
 | **团队协作流程** | `app/prompts` 22 次提交 6 位作者，用 `prompt(<scope>)` 类型的只有 2 次，影响最大的 e72ee2d 无类型前缀；无 CODEOWNERS；没有提示词写作规范（`place_close.md` 全英文 + 中文补丁块，其余 27 个活跃文件中文；示例用真实账户还是虚构、要不要写自检清单全凭作者习惯）——这是病灶随下一次同步长回来的机制性原因 | 路线图步骤 6 |
 
 批评员的**跨路仲裁**也改变了三处评级：`holding_query.md` 真实账户名 / 哨兵魔数从 P0 降 P1（不是"会膨胀的业务字典"）；GOV-01 真源之争降 P1 但列为第一道闸；`infer_code.md` 名称→代码清单维持 P0（严重度与"需业务确认"的风险档是两个维度）。另指出 option `intent.py` 还有第 4 条确定性快路径（单个 `-` 即确认下单）在提示词中零对应，且 `deterministic_cancel` 分支零测试——与 close 域已修的 OC-02 同型，option 域仍 open（步骤 5 问题 2）。
+
+## 十、高代码范式重评估：提示词管理与 AgentState / Pydantic 契约（2026-09-15 增补）
+
+用户在 ADR 0022 落地后提出：提示词管理要按 **LangGraph 高代码范式**（AgentState 显式输入、Pydantic 显式输出、节点纯函数）重新评估，而不是停留在"文本文件 + 加载器"。按此口径重新核实 `app/subgraphs` 与 `app/nodes` 的 24 个 LLM 节点，结论：ADR 0022 治理的是**资产**，没有触及**契约**；契约层的缺失才是"冗余删不掉"的根因。
+
+### 10.1 证据（代码迁移完成时 HEAD 实测）
+
+| 维度 | 实测 | 后果 |
+|---|---|---|
+| 节点 → AgentState 输入契约 | 19 份 `_build_user_message`、9 份逐字相同 `_format_history`、3 份 `_format_*_list`，无任何声明 | 一个节点读哪些 State 字段只能读函数体；改字段名不会变红 |
+| 输出契约 | 24 个输出模型 `Field(description=)` 为 **0**，语义全部在 `#:` 注释 | function calling schema 只带字段名 / 类型，`.md` 被迫维护 JSON 骨架 / 字段表（option 7 个 extract 各一份）→ 两份真源漂移（`hasFastExecutionIntent`） |
+| 规则文本进 Python | `swap/place_order.py` user 拼装硬编码"核心护栏 6"+"hasFastExecutionIntent 最终判定"（C-25）；`close/intent.py` 后置追加 `_JSON_OUTPUT_INSTRUCTION`（C-18） | 不在 manifest changelog / eval 门视野内；违反核心原则 1 |
+| 占位符渲染 | `holding_query` / `ticker/tools` / `multimodal` 各自 `str.replace` 常量 | manifest `injects` 与代码一致性靠人工 |
+| 确定性前处理 | `quote_hints` / `prewash` / `order_id` / `pre_route` 已是"代码先算、LLM 后判"的先例 | 说明团队已经在按高代码范式做输入侧，只是没有形成契约对象 |
+
+### 10.2 目标模型（ADR 0023）
+
+一个 LLM 节点 = 一个 `PromptSpec`（`app/prompts/spec.py`）：`inputs`（AgentState 字段，构造期校验）+ `output_model`（Pydantic，`Field(description)` 是输出语义唯一真源）+ `injects`（system 占位符 → 渲染器）+ `user_builder`（只拼变量，规则文本住 `.md` `[user]` 段）+ `gray`。共享积木 `app/prompts/blocks.py` 替代各节点复制。注册表与 `_manifest.yaml` / AgentState 交叉核对，`prompt_inventory.py --check` 把 `PromptSpec(category=, name=)` 视为加载点。
+
+### 10.3 试点结果（本 PR 已落地，12 节点）
+
+| 指标 | 迁移前 | 迁移后 |
+|---|---|---|
+| `_build_user_message` 私有副本 | 19 | 11（剩余为第二 / 三批） |
+| `_format_history` 副本 | 9 | 0 |
+| 输出模型 `Field(description=)` | 0 | 69（option 全部 + close / swap 主要模型） |
+| `.md` 内 JSON 骨架 | option 7 份 | 0（改为一句"以工具 schema 为准"） |
+| 代码内规则文本 | `place_order.py` 两段 + `close/intent.py` 一段 | 0（迁回 `swap/place_order.md` `[user]` 段 / 删除） |
+| 注册 PromptSpec | — | 12（option 8、option_close 2、swap 2） |
+
+LLM 输入文本零变化（user 模板逐字迁回 `.md`；JSON 骨架删除属 ADR 0022 D4 零风险档），全量测试 GREEN（新增 `tests/test_prompt_spec.py` 与 lint 用例）。
+
+### 10.4 剩余迁移与未决
+
+- 第二批：close 5 个 + swap select_counterparty / select_ticker（机械迁移）；第三批：multimodal 3 个（含 v2 灰度位，需多模态 `user_builder`）、ticker 4 个（先转 structured output）、router
+- `description` 也计 tokens：`prompt_inventory.py` 需把 function calling schema 算入单请求开销，才能与第九节的"按路径 token 账"合并
+- `inputs` 目前只声明不强制；是否用受限 State 代理在测试里强制，第二批后决定
 
 ## 附录 A · 发现索引
 

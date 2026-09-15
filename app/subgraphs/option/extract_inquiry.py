@@ -18,11 +18,12 @@ from typing import Any
 
 from app.graph.business_params import validated_place_params
 from app.graph.safe_node import safe_node
-from app.graph.state import AgentState, Message, TraceEntry
+from app.graph.state import AgentState, TraceEntry
 from app.llm.clients import get_qwen_thinking
-from app.prompts import load_prompt
+from app.prompts.spec import PromptSpec, register
 from app.subgraphs.option.backend import _with_resolved_ticker, call_option_backend
 from app.subgraphs.option.models import OptionInquiryParams
+from app.subgraphs.option.prompting import EXTRACT_INPUTS, extract_user
 from app.subgraphs.option.sanitize import sanitize_order_list
 from app.subgraphs.ticker.resolver import resolve_ticker, resolve_ticker_full
 
@@ -37,26 +38,15 @@ def _is_fast_inquiry(text: str) -> bool:
     return any(m in text for m in _FAST_INQUIRY_MARKERS)
 
 
-def _format_history(history: list[Message] | None) -> str:
-    if not history:
-        return ""
-    lines: list[str] = []
-    for msg in history:
-        role = msg.role if hasattr(msg, "role") else msg.get("role", "user")
-        content = msg.content if hasattr(msg, "content") else msg.get("content", "")
-        lines.append(f"{role}: {content}")
-    return "\n".join(lines)
 
 
-def _build_user_message(state: AgentState) -> str:
-    raw_content = state.get("raw_text", "") or ""
-    quote_content = state.get("quote_content") or ""
-    history_str = _format_history(state.get("history_messages"))
-    return (
-        f"用户消息：{raw_content}\n\n"
-        f"引用消息：{quote_content}\n\n"
-        f"历史对话：\n{history_str}"
-    )
+SPEC = register(PromptSpec(
+    category="option",
+    name="extract_inquiry",
+    output_model=OptionInquiryParams,
+    inputs=EXTRACT_INPUTS,
+    user_builder=extract_user,
+))
 
 
 @safe_node
@@ -127,15 +117,9 @@ async def option_extract_inquiry(state: AgentState) -> dict[str, Any]:
             }
 
     # 1. LLM 提取询价参数（thinking 模型 + structured output）
-    prompt = load_prompt("option", "extract_inquiry")
+    messages, _prompt_name = SPEC.build_messages(state)
     llm = get_qwen_thinking().with_structured_output(OptionInquiryParams)
-    user_message = _build_user_message(state)
-    params: Any = await llm.ainvoke(
-        [
-            ("system", prompt.system),
-            ("user", user_message),
-        ]
-    )
+    params: Any = await llm.ainvoke(messages)
 
     # 2. ticker resolver 识别标的（含 HITL 信号）
     resolution = await resolve_ticker_full(raw_text)

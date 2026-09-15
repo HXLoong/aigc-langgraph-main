@@ -59,10 +59,14 @@ _JSON_BAN_RE = re.compile(
     r"不要.*```|不得包含.*说明文字|不要有任何解释|JSON\s*格式输出，不要)",
     re.IGNORECASE,
 )
-#: 代码侧引用提示词的三种形态：load_prompt("cat", "name") /
-#: resolve_prompt_version("cat", "name", ...) / 任意 helper("name")（如 _call_ticker_llm）
+#: 代码侧引用提示词的四种形态：load_prompt("cat", "name") /
+#: resolve_prompt_version("cat", "name", ...) / 任意 helper("name")（如 _call_ticker_llm）/
+#: PromptSpec(category="cat", name="name", ...)（ADR 0023 节点契约对象）
 _LOAD_CALL_RE = re.compile(
     r"(?:load_prompt|resolve_prompt_version)\(\s*['\"]([\w/]+)['\"]\s*,\s*['\"](\w+)['\"]"
+)
+_PROMPT_SPEC_RE = re.compile(
+    r"PromptSpec\(\s*category=['\"]([\w/]+)['\"]\s*,\s*name=['\"](\w+)['\"]", re.DOTALL
 )
 
 VALID_STATUS = {"active", "gray", "inactive"}
@@ -121,7 +125,7 @@ def _load_calls(project_root: Path) -> dict[str, list[str]]:
             if py.parent == project_root / "app" / "prompts":
                 continue  # 加载器自身的 docstring 示例不算引用
             text = py.read_text(encoding="utf-8", errors="ignore")
-            for cat, name in _LOAD_CALL_RE.findall(text):
+            for cat, name in _LOAD_CALL_RE.findall(text) + _PROMPT_SPEC_RE.findall(text):
                 refs.setdefault(f"{cat}/{name}", []).append(str(py.relative_to(project_root)))
     return refs
 
@@ -159,6 +163,8 @@ def _has_load_call(text: str, category: str, name: str, helper: str | None) -> b
     for fn in _DEFAULT_LOAD_CALLS:
         if re.search(rf"{fn}\(\s*['\"]{re.escape(category)}['\"]\s*,\s*['\"]{re.escape(name)}['\"]", text):
             return True
+    if (category, name) in _PROMPT_SPEC_RE.findall(text):
+        return True
     return bool(helper and re.search(rf"{re.escape(helper)}\(\s*['\"]{re.escape(name)}['\"]", text))
 
 

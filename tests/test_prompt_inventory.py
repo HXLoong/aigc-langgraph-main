@@ -90,6 +90,31 @@ class TestLoaderReferences:
         manifest = {"demo/intent": {"status": "active", "loader": "app/subgraphs/demo/intent.py"}}
         assert inv.check_loaders(repo["root"], manifest) == []
 
+    def test_active_ok_via_prompt_spec(self, repo):
+        """ADR 0023：PromptSpec(category=, name=) 声明等价于 load_prompt 加载点。"""
+        (repo["code"] / "intent.py").write_text(
+            "from app.prompts.spec import PromptSpec, register\n"
+            "SPEC = register(PromptSpec(\n"
+            '    category="demo",\n'
+            '    name="intent",\n'
+            "    output_model=object,\n"
+            "    inputs=(),\n"
+            "    user_builder=str,\n"
+            "))\n",
+            encoding="utf-8",
+        )
+        manifest = {"demo/intent": {"status": "active", "loader": "app/subgraphs/demo/intent.py"}}
+        assert inv.check_loaders(repo["root"], manifest) == []
+
+    def test_inactive_still_loaded_via_prompt_spec_is_reported(self, repo):
+        (repo["code"] / "intent.py").write_text(
+            'SPEC = PromptSpec(category="demo", name="intent", output_model=object)\n',
+            encoding="utf-8",
+        )
+        manifest = {"demo/intent": {"status": "inactive", "reason": "已去 LLM 化"}}
+        errs = inv.check_loaders(repo["root"], manifest)
+        assert any("demo/intent" in e and "仍被" in e for e in errs)
+
     def test_inactive_still_loaded_is_reported(self, repo):
         manifest = {"demo/intent": {"status": "inactive", "reason": "已去 LLM 化"}}
         errs = inv.check_loaders(repo["root"], manifest)

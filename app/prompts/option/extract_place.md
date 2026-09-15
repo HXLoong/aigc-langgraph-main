@@ -123,25 +123,5 @@ B 类（询价回执已固化的参数，raw_content 优先 + quote_content 兜�
 
 
 【输出格式】
-你必须输出如下JSON结构:
-{
-  "operate": "交易",
-  "type": "place_order_from_quote",
-  "orderList": [{
-    "orderId": "<订单号>",
-    "stockCode": null,
-    "optionType": null,
-    "tenor": null,
-    "strikePercentage": null,
-    "notionalAmount": "<名义本金>",
-    "participationRate": null,
-    "orderType": "<市价单/限价单/POV/TWAP>",
-    "limitPrice": <数字或null>,
-    "povRatio": <数字或null>,
-    "twapStartTime": "<HH:MM或null>",
-    "twapEndTime": "<HH:MM或null>",
-    "shortName": "<交易对手或null>",
-    "hasFastExecutionIntent":"<布尔值>"
-  }]
-}
+输出字段与取值以工具 schema（字段说明）为准；仅填本节点相关字段，其余保持 null。
 ```

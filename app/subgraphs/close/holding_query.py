@@ -14,33 +14,34 @@ prompt：app/prompts/option_close/holding_query.md。
 """
 from __future__ import annotations
 
-import json
 from typing import Any
 
 from app.graph.business_params import validated_close_params
 from app.graph.safe_node import safe_node
 from app.graph.state import AgentState, TraceEntry
 from app.llm.clients import get_qwen_thinking
-from app.prompts import load_prompt
+from app.prompts import blocks
+from app.prompts.spec import PromptSpec, register
 from app.subgraphs.close.aggregate import build_close_order_req_vo
 from app.subgraphs.close.backend import call_close_backend
 from app.subgraphs.close.models import HoldingQueryParams
 
-_COUNTERPARTY_PLACEHOLDER = "{{#1772773805306.optionListStr#}}"
-
-
-def _render_system(system: str, state: AgentState) -> str:
-    """把交易对手列表占位符渲染为 JSON（与 Dify code 节点 optionListStr 同口径）。"""
-    option_list = state.get("option_counterparties") or []
-    return system.replace(
-        _COUNTERPARTY_PLACEHOLDER, json.dumps(option_list, ensure_ascii=False)
-    )
-
 
 def _build_user_message(state: AgentState) -> str:
-    """组装 user message（raw_content 一个变量；对手列表走 system 渲染）。"""
-    raw_content = state.get("raw_text", "") or ""
-    return f"用户输入：{raw_content}"
+    return f"用户输入：{state.get('raw_text', '') or ''}"
+
+
+SPEC = register(PromptSpec(
+    category="option_close",
+    name="holding_query",
+    output_model=HoldingQueryParams,
+    inputs=("raw_text", "option_counterparties"),
+    user_builder=_build_user_message,
+    injects={
+        # Dify code 节点 optionListStr = json.dumps(option_list)，同口径渲染
+        "{{#1772773805306.optionListStr#}}": lambda s: blocks.json_list(s.get("option_counterparties")),
+    },
+))
 
 
 @safe_node
@@ -51,16 +52,9 @@ async def close_holding_query(state: AgentState) -> dict[str, Any]:
     - close_params: dict（HoldingQueryParams.model_dump()）
     - trace: 单条 TraceEntry，记录 closeable_only + 提取到的关键字段计数
     """
-    prompt = load_prompt("option_close", "holding_query")
+    messages, _prompt_name = SPEC.build_messages(state)
     llm = get_qwen_thinking().with_structured_output(HoldingQueryParams)
-
-    user_message = _build_user_message(state)
-    result: Any = await llm.ainvoke(
-        [
-            ("system", _render_system(prompt.system, state)),
-            ("user", user_message),
-        ]
-    )
+    result: Any = await llm.ainvoke(messages)
 
     decision = (
         f"closeable_only={result.closeable_only},"

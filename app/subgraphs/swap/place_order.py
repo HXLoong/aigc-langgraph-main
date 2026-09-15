@@ -37,7 +37,8 @@ from app.graph.business_params import validated_place_params
 from app.graph.safe_node import safe_node
 from app.graph.state import AgentState, TraceEntry
 from app.llm.clients import get_qwen_complex
-from app.prompts import load_prompt, resolve_prompt_version
+from app.prompts import load_prompt
+from app.prompts.spec import PromptSpec, register
 from app.subgraphs.swap.backend import _with_resolved_ticker, call_swap_backend
 from app.subgraphs.swap.models import SwapPlaceOrderParams
 from app.subgraphs.swap.quote_hints import refine_quote_hints
@@ -52,30 +53,35 @@ def _format_counterparty_list(counterparties: list[dict[str, Any]] | None) -> st
     )
 
 
-def _build_user_message(state: AgentState, hints: dict[str, str]) -> str:
-    """组装 user message（对齐 DSL v2 互换-节点-下单.md 的 user 模板）。
+def _build_user_message(
+    state: AgentState, hints: dict[str, str], prompt_name: str | None = None
+) -> str:
+    """渲染 place_order.md 的 [user] 模板（规则文本住在 .md，代码只供变量，ADR 0023）。
 
-    3 个变量：raw_content（=互换-规整引用补参摘要.raw_content_for_llm）、
-    补参摘要（=quote_param_hints）、counterparty_list（=swap_counterparties）。
+    3 个变量：raw_content_for_llm / quote_param_hints（refine_quote_hints 产出）、
+    counterparty_list（state["swap_counterparties"]）。
     """
-    counterparty_list_str = _format_counterparty_list(state.get("swap_counterparties"))
-    return (
-        "-------\n"
-        "解析前先执行核心护栏6：先整体删除尾部命中的完整交易对手 shortName；"
-        "余下命中 `S+A+数量标记+唯一正数P` 时锁定 P 为限价，"
-        "命中 `S+A+Q+价格标记` 时锁定 S/Q/P 对应标的/数量/价格，后续规则不得覆盖。\n"
-        f"raw_content：{hints['raw_content_for_llm']}\n"
-        "-------\n"
-        "补参摘要：\n"
-        f"{hints['quote_param_hints']}\n"
-        "-------\n"
-        "counterparty_list（交易对手候选列表 [{sort,shortName}]，"
-        "仅用于 shortName 名称命中提取 placeOrderShortname）：\n"
-        f"{counterparty_list_str}\n"
-        "-------\n"
-        "【本轮 hasFastExecutionIntent 最终判定】逐个 orderList 对象只检查自己的"
-        "最小订单片段：该片段逐字包含系统规则中的闭集快速词才输出 true，否则输出 false。"
+    prompt = load_prompt("swap", prompt_name or SPEC.resolve_name(state))
+    return prompt.render_user(
+        raw_content_for_llm=hints["raw_content_for_llm"],
+        quote_param_hints=hints["quote_param_hints"],
+        counterparty_list=_format_counterparty_list(state.get("swap_counterparties")),
     )
+
+
+def _user_from_state(state: AgentState) -> str:
+    hints = refine_quote_hints(state.get("quote_content"), state.get("raw_text", "") or "")
+    return _build_user_message(state, hints)
+
+
+SPEC = register(PromptSpec(
+    category="swap",
+    name="place_order",
+    output_model=SwapPlaceOrderParams,
+    inputs=("raw_text", "quote_content", "swap_counterparties", "conversation_id"),
+    user_builder=_user_from_state,
+    gray=True,
+))
 
 
 def _expected_action(params: SwapPlaceOrderParams) -> str:
@@ -108,15 +114,10 @@ async def swap_place_order(state: AgentState) -> dict[str, Any]:
     hints = refine_quote_hints(quote_content, raw_text)
 
     # 2. LLM 提取下单参数
-    prompt_name = resolve_prompt_version("swap", "place_order", state.get("conversation_id"))
-    prompt = load_prompt("swap", prompt_name)
+    system, prompt_name = SPEC.render_system(state)
     llm = get_qwen_complex().with_structured_output(SwapPlaceOrderParams)
-    user_message = _build_user_message(state, hints)
     params: Any = await llm.ainvoke(
-        [
-            ("system", prompt.system),
-            ("user", user_message),
-        ]
+        [("system", system), ("user", _build_user_message(state, hints, prompt_name))]
     )
 
     # 3. ticker resolver 识别标的（独立通道，含 HITL 信号；与 swap.select_ticker

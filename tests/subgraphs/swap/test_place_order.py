@@ -269,3 +269,28 @@ class TestSwapPlaceOrderNode:
         result = await swap_place_order({"raw_text": "x"})
         assert result.get("error") is not None
         assert result["error"].node == "swap_place_order"
+
+
+class TestUserTemplateLivesInMarkdown:
+    """ADR 0023 / 评估 C-25：user 消息里的规则文本属于提示词，必须住在 place_order.md 的 [user]
+    模板里由代码渲染变量，而不是硬编码在 Python 字符串中。"""
+
+    def test_builder_renders_md_user_template(self) -> None:
+        from app.subgraphs.swap.place_order import _build_user_message
+
+        msg = _build_user_message(
+            {"swap_counterparties": [{"sort": "A", "shortName": "对手甲"}]},
+            {"raw_content_for_llm": "买 600519 100股", "quote_param_hints": "无"},
+        )
+        assert "解析前先执行核心护栏6" in msg
+        assert "买 600519 100股" in msg and "对手甲" in msg
+        assert "{{" not in msg
+
+    def test_no_rule_text_hardcoded_in_python(self) -> None:
+        from pathlib import Path
+
+        import app.subgraphs.swap.place_order as po
+
+        src = Path(po.__file__).read_text(encoding="utf-8")
+        assert "核心护栏6" not in src
+        assert "hasFastExecutionIntent 最终判定" not in src

@@ -42,7 +42,7 @@ class OptionIntentOutput(BaseModel):
 
     model_config = ConfigDict(extra="ignore")
 
-    type: OptionIntentType
+    type: OptionIntentType = Field(description="期权意图，取 8 个枚举值之一")
 
 
 # ============================================================
@@ -69,32 +69,32 @@ class OptionOrderItem(WireModel):
 
     model_config = ConfigDict(extra="ignore")
 
-    order_id: str | None = Field(default=None, alias="orderId")
+    order_id: str | None = Field(default=None, alias="orderId", description="订单号（Q-YYYYMMDD-XXXXXXXXXX），仅在用户或引用消息明确给出时填写，否则 null")
     #: 标的原文（用户原话片段，标准化由 ticker resolver 负责）
-    stock_code: str | None = Field(default=None, alias="stockCode")
-    option_type: OptionContractType | None = Field(default=None, alias="optionType")
+    stock_code: str | None = Field(default=None, alias="stockCode", description="标的原文片段（用户原话，逐字保留，不做代码补全；标准化由 ticker resolver 负责）")
+    option_type: OptionContractType | None = Field(default=None, alias="optionType", description="期权类型：欧式看涨 / 参与型看涨 / 雪球；未明确 → null")
     #: 期限，"XM" 格式（如 "1M"/"12M"）
-    tenor: str | None = None
+    tenor: str | None = Field(default=None, description="期限，XM 格式（如 1M / 12M）；年 × 12 折算为月")
     #: 行权价格百分比（数字，不带 %，如 100 / 95 / 103.5）
-    strike_percentage: float | int | None = Field(default=None, alias="strikePercentage")
+    strike_percentage: float | int | None = Field(default=None, alias="strikePercentage", description="行权价百分比，纯数字不带 %（如 100 / 95 / 103.5）")
     #: 名义本金（字符串数字，如 "1000000"）
-    notional_amount: str | None = Field(default=None, alias="notionalAmount")
+    notional_amount: str | None = Field(default=None, alias="notionalAmount", description="名义本金，字符串数字（如 \"1000000\"）")
     #: 参与率（百分比数字 0-100）
-    participation_rate: float | int | None = Field(default=None, alias="participationRate")
-    order_type: OptionOrderType | None = Field(default=None, alias="orderType")
-    limit_price: float | int | None = Field(default=None, alias="limitPrice")
-    pov_ratio: float | int | None = Field(default=None, alias="povRatio")
+    participation_rate: float | int | None = Field(default=None, alias="participationRate", description="参与率，百分比数字 0-100")
+    order_type: OptionOrderType | None = Field(default=None, alias="orderType", description="下单方式：市价单 / 限价单 / POV / TWAP")
+    limit_price: float | int | None = Field(default=None, alias="limitPrice", description="限价（限价单时的价格数字）")
+    pov_ratio: float | int | None = Field(default=None, alias="povRatio", description="POV 跟量比例（数字，不带 %）")
     #: TWAP 起止时间，"HH:MM" 格式（Dify DSL v2 重命名，原 algoStartTime/algoEndTime）
-    twap_start_time: str | None = Field(default=None, alias="twapStartTime")
-    twap_end_time: str | None = Field(default=None, alias="twapEndTime")
-    short_name: str | None = Field(default=None, alias="shortName")
+    twap_start_time: str | None = Field(default=None, alias="twapStartTime", description="TWAP 开始时间，HH:MM")
+    twap_end_time: str | None = Field(default=None, alias="twapEndTime", description="TWAP 结束时间，HH:MM")
+    short_name: str | None = Field(default=None, alias="shortName", description="交易对手名称（完整保留括号与特殊字符；用户回复选项字母时取对应完整名称）")
 
 
 class OptionOrderItemWithFastExec(OptionOrderItem):
     """`place_order_from_quote`（下单）节点专用：多一个 hasFastExecutionIntent 字段。"""
 
     #: 是否最大跟量（下游最大跟量公共 prompt 判定结果）
-    has_fast_execution_intent: bool | None = Field(default=None, alias="hasFastExecutionIntent")
+    has_fast_execution_intent: bool | None = Field(default=None, alias="hasFastExecutionIntent", description="是否最大跟量 / 快速执行语义（按 system 中 hasFastExecutionIntent 规则判定）")
 
 
 # ============================================================
@@ -107,7 +107,7 @@ class OptionInquiryParams(WireModel):
 
     model_config = ConfigDict(extra="ignore")
 
-    order_list: list[OptionOrderItem] = Field(alias="orderList", default_factory=list)
+    order_list: list[OptionOrderItem] = Field(alias="orderList", default_factory=list, description="订单条目列表；多期限 / 多执行价展开为多条；仅填本节点相关字段，其余 null")
 
 
 class OptionPlaceParams(WireModel):
@@ -115,7 +115,7 @@ class OptionPlaceParams(WireModel):
 
     model_config = ConfigDict(extra="ignore")
 
-    order_list: list[OptionOrderItemWithFastExec] = Field(alias="orderList", default_factory=list)
+    order_list: list[OptionOrderItemWithFastExec] = Field(alias="orderList", default_factory=list, description="下单条目列表（含 hasFastExecutionIntent）；仅填本节点相关字段，其余 null")
 
 
 class OptionConfirmPlaceParams(WireModel):
@@ -123,7 +123,7 @@ class OptionConfirmPlaceParams(WireModel):
 
     model_config = ConfigDict(extra="ignore")
 
-    order_list: list[OptionOrderItem] = Field(alias="orderList", default_factory=list)
+    order_list: list[OptionOrderItem] = Field(alias="orderList", default_factory=list, description="订单条目列表；多期限 / 多执行价展开为多条；仅填本节点相关字段，其余 null")
 
 
 class OptionCancelPlaceParams(WireModel):
@@ -131,7 +131,7 @@ class OptionCancelPlaceParams(WireModel):
 
     model_config = ConfigDict(extra="ignore")
 
-    order_list: list[OptionOrderItem] = Field(alias="orderList", default_factory=list)
+    order_list: list[OptionOrderItem] = Field(alias="orderList", default_factory=list, description="订单条目列表；多期限 / 多执行价展开为多条；仅填本节点相关字段，其余 null")
 
 
 class OptionCancelParams(WireModel):
@@ -139,7 +139,7 @@ class OptionCancelParams(WireModel):
 
     model_config = ConfigDict(extra="ignore")
 
-    order_list: list[OptionOrderItem] = Field(alias="orderList", default_factory=list)
+    order_list: list[OptionOrderItem] = Field(alias="orderList", default_factory=list, description="订单条目列表；多期限 / 多执行价展开为多条；仅填本节点相关字段，其余 null")
 
 
 class OptionConfirmCancelParams(WireModel):
@@ -147,7 +147,7 @@ class OptionConfirmCancelParams(WireModel):
 
     model_config = ConfigDict(extra="ignore")
 
-    order_list: list[OptionOrderItem] = Field(alias="orderList", default_factory=list)
+    order_list: list[OptionOrderItem] = Field(alias="orderList", default_factory=list, description="订单条目列表；多期限 / 多执行价展开为多条；仅填本节点相关字段，其余 null")
 
 
 class OptionQueryParams(WireModel):
@@ -155,7 +155,7 @@ class OptionQueryParams(WireModel):
 
     model_config = ConfigDict(extra="ignore")
 
-    order_list: list[OptionOrderItem] = Field(alias="orderList", default_factory=list)
+    order_list: list[OptionOrderItem] = Field(alias="orderList", default_factory=list, description="订单条目列表；多期限 / 多执行价展开为多条；仅填本节点相关字段，其余 null")
 
 
 __all__ = [

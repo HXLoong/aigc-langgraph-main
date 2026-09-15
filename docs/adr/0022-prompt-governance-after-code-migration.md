@@ -71,7 +71,7 @@
 
 ### D5 · `.md` 契约瘦身（已落地一半）
 
-- `[user]` 段：保留作 Dify 原始输入形态参照，不再是运行时契约；节点 user 消息由代码拼装
+- `[user]` 段：保留作 Dify 原始输入形态参照，不再是运行时契约；节点 user 消息由代码拼装。**ADR 0023 修订**：user 消息里含规则文本的节点，把规则写回 `[user]` 段用 `{{var}}` 占位并由 `PromptSpec.user_builder` 经 `render_user()` 渲染（先例 `swap/place_order.md`），此时 `[user]` 段重新成为运行时契约
 - `{{#node.var#}}` 占位符：只允许出现在**代码确实注入了对应值**的位置（由代码-提示词契约评估逐文件核对）；未注入的占位符视为悬空规则，属零风险删除档
 - `node_id` / `model` 元数据：仅供 Dify 对照，无代码消费
 
@@ -98,3 +98,4 @@
 - [ADR 0014](./0014-langfuse-as-harness-backend.md) · D3-2 git 真源 → 本 ADR D1 沿用
 - `docs/swap-prompt-slimming-assessment.md` · swap 域内容评估 → 本 ADR D4 三档口径来源
 - `docs/prompt-maintainability-assessment.md` · 本次全域评估
+- [ADR 0023](./0023-prompt-as-code-langgraph.md) · 提示词即代码：本 ADR 治理资产，0023 补契约层（PromptSpec / AgentState / Pydantic description），并修订本 ADR D5 的 `[user]` 段口径

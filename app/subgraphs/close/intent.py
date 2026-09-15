@@ -11,58 +11,37 @@ from __future__ import annotations
 from typing import Any
 
 from app.graph.safe_node import safe_node
-from app.graph.state import AgentState, Message, TraceEntry
+from app.graph.state import AgentState, TraceEntry
 from app.llm.clients import get_qwen_thinking
-from app.prompts import load_prompt
+from app.prompts import blocks
+from app.prompts.spec import PromptSpec, register
 from app.subgraphs.close.models import CloseIntentOutput
-
-#: 后置追加到 prompt.system 末尾的 JSON 输出指令（不修改 Dify 原 .md）
-_JSON_OUTPUT_INSTRUCTION = """
-
-## 工程层输出格式约束（不修改 Dify 原文逻辑）
-
-请严格输出 JSON 对象，仅含一个 type 字段，绝不输出其他文字：
-
-{"type": "<6 个 close_order_* 之一 或 unknown_intent>"}
-"""
-
-
-def _format_history(history: list[Message] | None) -> str:
-    if not history:
-        return ""
-    lines: list[str] = []
-    for msg in history:
-        role = msg.role if hasattr(msg, "role") else msg.get("role", "user")
-        content = msg.content if hasattr(msg, "content") else msg.get("content", "")
-        lines.append(f"{role}: {content}")
-    return "\n".join(lines)
 
 
 def _build_user_message(state: AgentState) -> str:
-    raw_content = state.get("raw_text", "") or ""
-    quote_content = state.get("quote_content") or ""
-    history_str = _format_history(state.get("history_messages"))
     return (
-        f"raw_content: {raw_content}\n\n"
-        f"quote_content: {quote_content}\n\n"
-        f"history_query_str:\n{history_str}"
+        f"raw_content: {state.get('raw_text', '') or ''}\n\n"
+        f"quote_content: {state.get('quote_content') or ''}\n\n"
+        f"history_query_str:\n{blocks.format_history(state.get('history_messages'))}"
     )
+
+
+SPEC = register(PromptSpec(
+    category="option_close",
+    name="intent",
+    output_model=CloseIntentOutput,
+    inputs=("raw_text", "quote_content", "history_messages"),
+    user_builder=_build_user_message,
+))
 
 
 @safe_node
 async def close_intent(state: AgentState) -> dict[str, Any]:
     """close.intent 节点。"""
-    prompt = load_prompt("option_close", "intent")
-    augmented_system = prompt.system + _JSON_OUTPUT_INSTRUCTION
-
+    # ADR 0023：输出契约由 with_structured_output 的 schema 承担，不再在代码里追加格式指令
+    messages, _prompt_name = SPEC.build_messages(state)
     llm = get_qwen_thinking().with_structured_output(CloseIntentOutput)
-    user_message = _build_user_message(state)
-    result: Any = await llm.ainvoke(
-        [
-            ("system", augmented_system),
-            ("user", user_message),
-        ]
-    )
+    result: Any = await llm.ainvoke(messages)
 
     intent = result.type
     raw = state.get("raw_text", "") or ""

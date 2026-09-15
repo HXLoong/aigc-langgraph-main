@@ -43,26 +43,7 @@
 - 没有明确提供的字段设为null
 
 【输出格式】
-你必须输出如下JSON结构:
-{
-  "operate": "交易",
-  "type": "request_cancel_order",
-  "orderList": [{
-    "orderId": "<订单号>",
-    "stockCode": null,
-    "optionType": null,
-    "tenor": null,
-    "strikePercentage": null,
-    "notionalAmount": null,
-    "participationRate": null,
-    "orderType": null,
-    "limitPrice": null,
-    "povRatio": null,
-    "twapStartTime": null,
-    "twapEndTime": null,
-    "shortName": null
-  }]
-}
+输出字段与取值以工具 schema（字段说明）为准；仅填本节点相关字段，其余保持 null。
 
 ```
 

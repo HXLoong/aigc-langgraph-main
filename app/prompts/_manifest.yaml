@@ -36,6 +36,7 @@ prompts:
   swap/place_order:
     status: active
     changelog:
+      - {date: 2026-09-15, kind: refactor, note: "ADR 0023：[user] 模板改为代码渲染（原 Python 硬编码规则文本迁回 .md，LLM 输入不变）"}
       - {date: 2026-09-15, kind: slim, note: "零风险批：删 structured output 下的纯 JSON 输出规则条"}
     dify: {file: "场外交易-test.yml", node_id: "1776160580437", system_sha256: 1fa3351de8ae9266c5c255dc9d161f5391a2cb47e64c51541cade14076281c05}
     loader: app/subgraphs/swap/place_order.py
@@ -119,6 +120,7 @@ prompts:
   # ---------- option ----------
   option/intent:
     status: active
+    output_model: OptionIntentOutput
     changelog:
       - {date: 2026-09-15, kind: slim, note: "零风险批：烘焙 17797951842080 keywords"}
     dify: {file: "场外交易-test.yml", node_id: "1755073106378", system_sha256: 4ef7c227973113ded050f2205f3b18e501d67955b5f37845a3ebbf692edfaaad}
@@ -126,11 +128,17 @@ prompts:
   option/extract_inquiry:
     status: active
     changelog:
+      - {date: 2026-09-15, kind: refactor, note: "ADR 0023：删 JSON 骨架，输出契约由 Pydantic Field(description) 经 function calling 下发；节点改用 PromptSpec"}
+    output_model: OptionInquiryParams
+    changelog:
       - {date: 2026-09-15, kind: slim, note: "零风险批：删机器人过滤块与 query/bot_name_list 声明（代码不注入）"}
     dify: {file: "场外交易-test.yml", node_id: "1779330004958", system_sha256: 3455776232a30a0d0e5f47b61dfcbdc2ff90122de8dd35fd810ad5c90e9ceed5}
     loader: app/subgraphs/option/extract_inquiry.py
   option/extract_place:
     status: active
+    changelog:
+      - {date: 2026-09-15, kind: refactor, note: "ADR 0023：删 JSON 骨架，输出契约由 Pydantic Field(description) 经 function calling 下发；节点改用 PromptSpec"}
+    output_model: OptionPlaceParams
     changelog:
       - {date: 2026-09-15, kind: slim, note: "零风险批：烘焙 17797951842080 output（hasFastExecutionIntent 规则本体，09-11 回归后丢失）；删机器人过滤块"}
     dify: {file: "场外交易-test.yml", node_id: "17793301871440", system_sha256: 40cf4b71f59a72c96166c596550df5f2907da448f68cdf0c6e3e3ab7767b24aa}
@@ -138,11 +146,17 @@ prompts:
   option/extract_confirm_place:
     status: active
     changelog:
+      - {date: 2026-09-15, kind: refactor, note: "ADR 0023：删 JSON 骨架，输出契约由 Pydantic Field(description) 经 function calling 下发；节点改用 PromptSpec"}
+    output_model: OptionConfirmPlaceParams
+    changelog:
       - {date: 2026-09-15, kind: slim, note: "零风险批：删机器人过滤块与 query/bot_name_list 声明"}
     dify: {file: "场外交易-test.yml", node_id: "17793301761160", system_sha256: d3bda44205402bbda059bab0f7e014fbd6f7170539018c773c345539d7b024f8}
     loader: app/subgraphs/option/extract_confirm_place.py
   option/extract_cancel_place:
     status: active
+    changelog:
+      - {date: 2026-09-15, kind: refactor, note: "ADR 0023：删 JSON 骨架，输出契约由 Pydantic Field(description) 经 function calling 下发；节点改用 PromptSpec"}
+    output_model: OptionCancelPlaceParams
     changelog:
       - {date: 2026-09-15, kind: slim, note: "零风险批：删机器人过滤块与 query/bot_name_list 声明"}
     dify: {file: "场外交易-test.yml", node_id: "17793301887260", system_sha256: e0bfea80c6f70e909a1a34be689306e2da3619e903fe06e36657d928d8b6eade}
@@ -150,17 +164,26 @@ prompts:
   option/extract_confirm_cancel:
     status: active
     changelog:
+      - {date: 2026-09-15, kind: refactor, note: "ADR 0023：删 JSON 骨架，输出契约由 Pydantic Field(description) 经 function calling 下发；节点改用 PromptSpec"}
+    output_model: OptionConfirmCancelParams
+    changelog:
       - {date: 2026-09-15, kind: slim, note: "零风险批：删机器人过滤块与 query/bot_name_list 声明"}
     dify: {file: "场外交易-test.yml", node_id: "17793301782150", system_sha256: a7a6630d10f48394c96659852a2edd5263701e4ee848560aa6d862d4fde28c5c}
     loader: app/subgraphs/option/extract_confirm_cancel.py
   option/extract_cancel:
     status: active
     changelog:
+      - {date: 2026-09-15, kind: refactor, note: "ADR 0023：删 JSON 骨架，输出契约由 Pydantic Field(description) 经 function calling 下发；节点改用 PromptSpec"}
+    output_model: OptionCancelParams
+    changelog:
       - {date: 2026-09-15, kind: slim, note: "零风险批：删机器人过滤块与 query/bot_name_list 声明"}
     dify: {file: "场外交易-test.yml", node_id: "17793301778710", system_sha256: 24725c9cd8b54416e24af82742b6a5a30001b57bc612030ee53d56602459cee9}
     loader: app/subgraphs/option/extract_cancel.py
   option/extract_query:
     status: active
+    changelog:
+      - {date: 2026-09-15, kind: refactor, note: "ADR 0023：删 JSON 骨架，输出契约由 Pydantic Field(description) 经 function calling 下发；节点改用 PromptSpec"}
+    output_model: OptionQueryParams
     changelog:
       - {date: 2026-09-15, kind: slim, note: "零风险批：删机器人过滤块与 query/bot_name_list 声明"}
     dify: {file: "场外交易-test.yml", node_id: "17793301774310", system_sha256: 7288250786477fc9d4bd70abd3b871c5be850535020e9d57174c1d9c70c76256}
@@ -175,6 +198,9 @@ prompts:
   # ---------- option_close（代码目录 app/subgraphs/close/）----------
   option_close/intent:
     status: active
+    changelog:
+      - {date: 2026-09-15, kind: refactor, note: "ADR 0023：删代码内追加的 _JSON_OUTPUT_INSTRUCTION；节点改用 PromptSpec"}
+    output_model: CloseIntentOutput
     changelog:
       - {date: 2026-09-15, kind: slim, note: "零风险批：烘焙 17797951842080 keywords；删 system 内悬空的“用户输入”占位块"}
     dify: {file: "场外交易-test.yml", node_id: "1772589205439", system_sha256: 2fea06ade08be009ce4b410bb13e6867c444e4d6a6d541be7d8ae1f05fd06c85}

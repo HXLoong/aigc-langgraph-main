@@ -80,26 +80,7 @@ B 类（询价回执已固化的参数，raw_content 优先 + quote_content 兜�
 绝对禁止任何字符替换、转换或变体（简繁体/全半角/拼音/字形相似字符/中英文字符互换），金融专业缩写必须100%逐字符原样保留、大小写完全一致。
 
 【输出格式】
-你必须输出如下JSON结构:
-{
-  "operate": "交易",
-  "type": "confirm_order",
-  "orderList": [{
-    "orderId": "<订单号>",
-    "stockCode": null,
-    "optionType": null,
-    "tenor": null,
-    "strikePercentage": null,
-    "notionalAmount": "<名义本金或null>",
-    "participationRate": null,
-    "orderType": "<市价单/限价单/POV/TWAP或null>",
-    "limitPrice": <数字或null>,
-    "povRatio": <数字或null>,
-    "twapStartTime": "<HH:MM或null>",
-    "twapEndTime": "<HH:MM或null>",
-    "shortName": "<交易对手或null>"
-  }]
-}
+输出字段与取值以工具 schema（字段说明）为准；仅填本节点相关字段，其余保持 null。
 
 ```
 

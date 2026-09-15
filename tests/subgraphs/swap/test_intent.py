@@ -5,26 +5,27 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
+from app.prompts import blocks
 from app.subgraphs.swap import intent as intent_module
-from app.subgraphs.swap.intent import _build_user_message, _format_shortname_list, swap_intent
+from app.subgraphs.swap.intent import _build_user_message, swap_intent
 from app.subgraphs.swap.models import SwapIntentOutput
 
 # ============================================================
-# 辅助函数 _format_shortname_list
+# 共享积木 blocks.shortnames（ADR 0023：替代各节点私有的 _format_shortname_list）
 # ============================================================
 
 
-class TestFormatShortnameList:
+class TestShortnameBlock:
     def test_empty_or_none(self) -> None:
-        assert _format_shortname_list(None) == ""
-        assert _format_shortname_list([]) == ""
+        assert blocks.shortnames(None) == []
+        assert blocks.shortnames([]) == []
 
     def test_joins_shortnames(self) -> None:
         counterparties = [
             {"ctptyId": "1", "shortName": "临沂阿凡提", "longName": "临沂阿凡提有限公司", "sort": "A"},
             {"ctptyId": "2", "shortName": "测试111", "longName": "测试有限公司", "sort": "B"},
         ]
-        result = _format_shortname_list(counterparties)
+        result = ", ".join(blocks.shortnames(counterparties))
         assert "临沂阿凡提" in result
         assert "测试111" in result
 

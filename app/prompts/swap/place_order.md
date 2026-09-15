@@ -332,13 +332,15 @@ user 消息中的 `<raw_content>`、`<quote_param_hints>`、`<counterparty_list>
 ## [user]
 
 ```
-<counterparty_list>
-{{#1772773805306.trsShortListStr#}}
-</counterparty_list>
-<quote_param_hints>
-{{#1781075165428.quote_param_hints#}}
-</quote_param_hints>
-<raw_content>
-{{#1755072621769.raw_content#}}
-</raw_content>
+-------
+解析前先执行核心护栏6：先整体删除尾部命中的完整交易对手 shortName；余下命中 `S+A+数量标记+唯一正数P` 时锁定 P 为限价，命中 `S+A+Q+价格标记` 时锁定 S/Q/P 对应标的/数量/价格，后续规则不得覆盖。
+raw_content：{{raw_content_for_llm}}
+-------
+补参摘要：
+{{quote_param_hints}}
+-------
+counterparty_list（交易对手候选列表 [{sort,shortName}]，仅用于 shortName 名称命中提取 placeOrderShortname）：
+{{counterparty_list}}
+-------
+【本轮 hasFastExecutionIntent 最终判定】逐个 orderList 对象只检查自己的最小订单片段：该片段逐字包含系统规则中的闭集快速词才输出 true，否则输出 false。
 ```

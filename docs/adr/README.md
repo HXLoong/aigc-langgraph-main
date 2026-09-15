@@ -1,6 +1,6 @@
 # 架构决定记录（ADR）索引
 
-本目录收录 otc-agent 的全部架构决定：**ADR 0000-0022（共 23 篇）**。
+本目录收录 otc-agent 的全部架构决定：**ADR 0000-0023（共 24 篇）**。
 
 2026-08-27 全量整理（wayfinder map [#138](https://github.com/GZTL-AI/aigc-langgraph/issues/138)）：逐篇对照代码核查事实性声明后深度改写为**现状口径**——每篇读起来即当前实现；实现违背决策原意之处不洗白，以"实现偏离"小节标注并链接裁决 issue（[#153](https://github.com/GZTL-AI/aigc-langgraph/issues/153)–[#160](https://github.com/GZTL-AI/aigc-langgraph/issues/160)）。
 
@@ -30,13 +30,14 @@
 | [0019](./0019-incident-severity-thresholds.md) | 故障升级阈值 P0/P1/P2 | 已采纳 | 互补 **0017**；3 项偏离已修复（#157） |
 | [0020](./0020-unify-all-llm-on-deepseek-v4-pro.md) | 全量统一 DeepSeek-V4-pro | 已采纳 | 取代 **0018**、修订 **0010**；baseline 重建为 M3.3 前置 |
 | [0021](./0021-text-confirm-replaces-interrupt.md) | 文本二阶段确认替代 interrupt + checkpointer 接线 | 已采纳 | 取代 **0006** interrupt 部分；修复 **0009** checkpointer 偏离 |
-| [0022](./0022-prompt-governance-after-code-migration.md) | 代码迁移完成后的提示词治理模型（manifest + lint / 版本化收敛 / 瘦身纪律） | 部分采纳（D1 真源切换待拍板） | 修订 **0001 D5**、**0003**；沿用 **0014** D3-2 |
+| [0022](./0022-prompt-governance-after-code-migration.md) | 代码迁移完成后的提示词治理模型（manifest + lint / 版本化收敛 / 瘦身纪律） | 已采纳（D1 git 为真源已拍板落地） | 修订 **0001 D5**、**0003**；沿用 **0014** D3-2 |
+| [0023](./0023-prompt-as-code-langgraph.md) | 提示词即代码：PromptSpec 把 AgentState 输入 / Pydantic 输出 / 占位符注入声明为节点契约 | 已采纳（12 节点试点落地，其余分两批） | 补 **0022** 契约层；修订 **0022 D5**；依赖 **0020** function calling |
 
 ## 按主题分组
 
 - **迁移与架构**：0000（为什么迁）→ 0001（怎么重写）→ 0002（Harness 三位一体）→ 0007（子图扩张规则）
 - **LLM 模型**：0010（Qwen 分工，历史）→ 0018（双轨制，历史存根）→ **0020（现行：全量 DeepSeek-V4-pro）**
-- **提示词管理**：0003（版本化机制）· 0011（option 拆分）· 0013（后端动态片段）
+- **提示词管理**：0003（版本化机制）· 0011（option 拆分）· 0013（后端动态片段）· 0022（资产治理）· **0023（提示词即代码 / PromptSpec）**
 - **数据与后端契约**：0009（MySQL/TDSQL）· 0012（标的查询走 HTTP）
 - **可观测与评估**：0004（trace 颗粒度）· 0005（标注闭环）· 0014（LangFuse 后台）
 - **路由与交互**：0015（一级路由四层）· 0006（HITL 边界，历史）· 0021（文本二阶段确认）· 0008（ticker 识别）

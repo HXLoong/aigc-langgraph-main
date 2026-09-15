@@ -348,25 +348,5 @@ orderId 在询价场景为【可选】字段（不是必填，也不是恒为 nu
 
 
 【输出格式】
-你必须输出如下JSON结构:
-{
-  "operate": "询价",
-  "type": "new_inquiry",
-  "orderList": [   // 多期限/多执行价时此数组含多个对象，见上方"多订单展开"规则
-  {
-    "orderId": null,
-    "stockCode": "<标的代码>",
-    "optionType": "<欧式看涨|参与型看涨|雪球>",
-    "tenor": "<期限>",
-    "strikePercentage": "<行权价百分比>",
-    "notionalAmount": "<名义本金>",
-    "participationRate": "<参与率>",
-    "orderType": null,
-    "limitPrice": null,
-    "povRatio": null,
-    "twapStartTime": null,
-    "twapEndTime": null,
-    "shortName": null
-  }]
-}
+输出字段与取值以工具 schema（字段说明）为准；仅填本节点相关字段，其余保持 null。
 ```

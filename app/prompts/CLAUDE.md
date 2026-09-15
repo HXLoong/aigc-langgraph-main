@@ -20,8 +20,11 @@
   合入后把 `system_sha256` 更新为新值。旧的 7 文件逐字锁定测试已退役。改 `.md` 请在该条目 `changelog` 加一行
 - 5 个 `swap/*_v2.md` 灰度位现只剩 image_extract / excel_extract / image_ocr 三个（intent_v2 / place_order_v2 已删），
   由 `_versions.yaml` / `OTC_PROMPT_SWAP_*_VERSION` 控制、默认 0 流量；manifest 记录 v1 快照 sha，v1 再变必须重新 ack
-- `[user]` 段：所有节点只用 `prompt.system`，user 消息由节点代码拼装，`.md` 里的 `[user]` 段仅作 Dify
-  原始输入形态的参照（ADR 0022）
+- **一个 LLM 节点 = 一个 `PromptSpec`**（`app/prompts/spec.py`，ADR 0023）：`inputs` 必须是 AgentState 字段（构造期校验）、
+  `output_model` 每个字段写 `Field(description=)`（输出语义唯一真源，`.md` 不再放 JSON 骨架）、`injects` 与 manifest 同步、
+  `user_builder` 只拼变量。共享积木在 `blocks.py`，不要在子图复制 `_format_history`
+- `[user]` 段：默认只作 Dify 原始输入形态的参照，user 消息由 `user_builder` 拼变量；**只有**当 user 含规则文本时才把规则写进
+  `[user]` 段用 `{{var}}` 占位并经 `render_user()` 渲染（先例 `swap/place_order.md`），这类节点的 `[user]` 段是运行时契约
 
 ## .md 文件格式约定（4-backtick 外层 fence 才不会被内层 ``` 提前闭合）
 
@@ -41,8 +44,8 @@
 ```
 ````
 
-占位符 `{{#node_id.var#}}`：Dify 由引擎渲染，LangGraph 没有渲染层。代码确实注入的占位符在节点里
-`system.replace(...)` 渲染并在 `_manifest.yaml` 的 `injects` 登记（先例：`close/holding_query.py`、`ticker/tools.py`）；
+占位符 `{{#node_id.var#}}`：Dify 由引擎渲染，LangGraph 没有渲染层。代码确实注入的占位符在 `PromptSpec.injects` 登记渲染器
+（先例：`close/holding_query.py`；未迁移节点如 `ticker/tools.py` 仍是 `system.replace(...)`）并在 `_manifest.yaml` 的 `injects` 登记；
 代码不注入的就是悬空规则（`prompt_inventory.py --strict` 列出），属零风险删除档——不要指望 LLM 把变量名当上下文。
 
 ## 字符数提示（影响延迟）
