@@ -104,10 +104,15 @@ tests/fixtures/              # golden.jsonl（350+ 条）+ golden_ticker_2026-05
 
 ## 团队工具链：Claude Code 与 Codex 共用一份纪律
 
-团队主用 Codex。Codex 只读根目录与各级子目录的 `AGENTS.md`，不读本文件与 `.claude/rules/`。
-因此 **`AGENTS.md` 全部由 `python scripts/sync_agents_md.py` 从本文件 + `.claude/rules/*.md` 生成，禁止手改**；
-改纪律只改 `CLAUDE.md` / `.claude/rules/` / 子目录 `CLAUDE.md`，再重新生成并一起提交（governance CI `--check` 守同步）。
-`.claude/skills/*/SKILL.md` 是纯 markdown 流程说明，Codex 可按路径直接读。
+团队主用 Codex。Codex 只读根目录与各级子目录的 `AGENTS.md` 和 `.agents/skills/<name>/SKILL.md`，不读本文件、
+`.claude/rules/`、`.claude/skills/`、`.claude/agents/`。因此这些 **Codex 产物全部由 `python scripts/sync_agents_md.py` 生成，禁止手改**：
+
+- 根 `AGENTS.md` = 本文件 + 并入 `.claude/rules/{prompt-management,testing}.md`，其余 rules 只列路径（控制上下文体积）
+- `app/prompts` / `tests` / `scripts` 下的 `AGENTS.md` = 各自的 `CLAUDE.md`
+- `.agents/skills/<name>/` = `.claude/skills/<name>/`（frontmatter 收敛为 Agent Skills 标准的 `name` / `description` / `metadata`）
+  + `.claude/agents/*.md`（Codex 无 subagent，转为同名技能，调用时以该角色执行）；Codex 里用 `$name` 显式调用
+
+改纪律或流程只改 `CLAUDE.md` / `.claude/**`，再跑生成脚本一起提交；governance CI `--check` 守同步。
 
 ## 子目录陷阱页（按需加载）
 
