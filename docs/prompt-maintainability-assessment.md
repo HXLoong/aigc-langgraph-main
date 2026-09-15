@@ -9,7 +9,30 @@
 
 ## 一、执行摘要
 
-（评估工作流进行中，本节随核证结果补齐。）
+**结论一句话**：提示词"臃肿"是真的，但它是**症状**；病根是代码迁移完成后提示词仍按"Dify 镜像"管理——Dify 由工作流引擎渲染占位符、由 code 节点做前置分流，LangGraph 没有这两层，于是同一份原文搬过来后出现悬空规则、丢失分流、双份真源；而逐字锁定测试又让本地不能改。本次评估把重点放在**管理模型**上，先把"能改、改了有守护"的机制落地，内容瘦身按档推进。
+
+**规模**：41 个 `.md`、system 段 48.4 万字符（≈30 万 tokens）；生产活跃 28 个 / 29.4 万字符。三条 3 万 tokens 以上的请求路径（互换图片下单 54K、平仓下单 37K、互换文本下单 36K）是延迟与成本主单点。
+
+**核证后的发现总量**（7 路评估 + 逐路对抗核证，只采信 confirmed / partial）：
+
+| 严重度 | 条数 | 其中本次已修 |
+|---|---:|---:|
+| P0 | 11 | 7（代码级 5 + 红线 2） |
+| P1 | 47 | 6（治理机制） |
+| P2 | 45 | 4（文档口径） |
+
+**P0 的共性**：全部是"迁移丢东西"而非"提示词写得差"——
+
+1. **注入变量丢失**：`holding_query` 对手列表、`infer_code`/`rank` 当前日期在 Dify 由上游节点注入，迁移后占位符原样发给 LLM（OC-01 / TRJ-01，已修）
+2. **前置分流丢失**：09-11 回归 Dify 原文时 `swap/intent.md` 删掉了 `confirm_order` 枚举（Dify 靠 code 节点前置分流），app 未移植 → 互换确认下单链路不可达（SW-INC-01 / GOV-02，已修）
+3. **契约移交未同步**：09-11 版 `select_counterparty.md` 把简写唯一性交给代码，代码却按列表顺序取首项 → 多命中错配对手（SW-INC-06，已修）
+4. **代码规则层与提示词矛盾**：`close/intent.py` 写入枚举外的值落 `close_unknown`（OC-02，已修）
+5. **红线**：`dify/sync.py` 默认值里的内网账号密码（GOV-03，已删，**密码需轮换**）；`router/unknown_intent.md` / `ticker/infer_code.md` / `option_close/holding_query.md` 的 代码↔公司名 / 名称→windCode / 真实账户名（C-01/02/03，router 已删，其余需业务确认改法）
+6. **真源之争**：ADR 0014 说 git 是真源、`test_prompt_governance.py` 把 7 个最重文件锁成 Dify 逐字镜像、客户要瘦身——三者互斥（GOV-01，待用户拍板 ADR 0022 D1）
+
+**已落地的管理层改进**（见第八节）：manifest 三态清单 + 四条不变量 lint 进 CI、v2 漂移防护（结构化 ack + expires）、版本化收敛为一种、晋升脚本产物契约修复、灰度节点 trace 写 prompt_name、规则页重写、去凭据。
+
+**下一步需要拍板的两件事**：① ADR 0022 D1 真源模型（推荐 git 为真源、Dify 降为上游输入，把逐字锁定改为漂移告警）；② 三处硬编码业务数据的替代判定方式（业务方）。
 
 ## 二、全域盘点（`python scripts/prompt_inventory.py` 生成）
 
@@ -94,26 +117,165 @@
 
 ## 四、按域评估（核证后）
 
-（工作流进行中。）
+判定口径：health 红 = 结构性问题（悬空/矛盾/双份真源），橙 = 重复与错例回填为主，黄 = 可局部瘦身，绿 = 紧凑范本，灰 = 非活跃。`est` 为核证员认可的零/低风险可压缩比例。
 
-## 五、跨域病灶汇总
+### 4.1 option（8 活跃 + 2 非活跃，活跃 system 31K）
 
-（工作流进行中。）
+| 文件 | health | est | 核心问题 |
+|---|---|---:|---|
+| `intent` | 黄 | 30% | 撤单/确认撤单区分写 4 遍、数据源约束写 4 遍；`{{#…keywords#}}` 悬空；代码 4 条确定性快路径（"-"、"确认下单"、"撤单"+quote）使提示词规则 0/3/4 不可达且语义相反（OPT-11，deterministic_cancel 零测试） |
+| `extract_inquiry` | 橙 | 45% | 同一规则三层陈述 + 94 个「→」示例；tenor/百分号/名义本金归一化交 LLM 且代码零校验（OPT-07）；示例围绕单一测试账户「11125测试短名（张天琪专用）」堆 8 组正反例（OPT-06，需业务确认匿名化，且被逐字锁定） |
+| `extract_place` | 黄 | 30% | `hasFastExecutionIntent` 规则本体是未渲染占位符 `{{#17797951842080.output#}}`（OPT-02 / C-07）——09-11 回归时丢掉了本地写好的说明；「覆盖客户实测 bug 场景」正例是错例回填 |
+| `extract_confirm_place` | 黄 | 45% | 70% 与 `extract_place` 逐字重复，一个被锁一个没锁 → 已漂移（OPT-09） |
+| `extract_cancel` / `cancel_place` / `confirm_cancel` / `query` | 橙 | 60% | 唯一任务是 Q- 单号正则，swap 域同型节点 08-28 已去 LLM 化、option 未跟进（OPT-08）；13 字段 null 模板 ×7 + type/operate 输出要求对 schema 是死的（OPT-10） |
+| `intent_extract`（非活跃） | 灰 | 100% | 65K 旧快照，Dify 侧已无对应原文，无消费者；占 option 目录 62% 字节（OPT-13，manifest 已写归档条件） |
+| `param_limit`（非活跃） | 灰 | 100% | 4 份 Dify YAML 均无此节点，核心是「标的×执行价×期限 ≤10」整数乘法（OPT-14） |
+
+跨文件：机器人过滤规则 ≈330 字符 ×8 份，且 7 个 extract 根本不注入 `bot_name_list`（OPT-01 / C-09，零风险删）。
+
+### 4.2 option_close（7 活跃，system 84K，全部逐字等于 Dify 原文、未锁定也未登记 D5）
+
+| 文件 | health | est | 核心问题 |
+|---|---|---:|---|
+| `place_close` | 红 | 55% | 全仓第二大活跃提示词。`hasFastExecutionIntent` 占 12% 篇幅但 `CloseOrderItem` 无此字段、`extra=ignore` 静默丢弃（OC-03 / C-05）；「POV 默认由后端兜底」说了 8 遍，代码却本地写死 25 并跨 leg 套用（OC-04 / C-04，需业务确认归属）；让 LLM 做 floor/分数/单位换算等算术（OC-06）；§A 前提三处、"不重数候选"五处、29 行自检表（OC-07）；中英混杂补丁块 + 示例编号断档（OC-08） |
+| `confirm_cancel` / `cancel_close` / `confirm_close` | 橙 / 橙 / 黄 | 60/50/40% | 三文件共享 ≈8K 骨架与同一组示例单号，只有被投诉的那个加了 UUID/引号规则 → 已漂移（OC-09）；「必填至少一个」vs「可输出空列表」自相矛盾（OC-13）；代码兜底把 Q-/OPTG-/会话上一单塞进 `cancelOrderNoList`，打破提示词「CO- 开头、不可编造」契约（OC-18，P1） |
+| `query_status` | 黄 | 100% | 提示词里已写明正则 `CO-\d{8}-[A-Za-z0-9]{8}`，整个节点 = 一次 LLM 调用跑正则 + 去重（OC-10） |
+| `intent` | 橙 | 45% | 「关键区分」47 行逐条复述前文（29%）；system 内 3 个字面占位符（OC-14）；与 `place_close` 对裸数字语义相反（OC-15，限无 quote 场景）；~~代码写入枚举外值~~（OC-02，已修） |
+| `holding_query` | 橙 | 30% | ~~对手列表占位符未注入 → 99999999 哨兵发后端~~（OC-01，已修）；示例含真实测试对手 / 员工名 / 公司全称 + 标的代码格式字典 + 哨兵魔数只在提示词（OC-17 / C-03，需业务确认） |
+
+核证员补充：close 域存在 **5 套互不一致的 CO- 单号正则**（reference_parser 仅十六进制、place_close/cancel_close `[A-Z0-9]{4,16}`、confirm_close `[A-Z0-9]+`、query_status.md `{8}`），同一单号在链路不同环节被接受/拒绝；序号兜底正则只认阿拉伯数字，「第一笔」在兜底路径不匹配。
+
+### 4.3 ticker（4 活跃，24.7K）+ router（1，8.8K）+ judge
+
+| 文件 | health | est | 核心问题 |
+|---|---|---:|---|
+| `ticker/infer_code` | 红 | 45% | ~~当前日期未注入，期货月份推断失锚~~（TRJ-01，已修；但 :24/:209/:213 仍有「当前 2026-05 → CU2606」硬编码日期锚点与注入日期竞争）；`transactionTypes`/`inferencePrompt` 从未注入，41% 篇幅描述永远为空的变量（TRJ-02 / C-08，零风险删）；枚举表含 `CROSS_OTHER` 而代码 `GoatsTransactionType` 无（已漂移）；示例区 6 组不可推导的 名称→windCode / 命名指数→ETF 事实清单，与自身「不要硬编码具体代码」矛盾（TRJ-03 / C-01，P0 红线，需业务确认改法） |
+| `ticker/tokenize` | 橙 | 55% | 与代码 `tools.tokenize()` 三条主规则重复且在文件自己的示例上行为不一致（`600519.SH贵州茅台` → `.SH贵州茅台`，≥5 组）（TRJ-05）；前缀词规则与示例正反两说（TRJ-06）；总示例块 22% 全是前文重复（TRJ-07） |
+| `ticker/rank` | 黄 | 30% | ~~日期未注入~~（已修）；「用户期望品种」恒空、5 个 GOATS 字段契约文档未声明（TRJ-09 / C-24）；「相关性永远首要」说 4 遍、「临时补丁」无到期条件（TRJ-10） |
+| `ticker/judge_type` | 绿 | 20% | 最轻一路，FUND/FUTURE 可正则化（TRJ-17，可选） |
+| 4 文件共性 | — | — | 走 `<result>` 原文 JSON 解析而非 structured output，≈4.3K 字符格式协议 + 3 个正则解析器 + 静默 `{}` 降级（TRJ-04） |
+| `router/unknown_intent` | 橙 | 45% | 38 组 few-shot 中 16 组被 `route_rules` 正则前置截获、永远到不了 LLM（TRJ-11）；Q- 引用撤单两组示例给出相反标签（TRJ-12）；~~港/美股代码↔公司名字典~~（C-02，已删）；「禁止 JSON」与 structured output 契约相反（TRJ-13 / C-18） |
+| `judge/option_judge` | 绿 | 0 | 内容精炼；放在 `app/` 业务包、共用 LangFuse 优先加载分支、名字与范围不符（TRJ-15，归位问题） |
+
+### 4.4 swap（增量：09-11 回归之后）
+
+08-28 报告的病灶（护栏 0、🇮🇹 emoji、闭集词表、重复禁令、JSON 禁令、测试账户名）在回归后的 v1 中**全部原样残留**，且因逐字锁定不可本地修改（SW-INC-08）。增量发现：
+
+- ~~回归只搬了提示词没搬拓扑：Dify 把「确认下单」交给 code 节点前置分流，app 未移植~~（SW-INC-01 / GOV-02，已修：移植同款词表为确定性前置）
+- ~~`aggregate.shortname_from_pick` 多命中取首项~~（SW-INC-06，已修）
+- `intent_v2` / `place_order_v2` 与 v1 已是业务规则代差（v1 新增护栏 0.5 等 12 处引用，v2 仍含 `confirm_order`），**不可放量，应废弃后从新 v1 机械再生**（SW-INC-03；manifest 已标注 + expires）；excel/image/ocr 三个 v2 无漂移
+- Dify `场外交易-test.yml` 新增 LLM 节点「互换-全新下单交易对手识别」不是遗漏迁移，而是三处并行实现同一件事（Dify 小 LLM + code 唯一性 / app `_complete_counterparties` / LLM-C 护栏 0.5），需业务拍板一个归属（SW-INC-04）
+- 两份 YAML 是同一 Dify app（`name: 场外交易-test`）的两次快照（`select_counterparty` system 2446→2817、`select_ticker` 2503→2906 字符）：`sync.py` 更新的文件不被治理测试锁，被锁的文件工具不更新（SW-INC-05 / GOV-09）
+- 6 个去 LLM 化后的非活跃文件零引用、Dify 侧同类节点也已去 LLM 化，「行为规约参照」理由失效；`harness/reporter.py:89` 与 sync skill 的映射仍指向它们（SW-INC-07）
+- `place_order.py` 手拼 user 消息里硬编码 ≈300 字符规则文本，不受任何治理覆盖（SW-INC-02 / C-25）
+
+## 五、跨域病灶汇总（沿用 swap 报告五分类）
+
+| 病灶 | 跨域证据（核证后） | 档位 | 估算可压缩 |
+|---|---|---|---:|
+| ④ 死重与悬空 | 悬空占位符 16 处（`--strict` 列表）；JSON 格式禁令 36 行分布在 structured output 节点；option 机器人过滤块 ×7 引用不存在变量；infer_code 41% 描述永远为空的范围变量；`[user]` 段 4.2K 字符无调用点 | 零风险 | ≈25K |
+| ③ 重复陈述 | option intent 撤单区分 ×4；extract_inquiry 三层陈述；place_close §A ×3 / 不重数 ×5 / 后端兜底 ×8；option_close intent 复述 29%；tokenize 总示例 22%；rank 首要主键 ×4 | 零风险 | ≈30K |
+| ② LLM 干确定性活 | option 4 个 Q- 单号节点、close 4 个 CO- 单号节点（≈21K + 8 次 LLM 调用）；tenor/百分号/名义本金归一化；place_close 算术与 holdingMap 查表；tokenize 与代码分词双实现 | 低风险（eval + 单测） | ≈35K + 8 次调用/请求 |
+| ① 错例回填 | 「覆盖客户实测 bug 场景」正例、🇮🇹/UB斯 幻觉复现、豁免优先于上面两条、place_close 中英混杂补丁块、confirm_cancel 五个单次错例各成规则、rank「临时补丁」 | 低风险（错例转 golden） | ≈15K |
+| ⑤ 硬编码业务数据 | infer_code 名称→windCode / 命名指数→ETF；router 代码↔公司名（已删）；holding_query / extract_inquiry / swap intent 真实测试对手与员工名；holding_query 标的代码格式字典；99999999 哨兵只在提示词 | 需业务确认 | ≈5K |
+| 新增 ⑥ 双份真源 | 提示词枚举 vs Pydantic Literal（swap transactionType 三份互不相同 C-22、option/close 13 字段骨架 ×8 C-19）；代码规则层 vs 提示词规则（option/close intent 快路径、place_close POV25、cancel_close 兜底）；5 套 CO- 正则 | 结构性 | — |
+
+合计零/低风险档约 **10 万字符（活跃总量的 1/3）**，与 swap 报告的 -55% 口径一致；真正的收益不在字符数，在于每条规则只剩一处真源。
 
 ## 六、治理层评估与目标模型
 
-（工作流进行中；结论已先行写入 ADR 0022 D1–D6。）
+### 6.1 核证后的治理层发现
 
-## 七、实施路线
+| # | 发现 | 状态 |
+|---|---|---|
+| GOV-01 | 真源三方冲突（ADR 0014 git / 锁定测试 Dify / 客户瘦身） | **待拍板**（ADR 0022 D1） |
+| GOV-02 | 锁定测试守的是文本相等，不是「提示词枚举 ⊆ Literal 且 Literal 每个值可达」 | 症状已修（SW-INC-01，核证员在 HEAD 上判 refuted）；守护待加 |
+| GOV-03 | `dify/sync.py` 硬编码内网账号密码；且 `DIFY_BASE` 是 `http://`，登录走明文 | 已删默认值；**密码需轮换**；明文 HTTP 需内网评估 |
+| GOV-04 | 所有治理守护挂在 05-12 起只能手动触发的 CI 上 | 待决定：建议拆 <2 分钟 governance job 并恢复 push/PR 触发 |
+| GOV-05 | `promote_langfuse_prompt.py` 产物 loader 解析不了、不登记 manifest；ADR 0014/0022「已落地」失实 | 已修 |
+| GOV-06 | 「占位符保留原样」规则在无渲染层的 LangGraph 里有害 | 规则已反转（prompt-management.md）；`--strict` 可见 |
+| GOV-07 | 5 个灰度位 4 个不写 `prompt_name`，违反 ADR 0003 硬前置 | 已修（place_order / multimodal） |
+| GOV-08 | `drift_acknowledged` 是永久静默开关 | 已改结构化 `{at_base_sha, note}` + `expires` |
+| GOV-09 | 哪份 Dify YAML 是生产无机器可读声明；上游新增 LLM 节点无提示 | 待业务方声明 app_id；manifest `dify:` 映射为后续项 |
+| GOV-10 | D5 手写处置表历史上三次漏登记、无机制 | 资产状态已由 manifest 接管；改写 changelog 为后续项 |
+| GOV-11/12 | `.claude/rules` 教人做已废弃的事；ADR 0013 描述已删除链路 | 已重写 / 已改状态 |
+| GOV-13 | `.md` 契约 1/3 是运行时不消费的内容（`[user]`、model、node_id） | ADR 0022 D5 登记，随 D1 一并收缩 |
+| GOV-14 | lint 判定过弱 | 已收紧（真实加载调用 / loader_call / injects / --strict） |
+| GOV-15/16 | `_versions.yaml` 98% 是注释；四套命名并存；judge 混在业务目录 | P2，随下次大 PR |
 
-（工作流进行中。）
+### 6.2 目标治理模型（ADR 0022 D1 推荐 B）
+
+```
+git app/prompts/*.md ── 唯一生产真源 ──► load_prompt → 节点渲染 injects → LLM
+        ▲                                   ▲
+        │ 人工 diff 选择性合入               │ manifest: status / loader / injects / output_model
+        │                                   │           gray: base_sha + drift ack + expires
+Dify YAML（上游输入，sync.py 拉取）          │ lint: prompt_inventory --check [--strict]
+        │                                   │ 守护: 提示词枚举 ⊆ Literal；Dify 节点 sha 变化 → 告警
+        └── test_prompt_governance：逐字锁定 ──► 改为「上游快照漂移告警」（切换动作只此一处）
+```
+
+切换前提只有一个需要业务方确认：M4 后 Dify 工作流不再是生产路径，并指明生产 app_id。在此之前维持现状，瘦身只能走 `*_v2.md`（且 v2 需随 v1 变化重新 ack）。
+
+## 七、实施路线（按风险递增）
+
+| 步 | 内容 | 退出门 | 状态 |
+|---|---|---|---|
+| 0 | 五处代码级 P0 + 去凭据 + router 红线 | 单测 GREEN；现场跑 `langfuse_eval.py` 对应子集 ≥ 基线 | **已提交**（本 PR） |
+| 1 | 治理机制：manifest + lint + 漂移防护 + 晋升契约 + 规则页 | `prompt_inventory.py --check` 进 CI 且 CI 能触发（GOV-04） | 代码已提交；CI 触发待决定 |
+| 2 | 拍板 ADR 0022 D1；锁定测试改漂移告警；manifest 补 `dify:` 映射与「枚举 ⊆ Literal」守护 | 7 个锁定文件可本地改；上游更新有告警 | 待拍板 |
+| 3 | 零风险档：删 16 处悬空占位符与相关段落、36 行 JSON 禁令、重复陈述、不可达 few-shot（TRJ-11 守卫测试）、`[user]` 段 | `--strict` 通过；eval PASS ≥ 基线 | 待 2 |
+| 4 | 低风险档：option 4 个 Q- 节点 + close 4 个 CO- 节点去 LLM 化（先 `query_status`）；统一 CO- 正则为一处；归一化下沉 validator；错例转 golden；示例压缩 | eval + 单测 + 抽样人工比对；每节点 -1 LLM 调用 | 待 3 |
+| 5 | 需业务确认档：三处硬编码业务数据改法；POV 默认值归属；`hasFastExecutionIntent` 是否下传；对手召回三实现选一；裸数字语义统一 | 业务方逐条裁决 + golden | 待业务方 |
+| 6 | 结构性：swap 三链共享规范；option place/confirm_place 合并；ticker 转 structured output；tokenize 单一实现；判定 `intent_extract` / `param_limit` 归档 | 每项独立 PR + eval | 待 4 |
+
+**评估守护前置条件**：09-10 golden 迁到 `old_typing/` 后 `check_fixture_consistency.py` 恒 exit 2、`harness run` 跑在归档数据上（`plan0909.md` 正在重建）。第 3 步之前必须先有一条能自动跑的 eval 基线，否则「PASS ≥ 基线」无载体。
 
 ## 八、本次已落地的改进
 
-| 改动 | 说明 |
-|---|---|
-| `app/prompts/_manifest.yaml` | 41 个 `.md` 的 active / gray / inactive 登记，含 inactive 保留理由与 gray 的 v1 快照 sha |
-| `scripts/prompt_inventory.py` + `tests/test_prompt_inventory.py` | 清单生成 + 四条不变量 lint，`--check` 已接入 `.github/workflows/ci.yml` |
-| 删除 `compose_prompt()` / `Settings.swap_prompt_version` | #159 遗留死路径（ADR 0003 修订、handbook 8.7 改写） |
-| `app/prompts/CLAUDE.md` 改写 | 手写非活跃清单 → 指向 manifest；修正 2 处不存在文件的引用 |
-| ADR 0022 + ADR 0001 D5 登记 + ADR README 索引 | 治理模型决策 |
+| 改动 | 说明 | 对应发现 |
+|---|---|---|
+| `app/prompts/_manifest.yaml` | 41 个 `.md` 的 active / gray / inactive 登记；inactive 写保留理由与可删条件；gray 记 v1 快照 sha + 结构化漂移 ack + expires；`loader_call` / `output_model` / `injects` | GOV-08/14, D2 |
+| `scripts/prompt_inventory.py` + 测试 | 清单 + 四条不变量 lint（`--check` 进 CI）+ `--strict`（悬空占位符 / JSON 禁令）+ 到期警告 | GOV-06/14 |
+| 删 `compose_prompt()` / `Settings.swap_prompt_version` | #159 遗留死路径；ADR 0003 / handbook 8.7 改口径；测试防复活 | D3 |
+| `close/holding_query.py` | 对手列表占位符按 Dify 同口径渲染 | OC-01 P0 |
+| `close/intent.py` | 删写入枚举外值的规则；规则层字面量 ⊆ 枚举守护 | OC-02 P0 |
+| `swap/intent.py` | 移植 Dify `has_confirmation_keyword` 前置分流 | SW-INC-01 / GOV-02 P0 |
+| `swap/aggregate.py` | 简写唯一性：精确 → 唯一子串 → None | SW-INC-06 P0 |
+| `ticker/tools.py` | 注入 Asia/Shanghai 当前日期 | TRJ-01 P0 |
+| `dify/sync.py` | 删默认凭据 | GOV-03 P0 |
+| `router/unknown_intent.md` | 删 代码↔公司名 字典 | C-02 P0 |
+| `scripts/promote_langfuse_prompt.py` | 产物按加载器契约渲染 + 自动登记 manifest gray | GOV-05 |
+| `swap/place_order.py` / `multimodal.py` | trace 写 `prompt_name` | GOV-07 |
+| `.claude/rules/prompt-management.md` 重写、`testing.md`、ADR 0000/0001/0003/0013、`app/prompts/CLAUDE.md`、handbook | 陈旧口径与已删文件引用 | GOV-11/12, OPT-15 |
+| ADR 0022 + ADR README + ADR 0001 D5 登记 | 治理模型决策 | — |
+
+**未能在本环境完成**：eval 回归（无 LLM 密钥、golden 迁移中）——所有提示词相关改动（router 红线、holding_query 渲染）需现场用 `scripts/langfuse_eval.py` 补跑对应子集；Dify 账号密码轮换。
+
+## 附录 A · 发现索引
+
+编号前缀：OPT = option 域、OC = option_close 域、TRJ = ticker/router/judge、SW-INC = swap 增量、GOV = 治理层、C = 代码-提示词契约。完整证据（路径:行号 + 原文）见评估工作流产物；本表只列 P0/P1 与核证结论。
+
+| ID | 严重度 | 核证 | 一句话 |
+|---|---|---|---|
+| OC-01 | P0 | 已修 | holding_query 对手列表占位符未注入 → 99999999 哨兵发后端 |
+| OC-02 | P0 | 已修 | close intent 规则写入枚举外值 → close_unknown |
+| SW-INC-01 / GOV-02 | P0 | 已修 | swap intent 枚举丢 confirm_order，确认下单链路不可达 |
+| SW-INC-06 | P0 | 已修 | 对手简写多命中按列表顺序取首项 |
+| TRJ-01 | P0 | 已修 | ticker 当前日期未注入，期货月份推断失锚 |
+| GOV-03 | P0 | 已修 | sync.py 硬编码 Dify 账号密码（需轮换） |
+| C-02 | P0 | 已修 | router 提示词 代码↔公司名 字典 |
+| C-01 / TRJ-03 | P0 | confirmed | infer_code 名称→windCode / 命名指数→ETF 事实清单 |
+| C-03 / OC-17 | P0 | confirmed | holding_query 真实对手 / 员工名 / 代码格式字典 / 哨兵魔数 |
+| GOV-01 / OPT-16 / SW-INC-08 | P0 | confirmed | 真源三方冲突，阻断所有本地瘦身 |
+| OPT-01 / C-09 | P1 | confirmed | 机器人过滤块 ×8，7 个 extract 不注入 bot_name_list |
+| OPT-02 / C-07 | P1 | confirmed | extract_place hasFastExecutionIntent 规则是未渲染占位符 |
+| OPT-04 / 05 / 07 / 08 / 09 / 11 | P1 | confirmed | 见 4.1 |
+| OPT-06 | P1 | partial | 测试账户名成立；「名称↔代码映射」不成立 |
+| OPT-13 / 14 | P1 | partial | 可归档成立；处置条件已在 manifest 登记 |
+| OC-03 / 04 / 06 / 07 / 08 / 10 / 14 / 18 | P1 | confirmed | 见 4.2 |
+| OC-05 / 09 / 15 / 19 | P1 | partial | 代码兜底仅在 LLM 输出非法时触发；三文件重复成立但 compose_prompt 已删；矛盾限无 quote；已登记 manifest 未锁定 |
+| TRJ-02 / 04 / 05 / 06 / 09 / 11 / 12 | P1 | confirmed | 见 4.3（TRJ-02 枚举漂移已成事实） |
+| SW-INC-02 / 03 / 04 / 05 / 08 / 09 | P1 | 核证中 | 见 4.4 |
+| GOV-04 … GOV-11 | P1 | 核证中 | 见 6.1 |
+| C-04 / 05 / 06 / 08 / 11 / 15 | P1 | 核证中 | POV25 归属 / hasFastExecutionIntent 丢弃 / 多模态链旧 schema / 范围段死重 / option 撤单快路径 operate 分歧 / close 4 节点去 LLM 化 |

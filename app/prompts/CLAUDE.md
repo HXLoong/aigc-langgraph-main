@@ -43,7 +43,9 @@
 ```
 ````
 
-占位符 `{{#node_id.var#}}` 保留原样——不要 regex 替换，会破坏 Dify 行为对齐。
+占位符 `{{#node_id.var#}}`：Dify 由引擎渲染，LangGraph 没有渲染层。代码确实注入的占位符在节点里
+`system.replace(...)` 渲染并在 `_manifest.yaml` 的 `injects` 登记（先例：`close/holding_query.py`、`ticker/tools.py`）；
+代码不注入的就是悬空规则（`prompt_inventory.py --strict` 列出），属零风险删除档——不要指望 LLM 把变量名当上下文。
 
 ## 字符数提示（影响延迟）
 

@@ -24,13 +24,13 @@ from app.subgraphs.swap.models import SwapIntentOutput
 #: Dify code 节点 1755072896717 `has_confirmation_keyword` 同款词表；命中直接走 confirm_order。
 #: 2026-09-11 回归 Dify 原文后 intent.md 枚举已不含 confirm_order（Dify 靠前置分流），
 #: app 侧必须移植该分流，否则确认下单链路失效（提示词治理评估 SW-INC-01）。
-_CONFIRM_ORDER_KEYWORDS: tuple[str, ...] = ("确认下单", "确定下单", "确认订单", "下单确认")
+CONFIRM_ORDER_KEYWORDS: tuple[str, ...] = ("确认下单", "确定下单", "确认订单", "下单确认")
 
 
 def has_confirm_order_keyword(raw: str | None) -> bool:
     """raw_content 是否含「确认下单」类关键词（Dify has_confirmation_keyword 同款）。"""
     text = (raw or "").strip()
-    return any(word in text for word in _CONFIRM_ORDER_KEYWORDS)
+    return any(word in text for word in CONFIRM_ORDER_KEYWORDS)
 
 
 def _format_shortname_list(counterparties: list[dict[str, Any]] | None) -> str:
@@ -99,4 +99,4 @@ async def swap_intent(state: AgentState) -> dict[str, Any]:
     }
 
 
-__all__ = ["has_confirm_order_keyword", "swap_intent"]
+__all__ = ["CONFIRM_ORDER_KEYWORDS", "has_confirm_order_keyword", "swap_intent"]

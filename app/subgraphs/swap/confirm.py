@@ -36,13 +36,15 @@ from app.graph.business_params import validated_confirm
 from app.graph.safe_node import safe_node
 from app.graph.state import AgentState, ErrorInfo, TraceEntry
 from app.subgraphs.swap.backend import call_swap_backend
+from app.subgraphs.swap.intent import CONFIRM_ORDER_KEYWORDS
 from app.subgraphs.swap.order_id import (
     extract_for_confirm_order,
     extract_for_confirm_single,
 )
 
-#: 互换-确认下单二次校验关键词（DSL v2 if-else `1781200000774`，含同义词）
-_CONFIRM_ORDER_KEYWORDS: tuple[str, ...] = ("确认下单", "确定下单", "确认订单", "下单确认")
+#: 互换-确认下单二次校验关键词（DSL v2 if-else `1781200000774`，含同义词）——与 intent 前置
+#: 分流共用同一份词表（Dify 侧只有一份 has_confirmation_keyword），改词表只改 intent.py
+_CONFIRM_ORDER_KEYWORDS: tuple[str, ...] = CONFIRM_ORDER_KEYWORDS
 
 
 def _expected_action(intent: str | None) -> str:

@@ -12,7 +12,7 @@
 
 比内容更根本的是**管理**问题——同样的内容病灶会在下一次 Dify 同步后重新长回来：
 
-1. **真源之争**：ADR 0014 D3-2 规定生产真源是 git `.md`；2026-09-11 又按用户要求把 7 个文件回归为 `dify/yaml/场外交易-test.yml` 原文并用 `tests/test_prompt_governance.py` 逐字锁定。任何对这 7 个文件的瘦身都会让测试失败。
+1. **真源之争**：ADR 0014 D3-2 规定生产真源是 git `.md`；2026-09-11 又按用户要求把 7 个文件回归为 `dify/yaml/场外交易-test.yml` 原文并用 `tests/test_prompt_governance.py` 逐字锁定。任何对这 7 个文件的瘦身都会让测试失败。更重要的是**锁定守的是文本相等而非代码契约**：这次回归把 Dify 靠 code 节点前置分流的 `confirm_order` 从提示词枚举中删掉，代码 Literal / 路由 / 二次校验没有同步，互换确认下单链路一度不可达（评估 SW-INC-01，已补前置分流）。
 2. **活跃/非活跃靠手写**：`app/prompts/CLAUDE.md` 手写"禁止直接删"清单，其中 `swap/place_order.dify_original.md`、`swap/v2/` 已不存在；没有机器可读清单，也没有"每个 .md 必须有加载点"的守护。
 3. **三套版本化形态并存**：`_versions.yaml` 同目录灰度（在用）、`compose_prompt` + `swap/v2/` 子目录拼装（零调用点、目录不存在）、`promote_langfuse_prompt` 的 `_v{N+1}` 晋升；ADR 0003 ">2 并存版本视为治理债"无执行机制。
 4. **v2 灰度位漂移无防护**：2026-08-28 切出的 `swap/intent_v2` / `place_order_v2` 在 09-11 v1 被 Dify 更新后没有同步，若此时放量会丢规则。
