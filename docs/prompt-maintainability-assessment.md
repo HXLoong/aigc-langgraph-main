@@ -173,7 +173,7 @@
 
 | 病灶 | 跨域证据（核证后） | 档位 | 估算可压缩 |
 |---|---|---|---:|
-| ④ 死重与悬空 | 悬空占位符 16 处（`--strict` 列表）；JSON 格式禁令 36 行分布在 structured output 节点；option 机器人过滤块 ×7 引用不存在变量；infer_code 41% 描述永远为空的范围变量；`[user]` 段 4.2K 字符无调用点 | 零风险 | ≈25K |
+| ④ 死重与悬空 | 7 个文件共 10 个悬空占位符 + 5 个 structured output 文件 27 行 JSON 禁令（`--strict` 共 12 项；option / option_close 其余文件的 JSON 禁令因 manifest 尚未登记 output_model 未计入）；JSON 格式禁令 36 行分布在 structured output 节点；option 机器人过滤块 ×7 引用不存在变量；infer_code 41% 描述永远为空的范围变量；`[user]` 段 4.2K 字符无调用点 | 零风险 | ≈25K |
 | ③ 重复陈述 | option intent 撤单区分 ×4；extract_inquiry 三层陈述；place_close §A ×3 / 不重数 ×5 / 后端兜底 ×8；option_close intent 复述 29%；tokenize 总示例 22%；rank 首要主键 ×4 | 零风险 | ≈30K |
 | ② LLM 干确定性活 | option 4 个 Q- 单号节点、close 4 个 CO- 单号节点（≈21K + 8 次 LLM 调用）；tenor/百分号/名义本金归一化；place_close 算术与 holdingMap 查表；tokenize 与代码分词双实现 | 低风险（eval + 单测） | ≈35K + 8 次调用/请求 |
 | ① 错例回填 | 「覆盖客户实测 bug 场景」正例、🇮🇹/UB斯 幻觉复现、豁免优先于上面两条、place_close 中英混杂补丁块、confirm_cancel 五个单次错例各成规则、rank「临时补丁」 | 低风险（错例转 golden） | ≈15K |
@@ -224,7 +224,7 @@ Dify YAML（上游输入，sync.py 拉取）          │ lint: prompt_inventory
 | 0 | 五处代码级 P0 + 去凭据 + router 红线 | 单测 GREEN；现场跑 `langfuse_eval.py` 对应子集 ≥ 基线 | **已提交**（本 PR） |
 | 1 | 治理机制：manifest + lint + 漂移防护 + 晋升契约 + 规则页 | `prompt_inventory.py --check` 进 CI 且 CI 能触发（GOV-04） | 代码已提交；CI 触发待决定 |
 | 2 | 拍板 ADR 0022 D1；锁定测试改漂移告警；manifest 补 `dify:` 映射与「枚举 ⊆ Literal」守护 | 7 个锁定文件可本地改；上游更新有告警 | 待拍板 |
-| 3 | 零风险档：删 16 处悬空占位符与相关段落、36 行 JSON 禁令、重复陈述、不可达 few-shot（TRJ-11 守卫测试）、`[user]` 段 | `--strict` 通过；eval PASS ≥ 基线 | 待 2 |
+| 3 | 零风险档：删 7 文件 10 个悬空占位符与相关段落、36 行 JSON 禁令、重复陈述、不可达 few-shot（TRJ-11 守卫测试）、`[user]` 段 | `--strict` 通过；eval PASS ≥ 基线 | 待 2 |
 | 4 | 低风险档：option 4 个 Q- 节点 + close 4 个 CO- 节点去 LLM 化（先 `query_status`）；统一 CO- 正则为一处；归一化下沉 validator；错例转 golden；示例压缩 | eval + 单测 + 抽样人工比对；每节点 -1 LLM 调用 | 待 3 |
 | 5 | 需业务确认档：三处硬编码业务数据改法；POV 默认值归属；`hasFastExecutionIntent` 是否下传；对手召回三实现选一；裸数字语义统一 | 业务方逐条裁决 + golden | 待业务方 |
 | 6 | 结构性：swap 三链共享规范；option place/confirm_place 合并；ticker 转 structured output；tokenize 单一实现；判定 `intent_extract` / `param_limit` 归档 | 每项独立 PR + eval | 待 4 |
@@ -254,7 +254,7 @@ Dify YAML（上游输入，sync.py 拉取）          │ lint: prompt_inventory
 
 ## 附录 A · 发现索引
 
-编号前缀：OPT = option 域、OC = option_close 域、TRJ = ticker/router/judge、SW-INC = swap 增量、GOV = 治理层、C = 代码-提示词契约。完整证据（路径:行号 + 原文）见评估工作流产物；本表只列 P0/P1 与核证结论。
+编号前缀：OPT = option 域、OC = option_close 域、TRJ = ticker/router/judge、SW-INC = swap 增量、GOV = 治理层、C = 代码-提示词契约。完整证据（路径:行号 + 原文）见评估工作流产物；本表只列 P0/P1 与核证结论。**注意**：C-* 评估路的 `.py` 行号系统性失真（核证员逐条修正），本报告正文只引用 `.md` 行号与经核证的代码位置。
 
 | ID | 严重度 | 核证 | 一句话 |
 |---|---|---|---|
@@ -276,6 +276,9 @@ Dify YAML（上游输入，sync.py 拉取）          │ lint: prompt_inventory
 | OC-03 / 04 / 06 / 07 / 08 / 10 / 14 / 18 | P1 | confirmed | 见 4.2 |
 | OC-05 / 09 / 15 / 19 | P1 | partial | 代码兜底仅在 LLM 输出非法时触发；三文件重复成立但 compose_prompt 已删；矛盾限无 quote；已登记 manifest 未锁定 |
 | TRJ-02 / 04 / 05 / 06 / 09 / 11 / 12 | P1 | confirmed | 见 4.3（TRJ-02 枚举漂移已成事实） |
-| SW-INC-02 / 03 / 04 / 05 / 08 / 09 | P1 | 核证中 | 见 4.4 |
-| GOV-04 … GOV-11 | P1 | 核证中 | 见 6.1 |
-| C-04 / 05 / 06 / 08 / 11 / 15 | P1 | 核证中 | POV25 归属 / hasFastExecutionIntent 丢弃 / 多模态链旧 schema / 范围段死重 / option 撤单快路径 operate 分歧 / close 4 节点去 LLM 化 |
+| SW-INC-02 / 03 / 04 / 08 | P1 | confirmed | 见 4.4 |
+| SW-INC-05 / 09 | P1 | partial | 同一 app 两次快照成立、字符数按 YAML 实测修正；示例真实 UAT 对手名属 P1 而非 P0 红线 |
+| GOV-03 / 04 / 05 / 07 / 08 / 09 / 11 | P1 | confirmed | 见 6.1 |
+| GOV-01 / 06 / 10 | P1 | partial | 真源冲突成立但实害已修（建议降 P1）；注入实现在 HEAD 已有 3 处；D5 漏登记可核实 2 次 |
+| C-04 / 05 / 06 / 08 / 11 / 15 | P1 | confirmed | POV25 归属（`place_close.py` 注释自称「不影响后端语义」却改写 POV/25）/ hasFastExecutionIntent 丢弃（Dify 侧 schema 也无此字段，属 Dify 原生死重）/ 多模态链旧 schema（image 缺 9 字段、excel 缺 13）/ 范围段死重 / option 撤单快路径 operate 分歧 / close 单号节点去 LLM 化（仅 cancel_close / confirm_close 有双路径）|
+| C-02 | P0 | 已修 | 核证员在 HEAD 判「已修复 / 待 eval 回归」 |
