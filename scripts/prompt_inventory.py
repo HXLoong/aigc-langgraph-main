@@ -90,7 +90,7 @@ def list_md_keys(prompts_dir: Path) -> list[str]:
     """`swap/intent` 形式的 key 列表（跳过 CLAUDE.md 与下划线前缀文件）。"""
     keys = []
     for p in sorted(prompts_dir.rglob("*.md")):
-        if p.name == "CLAUDE.md" or p.name.startswith("_"):
+        if p.name in ("CLAUDE.md", "AGENTS.md") or p.name.startswith("_"):
             continue
         keys.append(str(p.relative_to(prompts_dir).with_suffix("")).replace("\\", "/"))
     return keys

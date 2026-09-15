@@ -209,7 +209,7 @@ class TestRealRepo:
 
     def test_inventory_rows_cover_all_md(self):
         rows = inv.build_inventory(inv.PROMPTS_DIR, inv.load_manifest(inv.MANIFEST))
-        md_files = [p for p in inv.PROMPTS_DIR.rglob("*.md") if p.name != "CLAUDE.md"]
+        md_files = [p for p in inv.PROMPTS_DIR.rglob("*.md") if p.name not in ("CLAUDE.md", "AGENTS.md")]
         assert len(rows) == len(md_files)
         assert all(r["status"] in {"active", "gray", "inactive"} for r in rows)
 

@@ -1,3 +1,6 @@
+<!-- 自动生成：python scripts/sync_agents_md.py —— 禁止手改。
+     真源是 scripts/CLAUDE.md；改那里再重新生成，CI（governance job）会校验同步。 -->
+
 # scripts · 运维与评估脚本
 
 > 局部约定。所有脚本应是**幂等 + 可独立运行**的入口，业务逻辑在 `app/` 里实现。

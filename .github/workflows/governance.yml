@@ -32,10 +32,12 @@ jobs:
         run: ruff check app/ tests/
       - name: 提示词清单一致性（目录 ↔ manifest ↔ 加载点；v2 漂移；上游 Dify 告警）
         run: python scripts/prompt_inventory.py --check --strict
+      - name: AGENTS.md 与 CLAUDE.md / .claude/rules 同步（团队 Codex 读 AGENTS.md）
+        run: python scripts/sync_agents_md.py --check
       - name: 提示词治理 + 意图路由测试
         run: |
           pytest -q -p no:cacheprovider \
-            tests/test_prompt_inventory.py tests/test_prompt_governance.py \
+            tests/test_prompt_inventory.py tests/test_prompt_governance.py tests/test_agents_md_sync.py \
             tests/test_prompt_loader.py tests/test_prompt_versioning.py \
             tests/test_promote_langfuse_prompt.py tests/test_langfuse_prompt_gate.py \
             tests/subgraphs/swap/test_intent.py tests/subgraphs/option/test_intent.py \

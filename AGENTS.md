@@ -1,3 +1,7 @@
+<!-- 自动生成：python scripts/sync_agents_md.py —— 禁止手改。
+     真源是 CLAUDE.md + .claude/rules/*.md；改那里再重新生成，CI（governance job）会校验同步。 -->
+
+
 # otc-agent · 图灵科技 Project Memory
 
 场外衍生品 AI 指令助手。**FastAPI + LangGraph + MySQL + LangFuse self-hosted**，从 Dify 工作流迁移而来。
@@ -123,10 +127,10 @@ tests/fixtures/              # golden.jsonl（350+ 条）+ golden_ticker_2026-05
 2. **LLM 输出用 `with_structured_output(PydanticModel)`** —— 绝不手工解析 JSON
 3. **每个节点用 `@safe_node` 装饰** —— 异常降级到 `state['error']`，不让图崩
 4. **State 字段只通过 TypedDict 约定** —— 新增字段必须先在 `app/graph/state.py` 中声明
-5. **TDD 强制**（/test-driven-development skill）—— 任何 bug fix / 新功能必须先写失败测试：
+5. **TDD 强制**（`.claude/skills/test-driven-development/SKILL.md` 流程）—— 任何 bug fix / 新功能必须先写失败测试：
    - 写测试 → 跑到 RED（测试失败） → 写最小修复代码 → 跑到 GREEN → 全量回归
    - 禁止先改代码再补测试，也禁止跳过 RED 验证
-   - `/test-driven-development` skill 包含完整 workflow，修改代码前调用
+   - `.claude/skills/test-driven-development/SKILL.md` 流程 包含完整 workflow，修改代码前调用
 6. **git 里的提示词是唯一真源，Dify 只是上游输入**（ADR 0022 D1，2026-09-15）—— 改活跃提示词走 ADR 0022 D4 分档：零风险档直接改 v1，低风险 / 需业务确认档走 `*_v2.md` 灰度 + eval 门；每次改动在 `app/prompts/_manifest.yaml` 该条目 `changelog` 登记，`prompt(<scope>)` commit。Dify 侧更新由 `scripts/prompt_inventory.py --check` 告警后人工 diff 合入，不再一键覆盖
 7. **标的代码必须 from_goats=True** —— Ticker Agent 的绝对约束（ADR 0008）
 8. **节点失败必须 cascade 防御** —— 任一节点写入 `state['error']` 后，下游 conditional 路由必须检查并跳到 fallback render，禁止 cascade 失败。具体：主图 `_route_by_product` 与每子图首节点后的 conditional 都加 `if state.get('error'): return 'fallback'`。fallback 节点输出友好回复（"我没完全理解你的意思，能换种说法重新告诉我吗"）+ trace 记录原 fail 节点名。LLM 解析失败由 `with_structured_output` 自带 1 次重试 + `@safe_node` 兜底捕获 ValidationError 写入 error；不走 HITL（HITL 仅用于 ADR 0006 的业务参数二次确认场景）
@@ -195,7 +199,7 @@ tests/fixtures/              # golden.jsonl（350+ 条）+ golden_ticker_2026-05
 
 ### 2. TDD 修复（强制）
 
-找到根因后，**必须先写失败测试再改代码**（`/test-driven-development` skill）：
+找到根因后，**必须先写失败测试再改代码**（`.claude/skills/test-driven-development/SKILL.md` 流程）：
 
 ```bash
 # 1. 写 tests/xxx/test_yyy.py，体现 bug 的最小复现
@@ -306,3 +310,540 @@ Issues 存在 GitHub Issues（`github.com/GZTL-AI/aigc-langgraph`），通过 `g
 ### Domain docs
 
 Single-context 布局：根目录 `CONTEXT.md` + `docs/adr/`。详见 `docs/agents/domain.md`。
+
+
+---
+
+# 附：仓库规则（.claude/rules/*.md 原文）
+
+
+<!-- 来源：.claude/rules/git-workflow.md -->
+
+# Git 工作流
+
+## 分支策略
+
+```
+main               ← 生产，受保护，只接 PR
+├── develop        ← 集成测试分支
+└── feature/xxx    ← 业务功能分支
+    fix/xxx        ← bug 修复
+    chore/xxx      ← 杂项（依赖升级、文档等）
+    prompt/xxx     ← 提示词调优（特殊分支类型）
+```
+
+## 提交信息约定
+
+```
+<type>(<scope>): <简短描述>
+
+<可选的详细说明>
+
+<可选的 Footer：Closes #123 等>
+```
+
+type:
+- `feat` 新功能
+- `fix` bug 修复
+- `refactor` 重构（不改外部行为）
+- `test` 加测试
+- `docs` 文档
+- `chore` 杂项
+- `prompt` 提示词调整（本项目专属）
+
+scope:
+- `swap` / `option` / `close` / `ticker` 对应子图
+- `api` / `graph` / `checkpointer` / `prompts`
+- `infra` / `test` / `ci`
+
+**示例**：
+```
+feat(swap): 支持按名义本金下单的参数提取
+fix(ticker): 修复期货合约"YYMM"格式误入结果的 bug
+prompt(close): 更新平仓意图识别提示词到 Dify v2.3
+test(e2e): 新增 2 条雪球询价的 golden case
+```
+
+## PR 标题与内容语言
+
+**强制中文**：
+
+- PR 标题必须用中文（仍保留 `<type>(<scope>): ...` 前缀约定）
+- PR 描述（body）必须用中文，含中文小节标题（如 ## 概述 / ## 变更内容 / ## 验证 / ## 关联）
+- 不要混用英文小节（如 `## Summary` / `## Test plan`）—— 统一中文
+- 代码块、链接、ADR 编号、技术词（`workflow_dispatch` / `golden case` 等）保持英文原样
+- Commit message 沿用现有 type 约定，正文 OK 用中文（已有先例）
+
+理由：团队 review 主语种为中文，PR 是业务方与开发的协作界面，混语种会拖慢理解。
+
+**示例**：
+
+```
+✅ docs(roadmap): M3/M4 路线图 + 分工 SOP
+✅ feat(swap): 支持按名义本金下单的参数提取
+❌ docs: Add M3/M4 roadmap and team assignment SOP
+```
+
+## PR 检查清单
+
+提交 PR 前（让 agent 帮你逐条检查）：
+
+- [ ] `pytest tests/ -v` 全部通过
+- [ ] `ruff check app/ tests/` 零警告
+- [ ] 如果改了提示词加载：跑 `python scripts/eval_golden.py`，准确率不低于上一版
+- [ ] 如果新增节点/意图：golden set 加了 case
+- [ ] 如果改了 State：`make_initial_state()` 同步更新
+- [ ] 如果改了 pyproject.toml 依赖：说明原因
+- [ ] 没有硬编码 secret
+- [ ] 中文变更说明（供国内团队 review）
+
+## 敏感文件
+
+**绝对不提交**：
+- `.env`（环境变量）
+- `CLAUDE.local.md`（个人偏好）
+- `/tmp/` 下任何输出
+- `__pycache__/`、`.pytest_cache/`
+- 任何含真实 API Key / Password 的文件
+- 生产日志导出（即使脱敏过也要先 review）
+
+这些在 `.gitignore` 里，但偶尔需要手动 double-check。
+
+## Rebase vs Merge
+
+- feature → develop：**rebase** 保持线性历史
+- develop → main：**merge commit**（保留 feature 边界）
+- 同一 feature 分支内部：小步提交 OK，合并前 `git rebase -i` squash 成干净 commits
+
+## 冲突解决
+
+提示词文件（`app/prompts/**/*.md`）冲突：
+- **永远选 Dify 原始版本**，不要手工 merge
+- 若是两个 PR 同时更新提示词：重新跑一次 `export_dify_prompts.py`
+
+State / 子图代码冲突：
+- 先读懂两个 PR 的意图，不要简单选一边
+- 必要时把两个 feature 都 rebase 到最新 main 再合
+
+## Tag & Release
+
+- Tag 格式：`v0.1.0`, `v0.2.0-rc1`
+- 每个 release 必须有 CHANGELOG 条目
+- 生产发布前必须跑 shadow compare 至少 24 小时
+
+
+<!-- 来源：.claude/rules/langgraph-patterns.md -->
+
+# LangGraph 特定模式
+
+## State 设计
+
+- 在 `app/state.py` 统一管理 `AgentState`（TypedDict）
+- 新增字段必须：
+  1. 在 TypedDict 中声明类型
+  2. 若需要并行合并（如 `trace`），加 `Annotated[list, add]`
+  3. 在 `make_initial_state()` 中给默认值
+
+```python
+class AgentState(TypedDict, total=False):
+    trace: Annotated[list[TraceEntry], add]  # 并行合并
+    product_type: ProductType                 # 单值覆盖
+    history_messages: Annotated[list, add]    # 累加
+```
+
+## 节点函数规范
+
+```python
+@safe_node
+async def my_node(state: AgentState) -> dict[str, Any]:
+    """做一件事的简洁文档。"""
+    # 1. 从 state 读需要的字段
+    wx = state["wechat_input"]
+
+    # 2. 做业务逻辑（LLM / HTTP / 纯计算）
+    result = await do_work(...)
+
+    # 3. 返回 **部分** state 更新（不要返回整个 state）
+    return {
+        "intent": result.type,
+        "trace": [{"node": "my_node", "decision": "..."}],
+    }
+```
+
+**关键**：
+- 节点只返回**需要更新的字段**，LangGraph 会自动 merge
+- 不要修改传入的 state（immutable 对待）
+- trace 用 list 形式（reducer 会累加）
+
+## 条件路由
+
+```python
+# ✅ 正确：路由函数是纯函数
+def route_by_intent(state: AgentState) -> str:
+    return state.get("intent", "default")
+
+g.add_conditional_edges(
+    "classify",
+    route_by_intent,
+    {"place_order": "extract_place", "confirm": "extract_id"},
+)
+
+# ❌ 错误：路由函数里做 IO 或 LLM 调用
+def route_by_intent(state):
+    result = llm.invoke(...)   # 禁止
+    return result.type
+```
+
+## 子图嵌入
+
+```python
+# 子图作为节点嵌入主图
+from app.subgraphs.swap import build_swap_graph
+
+g.add_node("swap", build_swap_graph().compile())
+```
+
+- 子图和主图**共享 State schema**（都是 AgentState）
+- 子图内部有自己的 START/END
+- 主图的 conditional_edges 选择哪个子图
+
+## Checkpointer 使用
+
+```python
+# ✅ 生产：MySQL
+from langgraph.checkpoint.mysql.aio import AIOMySQLSaver
+async with AIOMySQLSaver.from_conn_string(uri) as cp:
+    await cp.setup()
+    graph = build_main_graph(cp)
+
+# ✅ 测试：内存
+from langgraph.checkpoint.memory import InMemorySaver
+graph = build_main_graph(InMemorySaver())
+
+# ❌ 错误：不传 checkpointer 就编译（多轮对话会失效）
+graph = g.compile()  # 不行，需要 checkpointer
+```
+
+## thread_id 约定
+
+- **thread_id 固定等于 conversation_id**（企微会话 ID）
+- 同一客户在同一群的对话会共享 state 历史
+- 换客户/换群 → thread_id 不同 → state 完全隔离
+
+```python
+config = {"configurable": {"thread_id": req.conversation_id}}
+result = await graph.ainvoke(state, config=config)
+```
+
+## 历史消息加载
+
+- FastAPI 路由层预加载：`load_history_from_checkpoint()` → 注入 state
+- 节点内不应直接读 checkpoint，通过 state 获取
+
+## Structured Output（必须）
+
+```python
+# ✅ 正确
+from app.subgraphs.swap_models import SwapIntentOutput
+llm = qwen.with_structured_output(SwapIntentOutput)
+result: SwapIntentOutput = await llm.ainvoke([...])
+
+# ❌ 错误：手工解析 JSON
+response = await qwen.ainvoke(...)
+data = json.loads(response.content)  # 容易失败，违反 Dify 迁移原则
+```
+
+## Human-in-the-Loop（interrupt）
+
+```python
+# 编译时指定在哪些节点前暂停
+graph = g.compile(
+    checkpointer=cp,
+    interrupt_before=["swap_place_order"],  # 下单前人工确认（示例；生产当前未启用 interrupt，见 ADR 0006）
+)
+
+# API 层：暂停时返回确认卡片给企微
+# 确认后：graph.ainvoke(None, config=config)  # None = 不新增输入，从 checkpoint 恢复
+```
+
+## 观测
+
+- 生产：LangFuse（`ENABLE_LANGFUSE=true` + `LANGFUSE_PUBLIC_KEY`/`LANGFUSE_SECRET_KEY`，ADR 0014）
+- 自建：OpenTelemetry（`app/observability/tracing.py`）
+- 每个节点通过 `trace` 字段记录决策，写到 MySQL `node_trace` 表
+
+## 常见陷阱
+
+1. **节点返回值不要 `state.update(...)`**：返回 partial dict 即可
+2. **Checkpointer 是应用级单例**：别在每个请求创建新的
+3. **ReAct Agent 作为子图节点时自动处理 state**：不用手工做 invoke
+4. **递归限制**：复杂子图设 `{"recursion_limit": 25}` 避免死循环
+
+
+<!-- 来源：.claude/rules/prompt-management.md -->
+
+# 提示词管理规则
+
+> 真源与状态机：[ADR 0022](../../docs/adr/0022-prompt-governance-after-code-migration.md)；
+> 清单：`app/prompts/_manifest.yaml`（`python scripts/prompt_inventory.py` 打印，`--check` 进 CI）；
+> 局部陷阱：`app/prompts/CLAUDE.md`。本文件只写"怎么做"，不复制清单与节点数（以 manifest 为准）。
+
+## 三态与守护
+
+| status | 含义 | lint 不变量 |
+|---|---|---|
+| `active` | 生产加载 | `loader` 文件里必须有 `load_prompt("<cat>", "<name>")` / `resolve_prompt_version(...)` 或 `loader_call` helper 调用 |
+| `gray` | ADR 0003 灰度位（`*_v2.md`），由 `_versions.yaml` / `OTC_PROMPT_<CAT>_<NAME>_VERSION` 切流 | 记录 `base_system_sha256`；v1 之后被改 → 必须重做 diff 并写 `drift_acknowledged: {at_base_sha, note}`；`expires` 到期未转正 → 警告 |
+| `inactive` | 无加载点的资产 | `reason` 必填（保留理由 + 可删条件）；`app/` 内零 `load_prompt` 引用 |
+
+`--strict` 加严项（ADR 0022 D5 目标态，逐步收敛）：system 段里未在 `injects` 登记的 `{{#…#}}` 占位符视为**悬空**；走 `with_structured_output`（有 `output_model`）的文件里的 JSON 格式禁令视为死重。
+
+## 占位符纪律（2026-09-15 反转）
+
+Dify 的 `{{#node_id.var#}}` 在 Dify 由工作流引擎渲染；LangGraph 里**没有渲染层**。所以：
+
+- 代码确实注入的占位符 → 在节点里 `system.replace(...)` 渲染（先例：`close/holding_query.py` 对手列表、`ticker/tools.py` 当前日期），并在 manifest `injects` 登记
+- 代码不注入的占位符 → 是悬空规则，LLM 看到的是变量名；属零风险删除档，围绕它的整段规则一起删
+
+## 加载方式
+
+```python
+from app.prompts import load_prompt, resolve_prompt_version
+
+name = resolve_prompt_version("swap", "intent", conversation_id)   # 灰度位按 _versions.yaml 分流
+p = load_prompt("swap", name)
+llm = model.with_structured_output(SwapIntentOutput)
+result = await llm.ainvoke([("system", p.system), ("user", user_message)])
+```
+
+- 节点只用 `p.system`；user 消息由节点代码拼装。`.md` 的 `[user]` 段只是 Dify 原始输入形态的参照
+- **禁止**把提示词正文硬编码进 Python（含"后置追加一段格式指令"这种写法）
+- 进 `_versions.yaml` 灰度的节点必须在 `TraceEntry.llm_output["prompt_name"]` 写实际加载的文件名（ADR 0003 硬前置，harness reporter 按此分桶）
+
+## 来源优先级（ADR 0014 D3-2）
+
+生产真源永远是 git 里的 `app/prompts/**/*.md`；`USE_LANGFUSE_PROMPTS=true` 只允许开发/staging 演练，生产开启即 fail-fast。LangFuse 演练稿用 `scripts/promote_langfuse_prompt.py` 晋升为 `_v{N+1}.md`（自动登记 manifest `gray`），再走 PR。
+
+## 改提示词的三条路
+
+| 场景 | 做法 | 门槛 |
+|---|---|---|
+| 瘦身 / 修规则（ADR 0022 D4 三档） | 零风险档直接改 v1；低风险档与需业务确认档走 `*_v2.md` 灰度位；都在 manifest `changelog` 加一行 | eval PASS ≥ v1 基线；`prompt(<scope>)` commit |
+| Dify 侧有更新 | `python dify/sync.py`（凭据只从 `DIFY_EMAIL` / `DIFY_PASSWORD` 环境变量读）→ `scripts/export_dify_prompts.py`（默认不覆盖已存在文件）→ 人工 diff 选择性合入 | 不要一键覆盖；`prompt_inventory.py --check` 会按 manifest `dify.system_sha256` 告警哪些节点有上游更新，合入后更新该 sha |
+| 新 LLM 节点 | `.md` 放对目录 + Pydantic Output 模型 + `@safe_node` 节点 + manifest 登记 + golden case | `prompt_inventory.py --check` 通过 |
+
+## 字符数 / 延迟
+
+用 `python scripts/prompt_inventory.py` 看 system 字符与估算 tokens（÷1.6）；单请求开销按调用链累加（`docs/prompt-maintainability-assessment.md` 第二节）。当前最重路径：互换图片下单 ≈54K tokens、平仓下单 ≈37K、互换文本下单 ≈36K。
+
+## Loader 缓存
+
+`load_prompt()` 有 `@lru_cache`；测试里要重载用 `from app.prompts import clear_cache; clear_cache()`。
+
+## 相关 ADR
+
+- ADR 0001 D5：改写决定登记表（资产状态部分已由 manifest 接管）
+- ADR 0003：同目录并存 + `_versions.yaml` 灰度（唯一版本化形态）
+- ADR 0014：LangFuse 作为演练区，git 为真源
+- ADR 0022：代码迁移完成后的提示词治理模型
+
+
+<!-- 来源：.claude/rules/python-style.md -->
+
+# Python 编码规范
+
+## 版本与工具链
+- Python 3.11+（严格要求，因为用了 `TypedDict` with `total=False` + `Annotated` reducer 语法）
+- 依赖管理：`pyproject.toml`，不用 requirements.txt
+- lint：ruff（行宽 100）
+- type check：mypy strict
+- 格式化：ruff format（黑体风格）
+
+## 类型提示
+
+**强制**：所有函数签名必须有类型提示，包括返回值。
+
+```python
+# ✅ 正确
+async def classify_intent(state: AgentState) -> dict[str, Any]:
+    ...
+
+# ❌ 错误：缺返回类型
+async def classify_intent(state):
+    ...
+```
+
+- 用 `from __future__ import annotations` 作为每个文件第一行
+- 用内建泛型 `list[int]` / `dict[str, Any]`，不用 `typing.List` / `typing.Dict`
+- `X | None` 代替 `Optional[X]`
+- `Literal["a", "b"]` 用于枚举字符串
+
+## 异步优先
+
+```python
+# ✅ 正确：异步
+async def load_data(client: httpx.AsyncClient) -> dict:
+    r = await client.get(url)
+    return r.json()
+
+# ❌ 错误：在异步函数里用同步 requests
+import requests   # 绝对禁止
+```
+
+- httpx.AsyncClient 是标准选择
+- 并发请求用 `asyncio.gather(...)`，不要串行 await
+- 阻塞 IO（如 openpyxl）用 `asyncio.to_thread` 包一下（如果可能卡住事件循环）
+
+## 错误处理
+
+```python
+# ✅ 正确：节点用 @safe_node
+@safe_node
+async def my_node(state: AgentState) -> dict[str, Any]:
+    # 这里的异常会被装饰器捕获，转成 state['error']
+    result = await risky_operation()
+    return {"result": result}
+
+# ✅ 正确：HTTP 客户端用 tenacity
+@retry(stop=stop_after_attempt(3),
+       wait=wait_exponential(multiplier=0.5, max=4.0),
+       retry=retry_if_exception_type(httpx.TimeoutException))
+async def _post(self, path, payload):
+    ...
+
+# ❌ 错误：裸 try/except Exception
+try:
+    do_something()
+except Exception:
+    pass   # 吞掉异常
+```
+
+## Import 规范
+
+```python
+from __future__ import annotations       # 第一行
+
+# 标准库
+import asyncio
+import logging
+from pathlib import Path
+
+# 第三方
+import httpx
+from pydantic import BaseModel
+
+# 本项目（绝对导入）
+from app.config import get_settings
+from app.state import AgentState
+```
+
+**禁止**：
+- `from x import *`
+- 相对导入（`from ..config import`）
+- 循环导入（必要时在函数体内延迟导入）
+
+## 日志
+
+```python
+# ✅ 正确
+logger = logging.getLogger(__name__)
+logger.info("msg=%s latency=%dms", msg_id, latency)   # 用 % 格式化
+
+# ❌ 错误
+print(...)                  # 生产代码不要 print
+logger.info(f"msg={msg_id}")  # 不要 f-string（丢失结构化日志能力）
+```
+
+## 命名
+
+- `snake_case` for 函数、变量
+- `PascalCase` for 类、Pydantic 模型、TypedDict
+- `UPPER_CASE` for 常量、枚举
+- 中文业务术语保持原样（如 `期权意图`）作为注释，但标识符用英文
+
+## 单行函数与 lambda
+
+- 避免 `lambda` 用于非平凡逻辑，用 `def` 定义
+- 单行 `if: return` 可以接受，多行必须展开
+
+
+<!-- 来源：.claude/rules/testing.md -->
+
+# 测试规范
+
+## 三层测试金字塔
+
+```
+   E2E 集成测试 (tests/test_e2e.py)     ← 慢，少，Mock LLM + Mock 后端
+   ─────────────────────────────
+   子图 / 节点测试 (tests/test_*.py)   ← 中等，覆盖关键路径
+   ─────────────────────────────
+   模型与路由测试 (tests/test_models.py) ← 快，多，纯函数单测
+```
+
+## pytest 约定
+
+- 所有测试必须 import 时能成功（不联网、不依赖真实 MySQL）
+- 异步测试用 `@pytest.mark.asyncio`（`asyncio_mode = "auto"` 已在 pyproject.toml 配置）
+- Mock 必须 patch "where it's looked up"，不是定义处
+
+## Mock 陷阱提醒
+
+```python
+# ❌ 错误：patch 原定义位置
+monkeypatch.setattr("app.tools.otc_backend.OtcBackendClient", factory)
+# 因为 swap.py 已经 `from app.tools.otc_backend import OtcBackendClient`
+# 名字绑到 swap 模块了，改原模块不生效
+
+# ✅ 正确：patch 所有使用点
+for target in (
+    "app.tools.otc_backend.OtcBackendClient",
+    "app.subgraphs.swap.OtcBackendClient",
+    "app.subgraphs.option.OtcBackendClient",
+    "app.subgraphs.close.OtcBackendClient",
+):
+    monkeypatch.setattr(target, factory)
+```
+
+## E2E 测试
+
+- **用 `InMemorySaver` 代替 MySQL Checkpointer**：避免依赖数据库
+- **Mock LLM 要 Mock 到 `with_structured_output` 返回的对象**：
+  ```python
+  mock_intent_llm = MagicMock()
+  mock_intent_llm.ainvoke = AsyncMock(return_value=CloseIntentOutput(type="..."))
+  mock_std.return_value.with_structured_output.return_value = mock_intent_llm
+  ```
+- **后端调用通过真实后端或集成测试环境**：E2E 测试直接对接真实后端（需真实后端 + VPN），单元测试 Mock 掉 Client Protocol
+
+## Golden Set
+
+- 所有新增意图必须在 `tests/fixtures/golden.jsonl` 加至少 2 条用例
+- golden 格式见文件顶部注释
+- 跑评估：`python scripts/langfuse_eval.py --local <fixture>`（`eval_golden.py` 为旧入口）
+
+## 提交前自检
+
+```bash
+pytest tests/ -v                              # 全部通过
+ruff check app/ tests/                        # lint 零警告
+mypy app/                                     # 类型无错
+```
+
+## 何时写测试
+
+- ✅ 新增节点函数 → 加路由测试
+- ✅ 新增 Pydantic 模型 → 加字段校验测试
+- ✅ 新增业务逻辑分支 → 加 E2E 覆盖
+- ✅ 修 bug → 先写复现测试，再修
+- ⚠️ 改活跃提示词 → 走 ADR 0022 D4 分档 + eval 门（PASS ≥ 上一版），`prompt(<scope>)` commit；改 `.md` 必须同步 `app/prompts/_manifest.yaml`
+
+## 跑慢测试的技巧
+
+```bash
+pytest -v -k "not e2e"          # 跳过 E2E（只跑快速测试）
+pytest -v -k "swap"             # 只跑互换相关
+pytest -v --lf                  # last-failed（只跑上次失败的）
+pytest -v -x                    # 遇到第一个失败就停
+pytest --cov=app.nodes.route    # 覆盖率
+```
