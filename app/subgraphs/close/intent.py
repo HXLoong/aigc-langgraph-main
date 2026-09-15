@@ -88,9 +88,9 @@ async def close_intent(state: AgentState) -> dict[str, Any]:
     # close_order_confirm_cancel，导致规则从未命中、静默 fall through 到 unknown）
     if "确认撤单" in raw:
         intent = "close_order_cancel_confirm"
-    # "取消" + quote 中有撤单上下文 → confirm_cancel
-    if "取消" in raw and ("撤单" in quote or "撤单请求" in quote):
-        intent = "close_order_confirm_cancel"
+    # 注：曾有「"取消" + quote 含撤单上下文 → 确认撤单」规则，写入的是不存在的枚举值
+    # close_order_confirm_cancel（路由落 close_unknown），且违反提示词「撤单类意图只看
+    # raw_content、禁止用 quote_content 判定」；2026-09-15 提示词治理评估 OC-02 删除，以 LLM 为准
     # "序号N" + 平仓动作词 → close_order_request
     import re as _re2
     if _re2.search(r"序号\s*\d", raw):
