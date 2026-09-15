@@ -7,25 +7,23 @@
 
 - **目录名是 `option_close/`，不是 `close/`**（沿用 Dify 命名）；子图代码侧是 `app/subgraphs/close/`，两边不对称
 - **`_versions.yaml`** 才是 ADR 0003 A/B 灰度的真源；不要在 Python 里写死版本
-- **同目录下的非活跃 `.md` 文件**（不被 `load_prompt()` 主路径加载）：
-  - `option/intent_extract.md` — ADR 0011 拆分前的旧版统一节点快照，**保留供 diff 比对**，业务代码已切到 `intent.md` + `extract_*.md`
-  - `option/param_limit.md` — Dify 原始参数校验节点，当前未接线（保留资产）
-  - `swap/place_order.dify_original.md` — Dify 原始版快照，对照用
-  - `swap/v2/` — 灰度实验位（由 `_versions.yaml` 控制是否启用）
-  - 这些文件**禁止直接删**——会破坏 ADR 0001 D5 的"重构期内可改写但需可回滚"纪律
-  - 例外（Dify DSL v2 迁移，2026-08-28）：`ticker/completeness.md`（completeness LLM 节点已被
-    确定性校验替代）、`ticker/tokenize_v2.md`（零引用灰度实验位，未被 `_versions.yaml` 或任何
-    代码/测试引用）随 `app/subgraphs/ticker/` 整体重构一并删除，详见 ADR 0008 迁移落地段
-  - `swap/confirm.md` — 旧"三确认合并版"快照（DSL v2 后代码按 intent 动态加载
-    confirm_order/confirm_cancel/confirm_modify 三个独立文件），保留供 diff 比对
-- **去 LLM 化后转非活跃**（2026-08-28 瘦身 P1，ADR 0001 D5 处置表）：
-  `swap/{cancel_order,query_order,confirm_order,confirm_cancel,confirm_modify}.md` ——
-  对应节点已改确定性订单号提取（`app/subgraphs/swap/order_id.py`），不再有 LLM 调用;
-  五个文件保留为行为规约参照与可回滚资产
-- **瘦身 v2 灰度系列**（2026-08-28 P0 批，ADR 0001 D5 处置表 + `docs/swap-prompt-slimming-assessment.md`）：
-  `swap/{intent,image_extract,excel_extract,image_ocr,place_order}_v2.md` 为零风险/去重瘦身版,由
-  `_versions.yaml` / `OTC_PROMPT_SWAP_*_VERSION` 环境变量控制,默认 0 流量;
-  eval PASS ≥ v1 基线后才允许放量,达标转正时 v2→v1 并删 v2(ADR 0003)
+- **活跃 / 灰度 / 非活跃三态以 `_manifest.yaml` 为机器可读真源**（ADR 0022），不再在本文件手写清单。
+  `python scripts/prompt_inventory.py` 打印清单，`--check` 进 CI 守四条不变量：目录 ↔ manifest 无孤儿、
+  active 必有真实加载点、inactive 零引用 + 有 reason、gray（`*_v2.md`）相对 v1 无漂移
+  （v1 在 v2 切出后被改动 → 必须重做 diff 并写 `drift_acknowledged`）。
+  - 新增 .md → 必须登记；删 .md → 必须注销；去 LLM 化一个节点 → 把条目改成 `inactive` + reason
+  - 当前 8 个 inactive 资产（`option/intent_extract`、`option/param_limit`、swap 去 LLM 化的 5 个订单号
+    节点 + `swap/confirm`）的保留理由与可删条件都写在 manifest 的 `reason` 里；ADR 0001 D5
+    "重构期内可改写但需可回滚"纪律仍然有效，删除前先看 reason
+  - 5 个 `swap/*_v2.md` 是 2026-08-28 瘦身 P0 批灰度位（`docs/swap-prompt-slimming-assessment.md`），
+    由 `_versions.yaml` / `OTC_PROMPT_SWAP_*_VERSION` 控制，默认 0 流量；其中 `intent_v2` /
+    `place_order_v2` 的 v1 已在 2026-09-11 被 Dify 回归更新，manifest 已标 drift_acknowledged，
+    放量前须重做 diff（ADR 0003：eval PASS ≥ v1 基线后才允许放量，达标转正时 v2→v1 并删 v2）
+- **7 个提示词被 `tests/test_prompt_governance.py` 按 Dify node_id 锁定为与 `dify/yaml/场外交易-test.yml`
+  逐字一致**（option/{intent,extract_inquiry,extract_place}、swap/{intent,place_order,select_counterparty,
+  select_ticker}）——改这 7 个 v1 文件会让测试失败；瘦身走 `*_v2.md` 灰度位，或按 ADR 0022 调整锁定范围
+- `[user]` 段：所有节点只用 `prompt.system`，user 消息由节点代码拼装，`.md` 里的 `[user]` 段仅作 Dify
+  原始输入形态的参照（ADR 0022）
 
 ## .md 文件格式约定（4-backtick 外层 fence 才不会被内层 ``` 提前闭合）
 
@@ -49,5 +47,6 @@
 
 ## 字符数提示（影响延迟）
 
-- `swap/place_order.md` ≈ 126K 字符 ≈ 38K tokens（Qwen3-30B 上下文上限的一半）
+- 单请求提示词开销以 `python scripts/prompt_inventory.py` 的 system 字符 ÷1.6 估算 tokens；
+  当前最重路径：互换图片下单 ≈ 54K tokens、平仓下单 ≈ 37K、互换文本下单 ≈ 36K（详见 `docs/prompt-maintainability-assessment.md`）
 - 长提示词显著影响 P95 延迟，评估时关注延迟指标

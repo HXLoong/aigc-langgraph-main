@@ -1,0 +1,165 @@
+# 提示词清单真源（ADR 0022）。
+#
+# 每个 app/prompts/**/*.md 必须在此登记，CI 由 scripts/prompt_inventory.py --check 守护：
+#   status: active    生产加载；loader = 引用它的 .py（相对仓库根），文件内必须出现字面量 "name"
+#   status: gray      ADR 0003 灰度位（*_v2.md）；base = 对应 v1；base_system_sha256 = 切 v2 时
+#                     v1 [system] 段的 sha256（python scripts/prompt_inventory.py 可算）。
+#                     v1 之后被改动 → lint 报"漂移"，须重做 diff 并写 drift_acknowledged
+#   status: inactive  无代码加载点的资产；reason 必填（保留理由 + 可删条件）
+#   max_system_chars  可选，system 段字符预算，超出 lint fail
+#
+# 本文件替代 app/prompts/CLAUDE.md 里手写的"非活跃文件清单"。
+
+prompts:
+  # ---------- router ----------
+  router/unknown_intent:
+    status: active
+    loader: app/nodes/intent_route.py
+    output_model: UnknownIntentOutput
+
+  # ---------- swap ----------
+  swap/intent:
+    status: active
+    loader: app/subgraphs/swap/intent.py
+    output_model: SwapIntentOutput
+  swap/intent_v2:
+    status: gray
+    base: swap/intent
+    since: 2026-08-28
+    base_system_sha256: f3fb7f42b19e6c8e31aa50d793cb0210de8902f57263f4e2ca02586794365cfd
+    drift_acknowledged: >-
+      2026-09-11 e72ee2d 把 v1 回归为 Dify 原文（场外交易-test.yml 1776159951508），
+      v2 未同步；放量前必须 diff v1 新增规则并回填 v2（见 docs/prompt-maintainability-assessment.md）
+  swap/place_order:
+    status: active
+    loader: app/subgraphs/swap/place_order.py
+    output_model: SwapPlaceOrderParams
+  swap/place_order_v2:
+    status: gray
+    base: swap/place_order
+    since: 2026-08-28
+    base_system_sha256: 85eba609ce9c6b979b201e90afd467a9119452a178dd9e79b9a81608721f1784
+    drift_acknowledged: >-
+      2026-09-11 e72ee2d 把 v1 回归为 Dify 原文（1776160580437），v2 未同步；放量前必须重做 diff
+  swap/image_extract:
+    status: active
+    loader: app/subgraphs/swap/multimodal.py
+  swap/image_extract_v2:
+    status: gray
+    base: swap/image_extract
+    since: 2026-08-28
+    base_system_sha256: 0712c89a18968019549e11aaedd6d8a273aaaa3609a251e3090e8813bb6afd0c
+  swap/excel_extract:
+    status: active
+    loader: app/subgraphs/swap/multimodal.py
+  swap/excel_extract_v2:
+    status: gray
+    base: swap/excel_extract
+    since: 2026-08-28
+    base_system_sha256: fdaf20a624a2e43af2fb674d444c2713c21bdbd94b9e18672d97c2e0a1f7de27
+  swap/image_ocr:
+    status: active
+    loader: app/subgraphs/swap/multimodal.py
+  swap/image_ocr_v2:
+    status: gray
+    base: swap/image_ocr
+    since: 2026-08-28
+    base_system_sha256: 3167ee52ff41c6fa8521ffab07def349d9fdd10578d465ae96cb22232a22cfed
+  swap/select_counterparty:
+    status: active
+    loader: app/subgraphs/swap/select_counterparty.py
+  swap/select_ticker:
+    status: active
+    loader: app/subgraphs/swap/select_ticker.py
+  swap/cancel_order:
+    status: inactive
+    reason: 2026-08-28 瘦身 P1 去 LLM 化（app/subgraphs/swap/order_id.py 确定性提取），保留为行为规约参照；M4 全量上线稳定 7 天后可删
+  swap/query_order:
+    status: inactive
+    reason: 同 swap/cancel_order
+  swap/confirm_order:
+    status: inactive
+    reason: 同 swap/cancel_order
+  swap/confirm_cancel:
+    status: inactive
+    reason: 同 swap/cancel_order
+  swap/confirm_modify:
+    status: inactive
+    reason: 同 swap/cancel_order
+  swap/confirm:
+    status: inactive
+    reason: ADR 0001 D5 旧"三确认合并版"快照，DSL v2 后代码按 intent 分别加载三文件；仅供 diff 比对，M4 后可删
+
+  # ---------- option ----------
+  option/intent:
+    status: active
+    loader: app/subgraphs/option/intent.py
+  option/extract_inquiry:
+    status: active
+    loader: app/subgraphs/option/extract_inquiry.py
+  option/extract_place:
+    status: active
+    loader: app/subgraphs/option/extract_place.py
+  option/extract_confirm_place:
+    status: active
+    loader: app/subgraphs/option/extract_confirm_place.py
+  option/extract_cancel_place:
+    status: active
+    loader: app/subgraphs/option/extract_cancel_place.py
+  option/extract_confirm_cancel:
+    status: active
+    loader: app/subgraphs/option/extract_confirm_cancel.py
+  option/extract_cancel:
+    status: active
+    loader: app/subgraphs/option/extract_cancel.py
+  option/extract_query:
+    status: active
+    loader: app/subgraphs/option/extract_query.py
+  option/intent_extract:
+    status: inactive
+    reason: ADR 0011 拆分前的 Dify 单体节点快照（2870 行），仅供 diff 比对；Dify 侧已同样拆分（场外交易-test.yml 无此节点），可归档到 docs/archive/dify-originals
+  option/param_limit:
+    status: inactive
+    reason: Dify 原始参数校验节点，未接线（参数校验由 Pydantic + Java 后端承担）；确认无需接线后可归档
+
+  # ---------- option_close（代码目录 app/subgraphs/close/）----------
+  option_close/intent:
+    status: active
+    loader: app/subgraphs/close/intent.py
+  option_close/place_close:
+    status: active
+    loader: app/subgraphs/close/place_close.py
+  option_close/cancel_close:
+    status: active
+    loader: app/subgraphs/close/cancel_close.py
+  option_close/confirm_close:
+    status: active
+    loader: app/subgraphs/close/confirm_close.py
+  option_close/confirm_cancel:
+    status: active
+    loader: app/subgraphs/close/confirm_cancel.py
+  option_close/holding_query:
+    status: active
+    loader: app/subgraphs/close/holding_query.py
+  option_close/query_status:
+    status: active
+    loader: app/subgraphs/close/query_status.py
+
+  # ---------- ticker（原文 JSON 解析，非 structured output）----------
+  ticker/infer_code:
+    status: active
+    loader: app/subgraphs/ticker/tools.py
+  ticker/tokenize:
+    status: active
+    loader: app/subgraphs/ticker/tools.py
+  ticker/judge_type:
+    status: active
+    loader: app/subgraphs/ticker/tools.py
+  ticker/rank:
+    status: active
+    loader: app/subgraphs/ticker/tools.py
+
+  # ---------- judge（评估用，非业务链路）----------
+  judge/option_judge:
+    status: active
+    loader: scripts/langfuse_eval.py

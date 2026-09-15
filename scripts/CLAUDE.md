@@ -60,6 +60,7 @@
 | `merge_golden.py` | 合并多个 golden 文件 |
 | `upload_dataset_to_langfuse.py` | golden → Langfuse dataset |
 | `export_dify_prompts.py` | Dify YAML → app/prompts/**/*.md |
+| `prompt_inventory.py` | 提示词清单 + 治理 lint（`--check` 进 CI；`_manifest.yaml` 为真源，ADR 0022）|
 
 ### 一次性 / Demo
 

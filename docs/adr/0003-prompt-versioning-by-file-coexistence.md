@@ -23,7 +23,7 @@ _versions.yaml（灰度配置，如 swap.intent = 95% intent / 5% intent_v2）
 
 节点侧示例：`app/subgraphs/swap/intent.py` 先 `resolve_prompt_version` 再 `load_prompt`。原文"代码写死 `load_prompt("swap", "intent_v2")`"仅是临时调试用法。
 
-**第二种版本化形态（原文未记录，本次补录）**：`compose_prompt(category, name, version)` + `swap/v2/` 子目录拼装（`_base.md` + 意图片段，字符数 -20%），由 `SWAP_PROMPT_VERSION` 配置选择。⚠️ 当前 `compose_prompt` 在 `app/` 内零调用点、`swap_prompt_version` 为死配置——接线或删除待裁决（[#159](https://github.com/GZTL-AI/aigc-langgraph/issues/159)）。
+**第二种版本化形态（已删除，2026-09-15）**：`compose_prompt(category, name, version)` + `swap/v2/` 子目录拼装曾作为备选形态存在，但在 `app/` 内零调用点、`swap_prompt_version` 为死配置（[#159](https://github.com/GZTL-AI/aigc-langgraph/issues/159) 待裁决项）。[ADR 0022](./0022-prompt-governance-after-code-migration.md) 裁决删除，同目录并存成为唯一版本化形态；`tests/test_prompt_inventory.py` 防止复活。
 
 ## 备选方案
 

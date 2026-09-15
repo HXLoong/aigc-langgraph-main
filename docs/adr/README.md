@@ -1,6 +1,6 @@
 # 架构决定记录（ADR）索引
 
-本目录收录 otc-agent 的全部架构决定：**ADR 0000-0021（共 22 篇）**。
+本目录收录 otc-agent 的全部架构决定：**ADR 0000-0022（共 23 篇）**。
 
 2026-08-27 全量整理（wayfinder map [#138](https://github.com/GZTL-AI/aigc-langgraph/issues/138)）：逐篇对照代码核查事实性声明后深度改写为**现状口径**——每篇读起来即当前实现；实现违背决策原意之处不洗白，以"实现偏离"小节标注并链接裁决 issue（[#153](https://github.com/GZTL-AI/aigc-langgraph/issues/153)–[#160](https://github.com/GZTL-AI/aigc-langgraph/issues/160)）。
 
@@ -30,6 +30,7 @@
 | [0019](./0019-incident-severity-thresholds.md) | 故障升级阈值 P0/P1/P2 | 已采纳 | 互补 **0017**；3 项偏离已修复（#157） |
 | [0020](./0020-unify-all-llm-on-deepseek-v4-pro.md) | 全量统一 DeepSeek-V4-pro | 已采纳 | 取代 **0018**、修订 **0010**；baseline 重建为 M3.3 前置 |
 | [0021](./0021-text-confirm-replaces-interrupt.md) | 文本二阶段确认替代 interrupt + checkpointer 接线 | 已采纳 | 取代 **0006** interrupt 部分；修复 **0009** checkpointer 偏离 |
+| [0022](./0022-prompt-governance-after-code-migration.md) | 代码迁移完成后的提示词治理模型（manifest + lint / 版本化收敛 / 瘦身纪律） | 部分采纳（D1 真源切换待拍板） | 修订 **0001 D5**、**0003**；沿用 **0014** D3-2 |
 
 ## 按主题分组
 

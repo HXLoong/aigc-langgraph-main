@@ -2599,30 +2599,11 @@ def resolve_prompt_version(category, base_name, conversation_id=None) -> str:
 - 节点 trace 自动记录 `prompt_name`，harness 可按版本统计准确率
 - 开发时可用环境变量强制：`OTC_PROMPT_SWAP_INTENT_VERSION=v2 pytest tests/`
 
-### 8.7 Prompt 拆分（`compose_prompt` v2 模式）
+### 8.7 Prompt 拆分（已退役的 `compose_prompt` 模式）
 
-ADR 0013 + grill-with-docs：当一个 prompt 太大（如 `swap.place_order` 3059 行），可以拆成 base + 意图片段。
+早期设想过 `compose_prompt("swap", "place_order", version="v2")` 把 `swap/v2/_base.md` + 意图片段拼装成 system prompt。该路径在 `app/` 内从未接线（#159），`swap/v2/` 目录也从未创建，已随 ADR 0022 删除。
 
-目录结构：
-```
-app/prompts/swap/
-├── intent.md              # v1：原文
-└── v2/                    # v2：拆分版
-    ├── _base.md           # 共享规则基底
-    ├── intent.md          # 意图分类专属
-    └── place_order.md     # 下单专属
-```
-
-加载：
-```python
-p = compose_prompt("swap", "place_order", version="v2")
-# p.system = swap/v2/_base.md 的 system + "\n\n" + swap/v2/place_order.md 的 system
-```
-
-好处：
-- 多个意图共享 base，避免规则被复制多份
-- 单意图 prompt 短，延迟更低
-- 一键回滚 v1（`version="v1"`）
+现在**唯一**的版本化形态是 8.6 的同目录并存（`intent.md` / `intent_v2.md` + `_versions.yaml` 灰度）。要把巨型 prompt 拆成"共享规范 + 各链前置段"，做法是在 `.md` 层面拆文件、由节点代码按需拼接，并在 `app/prompts/_manifest.yaml` 登记（`python scripts/prompt_inventory.py --check` 守护）。
 
 ### 8.8 LangFuse 接入（运行时观测 + Prompt 管理）
 

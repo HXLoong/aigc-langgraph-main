@@ -87,11 +87,6 @@ class Settings(BaseSettings):
     # 详见 docs/archive/m3/m3-shadow-compare-dry-run-design.md
     dry_run_backend: bool = False
 
-    # === Prompt 版本 ===
-    # v1：Dify 原始 md 直接加载（兼容/回滚）
-    # v2：裁剪版，compose_prompt 把 _base + 意图片段拼接，字符数少 ~20%
-    swap_prompt_version: Literal["v1", "v2"] = "v1"
-
     # === 兜底回复（DSL v2 env.default_reply,fallback/answer 节点统一文案）===
     default_reply: str = "我没完全理解你的意思，能换种说法重新告诉我吗？"
 
