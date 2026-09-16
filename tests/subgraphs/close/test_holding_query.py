@@ -141,3 +141,39 @@ class TestCloseHoldingQueryNode:
         result = await close_holding_query({"raw_text": "x"})
         assert result.get("error") is not None
         assert result["error"].node == "close_holding_query"
+
+
+# ============================================================
+# 提示词治理评估 OC-01：交易对手列表占位符必须由代码注入（ADR 0022 D5）
+# ============================================================
+
+
+@pytest.mark.asyncio
+class TestCounterpartyListInjection:
+    _CPS = [
+        {"ctptyId": 10049, "shortName": "临沂阿凡提", "longName": "临沂阿凡提投资", "sort": 1},
+        {"ctptyId": 15912, "shortName": "15912测试账户", "longName": None, "sort": 2},
+    ]
+
+    async def test_placeholder_rendered_with_state_counterparties(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Dify 原 system 里的 {{#1772773805306.optionListStr#}} 曾原样发给 LLM，
+        keyCtptyIdList 的模糊匹配规则整段悬空，任何"对手XX"都会输出哨兵 99999999。"""
+        ainvoke = _patch_llm(monkeypatch, HoldingQueryParams(closeable_only=False))
+        await close_holding_query(
+            {"raw_text": "查对手阿凡提的持仓", "option_counterparties": self._CPS}
+        )
+        system_content = ainvoke.call_args.args[0][0][1]
+        assert "{{#1772773805306.optionListStr#}}" not in system_content
+        assert "临沂阿凡提" in system_content
+        assert "10049" in system_content
+
+    async def test_empty_counterparties_renders_empty_list(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        ainvoke = _patch_llm(monkeypatch, HoldingQueryParams(closeable_only=False))
+        await close_holding_query({"raw_text": "我有哪些期权持仓"})
+        system_content = ainvoke.call_args.args[0][0][1]
+        assert "{{#" not in system_content
+        assert "[]" in system_content

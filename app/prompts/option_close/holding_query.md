@@ -133,7 +133,7 @@
 
 ## 输出要求
 
-仅输出JSON，不要输出任何其他内容。输出格式如下：
+输出格式如下：
 
 ```json
 {"closeable_only": true, "internalTradeIdList": ["OPTG-SZZSCF20250030"], "keyCtptyIdList": [10049], "underlyingInsNameList": ["贵州茅台"], "underlyingInsIdList": ["600519.SH"], "insFamilyList": ["EQUITY"], "contractTypeList": ["AUTOCALL"]}

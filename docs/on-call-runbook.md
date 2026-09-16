@@ -85,7 +85,7 @@
 | 3 | 多数同节点 → 该节点 prompt / Pydantic 模型 / 后端调用有共性 bug |
 | 4 | 多数同 prompt 类型（如多个 extract 节点都炸）→ LLM 后端有问题（模型升级 / API 接口变更） |
 | 5 | 不同节点散布 → 系统性问题（如 MySQL 写延迟拖慢 timeout） |
-| 6 | 若来源明确且能热修：用 LangFuse Prompt 在线版本切换回上版本（ADR 0014）|
+| 6 | 若来源明确且能热修：**生产禁止从 LangFuse 拉提示词**（ADR 0014 D3-2 硬闸门，`USE_LANGFUSE_PROMPTS` 生产为 false）——热修走 `_versions.yaml` 灰度位回切 v1 / 回滚镜像；LangFuse 在线切版本只在 staging 演练 |
 | 7 | 若来源不明 + 持续 30 分钟未改善 → 执行紧急回滚（§7） |
 
 ### 5.3 HITL 长时间未恢复

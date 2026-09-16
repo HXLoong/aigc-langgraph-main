@@ -5,26 +5,27 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
+from app.prompts import blocks
 from app.subgraphs.swap import intent as intent_module
-from app.subgraphs.swap.intent import _build_user_message, _format_shortname_list, swap_intent
+from app.subgraphs.swap.intent import _build_user_message, swap_intent
 from app.subgraphs.swap.models import SwapIntentOutput
 
 # ============================================================
-# 辅助函数 _format_shortname_list
+# 共享积木 blocks.shortnames（ADR 0023：替代各节点私有的 _format_shortname_list）
 # ============================================================
 
 
-class TestFormatShortnameList:
+class TestShortnameBlock:
     def test_empty_or_none(self) -> None:
-        assert _format_shortname_list(None) == ""
-        assert _format_shortname_list([]) == ""
+        assert blocks.shortnames(None) == []
+        assert blocks.shortnames([]) == []
 
     def test_joins_shortnames(self) -> None:
         counterparties = [
             {"ctptyId": "1", "shortName": "临沂阿凡提", "longName": "临沂阿凡提有限公司", "sort": "A"},
             {"ctptyId": "2", "shortName": "测试111", "longName": "测试有限公司", "sort": "B"},
         ]
-        result = _format_shortname_list(counterparties)
+        result = ", ".join(blocks.shortnames(counterparties))
         assert "临沂阿凡提" in result
         assert "测试111" in result
 
@@ -133,3 +134,26 @@ class TestSwapIntentNode:
         assert result.get("error") is not None
         assert result["error"].node == "swap_intent"
         assert "LLM down" in result["error"].message
+
+
+@pytest.mark.asyncio
+class TestConfirmKeywordPreRoute:
+    """提示词治理评估 SW-INC-01：2026-09-11 回归 Dify 原文后，intent.md 的意图枚举不再含
+    confirm_order（Dify 把「确认下单」交给 code 节点 1755072896717 + if-else 1781200000774
+    前置分流），而 app 仍靠 LLM 输出 confirm_order 路由到 swap_confirm。这里移植同款
+    确定性前置：raw 含「确认下单/确定下单/确认订单/下单确认」→ confirm_order，不调 LLM。"""
+
+    @pytest.mark.parametrize("raw", ["确认下单", "确定下单 H-20260901-0000000001", "确认订单", "下单确认"])
+    async def test_confirm_keyword_routes_without_llm(
+        self, monkeypatch: pytest.MonkeyPatch, raw: str
+    ) -> None:
+        ainvoke = _patch_llm(monkeypatch, "place_order_request")  # LLM 若被调会误判
+        result = await swap_intent({"raw_text": raw, "quote_content": "互换订单 H-20260901-0000000001"})
+        assert result["intent"] == "confirm_order"
+        ainvoke.assert_not_called()
+
+    async def test_no_keyword_still_uses_llm(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        ainvoke = _patch_llm(monkeypatch, "place_order_request")
+        result = await swap_intent({"raw_text": "临沂阿凡提", "quote_content": "请回复【确认下单】"})
+        assert result["intent"] == "place_order_request"
+        ainvoke.assert_called_once()

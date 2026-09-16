@@ -8,20 +8,22 @@
 from __future__ import annotations
 
 import argparse
+import http.cookiejar
 import json
 import os
 import ssl
 import subprocess
 import sys
 import urllib.request
-import http.cookiejar
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 DIFY_BASE = "http://agent.smart-zone-dev.gf.com.cn"
 
 WORKFLOWS: list[tuple[str, str]] = [
-    ("d6c0ea8b-c037-4d63-95b4-cb3f02940d23", "主干工作流"),
+    # 治理（app/prompts/_manifest.yaml 的 dify.file）读取的是这一份；旧文件名「主干工作流.yml」
+    # 为 2026-08 冻结的拓扑参照，不再更新（ADR 0022 D1）
+    ("d6c0ea8b-c037-4d63-95b4-cb3f02940d23", "场外交易-test"),
     ("07c56e04-2250-4f78-be36-768091d9939b", "标的智能化推断和分词工具"),
     ("d6a4f5e1-4ff0-4ac4-82c8-7bc63e327cc0", "标的相关性排序工具"),
     ("1f6dcea0-8765-4be0-b0af-1ba5cba54aa7", "场外交易-期权工具"),
@@ -131,7 +133,7 @@ def git_push(target_branch: str = "feature-yaml") -> bool:
         print("无变更，跳过推送")
         return False
 
-    now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+    now = datetime.now(UTC).strftime("%Y-%m-%d %H:%M UTC")
     _git(["commit", "-m", f"chore: 同步 Dify 工作流 YAML ({now})"], repo_dir)
     _git(["push", "origin", target_branch], repo_dir)
     print(f"已推送到 origin/{target_branch}")
@@ -151,12 +153,12 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="同步 Dify 工作流 YAML")
     parser.add_argument(
         "--email",
-        default=os.environ.get("DIFY_EMAIL", "wxzhoutao@gfpartner.com.cn"),
+        default=os.environ.get("DIFY_EMAIL"),
         help="Dify 登录邮箱",
     )
     parser.add_argument(
         "--password",
-        default=os.environ.get("DIFY_PASSWORD", "wxzhoutao123"),
+        default=os.environ.get("DIFY_PASSWORD"),
         help="Dify 登录密码",
     )
     parser.add_argument(

@@ -61,10 +61,16 @@ def _image_urls(files: list[dict[str, Any]]) -> list[str]:
     return urls
 
 
+_OCR_COUNTERPARTY_PLACEHOLDER = "{{#1772773805306.optionListStr#}}"
+
+
 async def _extract_params(
     prompt_name: str, user_text: str, conversation_id: str | None = None
-) -> SwapPlaceOrderParams:
-    """image_extract / excel_extract 共用的参数提取调用(走 _versions.yaml 灰度)。"""
+) -> tuple[SwapPlaceOrderParams, str]:
+    """image_extract / excel_extract 共用的参数提取调用(走 _versions.yaml 灰度)。
+
+    返回 (参数, 实际加载的 prompt name)——后者写进 trace（ADR 0003 灰度硬前置）。
+    """
     resolved = resolve_prompt_version("swap", prompt_name, conversation_id)
     prompt = load_prompt("swap", resolved)
     llm = get_qwen_structured().with_structured_output(SwapPlaceOrderParams)
@@ -74,10 +80,12 @@ async def _extract_params(
             ("user", user_text),
         ]
     )
-    return result
+    return result, resolved
 
 
-def _params_update(params: SwapPlaceOrderParams, node: str, decision: str) -> dict[str, Any]:
+def _params_update(
+    params: SwapPlaceOrderParams, node: str, decision: str, prompt_name: str | None = None
+) -> dict[str, Any]:
     action = _expected_action(params)
     return {
         "place_params": {
@@ -85,7 +93,9 @@ def _params_update(params: SwapPlaceOrderParams, node: str, decision: str) -> di
             "orderList": [item.model_dump() for item in params.order_list],
         },
         "intent": "place_order_request",
-        "trace": [TraceEntry(node=node, decision=decision)],
+        "trace": [
+            TraceEntry(node=node, decision=decision, llm_output={"prompt_name": prompt_name})
+        ],
     }
 
 
@@ -101,17 +111,23 @@ async def swap_image_order(state: AgentState) -> dict[str, Any]:
         "swap", resolve_prompt_version("swap", "image_ocr", state.get("conversation_id"))
     )
     vl = get_qwen_vl()
-    content: list[dict[str, Any]] = [{"type": "text", "text": ocr_prompt.system}]
+    # Dify 原 system 的 {{#1772773805306.optionListStr#}} 由 code 节点 json.dumps 注入；
+    # 互换图片链按同口径渲染为 state["swap_counterparties"]（ADR 0022 D5，评估 C-27）
+    ocr_system = ocr_prompt.system.replace(
+        _OCR_COUNTERPARTY_PLACEHOLDER,
+        json.dumps(state.get("swap_counterparties") or [], ensure_ascii=False),
+    )
+    content: list[dict[str, Any]] = [{"type": "text", "text": ocr_system}]
     for u in urls:
         content.append({"type": "image_url", "image_url": {"url": u}})
     ocr_result = await vl.ainvoke([{"role": "user", "content": content}])
     ocr_text = getattr(ocr_result, "content", "") or ""
 
     user_text = f"图片识别内容:\n{ocr_text}\n\nraw_content: {state.get('raw_text', '') or ''}"
-    params = await _extract_params(
+    params, prompt_name = await _extract_params(
         "image_extract", user_text, state.get("conversation_id")
     )
-    return _params_update(params, "swap_image_order", f"images={len(urls)}")
+    return _params_update(params, "swap_image_order", f"images={len(urls)}", prompt_name)
 
 
 @safe_node
@@ -132,10 +148,10 @@ async def swap_excel_order(state: AgentState) -> dict[str, Any]:
     rows_text = json.dumps(rows, ensure_ascii=False, default=str)
 
     user_text = f"Excel 数据:\n{rows_text}\n\nraw_content: {state.get('raw_text', '') or ''}"
-    params = await _extract_params(
+    params, prompt_name = await _extract_params(
         "excel_extract", user_text, state.get("conversation_id")
     )
-    return _params_update(params, "swap_excel_order", f"rows={len(rows)}")
+    return _params_update(params, "swap_excel_order", f"rows={len(rows)}", prompt_name)
 
 
 __all__ = ["swap_image_order", "swap_excel_order", "parse_excel_rows"]

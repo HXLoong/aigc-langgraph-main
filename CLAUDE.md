@@ -24,8 +24,8 @@ pytest tests/test_smoke.py -v                # 仅 smoke
 pytest -k "not e2e"                          # 跳过 e2e
 
 # 评估（M3 主用入口：DeepSeek Judge + per-turn 富集 JSON 写到 Langfuse Cloud）
-python scripts/langfuse_eval.py --local tests/fixtures/golden.jsonl --concurrency 4   # 全量 350+
-python scripts/langfuse_eval.py --local tests/fixtures/golden.jsonl --ids opt-001,opt-018 --concurrency 2
+python scripts/langfuse_eval.py --local tests/fixtures/unified_golden.jsonl --concurrency 4   # 全量 350+
+python scripts/langfuse_eval.py --local tests/fixtures/unified_golden.jsonl --ids opt-001,opt-018 --concurrency 2
 
 # Harness CLI（备用 / 本地快速 smoke，无 Judge）
 python -m harness run                        # 跑 golden 全集
@@ -102,6 +102,18 @@ tests/                       # 841 passed + 14 skipped；行覆盖率 82%
 tests/fixtures/              # golden.jsonl（350+ 条）+ golden_ticker_2026-05.jsonl（34 条）
 ```
 
+## 团队工具链：Claude Code 与 Codex 共用一份纪律
+
+团队主用 Codex。Codex 只读根目录与各级子目录的 `AGENTS.md` 和 `.agents/skills/<name>/SKILL.md`，不读本文件、
+`.claude/rules/`、`.claude/skills/`、`.claude/agents/`。因此这些 **Codex 产物全部由 `python scripts/sync_agents_md.py` 生成，禁止手改**：
+
+- 根 `AGENTS.md` = 本文件 + 并入 `.claude/rules/{prompt-management,testing}.md`，其余 rules 只列路径（控制上下文体积）
+- `app/prompts` / `tests` / `scripts` 下的 `AGENTS.md` = 各自的 `CLAUDE.md`
+- `.agents/skills/<name>/` = `.claude/skills/<name>/`（frontmatter 收敛为 Agent Skills 标准的 `name` / `description` / `metadata`）
+  + `.claude/agents/*.md`（Codex 无 subagent，转为同名技能，调用时以该角色执行）；Codex 里用 `$name` 显式调用
+
+改纪律或流程只改 `CLAUDE.md` / `.claude/**`，再跑生成脚本一起提交；governance CI `--check` 守同步。
+
 ## 子目录陷阱页（按需加载）
 
 只在三个目录下有 `CLAUDE.md`，承载**根文件不便展开的局部陷阱**，不是必读层级：
@@ -112,15 +124,15 @@ tests/fixtures/              # golden.jsonl（350+ 条）+ golden_ticker_2026-05
 
 ## 核心原则（永远有效）
 
-1. **提示词不硬编码在代码里** —— 从 `app/prompts/**/*.md` 用 `load_prompt()` 加载
-2. **LLM 输出用 `with_structured_output(PydanticModel)`** —— 绝不手工解析 JSON
+1. **提示词不硬编码在代码里** —— 从 `app/prompts/**/*.md` 加载；LLM 节点用 `PromptSpec`（`app/prompts/spec.py`，ADR 0023）声明 `inputs`（AgentState 字段）/ `output_model` / `injects` / `user_builder`，`SPEC.build_messages(state)` 拼消息；user 里的规则文本住 `.md` `[user]` 段，代码只供变量；共享拼装用 `app/prompts/blocks.py`，不在子图里复制 `_format_history`
+2. **LLM 输出用 `with_structured_output(PydanticModel)`** —— 绝不手工解析 JSON；输出模型每个字段写 `Field(description=)`，这是输出语义的唯一真源（经 function calling schema 下发），提示词正文不再维护 JSON 骨架 / 字段表
 3. **每个节点用 `@safe_node` 装饰** —— 异常降级到 `state['error']`，不让图崩
 4. **State 字段只通过 TypedDict 约定** —— 新增字段必须先在 `app/graph/state.py` 中声明
 5. **TDD 强制**（/test-driven-development skill）—— 任何 bug fix / 新功能必须先写失败测试：
    - 写测试 → 跑到 RED（测试失败） → 写最小修复代码 → 跑到 GREEN → 全量回归
    - 禁止先改代码再补测试，也禁止跳过 RED 验证
    - `/test-driven-development` skill 包含完整 workflow，修改代码前调用
-6. **Dify 原始提示词在重构期内可改写** —— ADR 0001 D5：合并 3 个"确认 X"节点 + option 拆 1 intent + 5 extract（不含 close）；M2 阶段已按需对 swap/render 等做参数对齐与提示词瘦身。M3 工程联调期间仍可改写，但每次改写须在 ADR 0001 D5 的"处置表"中登记；M4 全量上线后恢复"只读资产"纪律
+6. **git 里的提示词是唯一真源，Dify 只是上游输入**（ADR 0022 D1，2026-09-15）—— 改活跃提示词走 ADR 0022 D4 分档：零风险档直接改 v1，低风险 / 需业务确认档走 `*_v2.md` 灰度 + eval 门；每次改动在 `app/prompts/_manifest.yaml` 该条目 `changelog` 登记，`prompt(<scope>)` commit。Dify 侧更新由 `scripts/prompt_inventory.py --check` 告警后人工 diff 合入，不再一键覆盖
 7. **标的代码必须 from_goats=True** —— Ticker Agent 的绝对约束（ADR 0008）
 8. **节点失败必须 cascade 防御** —— 任一节点写入 `state['error']` 后，下游 conditional 路由必须检查并跳到 fallback render，禁止 cascade 失败。具体：主图 `_route_by_product` 与每子图首节点后的 conditional 都加 `if state.get('error'): return 'fallback'`。fallback 节点输出友好回复（"我没完全理解你的意思，能换种说法重新告诉我吗"）+ trace 记录原 fail 节点名。LLM 解析失败由 `with_structured_output` 自带 1 次重试 + `@safe_node` 兜底捕获 ValidationError 写入 error；不走 HITL（HITL 仅用于 ADR 0006 的业务参数二次确认场景）
 
@@ -204,7 +216,7 @@ tests/fixtures/              # golden.jsonl（350+ 条）+ golden_ticker_2026-05
 修完跑对应 case 确认：
 
 ```bash
-.venv/bin/python scripts/langfuse_eval.py --local tests/fixtures/golden.jsonl --ids opt-001,opt-018 --concurrency 2
+.venv/bin/python scripts/langfuse_eval.py --local tests/fixtures/unified_golden.jsonl --ids opt-001,opt-018 --concurrency 2
 ```
 
 ## 绝对禁止
@@ -281,7 +293,7 @@ harness reporter 输出按桶分别统计；CI 维护一致性 lint（详见 `sc
 详见：
 
 - 领域语言：`@CONTEXT.md`
-- 架构决定：`@docs/adr/`（ADR 0000-0021 共 22 篇，索引见 `docs/adr/README.md`）
+- 架构决定：`@docs/adr/`（ADR 0000-0023 共 24 篇，索引见 `docs/adr/README.md`）
 - Java 契约：`@docs/api-contracts/java-backend.md`
 - M3/M4 路线图：`@docs/m3-m4-roadmap.md`
 - on-call SOP：`@docs/on-call-runbook.md` + `@docs/troubleshooting-sop.md`

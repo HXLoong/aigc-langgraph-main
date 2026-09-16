@@ -855,15 +855,6 @@ LKQ
 - placeOrderQuantityTotal: 总量(总单场景)
 - placeOrderTotalPovPercent: 总单POV比例(总单场景)
 
-**【极其重要】JSON输出格式严格要求**:
-- **绝对禁止**在JSON前后添加任何Markdown代码块标记(如```json或```)
-- **绝对禁止**在JSON前后添加任何说明文字或注释
-- **必须直接输出**纯JSON字符串,不带任何包装
-- **正确格式**: `{"type": "place_order_request", "orderList": [...]}`
-- **错误格式**: ````json\n{"type": ...}\n````
-- **错误格式**: `这是解析结果:\n{"type": ...}`
-- **错误格式**: `{"type": ...}\n// 注释`
-
 【示例】
 
 **【极其重要】示例数据污染防护警告**
@@ -894,8 +885,6 @@ LKQ
 
 ---
 
-**【重要提醒】**: 以下所有示例的JSON输出都是**纯JSON格式**,不带```json标记,实际输出时也必须如此。
-
 **【示例格式说明】**: 下面每个示例中的"输入:"/"输出:"等都是示例的一部分,用于展示格式。实际识别时,你会收到真实的`image_data`变量,而不是这些示例文本。
 
 **示例1: 总单场景(POV算法,多个交易对手)**
@@ -907,7 +896,7 @@ LKQ
 多策略1号 500
 ```
 
-输出(纯JSON,不带标记):
+输出:
 ```json
 {
   "type": "place_order_request",
@@ -1206,7 +1195,7 @@ A股000560.SZ 买入 600股 限价1 | -
 10908测试短名（1mx专用） | 616 | Western Digital Corp | WDC | -
 ```
 
-输出(纯JSON,不带标记):
+输出:
 ```json
 {
   "type": "place_order_request",
@@ -1269,7 +1258,7 @@ WDC.O | 千惠盛景一号 | Western Digital Corp | 616 | -
 - | 千惠盛景一号 | 京东集团 | 616 | -
 ```
 
-输出(纯JSON,不带标记):
+输出:
 ```json
 {
   "type": "place_order_request",
@@ -1353,7 +1342,7 @@ WDC.O | 千惠盛景一号 | Western Digital Corp | 616 | -
 产品全称 | 10908测试短名（1mx专用） | 10908测试短名（1mx专用）
 ```
 
-输出(纯JSON,不带标记):
+输出:
 ```json
 {
   "type": "place_order_request",
@@ -1417,7 +1406,7 @@ WDC.O | 千惠盛景一号 | Western Digital Corp | 616 | -
 产品名称 | 10908测试短名（1mx专用） | 10908测试短名（1mx专用）
 ```
 
-输出(纯JSON,不带标记):
+输出:
 ```json
 {
   "type": "place_order_request",
@@ -1479,7 +1468,7 @@ Alibaba Group | -
 BABA.N | -
 ```
 
-输出(纯JSON,不带标记):
+输出:
 ```json
 {
   "type": "place_order_request",
@@ -1525,7 +1514,7 @@ LKQ
 买入，ICEBERG，10，14:00-15:00
 ```
 
-输出(纯JSON,不带标记):
+输出:
 ```json
 {
   "type": "place_order_request",
@@ -1576,7 +1565,7 @@ LKQ
 买入，POV 15%，11:00-15:00
 ```
 
-输出(纯JSON,不带标记):
+输出:
 ```json
 {
   "type": "place_order_request",
@@ -1626,7 +1615,7 @@ LKQ
 市价，跟量5%，14:00-15:00 | 3500 | Alibaba Group | BABA.N | 千惠盛景一号
 ```
 
-输出(纯JSON,不带标记):
+输出:
 ```json
 {
   "type": "place_order_request",
@@ -1669,7 +1658,7 @@ Alibaba Group | -
 市价，跟量5%，14:00-15:00 | -
 ```
 
-输出(纯JSON,不带标记):
+输出:
 ```json
 {
   "type": "place_order_request",
@@ -1707,7 +1696,7 @@ Alibaba Group | -
 卖出 | 限价88.2，TWAP，10:00-11:00 | Alibaba Group | BABA.N | 千惠盛景一号
 ```
 
-输出(纯JSON,不带标记):
+输出:
 ```json
 {
   "type": "place_order_request",
@@ -1745,7 +1734,7 @@ Alibaba Group | -
 卖出 | 限价88.2 | 限价90.5 | Alibaba Group | BABA.N | 千惠盛景一号
 ```
 
-输出(纯JSON,不带标记):
+输出:
 ```json
 {
   "type": "place_order_request",
@@ -1800,7 +1789,7 @@ Alibaba Group | -
 市价 | 3500 | Alibaba Group | BABA.N | 0700.HK | 千惠盛景一号
 ```
 
-输出(纯JSON,不带标记):
+输出:
 ```json
 {
   "type": "place_order_request",
@@ -1858,7 +1847,7 @@ BABA.N | -
 市价 | -
 ```
 
-输出(纯JSON,不带标记):
+输出:
 ```json
 {
   "type": "place_order_request",
@@ -1912,7 +1901,7 @@ BABA.N | -
 卖出 | 限价88.2 | 限价90.5 | 10:00-11:00 | 14:00-15:00 | BABA.N | 千惠盛景一号
 ```
 
-输出(纯JSON,不带标记):
+输出:
 ```json
 {
   "type": "place_order_request",

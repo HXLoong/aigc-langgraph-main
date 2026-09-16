@@ -1,15 +1,15 @@
 """close.holding_query 节点 · 持仓查询参数提取。
 
-输入：raw_text（用户原话）+ 交易对手列表（M2 后续 PR 接入 TickerClient.list_counterparty）
-输出：state['close_params'] = HoldingQueryParams.model_dump()
+输入：raw_text（用户原话）+ 交易对手列表（state["option_counterparties"]，由 pre_route
+从 Java 侧预查 JSON 解析，字段 ctptyId/shortName/longName/sort）
+输出：state['close_params'] = HoldingQueryParams.model_dump() → 调真后端 query 接口
 
-骨架阶段范围：
-- LLM 提取 7 个查询字段（写 state['close_params']）
-- 不调真后端 query_close_orders（留给后续 PR）
-- 交易对手列表用空 stub（不影响 keyCtptyIdList 提取的 LLM 推理；真接入时通过
-  TickerClient.list_counterparty 拉取并替换）
+交易对手列表注入：Dify 原 system 里的 `{{#1772773805306.optionListStr#}}` 对应 Dify code
+节点 `json.dumps(option_list, ensure_ascii=False)`；本节点在送 LLM 前做同样的确定性渲染
+（ADR 0022 D5：占位符只允许出现在代码确实注入了值的位置）。此前占位符原样发给 LLM，
+keyCtptyIdList 的模糊匹配规则整段悬空，任何"对手XX"都会命中哨兵 99999999（评估 OC-01）。
 
-LLM：standard 模型 + with_structured_output（ADR 0010）。
+LLM：thinking 模型 + with_structured_output。
 prompt：app/prompts/option_close/holding_query.md。
 """
 from __future__ import annotations
@@ -20,21 +20,28 @@ from app.graph.business_params import validated_close_params
 from app.graph.safe_node import safe_node
 from app.graph.state import AgentState, TraceEntry
 from app.llm.clients import get_qwen_thinking
-from app.prompts import load_prompt
+from app.prompts import blocks
+from app.prompts.spec import PromptSpec, register
 from app.subgraphs.close.aggregate import build_close_order_req_vo
 from app.subgraphs.close.backend import call_close_backend
 from app.subgraphs.close.models import HoldingQueryParams
 
 
 def _build_user_message(state: AgentState) -> str:
-    """组装 user message。
+    return f"用户输入：{state.get('raw_text', '') or ''}"
 
-    Dify 原 prompt 用 `{{#1755072621769.raw_content#}}` 占位符。骨架阶段
-    我们直接把 raw_content 作为 user message——LLM 已被 system prompt 训练
-    理解原始输入，不需要 Dify 占位符严格替换。
-    """
-    raw_content = state.get("raw_text", "") or ""
-    return f"用户输入：{raw_content}"
+
+SPEC = register(PromptSpec(
+    category="option_close",
+    name="holding_query",
+    output_model=HoldingQueryParams,
+    inputs=("raw_text", "option_counterparties"),
+    user_builder=_build_user_message,
+    injects={
+        # Dify code 节点 optionListStr = json.dumps(option_list)，同口径渲染
+        "{{#1772773805306.optionListStr#}}": lambda s: blocks.json_list(s.get("option_counterparties")),
+    },
+))
 
 
 @safe_node
@@ -45,16 +52,9 @@ async def close_holding_query(state: AgentState) -> dict[str, Any]:
     - close_params: dict（HoldingQueryParams.model_dump()）
     - trace: 单条 TraceEntry，记录 closeable_only + 提取到的关键字段计数
     """
-    prompt = load_prompt("option_close", "holding_query")
+    messages, _prompt_name = SPEC.build_messages(state)
     llm = get_qwen_thinking().with_structured_output(HoldingQueryParams)
-
-    user_message = _build_user_message(state)
-    result: Any = await llm.ainvoke(
-        [
-            ("system", prompt.system),
-            ("user", user_message),
-        ]
-    )
+    result: Any = await llm.ainvoke(messages)
 
     decision = (
         f"closeable_only={result.closeable_only},"

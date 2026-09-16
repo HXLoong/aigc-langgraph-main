@@ -65,6 +65,9 @@
 | **瘦身** | `app/prompts/swap/place_order.md`：Dify 原版 3059 行 / 152,546 字符 → **2249 行 / 126,171 字符**（删冗余示例、压缩重复规则，保留语义；原版存为 `place_order.dify_original.md`）。注：DSL v2（2026-08）Dify 侧已自行重写该提示词，旧瘦身版随迁移被替换 | 2026-05-12 grill 授权，M2/M3 执行，本次补登记 |
 | **瘦身 P0 批（2026-08-28）** | 客户反馈提示词冗长/规则写死损害泛化性，全量评估见 `docs/swap-prompt-slimming-assessment.md`。P0 零风险档产出 4 个 v2 共存文件：`swap/{intent,image_extract,excel_extract,image_ocr}_v2.md`——只删死重（JSON 格式禁令，structured output 已强制）、悬空规则（bot_name_list/shortname_list/序号/total 等未注入变量）、重复陈述（同一规则 2~9 遍收敛为 1 处权威表述）、自相矛盾的补丁修订史（"POV 空格"）；**业务规则语义不变**。灰度经 `_versions.yaml`/env 控制，默认 0 流量，eval PASS ≥ v1 基线后方可放量（ADR 0003） | 本 ADR + 评估报告 |
 | **去 LLM 化（2026-08-28 瘦身 P1）** | swap 撤单/查单/三确认共 5 个节点的唯一任务是提取 `H-` 订单号，改为确定性提取（`app/subgraphs/swap/order_id.py`，来源优先级 1:1 对照原提示词规约）；省 5 次 LLM 调用（≈4.8K tokens/请求）与幻觉面。5 个提示词转非活跃资产保留。二次校验/后端调用/输出形状不变 | 本 ADR + 评估报告 |
+| **治理机制（2026-09-15）** | 客户反馈提示词臃肿 → 全域可维护性评估（`docs/prompt-maintainability-assessment.md`）；资产状态（active / gray / inactive）改由 `app/prompts/_manifest.yaml` + `scripts/prompt_inventory.py --check` 机器守护，本表只登记改写决定；删除零调用点的 `compose_prompt` 形态 | [ADR 0022](./0022-prompt-governance-after-code-migration.md) |
+| **零风险瘦身批（2026-09-15，ADR 0022 D1 拍板后直接落 v1）** | 烘焙 Dify 常量节点 17797951842080 的 keywords / output（5 处悬空占位符）；删 structured output 节点的 JSON 格式禁令（swap 4 文件 + holding_query）；删 option 7 个 extract 的机器人过滤块与 query/bot_name_list 声明（代码不注入）；`ticker/infer_code.md` 删从未注入的范围限制段、名称→windCode 事实清单改格式占位（C-01 红线）；删 `swap/intent_v2` / `place_order_v2`。逐文件记录见 `_manifest.yaml` 的 `changelog` | [ADR 0022](./0022-prompt-governance-after-code-migration.md) D4 |
+| **回归副作用补齐（2026-09-15）** | 09-11 回归把 Dify 靠 code 节点前置分流的「确认下单」从 `swap/intent.md` 枚举中移除，app 未移植分流 → 确认下单链路不可达；已在 `app/subgraphs/swap/intent.py` 移植同款 `has_confirmation_keyword` 前置（不调 LLM）。同批：`select_counterparty.md` 把简写唯一性交给代码 → `aggregate.shortname_from_pick` 改「精确 → 唯一子串 → None」；ticker / holding_query 补齐 Dify 上游注入的 日期 / 对手列表 占位符渲染 | 评估 SW-INC-01 / SW-INC-06 / TRJ-01 / OC-01 |
 | **保持** | 其他 Dify LLM 节点 1:1 复刻，提示词照搬 | — |
 
 **节点数：蓝图 24 → 主干落地 20**（与 CLAUDE.md / README 口径一致）：
@@ -76,7 +79,7 @@
 | option_close | 7 | 7（另有 unknown 兜底）| 与蓝图一致 |
 | ticker | 1（ReAct 子图）| 1 | ⚠️ 实为 resolver 确定性编排，见下"实现偏离" |
 
-补充事实：`intent_extract.md`（2870 行）已冻结为 diff 快照，非"当前最大提示词"——`place_order.dify_original.md`（3059 行）更大，两者均为非活跃资产（`app/prompts/CLAUDE.md`）。
+补充事实：`intent_extract.md`（2870 行）已冻结为 diff 快照，为非活跃资产；`place_order.dify_original.md` 已随 DSL v2 迁移（99a4c2f）删除。非活跃资产以 `app/prompts/_manifest.yaml` 为准（ADR 0022）。
 
 互换"下单 vs 改单"共用 `place_order_request`，靠 `orderList[i].orderId` 有无区分（`swap/place_order.py` 落地一致）。
 
@@ -107,7 +110,7 @@ app/
 ├── llm/clients.py             # LLM 统一工厂（ADR 0020 vendor 适配层）
 ├── checkpointer/factory.py    # AIOMySQLSaver（已随 ADR 0021/#153 接线，use_mysql_checkpointer）
 ├── observability/             # tracing / metrics / alerts / canary / health_probes
-└── prompts/                   # 37 个业务 .md + _versions.yaml
+└── prompts/                   # 41 个业务 .md + _versions.yaml + _manifest.yaml（ADR 0022）
 harness/                       # 评测台（模块清单见 ADR 0002）
 ```
 

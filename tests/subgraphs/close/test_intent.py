@@ -7,7 +7,7 @@ import pytest
 
 from app.subgraphs.close import intent as intent_module
 from app.subgraphs.close.intent import (
-    _JSON_OUTPUT_INSTRUCTION,
+    SPEC,
     _build_user_message,
     close_intent,
 )
@@ -29,16 +29,19 @@ def _patch_llm(monkeypatch: pytest.MonkeyPatch, return_type: str) -> AsyncMock:
 
 
 # ============================================================
-# 工程适配：JSON 输出指令追加
+# ADR 0023：输出契约由 with_structured_output 的 schema 承担
 # ============================================================
 
 
-class TestJsonInstructionAppend:
-    def test_json_instruction_constant_includes_type_field(self) -> None:
-        """工程层追加的指令必须含 'type' 关键字 + 6 个 close 意图引用。"""
-        assert "type" in _JSON_OUTPUT_INSTRUCTION
-        assert "close_order_" in _JSON_OUTPUT_INSTRUCTION
-        assert "unknown_intent" in _JSON_OUTPUT_INSTRUCTION
+class TestOutputContractLivesInSchema:
+    def test_spec_declares_output_model_with_type_field(self) -> None:
+        """不再在代码里追加 JSON 指令；type 枚举经 Pydantic schema 下发给 function calling。"""
+        assert SPEC.output_model is CloseIntentOutput
+        schema = CloseIntentOutput.model_json_schema()
+        assert "type" in schema["properties"]
+        enum_values = schema["properties"]["type"]["enum"]
+        assert "unknown_intent" in enum_values
+        assert any(v.startswith("close_order_") for v in enum_values)
 
 
 # ============================================================
@@ -109,16 +112,17 @@ class TestCloseIntentNode:
         assert trace[0].node == "close_intent"
         assert "intent=close_order_query" in trace[0].decision
 
-    async def test_passes_augmented_system_to_llm(
+    async def test_system_has_no_code_appended_format_instruction(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """system message 末尾必须含追加的 JSON 指令。"""
+        """ADR 0023：输出契约由 with_structured_output 的 schema 承担，代码不再往 system 末尾
+        追加 JSON 指令（原 _JSON_OUTPUT_INSTRUCTION 违反"提示词不硬编码在代码里"）。"""
         ainvoke = _patch_llm(monkeypatch, "close_order_query")
         await close_intent({"raw_text": "我想平仓"})
         messages = ainvoke.call_args[0][0]
         system_content = messages[0][1]
-        assert "工程层输出格式约束" in system_content
-        assert '"type"' in system_content
+        assert "工程层输出格式约束" not in system_content
+        assert system_content.rstrip().endswith("则输出 unknown_intent。")
 
     async def test_safe_node_catches_llm_error(
         self, monkeypatch: pytest.MonkeyPatch
@@ -145,3 +149,38 @@ class TestCloseIntentNode:
         _patch_llm(monkeypatch, "close_order_query")  # LLM 误判，靠规则纠正
         result = await close_intent({"raw_text": "确认撤单 CO-20260304-ABCD1234"})
         assert result["intent"] == "close_order_cancel_confirm"
+
+
+@pytest.mark.asyncio
+class TestDeterministicRulesStayInEnum:
+    """提示词治理评估 OC-02：代码规则层写入的 intent 必须是 CloseIntentType 合法值。"""
+
+    async def test_cancel_with_quoted_cancel_context_keeps_llm_intent(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """"取消" + 引用撤单请求：旧规则覆盖为不存在的 close_order_confirm_cancel，
+        路由落到 close_unknown。提示词明文规定撤单类意图只看 raw_content、禁止用
+        quote_content 判定（option_close/intent.md「quote_content 使用限制」），
+        故规则应删除、以 LLM 判定为准。"""
+        from typing import get_args
+
+        from app.subgraphs.close.models import CloseIntentType
+
+        _patch_llm(monkeypatch, "close_order_cancel_request")
+        result = await close_intent(
+            {"raw_text": "取消", "quote_content": "撤单请求 CO-20260304-4FE9C941 待确认"}
+        )
+        assert result["intent"] in get_args(CloseIntentType)
+        assert result["intent"] == "close_order_cancel_request"
+
+    def test_every_literal_intent_in_rule_layer_is_valid(self) -> None:
+        import re
+        from pathlib import Path
+        from typing import get_args
+
+        from app.subgraphs.close.models import CloseIntentType
+
+        src = Path(intent_module.__file__).read_text(encoding="utf-8")
+        assigned = set(re.findall(r'intent = "([a-z_]+)"', src))
+        assert assigned, "未找到规则层赋值"
+        assert assigned <= set(get_args(CloseIntentType)), assigned - set(get_args(CloseIntentType))

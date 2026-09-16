@@ -15,50 +15,22 @@ from __future__ import annotations
 from typing import Any
 
 from app.graph.safe_node import safe_node
-from app.graph.state import AgentState, Message, TraceEntry
+from app.graph.state import AgentState, TraceEntry
 from app.llm.clients import get_qwen_structured
-from app.prompts import load_prompt
+from app.prompts.spec import PromptSpec, register
 from app.subgraphs.option.models import OptionIntentOutput
+from app.subgraphs.option.prompting import INTENT_INPUTS, intent_user
 
+SPEC = register(PromptSpec(
+    category="option",
+    name="intent",
+    output_model=OptionIntentOutput,
+    inputs=INTENT_INPUTS,
+    user_builder=intent_user,
+))
 
-def _format_history(history: list[Message] | None) -> str:
-    """与 swap.intent 同款历史拼接（user/assistant 行）。"""
-    if not history:
-        return ""
-    lines: list[str] = []
-    for msg in history:
-        role = msg.role if hasattr(msg, "role") else msg.get("role", "user")
-        content = msg.content if hasattr(msg, "content") else msg.get("content", "")
-        lines.append(f"{role}: {content}")
-    return "\n".join(lines)
-
-
-def _build_user_message(state: AgentState) -> str:
-    """组装 user message（4 个既有 Dify 输入变量 + shortname_list）。
-
-    `shortname_list`（交易对手简称候选列表，Dify DSL v2 源
-    `1772773805306.optionListStr`）取自 pre_route 解析的
-    state["option_counterparties"]（后端预查对手精简列表）。
-    `bot_name_list` 取 state["bot_name"]（DSL v2 start 入参）。
-    """
-    raw_content = state.get("raw_text", "") or ""
-    quote_content = state.get("quote_content") or ""
-    history_str = _format_history(state.get("history_messages"))
-    bot_name = state.get("bot_name")
-    bot_name_list: list[str] = [bot_name] if bot_name else []
-    shortname_list: list[str] = [
-        cp.get("shortName")
-        for cp in (state.get("option_counterparties") or [])
-        if cp.get("shortName")
-    ]
-
-    return (
-        f"raw_content: {raw_content}\n\n"
-        f"quote_content: {quote_content}\n\n"
-        f"history_query_str:\n{history_str}\n\n"
-        f"bot_name_list: {bot_name_list}\n\n"
-        f"shortname_list: {shortname_list}"
-    )
+#: 兼容旧测试 / 调用点：user 消息拼装已收敛到 app/subgraphs/option/prompting.intent_user
+_build_user_message = intent_user
 
 
 @safe_node
@@ -89,16 +61,9 @@ async def option_intent(state: AgentState) -> dict[str, Any]:
             "trace": [TraceEntry(node="option_intent", decision="deterministic_cancel")],
         }
 
-    prompt = load_prompt("option", "intent")
+    messages, _prompt_name = SPEC.build_messages(state)
     llm = get_qwen_structured().with_structured_output(OptionIntentOutput)
-
-    user_message = _build_user_message(state)
-    result: Any = await llm.ainvoke(
-        [
-            ("system", prompt.system),
-            ("user", user_message),
-        ]
-    )
+    result: Any = await llm.ainvoke(messages)
 
     intent = result.type
     return {

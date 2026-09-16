@@ -1,6 +1,6 @@
 # ADR 0013 · 加载后端动态 prompt 片段（swap_instrument_inference_prompt）
 
-- 状态：已采纳（主链路已落地；#156 已正式追认结构化日志 + metrics 为观测载体）
+- 状态：**已撤销**（2026-08-28 DSL v2 迁移 a5d0c15 把 `inferencePrompt` 收编为静态 prompt，`app/subgraphs/ticker/tools.py` 不再运行时拉取；`TickerClient.get_inference_prompt` 为遗留死代码，清理见 [ADR 0022](./0022-prompt-governance-after-code-migration.md)）。以下为历史原文。
 - 日期：2026-05-10
 - 修订：2026-08-27 深度改写为现状口径（wayfinder map #138 / 核查 #141）
 - 作者：图灵科技 + Tony

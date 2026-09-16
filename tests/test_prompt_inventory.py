@@ -1,0 +1,413 @@
+"""提示词清单 + 治理 lint（scripts/prompt_inventory.py）。
+
+ADR 0022：代码迁移完成后，`app/prompts/_manifest.yaml` 是"哪些 .md 活跃 / 灰度 / 非活跃"
+的机器可读真源，替代 `app/prompts/CLAUDE.md` 手写清单。lint 守四条不变量：
+  1. 目录 ↔ manifest 双向无孤儿
+  2. active 条目的 loader 文件存在且真的引用了该 name
+  3. inactive 条目在 app/ 内零 load_prompt 引用，且登记了保留理由
+  4. gray 条目的 base（v1）自 v2 切出后未漂移（sha256 快照），漂移须显式 acknowledged
+另有死重扫描（structured output 下的 JSON 格式禁令 / 未注入的 Dify 占位符）与字符预算。
+"""
+from __future__ import annotations
+
+import hashlib
+from pathlib import Path
+
+import pytest
+
+from scripts import prompt_inventory as inv
+
+_MD = "# t\n\n## [system]\n\n```\n{system}\n```\n\n## [user]\n\n```\n{user}\n```\n"
+
+
+def _write_md(root: Path, key: str, system: str = "规则", user: str = "") -> Path:
+    p = root / f"{key}.md"
+    p.parent.mkdir(parents=True, exist_ok=True)
+    p.write_text(_MD.format(system=system, user=user), encoding="utf-8")
+    return p
+
+
+def _sha(text: str) -> str:
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()
+
+
+@pytest.fixture
+def repo(tmp_path: Path) -> dict[str, Path]:
+    prompts = tmp_path / "app" / "prompts"
+    code = tmp_path / "app" / "subgraphs" / "demo"
+    code.mkdir(parents=True)
+    _write_md(prompts, "demo/intent", system="意图规则")
+    (code / "intent.py").write_text(
+        'from app.prompts import load_prompt\nprompt = load_prompt("demo", "intent")\n',
+        encoding="utf-8",
+    )
+    return {"root": tmp_path, "prompts": prompts, "code": code}
+
+
+# ============================================================
+# 不变量 1 · 目录 ↔ manifest 双向无孤儿
+# ============================================================
+
+
+class TestOrphans:
+    def test_md_without_manifest_entry_is_reported(self, repo):
+        _write_md(repo["prompts"], "demo/stray")
+        manifest = {"demo/intent": {"status": "active", "loader": "app/subgraphs/demo/intent.py"}}
+        errs = inv.check_orphans(repo["prompts"], manifest)
+        assert any("demo/stray" in e and "未登记" in e for e in errs)
+
+    def test_manifest_entry_without_md_is_reported(self, repo):
+        manifest = {
+            "demo/intent": {"status": "active", "loader": "app/subgraphs/demo/intent.py"},
+            "demo/ghost": {"status": "inactive", "reason": "x"},
+        }
+        errs = inv.check_orphans(repo["prompts"], manifest)
+        assert any("demo/ghost" in e and "不存在" in e for e in errs)
+
+    def test_consistent_manifest_passes(self, repo):
+        manifest = {"demo/intent": {"status": "active", "loader": "app/subgraphs/demo/intent.py"}}
+        assert inv.check_orphans(repo["prompts"], manifest) == []
+
+
+# ============================================================
+# 不变量 2 / 3 · active 必须有真实加载点；inactive 必须零引用 + 有理由
+# ============================================================
+
+
+class TestLoaderReferences:
+    def test_active_loader_must_reference_name(self, repo):
+        (repo["code"] / "other.py").write_text("x = 1\n", encoding="utf-8")
+        manifest = {"demo/intent": {"status": "active", "loader": "app/subgraphs/demo/other.py"}}
+        errs = inv.check_loaders(repo["root"], manifest)
+        assert any("demo/intent" in e and "未见" in e for e in errs)
+
+    def test_active_loader_missing_file(self, repo):
+        manifest = {"demo/intent": {"status": "active", "loader": "app/nowhere.py"}}
+        errs = inv.check_loaders(repo["root"], manifest)
+        assert any("demo/intent" in e and "不存在" in e for e in errs)
+
+    def test_active_ok(self, repo):
+        manifest = {"demo/intent": {"status": "active", "loader": "app/subgraphs/demo/intent.py"}}
+        assert inv.check_loaders(repo["root"], manifest) == []
+
+    def test_active_ok_via_prompt_spec(self, repo):
+        """ADR 0023：PromptSpec(category=, name=) 声明等价于 load_prompt 加载点。"""
+        (repo["code"] / "intent.py").write_text(
+            "from app.prompts.spec import PromptSpec, register\n"
+            "SPEC = register(PromptSpec(\n"
+            '    category="demo",\n'
+            '    name="intent",\n'
+            "    output_model=object,\n"
+            "    inputs=(),\n"
+            "    user_builder=str,\n"
+            "))\n",
+            encoding="utf-8",
+        )
+        manifest = {"demo/intent": {"status": "active", "loader": "app/subgraphs/demo/intent.py"}}
+        assert inv.check_loaders(repo["root"], manifest) == []
+
+    def test_inactive_still_loaded_via_prompt_spec_is_reported(self, repo):
+        (repo["code"] / "intent.py").write_text(
+            'SPEC = PromptSpec(category="demo", name="intent", output_model=object)\n',
+            encoding="utf-8",
+        )
+        manifest = {"demo/intent": {"status": "inactive", "reason": "已去 LLM 化"}}
+        errs = inv.check_loaders(repo["root"], manifest)
+        assert any("demo/intent" in e and "仍被" in e for e in errs)
+
+    def test_inactive_still_loaded_is_reported(self, repo):
+        manifest = {"demo/intent": {"status": "inactive", "reason": "已去 LLM 化"}}
+        errs = inv.check_loaders(repo["root"], manifest)
+        assert any("demo/intent" in e and "仍被" in e for e in errs)
+
+    def test_inactive_requires_reason(self, repo):
+        _write_md(repo["prompts"], "demo/old")
+        manifest = {"demo/old": {"status": "inactive"}}
+        errs = inv.check_loaders(repo["root"], manifest)
+        assert any("demo/old" in e and "reason" in e for e in errs)
+
+
+# ============================================================
+# 不变量 4 · gray（v2 灰度位）相对 base 的漂移
+# ============================================================
+
+
+class TestGrayDrift:
+    def test_drift_detected_when_base_changed(self, repo):
+        _write_md(repo["prompts"], "demo/intent_v2", system="瘦身规则")
+        stale = _sha("切 v2 时的旧 v1 内容")
+        manifest = {
+            "demo/intent": {"status": "active", "loader": "app/subgraphs/demo/intent.py"},
+            "demo/intent_v2": {"status": "gray", "base": "demo/intent", "base_system_sha256": stale},
+        }
+        errs = inv.check_gray_drift(repo["prompts"], manifest)
+        assert any("demo/intent_v2" in e and "漂移" in e for e in errs)
+
+    def test_acknowledged_drift_at_current_sha_passes(self, repo):
+        _write_md(repo["prompts"], "demo/intent_v2", system="瘦身规则")
+        manifest = {
+            "demo/intent": {"status": "active", "loader": "app/subgraphs/demo/intent.py"},
+            "demo/intent_v2": {
+                "status": "gray",
+                "base": "demo/intent",
+                "base_system_sha256": _sha("旧"),
+                "drift_acknowledged": {
+                    "at_base_sha": inv.system_sha256(repo["prompts"] / "demo" / "intent.md"),
+                    "note": "2026-09-11 v1 被 Dify 回归更新，已重做 diff",
+                },
+            },
+        }
+        assert inv.check_gray_drift(repo["prompts"], manifest) == []
+
+    def test_no_drift_passes(self, repo):
+        _write_md(repo["prompts"], "demo/intent_v2", system="瘦身规则")
+        manifest = {
+            "demo/intent": {"status": "active", "loader": "app/subgraphs/demo/intent.py"},
+            "demo/intent_v2": {
+                "status": "gray",
+                "base": "demo/intent",
+                "base_system_sha256": inv.system_sha256(repo["prompts"] / "demo" / "intent.md"),
+            },
+        }
+        assert inv.check_gray_drift(repo["prompts"], manifest) == []
+
+    def test_gray_requires_base_and_hash(self, repo):
+        _write_md(repo["prompts"], "demo/intent_v2")
+        manifest = {
+            "demo/intent": {"status": "active", "loader": "app/subgraphs/demo/intent.py"},
+            "demo/intent_v2": {"status": "gray"},
+        }
+        errs = inv.check_gray_drift(repo["prompts"], manifest)
+        assert any("demo/intent_v2" in e and "base" in e for e in errs)
+
+
+# ============================================================
+# 死重扫描（报告项）
+# ============================================================
+
+
+class TestDeadWeightScan:
+    def test_json_format_ban_detected(self, tmp_path):
+        p = _write_md(
+            tmp_path, "x/a",
+            system="只输出纯 JSON，不要输出 markdown 代码块。\n禁止输出 ```json 标记。\n业务规则 A。",
+        )
+        r = inv.scan_dead_weight(p)
+        assert r["json_format_ban_lines"] >= 2
+
+    def test_dify_placeholders_counted(self, tmp_path):
+        p = _write_md(tmp_path, "x/a", system="输入 {{#111.raw_content#}} 与 {{#222.list#}}")
+        r = inv.scan_dead_weight(p)
+        assert r["dify_placeholders"] == 2
+
+    def test_unused_user_segment_flagged(self, tmp_path):
+        p = _write_md(tmp_path, "x/a", system="s", user="query: {{#1.q#}}")
+        r = inv.scan_dead_weight(p)
+        assert r["user_chars"] > 0
+
+
+# ============================================================
+# 字符预算
+# ============================================================
+
+
+def test_budget_exceeded_reported(tmp_path):
+    _write_md(tmp_path, "x/big", system="规" * 500)
+    manifest = {"x/big": {"status": "active", "loader": "a.py", "max_system_chars": 100}}
+    errs = inv.check_budget(tmp_path, manifest)
+    assert any("x/big" in e and "超出" in e for e in errs)
+
+
+# ============================================================
+# 真实仓库：manifest 与目录/代码一致（CI 门）
+# ============================================================
+
+
+class TestRealRepo:
+    def test_manifest_covers_repo(self):
+        manifest = inv.load_manifest(inv.MANIFEST)
+        assert manifest, "app/prompts/_manifest.yaml 为空"
+        assert inv.check_orphans(inv.PROMPTS_DIR, manifest) == []
+        assert inv.check_loaders(inv.PROJECT_ROOT, manifest) == []
+        assert inv.check_gray_drift(inv.PROMPTS_DIR, manifest) == []
+        assert inv.check_budget(inv.PROMPTS_DIR, manifest) == []
+
+    def test_inventory_rows_cover_all_md(self):
+        rows = inv.build_inventory(inv.PROMPTS_DIR, inv.load_manifest(inv.MANIFEST))
+        md_files = [p for p in inv.PROMPTS_DIR.rglob("*.md") if p.name not in ("CLAUDE.md", "AGENTS.md")]
+        assert len(rows) == len(md_files)
+        assert all(r["status"] in {"active", "gray", "inactive"} for r in rows)
+
+
+# ============================================================
+# ADR 0022 · 版本化形态收敛：compose_prompt / swap_prompt_version 死路径删除
+# ============================================================
+
+
+def test_compose_prompt_dead_path_removed():
+    """#159 裁决遗留：compose_prompt + swap/v2/ 子目录拼装在 app/ 内零调用点，
+    _versions.yaml 同目录并存是唯一版本化形态（ADR 0003），死路径不得复活。"""
+    import app.prompts as prompts
+    from app.config import Settings
+
+    assert not hasattr(prompts, "compose_prompt")
+    assert "swap_prompt_version" not in Settings.model_fields
+
+
+# ============================================================
+# 治理评估 GOV-08 / GOV-14 / GOV-06：漂移 ack 结构化 / 加载点判定收紧 / 占位符注入登记
+# ============================================================
+
+
+class TestStructuredDriftAck:
+    def _manifest(self, repo, ack):
+        _write_md(repo["prompts"], "demo/intent_v2", system="瘦身规则")
+        return {
+            "demo/intent": {"status": "active", "loader": "app/subgraphs/demo/intent.py"},
+            "demo/intent_v2": {
+                "status": "gray", "base": "demo/intent",
+                "base_system_sha256": _sha("切 v2 时的旧 v1"), "drift_acknowledged": ack,
+            },
+        }
+
+    def test_ack_at_current_sha_passes(self, repo):
+        cur = inv.system_sha256(repo["prompts"] / "demo" / "intent.md")
+        m = self._manifest(repo, {"at_base_sha": cur, "note": "已重做 diff"})
+        assert inv.check_gray_drift(repo["prompts"], m) == []
+
+    def test_ack_at_stale_sha_fails_again(self, repo):
+        """v1 在 ack 之后再次被改 → 必须重新 ack（ack 不是永久静默开关）。"""
+        m = self._manifest(repo, {"at_base_sha": _sha("ack 时的 v1"), "note": "旧 ack"})
+        errs = inv.check_gray_drift(repo["prompts"], m)
+        assert any("demo/intent_v2" in e and "重新" in e for e in errs)
+
+    def test_string_ack_rejected(self, repo):
+        m = self._manifest(repo, "随手写一句")
+        errs = inv.check_gray_drift(repo["prompts"], m)
+        assert any("demo/intent_v2" in e and "at_base_sha" in e for e in errs)
+
+
+class TestLoaderCallDetection:
+    def test_bare_literal_without_load_call_is_rejected(self, repo):
+        (repo["code"] / "other.py").write_text('x = {"intent": 1}\n', encoding="utf-8")
+        manifest = {"demo/intent": {"status": "active", "loader": "app/subgraphs/demo/other.py"}}
+        errs = inv.check_loaders(repo["root"], manifest)
+        assert any("demo/intent" in e for e in errs)
+
+    def test_resolve_prompt_version_call_accepted(self, repo):
+        (repo["code"] / "gray.py").write_text(
+            'name = resolve_prompt_version("demo", "intent", cid)\n', encoding="utf-8"
+        )
+        manifest = {"demo/intent": {"status": "active", "loader": "app/subgraphs/demo/gray.py"}}
+        assert inv.check_loaders(repo["root"], manifest) == []
+
+    def test_helper_loader_call_accepted(self, repo):
+        (repo["code"] / "tools.py").write_text(
+            'from app.prompts import load_prompt\nasync def _call(n):\n    return load_prompt("demo", n)\n'
+            'x = _call("intent")\n', encoding="utf-8"
+        )
+        manifest = {"demo/intent": {"status": "active", "loader": "app/subgraphs/demo/tools.py", "loader_call": "_call"}}
+        assert inv.check_loaders(repo["root"], manifest) == []
+
+
+class TestPlaceholderInjects:
+    def test_dangling_placeholders_reported(self, repo):
+        _write_md(repo["prompts"], "demo/intent", system="日期 {{#1.date#}} 列表 {{#2.list#}}")
+        manifest = {"demo/intent": {"status": "active", "loader": "app/subgraphs/demo/intent.py", "injects": ["{{#1.date#}}"]}}
+        rows = inv.build_inventory(repo["prompts"], manifest)
+        assert rows[0]["dangling_placeholders"] == ["{{#2.list#}}"]
+
+    def test_strict_check_fails_on_dangling(self, repo):
+        _write_md(repo["prompts"], "demo/intent", system="列表 {{#2.list#}}")
+        manifest = {"demo/intent": {"status": "active", "loader": "app/subgraphs/demo/intent.py"}}
+        errs = inv.check_strict(repo["prompts"], manifest)
+        assert any("demo/intent" in e and "悬空" in e for e in errs)
+
+    def test_strict_check_fails_on_json_ban_under_structured_output(self, repo):
+        _write_md(repo["prompts"], "demo/intent", system="只输出纯 JSON\n规则")
+        manifest = {"demo/intent": {"status": "active", "loader": "app/subgraphs/demo/intent.py", "output_model": "X"}}
+        errs = inv.check_strict(repo["prompts"], manifest)
+        assert any("demo/intent" in e and "JSON" in e for e in errs)
+
+
+def test_gray_expiry_warns(repo):
+    _write_md(repo["prompts"], "demo/intent_v2")
+    manifest = {"demo/intent_v2": {"status": "gray", "base": "demo/intent", "base_system_sha256": "x", "expires": "2026-09-01"}}
+    warns = inv.check_gray_expiry(manifest, today="2026-09-15")
+    assert any("demo/intent_v2" in w for w in warns)
+
+
+# ============================================================
+# ADR 0022 D1（2026-09-15 拍板：git 为唯一真源，Dify 为上游输入）：上游快照漂移告警
+# ============================================================
+
+_YAML = """app:
+  name: demo
+workflow:
+  graph:
+    nodes:
+      - id: "111"
+        data:
+          type: llm
+          title: 节点甲
+          prompt_template:
+            - role: system
+              text: "{sys}"
+      - id: "222"
+        data:
+          type: llm
+          title: 节点乙
+          prompt_template:
+            - role: system
+              text: "乙的规则"
+      - id: "333"
+        data:
+          type: code
+          title: 代码节点
+"""
+
+
+def _write_yaml(root: Path, sys_text: str = "甲的规则") -> Path:
+    d = root / "dify" / "yaml"
+    d.mkdir(parents=True, exist_ok=True)
+    f = d / "demo.yml"
+    f.write_text(_YAML.replace("{sys}", sys_text), encoding="utf-8")
+    return f
+
+
+class TestUpstreamDrift:
+    def test_no_warning_when_snapshot_matches(self, tmp_path):
+        _write_yaml(tmp_path)
+        sha = inv.text_sha256("甲的规则")
+        manifest = {
+            "demo/a": {"status": "active", "loader": "x.py", "dify": {"file": "demo.yml", "node_id": "111", "system_sha256": sha}},
+            "demo/b": {"status": "active", "loader": "x.py", "dify": {"file": "demo.yml", "node_id": "222", "system_sha256": inv.text_sha256("乙的规则")}},
+        }
+        assert inv.check_upstream(tmp_path / "dify" / "yaml", manifest) == []
+
+    def test_warning_when_upstream_changed(self, tmp_path):
+        _write_yaml(tmp_path, sys_text="甲的新规则")
+        manifest = {"demo/a": {"status": "active", "loader": "x.py", "dify": {"file": "demo.yml", "node_id": "111", "system_sha256": inv.text_sha256("甲的规则")}}}
+        warns = inv.check_upstream(tmp_path / "dify" / "yaml", manifest)
+        assert any("demo/a" in w and "上游" in w for w in warns)
+
+    def test_warning_for_unmapped_upstream_llm_node(self, tmp_path):
+        _write_yaml(tmp_path)
+        manifest = {"demo/a": {"status": "active", "loader": "x.py", "dify": {"file": "demo.yml", "node_id": "111", "system_sha256": inv.text_sha256("甲的规则")}}}
+        warns = inv.check_upstream(tmp_path / "dify" / "yaml", manifest)
+        assert any("222" in w and "未映射" in w for w in warns)
+        assert not any("333" in w for w in warns)
+
+    def test_missing_node_is_error(self, tmp_path):
+        _write_yaml(tmp_path)
+        manifest = {"demo/a": {"status": "active", "loader": "x.py", "dify": {"file": "demo.yml", "node_id": "999", "system_sha256": "x"}}}
+        warns = inv.check_upstream(tmp_path / "dify" / "yaml", manifest)
+        assert any("999" in w and "不存在" in w for w in warns)
+
+    def test_real_repo_mappings_resolve(self):
+        """真实仓库：manifest 里每个 dify 映射的节点都必须存在于对应 YAML（漂移只告警，不 fail）。"""
+        manifest = inv.load_manifest(inv.MANIFEST)
+        mapped = [k for k, v in manifest.items() if (v or {}).get("dify")]
+        assert len(mapped) >= 25, "镜像自 Dify 的活跃提示词应全部登记 dify 映射"
+        warns = inv.check_upstream(inv.PROJECT_ROOT / "dify" / "yaml", manifest)
+        assert not [w for w in warns if "不存在" in w], warns

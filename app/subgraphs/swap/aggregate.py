@@ -101,18 +101,17 @@ def windcode_from_pick(
 
 
 def shortname_from_pick(pick: dict[str, Any], trs_list: list[dict[str, Any]]) -> str | None:
-    """LLM-B 指针→真实 shortName：directName 按名匹配；letter/ordinal→sort→shortName；查不到 None。"""
+    """LLM-B 指针→真实 shortName：directName 精确→唯一子串；letter/ordinal→sort→shortName；查不到 None。"""
     name = pick.get("directName")
     if name:
         name = str(name).strip()
         for t in trs_list:
             if t.get("shortName") == name:
                 return t.get("shortName")
-        for t in trs_list:
-            sn = t.get("shortName") or ""
-            if sn and (name in sn or sn in name):
-                return t.get("shortName")
-        return None
+        # 唯一连续子串才算简写命中；多命中不得按列表顺序取首项（select_counterparty.md
+        # 「|M|=1 才是唯一简写」，Dify code 节点 1780652971845 同款，评估 SW-INC-06）
+        matches = [t.get("shortName") for t in trs_list if name in (t.get("shortName") or "")]
+        return matches[0] if len(matches) == 1 else None
     sort = None
     if pick.get("letter") is not None:
         sort = str(pick["letter"]).upper()

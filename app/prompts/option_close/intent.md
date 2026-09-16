@@ -31,7 +31,7 @@
 - 期货持仓、股票持仓有哪些、ETF持仓情况
 - 我想平掉OPTG-SZZSCF20250030这笔期权
 - 我想平掉OPT-SZZSCF20260001、OPTG-SZZSCF20260005、OPT-LYAFT20260001
--  用户消息中携带了{{#17797951842080.keywords#}}
+- 用户消息中携带了最大跟量、积极跟量、尽快成交、快点成交、要快、积极成交、全力成交这类明确最大参与或快速执行语义词语
 
 
 ### 2. close_order_order_query（平仓订单查询）
@@ -198,13 +198,6 @@
 - "查欧式 股票持仓" → `close_order_query`（按期权类型+品种查询持仓）
 - "查指数持仓" → `close_order_query`（按品种查询持仓）
 - "查ETF持仓" → `close_order_query`（按品种查询持仓）
-
-## 用户输入
-
-**raw_content（原始消息）**：{{#1755072621769.raw_content#}}
-
-**quote_content（引用消息）**：{{#1755072621769.quote_content#}}
-
 
 ## 输出要求
 

@@ -56,7 +56,7 @@ uvicorn app.main:app --reload   # POST /v1/workflows/run（兼容 Dify Workflow 
 pytest tests/ -v
 
 # 5. 跑评估
-python scripts/langfuse_eval.py --local tests/fixtures/golden.jsonl --concurrency 4
+python scripts/langfuse_eval.py --local tests/fixtures/unified_golden.jsonl --concurrency 4
 #   ↑ DeepSeek V4 Judge + per-turn 富集 JSON 写到 Langfuse Cloud
 python -m harness run                                    # 备用 harness CLI 入口
 ```

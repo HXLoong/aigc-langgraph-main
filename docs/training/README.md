@@ -10,6 +10,7 @@
 | 文件 | 用途 | 何时看 |
 |---|---|---|
 | **README.md**（本文件） | 学习路径 + 第 1 周日程 | **第 1 步：现在** |
+| `skills-guide.md` | **Claude Code 与 Codex 的 Skills 入门**：11 个项目 skill 怎么调、怎么加、真源在哪 | 第一次用 `/xxx` 或 `$xxx` 之前 |
 | `intern-langgraph-primer.md` | **实习生/零基础版**：不假设 Dify 背景，从零讲 LangGraph + 第一周路径 | 新实习生从这里开始 |
 | `langgraph-handbook.md`（4000+ 行） | 完整培训手册，分 12 章 + 3 附录 | 按需查阅，不要从头读 |
 

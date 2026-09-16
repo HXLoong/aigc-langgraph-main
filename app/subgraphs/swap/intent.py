@@ -18,29 +18,39 @@ from typing import Any
 from app.graph.safe_node import safe_node
 from app.graph.state import AgentState, TraceEntry
 from app.llm.clients import get_qwen_thinking
-from app.prompts import load_prompt, resolve_prompt_version
+from app.prompts import blocks
+from app.prompts.spec import PromptSpec, register
 from app.subgraphs.swap.models import SwapIntentOutput
 
+#: Dify code 节点 1755072896717 `has_confirmation_keyword` 同款词表；命中直接走 confirm_order。
+#: 2026-09-11 回归 Dify 原文后 intent.md 枚举已不含 confirm_order（Dify 靠前置分流），
+#: app 侧必须移植该分流，否则确认下单链路失效（提示词治理评估 SW-INC-01）。
+CONFIRM_ORDER_KEYWORDS: tuple[str, ...] = ("确认下单", "确定下单", "确认订单", "下单确认")
 
-def _format_shortname_list(counterparties: list[dict[str, Any]] | None) -> str:
-    """[{ctptyId,shortName,longName,sort}] → "shortName1, shortName2" 近似 Dify trsShortListStr。"""
-    items = counterparties or []
-    return ", ".join(
-        c.get("shortName", "") for c in items if isinstance(c, dict)
-    )
+
+def has_confirm_order_keyword(raw: str | None) -> bool:
+    """raw_content 是否含「确认下单」类关键词（Dify has_confirmation_keyword 同款）。"""
+    text = (raw or "").strip()
+    return any(word in text for word in CONFIRM_ORDER_KEYWORDS)
 
 
 def _build_user_message(state: AgentState) -> str:
-    """组装 user message（DSL v2 互换-节点-意图识别.md 的 3 个输入变量）。"""
-    raw_content = state.get("raw_text", "") or ""
-    quote_content = state.get("quote_content") or ""
-    shortname_list = _format_shortname_list(state.get("swap_counterparties"))
-
+    """DSL v2 互换-节点-意图识别.md 的 3 个输入变量；shortname_list 近似 Dify trsShortListStr。"""
     return (
-        f"raw_content：{raw_content}\n"
-        f"quote_content：{quote_content}\n"
-        f"shortname_list：{shortname_list}"
+        f"raw_content：{state.get('raw_text', '') or ''}\n"
+        f"quote_content：{state.get('quote_content') or ''}\n"
+        f"shortname_list：{', '.join(blocks.shortnames(state.get('swap_counterparties')))}"
     )
+
+
+SPEC = register(PromptSpec(
+    category="swap",
+    name="intent",
+    output_model=SwapIntentOutput,
+    inputs=("raw_text", "quote_content", "swap_counterparties", "conversation_id"),
+    user_builder=_build_user_message,
+    gray=True,
+))
 
 
 @safe_node
@@ -51,18 +61,21 @@ async def swap_intent(state: AgentState) -> dict[str, Any]:
     - intent: SwapIntentType 之一（小写下划线）
     - trace: 单条 TraceEntry，记录 LLM 输出 + 实际加载的 prompt name（含灰度版本号）
     """
-    conversation_id = state.get("conversation_id")
-    prompt_name = resolve_prompt_version("swap", "intent", conversation_id)
-    prompt = load_prompt("swap", prompt_name)
-    llm = get_qwen_thinking().with_structured_output(SwapIntentOutput)
+    if has_confirm_order_keyword(state.get("raw_text")):
+        return {
+            "intent": "confirm_order",
+            "trace": [
+                TraceEntry(
+                    node="swap_intent",
+                    decision="intent=confirm_order rule=has_confirmation_keyword",
+                    llm_output={"type": "confirm_order", "prompt_name": None},
+                )
+            ],
+        }
 
-    user_message = _build_user_message(state)
-    result: Any = await llm.ainvoke(
-        [
-            ("system", prompt.system),
-            ("user", user_message),
-        ]
-    )
+    messages, prompt_name = SPEC.build_messages(state)
+    llm = get_qwen_thinking().with_structured_output(SwapIntentOutput)
+    result: Any = await llm.ainvoke(messages)
 
     return {
         "intent": result.type,
@@ -76,4 +89,4 @@ async def swap_intent(state: AgentState) -> dict[str, Any]:
     }
 
 
-__all__ = ["swap_intent"]
+__all__ = ["CONFIRM_ORDER_KEYWORDS", "has_confirm_order_keyword", "swap_intent"]

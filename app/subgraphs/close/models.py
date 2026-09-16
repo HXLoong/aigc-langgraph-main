@@ -29,7 +29,7 @@ class CloseIntentOutput(BaseModel):
 
     model_config = ConfigDict(extra="ignore")
 
-    type: CloseIntentType
+    type: CloseIntentType = Field(description="平仓意图，取 7 个枚举值之一")
 
 
 # ============================================================
@@ -57,13 +57,13 @@ class HoldingQueryParams(WireModel):
 
     model_config = ConfigDict(extra="ignore")
 
-    closeable_only: bool
-    internal_trade_id_list: list[str] = Field(alias="internalTradeIdList", default_factory=list)
-    key_ctpty_id_list: list[int] = Field(alias="keyCtptyIdList", default_factory=list)
-    underlying_ins_name_list: list[str] = Field(alias="underlyingInsNameList", default_factory=list)
-    underlying_ins_id_list: list[str] = Field(alias="underlyingInsIdList", default_factory=list)
-    ins_family_list: list[InsFamily] = Field(alias="insFamilyList", default_factory=list)
-    contract_type_list: list[ContractType] = Field(alias="contractTypeList", default_factory=list)
+    closeable_only: bool = Field(description="true = 用户有平仓意图，只查可平持仓；false = 查全部持仓")
+    internal_trade_id_list: list[str] = Field(alias="internalTradeIdList", default_factory=list, description="用户提到的合约编号列表（OPT-/OPTG- 开头），未提及 → []")
+    key_ctpty_id_list: list[int] = Field(alias="keyCtptyIdList", default_factory=list, description="用户明确指示的交易对手在「交易对手列表」中匹配到的 ctptyId；无指示词 → []；提及但无相似匹配 → 99999999")
+    underlying_ins_name_list: list[str] = Field(alias="underlyingInsNameList", default_factory=list, description="用户提到的标的名称列表（个股 / ETF / 指数 / 期货品种中文名或简称，原样输出）")
+    underlying_ins_id_list: list[str] = Field(alias="underlyingInsIdList", default_factory=list, description="用户提到的标的代码列表（带交易所后缀原样输出）")
+    ins_family_list: list[InsFamily] = Field(alias="insFamilyList", default_factory=list, description="标的类型过滤：EQUITY / INDEX / FUND / FUTURE")
+    contract_type_list: list[ContractType] = Field(alias="contractTypeList", default_factory=list, description="期权合约类型过滤：EUROPEAN_VANILLA / AUTOCALL / PARTICIPATORY / AIRBAG")
 
 
 # ============================================================
@@ -117,17 +117,17 @@ class CloseOrderItem(WireModel):
 
     model_config = ConfigDict(extra="ignore")
 
-    order_id: str | None = Field(default=None, alias="orderId")
-    internal_trade_id: str | None = Field(default=None, alias="internalTradeId")
+    order_id: str | None = Field(default=None, alias="orderId", description="平仓订单号 CO-YYYYMMDD-XXXXXXXX，或由序号 / 第X笔在 holdingMap 中解析得到")
+    internal_trade_id: str | None = Field(default=None, alias="internalTradeId", description="合约编号（OPT-/OPTG-），与 orderId 二选一或同时给出")
     #: 平仓金额（字符串数字，"全部" 时由后端语义而非此字段）
-    close_order_notional_delta: str | None = Field(default=None, alias="closeOrderNotionalDelta")
-    close_order_type: ClosePriceType | None = Field(default=None, alias="closeOrderType")
-    close_order_price: float | int | None = Field(default=None, alias="closeOrderPrice")
-    close_order_pov_ratio: int | None = Field(default=None, alias="closeOrderPovRatio")
+    close_order_notional_delta: str | None = Field(default=None, alias="closeOrderNotionalDelta", description="平仓金额，字符串数字（元）；比例 / 余额表达按规则换算；全部平仓由 confirmFullClose 表达")
+    close_order_type: ClosePriceType | None = Field(default=None, alias="closeOrderType", description="平仓方式：市价单 / 限价单 / POV / TWAP；未明确 → null")
+    close_order_price: float | int | None = Field(default=None, alias="closeOrderPrice", description="限价价格（数字）")
+    close_order_pov_ratio: int | None = Field(default=None, alias="closeOrderPovRatio", description="POV 跟量比例（整数百分比）；「最大跟量」类语义不在此填值")
     #: TWAP 起始时间，格式 "HH:MM"
-    close_order_algo_start_time: str | None = Field(default=None, alias="closeOrderAlgoStartTime")
-    close_order_algo_end_time: str | None = Field(default=None, alias="closeOrderAlgoEndTime")
-    confirm_full_close: bool | None = Field(default=None, alias="confirmFullClose")
+    close_order_algo_start_time: str | None = Field(default=None, alias="closeOrderAlgoStartTime", description="TWAP 开始时间 HH:MM")
+    close_order_algo_end_time: str | None = Field(default=None, alias="closeOrderAlgoEndTime", description="TWAP 结束时间 HH:MM")
+    confirm_full_close: bool | None = Field(default=None, alias="confirmFullClose", description="是否全部平仓（全部 / 全平 / 确认全部平仓）")
 
 
 class ClosePlaceParams(WireModel):
@@ -139,7 +139,7 @@ class ClosePlaceParams(WireModel):
 
     model_config = ConfigDict(extra="ignore")
 
-    close_order_list: list[CloseOrderItem] = Field(alias="closeOrderList", default_factory=list)
+    close_order_list: list[CloseOrderItem] = Field(alias="closeOrderList", default_factory=list, description="平仓订单条目列表；空列表表示无可绑定订单或输入为空")
 
 
 # ============================================================
@@ -152,7 +152,7 @@ class ConfirmCancelParams(WireModel):
 
     model_config = ConfigDict(extra="ignore")
 
-    confirm_cancel_order_no_list: list[str] = Field(alias="confirmCancelOrderNoList", default_factory=list)
+    confirm_cancel_order_no_list: list[str] = Field(alias="confirmCancelOrderNoList", default_factory=list, description="确认撤单的平仓订单号（CO- 开头）列表")
 
 
 # ============================================================
