@@ -1,174 +1,236 @@
-"""option.extract_place 节点测试（Dify DSL v2 新节点，place_order_from_quote，mock LLM）。"""
+"""option.extract_place 节点测试（请求下单，确定性提取，无 LLM）。
+
+行为 1:1 对照原提示词规约：
+
+- A 类（orderType / notionalAmount / limitPrice / povRatio / twap / shortName /
+  hasFastExecutionIntent）只取自 raw_content
+- B 类（orderId / stockCode / optionType / tenor / strikePercentage）raw 优先、引用回执兜底
+- orderType 关键词优先级 TWAP > POV（含"跟量"）> 限价单 > 市价单，与出现顺序无关
+"""
+
 from __future__ import annotations
 
-from unittest.mock import AsyncMock, MagicMock
+from typing import Any
+from unittest.mock import AsyncMock
 
 import pytest
-from pydantic import ValidationError
 
 from app.subgraphs.option import extract_place as ep_module
 from app.subgraphs.option.extract_place import option_extract_place
-from app.subgraphs.option.models import (
-    OptionOrderItem,
-    OptionOrderItemWithFastExec,
-    OptionPlaceParams,
+
+_QUOTE_CARD = (
+    "-----场外期权询价详情-----\r\n"
+    "Q-20250616-000011\r\n"
+    "标的代码：300098.SZ；欧式看涨；80%\r\n"
+    "期限待补充，请引用本消息回复期限。如需下单，请提供建仓参数。"
 )
 
 
-def _patch_llm(
-    monkeypatch: pytest.MonkeyPatch, params: OptionPlaceParams
-) -> AsyncMock:
-    fake_llm = MagicMock()
-    fake_llm.ainvoke = AsyncMock(return_value=params)
-    fake_base = MagicMock()
-    fake_base.with_structured_output = MagicMock(return_value=fake_llm)
-    monkeypatch.setattr(ep_module, "get_qwen_thinking", lambda: fake_base)
-    monkeypatch.setattr(ep_module, "call_option_backend",
-                        AsyncMock(return_value={"api_code": 0, "api_result": "backend reply"}))
-    return fake_llm.ainvoke
+def _patch(monkeypatch: pytest.MonkeyPatch) -> AsyncMock:
+    """patch 后端调用 + 禁止 LLM。"""
+    backend = AsyncMock(return_value={"api_code": 0, "api_result": "backend reply"})
+    monkeypatch.setattr(ep_module, "call_option_backend", backend)
+
+    def _forbid(*_args: Any, **_kwargs: Any) -> None:
+        raise AssertionError("去 LLM 化节点不应调用 LLM")
+
+    monkeypatch.setattr(ep_module, "get_qwen_thinking", _forbid, raising=False)
+    return backend
 
 
-# ============================================================
-# OptionPlaceParams 容器
-# ============================================================
-
-
-class TestOptionPlaceParams:
-    def test_default_empty_list(self) -> None:
-        p = OptionPlaceParams()
-        assert p.order_list == []
-
-    def test_with_multiple_orders(self) -> None:
-        p = OptionPlaceParams(
-            orderList=[
-                OptionOrderItemWithFastExec(orderId="Q-A", orderType="市价单"),
-                OptionOrderItemWithFastExec(orderId="Q-B", orderType="POV", povRatio=25),
-            ]
-        )
-        assert len(p.order_list) == 2
-
-    def test_plain_dict_defaults_fast_exec_to_none(self) -> None:
-        """orderList item 类型是 OptionOrderItemWithFastExec，普通 dict 仍可校验通过。"""
-        p = OptionPlaceParams.model_validate({"orderList": [{"orderId": "Q-1"}]})
-        assert p.order_list[0].has_fast_execution_intent is None
-
-    def test_invalid_order_type_rejected(self) -> None:
-        with pytest.raises(ValidationError):
-            OptionPlaceParams(
-                orderList=[OptionOrderItem(orderId="Q-1", orderType="冰山单")]  # type: ignore[arg-type]
-            )
-
-
-# ============================================================
-# 节点端到端
-# ============================================================
+def _item(result: dict[str, Any], index: int = 0) -> dict[str, Any]:
+    return result["place_params"]["orderList"][index]
 
 
 @pytest.mark.asyncio
 class TestOptionExtractPlaceNode:
-    async def test_place_order_from_quote(
+    async def test_market_order_with_amount(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        backend = _patch(monkeypatch)
+        result = await option_extract_place(
+            {"raw_text": "市价下单100万", "quote_content": "Q-20250616-000011"}
+        )
+        item = _item(result)
+        assert item["orderId"] == "Q-20250616-000011"
+        assert item["orderType"] == "市价单"
+        assert item["notionalAmount"] == "1000000"
+        assert item["hasFastExecutionIntent"] is False
+        assert backend.await_args.kwargs["intent"] == "place_order_from_quote"
+
+    @pytest.mark.parametrize(
+        ("raw", "order_type", "limit_price", "pov_ratio"),
+        [
+            ("100W，限价12，POV", "POV", 12.0, None),
+            ("100W，POV，限价12", "POV", 12.0, None),
+            ("100W，POV25，限价6.3", "POV", 6.3, 25.0),
+            ("100W，限价6.3，POV25", "POV", 6.3, 25.0),
+            ("100W，限价12", "限价单", 12.0, None),
+        ],
+    )
+    async def test_keyword_priority_order_independent(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        raw: str,
+        order_type: str,
+        limit_price: float,
+        pov_ratio: float | None,
+    ) -> None:
+        _patch(monkeypatch)
+        result = await option_extract_place(
+            {"raw_text": raw, "quote_content": "Q-20250616-000011"}
+        )
+        item = _item(result)
+        assert item["orderType"] == order_type
+        assert item["limitPrice"] == limit_price
+        assert item["povRatio"] == pov_ratio
+        assert item["notionalAmount"] == "1000000"
+
+    async def test_twap_normalizes_times(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        _patch(monkeypatch)
+        result = await option_extract_place(
+            {"raw_text": "200W，限价8，TWAP 9:30-15:00", "quote_content": "Q-1"}
+        )
+        item = _item(result)
+        assert item["orderType"] == "TWAP"
+        assert item["limitPrice"] == 8.0
+        assert item["twapStartTime"] == "09:30"
+        assert item["twapEndTime"] == "15:00"
+        assert item["notionalAmount"] == "2000000"
+
+    async def test_limit_keyword_without_number_yields_null(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        params = OptionPlaceParams(
-            orderList=[
-                OptionOrderItemWithFastExec(
-                    orderId="Q-20250616-000011",
-                    orderType="市价单",
-                )
-            ]
+        _patch(monkeypatch)
+        result = await option_extract_place(
+            {"raw_text": "1W 限价下单", "quote_content": "Q-1"}
         )
-        _patch_llm(monkeypatch, params)
+        item = _item(result)
+        assert item["orderType"] == "限价单"
+        assert item["limitPrice"] is None
+        assert item["notionalAmount"] == "10000"
+
+    async def test_limit_then_amount_is_not_price(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        _patch(monkeypatch)
+        result = await option_extract_place(
+            {"raw_text": "限价 100万 下单", "quote_content": "Q-1"}
+        )
+        item = _item(result)
+        assert item["limitPrice"] is None
+        assert item["notionalAmount"] == "1000000"
+
+    async def test_pov_without_ratio_is_null(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        _patch(monkeypatch)
+        result = await option_extract_place(
+            {"raw_text": "50万 POV 下单", "quote_content": "Q-1"}
+        )
+        item = _item(result)
+        assert item["orderType"] == "POV"
+        assert item["povRatio"] is None
+
+    @pytest.mark.parametrize(
+        ("raw", "order_type", "fast"),
+        [
+            ("最大跟量 100万 市价下单", "POV", True),
+            ("尽快成交 100万", None, True),
+            ("跟量25 100万市价", "POV", False),
+            ("市价跟量 100万", "POV", False),
+        ],
+    )
+    async def test_fast_execution_intent(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        raw: str,
+        order_type: str | None,
+        fast: bool,
+    ) -> None:
+        _patch(monkeypatch)
+        result = await option_extract_place({"raw_text": raw, "quote_content": "Q-1"})
+        item = _item(result)
+        assert item["hasFastExecutionIntent"] is fast
+        assert item["orderType"] == order_type
+
+    async def test_multiple_order_ids_from_quote(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        _patch(monkeypatch)
         result = await option_extract_place(
             {
                 "raw_text": "市价下单",
-                "quote_content": "Q-20250616-000011",
-                "intent": "place_order_from_quote",
+                "quote_content": "Q-20250616-000011、Q-20250616-000012",
             }
         )
-        assert result["place_params"]["expected_action"] == "place"
-        assert len(result["place_params"]["orderList"]) == 1
-        assert (
-            result["place_params"]["orderList"][0]["orderId"]
-            == "Q-20250616-000011"
-        )
+        order_list = result["place_params"]["orderList"]
+        assert [o["orderId"] for o in order_list] == [
+            "Q-20250616-000011",
+            "Q-20250616-000012",
+        ]
+        assert all(o["orderType"] == "市价单" for o in order_list)
 
-    async def test_pov_with_limit_and_notional(
+    async def test_b_class_from_card(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        _patch(monkeypatch)
+        result = await option_extract_place(
+            {"raw_text": "市价下单", "quote_content": _QUOTE_CARD}
+        )
+        item = _item(result)
+        assert item["orderId"] == "Q-20250616-000011"
+        assert item["stockCode"] == "300098.SZ"
+        assert item["optionType"] == "欧式看涨"
+        assert item["strikePercentage"] == 80.0
+        assert item["tenor"] is None
+
+    async def test_raw_tenor_overrides_card(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        _patch(monkeypatch)
+        result = await option_extract_place(
+            {"raw_text": "换成2M 市价下单", "quote_content": _QUOTE_CARD}
+        )
+        item = _item(result)
+        assert item["tenor"] == "2M"
+        assert item["stockCode"] == "300098.SZ"
+
+    async def test_short_name_label_full_capture(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        _patch(monkeypatch)
+        result = await option_extract_place(
+            {
+                "raw_text": "交易对手：11125测试短名(张天琪专用) 市价下单",
+                "quote_content": "Q-1",
+            }
+        )
+        assert _item(result)["shortName"] == "11125测试短名(张天琪专用)"
+
+    async def test_short_name_option_letter_resolves_from_quote(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        params = OptionPlaceParams(
-            orderList=[
-                OptionOrderItemWithFastExec(
-                    orderId="Q-20250905-000016",
-                    orderType="POV",
-                    limitPrice=9.1,
-                    povRatio=25.0,
-                    notionalAmount="1000000",
-                )
-            ]
-        )
-        _patch_llm(monkeypatch, params)
+        _patch(monkeypatch)
         result = await option_extract_place(
-            {"raw_text": "100W下单9.1", "intent": "place_order_from_quote"}
+            {
+                "raw_text": "市价下单 B",
+                "quote_content": (
+                    "本群可选交易对手列表：A.临沂阿凡提 B.11125测试短名(张天琪专用)"
+                ),
+            }
         )
-        item = result["place_params"]["orderList"][0]
-        assert item["orderType"] == "POV"
-        assert item["povRatio"] == 25.0
-        assert item["limitPrice"] == 9.1
-        assert item["notionalAmount"] == "1000000"
+        assert _item(result)["shortName"] == "11125测试短名(张天琪专用)"
 
-    async def test_null_literal_shortname_sanitized(
+    async def test_no_order_keeps_placeholder_item(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """LLM 偶发吐出字面量字符串 "null" → 节点内 sanitize 清成 None。"""
-        params = OptionPlaceParams(
-            orderList=[OptionOrderItemWithFastExec(orderId="Q-1", shortName="null")]
-        )
-        _patch_llm(monkeypatch, params)
-        result = await option_extract_place(
-            {"raw_text": "x", "intent": "place_order_from_quote"}
-        )
-        assert result["place_params"]["orderList"][0]["shortName"] is None
+        _patch(monkeypatch)
+        result = await option_extract_place({"raw_text": "市价下单100万"})
+        order_list = result["place_params"]["orderList"]
+        assert len(order_list) == 1
+        assert order_list[0]["orderId"] is None
+        assert order_list[0]["orderType"] == "市价单"
 
-    async def test_empty_order_list(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        _patch_llm(monkeypatch, OptionPlaceParams())
-        result = await option_extract_place(
-            {"raw_text": "x", "intent": "place_order_from_quote"}
-        )
-        assert result["place_params"]["orderList"] == []
-        assert result["place_params"]["expected_action"] == "place"
-
-    async def test_writes_trace_with_action_and_types(
+    async def test_writes_trace_and_passes_backend_order_list(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        params = OptionPlaceParams(
-            orderList=[
-                OptionOrderItemWithFastExec(orderId="Q-A", orderType="市价单"),
-                OptionOrderItemWithFastExec(orderId="Q-B", orderType="POV", povRatio=20),
-            ]
-        )
-        _patch_llm(monkeypatch, params)
+        backend = _patch(monkeypatch)
         result = await option_extract_place(
-            {"raw_text": "x", "intent": "place_order_from_quote"}
+            {
+                "raw_text": "市价下单",
+                "quote_content": "Q-20250616-000011、Q-20250616-000012",
+            }
         )
-        trace = result.get("trace", [])
-        assert len(trace) == 1
+        trace = result["trace"]
         assert trace[0].node == "option_extract_place"
-        decision = trace[0].decision
-        assert "action=place" in decision
-        assert "orders=2" in decision
-
-    async def test_safe_node_catches_llm_error(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        fake_llm = MagicMock()
-        fake_llm.with_structured_output = MagicMock(
-            return_value=MagicMock(
-                ainvoke=AsyncMock(side_effect=RuntimeError("LLM down"))
-            )
-        )
-        monkeypatch.setattr(ep_module, "get_qwen_thinking", lambda: fake_llm)
-        result = await option_extract_place(
-            {"raw_text": "x", "intent": "place_order_from_quote"}
-        )
-        assert result.get("error") is not None
-        assert result["error"].node == "option_extract_place"
+        assert "deterministic" in trace[0].decision
+        assert "action=place" in trace[0].decision
+        assert "orders=2" in trace[0].decision
+        assert backend.await_args.kwargs["order_list"] == result["place_params"]["orderList"]

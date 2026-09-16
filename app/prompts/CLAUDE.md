@@ -35,7 +35,7 @@
 ````
 
 占位符 `{{#node_id.var#}}`：Dify 由引擎渲染，LangGraph 没有渲染层。代码确实注入的占位符在 `PromptSpec.injects` 登记渲染器
-（先例：`close/holding_query.py`；未迁移节点如 `ticker/tools.py` 仍是 `system.replace(...)`）；
+（先例：`close/holding_query.py`、`ticker/tools.py` 日期占位符）；
 代码不注入的就是悬空规则，属零风险删除档——不要指望 LLM 把变量名当上下文。
 
 ## 字符数提示（影响延迟）

@@ -331,7 +331,7 @@ Single-context 布局：根目录 `CONTEXT.md` + `docs/adr/`。详见 `docs/agen
 
 Dify 的 `{{#node_id.var#}}` 在 Dify 由工作流引擎渲染；LangGraph 里**没有渲染层**。所以：
 
-- 代码确实注入的占位符 → 在 `PromptSpec.injects` 登记渲染器（先例：`close/holding_query.py` 对手列表）；尚未迁到 PromptSpec 的节点用 `system.replace(...)` 渲染（先例：`ticker/tools.py` 当前日期）
+- 代码确实注入的占位符 → 在 `PromptSpec.injects` 登记渲染器（先例：`close/holding_query.py` 对手列表、`ticker/tools.py` 日期占位符）
 - 代码不注入的占位符 → 是悬空规则，LLM 看到的是变量名；属零风险删除档，围绕它的整段规则一起删
 
 ## 加载方式（ADR 0023：一个 LLM 节点 = 一个 PromptSpec）
@@ -361,7 +361,7 @@ result = await model.with_structured_output(SwapIntentOutput).ainvoke(messages)
 - 共享拼装（历史、对手列表、JSON 列表）只在 `app/prompts/blocks.py` 定义一次，不在子图里复制
 - `injects` 登记的占位符必须在 `.md` system 段里真实存在，`build_messages` 构造期校验（`tests/test_prompt_spec.py`）
 - 灰度节点必须把 `build_messages` 返回的 `prompt_name` 写进 `TraceEntry.llm_output["prompt_name"]`（ADR 0003 硬前置：进 `_versions.yaml` 前必须先写 trace，否则版本对比失真）
-- 尚未迁到 PromptSpec 的节点（close 5 个、swap select_* / multimodal、ticker、router）仍是 `load_prompt` / `resolve_prompt_version` 直调，按 ADR 0023 D5 分批迁移
+- 全部 18 个 LLM 节点已迁至 PromptSpec（2026-09-17：第二 / 三批迁移 28 个，D 批去 LLM 化再移除 option 4 + close 4 个；2026-09-17 option 收尾批再移除 2 个——extract_place / extract_confirm_place 改确定性 `place_params.py`）；节点内剩余 `load_prompt` 直调仅限 `[user]` 模板渲染（`user_builder` 中 `load_prompt(...).render_user(...)`，先例 `swap/place_order.py`、`swap/fresh_counterparty.py`），system 一律经 `SPEC.render_system`
 
 ## 来源优先级（ADR 0014 D3-2）
 

@@ -1,14 +1,13 @@
-"""option.extract_cancel 节点 · 期权撤单订单号提取（请求撤单）。
+"""option.extract_cancel 节点 · 期权撤单订单号提取（请求撤单，确定性，已去 LLM 化）。
 
 Dify DSL v2 迁移（对应 `期权-节点-撤单请求`，node_id=17793301778710）：仅处理
-request_cancel_order（针对已正式送出订单的撤单请求）。原 cancel_order_request
-（取消下单，未正式送出阶段作废）已拆到独立节点 `extract_cancel_place`。
+request_cancel_order（针对已正式送出订单的撤单请求）。原 LLM 调用的唯一任务是
+提取 Q- 订单号，改为 app/subgraphs/option/order_id.py 确定性提取（瘦身 P1）——
+零幻觉、零成本、零延迟。行为约定 1:1 对照原提示词：raw 指定具体订单则用 raw；
+"全部撤单"未指定时从 quote 取全部；均无 → orderId: null。
 
-输入：raw_text + quote_content + history_messages
-输出：state['cancel_params'] = {expected_action: "request_cancel", orderList}
-
-LLM：thinking 模型 + with_structured_output（ADR 0010）。
-prompt：app/prompts/option/extract_cancel.md。
+输入：raw_text + quote_content
+输出：state['cancel_params'] = {expected_action: "request_cancel", orderList} + 后端调用结果
 """
 from __future__ import annotations
 
@@ -17,30 +16,19 @@ from typing import Any
 from app.graph.business_params import validated_cancel_params
 from app.graph.safe_node import safe_node
 from app.graph.state import AgentState, TraceEntry
-from app.llm.clients import get_qwen_thinking
-from app.prompts.spec import PromptSpec, register
 from app.subgraphs.option.backend import call_option_backend
-from app.subgraphs.option.models import OptionCancelParams
-from app.subgraphs.option.prompting import EXTRACT_INPUTS, extract_user
-from app.subgraphs.option.sanitize import sanitize_order_list
-
-SPEC = register(PromptSpec(
-    category="option",
-    name="extract_cancel",
-    output_model=OptionCancelParams,
-    inputs=EXTRACT_INPUTS,
-    user_builder=extract_user,
-))
+from app.subgraphs.option.order_id import extract_for_request_cancel
 
 
 @safe_node
 async def option_extract_cancel(state: AgentState) -> dict[str, Any]:
-    """option.extract_cancel 节点（request_cancel_order）。"""
-    messages, _prompt_name = SPEC.build_messages(state)
-    llm = get_qwen_thinking().with_structured_output(OptionCancelParams)
-    result: Any = await llm.ainvoke(messages)
+    """option.extract_cancel 节点（request_cancel_order，确定性提取）。"""
+    order_ids = extract_for_request_cancel(
+        raw=state.get("raw_text"), quote=state.get("quote_content")
+    )
+    order_list = [{"orderId": order_id} for order_id in order_ids]
+    order_count = sum(1 for item in order_list if item["orderId"])
 
-    order_list = sanitize_order_list([item.model_dump() for item in result.order_list])
     backend = await call_option_backend(
         state,
         intent="request_cancel_order",
@@ -55,8 +43,7 @@ async def option_extract_cancel(state: AgentState) -> dict[str, Any]:
         "trace": [
             TraceEntry(
                 node="option_extract_cancel",
-                decision=f"action=request_cancel,orders={len(result.order_list)}",
-                llm_output=result.model_dump(),
+                decision=f"deterministic,action=request_cancel,orders={order_count}",
             )
         ],
     }

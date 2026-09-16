@@ -53,8 +53,8 @@ class TestNestedFenceParsing:
 
 
 class TestRealFileRegression:
-    def test_cancel_close_loads_fully(self):
-        """P1 迁移期确认:cancel_close.md(4717 字符,26 个围栏标记)曾被截断到 1049。"""
+    def test_place_close_loads_fully(self):
+        """P1 迁移期确认:长 system(大量内嵌围栏标记)不得被提前截断。"""
         clear_cache()
-        p = load_prompt("option_close", "cancel_close")
-        assert len(p.system) > 3000, f"cancel_close system 疑似截断: {len(p.system)}"
+        p = load_prompt("option_close", "place_close")
+        assert len(p.system) > 3000, f"place_close system 疑似截断: {len(p.system)}"

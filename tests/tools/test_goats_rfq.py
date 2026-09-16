@@ -14,6 +14,7 @@ async def test_parser_url_has_one_api_prefix(monkeypatch, base_url):
     monkeypatch.setattr(app.config, "get_settings", lambda: SimpleNamespace(
         goats_base_url=base_url, goats_client_id="C", goats_client_secret="S",
         goats_extapp_salt="X", goats_opt_agent_id="R@tl", goats_opt_agent_sub_id="U",
+        goats_rfq_direct_timeout_seconds=15.0,
     ))
     requests = []
 

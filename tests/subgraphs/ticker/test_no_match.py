@@ -80,10 +80,30 @@ async def test_resolve_ticker_full_returns_empty_not_raises(
     monkeypatch.setattr(tools_mod, "_make_client", lambda: client)
     monkeypatch.setattr(res_mod, "_make_client", lambda: client)
 
-    # 3 路批量 LLM 全部返回空 dict：候选无法解析出任何 org item，管线在
-    # merge_and_validate 前即无 GOATS 查询目标，属于 0 命中的合法路径之一。
+    # 3 路批量 LLM 全部返回空 dict（structured output 契约模型）：候选无法解析出
+    # 任何 org item，管线在 merge_and_validate 前即无 GOATS 查询目标，
+    # 属于 0 命中的合法路径之一。
+    from app.subgraphs.ticker.models import (
+        InferCodeOutput,
+        JudgeTypeOutput,
+        RankOutput,
+        SplitKeywordsOutput,
+    )
+
+    empty_outputs = {
+        InferCodeOutput: InferCodeOutput.model_validate({}),
+        SplitKeywordsOutput: SplitKeywordsOutput.model_validate({}),
+        JudgeTypeOutput: JudgeTypeOutput.model_validate({}),
+        RankOutput: RankOutput(ranked_codes=[]),
+    }
+
+    def make_structured(model):
+        inner = MagicMock()
+        inner.ainvoke = AsyncMock(return_value=empty_outputs[model])
+        return inner
+
     fake_llm = MagicMock()
-    fake_llm.ainvoke = AsyncMock(return_value=MagicMock(content=""))
+    fake_llm.with_structured_output = MagicMock(side_effect=make_structured)
     monkeypatch.setattr(tools_mod, "get_qwen_standard", lambda: fake_llm)
 
     from app.subgraphs.ticker.resolver import resolve_ticker_full

@@ -35,6 +35,15 @@ class Settings(BaseSettings):
     otc_api_base_url: str
     otc_api_secret: str
 
+    # === 超时预算（plan0916 §6.1 / A 批：集中配置；默认值与历史散点一致）===
+    llm_timeout_seconds: float = 60.0        # LLM 客户端（app/llm/clients.py 六个工厂）
+    backend_timeout_seconds: float = 30.0    # Option / Swap / Ticker / Message 四个后端 Client 默认
+    persist_timeout_seconds: float = 5.0     # node_trace 写库连接（app/nodes/persist.py）
+    multimodal_fetch_timeout_seconds: float = 30.0  # 图片 / Excel 远端文件下载（swap/multimodal.py）
+    goats_agent_rfq_timeout_seconds: float = 60.0        # GOATS agent：快速询价参数解析
+    goats_agent_instruction_timeout_seconds: float = 10.0  # GOATS agent：存量兼容指令查询
+    goats_rfq_direct_timeout_seconds: float = 15.0       # GOATS 快速询价直连（app/tools/goats_rfq.py）
+
     # === goats ===
     goats_base_url: str = ""
     goats_client_id: str = ""

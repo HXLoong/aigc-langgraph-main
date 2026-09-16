@@ -63,7 +63,9 @@ async def parse_rfq_instrument(chat_instrument: str) -> dict[str, Any] | None:
     }
 
     try:
-        async with httpx.AsyncClient(timeout=15.0, trust_env=False) as client:
+        async with httpx.AsyncClient(
+            timeout=settings.goats_rfq_direct_timeout_seconds, trust_env=False
+        ) as client:
             resp = await client.post(url, headers=headers, json={"chatInstrument": chat_instrument})
     except Exception:  # noqa: BLE001  网络异常 → fall back
         return None

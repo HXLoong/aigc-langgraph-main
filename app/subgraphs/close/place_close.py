@@ -31,11 +31,12 @@ from app.graph.business_params import validated_close_params
 from app.graph.safe_node import safe_node
 from app.graph.state import AgentState, TraceEntry
 from app.llm.clients import get_qwen_thinking
-from app.prompts import load_prompt
+from app.prompts.spec import PromptSpec, register
 from app.subgraphs.close.aggregate import build_close_order_req_vo
 from app.subgraphs.close.backend import call_close_backend
 from app.subgraphs.close.merge import merge_close_orders
 from app.subgraphs.close.models import CloseOrderItem, ClosePlaceParams
+from app.subgraphs.close.order_id import is_order_id
 from app.subgraphs.close.reference_parser import ReferenceParseResult, parse_reference_message
 from app.tools.exceptions import BackendUnreachableError
 from app.tools.option_client import OptionClientHttpx
@@ -67,6 +68,28 @@ def _build_user_message(
         f"quote_content：{quote_content}\n"
         f"orderList：{_j(order_list)}"
     )
+
+
+def _user_from_state(state: AgentState) -> str:
+    """state 可重建的 user 消息（orderList 由节点运行时经 HTTP 取单后注入）。
+
+    完整消息在节点内用 `_build_user_message(parsed, order_data)` 组装；本函数为
+    注册契约的 state-only 重建（引用解析是纯函数，取单结果为空时的形态），
+    与 swap.place_order 的 `_user_from_state` 同一模式（渲染时机在节点内）。
+    """
+    raw = state.get("raw_text", "") or ""
+    quote = state.get("quote_content") or ""
+    parsed = parse_reference_message(quote, raw)
+    return _build_user_message(raw, quote, parsed, [])
+
+
+SPEC = register(PromptSpec(
+    category="option_close",
+    name="place_close",
+    output_model=ClosePlaceParams,
+    inputs=("raw_text", "quote_content"),
+    user_builder=_user_from_state,
+))
 
 
 async def _fetch_order_data(
@@ -121,12 +144,12 @@ async def close_place_close(state: AgentState) -> dict[str, Any]:
     )
 
     # 步骤 4：请求下单和确认全部平仓参数提取[llm]
-    prompt = load_prompt("option_close", "place_close")
+    system, _prompt_name = SPEC.render_system(state)
     llm = get_qwen_thinking().with_structured_output(ClosePlaceParams)
     user_message = _build_user_message(raw, quote, parsed, order_data)
     result: Any = await llm.ainvoke(
         [
-            ("system", prompt.system),
+            ("system", system),
             ("user", user_message),
         ]
     )
@@ -203,24 +226,16 @@ async def close_place_close(state: AgentState) -> dict[str, Any]:
     _seq_iter = re.finditer(r"序号\s*[:：]?\s*(\d+)|第\s*(\d+)\s*笔", combined)
     _seq_list = [int(m.group(1) or m.group(2)) for m in _seq_iter]
 
-    def _is_valid_order_id(oid: str | None) -> bool:
-        if not oid:
-            return False
-        return bool(re.fullmatch(r"CO-\d{8}-[A-Z0-9]{4,16}", oid.upper().strip()))
-
-    def _is_placeholder_oid(oid: str | None) -> bool:
-        return not _is_valid_order_id(oid)
-
     # 首次按单个合约平仓时，query-close-orders 不负责创建 orderId；用户原文中的
     # OPT-/OPTG- 合约编号是 operate 创建平仓申请所需的确定性身份。
     if len(parsed["contractCodes"]) == 1 and len(close_list) == 1:
         direct_leg = close_list[0]
         direct_leg.internal_trade_id = parsed["contractCodes"][0]
-        if not _is_valid_order_id(direct_leg.order_id):
+        if not is_order_id(direct_leg.order_id):
             direct_leg.order_id = None
 
     for _i, _leg in enumerate(close_list):
-        if not _is_placeholder_oid(_leg.order_id) or _i >= len(_seq_list):
+        if is_order_id(_leg.order_id) or _i >= len(_seq_list):
             continue
         _seq = _seq_list[_i]
         _idx = _seq - 1

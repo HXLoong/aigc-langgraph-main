@@ -67,39 +67,6 @@ class HoldingQueryParams(WireModel):
 
 
 # ============================================================
-# 确认平仓参数（close.confirm_close）
-# ============================================================
-
-
-class ConfirmCloseParams(WireModel):
-    """close.confirm_close 节点 LLM 输出（与 Dify confirm_close.md 字段对齐）。
-
-    字段名 confirmOrderNoList 驼峰对齐 Java DTO。空列表表示"引用消息中没有
-    CO- 订单号 或 用户指定订单未匹配"。
-    """
-
-    model_config = ConfigDict(extra="ignore")
-
-    confirm_order_no_list: list[str] = Field(alias="confirmOrderNoList", default_factory=list)
-
-
-# ============================================================
-# 撤销平仓参数（close.cancel_close）
-# ============================================================
-
-
-class CancelCloseParams(WireModel):
-    """close.cancel_close 节点 LLM 输出（与 Dify cancel_close.md 字段对齐）。
-
-    字段名 cancelOrderNoList 驼峰对齐 Java DTO。
-    """
-
-    model_config = ConfigDict(extra="ignore")
-
-    cancel_order_no_list: list[str] = Field(alias="cancelOrderNoList", default_factory=list)
-
-
-# ============================================================
 # 平仓下单参数（close.place_close）
 # ============================================================
 
@@ -142,43 +109,13 @@ class ClosePlaceParams(WireModel):
     close_order_list: list[CloseOrderItem] = Field(alias="closeOrderList", default_factory=list, description="平仓订单条目列表；空列表表示无可绑定订单或输入为空")
 
 
-# ============================================================
-# 确认撤单参数（close.confirm_cancel）
-# ============================================================
-
-
-class ConfirmCancelParams(WireModel):
-    """close.confirm_cancel 节点 LLM 输出。"""
-
-    model_config = ConfigDict(extra="ignore")
-
-    confirm_cancel_order_no_list: list[str] = Field(alias="confirmCancelOrderNoList", default_factory=list, description="确认撤单的平仓订单号（CO- 开头）列表")
-
-
-# ============================================================
-# 平仓订单查询参数（close.query_status）
-# ============================================================
-
-
-class QueryStatusParams(WireModel):
-    """close.query_status 节点 LLM 输出。"""
-
-    model_config = ConfigDict(extra="ignore")
-
-    query_order_no_list: list[str] = Field(alias="queryOrderNoList", default_factory=list)
-
-
 __all__ = [
     "CloseIntentType",
     "CloseIntentOutput",
     "InsFamily",
     "ContractType",
     "HoldingQueryParams",
-    "ConfirmCloseParams",
-    "CancelCloseParams",
     "ClosePriceType",
     "CloseOrderItem",
     "ClosePlaceParams",
-    "ConfirmCancelParams",
-    "QueryStatusParams",
 ]

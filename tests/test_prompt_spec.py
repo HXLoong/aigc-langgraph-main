@@ -95,16 +95,17 @@ def _load_all_nodes() -> None:
     for mod in (
         "app.subgraphs.option.intent",
         "app.subgraphs.option.extract_inquiry",
-        "app.subgraphs.option.extract_place",
-        "app.subgraphs.option.extract_confirm_place",
-        "app.subgraphs.option.extract_cancel_place",
-        "app.subgraphs.option.extract_confirm_cancel",
-        "app.subgraphs.option.extract_cancel",
-        "app.subgraphs.option.extract_query",
         "app.subgraphs.close.intent",
         "app.subgraphs.close.holding_query",
+        "app.subgraphs.close.place_close",
         "app.subgraphs.swap.intent",
         "app.subgraphs.swap.place_order",
+        "app.subgraphs.swap.select_counterparty",
+        "app.subgraphs.swap.select_ticker",
+        "app.subgraphs.swap.fresh_counterparty",
+        "app.subgraphs.swap.multimodal",
+        "app.nodes.intent_route",
+        "app.subgraphs.ticker.tools",
     ):
         importlib.import_module(mod)
 
@@ -114,10 +115,13 @@ class TestRegistry:
         _load_all_nodes()
         keys = set(spec_mod.all_specs())
         assert {
-            "option/intent", "option/extract_inquiry", "option/extract_place", "option/extract_confirm_place",
-            "option/extract_cancel_place", "option/extract_confirm_cancel", "option/extract_cancel",
-            "option/extract_query", "option_close/intent", "option_close/holding_query", "swap/intent",
-            "swap/place_order",
+            "option/intent", "option/extract_inquiry",
+            "option_close/intent", "option_close/holding_query", "swap/intent",
+            "swap/place_order", "option_close/place_close",
+            "swap/select_counterparty", "swap/select_ticker", "swap/fresh_counterparty",
+            "swap/image_ocr", "swap/image_extract", "swap/excel_extract",
+            "router/unknown_intent",
+            "ticker/infer_code", "ticker/tokenize", "ticker/judge_type", "ticker/rank",
         } <= keys
 
     def test_inputs_are_agent_state_fields(self):

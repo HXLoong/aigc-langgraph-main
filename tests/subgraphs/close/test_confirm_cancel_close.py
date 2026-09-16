@@ -1,10 +1,13 @@
-"""close.confirm_close + close.cancel_close 节点测试（mock LLM）。
+"""close.confirm_close + close.cancel_close 节点测试（确定性提取，无 LLM）。
 
-两个节点结构高度相似（订单号列表提取），合并到一份测试文件。
+行为 1:1 对照原提示词规约：
+- 指定范围（raw 单号 / 序号 / 合约编号，并集）→ 仅取指定订单
+- 未指定 → 取引用消息全部
+- 序号越界 / 合约编号不在引用消息 → 不扩大操作范围，回请求补充
 """
 from __future__ import annotations
 
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock
 
 import pytest
 
@@ -12,68 +15,29 @@ from app.subgraphs.close import cancel_close as cancel_module
 from app.subgraphs.close import confirm_close as confirm_module
 from app.subgraphs.close.cancel_close import close_cancel_close
 from app.subgraphs.close.confirm_close import close_confirm_close
-from app.subgraphs.close.models import CancelCloseParams, ConfirmCloseParams
 from app.tools.models import CommonResult
 
-
-def _patch_llm(
-    monkeypatch: pytest.MonkeyPatch, module: object, return_value: object,
-    fn: str = "get_qwen_thinking",
-    mock_backend: bool = True,
-) -> AsyncMock:
-    fake_llm = MagicMock()
-    fake_llm.ainvoke = AsyncMock(return_value=return_value)
-    fake_base = MagicMock()
-    fake_base.with_structured_output = MagicMock(return_value=fake_llm)
-    monkeypatch.setattr(module, fn, lambda: fake_base)
-    if mock_backend and hasattr(module, "call_close_backend"):
-        monkeypatch.setattr(
-            module,
-            "call_close_backend",
-            AsyncMock(
-                return_value={"api_code": 0, "api_result": "backend reply"}
-            ),
-        )
-    return fake_llm.ainvoke
+_QUOTE_TWO = (
+    "1. CO-20260304-4FE9C941（OPT-SZZSCF20260001）\n"
+    "2. CO-20260304-E2BA7501（OPTG-SZZSCF20250030）"
+)
+_QUOTE_THREE = (
+    "期权平仓订单CO-20260304-4FE9C941（OPTG-SZZSCF20250029）：平仓确认下单成功。\n"
+    "期权平仓订单CO-20260304-E2BA7501（OPTG-SZZSCF20250030）：平仓确认下单成功。\n"
+    "期权平仓订单CO-20260304-3393211B（OPTG-SZZSCF20260003）：平仓确认下单成功。"
+)
 
 
-# ============================================================
-# Pydantic 模型
-# ============================================================
+def _patch(monkeypatch: pytest.MonkeyPatch, module: object) -> AsyncMock:
+    """固定后端边界；LLM 工厂若被调用即报错（去 LLM 化硬约束）。"""
+    backend = AsyncMock(return_value={"api_code": 0, "api_result": "backend reply"})
+    monkeypatch.setattr(module, "call_close_backend", backend)
 
+    def _forbid(*_args: object, **_kwargs: object) -> None:
+        raise AssertionError("去 LLM 化节点不应调用 LLM")
 
-class TestParamsModels:
-    def test_confirm_close_params_default_empty_list(self) -> None:
-        params = ConfirmCloseParams()
-        assert params.confirm_order_no_list == []
-
-    def test_confirm_close_params_with_orders(self) -> None:
-        params = ConfirmCloseParams(
-            confirmOrderNoList=["CO-20260304-4FE9C941", "CO-20260304-E2BA7501"]
-        )
-        assert len(params.confirm_order_no_list) == 2
-
-    def test_cancel_close_params_default_empty_list(self) -> None:
-        params = CancelCloseParams()
-        assert params.cancel_order_no_list == []
-
-    def test_cancel_close_params_with_orders(self) -> None:
-        params = CancelCloseParams(
-            cancelOrderNoList=["CO-20260304-759125AD"]
-        )
-        assert params.cancel_order_no_list == ["CO-20260304-759125AD"]
-
-    def test_confirm_close_extra_fields_ignored(self) -> None:
-        params = ConfirmCloseParams.model_validate(
-            {"confirmOrderNoList": [], "garbage": "x"}
-        )
-        assert params.confirm_order_no_list == []
-
-    def test_cancel_close_extra_fields_ignored(self) -> None:
-        params = CancelCloseParams.model_validate(
-            {"cancelOrderNoList": [], "garbage": "x"}
-        )
-        assert params.cancel_order_no_list == []
+    monkeypatch.setattr(module, "get_qwen_thinking", _forbid, raising=False)
+    return backend
 
 
 # ============================================================
@@ -83,64 +47,100 @@ class TestParamsModels:
 
 @pytest.mark.asyncio
 class TestCloseConfirmCloseNode:
-    async def test_extracts_orders_from_quote(
+    async def test_raw_order_id_selects_only_that_order(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        params = ConfirmCloseParams(
-            confirmOrderNoList=["CO-20260304-E2BA7501"]
-        )
-        _patch_llm(monkeypatch, confirm_module, params, fn="get_qwen_thinking")
+        _patch(monkeypatch, confirm_module)
         result = await close_confirm_close(
             {
-                "raw_text": "确认平仓第二笔",
-                "quote_content": (
-                    "1. CO-20260304-4FE9C941\n2. CO-20260304-E2BA7501"
-                ),
+                "raw_text": "确认平仓 CO-20260304-4FE9C941",
+                "quote_content": _QUOTE_TWO,
             }
         )
         assert result["confirm"]["action"] == "close"
-        assert result["confirm"]["confirmOrderNoList"] == [
-            "CO-20260304-E2BA7501"
-        ]
+        assert result["confirm"]["confirmOrderNoList"] == ["CO-20260304-4FE9C941"]
 
-    async def test_empty_orders_list(
+    async def test_ordinal_resolves_by_quote_position(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        _patch_llm(monkeypatch, confirm_module, ConfirmCloseParams(), fn="get_qwen_thinking")
+        _patch(monkeypatch, confirm_module)
         result = await close_confirm_close(
-            {"raw_text": "确认", "quote_content": ""}
+            {"raw_text": "确认平仓第二笔", "quote_content": _QUOTE_TWO}
         )
+        assert result["confirm"]["confirmOrderNoList"] == ["CO-20260304-E2BA7501"]
+
+    async def test_contract_code_maps_to_order_id(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        _patch(monkeypatch, confirm_module)
+        result = await close_confirm_close(
+            {
+                "raw_text": "确认OPTG-SZZSCF20250029和OPTG-SZZSCF20250030",
+                "quote_content": _QUOTE_THREE,
+            }
+        )
+        assert result["confirm"]["confirmOrderNoList"] == [
+            "CO-20260304-4FE9C941",
+            "CO-20260304-E2BA7501",
+        ]
+
+    async def test_unspecified_takes_all_quote_ids(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        _patch(monkeypatch, confirm_module)
+        result = await close_confirm_close(
+            {"raw_text": "确认平仓", "quote_content": _QUOTE_THREE}
+        )
+        assert len(result["confirm"]["confirmOrderNoList"]) == 3
+
+    async def test_mixed_ordinal_and_id_union(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """原提示词示例8：确认第一笔和CO-… → 并集。"""
+        _patch(monkeypatch, confirm_module)
+        result = await close_confirm_close(
+            {
+                "raw_text": "确认第一笔和CO-20260304-3393211B",
+                "quote_content": _QUOTE_THREE,
+            }
+        )
+        assert result["confirm"]["confirmOrderNoList"] == [
+            "CO-20260304-4FE9C941",
+            "CO-20260304-3393211B",
+        ]
+
+    async def test_no_signals_no_quote_returns_empty(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        _patch(monkeypatch, confirm_module)
+        result = await close_confirm_close({"raw_text": "确认", "quote_content": ""})
         assert result["confirm"]["confirmOrderNoList"] == []
+
+    async def test_unresolved_ordinal_does_not_expand_scope(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """序号越界 → 回请求补充，不调用后端、不扩大到全部订单。"""
+        backend = _patch(monkeypatch, confirm_module)
+        result = await close_confirm_close(
+            {"raw_text": "确认平仓第五笔", "quote_content": "1. CO-20260304-4FE9C941"}
+        )
+        assert result.get("reply_text")
+        assert result.get("confirm") is None
+        assert result["trace"][0].decision == "close_scope_unresolved"
+        backend.assert_not_awaited()
 
     async def test_writes_trace_with_order_count(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        params = ConfirmCloseParams(
-            confirmOrderNoList=["CO-1", "CO-2", "CO-3"]
+        _patch(monkeypatch, confirm_module)
+        result = await close_confirm_close(
+            {"raw_text": "确认平仓全部", "quote_content": _QUOTE_THREE}
         )
-        _patch_llm(monkeypatch, confirm_module, params, fn="get_qwen_thinking")
-        result = await close_confirm_close({"raw_text": "确认平仓全部"})
         trace = result.get("trace", [])
         assert len(trace) == 1
         assert trace[0].node == "close_confirm_close"
+        assert "deterministic" in trace[0].decision
         assert "orders=3" in trace[0].decision
-
-    async def test_passes_quote_to_llm(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        ainvoke = _patch_llm(
-            monkeypatch, confirm_module, ConfirmCloseParams(), fn="get_qwen_thinking"
-        )
-        await close_confirm_close(
-            {
-                "raw_text": "确认第一笔",
-                "quote_content": "订单 CO-20260304-XYZ",
-            }
-        )
-        messages = ainvoke.call_args[0][0]
-        user_content = messages[-1][1]
-        assert "用户发送消息：确认第一笔" in user_content
-        assert "用户引用消息：订单 CO-20260304-XYZ" in user_content
 
 
 # ============================================================
@@ -150,69 +150,78 @@ class TestCloseConfirmCloseNode:
 
 @pytest.mark.asyncio
 class TestCloseCancelCloseNode:
-    async def test_extracts_cancel_orders(
+    async def test_ordinal_selects_first_order(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        params = CancelCloseParams(
-            cancelOrderNoList=["CO-20260304-759125AD"]
-        )
-        _patch_llm(monkeypatch, cancel_module, params)
+        _patch(monkeypatch, cancel_module)
         result = await close_cancel_close(
-            {
-                "raw_text": "撤销第一笔",
-                "quote_content": "1. CO-20260304-759125AD",
-            }
+            {"raw_text": "撤销第一笔", "quote_content": "1. CO-20260304-759125AD"}
+        )
+        assert result["cancel_params"]["cancelOrderNoList"] == ["CO-20260304-759125AD"]
+
+    async def test_raw_order_id_selects_only_that_order(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        _patch(monkeypatch, cancel_module)
+        result = await close_cancel_close(
+            {"raw_text": "撤单 CO-20260304-759125AD", "quote_content": _QUOTE_TWO}
+        )
+        assert result["cancel_params"]["cancelOrderNoList"] == ["CO-20260304-759125AD"]
+
+    async def test_unspecified_takes_all_quote_ids(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        _patch(monkeypatch, cancel_module)
+        result = await close_cancel_close(
+            {"raw_text": "都撤了", "quote_content": _QUOTE_TWO}
         )
         assert result["cancel_params"]["cancelOrderNoList"] == [
-            "CO-20260304-759125AD"
+            "CO-20260304-4FE9C941",
+            "CO-20260304-E2BA7501",
         ]
 
-    async def test_empty_orders_list(
+    async def test_conversation_orders_fallback(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        _patch_llm(monkeypatch, cancel_module, CancelCloseParams())
+        """无引用、无单号时保留历史兜底（取最近一笔会话订单）。"""
+        _patch(monkeypatch, cancel_module)
         result = await close_cancel_close(
-            {"raw_text": "撤", "quote_content": ""}
+            {
+                "raw_text": "撤",
+                "quote_content": "",
+                "conversation_orders": [{"orderId": "CO-20260304-ABCD1234"}],
+            }
         )
-        assert result["cancel_params"]["cancelOrderNoList"] == []
+        assert result["cancel_params"]["cancelOrderNoList"] == ["CO-20260304-ABCD1234"]
+
+    async def test_unresolved_scope_does_not_expand(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        backend = _patch(monkeypatch, cancel_module)
+        result = await close_cancel_close(
+            {"raw_text": "撤第五笔", "quote_content": "1. CO-20260304-759125AD"}
+        )
+        assert result.get("reply_text")
+        assert result.get("cancel_params") is None
+        assert result["trace"][0].decision == "close_scope_unresolved"
+        backend.assert_not_awaited()
 
     async def test_writes_trace_with_order_count(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        params = CancelCloseParams(cancelOrderNoList=["CO-A", "CO-B"])
-        _patch_llm(monkeypatch, cancel_module, params)
-        result = await close_cancel_close({"raw_text": "撤销 CO-A 和 CO-B"})
+        _patch(monkeypatch, cancel_module)
+        result = await close_cancel_close(
+            {"raw_text": "撤销 CO-20260304-AAAAAAAA 和 CO-20260304-BBBBBBBB"}
+        )
         trace = result.get("trace", [])
         assert len(trace) == 1
         assert trace[0].node == "close_cancel_close"
         assert "orders=2" in trace[0].decision
 
-    async def test_safe_node_catches_llm_error(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        fake_llm = MagicMock()
-        fake_llm.with_structured_output = MagicMock(
-            return_value=MagicMock(
-                ainvoke=AsyncMock(side_effect=RuntimeError("LLM down"))
-            )
-        )
-        monkeypatch.setattr(
-            cancel_module, "get_qwen_thinking", lambda: fake_llm
-        )
-        result = await close_cancel_close(
-            {"raw_text": "撤", "quote_content": ""}
-        )
-        assert result.get("error") is not None
-        assert result["error"].node == "close_cancel_close"
-
     async def test_calls_real_backend_when_context_present(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """P0 payload 对齐：close_order_cancel_request 此前遗漏了真后端调用这一跳
-        （Dify 全 6 分支均汇入 期权平仓-参数聚合 → 期权平仓[code]）。"""
-        params = CancelCloseParams(cancelOrderNoList=["CO-20260304-759125AD"])
-        _patch_llm(monkeypatch, cancel_module, params, mock_backend=False)
-
+        """P0 payload 对齐：close_order_cancel_request 真后端调用 + 响应逐字节透传。"""
         captured: list[object] = []
 
         async def _fake_operate(self, req):  # type: ignore[no-untyped-def]
@@ -222,6 +231,13 @@ class TestCloseCancelCloseNode:
         monkeypatch.setattr(
             "app.tools.option_client.OptionClientHttpx.operate",
             _fake_operate,
+        )
+
+        def _forbid(*_args: object, **_kwargs: object) -> None:
+            raise AssertionError("去 LLM 化节点不应调用 LLM")
+
+        monkeypatch.setattr(
+            cancel_module, "get_qwen_thinking", _forbid, raising=False
         )
 
         result = await close_cancel_close(
@@ -237,10 +253,8 @@ class TestCloseCancelCloseNode:
         assert len(captured) == 1
         req = captured[0]
         assert req.type.value == "close_order_cancel_request"
-        assert req.order_list == []
         assert req.close_order_req_vo.model_dump()["cancelOrderNoList"] == [
             "CO-20260304-759125AD"
         ]
-        # P0：真后端响应逐字节透传
         assert result.get("api_result") == "撤单请求已提交"
         assert result.get("api_code") == 0

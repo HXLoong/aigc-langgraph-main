@@ -2,14 +2,18 @@
 from __future__ import annotations
 
 import json
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import MagicMock
 
 import httpx
 import pytest
-from langchain_core.messages import AIMessage
 
-from app.prompts import load_prompt
 from app.subgraphs.ticker import resolver, tools
+from app.subgraphs.ticker.models import (
+    InferCodeOutput,
+    JudgeTypeOutput,
+    RankOutput,
+    SplitKeywordsOutput,
+)
 from app.subgraphs.ticker.resolver import resolve_ticker_full
 from app.tools.ticker_client import TickerClientHttpx
 
@@ -19,25 +23,35 @@ def ticker_api(monkeypatch):
     queries = []
     options = {"reverse": False, "wrong_exchange": False}
 
-    async def reply(messages):
-        system, user = (message.content for message in messages)
-        if system == load_prompt("ticker", "rank").system:
-            return AIMessage(content='["000858.SZ", "600519.SH"]')
+    async def batch_reply(model, messages):
+        """批量 LLM 结果按输出模型返回（infer/tokenize → 原文映射；judge → EQUITY）。"""
+        _, user = (message.content for message in messages)
         candidates = json.loads(user.removeprefix("标的列表："))
         if options["reverse"]:
             candidates.reverse()
-        if system == load_prompt("ticker", "judge_type").system:
-            data = {value: "EQUITY" for value in candidates}
-        else:
-            data = {
-                value: ([value, value.split(".")[0], "858"] if value.upper().startswith("000858")
-                        else ["600519.SH"] if value == "茅台" else [value])
-                for value in candidates
-            }
-        return AIMessage(content=json.dumps(data, ensure_ascii=False))
+        if model is JudgeTypeOutput:
+            return JudgeTypeOutput.model_validate({value: "EQUITY" for value in candidates})
+        data = {
+            value: ([value, value.split(".")[0], "858"] if value.upper().startswith("000858")
+                    else ["600519.SH"] if value == "茅台" else [value])
+            for value in candidates
+        }
+        if model is SplitKeywordsOutput:
+            return SplitKeywordsOutput.model_validate(data)
+        return InferCodeOutput.model_validate(data)
+
+    def make_structured(model):
+        class _Structured:
+            async def ainvoke(self, messages):
+                if model is RankOutput:
+                    # 与迁移前行为一致：本 fixture 中 rank 固定降级为空（不改变命中排序断言）
+                    return RankOutput(ranked_codes=[])
+                return await batch_reply(model, messages)
+
+        return _Structured()
 
     llm = MagicMock()
-    llm.ainvoke = AsyncMock(side_effect=reply)
+    llm.with_structured_output = MagicMock(side_effect=make_structured)
     monkeypatch.setattr(tools, "get_qwen_standard", lambda: llm)
 
     def handle(request):
