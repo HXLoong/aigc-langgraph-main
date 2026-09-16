@@ -13,7 +13,7 @@
 | mock_api 或真实后端 | 跑在 `localhost:8099`（LangGraph 依赖） |
 | Dify 工作流 | 部署在 Dify Cloud / 自建 Dify，对外暴露 `/v1/workflows/run` |
 | Dify App API Key | 在 Dify 控制台「应用 → API 访问」获取，形如 `app-xxxxx` |
-| 样本数据 | `tests/fixtures/golden.jsonl`（30+ 条 case） |
+| 样本数据 | 含 `id` + `raw_content` 的 JSONL（格式见 §七；灰度期用真实流量样本） |
 
 ---
 
@@ -29,7 +29,7 @@ python scripts/shadow_compare.py \
     --langgraph http://localhost:8000/v1/message \
     --dify https://dify.example.com/v1/workflows/run \
     --dify-api-key app-xxxxxxxxxxxxxxxx \
-    --sample tests/fixtures/golden.jsonl \
+    --sample sample_real_traffic.jsonl \
     --output /tmp/shadow_diff.json
 
 # 3) 查看汇总
@@ -95,7 +95,7 @@ CREATE TABLE IF NOT EXISTS shadow_compare (
 python scripts/shadow_compare.py \
     --langgraph $LG_URL --dify $DIFY_URL \
     --dify-api-key $DIFY_API_KEY \
-    --sample tests/fixtures/golden.jsonl \
+    --sample sample_real_traffic.jsonl \
     --fail-threshold 0.01    # 差异率 > 1% 即 CI 失败
 ```
 
@@ -152,7 +152,7 @@ shadow 是**等价性验证**，不是"哪边对"的裁决。三种典型差异�
 | 差异类型 | 例子 | 处理方式 |
 |---------|------|---------|
 | 意图分类不同 | LG=`confirm_order` / Dify=`place_order_request` | 看具体 case：通常 LG 因有 quote_content 上下文判断更准 → 更新 Dify 或保留 |
-| api_code 不同 | LG=0 / Dify=500 | 后端调用差异，往往是 payload 结构不同 → 检查 OtcBackendClient 与 Dify 工具节点 |
+| api_code 不同 | LG=0 / Dify=500 | 后端调用差异，往往是 payload 结构不同 → 检查子图 backend / 三 Client 与 Dify 工具节点 |
 | 错误类型 | LG 返回正常 / Dify 超时 | 是基础设施问题，不是逻辑差异 → 重跑 |
 
 **经验阈值**：
@@ -163,23 +163,16 @@ shadow 是**等价性验证**，不是"哪边对"的裁决。三种典型差异�
 
 ---
 
-## 七、扩充样本
+## 七、样本格式（--sample）
 
-`tests/fixtures/golden.jsonl` 当前 30 条，覆盖：
-
-- swap：11 条（下单 / 确认 / 撤单 / 改单 / 查询 / 多标的 / 期货）
-- option：8 条（参与型快速询价 / 雪球 / 标准询价 / 下单 / 撤单 / 引用确认）
-- option_close：9 条（持仓查询 / 平仓 / 确认 / 撤单 / 确认撤单）
-- unknown / 路由优先级：6 条
-
-要加新 case：
+每行一条 JSON，至少包含 `id` 与 `raw_content`（可带 `quote_content` / `attachments`）：
 
 ```jsonl
-{"id": "g031", "category": "swap/...", "raw_content": "...", "expected": {"product_type": "swap", "intent": "..."}}
+{"id": "s-031", "raw_content": "000001 买入5000股 限价18.12 示例对手"}
 ```
 
-`expected` 中只有 `product_type` 和 `intent` 会被严格对比（参考 `eval_golden.py`），
-其他字段（如 `ticker`, `quantity`）只是文档说明。
+灰度期直接用从生产导入的真实流量样本（如 `sample_real_traffic.jsonl`）；
+`tests/fixtures/categories/` 的两种方言（`send_text` / `conversation`）**不是**该格式，需先转换。
 
 ---
 
@@ -187,12 +180,11 @@ shadow 是**等价性验证**，不是"哪边对"的裁决。三种典型差异�
 
 **Q: 没有 Dify 实例怎么验证 LangGraph？**
 
-A: 用 `scripts/eval_golden.py` 跑 snapshot 模式 — golden.jsonl 里 expected 就是
+A: 用 `scripts/langfuse_eval.py --local <fixture>` 跑本地评估 — fixture 的 expected_output 就是
 "我们认为正确的答案"，不依赖 Dify：
 
 ```bash
-python scripts/eval_golden.py tests/fixtures/golden.jsonl \
-    --endpoint http://localhost:8000/v1/message
+python scripts/langfuse_eval.py --local tests/fixtures/categories
 ```
 
 **Q: Dify 返回结构和我们约定的不一样怎么办？**

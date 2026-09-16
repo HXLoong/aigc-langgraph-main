@@ -32,36 +32,36 @@ model: sonnet
 - 不确定归类时，**停下来问用户**
 
 ### Step 3：定义 Pydantic 模型
-- 从 Dify 提示词的"输出格式"段推断 JSON schema
-- 写到 `app/subgraphs/<product>_models.py`
+- 输出契约以 Pydantic 模型为唯一真源（ADR 0023）：从 Dify"输出格式"段抽取字段清单，把字段语义写进每个字段的 `Field(description=)`（经 function calling schema 下发）
+- 写到 `app/subgraphs/<product>/models.py`（如 `app/subgraphs/swap/models.py`）
 - 字段用 `Literal` 做枚举约束，用 `Field(..., pattern=r"...")` 做格式约束
-- 模型类名加后缀 `Output`（如 `SwapNewIntentOutput`）
+- 模型类名加后缀 `Output`（如 `SwapNewIntentOutput`）；JSON 骨架不要带进 `.md`
 
 ### Step 4：写节点函数
-- 在对应的 `app/subgraphs/<product>.py` 新增一个 `@safe_node` 装饰的函数
-- 用 `load_prompt("category", "name")` 加载提示词
+- 在对应子图目录 `app/subgraphs/<product>/<node>.py` 新增 `@safe_node` 函数
+- 建 `PromptSpec`（`app/prompts/spec.py`，`register` 登记 inputs / output_model / user_builder），用 `SPEC.build_messages(state)` 拼消息（先例：`app/subgraphs/swap/intent.py`）
 - 用 `llm.with_structured_output(ModelClass)` 约束输出
-- 节点只返回 partial state（参考现有节点如 `classify_intent`）
+- 节点只返回 partial state，并写 `TraceEntry`（含 `llm_output["prompt_name"]`，ADR 0003 硬前置）
 
 ### Step 5：接入路由
-- 若是新意图，更新路由函数 `route_by_intent` 和子图的 `add_conditional_edges`
+- 若是新意图，更新子图路由函数（先例：`app/subgraphs/swap/graph.py::_route_after_swap_intent`）与 `add_conditional_edges` 映射；conditional 保留 `if state.get("error")` 的 cascade 防御（CLAUDE.md 原则 8）
 - 若替换已有节点，保持路由不变
 
 ### Step 6：测试
-- `tests/test_prompts_and_history.py` 加提示词加载测试（至少验证 system 段非空 + 含特定关键词）
-- `tests/test_models.py` 加 Pydantic 模型校验测试
-- `tests/fixtures/golden.jsonl` 加 2-3 条 E2E 测试用例
+- `tests/test_prompt_loader.py` / `tests/test_prompt_spec.py` 补提示词加载与 spec 校验（system 非空 / 占位符存在）
+- `tests/subgraphs/<product>/test_models.py` 加 Pydantic 模型校验测试
+- `tests/fixtures/categories/` 加 2-3 条 case（现役数据源，`scripts/check_fixture_consistency.py` 校验）
 - 跑 `pytest tests/ -v` 确认全部通过
 
 ### Step 7：总结报告
 给用户一个变更摘要：
 - 新增/修改了哪些文件（用相对路径）
 - 新增节点的路由条件是什么
-- 建议下一步：先在测试环境跑一次 `python scripts/eval_golden.py`
+- 建议下一步：先在测试环境跑一次 `python scripts/langfuse_eval.py --local <fixture>`
 
 ## 绝对禁止
 
-- 修改 `app/prompts/**/*.md` 中已有文件的内容（Dify 原文只读）
+- 未经确认就覆盖既有 `app/prompts/**/*.md` 的内容：默认只新增文件；确需更新既有提示词时按 `.claude/rules/prompt-management.md` 走普通 PR（Dify 侧更新走 sync → export → 人工 diff，不要一键覆盖）
 - 把提示词内容硬编码到 Python 源文件里
 - 跳过 Pydantic 模型直接返回 dict
 - 忘了写 `@safe_node` 装饰器

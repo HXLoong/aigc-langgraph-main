@@ -41,7 +41,7 @@ result = await llm.with_structured_output(SPEC.output_model).ainvoke(messages)
 
 - `inputs ⊆ get_type_hints(AgentState)`：构造时校验，改 State 字段名立刻在 import 阶段报错
 - `render_system` 对 `injects` 中登记但 `.md` 里不存在的占位符抛错：manifest / spec / `.md` 三者不可能悄悄不一致
-- 注册表 `all_specs()` 与 `_manifest.yaml` 交叉核对（`tests/test_prompt_spec.py`）：`output_model` / `injects` 必须相等；`scripts/prompt_inventory.py --check` 把 `PromptSpec(category=, name=)` 视为与 `load_prompt` 等价的加载点
+- 注册表 `all_specs()` 与 `_manifest.yaml` 交叉核对（`tests/test_prompt_spec.py`）：`output_model` / `injects` 必须相等；`scripts/prompt_inventory.py --check` 把 `PromptSpec(category=, name=)` 视为与 `load_prompt` 等价的加载点（2026-09-16：manifest 与 `prompt_inventory` 已随 ADR 0022 废弃移除，交叉核对以注册表测试为准）
 
 ### D2 · 输出契约只有一份：Pydantic `Field(description=)`
 
@@ -66,7 +66,7 @@ result = await llm.with_structured_output(SPEC.output_model).ainvoke(messages)
 | 第二批 | close 5 个（place_close / cancel_close / confirm_close / confirm_cancel / query_status）、swap select_counterparty / select_ticker | user 拼装同构，机械迁移；同时给 `close/models.py` 剩余模型补 description |
 | 第三批 | swap multimodal（image / excel / ocr，含 v2 灰度位）、ticker 4 个（tools.py helper 形态）、router unknown_intent | multimodal 输入含图片 / 文件，`user_builder` 需扩展为多模态消息；ticker 先完成 ADR 0022 未决项"转 structured output"再迁 |
 
-每批的门：`prompt_inventory.py --check --strict` 零违反 + 对应子图测试 GREEN + eval PASS ≥ 迁移前（迁移本身不改 LLM 输入文本，eval 应零变化；JSON 骨架删除属 ADR 0022 D4 零风险档）。
+每批的门：对应子图测试 GREEN + eval PASS ≥ 迁移前（迁移本身不改 LLM 输入文本，eval 应零变化；原 `prompt_inventory --strict` 门槛已随 ADR 0022 废弃移除，2026-09-16）。
 
 ## 备选方案
 
@@ -78,7 +78,7 @@ result = await llm.with_structured_output(SPEC.output_model).ainvoke(messages)
 
 - 正面：一个节点读哪些 State、输出什么、注入什么，在一个对象上可见并被测试守护；`_format_history` 类复制归零；JSON 骨架可删（option 7 文件 system 合计减少约 6K 字符）；改 AgentState 字段名 import 即红
 - 负面：新增 LLM 节点多写一个 `PromptSpec`（约 8 行）；输出模型必须补 description（本次 69 个字段）；灰度节点的 `prompt_name` 由 `build_messages` 返回，节点须继续写入 trace
-- 未决：第二 / 三批迁移；`description` 的字符预算（function calling schema 也计 tokens，`prompt_inventory` 尚未把 schema 算进单请求开销）；`inputs` 目前只声明不强制（节点仍可读未声明字段），是否在测试里用受限 State 代理强制，待第二批后决定
+- 未决：第二 / 三批迁移；`description` 的字符预算（function calling schema 也计 tokens，曾挂账给 ~~`prompt_inventory`~~，该工具已随 ADR 0022 废弃移除、需另找承载）；`inputs` 目前只声明不强制（节点仍可读未声明字段），是否在测试里用受限 State 代理强制，待第二批后决定
 
 ## 关联
 

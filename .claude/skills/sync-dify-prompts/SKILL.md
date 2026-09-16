@@ -35,9 +35,9 @@ done
 
 ### Step 3：准备映射表
 
-Dify YAML 节点标题 → 项目 prompt 路径：**以 `app/prompts/_manifest.yaml` 为准**（ADR 0022），下表只列当前活跃映射；
+Dify YAML 节点标题 → 项目 prompt 路径：下表列当前活跃映射（以 `app/prompts/` 目录与代码加载点为准）；
 非活跃文件（swap 5 个订单号节点 / `swap/confirm.md` / `option/intent_extract.md` / `option/param_limit.md`）已去 LLM 化或归档，
-不再同步；`ticker/completeness.md` 已删除（确定性校验替代）。同步后跑 `python scripts/prompt_inventory.py --check`。
+不再同步；`ticker/completeness.md` 已删除（确定性校验替代）。
 
 | Dify 节点标题 | 项目路径 |
 |---|---|
@@ -117,14 +117,14 @@ cp $TEMP/dify主工作流/互换-节点-意图识别.md app/prompts/swap/intent.
 ### Step 8：回归验证
 
 ```bash
-# 加载测试（确认没破坏 md 格式）
-pytest tests/test_prompts_and_history.py -v
+# 加载测试（确认没破坏 md 格式与 spec 契约）
+pytest tests/test_prompt_loader.py tests/test_prompt_spec.py -q
 
-# E2E 测试
-pytest tests/test_e2e.py -v
+# 回归测试
+pytest tests/ -q
 
-# golden set 评估（建议手动跑，需要服务运行中）
-# python scripts/eval_golden.py tests/fixtures/golden.jsonl
+# fixture 评估（建议手动跑，需要服务运行中）
+# python scripts/langfuse_eval.py --local tests/fixtures/categories
 ```
 
 ### Step 9：清理

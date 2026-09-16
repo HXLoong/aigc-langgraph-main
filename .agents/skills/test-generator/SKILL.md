@@ -22,10 +22,10 @@ metadata:
 - 读 `@.claude/rules/testing.md`
 - 读被测对象的代码（节点函数 / 模型 / 子图）
 - 读现有类似测试（找模板）：
-  - 路由测试：`tests/test_route.py`
-  - 模型测试：`tests/test_models.py`
-  - E2E 测试：`tests/test_e2e.py`
-  - 提示词+历史：`tests/test_prompts_and_history.py`
+  - 路由测试：`tests/test_intent_route.py`
+  - 模型测试：`tests/subgraphs/swap/test_models.py`（或对应子图目录）
+  - 集成 / E2E：`tests/integration/` + `tests/test_cascade_e2e.py`
+  - 提示词加载 / spec：`tests/test_prompt_loader.py` / `tests/test_prompt_spec.py`
 
 ### Step 2：选择测试层次
 
@@ -83,7 +83,7 @@ async def test_e2e_<scenario>(mock_settings):
 
 ### Step 4：避坑
 
-- **Mock 要 patch 使用点**：swap.py 里用了 `OtcBackendClient`，必须 patch `app.subgraphs.swap.OtcBackendClient`，而不是 `app.tools.otc_backend.OtcBackendClient`
+- **Mock 要 patch 使用点**：如 option 与 close 的 backend.py 都引了 `OptionClientHttpx`，必须分别 patch `app.subgraphs.option.backend.OptionClientHttpx` / `app.subgraphs.close.backend.OptionClientHttpx`，而不是定义处（先例：`tests/test_inquiry_continuation.py`）
 - **async 测试加 `@pytest.mark.asyncio`**（尽管 auto 模式下不加也能跑）
 - **Dify 原始提示词测试**：不要验证字符数精确值（会随 Dify 更新变化），只验证关键词存在
 
@@ -96,10 +96,10 @@ pytest tests/test_<file>.py::test_<new_name> -v
 pytest tests/ -v
 ```
 
-### Step 6：golden set 补充（若改了业务逻辑）
-- 在 `tests/fixtures/golden.jsonl` 末尾加 2-3 条 JSONL
-- 字段包含：`id`、`category`、`raw_content`、`quote_content`（可选）、`expected`
-- 运行 `python scripts/eval_golden.py` 验证
+### Step 6：fixture 补充（若改了业务逻辑）
+- 在 `tests/fixtures/categories/` 对应文件末尾加 2-3 条 case（现役数据源）
+- 字段沿用该文件既有方言（结构化方言含 `expected.product_type/intent`；任务队列方言用 `response_contains` 文本断言；格式见 `scripts/ai_test_langgraph/README.md`）
+- 运行 `python scripts/langfuse_eval.py --local tests/fixtures/categories` 验证
 
 ## 测试命名
 

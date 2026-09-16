@@ -18,19 +18,18 @@ docker compose -f infra/langfuse/docker-compose.yml --env-file infra/langfuse/.e
 # 启动应用
 uvicorn app.main:app --reload                # FastAPI（POST /v1/workflows/run，兼容 Dify）
 
-# 测试（841 passed + 14 skipped，约 2 分钟，行覆盖率 82%）
+# 测试（1864 passed + 15 skipped，约 3 分钟）
 pytest tests/ -v                             # 全套
 pytest tests/test_smoke.py -v                # 仅 smoke
 pytest -k "not e2e"                          # 跳过 e2e
 
 # 评估（M3 主用入口：DeepSeek Judge + per-turn 富集 JSON 写到 Langfuse Cloud）
-python scripts/langfuse_eval.py --local tests/fixtures/unified_golden.jsonl --concurrency 4   # 全量 350+
-python scripts/langfuse_eval.py --local tests/fixtures/unified_golden.jsonl --ids opt-001,opt-018 --concurrency 2
+python scripts/langfuse_eval.py --local tests/fixtures/categories --concurrency 4   # 全量（现役数据源，350+ 条）
+python scripts/langfuse_eval.py --local tests/fixtures/categories --ids case-025,case-026 --concurrency 2
 
 # Harness CLI（备用 / 本地快速 smoke，无 Judge）
-python -m harness run                        # 跑 golden 全集
-python -m harness diff <run-a> <run-b>       # 比对两次 run
-python -m harness sync-golden                # tests/fixtures/*.jsonl ↔ LangFuse dataset
+python -m harness doctor                     # 环境体检（/health /ready）
+python -m harness run                        # 跑 fixture（默认 tests/fixtures/categories/，参数见 --help）
 
 # 真后端探针（M3 联调）
 python scripts/probe_real_backend_e2e.py
@@ -79,27 +78,26 @@ app/
 ├── observability/           # tracing.py + metrics.py（Prometheus 兼容 /metrics）
 └── prompts/                 # Dify 提示词资产（router / swap / option / option_close / ticker）
 
-harness/                     # 评测台（与 app/ 解耦，仅 import build_main_graph）
-├── golden.py                # golden.jsonl 加载
-├── runner.py                # 跑 case + dump trace 到 LangFuse
-├── differ.py                # 字段级 diff（按业务对象路径）
-├── reporter.py              # JSON + markdown 报告（按 source 桶分别统计）
+harness/                     # 评测台（经 HTTP 调本地 /v1/workflows/run，与 app/ 解耦）
+├── golden.py                # categories fixture 加载（两方言归一化）
+├── multi_turn.py            # 多轮 case 的 HTTP runner
+├── differ.py                # 字段级 diff（按业务对象路径）+ 文本 / 结构化断言
 ├── langfuse_client.py       # LangFuse SDK 封装（v4 OTel-based）
 ├── token_tracker.py         # LLM token / 成本估算
 ├── case_generator/          # LLM 对抗式 paraphrase 生成 C 桶
-└── cli.py                   # python -m harness <run|diff|sync-golden|...>
+└── cli.py                   # python -m harness <doctor|run> + 报告渲染
 
-scripts/                     # langfuse_eval.py（Judge 评估，M3 主用） / eval_golden.py / probe_*_e2e.py
+scripts/                     # langfuse_eval.py（Judge 评估，M3 主用） / probe_*.py
                              # upload_golden_to_langfuse.py / promote_langfuse_prompt.py / canary_status.py
                              # rollback_canary.sh / run_alerts.py / llm_cost_report.py / shadow_compare.py 等
 
 infra/langfuse/              # LangFuse self-hosted Docker Compose（PG + ClickHouse + Redis + MinIO + Web + Worker）
-docs/adr/                    # 架构决定 ADR 0000-0021（共 22 篇）+ README 索引
+docs/adr/                    # 架构决定 ADR 0000-0023（共 24 篇）+ README 索引
 docs/api-contracts/          # Java 后端真实业务 API 契约
 docs/m3-m4-roadmap.md        # M3/M4 端到端任务图（6 个交付面，2026-05-11 修订）
 docs/on-call-runbook.md      # 上线 on-call SOP
-tests/                       # 841 passed + 14 skipped；行覆盖率 82%
-tests/fixtures/              # golden.jsonl（350+ 条）+ golden_ticker_2026-05.jsonl（34 条）
+tests/                       # 1864 passed + 15 skipped
+tests/fixtures/              # categories/（现役，6 文件 / 389 条）+ unified_golden.jsonl / old_typing/（归档）
 ```
 
 ## 团队工具链：Claude Code 与 Codex 共用一份纪律
@@ -112,7 +110,7 @@ tests/fixtures/              # golden.jsonl（350+ 条）+ golden_ticker_2026-05
 - `.agents/skills/<name>/` = `.claude/skills/<name>/`（frontmatter 收敛为 Agent Skills 标准的 `name` / `description` / `metadata`）
   + `.claude/agents/*.md`（Codex 无 subagent，转为同名技能，调用时以该角色执行）；Codex 里用 `$name` 显式调用
 
-改纪律或流程只改 `CLAUDE.md` / `.claude/**`，再跑生成脚本一起提交；governance CI `--check` 守同步。
+改纪律或流程只改 `CLAUDE.md` / `.claude/**`，再跑生成脚本一起提交；提交前跑 `python scripts/sync_agents_md.py --check` 守同步。
 
 ## 子目录陷阱页（按需加载）
 
@@ -132,7 +130,7 @@ tests/fixtures/              # golden.jsonl（350+ 条）+ golden_ticker_2026-05
    - 写测试 → 跑到 RED（测试失败） → 写最小修复代码 → 跑到 GREEN → 全量回归
    - 禁止先改代码再补测试，也禁止跳过 RED 验证
    - `/test-driven-development` skill 包含完整 workflow，修改代码前调用
-6. **git 里的提示词是唯一真源，Dify 只是上游输入**（ADR 0022 D1，2026-09-15）—— 改活跃提示词走 ADR 0022 D4 分档：零风险档直接改 v1，低风险 / 需业务确认档走 `*_v2.md` 灰度 + eval 门；每次改动在 `app/prompts/_manifest.yaml` 该条目 `changelog` 登记，`prompt(<scope>)` commit。Dify 侧更新由 `scripts/prompt_inventory.py --check` 告警后人工 diff 合入，不再一键覆盖
+6. **git 里的提示词是唯一真源，Dify 只是上游输入** —— 改提示词直接改 `app/prompts/**/*.md` + 普通 PR review，`prompt(<scope>)` commit；Dify 侧更新走 `dify/sync.py` → `scripts/export_dify_prompts.py` → 人工 diff 选择性合入，不要一键覆盖
 7. **标的代码必须 from_goats=True** —— Ticker Agent 的绝对约束（ADR 0008）
 8. **节点失败必须 cascade 防御** —— 任一节点写入 `state['error']` 后，下游 conditional 路由必须检查并跳到 fallback render，禁止 cascade 失败。具体：主图 `_route_by_product` 与每子图首节点后的 conditional 都加 `if state.get('error'): return 'fallback'`。fallback 节点输出友好回复（"我没完全理解你的意思，能换种说法重新告诉我吗"）+ trace 记录原 fail 节点名。LLM 解析失败由 `with_structured_output` 自带 1 次重试 + `@safe_node` 兜底捕获 ValidationError 写入 error；不走 HITL（HITL 仅用于 ADR 0006 的业务参数二次确认场景）
 
@@ -216,7 +214,7 @@ tests/fixtures/              # golden.jsonl（350+ 条）+ golden_ticker_2026-05
 修完跑对应 case 确认：
 
 ```bash
-.venv/bin/python scripts/langfuse_eval.py --local tests/fixtures/unified_golden.jsonl --ids opt-001,opt-018 --concurrency 2
+.venv/bin/python scripts/langfuse_eval.py --local tests/fixtures/categories --ids case-025,case-026 --concurrency 2
 ```
 
 ## 绝对禁止
@@ -246,7 +244,7 @@ ADR 0016 把"M3 = shadow 双跑"重新定义为"M3 = 工程联调闭环 + 评估
 **已完成（六大交付面）**：
 
 1. **代码完整性** ✅：24 节点蓝图 → 主干 20 节点已落地；P2 辅助节点（place_order_image / place_order_excel / image_recognize）按线上流量增量补
-2. **数据集完整性** ✅：golden.jsonl 已扩到 350+；fixture 职责矩阵 + 一致性 lint 已就位（PR #109）；按 B / C / D 桶分别维护
+2. **数据集完整性** ✅：fixture 集已扩到 350+；fixture 职责矩阵 + 一致性 lint 已就位（PR #109）；按 B / C / D 桶分别维护
 3. **客户现场部署能力** ✅：infra/langfuse self-hosted、`scripts/deploy-customer.sh`（C1.13 / Issue #58）、`.env.customer.template`（C1.12 / Issue #52）、私有化部署文档（C1.11 / Issue #51）
 4. **联调与回归** ✅：真后端 e2e 探针（`scripts/probe_*_e2e.py`，D2.1–D2.6 + Dx.1–Dx.2 已 closed）+ DeepSeek Judge 评估（`scripts/langfuse_eval.py`）+ business 子图 → 真 client → mock_api 全链路（PR #110，27 测试）
 5. **可观测 + 运维** ✅：`/metrics` Prometheus 端点（C1.5 / Issue #50） + 5xx 计数闭环（PR #104） + P95 延迟告警（PR #103） + LLM 成本监控（C1.7 / Issue #56） + 阈值一致性 CI lint（PR #106） + on-call 应急回切剧本（PR #99） + `scripts/rollback_canary.sh`（PR #98）
@@ -288,7 +286,7 @@ ADR 0016 把"M3 = shadow 双跑"重新定义为"M3 = 工程联调闭环 + 评估
 | **D · 客户历史真实输入** | 反映真实分布；必须业务方人工标注 expected 后才能合入 | 无硬性阈值（M3 持续累积，作补充参考）|
 | ~~A · 历史企微日志抽样~~ | 暂搁，被 D 桶替代 | — |
 
-harness reporter 输出按桶分别统计；CI 维护一致性 lint（详见 `scripts/check_fixture_consistency.py`）。
+按桶 PASS 率与退出门口径见 `docs/m3-m4-roadmap.md`；`scripts/check_fixture_consistency.py` 守 fixture 一致性 lint（提交前本地跑）。
 
 详见：
 

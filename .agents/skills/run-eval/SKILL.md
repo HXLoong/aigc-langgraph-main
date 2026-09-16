@@ -59,7 +59,7 @@ python -m harness run --out runs/eval-$(date +%Y%m%d_%H%M)
 
 ### Step 3：解读 summary.json
 
-字段（以 `harness/reporter.py` 的 `summarize` 为准）：
+字段（以 `harness/cli.py` 的实际输出为准）：
 - 总 case 数 / pass / fail
 - 按 category 分组的通过率
 - LangFuse trace url（每条 case 一个）
@@ -133,9 +133,8 @@ cp runs/<ts>/summary.md reports/eval_$(date +%Y%m%d_%H%M).md
 
 ## 相关
 
-- `harness/cli.py` — 命令实现
-- `harness/runner.py` — case 执行
+- `harness/cli.py` — 命令实现 + 报告渲染（JSON / markdown）
+- `harness/multi_turn.py` — 多轮 case 的 HTTP 执行
 - `harness/differ.py` — 字段级 diff
-- `harness/reporter.py` — JSON + markdown 报告
 - ADR 0002 — harness 总体设计
 - ADR 0014 — LangFuse 作为 harness 后端

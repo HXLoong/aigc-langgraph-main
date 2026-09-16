@@ -126,26 +126,6 @@ def render_prompt_md(title: str, system: str, user_template: str) -> str:
     return "\n".join(parts)
 
 
-def append_manifest_gray(
-    manifest_path: Path, category: str, name: str, version: int, base_sha: str, since: str
-) -> None:
-    """把晋升产物登记为 app/prompts/_manifest.yaml 的 gray 条目（ADR 0022 D2/D3）。
-
-    文本追加而非 yaml.dump 重写，以保留 manifest 里的注释。
-    """
-    entry = (
-        f"  {category}/{name}_v{version}:\n"
-        f"    status: gray\n"
-        f"    base: {category}/{name}\n"
-        f'    since: "{since}"\n'
-        f"    base_system_sha256: {base_sha}\n"
-    )
-    text = manifest_path.read_text(encoding="utf-8")
-    if not text.endswith("\n"):
-        text += "\n"
-    manifest_path.write_text(text + entry, encoding="utf-8")
-
-
 def _render_markdown_from_langfuse(prompt, lf_name: str) -> tuple[str, int]:
     """把 LangFuse 的 prompt 对象渲染为 markdown 文本（按 app/prompts/__init__.py 反向约定）。
 
@@ -204,17 +184,6 @@ def _write_target(
         )
         sys.exit(3)
     target.write_text(content, encoding="utf-8")
-    from datetime import date
-
-    from scripts.prompt_inventory import system_sha256
-
-    manifest = PROMPTS_ROOT / "_manifest.yaml"
-    base_md = PROMPTS_ROOT / category / f"{name}.md"
-    if manifest.exists() and base_md.exists():
-        append_manifest_gray(
-            manifest, category, name, version,
-            base_sha=system_sha256(base_md), since=date.today().isoformat(),
-        )
     return target
 
 

@@ -1,7 +1,7 @@
 """业务方 golden 种子收集模板生成器（grill-with-docs 2026-05-10 第 4 决策）。
 
 为 M2 24 个节点各生成一份 markdown 模板，业务方填空填出 6-8 条种子 case。
-业务方填完后由工具转 jsonl 合入 `tests/fixtures/golden.jsonl`。
+业务方填完后由工具转 jsonl 合入 `tests/fixtures/categories/`。
 
 模板填空原则：
 - 只标 product_type + intent（路由层），不标参数细节

@@ -18,7 +18,7 @@ metadata:
 ## 审查清单
 
 ### 1. 路由逻辑对齐
-对比 Dify 主工作流的 `脚本判断期权、互换、其他查询指令` 节点 和 LangGraph 的 `app/nodes/route.py`：
+对比 Dify 主工作流的 `脚本判断期权、互换、其他查询指令` 节点 和 LangGraph 的 `app/nodes/intent_route.py`（规则层 `app/nodes/route_rules.py`）：
 - 关键词列表是否一致
 - 优先级是否一致（特别是平仓单号正则 vs 关键词的先后）
 - 附件类型判断是否等价
@@ -28,7 +28,7 @@ metadata:
 - 绝不多出 Dify 里不存在的意图（会导致 shadow compare 不匹配）
 
 ### 3. 提示词加载对齐
-- `app/prompts/**/*.md` 的每个文件是否都有代码在 `load_prompt()` 调用
+- `app/prompts/**/*.md` 的每个文件是否都有代码在 `load_prompt()` / `PromptSpec` 中调用
 - 有没有孤儿提示词（文件在但没代码用）
 - 有没有硬编码的提示词（违反规范）
 
@@ -39,7 +39,7 @@ metadata:
 - 可选字段标记正确
 
 ### 5. 后端 API 调用对齐
-审查 `app/tools/otc_backend.py` 对比 Dify Code 节点的调用：
+审查子图 `backend.py`（`app/subgraphs/*/backend.py`）与三个 Client（`app/tools/option_client.py` / `swap_client.py` / `ticker_client.py`）对比 Dify Code 节点的调用：
 - URL 路径完全一致
 - 请求 body 字段名（**camelCase，与后端接口对齐**）
 - 响应 code 处理（0 / 500 / 其他）
@@ -75,11 +75,11 @@ metadata:
 
 ### 1. [swap] 意图枚举不一致
 - **Dify**：`互换-节点-意图识别.md` system prompt 中有 "7 种意图" 包括 `modify_order_request`
-- **代码**：`app/subgraphs/swap_models.py` 的 `SwapIntentType` 仅 6 种，缺 `modify_order_request`
+- **代码**：`app/subgraphs/swap/models.py` 的 `SwapIntentType` 仅 6 种，缺 `modify_order_request`
 - **影响**：Dify 能识别改单请求意图，我们直接兜底到 unknown
 - **建议**：
   - 添加 `modify_order_request` 到 Literal
-  - 在 route_by_intent 加映射
+  - 在子图路由函数（如 `_route_after_swap_intent`）加映射
   - 补 golden case
 
 ## MAJOR 级（N 项）

@@ -43,6 +43,15 @@ prompt(close): 更新平仓意图识别提示词到 Dify v2.3
 test(e2e): 新增 2 条雪球询价的 golden case
 ```
 
+## Agent 运行中的 checkpoint 纪律
+
+适用于 AI agent（Claude Code / Codex）驱动的长任务与自驱动循环：
+
+- **每绿即提交**：完成一个绿色里程碑（RED → GREEN → 回归通过）即本地 commit，沿用既有 type 约定；checkpoint 是恢复点，不是发布
+- **本地 commit 自由、远程操作受限**：循环内允许 `git commit`；`git push` / `gh pr create` 必须等用户显式指示（见 `CLAUDE.md`「绝对禁止」P0）
+- **记录恢复点**：长任务在对应 issue 或计划文件里记 checkpoint 短 sha（`git rev-parse --short HEAD`），跨会话 / 换工具恢复时从最近 checkpoint 起
+- **会话结束不留脏树**：要么提交、要么 `git stash` 并在 issue 说明 WIP；跨会话的未提交改动是最易丢的状态
+
 ## PR 标题与内容语言
 
 **强制中文**：
@@ -69,7 +78,7 @@ test(e2e): 新增 2 条雪球询价的 golden case
 
 - [ ] `pytest tests/ -v` 全部通过
 - [ ] `ruff check app/ tests/` 零警告
-- [ ] 如果改了提示词加载：跑 `python scripts/eval_golden.py`，准确率不低于上一版
+- [ ] 如果改了提示词加载：跑 `python scripts/langfuse_eval.py --local <fixture>`，准确率不低于上一版
 - [ ] 如果新增节点/意图：golden set 加了 case
 - [ ] 如果改了 State：`make_initial_state()` 同步更新
 - [ ] 如果改了 pyproject.toml 依赖：说明原因

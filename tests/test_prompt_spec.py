@@ -85,7 +85,7 @@ class TestBlocks:
 
 
 # ============================================================
-# 注册表：与 manifest / AgentState / 输出模型契约一致
+# 注册表：AgentState / 输出模型契约一致
 # ============================================================
 
 
@@ -119,17 +119,6 @@ class TestRegistry:
             "option/extract_query", "option_close/intent", "option_close/holding_query", "swap/intent",
             "swap/place_order",
         } <= keys
-
-    def test_registry_matches_manifest(self):
-        from scripts.prompt_inventory import MANIFEST, load_manifest
-
-        _load_all_nodes()
-        manifest = load_manifest(MANIFEST)
-        for key, s in spec_mod.all_specs().items():
-            entry = manifest.get(key)
-            assert entry and entry.get("status") == "active", key
-            assert entry.get("output_model") == (s.output_model.__name__ if s.output_model else None), key
-            assert set(entry.get("injects") or []) == set(s.injects), key
 
     def test_inputs_are_agent_state_fields(self):
         _load_all_nodes()

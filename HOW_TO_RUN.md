@@ -101,7 +101,7 @@ docker ps --filter "name=otc-agent" --filter "name=langfuse"
 ### 单元测试
 
 ```bash
-pytest tests/ -v                 # 841 passed + 14 skipped（约 2 分钟，行覆盖率 82%）
+pytest tests/ -v                 # 1864 passed + 15 skipped（约 3 分钟）
 pytest tests/test_smoke.py -v    # 仅 smoke（图编译 + 端到端 stub run + @safe_node 异常捕获）
 pytest -k "not e2e"              # 跳过端到端
 pytest --lf                      # last-failed
@@ -114,11 +114,11 @@ pytest --lf                      # last-failed
 **A · DeepSeek Judge 评估（推荐，含 per-turn 富集 JSON 写回 Langfuse Cloud）**：
 
 ```bash
-# 全量 350+ 条 golden
-python scripts/langfuse_eval.py --local tests/fixtures/golden.jsonl --concurrency 4
+# 全量（现役数据源 tests/fixtures/categories，350+ 条）
+python scripts/langfuse_eval.py --local tests/fixtures/categories --concurrency 4
 
 # 指定 case 子集
-python scripts/langfuse_eval.py --local tests/fixtures/golden.jsonl --ids opt-001,opt-018 --concurrency 2
+python scripts/langfuse_eval.py --local tests/fixtures/categories --ids case-025,case-026 --concurrency 2
 
 # Langfuse Dataset 模式（运行后到 UI 看 score + judge_comment + turns[i] 富集字段）
 python scripts/langfuse_eval.py --concurrency 4
@@ -129,24 +129,21 @@ python scripts/langfuse_eval.py --concurrency 4
 **B · 纯本地 harness（快速 smoke，无 Judge）**：
 
 ```bash
-python -m harness run                     # 跑 golden 全集
-python -m harness run --case g042         # 单 case
-python -m harness diff <run-a> <run-b>    # 比对两次 run
-python -m harness sync-golden             # tests/fixtures/*.jsonl ↔ LangFuse dataset
+python -m harness doctor                  # 环境体检（/health /ready）
+python -m harness run                     # 跑 fixture（默认 tests/fixtures/categories/）
+python -m harness run --case case-025     # 单 case
 ```
 
 **C · 上传 golden 到 Langfuse Dataset（同步工具）**：
 
 ```bash
-python scripts/upload_golden_to_langfuse.py   # tests/fixtures/golden.jsonl → Langfuse Dataset
-python scripts/upload_option_dataset.py       # 期权 QA 原版 → Langfuse Dataset
+python scripts/upload_golden_to_langfuse.py   # tests/fixtures/categories/ → Langfuse Dataset
 ```
 
 ### 真后端 e2e 探针（M3 联调用）
 
 ```bash
-python scripts/probe_real_backend.py        # 健康检查
-python scripts/probe_real_backend_e2e.py    # 端到端探针
+python scripts/probe_real_backend_e2e.py    # 通用连通性 / 健康检查
 python scripts/probe_swap_write_e2e.py      # swap 写路径
 python scripts/probe_option_write_e2e.py    # option 写路径
 python scripts/probe_close_write_e2e.py     # close 写路径
@@ -230,7 +227,7 @@ aigc-langgraph/
 ├── docs/adr/                     # 20 个架构决定（ADR 0000-0019）
 ├── docs/api-contracts/           # Java 后端真实契约
 ├── scripts/                      # langfuse_eval / probe_* / upload_* / canary_* 等
-├── tests/                        # 841 passed + 14 skipped
+├── tests/                        # 1864 passed + 15 skipped
 ├── tests/fixtures/               # golden.jsonl（350+）+ golden_ticker_2026-05.jsonl
 ├── docker-compose.yml            # MySQL + LangGraph app
 └── .env.example                  # 环境变量模板

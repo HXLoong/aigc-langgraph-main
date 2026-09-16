@@ -52,7 +52,7 @@ docker compose -f infra/langfuse/docker-compose.yml --env-file infra/langfuse/.e
 # 3. 启动应用
 uvicorn app.main:app --reload   # POST /v1/workflows/run（兼容 Dify Workflow Run API）
 
-# 4. 跑测试（841 passed + 14 skipped，2 分钟左右）
+# 4. 跑测试（1864 passed + 15 skipped，约 3 分钟）
 pytest tests/ -v
 
 # 5. 跑评估
@@ -85,26 +85,25 @@ app/                        # LangGraph 应用层
 ├── main.py                 # FastAPI 入口 + lifespan + HTTPMetricsMiddleware + /metrics
 ├── api/                    # routes.py（POST /v1/workflows/run）+ health.py（/health, /ready）
 ├── graph/                  # state + safe_node + cascade fallback
-├── graphs/main_graph.py    # 兼容 shim → 真源 app/graph/main.py（一级路由 _route_after_intent）
-├── nodes/                  # ingest / intent_route / persist / render / fallback
+├── nodes/                  # ingest / pre_route / intent_route（+route_rules）/ fast_query / persist / render / fallback
 ├── subgraphs/
-│   ├── swap/               # intent / place_order / cancel / confirm / query_order / hand_to_share
-│   ├── option/             # intent + 5 extract（inquiry / place_or_modify / cancel / confirm / query）
+│   ├── swap/               # intent / place_order / select_counterparty / select_ticker / confirm / cancel / query_order / multimodal
+│   ├── option/             # intent + 7 extract（inquiry / place / confirm_place / cancel_place / confirm_cancel / cancel / query）+ sanitize
 │   ├── close/              # intent / place_close / cancel_close / confirm_close / confirm_cancel / holding_query / query_status
-│   └── ticker/             # ReAct Agent（tokenize / completeness / rank / infer_code）+ resolver
+│   └── ticker/             # resolver 确定性管线（候选格式化 → 3 路 LLM → merge_and_validate → GOATS+rank）
 ├── tools/                  # OptionClient / SwapClient / TickerClient + models + auth
-├── llm/clients.py          # Qwen 工厂：standard / thinking / VL / qwen3.5-35b-a3b 非 thinking
+├── llm/clients.py          # LLM 统一工厂：全量 DeepSeek-V4-pro（ADR 0020；函数名沿用 get_qwen_*）
 ├── checkpointer/factory.py # AIOMySQLSaver
 ├── observability/          # tracing + metrics（Prometheus 兼容 /metrics）
 └── prompts/                # Dify 提示词资产（router / swap / option / option_close / ticker）
 
-harness/                    # 评测台 CLI（python -m harness <run|diff|sync-golden|...>）
-scripts/                    # langfuse_eval.py / eval_golden.py / probe_*_e2e.py / promote_*.py / canary_*.sh ...
+harness/                    # 评测台 CLI（python -m harness <doctor|run>，经 HTTP 调本地 /v1/workflows/run）
+scripts/                    # langfuse_eval.py / probe_*.py / promote_*.py / canary_*.sh ...
 infra/langfuse/             # LangFuse self-hosted Docker Compose（PG + ClickHouse + Redis + MinIO + Web + Worker）
-docs/adr/                   # 架构决定 ADR 0000-0021（共 22 篇）+ README 索引
+docs/adr/                   # 架构决定 ADR 0000-0023（共 24 篇）+ README 索引
 docs/api-contracts/         # Java 后端真实业务 API 契约
 dify/                       # Dify 同步工具（保留历史 YAML 资产）
-tests/                      # 841 passed + 14 skipped；行覆盖率 82%
+tests/                      # 1864 passed + 15 skipped
 tests/fixtures/             # golden.jsonl（350+ 条）+ golden_ticker_2026-05.jsonl
 ```
 

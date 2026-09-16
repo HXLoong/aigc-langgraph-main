@@ -8,7 +8,7 @@
 1. 根 `CLAUDE.md` —— 项目现状、命令、核心原则、排查 SOP（唯一必读）
 2. [ARCHITECTURE.md](./ARCHITECTURE.md) —— 单页导览 + 分层细节
 3. 根 `CONTEXT.md` —— 领域语言（业务术语）
-4. [adr/README.md](./adr/README.md) —— 22 篇架构决策索引，按需查
+4. [adr/README.md](./adr/README.md) —— 24 篇架构决策索引，按需查
 
 ## 根目录活文档（9 个）
 
@@ -30,7 +30,7 @@
 
 | 目录 | 职责 |
 |---|---|
-| [adr/](./adr/) | 架构决策记录（0000–0021），只增不改，被取代标 Superseded |
+| [adr/](./adr/) | 架构决策记录（0000–0023），只增不改，被取代标 Superseded |
 | [api-contracts/](./api-contracts/) | Java 后端真实 API 契约 |
 | [deploy/](./deploy/) | 客户私有化部署、LangFuse self-hosted、shadow 双跑指南 |
 | [customer/](./customer/) | 客户环境评估 |

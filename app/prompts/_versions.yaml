@@ -22,8 +22,8 @@
 #
 # 2026-08-28 · swap 提示词瘦身 P0 批（docs/swap-prompt-slimming-assessment.md）：
 # image_extract_v2 / excel_extract_v2 / image_ocr_v2 为「零风险删除档」瘦身版，默认 0 流量。
-# 2026-09-15 · ADR 0022 D1 拍板 git 为真源后，零风险瘦身直接落 v1；intent_v2 / place_order_v2
-# 已与 v1 产生业务规则代差且失去用途，删除（git 历史可查）。灰度位状态以 _manifest.yaml 为准。
+# 2026-09-15 · git 为真源后，零风险瘦身直接落 v1；intent_v2 / place_order_v2
+# 已与 v1 产生业务规则代差且失去用途，删除（git 历史可查）。
 #   a) 环境变量强制（开发/eval 验证）：
 #      OTC_PROMPT_SWAP_IMAGE_EXTRACT_VERSION=image_extract_v2
 #      OTC_PROMPT_SWAP_EXCEL_EXTRACT_VERSION=excel_extract_v2

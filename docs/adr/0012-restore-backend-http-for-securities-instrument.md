@@ -29,7 +29,7 @@ V1 闭环为脱离 VPN 依赖，曾把标的查询从 Dify 的后端 HTTP 接口
 **MySQL 直连的处置（超出原计划）**：原决策保留直连给 mock_api 闭环 demo；`mock_api/` 已于 2026-05-13（commit `4ac9f0b`）整体删除，直连代码零残留。现状的测试形态 = AsyncMock 单测 + `scripts/probe_*_e2e.py` 真后端探针。遗留清理项：
 
 - 死配置：`app/config.py` 的 `ticker_mysql_*`（5 项）与 `securities_instrument_url/key`（零引用）+ `.env.example` 对应段
-- rot 脚本：`scripts/demo_closed_loop.py` 仍 patch 已删符号（`app.tools.otc_backend.*`），已不可运行
+- rot 脚本：~~`scripts/demo_closed_loop.py`~~（已删除）曾 patch 已删符号，早已不可运行
 - `.env.example` 的 `OTC_API_BASE_URL` 示例含 `/admin-api` 会与 client 拼接出双前缀（真实 `.env` 与客户模板写法正确）
 
 **Shadow 比对维度**：原 TODO 已完成——`scripts/shadow_compare.py` 归一化 `tickers` + `ticker_hitl_candidates` 做字段级 diff，有测试覆盖。

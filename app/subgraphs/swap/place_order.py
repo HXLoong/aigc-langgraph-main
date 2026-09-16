@@ -160,7 +160,7 @@ async def swap_place_order(state: AgentState) -> dict[str, Any]:
                 node="swap_place_order",
                 decision=decision,
                 llm_output={
-                    "prompt_name": prompt_name,  # ADR 0003 灰度硬前置：reporter 按此分桶
+                    "prompt_name": prompt_name,  # ADR 0003 灰度硬前置：trace 记录实际加载文件名
                     "params": params.model_dump(),
                     "tickers_count": len(tickers),
                     "hitl_count": len(resolution.hitl_pending),

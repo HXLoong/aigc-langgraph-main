@@ -65,9 +65,9 @@ curl -X POST http://localhost:8000/v1/workflows/run \
   -d '{"inputs": {"rawContent": "600519.SH 询价 3 个月平值看涨", "conversationId": "t-1"},
        "response_mode": "blocking", "user": "t-1"}'
 
-# 层 4 · golden 批量评估（DeepSeek Judge 打分）
-.venv/bin/python scripts/langfuse_eval.py --local tests/fixtures/old_typing/golden.jsonl --limit 20 --concurrency 5
-.venv/bin/python scripts/langfuse_eval.py --local tests/fixtures/old_typing/golden.jsonl --ids opt-001 --no-judge  # 显式选择历史基准
+# 层 4 · fixture 批量评估（DeepSeek Judge 打分）
+.venv/bin/python scripts/langfuse_eval.py --local tests/fixtures/categories --limit 20 --concurrency 5
+.venv/bin/python scripts/langfuse_eval.py --local tests/fixtures/categories --ids case-025 --no-judge  # 单 case 冒烟
 
 # 层 5 · 真后端探针（需 VPN）
 .venv/bin/python scripts/probe_real_backend_e2e.py     # 通用连通性
