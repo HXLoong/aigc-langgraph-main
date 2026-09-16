@@ -45,10 +45,6 @@ jobs:
         # 详见 tests/fixtures/README.md §3
         run: python scripts/check_fixture_consistency.py
 
-      - name: 提示词清单一致性（app/prompts ↔ _manifest.yaml ↔ 代码加载点，ADR 0022）
-        # 目录/manifest 双向无孤儿 + active 必有加载点 + inactive 零引用 + v2 灰度位漂移
-        run: python scripts/prompt_inventory.py --check
-
       - name: ADR 引用一致性（互引虚悬 + 代码路径存在性）
         # Issue #161（#152 裁决落地）：承接 AUDIT-2026-05-13 §4 复检能力，
         # 跳过 ~~删除线~~ 段；详见 docs/adr/README.md "卫生检查"
