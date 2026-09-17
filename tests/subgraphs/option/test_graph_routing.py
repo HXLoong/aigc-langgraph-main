@@ -15,16 +15,9 @@ from app.subgraphs.option import extract_place as place_module
 from app.subgraphs.option import extract_query as query_module
 from app.subgraphs.option import intent as intent_module
 from app.subgraphs.option.models import (
-    OptionCancelParams,
-    OptionCancelPlaceParams,
-    OptionConfirmCancelParams,
-    OptionConfirmPlaceParams,
-    OptionInquiryParams,
+    OptionInquiryRawItem,
+    OptionInquiryRawParams,
     OptionIntentOutput,
-    OptionOrderItem,
-    OptionOrderItemWithFastExec,
-    OptionPlaceParams,
-    OptionQueryParams,
 )
 
 #: 不含 conversation_id/user_id/room_id——保持 call_option_backend() 的早退门禁
@@ -58,6 +51,20 @@ def _patch(
         )
 
 
+def _patch_backend(monkeypatch: pytest.MonkeyPatch, module: object) -> None:
+    """去 LLM 化节点：只固定后端边界；LLM 工厂不存在也必须不被调用。"""
+    monkeypatch.setattr(
+        module,
+        "call_option_backend",
+        AsyncMock(return_value={"api_code": 0, "api_result": "backend reply"}),
+    )
+
+    def _forbid(*_args: object, **_kwargs: object) -> None:
+        raise AssertionError("去 LLM 化节点不应调用 LLM")
+
+    monkeypatch.setattr(module, "get_qwen_thinking", _forbid, raising=False)
+
+
 def _patch_intent(monkeypatch: pytest.MonkeyPatch, intent_type: str) -> None:
     _patch(
         monkeypatch,
@@ -75,7 +82,7 @@ async def test_new_inquiry_routes_to_extract_inquiry(
     _patch(
         monkeypatch,
         inquiry_module,
-        OptionInquiryParams(orderList=[OptionOrderItem(stockCode="腾讯")]),
+        OptionInquiryRawParams(orderList=[OptionInquiryRawItem(stockCode="腾讯")]),
     )
     graph = build_option_graph()
     final = await graph.ainvoke({**_BASE_STATE, "raw_text": "腾讯询价"})
@@ -90,13 +97,7 @@ async def test_place_order_from_quote_routes_to_extract_place(
 ) -> None:
     """place_order_from_quote → option_extract_place 真节点。"""
     _patch_intent(monkeypatch, "place_order_from_quote")
-    _patch(
-        monkeypatch,
-        place_module,
-        OptionPlaceParams(
-            orderList=[OptionOrderItemWithFastExec(orderId="Q-1", orderType="市价单")]
-        ),
-    )
+    _patch_backend(monkeypatch, place_module)
 
     graph = build_option_graph()
     final = await graph.ainvoke({**_BASE_STATE, "raw_text": "市价下单"})
@@ -113,11 +114,7 @@ async def test_confirm_order_routes_to_extract_confirm_place(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     _patch_intent(monkeypatch, "confirm_order")
-    _patch(
-        monkeypatch,
-        confirm_place_module,
-        OptionConfirmPlaceParams(orderList=[OptionOrderItem(orderId="Q-1")]),
-    )
+    _patch_backend(monkeypatch, confirm_place_module)
     graph = build_option_graph()
     final = await graph.ainvoke({**_BASE_STATE, "raw_text": "确认下单"})
     trace_nodes = [e.node for e in final.get("trace", [])]
@@ -130,11 +127,7 @@ async def test_cancel_order_request_routes_to_extract_cancel_place(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     _patch_intent(monkeypatch, "cancel_order_request")
-    _patch(
-        monkeypatch,
-        cancel_place_module,
-        OptionCancelPlaceParams(orderList=[OptionOrderItem(orderId="Q-1")]),
-    )
+    _patch_backend(monkeypatch, cancel_place_module)
     graph = build_option_graph()
     final = await graph.ainvoke({**_BASE_STATE, "raw_text": "取消下单"})
     trace_nodes = [e.node for e in final.get("trace", [])]
@@ -147,11 +140,7 @@ async def test_request_cancel_order_routes_to_extract_cancel(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     _patch_intent(monkeypatch, "request_cancel_order")
-    _patch(
-        monkeypatch,
-        cancel_module,
-        OptionCancelParams(orderList=[OptionOrderItem(orderId="Q-1")]),
-    )
+    _patch_backend(monkeypatch, cancel_module)
     graph = build_option_graph()
     final = await graph.ainvoke({**_BASE_STATE, "raw_text": "撤单 Q-1"})
     trace_nodes = [e.node for e in final.get("trace", [])]
@@ -164,11 +153,7 @@ async def test_confirm_cancel_order_routes_to_extract_confirm_cancel(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     _patch_intent(monkeypatch, "confirm_cancel_order")
-    _patch(
-        monkeypatch,
-        confirm_cancel_module,
-        OptionConfirmCancelParams(orderList=[OptionOrderItem(orderId="Q-1")]),
-    )
+    _patch_backend(monkeypatch, confirm_cancel_module)
     graph = build_option_graph()
     final = await graph.ainvoke({**_BASE_STATE, "raw_text": "确认撤单"})
     trace_nodes = [e.node for e in final.get("trace", [])]
@@ -181,11 +166,7 @@ async def test_query_order_status_routes_to_extract_query(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     _patch_intent(monkeypatch, "query_order_status")
-    _patch(
-        monkeypatch,
-        query_module,
-        OptionQueryParams(orderList=[OptionOrderItem(orderId="Q-1")]),
-    )
+    _patch_backend(monkeypatch, query_module)
     graph = build_option_graph()
     final = await graph.ainvoke({**_BASE_STATE, "raw_text": "查询订单状态"})
     trace_nodes = [e.node for e in final.get("trace", [])]

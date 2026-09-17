@@ -15,15 +15,17 @@ from __future__ import annotations
 import re
 from typing import Any, TypedDict
 
+from app.subgraphs.close.order_id import ORDER_ID_EXACT8_TOKEN, ORDER_ID_STRICT_TOKEN
+
 _SEQ_RE = re.compile(r"序号[：:]\s*(\d+)")
-_ORDER_ID_RE = re.compile(r"单号[：:]\s*(CO-\d{8}-[0-9A-F]{8})")
+_ORDER_ID_RE = re.compile(rf"单号[：:]\s*({ORDER_ID_EXACT8_TOKEN})")
 _CONTRACT_RE = re.compile(r"合约编号[：:]\s*(OPT[G]?-[A-Z0-9]+)")
 _ERROR_ID_PATTERNS = (
-    re.compile(r"期权平仓订单\[(CO-\d{8}-[0-9A-F]{8,})\]参数需要完善"),
-    re.compile(r"期权平仓订单(CO-\d{8}-[0-9A-F]{8,})（序号\d+）"),
+    re.compile(rf"期权平仓订单\[({ORDER_ID_STRICT_TOKEN})\]参数需要完善"),
+    re.compile(rf"期权平仓订单({ORDER_ID_STRICT_TOKEN})（序号\d+）"),
 )
-_FULL_CLOSE_RE = re.compile(r"期权平仓订单(CO-\d{8}-[0-9A-F]{8,})[：:].*?只能全部平仓")
-_RAW_ORDER_ID_RE = re.compile(r"(CO-\d{8}-[0-9A-F]{8,})")
+_FULL_CLOSE_RE = re.compile(rf"期权平仓订单({ORDER_ID_STRICT_TOKEN})[：:].*?只能全部平仓")
+_RAW_ORDER_ID_RE = re.compile(rf"({ORDER_ID_STRICT_TOKEN})")
 _RAW_CONTRACT_RE = re.compile(r"(OPT[G]?-[A-Z0-9]+)")
 
 _DETAIL_END_MARKERS = ("若以上订单执行平仓操作", "期权平仓订单")

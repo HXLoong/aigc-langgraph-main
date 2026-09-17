@@ -5,9 +5,12 @@
       state['tickers'] = list[TickerCandidate]（来自 ticker resolver）
 
 **首次集成 ticker resolver**：
-- LLM 提取询价参数（stockCode 字段保留用户原话）
+- LLM 只抽取原文片段（stockCode 字段保留用户原话）
 - 节点同步调用 resolve_ticker(raw_text) 拿 from_goats=True 候选
 - 写到 state['tickers']，供下游审计 / 后端调用使用
+
+归一化（OPT-07 下沉，2026-09）：tenor / 百分号 / 名义本金 / 参与率由
+`normalize.py` 确定性完成，"/" 多值按笛卡尔积展开——LLM 不再承担格式换算。
 
 LLM：thinking 模型 + with_structured_output（ADR 0010）。
 prompt：app/prompts/option/extract_inquiry.md（Dify DSL v2 同步版）。
@@ -22,7 +25,8 @@ from app.graph.state import AgentState, TraceEntry
 from app.llm.clients import get_qwen_thinking
 from app.prompts.spec import PromptSpec, register
 from app.subgraphs.option.backend import _with_resolved_ticker, call_option_backend
-from app.subgraphs.option.models import OptionInquiryParams
+from app.subgraphs.option.models import OptionInquiryParams, OptionInquiryRawParams
+from app.subgraphs.option.normalize import expand_inquiry_items
 from app.subgraphs.option.prompting import EXTRACT_INPUTS, extract_user
 from app.subgraphs.option.sanitize import sanitize_order_list
 from app.subgraphs.ticker.resolver import resolve_ticker, resolve_ticker_full
@@ -43,7 +47,7 @@ def _is_fast_inquiry(text: str) -> bool:
 SPEC = register(PromptSpec(
     category="option",
     name="extract_inquiry",
-    output_model=OptionInquiryParams,
+    output_model=OptionInquiryRawParams,
     inputs=EXTRACT_INPUTS,
     user_builder=extract_user,
 ))
@@ -116,12 +120,17 @@ async def option_extract_inquiry(state: AgentState) -> dict[str, Any]:
                 "trace": [TraceEntry(node="option_extract_inquiry", decision="invalid_ticker")],
             }
 
-    # 1. LLM 提取询价参数（thinking 模型 + structured output）
+    # 1. LLM 只抽取原文片段（thinking 模型 + structured output）
     messages, _prompt_name = SPEC.build_messages(state)
-    llm = get_qwen_thinking().with_structured_output(OptionInquiryParams)
-    params: Any = await llm.ainvoke(messages)
+    llm = get_qwen_thinking().with_structured_output(OptionInquiryRawParams)
+    raw_params: Any = await llm.ainvoke(messages)
 
-    # 2. ticker resolver 识别标的（含 HITL 信号）
+    # 2. 归一化（tenor / 百分号 / 名义本金 / 参与率）+ "/" 多值笛卡尔积展开（OPT-07）
+    params = OptionInquiryParams.model_validate(
+        {"orderList": expand_inquiry_items(raw_params.order_list)}
+    )
+
+    # 3. ticker resolver 识别标的（含 HITL 信号）
     resolution = await resolve_ticker_full(raw_text)
     tickers = resolution.resolved
     order_list = sanitize_order_list([item.model_dump() for item in params.order_list])
@@ -161,7 +170,7 @@ async def option_extract_inquiry(state: AgentState) -> dict[str, Any]:
                 node="option_extract_inquiry",
                 decision=decision,
                 llm_output={
-                    "params": params.model_dump(),
+                    "raw_params": raw_params.model_dump(),
                     "tickers_count": len(tickers),
                     "hitl_count": len(resolution.hitl_pending),
                     "ticker_bindings": ticker_bindings,

@@ -47,6 +47,7 @@ def _fake_settings(model: str) -> SimpleNamespace:
         qwen_model_thinking=model,
         qwen_model_complex=model,
         qwen_model_vl="qwen-vl-max-latest",
+        llm_timeout_seconds=60.0,
     )
 
 

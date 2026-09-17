@@ -71,7 +71,7 @@
 | 后端 5xx 引发 | 见 §3 后端 5xx playbook；本节点的 fallback 路径应已写好降级 |
 | Prompt 漂移 | 检查最近 PR 是否改了相关 prompt；按 ADR 0001 D5 处置表 review；必要时回滚 |
 | 上游字段缺失 | 看 `ingest` 节点是否正常解析；节点入口加防御代码（`if not state.get("xxx"): return fallback`），属于**业务防御性编程**改动，不涉及 ADR |
-| 路由 bug | 检查 `app/prompts/router/keywords.yaml`；补关键词；提 PR |
+| 路由 bug | 检查 `app/nodes/route_rules.py`；补关键词 / 正则；提 PR |
 | MySQL 拖慢 | 见 §4 Checkpointer playbook |
 
 ### 1.5 禁忌

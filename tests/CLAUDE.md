@@ -8,7 +8,7 @@
 ```
 tests/
 ├── conftest.py            # 全局 pytest 配置（仅占位；根纪律禁止用 autouse 绕过真实业务路径）
-├── fixtures/              # golden.jsonl（350+ 条）+ golden_ticker_2026-05.jsonl + README.md
+├── fixtures/              # categories/（现役数据源）+ unified_golden.jsonl / old_typing/（归档）+ README.md
 ├── api/                   # FastAPI 路由测试
 ├── nodes/                 # 节点级测试（intent_route / render / fallback ...）
 ├── subgraphs/{swap,option,close,ticker}/  # 子图级测试

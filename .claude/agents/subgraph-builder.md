@@ -16,8 +16,8 @@ model: sonnet
 - `@CLAUDE.md` - 项目总览
 - `@.claude/rules/langgraph-patterns.md` - LangGraph 模式
 - `@.claude/rules/prompt-management.md` - 提示词管理
-- `@app/subgraphs/swap.py` - 最复杂的子图，参考模板
-- `@app/subgraphs/swap_models.py` - Pydantic 模型参考
+- `@app/subgraphs/swap/graph.py` - 最复杂的子图组装，参考模板（目录 `app/subgraphs/swap/`）
+- `@app/subgraphs/swap/models.py` - Pydantic 模型参考
 
 ## 子图设计范式
 
@@ -77,21 +77,22 @@ def route_by_intent(state: AgentState) -> str:
 
 ### 参数提取节点
 ```python
+# 先建 PromptSpec（app/prompts/spec.py），节点内 build_messages；先例 app/subgraphs/swap/place_order.py
 @safe_node
 async def extract_place_order(state: AgentState) -> dict[str, Any]:
-    from app.llm.clients import get_qwen_thinking  # 复杂参数用 thinking 模型
-    prompt = load_prompt("swap", "place_order")
-    llm = get_qwen_thinking().with_structured_output(SwapPlaceOrderOutput)
+    from app.llm.clients import get_qwen_complex  # swap 复杂提取用 complex 工厂
+    messages, prompt_name = SPEC.build_messages(state)
+    llm = get_qwen_complex().with_structured_output(SwapPlaceOrderOutput)
     ...
 ```
 
 ### API 调用节点
 ```python
+# 业务 HTTP 调用统一放子图 backend.py（先例：app/subgraphs/swap/backend.py）
 @safe_node
 async def call_swap_api(state: AgentState) -> dict[str, Any]:
-    async with OtcBackendClient() as client:
-        resp = await client.swap_operate(...)
-    return {"api_code": resp["code"], "api_result": resp["result"]}
+    out = await call_swap_backend(state)   # 内部走 SwapClientHttpx().operate(...)
+    return out
 ```
 
 ### 子图构建函数
@@ -130,7 +131,7 @@ def build_swap_graph():
 1. 读 `app/graph/state.py` → 确认 `AgentState` 是否需要新字段；若需要，先改它（`app/state.py` 仅兼容 shim）
 2. 新建 `app/subgraphs/<new_product>/` 包（`graph.py` / `models.py` / `intent.py` / 各意图节点文件）
 3. 在 `app/subgraphs/<new_product>/models.py` 定义 `IntentType` Literal，`app/graph/state.py` 的 `ProductType` 加值
-4. 在 `app/nodes/intent_route.py` + `app/prompts/router/keywords.yaml` 加路由规则（ADR 0015 四层）
+4. 在 `app/nodes/route_rules.py`（规则层）+ `app/nodes/intent_route.py` 加路由规则（ADR 0015）
 5. 在 `app/graph/main.py`：
    - `g.add_node("<new_product>", build_<new_product>_graph().compile())`
    - 在 `_route_after_intent` 的映射加一项
@@ -141,8 +142,8 @@ def build_swap_graph():
 
 - **不要修改 AgentState 以外的共享结构**（其他子图会破）
 - **不要在子图里做持久化**（persist_intent 节点统一做）
-- **不要在子图里写业务 HTTP 调用**（走 `OtcBackendClient`）
-- **不要把提示词写死**（走 `load_prompt`）
+- **不要在子图里写业务 HTTP 调用**（统一放子图 `backend.py`，走 `OptionClientHttpx` / `SwapClientHttpx` / `TickerClientHttpx`）
+- **不要把提示词写死**（走 `PromptSpec` / `load_prompt`）
 - **不要忘记 `@safe_node`**
 - **不要直接 `g.compile()`**（返回 builder，主图负责 compile）
 

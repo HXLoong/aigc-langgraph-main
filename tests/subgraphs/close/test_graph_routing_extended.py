@@ -7,14 +7,8 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from app.subgraphs.close import build_close_graph
-from app.subgraphs.close import cancel_close as cancel_module
-from app.subgraphs.close import confirm_close as confirm_module
 from app.subgraphs.close import intent as intent_module
-from app.subgraphs.close.models import (
-    CancelCloseParams,
-    CloseIntentOutput,
-    ConfirmCloseParams,
-)
+from app.subgraphs.close.models import CloseIntentOutput
 from app.tools.models import CommonResult
 
 
@@ -29,25 +23,26 @@ def _patch_close_backend(monkeypatch: pytest.MonkeyPatch) -> None:
     )
 
 
-def _patch(
-    monkeypatch: pytest.MonkeyPatch,
-    module: object,
-    value: object,
-    fn: str = "get_qwen_thinking",
-) -> None:
+def _forbid_deterministic_llms(monkeypatch: pytest.MonkeyPatch) -> None:
+    """confirm_close / cancel_close 已去 LLM 化：工厂若被调用即报错。"""
+
+    def _forbid(*_args: object, **_kwargs: object) -> None:
+        raise AssertionError("去 LLM 化节点不应调用 LLM")
+
+    for target in (
+        "app.subgraphs.close.confirm_close.get_qwen_thinking",
+        "app.subgraphs.close.cancel_close.get_qwen_thinking",
+    ):
+        monkeypatch.setattr(target, _forbid, raising=False)
+
+
+def _patch_intent(monkeypatch: pytest.MonkeyPatch, intent_type: str) -> None:
+    """close.intent 分类结果固定为 intent_type。"""
     fake_llm = MagicMock()
-    fake_llm.ainvoke = AsyncMock(return_value=value)
+    fake_llm.ainvoke = AsyncMock(return_value=CloseIntentOutput(type=intent_type))
     fake_base = MagicMock()
     fake_base.with_structured_output = MagicMock(return_value=fake_llm)
-    monkeypatch.setattr(module, fn, lambda: fake_base)
-    if hasattr(module, "call_close_backend"):
-        monkeypatch.setattr(
-            module,
-            "call_close_backend",
-            AsyncMock(
-                return_value={"api_code": 0, "api_result": "backend reply"}
-            ),
-        )
+    monkeypatch.setattr(intent_module, "get_qwen_thinking", lambda: fake_base)
 
 
 @pytest.mark.asyncio
@@ -55,13 +50,8 @@ async def test_close_order_confirm_routes_to_confirm_close(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """close_order_confirm → close_confirm_close 节点。"""
-    _patch(monkeypatch, intent_module, CloseIntentOutput(type="close_order_confirm"))
-    _patch(
-        monkeypatch,
-        confirm_module,
-        ConfirmCloseParams(confirmOrderNoList=["CO-20260304-ABCD"]),
-        fn="get_qwen_thinking",
-    )
+    _patch_intent(monkeypatch, "close_order_confirm")
+    _forbid_deterministic_llms(monkeypatch)
     _patch_close_backend(monkeypatch)
 
     graph = build_close_graph()
@@ -89,33 +79,27 @@ async def test_close_order_cancel_request_routes_to_cancel_close(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """close_order_cancel_request → close_cancel_close 节点。"""
-    _patch(
-        monkeypatch,
-        intent_module,
-        CloseIntentOutput(type="close_order_cancel_request"),
-    )
-    _patch(
-        monkeypatch,
-        cancel_module,
-        CancelCloseParams(cancelOrderNoList=["CO-20260304-XYZ"]),
-    )
+    _patch_intent(monkeypatch, "close_order_cancel_request")
+    _forbid_deterministic_llms(monkeypatch)
     _patch_close_backend(monkeypatch)
 
     graph = build_close_graph()
     final = await graph.ainvoke(
         {
-            "raw_text": "撤销平仓单 CO-20260304-XYZ",
+            "raw_text": "撤销平仓单 CO-20260304-A1B2C3D4",
             "conversation_id": "t",
             "user_id": "u",
             "room_id": "r",
             "message_id": 1,
-            "message_content": "撤销平仓单 CO-20260304-XYZ",
+            "message_content": "撤销平仓单 CO-20260304-A1B2C3D4",
         }
     )
     trace_nodes = [e.node for e in final.get("trace", [])]
     assert "close_cancel_close" in trace_nodes
     assert "close_todo" not in trace_nodes
-    assert final.get("cancel_params", {}).get("cancelOrderNoList") == ["CO-20260304-XYZ"]
+    assert final.get("cancel_params", {}).get("cancelOrderNoList") == [
+        "CO-20260304-A1B2C3D4"
+    ]
 
 
 @pytest.mark.asyncio
@@ -123,11 +107,7 @@ async def test_unmapped_intent_still_routes_to_todo(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """剩余未实现意图（如 close_order_cancel_confirm / order_query）走 todo。"""
-    _patch(
-        monkeypatch,
-        intent_module,
-        CloseIntentOutput(type="unknown_intent"),
-    )
+    _patch_intent(monkeypatch, "unknown_intent")
     graph = build_close_graph()
     final = await graph.ainvoke(
         {

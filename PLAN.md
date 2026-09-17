@@ -1,14 +1,14 @@
 # 评估与迭代方案（M3 阶段）
 
 > Judge：DeepSeek V4（Anthropic 兼容端点，thinking=4096 tokens）
-> 范围：全链路（swap / option / option_close / ticker），golden.jsonl 当前 350+ 条
+> 范围：全链路（swap / option / option_close / ticker），fixture 现役数据源 `tests/fixtures/categories/`（350+ 条）
 > 状态：基础设施完成 ✅；M3.1 mock 跑通 ✅；M3.2 真后端联调 ✅；当前推进 **M3.3 真后端 golden 回归 + 错例修 P0/P1 + 业务方现场 sign-off**（issues #82–#87）
 
 ## M3 阶段三段定义（来自 ADR 0016）
 
 | 阶段 | 状态 | 退出门 | 关联 |
 |---|---|---|---|
-| **M3.1 · Mock 跑通** | ✅ 完成 | harness anchor 全集 PASS ≥ 85%（达成 84.6%）| `docs/m2-real-llm-final-report.md` |
+| **M3.1 · Mock 跑通** | ✅ 完成 | harness anchor 全集 PASS ≥ 85%（达成 84.6%）| `docs/archive/m2/m2-real-llm-final-report.md` |
 | **M3.2 · 真后端联调** | ✅ 完成 | D2.1–D2.6 + Dx.1/Dx.2 全 closed；HTTP 5xx = 0 / 4xx = 0 | issues #72–#80 |
 | **M3.3 · 真后端 Golden 回归** | 🔄 进行中 | PASS ≥ M3.1 mock baseline + 错例 P0/P1 全修 + 现场 sign-off | issues #82–#87 |
 
@@ -34,19 +34,19 @@
 | 组件 | 文件 | 状态 |
 |---|---|---|
 | 评估脚本（DeepSeek Judge + per-turn 富集 JSON）| `scripts/langfuse_eval.py` | ✅ 单轮 / 多轮 / Langfuse Cloud 写回 |
-| Dataset 上传 | `scripts/upload_golden_to_langfuse.py` / `scripts/upload_option_dataset.py` | ✅ |
-| JSONL 转换 | `scripts/convert_testcase_to_jsonl.py` | ✅ Excel/CSV → JSONL |
-| 本地 golden | `tests/fixtures/golden.jsonl`（350+）+ `golden_ticker_2026-05.jsonl`（34）| ✅ |
+| Dataset 上传 | `scripts/upload_golden_to_langfuse.py`（categories → Langfuse） | ✅ |
+| 数据转换 | `scripts/convert_csv_to_excel.py` / `convert_jsonl_to_csv.py` | ✅ |
+| 本地 fixture | `tests/fixtures/categories/`（现役，6 文件 / 389 条）；`unified_golden.jsonl` / `old_typing/` 归档 | ✅ |
 | 真后端 e2e 探针 | `scripts/probe_*_e2e.py`（swap / option / close / ticker / real_backend） | ✅ |
 | Token / 成本估算 | `harness/token_tracker.py` + `scripts/llm_cost_report.py` | ✅ |
-| 报告器（按桶分桶 + 怀疑节点）| `harness/reporter.py` + `tests/test_reporter_*` | ✅ |
+| 报告 | Langfuse per-turn 富集 JSON + `harness/cli.py` markdown 报告 | ✅ |
 | 期权链路迭代 skill | `.claude/skills/iterate-option/SKILL.md` | ✅ |
 | 通用评估 skill | `.claude/skills/run-eval/` | ✅ |
 
 ### 数据流
 
 ```
-本地 tests/fixtures/golden.jsonl（350+ 条）
+本地 tests/fixtures/categories/（现役，350+ 条）
         │
         ├──→ scripts/upload_golden_to_langfuse.py
         │            │
@@ -56,9 +56,9 @@
         ▼            ▼
 scripts/langfuse_eval.py
   ├── InMemorySaver（不依赖 MySQL checkpoint）
-  ├── 真实 Qwen LLM（测提示词效果）
+  ├── 真实 DeepSeek-V4-pro（测提示词效果，ADR 0020）
   ├── 真实后端 / 本地 mock（OTC_API_BASE_URL 切换）
-  ├── MySQL 标的池直查（aigc-test.stock_exchange_sec_data, ~14k 条）
+  ├── TickerClient 标的查询（securities-instrument HTTP，ADR 0012）
   └── DeepSeek V4 Judge（Anthropic 端点, thinking=4096）
         │
         ▼
@@ -76,10 +76,10 @@ scripts/langfuse_eval.py
 
 ```bash
 # 全量基线
-python scripts/langfuse_eval.py --local tests/fixtures/golden.jsonl --concurrency 4
+python scripts/langfuse_eval.py --local tests/fixtures/categories --concurrency 4
 
 # 按 case 子集复跑（修一处 bug 后验证）
-python scripts/langfuse_eval.py --local tests/fixtures/golden.jsonl --ids opt-001,opt-018 --concurrency 2
+python scripts/langfuse_eval.py --local tests/fixtures/categories --ids case-025,case-026 --concurrency 2
 
 # 按子链路批量（option 链路）
 .claude/skills/iterate-option/SKILL.md  # 跑→归因→TDD 修→重跑的自驱动循环
@@ -111,17 +111,16 @@ TDD 修复（先写 RED 测试 → 写最小修复 → GREEN + 全量回归）
 
 ```bash
 # 评估
-python scripts/langfuse_eval.py --local tests/fixtures/golden.jsonl --concurrency 4
-python scripts/langfuse_eval.py --local tests/fixtures/golden.jsonl --ids opt-001
-python scripts/langfuse_eval.py --local tests/fixtures/golden.jsonl --dry-run --limit 5
+python scripts/langfuse_eval.py --local tests/fixtures/categories --concurrency 4
+python scripts/langfuse_eval.py --local tests/fixtures/categories --ids case-025
+python scripts/langfuse_eval.py --local tests/fixtures/categories --dry-run --limit 5
 
 # 数据集
-python scripts/upload_golden_to_langfuse.py        # 全量 golden → Langfuse Dataset
-python scripts/upload_option_dataset.py            # 期权 QA 原版（保留 priority / designer 字段）
+python scripts/upload_golden_to_langfuse.py        # categories → Langfuse Dataset
 
 # Harness CLI（无 Judge 快速 smoke）
+python -m harness doctor
 python -m harness run
-python -m harness diff <run-a> <run-b>
 
 # 真后端 e2e
 python scripts/probe_real_backend_e2e.py
@@ -136,8 +135,8 @@ python scripts/llm_cost_report.py                  # LLM 成本日报
 ## 四、不做（范围约束）
 
 - 不做 shadow 双跑作为 M3 退出门（ADR 0016：Dify 自身有"标的不准 / 参数 bug / 评估缺失"三大缺陷，不能作 ground truth；shadow 仅作 M4 切流前的第二意见）
-- Judge 不用 Qwen（自评不可信，会高估）
-- 标的池不切回 HTTP API（ADR 0012：securities-instrument MySQL 直查更稳）
+- Judge 不用业务同源模型自评（会高估）；统一 DeepSeek Judge
+- 不做标的池 MySQL 直查（ADR 0012：恢复 securities-instrument HTTP，走 `TickerClient`）
 - 不为提高 PASS 率硬编码业务数据字典（CLAUDE.md "绝对禁止 · P0"）
 - M3.3 错例修复**只修 P0/P1**（cascade fail / 5xx / 严重参数错 / 标的错），P2 错例（个别意图识别错 / 低频边界 case）延后到 F4.6 金丝雀期再修
 

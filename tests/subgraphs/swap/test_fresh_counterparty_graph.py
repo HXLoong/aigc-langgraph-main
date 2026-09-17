@@ -31,6 +31,12 @@ from app.subgraphs.swap.models import (
     SwapSelectTickerOutput,
 )
 from app.subgraphs.ticker import resolver, tools
+from app.subgraphs.ticker.models import (
+    InferCodeOutput,
+    JudgeTypeOutput,
+    RankOutput,
+    SplitKeywordsOutput,
+)
 from app.tools.swap_client import SwapClientHttpx
 from app.tools.ticker_client import TickerClientHttpx
 from tests.subgraphs.swap.test_fresh_counterparty import fresh_state, patch_recognition
@@ -52,8 +58,20 @@ def graph_boundaries(
     patch_structured(monkeypatch, intent, "get_qwen_thinking",
                      SwapIntentOutput(type="place_order_request"))
     patch_structured(monkeypatch, place_order, "get_qwen_complex", params)
+    empty_outputs = {
+        InferCodeOutput: InferCodeOutput.model_validate({}),
+        SplitKeywordsOutput: SplitKeywordsOutput.model_validate({}),
+        JudgeTypeOutput: JudgeTypeOutput.model_validate({}),
+        RankOutput: RankOutput(ranked_codes=[]),
+    }
+
+    def make_structured(model):
+        inner = MagicMock()
+        inner.ainvoke = AsyncMock(return_value=empty_outputs[model])
+        return inner
+
     ticker_model = MagicMock()
-    ticker_model.ainvoke = AsyncMock(return_value=AIMessage(content="{}"))
+    ticker_model.with_structured_output = MagicMock(side_effect=make_structured)
     monkeypatch.setattr(tools, "get_qwen_standard", lambda: ticker_model)
 
     requests: list[dict[str, Any]] = []

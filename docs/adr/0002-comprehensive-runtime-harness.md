@@ -13,9 +13,9 @@
 
 ## 三个阶段的覆盖面（现状）
 
-- **开发期**：节点 / 子图 / 模型层单元测试（`tests/` 977 项 collected）+ in-process 闭环 demo（`scripts/demo_closed_loop.py`，零外部依赖跑全量 golden）+ 子图金字塔。
+- **开发期**：节点 / 子图 / 模型层单元测试（`tests/` 977 项 collected）+ in-process 闭环 demo（~~`scripts/demo_closed_loop.py`~~，零外部依赖跑全量 golden；脚本已删除，2026-09-16 核查）+ 子图金字塔。
 - **运行期**：每个节点产出结构化 trace；`app/nodes/persist.py` 提供写入 MySQL `node_trace` 的代码，对接 **LangFuse**（[ADR 0014](./0014-langfuse-as-harness-backend.md)，取代早期 LangSmith 方案）+ OpenTelemetry（`app/observability/tracing.py`），基于 `/metrics` 做延迟、错误率告警（`app/observability/{metrics,alerts}.py`）。⚠️ 仓库尚无 `node_trace` 建表/迁移资产，未初始化业务库时写入会降级失败。
-- **提示词调优期**：提示词版本化（`app/prompts/_versions.yaml` + [ADR 0003](./0003-prompt-versioning-by-file-coexistence.md)）+ golden set 自动评分（`scripts/eval_golden.py` / `scripts/langfuse_eval.py` DeepSeek Judge）+ A/B 流量染色（conversation_id 稳定 hash 分流，`swap.intent` 95/5 灰度在跑）。
+- **提示词调优期**：提示词版本化（`app/prompts/_versions.yaml` + [ADR 0003](./0003-prompt-versioning-by-file-coexistence.md)）+ golden set 自动评分（~~`scripts/eval_golden.py`~~（已删除）/ `scripts/langfuse_eval.py` DeepSeek Judge）+ A/B 流量染色（conversation_id 稳定 hash 分流，`swap.intent` 95/5 灰度在跑）。
 
 ## 备选方案
 

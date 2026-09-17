@@ -2,7 +2,7 @@
 
 设计原则：
 - 数据**接近生产**而非一两条占位（让 LangGraph 跑时拿到真实样貌）
-- 与 `tests/fixtures/golden.jsonl` 中常用的 case 对齐（如 700.HK / 600519.SH / OPT-LYAFT…）
+- 与 `tests/fixtures/categories/` 常用 case 对齐（如 700.HK / 600519.SH / OPT-LYAFT…）
 """
 from __future__ import annotations
 

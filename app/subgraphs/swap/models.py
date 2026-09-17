@@ -198,11 +198,11 @@ class SwapTickerPick(WireModel):
 
     model_config = ConfigDict(extra="ignore")
 
-    order_id: str | None = Field(default=None, alias="orderId")
-    order_seq: int | None = Field(default=None, alias="orderSeq")
-    idx: int | None = None
-    seq: int | None = None
-    direct_ref: str | None = Field(default=None, alias="directRef")
+    order_id: str | None = Field(default=None, alias="orderId", description="目标订单号（引用消息中的 H- 单号）")
+    order_seq: int | None = Field(default=None, alias="orderSeq", description="目标订单在 candidate_list 中的序号（orderId 缺失时用）")
+    idx: int | None = Field(default=None, description="目标订单下标（0 起；orderId / orderSeq 都缺失时的兜底）")
+    seq: int | None = Field(default=None, description="候选标的在本单 candidates 中的序号（seq → code）")
+    direct_ref: str | None = Field(default=None, alias="directRef", description="直接引用（候选 code / 名称；命中候选则规范为 code，否则按原文使用）")
 
 
 class SwapSelectTickerOutput(BaseModel):
@@ -210,7 +210,7 @@ class SwapSelectTickerOutput(BaseModel):
 
     model_config = ConfigDict(extra="ignore")
 
-    picks: list[SwapTickerPick] = Field(default_factory=list)
+    picks: list[SwapTickerPick] = Field(default_factory=list, description="切换标的的指针列表；未切换 → []（解析为空时保留原 windCode，非破坏）")
 
 
 class SwapCounterpartyPick(WireModel):
@@ -218,12 +218,12 @@ class SwapCounterpartyPick(WireModel):
 
     model_config = ConfigDict(extra="ignore")
 
-    order_id: str | None = Field(default=None, alias="orderId")
-    order_seq: int | None = Field(default=None, alias="orderSeq")
-    idx: int | None = None
-    letter: str | None = None
-    ordinal: int | None = None
-    direct_name: str | None = Field(default=None, alias="directName")
+    order_id: str | None = Field(default=None, alias="orderId", description="目标订单号（引用消息中的 H- 单号）")
+    order_seq: int | None = Field(default=None, alias="orderSeq", description="目标订单序号（单订单场景可省略）")
+    idx: int | None = Field(default=None, description="目标订单下标（0 起；orderId / orderSeq 都缺失时的兜底）")
+    letter: str | None = Field(default=None, description="对手列表中的字母标识（如 A / B，对应 sort）")
+    ordinal: int | None = Field(default=None, description="对手列表中的第 N 个（1 起，映射为 sort 字母）")
+    direct_name: str | None = Field(default=None, alias="directName", description="对手名称原文（精确匹配优先，唯一子串次之；多命中不算）")
 
 
 class SwapSelectCounterpartyOutput(WireModel):
@@ -231,8 +231,8 @@ class SwapSelectCounterpartyOutput(WireModel):
 
     model_config = ConfigDict(extra="ignore")
 
-    has_signal: bool = Field(default=False, alias="hasSignal")
-    picks: list[SwapCounterpartyPick] = Field(default_factory=list)
+    has_signal: bool = Field(default=False, alias="hasSignal", description="用户本次消息是否在选择 / 切换交易对手")
+    picks: list[SwapCounterpartyPick] = Field(default_factory=list, description="选择对手的指针列表；无信号 → []（解析为空时保留原 shortName，非破坏）")
 
 
 class SwapFreshCounterpartyMatch(WireModel):
@@ -240,8 +240,8 @@ class SwapFreshCounterpartyMatch(WireModel):
 
     model_config = ConfigDict(extra="forbid", strict=True)
 
-    short_name: str = Field(alias="shortName")
-    evidence: str
+    short_name: str = Field(alias="shortName", description="候选列表中的完整 shortName（逐字，不得改写）")
+    evidence: str = Field(description="用户原话中支持该名称的片段（必须是原文子串）")
 
 
 class SwapFreshCounterpartyOutput(WireModel):
@@ -249,8 +249,8 @@ class SwapFreshCounterpartyOutput(WireModel):
 
     model_config = ConfigDict(extra="forbid", strict=True)
 
-    has_signal: bool = Field(alias="hasSignal")
-    matches: list[SwapFreshCounterpartyMatch]
+    has_signal: bool = Field(alias="hasSignal", description="用户原话中是否包含交易对手指名（同一候选内多名字→不唯一时不采纳）")
+    matches: list[SwapFreshCounterpartyMatch] = Field(description="从原话召回的交易对手匹配列表；无召回 → []")
 
 
 __all__ = [

@@ -2,8 +2,8 @@
 
 瘦身 P1(docs/swap-prompt-slimming-assessment.md 病灶 2):原 LLM 调用的唯一
 任务是提取 H- 订单号,改为 app/subgraphs/swap/order_id.py 确定性提取——
-零幻觉、零成本、零延迟。原提示词 app/prompts/swap/cancel_order.md 保留为
-非活跃资产。保留 raw 指定的订单范围，范围无法解析时提示补充且不调用后端。
+零幻觉、零成本、零延迟。原提示词 app/prompts/swap/cancel_order.md 已删除
+(零加载点即删,ADR 0022)。保留 raw 指定的订单范围，范围无法解析时提示补充且不调用后端。
 
 输入:raw_text + quote_content
 输出:state['cancel_params'] = {orderList} + 后端调用结果

@@ -142,7 +142,7 @@ class SwapClientHttpx:
     def __init__(
         self,
         base_url: str = "",
-        timeout: float = 30.0,
+        timeout: float | None = None,
         token: str | None = None,
         transport: httpx.AsyncBaseTransport | None = None,
         dry_run: bool | None = None,
@@ -151,7 +151,7 @@ class SwapClientHttpx:
         from app.config import get_settings
         settings = get_settings()
         self._base_url = (base_url or settings.otc_api_base_url).rstrip("/")
-        self._timeout = timeout
+        self._timeout = timeout if timeout is not None else settings.backend_timeout_seconds
         self._token = token if token is not None else settings.otc_api_secret
         self._transport = transport
         self._dry_run = (

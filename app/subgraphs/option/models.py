@@ -7,10 +7,13 @@ confirm_modify_order——期权无独立改单流程，改参数统一归 place
 
 LLM 输出统一用 `type` 字段（与 Dify 原 prompt 约定一致）。
 
-orderList item 结构在新 DSL 下 7 个 extract 节点共用同一份 13 字段 schema
+orderList item 结构由 3 个 extract 节点共用同一份 13 字段 schema
 （`OptionOrderItem`，来自 spec/llm_schemas.txt 对应节点 structured_output 的
-实际【输出格式】字段集），仅 `place_order_from_quote`（下单）节点额外多一个
-`hasFastExecutionIntent` 字段（`OptionOrderItemWithFastExec`）。
+实际【输出格式】字段集），作为 canonical 校验层：询价链路 LLM 只输出原文片段
+（`OptionInquiryRawItem`），经 `normalize.py` 归一化后回填本 schema；下单 /
+确认下单（2026-09 去 LLM 化）由 `place_params.py` 确定性解析后同此校验。仅
+`place_order_from_quote`（下单）节点额外多一个 `hasFastExecutionIntent` 字段
+（`OptionOrderItemWithFastExec`）。
 """
 from __future__ import annotations
 
@@ -46,7 +49,7 @@ class OptionIntentOutput(BaseModel):
 
 
 # ============================================================
-# orderList item 共用 schema（7 个 extract 节点共用，Dify DSL v2）
+# orderList item 共用 schema（extract 节点共用，Dify DSL v2；1 个 LLM + 2 个确定性）
 # ============================================================
 
 
@@ -58,7 +61,7 @@ OptionContractType = Literal["欧式看涨", "参与型看涨", "雪球"]
 
 
 class OptionOrderItem(WireModel):
-    """orderList 中的单个订单条目（7 个 extract 节点共用 13 字段 schema）。
+    """orderList 中的单个订单条目（extract 节点共用 13 字段 schema）。
 
     字段名 1:1 对齐 spec/llm_schemas.txt 中 `期权-节点-*` 系列 structured_output
     的实际【输出格式】：orderId / stockCode / optionType / tenor /
@@ -97,17 +100,49 @@ class OptionOrderItemWithFastExec(OptionOrderItem):
     has_fast_execution_intent: bool | None = Field(default=None, alias="hasFastExecutionIntent", description="是否最大跟量 / 快速执行语义（按 system 中 hasFastExecutionIntent 规则判定）")
 
 
+class OptionInquiryRawItem(WireModel):
+    """option.extract_inquiry LLM 输出条目：字段值为用户原文片段，归一化交代码。
+
+    与 `OptionOrderItem` 的差异：strikePercentage / participationRate 以文本片段
+    返回（如 "80%"、"平值"、"90%"），tenor / notionalAmount 同样是未换算原文
+    （如 "1个月"、"100万"）；下游 `normalize.py` 负责归一化与 "/" 多值展开。
+    """
+
+    model_config = ConfigDict(extra="ignore")
+
+    order_id: str | None = Field(default=None, alias="orderId", description="订单号原文片段（Q- 开头）；输入未出现 → null")
+    stock_code: str | None = Field(default=None, alias="stockCode", description="标的原文片段（逐字保留，不做代码补全；标准化由 ticker resolver 负责）")
+    option_type: OptionContractType | None = Field(default=None, alias="optionType", description="期权类型：欧式看涨 / 参与型看涨 / 雪球；未明确 → null")
+    tenor: str | None = Field(default=None, description="期限原文片段，逐字保留不换算（如 \"1M\" / \"1个月\" / \"半年\" / \"1Y\" / \"1M/3M\"）")
+    strike_percentage: str | None = Field(default=None, alias="strikePercentage", description="执行价原文片段，逐字保留不换算（如 \"100%\" / \"100/103%\" / \"平值\"）")
+    notional_amount: str | None = Field(default=None, alias="notionalAmount", description="名义本金原文片段，含单位不换算（如 \"100万\" / \"1W\" / \"两千万\"）")
+    participation_rate: str | None = Field(default=None, alias="participationRate", description="参与率原文片段（如 \"90%\"）；无参与率关键词 → null")
+    short_name: str | None = Field(default=None, alias="shortName", description="交易对手名称（完整保留括号与特殊字符；用户回复选项字母时取对应完整名称）")
+
+
+class OptionInquiryRawParams(WireModel):
+    """option.extract_inquiry 的 LLM 输出容器（原文片段版）。"""
+
+    model_config = ConfigDict(extra="ignore")
+
+    order_list: list[OptionInquiryRawItem] = Field(alias="orderList", default_factory=list, description="订单条目列表；tenor / strikePercentage 含 \"/\" 多值时保持原样，由代码展开")
+
+
 # ============================================================
 # 各节点输出容器（1 意图 : 1 节点 : 1 容器，Dify DSL v2 一一对应）
 # ============================================================
 
 
 class OptionInquiryParams(WireModel):
-    """option.extract_inquiry 节点输出（new_inquiry，询价）。"""
+    """option.extract_inquiry 的 canonical 输出（new_inquiry，询价）。
+
+    LLM 原文片段（`OptionInquiryRawParams`）经 `normalize.py` 归一化 + "/" 多值
+    笛卡尔积展开后写入；state / 后端请求均以此为准。
+    """
 
     model_config = ConfigDict(extra="ignore")
 
-    order_list: list[OptionOrderItem] = Field(alias="orderList", default_factory=list, description="订单条目列表；多期限 / 多执行价展开为多条；仅填本节点相关字段，其余 null")
+    order_list: list[OptionOrderItem] = Field(alias="orderList", default_factory=list, description="订单条目列表；仅填本节点相关字段，其余 null")
 
 
 class OptionPlaceParams(WireModel):
@@ -123,39 +158,7 @@ class OptionConfirmPlaceParams(WireModel):
 
     model_config = ConfigDict(extra="ignore")
 
-    order_list: list[OptionOrderItem] = Field(alias="orderList", default_factory=list, description="订单条目列表；多期限 / 多执行价展开为多条；仅填本节点相关字段，其余 null")
-
-
-class OptionCancelPlaceParams(WireModel):
-    """option.extract_cancel_place 节点输出（cancel_order_request，取消下单）。"""
-
-    model_config = ConfigDict(extra="ignore")
-
-    order_list: list[OptionOrderItem] = Field(alias="orderList", default_factory=list, description="订单条目列表；多期限 / 多执行价展开为多条；仅填本节点相关字段，其余 null")
-
-
-class OptionCancelParams(WireModel):
-    """option.extract_cancel 节点输出（request_cancel_order，请求撤单）。"""
-
-    model_config = ConfigDict(extra="ignore")
-
-    order_list: list[OptionOrderItem] = Field(alias="orderList", default_factory=list, description="订单条目列表；多期限 / 多执行价展开为多条；仅填本节点相关字段，其余 null")
-
-
-class OptionConfirmCancelParams(WireModel):
-    """option.extract_confirm_cancel 节点输出（confirm_cancel_order，确认撤单）。"""
-
-    model_config = ConfigDict(extra="ignore")
-
-    order_list: list[OptionOrderItem] = Field(alias="orderList", default_factory=list, description="订单条目列表；多期限 / 多执行价展开为多条；仅填本节点相关字段，其余 null")
-
-
-class OptionQueryParams(WireModel):
-    """option.extract_query 节点输出（query_order_status，查询订单状态）。"""
-
-    model_config = ConfigDict(extra="ignore")
-
-    order_list: list[OptionOrderItem] = Field(alias="orderList", default_factory=list, description="订单条目列表；多期限 / 多执行价展开为多条；仅填本节点相关字段，其余 null")
+    order_list: list[OptionOrderItem] = Field(alias="orderList", default_factory=list, description="订单条目列表；仅填本节点相关字段，其余 null")
 
 
 __all__ = [
@@ -165,11 +168,9 @@ __all__ = [
     "OptionContractType",
     "OptionOrderItem",
     "OptionOrderItemWithFastExec",
+    "OptionInquiryRawItem",
+    "OptionInquiryRawParams",
     "OptionInquiryParams",
     "OptionPlaceParams",
     "OptionConfirmPlaceParams",
-    "OptionCancelPlaceParams",
-    "OptionCancelParams",
-    "OptionConfirmCancelParams",
-    "OptionQueryParams",
 ]

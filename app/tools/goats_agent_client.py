@@ -19,6 +19,8 @@ from typing import Any, Protocol
 
 import httpx
 
+from app.config import get_settings
+
 RFQ_PARSER_PATH = "/internal/agent/option_rfq_instrument_parser"
 INSTRUCTION_QUERY_PATH = "/internal/agent/instruction/query"
 
@@ -123,7 +125,8 @@ class GoatsAgentClientHttpx:
             "productType": 0,
         }
         status, resp = await self._post(
-            RFQ_PARSER_PATH, {"chatInstrument": query}, room_id, user_id, timeout=60.0
+            RFQ_PARSER_PATH, {"chatInstrument": query}, room_id, user_id,
+            timeout=get_settings().goats_agent_rfq_timeout_seconds,
         )
         if resp is None:
             return base
@@ -175,7 +178,8 @@ class GoatsAgentClientHttpx:
             }
 
         status, resp = await self._post(
-            INSTRUCTION_QUERY_PATH, {"chatInstruction": query}, room_id, user_id, timeout=10.0
+            INSTRUCTION_QUERY_PATH, {"chatInstruction": query}, room_id, user_id,
+            timeout=get_settings().goats_agent_instruction_timeout_seconds,
         )
         if resp is None:
             return _result(500)

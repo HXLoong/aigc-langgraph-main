@@ -10,7 +10,8 @@ from app.graph.state import TickerCandidate
 from app.subgraphs.option import extract_inquiry as ei_module
 from app.subgraphs.option.extract_inquiry import option_extract_inquiry
 from app.subgraphs.option.models import (
-    OptionInquiryParams,
+    OptionInquiryRawItem,
+    OptionInquiryRawParams,
     OptionOrderItem,
 )
 from app.subgraphs.ticker.resolver import TickerResolution
@@ -27,7 +28,7 @@ def _patch_resolver(
 
 
 def _patch_llm(
-    monkeypatch: pytest.MonkeyPatch, params: OptionInquiryParams
+    monkeypatch: pytest.MonkeyPatch, params: OptionInquiryRawParams
 ) -> AsyncMock:
     fake_llm = MagicMock()
     fake_llm.ainvoke = AsyncMock(return_value=params)
@@ -103,8 +104,8 @@ async def test_case_026_backend_orders_keep_their_ticker(monkeypatch, codes) -> 
     _patch_resolver(monkeypatch, [
         TickerCandidate(windCode=code, from_goats=True) for code in codes
     ])
-    params = OptionInquiryParams(orderList=[
-        OptionOrderItem(stockCode="600519.SH", tenor=tenor, strikePercentage=80.0)
+    params = OptionInquiryRawParams(orderList=[
+        OptionInquiryRawItem(stockCode="600519.SH", tenor=tenor, strikePercentage="80%")
         for tenor in ("1M", "2M")
     ])
     _patch_llm(monkeypatch, params)
@@ -149,8 +150,8 @@ async def test_inquiry_binds_by_unique_identity_and_preserves_unresolved_values(
         "茅台", "茅台", "腾讯", "腾讯", " 600519 ", "贵州茅台", " kweichow moutai ",
         " 600519.sh ", "unknown", "shared", None, "unverified", "000858.SZ", "茅",
     ]
-    params = OptionInquiryParams(orderList=[
-        OptionOrderItem(stockCode=stock_code, tenor="1M" if i % 2 == 0 else "2M")
+    params = OptionInquiryRawParams(orderList=[
+        OptionInquiryRawItem(stockCode=stock_code, tenor="1M" if i % 2 == 0 else "2M")
         for i, stock_code in enumerate(originals)
     ])
     _patch_llm(monkeypatch, params)
@@ -177,7 +178,7 @@ async def test_inquiry_binds_by_unique_identity_and_preserves_unresolved_values(
 @pytest.mark.parametrize("stock_code", [None, "unknown"])
 async def test_single_candidate_does_not_fill_unrelated_order(monkeypatch, stock_code) -> None:
     _patch_resolver(monkeypatch, [TickerCandidate(windCode="600519.SH", from_goats=True)])
-    _patch_llm(monkeypatch, OptionInquiryParams(orderList=[OptionOrderItem(stockCode=stock_code)]))
+    _patch_llm(monkeypatch, OptionInquiryRawParams(orderList=[OptionInquiryRawItem(stockCode=stock_code)]))
     await option_extract_inquiry({"raw_text": "询价"})
     assert ei_module.call_option_backend.call_args.kwargs["order_list"][0]["stockCode"] == stock_code
 
@@ -204,13 +205,13 @@ class TestOptionExtractInquiryNode:
         _patch_resolver(monkeypatch, [
             TickerCandidate(windCode="00700.HK", insShtDesc="腾讯控股", from_goats=True),
         ])
-        params = OptionInquiryParams(
+        params = OptionInquiryRawParams(
             orderList=[
-                OptionOrderItem(
+                OptionInquiryRawItem(
                     stockCode="腾讯",
                     optionType="欧式看涨",
                     tenor="1M",
-                    strikePercentage=100.0,
+                    strikePercentage="100%",
                 )
             ]
         )
@@ -231,9 +232,9 @@ class TestOptionExtractInquiryNode:
     ) -> None:
         """节点正常完成，LLM 提取不受 ticker resolver 影响。"""
         _patch_resolver(monkeypatch, [])
-        params = OptionInquiryParams(
+        params = OptionInquiryRawParams(
             orderList=[
-                OptionOrderItem(stockCode="某不存在的标的", tenor="1M")
+                OptionInquiryRawItem(stockCode="某不存在的标的", tenor="1M")
             ]
         )
         _patch_llm(monkeypatch, params)
@@ -266,10 +267,10 @@ class TestOptionExtractInquiryNode:
                 hitl_pending=[],
             )),
         )
-        params = OptionInquiryParams(
+        params = OptionInquiryRawParams(
             orderList=[
-                OptionOrderItem(stockCode="茅台", optionType="雪球"),
-                OptionOrderItem(stockCode="腾讯", optionType="雪球"),
+                OptionInquiryRawItem(stockCode="茅台", optionType="雪球"),
+                OptionInquiryRawItem(stockCode="腾讯", optionType="雪球"),
             ]
         )
         _patch_llm(monkeypatch, params)
@@ -286,9 +287,9 @@ class TestOptionExtractInquiryNode:
         _patch_resolver(monkeypatch, [
             TickerCandidate(windCode="00700.HK", insShtDesc="腾讯控股", from_goats=True),
         ])
-        params = OptionInquiryParams(
+        params = OptionInquiryRawParams(
             orderList=[
-                OptionOrderItem(stockCode="腾讯", optionType="雪球"),
+                OptionInquiryRawItem(stockCode="腾讯", optionType="雪球"),
             ]
         )
         _patch_llm(monkeypatch, params)
@@ -307,8 +308,8 @@ class TestOptionExtractInquiryNode:
     ) -> None:
         """LLM 偶发把 notionalAmount 吐成字面量字符串 "null" → sanitize 清成 None。"""
         _patch_resolver(monkeypatch, [])
-        params = OptionInquiryParams(
-            orderList=[OptionOrderItem(stockCode="腾讯", notionalAmount="null")]
+        params = OptionInquiryRawParams(
+            orderList=[OptionInquiryRawItem(stockCode="腾讯", notionalAmount="null")]
         )
         _patch_llm(monkeypatch, params)
         result = await option_extract_inquiry({"raw_text": "腾讯询价"})
@@ -329,3 +330,65 @@ class TestOptionExtractInquiryNode:
         result = await option_extract_inquiry({"raw_text": "x"})
         assert result.get("error") is not None
         assert result["error"].node == "option_extract_inquiry"
+
+    async def test_raw_fragments_normalized_to_canonical(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """LLM 只输出原文片段 → 代码归一化 tenor / 百分号 / 名义本金 / 参与率。"""
+        _patch_resolver(monkeypatch, [
+            TickerCandidate(windCode="600519.SH", from_goats=True),
+        ])
+        params = OptionInquiryRawParams(orderList=[OptionInquiryRawItem(
+            stockCode="贵州茅台", optionType="欧式看涨", tenor="1个月",
+            strikePercentage="80%", notionalAmount="100万", participationRate="90%",
+        )])
+        _patch_llm(monkeypatch, params)
+        result = await option_extract_inquiry(
+            {"raw_text": "贵州茅台 欧式看涨 1个月 80% 100万"}
+        )
+        sent = ei_module.call_option_backend.call_args.kwargs["order_list"]
+        assert sent[0]["tenor"] == "1M"
+        assert sent[0]["strikePercentage"] == 80.0
+        assert sent[0]["notionalAmount"] == "1000000"
+        assert sent[0]["participationRate"] == 90.0
+        stored = result["place_params"]["orderList"][0]
+        assert stored["tenor"] == "1M"
+        assert stored["strikePercentage"] == 80.0
+
+    async def test_year_tenor_and_pingzhi_strike_normalized(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        _patch_resolver(monkeypatch, [
+            TickerCandidate(windCode="600519.SH", from_goats=True),
+        ])
+        params = OptionInquiryRawParams(orderList=[OptionInquiryRawItem(
+            stockCode="贵州茅台", optionType="欧式看涨", tenor="1年",
+            strikePercentage="平值",
+        )])
+        _patch_llm(monkeypatch, params)
+        result = await option_extract_inquiry({"raw_text": "贵州茅台 平直看涨 1年"})
+        stored = result["place_params"]["orderList"][0]
+        assert stored["tenor"] == "12M"
+        assert stored["strikePercentage"] == 100.0
+
+    async def test_cartesian_expansion_sinked_to_code(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """\"/\" 多值原样交给代码展开（T×S 笛卡尔积，与提示词旧规约一致）。"""
+        _patch_resolver(monkeypatch, [
+            TickerCandidate(windCode="600519.SH", from_goats=True),
+        ])
+        params = OptionInquiryRawParams(orderList=[OptionInquiryRawItem(
+            stockCode="茅台", optionType="欧式看涨", tenor="1/3M", strikePercentage="100/103%",
+        )])
+        _patch_llm(monkeypatch, params)
+        result = await option_extract_inquiry({"raw_text": "茅台 1/3M 100/103%"})
+        orders = result["place_params"]["orderList"]
+        assert [(o["tenor"], o["strikePercentage"]) for o in orders] == [
+            ("1M", 100.0), ("1M", 103.0), ("3M", 100.0), ("3M", 103.0),
+        ]
+        assert "orders=4" in result["trace"][0].decision
+        sent = ei_module.call_option_backend.call_args.kwargs["order_list"]
+        assert [(o["tenor"], o["strikePercentage"]) for o in sent] == [
+            ("1M", 100.0), ("1M", 103.0), ("3M", 100.0), ("3M", 103.0),
+        ]

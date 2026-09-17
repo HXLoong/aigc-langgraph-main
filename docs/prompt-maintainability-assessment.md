@@ -4,6 +4,7 @@
 > 背景：客户反馈从 Dify 迁移过来的提示词"太臃肿、冗余多"。2026-08-28 的 `docs/swap-prompt-slimming-assessment.md` 只覆盖 swap 域；本报告把评估扩到 option / option_close / ticker / router 全域，并把重点从"内容"移到"代码迁移完成后提示词怎么管才易于维护"。
 > 方法：动态工作流 7 路并行评估（5 个提示词域 + 治理层 + 代码-提示词契约）→ 每路独立对抗核证（只采信 confirmed / partial 的发现）→ 完整性批评。字符数口径：Python `len()`（Unicode 字符）；token 为估算（字符 ÷ 1.6，与 swap 报告同口径）。
 > 决策落点：[ADR 0022](./adr/0022-prompt-governance-after-code-migration.md)。
+> **2026-09-16 更新**：本报告落地的 manifest / prompt_inventory 治理机制已随 ADR 0022 废弃而全量移除（见 ADR 0022 废弃说明）；保留本文作为评估历史记录。
 
 ---
 

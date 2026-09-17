@@ -17,7 +17,7 @@ Claude Code 专有写法（"/xxx skill"）改写为"见 .claude/skills/xxx/SKILL
 
 用法：
     python scripts/sync_agents_md.py            # 生成 / 覆盖全部产物
-    python scripts/sync_agents_md.py --check    # CI：任一产物缺失或过期 → 退出码 1
+    python scripts/sync_agents_md.py --check    # 提交前自检：任一产物缺失或过期 → 退出码 1
 """
 from __future__ import annotations
 
@@ -31,7 +31,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 MERGED_RULES: tuple[str, ...] = ("prompt-management.md", "testing.md")
 HEADER = (
     "<!-- 自动生成：python scripts/sync_agents_md.py —— 禁止手改。\n"
-    "     真源是 {source}；改那里再重新生成，CI（governance job）会校验同步。 -->\n\n"
+    "     真源是 {source}；改那里再重新生成，提交前跑 python scripts/sync_agents_md.py --check 校验同步。 -->\n\n"
 )
 SKILL_NOTE = (
     "> 自动生成自 `{source}`（python scripts/sync_agents_md.py），禁止手改。"

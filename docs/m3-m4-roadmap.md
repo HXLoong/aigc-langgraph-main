@@ -166,7 +166,7 @@
 | **E3.2** | 真后端跑 business_seed 全集 → 按桶达标（B ≥ 90% / C ≥ 80%） | #25 | D2.* | 0.5d |
 | **E3.3** | 真后端跑客户真实输入样本（D 桶初版） | #25 | B1.5 | 0.5d |
 | **E3.4** | 错例聚类 + 根因分析：按 `suspected_node` 归类，找共性 bug → **只修 P0/P1**（cascade fail / 5xx / 严重参数错 / 标的错），**P2 错例**（个别意图识别错、低频边界 case）延后到 F4.6 金丝雀期修 | #25 + #26 | E3.1-3 | 2-3d |
-| **E3.5** | 现场 smoke checklist `docs/customer-smoke-checklist.md` 落地 + 与客户 Java 后端联调（真实下单/撤单/查询） | Tony + #25 | E3.4 | 1-2d |
+| **E3.5** | 现场 smoke checklist 落地（`docs/customer/`）+ 与客户 Java 后端联调（真实下单/撤单/查询） | Tony + #25 | E3.4 | 1-2d |
 | **E3.6** | 业务方培训 + 业务方现场 sign-off | Tony + PM | E3.5 | 1d |
 
 **阶段 3 退出门**（M3.3 + #33 阶段 3-4 合并退出门）：

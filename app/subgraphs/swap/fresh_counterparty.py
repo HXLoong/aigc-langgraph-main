@@ -9,8 +9,32 @@ from app.graph.safe_node import safe_node
 from app.graph.state import AgentState, TraceEntry
 from app.llm.clients import get_qwen_complex
 from app.prompts import load_prompt
+from app.prompts.spec import PromptSpec, register
 from app.subgraphs.swap.aggregate import apply_fresh_counterparty, unique_fresh_counterparty
 from app.subgraphs.swap.models import SwapFreshCounterpartyOutput
+
+
+def _user_from_state(state: AgentState) -> str:
+    """渲染 fresh_counterparty.md 的 user 模板（规则文本住 .md，代码只供变量）。"""
+    candidates = state.get("swap_counterparties") or []
+    shortname_list = json.dumps(
+        [{"sort": c.get("sort"), "shortName": c.get("shortName")} for c in candidates],
+        ensure_ascii=False,
+    )
+    prompt = load_prompt("swap", "fresh_counterparty")
+    return prompt.render_user(**{
+        "#1755072621769.raw_content#": state.get("raw_text") or "",
+        "#1772773805306.trsShortListStr#": shortname_list,
+    })
+
+
+SPEC = register(PromptSpec(
+    category="swap",
+    name="fresh_counterparty",
+    output_model=SwapFreshCounterpartyOutput,
+    inputs=("raw_text", "swap_counterparties"),
+    user_builder=_user_from_state,
+))
 
 
 @safe_node
@@ -29,17 +53,9 @@ async def swap_recognize_fresh_counterparty(state: AgentState) -> dict[str, Any]
     elif not candidates:
         reason = "no_candidates"
     else:
-        prompt = load_prompt("swap", "fresh_counterparty")
-        shortname_list = json.dumps(
-            [{"sort": c.get("sort"), "shortName": c.get("shortName")} for c in candidates],
-            ensure_ascii=False,
-        )
-        user_message = prompt.render_user(**{
-            "#1755072621769.raw_content#": raw_text,
-            "#1772773805306.trsShortListStr#": shortname_list,
-        })
+        messages, _prompt_name = SPEC.build_messages(state)
         llm = get_qwen_complex().with_structured_output(SwapFreshCounterpartyOutput)
-        result: Any = await llm.ainvoke([("system", prompt.system), ("user", user_message)])
+        result: Any = await llm.ainvoke(messages)
         recall = result.model_dump()
         shortname, reason = unique_fresh_counterparty(recall, candidates, raw_text)
         if shortname is not None:

@@ -131,7 +131,7 @@ curl -X POST http://127.0.0.1:8099/admin-api/swap-order/operate \
 
 ## 持仓数据
 
-`POSITIONS` 4 条（与 `tests/fixtures/golden.jsonl` 中常用 `OPT-LYAFT…` `OPT-SZZSCF…` case 对齐），覆盖：
+`POSITIONS` 4 条（与 `tests/fixtures/categories/` 常用 `OPT-LYAFT…` `OPT-SZZSCF…` case 对齐），覆盖：
 - 川能动力欧式看涨 × 3
 - 蓝帆医疗雪球 × 1
 
@@ -171,5 +171,4 @@ mock_api/
 ```bash
 uvicorn mock_api.server:app --port 8099 &
 python -m harness run                  # 跑 golden set 验证
-python scripts/demo_closed_loop.py     # 30/30 PASS 闭环 demo
 ```

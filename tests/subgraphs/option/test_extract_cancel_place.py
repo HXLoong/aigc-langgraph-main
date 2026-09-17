@@ -1,76 +1,85 @@
-"""option.extract_cancel_place 节点测试（Dify DSL v2 新节点，cancel_order_request，mock LLM）。"""
+"""option.extract_cancel_place 节点测试（取消下单，确定性提取，无 LLM）。
+
+原提示词规约：仅从 quote_content 提取 Q- 订单号（用户引用确认卡并选择取消）。
+"""
 from __future__ import annotations
 
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock
 
 import pytest
 
-from app.subgraphs.option import extract_cancel_place as ecp_module
+from app.subgraphs.option import extract_cancel_place as cancel_place_module
 from app.subgraphs.option.extract_cancel_place import option_extract_cancel_place
-from app.subgraphs.option.models import OptionCancelPlaceParams, OptionOrderItem
 
 
-def _patch_llm(
-    monkeypatch: pytest.MonkeyPatch, params: OptionCancelPlaceParams
-) -> AsyncMock:
-    fake_llm = MagicMock()
-    fake_llm.ainvoke = AsyncMock(return_value=params)
-    fake_base = MagicMock()
-    fake_base.with_structured_output = MagicMock(return_value=fake_llm)
-    monkeypatch.setattr(ecp_module, "get_qwen_thinking", lambda: fake_base)
-    monkeypatch.setattr(ecp_module, "call_option_backend",
-                        AsyncMock(return_value={"api_code": 0, "api_result": "backend reply"}))
-    return fake_llm.ainvoke
+def _patch(monkeypatch: pytest.MonkeyPatch) -> AsyncMock:
+    backend = AsyncMock(return_value={"api_code": 0, "api_result": "backend reply"})
+    monkeypatch.setattr(cancel_place_module, "call_option_backend", backend)
+
+    def _forbid(*_args: object, **_kwargs: object) -> None:
+        raise AssertionError("去 LLM 化节点不应调用 LLM")
+
+    monkeypatch.setattr(cancel_place_module, "get_qwen_thinking", _forbid, raising=False)
+    return backend
 
 
 @pytest.mark.asyncio
 class TestOptionExtractCancelPlaceNode:
-    async def test_cancel_order_request_writes_action(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        params = OptionCancelPlaceParams(
-            orderList=[OptionOrderItem(orderId="Q-20250616-000017")]
-        )
-        _patch_llm(monkeypatch, params)
+    async def test_quote_card_order_is_used(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        backend = _patch(monkeypatch)
         result = await option_extract_cancel_place(
-            {"raw_text": "算了不下了", "intent": "cancel_order_request"}
+            {
+                "raw_text": "算了不下了",
+                "quote_content": "请确认下单 Q-20250616-000017",
+                "intent": "cancel_order_request",
+            }
         )
         assert result["cancel_params"]["expected_action"] == "cancel_request"
-        assert (
-            result["cancel_params"]["orderList"][0]["orderId"]
-            == "Q-20250616-000017"
-        )
+        assert result["cancel_params"]["orderList"] == [{"orderId": "Q-20250616-000017"}]
+        assert backend.await_args.kwargs["order_list"] == [{"orderId": "Q-20250616-000017"}]
 
-    async def test_empty_order_list(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        _patch_llm(monkeypatch, OptionCancelPlaceParams())
+    async def test_quote_multi_orders_kept_in_order(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        _patch(monkeypatch)
+        result = await option_extract_cancel_place(
+            {
+                "raw_text": "取消下单",
+                "quote_content": "待确认：Q-20250616-000017、Q-20250616-000021",
+                "intent": "cancel_order_request",
+            }
+        )
+        assert [item["orderId"] for item in result["cancel_params"]["orderList"]] == [
+            "Q-20250616-000017",
+            "Q-20250616-000021",
+        ]
+
+    async def test_raw_only_does_not_extract(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """原提示词规约：订单号只从引用消息取；raw 单独出现 Q- 不提取。"""
+        _patch(monkeypatch)
+        result = await option_extract_cancel_place(
+            {"raw_text": "取消下单 Q-20250616-000017", "intent": "cancel_order_request"}
+        )
+        assert result["cancel_params"]["orderList"] == [{"orderId": None}]
+
+    async def test_no_quote_keeps_null_item_shape(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        _patch(monkeypatch)
         result = await option_extract_cancel_place(
             {"raw_text": "取消下单", "intent": "cancel_order_request"}
         )
-        assert result["cancel_params"]["orderList"] == []
+        assert result["cancel_params"]["orderList"] == [{"orderId": None}]
 
     async def test_writes_trace(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        params = OptionCancelPlaceParams(orderList=[OptionOrderItem(orderId="Q-1")])
-        _patch_llm(monkeypatch, params)
+        _patch(monkeypatch)
         result = await option_extract_cancel_place(
-            {"raw_text": "取消下单", "intent": "cancel_order_request"}
+            {
+                "raw_text": "取消下单",
+                "quote_content": "请确认下单 Q-20250616-000017",
+                "intent": "cancel_order_request",
+            }
         )
         trace = result.get("trace", [])
         assert len(trace) == 1
         assert trace[0].node == "option_extract_cancel_place"
+        assert "deterministic" in trace[0].decision
         assert "cancel_request" in trace[0].decision
-
-    async def test_safe_node_catches_error(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        fake_llm = MagicMock()
-        fake_llm.with_structured_output = MagicMock(
-            return_value=MagicMock(
-                ainvoke=AsyncMock(side_effect=RuntimeError("LLM down"))
-            )
-        )
-        monkeypatch.setattr(ecp_module, "get_qwen_thinking", lambda: fake_llm)
-        result = await option_extract_cancel_place(
-            {"raw_text": "取消下单", "intent": "cancel_order_request"}
-        )
-        assert result.get("error") is not None
-        assert result["error"].node == "option_extract_cancel_place"

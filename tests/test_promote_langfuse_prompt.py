@@ -276,22 +276,3 @@ def test_e2e_explicit_version_arg(
     assert rc == 0
     assert (tmp_path / "swap" / "intent_v5.md").exists()
     assert not (tmp_path / "swap" / "intent_v2.md").exists()
-
-
-# ============================================================
-# 治理评估 GOV-05：晋升产物必须登记为 manifest gray 条目（ADR 0022 D2/D3）
-# ============================================================
-
-
-def test_append_manifest_gray_entry(tmp_path: Path) -> None:
-    manifest = tmp_path / "_manifest.yaml"
-    manifest.write_text("prompts:\n  swap/intent:\n    status: active\n    loader: a.py\n", encoding="utf-8")
-    ppm.append_manifest_gray(manifest, "swap", "intent", 3, base_sha="abc", since="2026-09-15")
-    import yaml
-
-    data = yaml.safe_load(manifest.read_text(encoding="utf-8"))
-    entry = data["prompts"]["swap/intent_v3"]
-    assert entry["status"] == "gray"
-    assert entry["base"] == "swap/intent"
-    assert entry["base_system_sha256"] == "abc"
-    assert entry["since"] == "2026-09-15"

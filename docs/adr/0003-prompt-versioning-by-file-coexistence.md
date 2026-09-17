@@ -23,7 +23,7 @@ _versions.yaml（灰度配置，如 swap.intent = 95% intent / 5% intent_v2）
 
 节点侧示例：`app/subgraphs/swap/intent.py` 先 `resolve_prompt_version` 再 `load_prompt`。原文"代码写死 `load_prompt("swap", "intent_v2")`"仅是临时调试用法。
 
-**第二种版本化形态（已删除，2026-09-15）**：`compose_prompt(category, name, version)` + `swap/v2/` 子目录拼装曾作为备选形态存在，但在 `app/` 内零调用点、`swap_prompt_version` 为死配置（[#159](https://github.com/GZTL-AI/aigc-langgraph/issues/159) 待裁决项）。[ADR 0022](./0022-prompt-governance-after-code-migration.md) 裁决删除，同目录并存成为唯一版本化形态；`tests/test_prompt_inventory.py` 防止复活。
+**第二种版本化形态（已删除，2026-09-15）**：`compose_prompt(category, name, version)` + `swap/v2/` 子目录拼装曾作为备选形态存在，但在 `app/` 内零调用点、`swap_prompt_version` 为死配置（[#159](https://github.com/GZTL-AI/aigc-langgraph/issues/159) 待裁决项）。[ADR 0022](./0022-prompt-governance-after-code-migration.md) 裁决删除，同目录并存成为唯一版本化形态（当时的防复活守卫测试已随 ADR 0022 废弃移除，2026-09-16）。
 
 ## 备选方案
 
@@ -33,9 +33,9 @@ _versions.yaml（灰度配置，如 swap.intent = 95% intent / 5% intent_v2）
 
 ## 后果与纪律（现状口径）
 
-- 加载器支持任意文件名 ✅；trace / 评估报告须记录实际加载的文件名——`harness/reporter.py` 已按 `prompt_name` 分桶统计。**A/B 前置纪律（#156 裁决）**：现仅 swap_intent 写 `prompt_name`（1/21），不批量回改；但**对任何提示词开启 A/B（进 `_versions.yaml`）前，其节点必须先在 trace 写入 `prompt_name`**，否则版本对比失真——此为 `_versions.yaml` 加条目的硬前置。
+- 加载器支持任意文件名 ✅；trace / 评估报告须记录实际加载的文件名——~~`harness/reporter.py`~~ 曾按 `prompt_name` 分桶统计（模块已移除，2026-09-16 核查）。**A/B 前置纪律（#156 裁决）**：现仅 swap_intent 写 `prompt_name`（1/21），不批量回改；但**对任何提示词开启 A/B（进 `_versions.yaml`）前，其节点必须先在 trace 写入 `prompt_name`**，否则版本对比失真——此为 `_versions.yaml` 加条目的硬前置。
 - **文件分两类，清理规则不同**（本次改写澄清原文与 `app/prompts/CLAUDE.md` "禁止直接删"的冲突）：
   - **A/B 实验位**（`*_v2.md` 等）：新版满一个金丝雀周期 + 稳定 7 天后清理、去后缀；
-  - **Dify 原始快照 / 回滚资产**（冻结的 `intent_extract.md` 等；`*.dify_original.md` 已于 DSL v2 迁移删除）：在 `app/prompts/_manifest.yaml` 登记为 `inactive` 并写保留理由与可删条件（ADR 0022 D6），按 reason 清理。
+  - **Dify 原始快照 / 回滚资产**（冻结的 `intent_extract.md` 等；`*.dify_original.md` 已于 DSL v2 迁移删除）：曾按 ADR 0022 D6 在 ~~`app/prompts/_manifest.yaml`~~ 登记为 `inactive` 并写保留理由与可删条件；manifest 机制已于 2026-09-16 废弃移除，清理时以 git 历史与文件内注释为准。
 - ">2 个并存版本视为治理债"目前**无执行机制且已被突破**（`swap/place_order` 3 变体；`ticker/tokenize*.md` 双死文件）——裁决见 [#159](https://github.com/GZTL-AI/aigc-langgraph/issues/159)。
 - Dify 同步策略：原决策要求"拉下来的新版放 `_v{N+1}.md`、不覆盖原文件"。#159 已补保护：`scripts/export_dify_prompts.py` 默认跳过已存在文件，只有显式 `--overwrite` 才允许覆盖；覆盖前仍须人工 diff。

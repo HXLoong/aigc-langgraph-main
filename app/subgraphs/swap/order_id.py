@@ -3,7 +3,8 @@
 背景(docs/swap-prompt-slimming-assessment.md 病灶 2):原 5 个 LLM 节点
 (cancel_order / query_order / confirm_order / confirm_cancel / confirm_modify)
 的唯一任务是按格式 `H-YYYYMMDD-XXXXXXXXXX` 提取订单号——确定性正则即可完成,
-零幻觉、零成本、零延迟。原提示词保留为非活跃资产(app/prompts/CLAUDE.md)。
+零幻觉、零成本、零延迟。被替换的 5 个节点提示词已同批删除
+(另含旧合并版快照 confirm.md；零加载点即删,ADR 0022)。
 
 各意图的来源优先级 1:1 对照原提示词规约:
 - cancel:raw 的单号/序号/标的/合约共同限定，无法确定时抛 CancelScopeError；无范围才取 quote 全部

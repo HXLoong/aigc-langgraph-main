@@ -20,13 +20,13 @@ from __future__ import annotations
 import logging
 from typing import Any, Literal
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from app.graph.safe_node import safe_node
 from app.graph.state import AgentState, ProductType, TraceEntry
 from app.llm.clients import get_qwen_thinking
 from app.nodes.route_rules import is_swap_transaction
-from app.prompts import load_prompt
+from app.prompts.spec import PromptSpec, register
 
 logger = logging.getLogger(__name__)
 
@@ -44,20 +44,37 @@ _LABEL_MAP: dict[str, tuple[ProductType, str | None]] = {
 class UnknownIntentOutput(BaseModel):
     """LLM 兜底输出 schema(枚举值与提示词「只输出 1 行枚举值」约定一致)。"""
 
-    label: Literal["互换-文本", "期权-文本", "期权平仓-文本", "unknown"]
+    label: Literal["互换-文本", "期权-文本", "期权平仓-文本", "unknown"] = Field(
+        description="一级路由标签，取 4 个枚举值之一"
+    )
+
+
+def _user_from_state(state: AgentState) -> str:
+    """user 消息（与历史实现逐字一致：query + quote_content 两段）。"""
+    text = state.get("raw_text", "") or ""
+    quote = state.get("quote_content")
+    return f"query: {text}\n\nquote_content: {quote or ''}"
+
+
+SPEC = register(PromptSpec(
+    category="router",
+    name="unknown_intent",
+    output_model=UnknownIntentOutput,
+    inputs=("raw_text", "quote_content"),
+    user_builder=_user_from_state,
+))
 
 
 async def _classify_with_llm(text: str, quote_content: str | None) -> str:
-    """LLM 兜底(unknown意图兜底识别):规则未命中的模糊样本分类。"""
-    prompt = load_prompt("router", "unknown_intent")
-    llm = get_qwen_thinking().with_structured_output(UnknownIntentOutput)
-    user_text = f"query: {text}\n\nquote_content: {quote_content or ''}"
-    result: Any = await llm.ainvoke(
-        [
-            ("system", prompt.system),
-            ("user", user_text),
-        ]
+    """LLM 兜底(unknown意图兜底识别):规则未命中的模糊样本分类。
+
+    入参保持 (text, quote_content)（测试按此签名 monkeypatch）；消息组装统一走 SPEC。
+    """
+    messages, _prompt_name = SPEC.build_messages(
+        {"raw_text": text, "quote_content": quote_content}
     )
+    llm = get_qwen_thinking().with_structured_output(UnknownIntentOutput)
+    result: Any = await llm.ainvoke(messages)
     return result.label
 
 

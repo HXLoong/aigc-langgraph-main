@@ -11,7 +11,7 @@ python scripts/shadow_compare.py \\
     --langgraph http://localhost:8000/v1/message \\
     --dify https://dify.example.com/v1/workflows/run \\
     --dify-api-key dify-app-xxx \\
-    --sample tests/fixtures/golden.jsonl \\
+    --sample sample_real_traffic.jsonl \\
     --output /tmp/shadow_diff.json
 
 # 同时写入 MySQL（生产灰度场景）
@@ -26,6 +26,15 @@ python scripts/shadow_compare.py ... --dry-run
 # 只跑前 N 条
 python scripts/shadow_compare.py ... --max-cases 5
 ```
+
+## 样本格式（--sample）
+
+每行一条 JSON，至少包含 `id` 与 `raw_content`（可带 `quote_content` / `attachments`）：
+
+    {"id": "s-001", "raw_content": "600519.SH 询价 3 个月平值看涨"}
+
+注意：`tests/fixtures/categories/` 的两种方言（`send_text` / `conversation`）不是该格式，需先转换；
+灰度期直接用导出的真实流量样本。
 
 ## 响应归一化
 

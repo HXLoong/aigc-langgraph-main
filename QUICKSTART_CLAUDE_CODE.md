@@ -96,10 +96,10 @@ Claude Code：
 你：客户发"CO-20260101-XYZ12345 平" 但我们识别成了 swap 而不是 option_close
 
 Claude Code：
-- 读 app/nodes/route.py
+- 读 app/nodes/route_rules.py
 - 意识到正则 OPTION_CLOSE_PATTERN 只匹配 [0-9A-F]，XYZ 是字母，错误！
 - 让 test-generator 先写一个失败的回归测试
-- 修 route.py
+- 修 route_rules.py
 - 重跑测试确认通过
 ```
 
@@ -184,7 +184,7 @@ claude --permission-mode plan    # 只读模式，不能改代码，适合探索
 
 在对话里直接引用文件内容，不用让 Claude 自己搜：
 ```
-帮我优化 @app/subgraphs/swap.py 的 classify_intent 节点
+帮我优化 @app/subgraphs/swap/intent.py 的意图识别逻辑
 ```
 
 ### 并行多任务（worktree 隔离）
@@ -261,7 +261,7 @@ Claude Code 有能力执行 bash 命令。即使有 `settings.json` 的白名单
 - [项目内其他文档](docs/)
   - [架构](docs/ARCHITECTURE.md)
   - [开发指南](docs/DEVELOPMENT.md)
-  - [Dify 迁移](docs/DIFY_MIGRATION.md)
+  - [Dify 迁移](docs/archive/history/DIFY_MIGRATION.md)
   - [常见问题](docs/TROUBLESHOOTING.md)
   - [M3/M4 路线图](docs/m3-m4-roadmap.md)
   - [on-call SOP](docs/on-call-runbook.md)

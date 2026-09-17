@@ -2596,14 +2596,14 @@ def resolve_prompt_version(category, base_name, conversation_id=None) -> str:
 
 - 同一 conversation_id **永远命中同一版本**（hash 稳定）
 - 业务节点函数零改动，只要在 `_versions.yaml` 加配置
-- 节点 trace 自动记录 `prompt_name`，harness 可按版本统计准确率
+- 节点 trace 自动记录 `prompt_name`，评估时可按版本分桶对比准确率
 - 开发时可用环境变量强制：`OTC_PROMPT_SWAP_INTENT_VERSION=v2 pytest tests/`
 
 ### 8.7 Prompt 拆分（已退役的 `compose_prompt` 模式）
 
 早期设想过 `compose_prompt("swap", "place_order", version="v2")` 把 `swap/v2/_base.md` + 意图片段拼装成 system prompt。该路径在 `app/` 内从未接线（#159），`swap/v2/` 目录也从未创建，已随 ADR 0022 删除。
 
-现在**唯一**的版本化形态是 8.6 的同目录并存（`intent.md` / `intent_v2.md` + `_versions.yaml` 灰度）。要把巨型 prompt 拆成"共享规范 + 各链前置段"，做法是在 `.md` 层面拆文件、由节点代码按需拼接，并在 `app/prompts/_manifest.yaml` 登记（`python scripts/prompt_inventory.py --check` 守护）。
+现在**唯一**的版本化形态是 8.6 的同目录并存（`intent.md` / `intent_v2.md` + `_versions.yaml` 灰度）。要把巨型 prompt 拆成"共享规范 + 各链前置段"，做法是在 `.md` 层面拆文件、由节点代码按需拼接；加载点登记与契约守护由 PromptSpec 注册表承担（ADR 0023，`tests/test_prompt_spec.py` 交叉核对），manifest / `prompt_inventory.py` 机制已随 ADR 0022 废弃移除（2026-09-16）。
 
 ### 8.8 LangFuse 接入（运行时观测 + Prompt 管理）
 

@@ -28,36 +28,36 @@ metadata:
 ## 环境
 
 ```bash
-cd /Users/toushi/code/github/aigc-langgraph
-# Python: .venv/bin/python（不用 uv）
+# 在仓库根目录运行；Python 用仓库 venv
+# Windows: .venv/Scripts/python.exe；macOS / Linux: .venv/bin/python
 ```
 
 ## 命令速查
 
 ```bash
-# 评测批次（local golden.jsonl 模式）
-.venv/bin/python scripts/langfuse_eval.py --local tests/fixtures/golden.jsonl --limit 10 --concurrency 5
-.venv/bin/python scripts/langfuse_eval.py --local tests/fixtures/golden.jsonl --limit 30 --concurrency 10
-.venv/bin/python scripts/langfuse_eval.py --local tests/fixtures/golden.jsonl --concurrency 10   # 全量
+# 评测批次（本地 fixture 模式）
+python scripts/langfuse_eval.py --local tests/fixtures/categories --limit 10 --concurrency 5
+python scripts/langfuse_eval.py --local tests/fixtures/categories --limit 30 --concurrency 10
+python scripts/langfuse_eval.py --local tests/fixtures/categories --concurrency 10   # 全量
 
 # 只重跑失败的 case
-.venv/bin/python scripts/langfuse_eval.py --local tests/fixtures/golden.jsonl --ids opt-018,opt-019 --concurrency 2
+python scripts/langfuse_eval.py --local tests/fixtures/categories --ids case-025,case-026 --concurrency 2
 
 # 按意图类型聚焦
-.venv/bin/python scripts/langfuse_eval.py --local tests/fixtures/golden.jsonl --filter option/place_order --concurrency 5
+python scripts/langfuse_eval.py --local tests/fixtures/categories --filter option/place_from_quote --concurrency 5
 
 # 跳过 Judge（只检查 reply_text 非空，跑得快）
-.venv/bin/python scripts/langfuse_eval.py --local tests/fixtures/golden.jsonl --ids opt-001 --no-judge
+python scripts/langfuse_eval.py --local tests/fixtures/categories --ids case-025 --no-judge
 
 # pytest 守卫
-.venv/bin/python -m pytest tests/ -q --tb=line 2>&1 | tail -5
+python -m pytest tests/ -q --tb=line 2>&1 | tail -5
 ```
 
 ## 跑 eval 的正确方式
 
 ```python
 # 1. 后台启动 eval
-Bash(command=".venv/bin/python scripts/langfuse_eval.py --local tests/fixtures/golden.jsonl --limit 20 --concurrency 10 2>&1",
+Bash(command="python scripts/langfuse_eval.py --local tests/fixtures/categories --limit 20 --concurrency 10 2>&1",
      run_in_background=True, timeout=600000, description="Run eval batch N")
 
 # 2. 等待完成（background task 完成时自动通知，不需要 Monitor/Poll）
@@ -175,7 +175,7 @@ eval 失败报告每条 case 输出 per-turn 详情（**stdout 文本格式**）
 ### 路由类
 - `intent_route` quote_marker 层失效 → 检查 `_QUOTE_MARKERS` 列表，确认标记字符串精确匹配
 - 订单号前缀关键词（OPT-/CO-/H-）被送到 GOATS → `app/subgraphs/ticker/resolver.py` 过滤
-- LLM 兜底误判 → 在 `app/prompts/router/keywords.yaml` 加关键词，或加 quote_marker
+- LLM 兜底误判 → 在 `app/nodes/route_rules.py` 加关键词 / 正则，或补 quote_marker
 
 ### render 类
 - 期权 place_order 走互换渲染 → `render.py` 第3分支必须加 `product_type == "swap"` 条件
@@ -221,7 +221,7 @@ Round 3+: --concurrency 10（全量）
 - **禁止先改代码再写测试**：必须先 RED 再 GREEN
 - **禁止硬编码期望值**：不能在 `app/` 里针对特定 case 返回特定结果
 - **禁止加模式开关**：不能在业务代码里加 `if TEST_MODE` 或环境变量切换逻辑路径
-- **禁止改测试用例**：`tests/fixtures/golden.jsonl` 的 case 不能动
+- **禁止改测试用例**：`tests/fixtures/categories/` 的 case 不能动
 - 合法的修法只有两种：**修 bug**（代码逻辑错误）或**改提示词**（LLM 理解偏差）
 
 ## 关键文件
@@ -229,7 +229,7 @@ Round 3+: --concurrency 10（全量）
 | 文件 | 用途 | 可改？ |
 |---|---|---|
 | `scripts/langfuse_eval.py` | 评估脚本（含 per-turn trace 输出）| ✅ 只改 trace/report 展示，不改评分逻辑 |
-| `tests/fixtures/golden.jsonl` | golden case 集 | ❌ 不准改 case，可新增 |
+| `tests/fixtures/categories/` | fixture case 集（现役）| ❌ 不准改 case，可新增 |
 | `app/state.py` `make_initial_state` | 每轮初始 state | ⚠️ 慎改：字段默认值影响多轮 checkpoint 传递 |
 | `app/nodes/intent_route.py` | 产品路由（4层）| ✅ |
 | `app/nodes/render.py` | 最终回复生成 | ✅ 改分支时必须带 product_type 条件 |

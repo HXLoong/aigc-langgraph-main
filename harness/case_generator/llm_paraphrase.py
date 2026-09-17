@@ -142,7 +142,7 @@ _REVIEW_HEADER = """\
 
 > grill-with-docs 第 4 决策 C 来源 · LLM 生成的 paraphrase 候选 case
 >
-> 业务方 review pass 的 case 转 jsonl 合入 `tests/fixtures/golden.jsonl`，
+> 业务方 review pass 的 case 转 jsonl 合入 `tests/fixtures/categories/`，
 > 标记 `source: llm_paraphrase`（PASS 阈值 80%，比 business_seed 90% 阈值更宽松）。
 
 ## 使用流程

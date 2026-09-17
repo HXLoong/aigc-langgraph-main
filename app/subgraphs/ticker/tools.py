@@ -18,8 +18,8 @@
 - **infer_code 从"单 keyword 同步 + 线程包裹调用"改为"批量 async 调用"**：
   新 DSL 一次性把全部候选词交给 LLM（省 token、省往返延迟），不再逐词调用
 - **动态 prompt HTTP 拉取（ADR 0013）已删除**：新 DSL 把 `inferencePrompt` 收编为
-  外部入参，本地实现改为纯 `load_prompt()` 静态加载，不再有 5 分钟 LRU 缓存 /
-  `get_inference_prompt()` 运行时拉取链路
+  外部入参，提示词经 PromptSpec（`app/prompts/spec.py`）静态加载，不再有
+  5 分钟 LRU 缓存 / `get_inference_prompt()` 运行时拉取链路
 - **无 ReAct**：不再有 Agent 自主决策调用顺序，管线在 resolver.py 里显式编排
 
 后端依赖：
@@ -37,8 +37,16 @@ from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_core.tools import tool
 
 from app.config import get_settings
+from app.graph.state import AgentState
 from app.llm.clients import get_qwen_standard
+from app.prompts.spec import PromptSpec, register
 from app.subgraphs.ticker.context import mask_order_context
+from app.subgraphs.ticker.models import (
+    InferCodeOutput,
+    JudgeTypeOutput,
+    RankOutput,
+    SplitKeywordsOutput,
+)
 from app.tools.ticker_client import TickerClientHttpx
 
 logger = logging.getLogger(__name__)
@@ -455,47 +463,10 @@ def _make_client() -> TickerClientHttpx:
 # ============================================================
 #
 # 均为非 thinking 模型批量调用（1 次调用处理全部候选词，对齐新 DSL 的 fan-out
-# 并行设计），静态 prompt 通过 load_prompt() 加载，不做任何运行时动态拼接。
-
-_RESULT_TAG_RE = re.compile(r"<result>\s*(.*?)\s*</result>", re.DOTALL)
-
-
-def _extract_json_dict(content: str) -> dict[str, Any]:
-    """从 LLM 原始输出提取 JSON object：优先 `<result>` 标签，否则整段内容。"""
-    if not content:
-        return {}
-    m = _RESULT_TAG_RE.search(content)
-    payload = m.group(1) if m else content
-    payload = _strip_markdown_fence(payload)
-    try:
-        data = json.loads(payload)
-    except (json.JSONDecodeError, ValueError):
-        return {}
-    return data if isinstance(data, dict) else {}
-
-
-def _extract_json_list(content: str) -> list[Any]:
-    """从 LLM 原始输出提取 JSON array：优先 `<result>` 标签，否则整段内容。"""
-    if not content:
-        return []
-    m = _RESULT_TAG_RE.search(content)
-    payload = m.group(1) if m else content
-    payload = _strip_markdown_fence(payload)
-    try:
-        data = json.loads(payload)
-    except (json.JSONDecodeError, ValueError):
-        return []
-    return data if isinstance(data, list) else []
-
-
-#: infer_code / rank 的「当前日期」占位符。Dify 由 JS 节点注入
-#: `new Date().toLocaleString("zh-CN", {timeZone: "Asia/Shanghai"})`，迁移时丢失，
-#: 期货合约到期月推断与排序失锚（提示词治理评估 TRJ-01）。infer_code.md 原文是四重花括号。
-_DATE_PLACEHOLDERS: tuple[str, ...] = (
-    "{{{{#1775913928411.date#}}}}",
-    "{{#1775913928411.date#}}",
-    "{{#1775820054722.date#}}",
-)
+# 并行设计）。ADR 0022 未决项已落地：4 个提示词全部转 structured output
+# （契约见 app/subgraphs/ticker/models.py），消除 <result> 标签 JSON 解析与静默漂移。
+# 本模块是 helper 形态（user 消息来自工具入参、非 AgentState），PromptSpec 在此
+# 只承载 system 渲染（日期 injects）与输出契约注册。
 
 
 def current_date_str() -> str:
@@ -507,34 +478,70 @@ def current_date_str() -> str:
     return f"{now.year}/{now.month}/{now.day} {now.hour:02d}:{now.minute:02d}:{now.second:02d}"
 
 
-def _render_system(system: str) -> str:
-    """把 Dify 日期占位符渲染为当前日期（ADR 0022 D5：占位符只允许出现在代码注入了值的位置）。"""
-    date_str = current_date_str()
-    for ph in _DATE_PLACEHOLDERS:
-        system = system.replace(ph, date_str)
-    return system
+def _helper_user_from_state(state: AgentState) -> str:
+    """helper 形态的 user 消息来自工具入参（非 AgentState），此处为注册契约占位。"""
+    return ""
 
 
-async def _call_ticker_llm(prompt_name: str, user_message: str) -> str:
-    """加载 `ticker/<prompt_name>.md` 静态 prompt，异步调用非 thinking 模型，返回原始文本。
+INFER_CODE_SPEC = register(PromptSpec(
+    category="ticker",
+    name="infer_code",
+    output_model=InferCodeOutput,
+    inputs=(),
+    user_builder=_helper_user_from_state,
+    injects={
+        # Dify JS 节点注入的当前日期（TRJ-01；infer_code.md 原文是四重花括号）
+        "{{{{#1775913928411.date#}}}}": lambda s: current_date_str(),
+    },
+))
 
-    失败（网络异常 / 超时）时返回空串，交由调用方按空结果降级处理，不抛出阻塞管线。
+SPLIT_KEYWORDS_SPEC = register(PromptSpec(
+    category="ticker",
+    name="tokenize",
+    output_model=SplitKeywordsOutput,
+    inputs=(),
+    user_builder=_helper_user_from_state,
+))
+
+JUDGE_TYPE_SPEC = register(PromptSpec(
+    category="ticker",
+    name="judge_type",
+    output_model=JudgeTypeOutput,
+    inputs=(),
+    user_builder=_helper_user_from_state,
+))
+
+RANK_SPEC = register(PromptSpec(
+    category="ticker",
+    name="rank",
+    output_model=RankOutput,
+    inputs=(),
+    user_builder=_helper_user_from_state,
+    injects={
+        # Dify JS 节点注入的当前日期（TRJ-01）
+        "{{#1775820054722.date#}}": lambda s: current_date_str(),
+    },
+))
+
+
+async def _call_ticker_llm(spec: PromptSpec, user_message: str) -> Any | None:
+    """按 SPEC 渲染 system（含日期注入）+ structured output 调用非 thinking 模型。
+
+    失败（网络异常 / 解析失败）返回 None，交由调用方按空结果降级处理，不抛出阻塞管线。
     """
-    from app.prompts import load_prompt
-
-    prompt = load_prompt("ticker", prompt_name)
-    llm = get_qwen_standard()
+    system, _prompt_name = spec.render_system({})
+    model = spec.output_model
+    assert model is not None  # 4 个 ticker SPEC 均为 structured output
+    llm = get_qwen_standard().with_structured_output(model)
     messages = [
-        SystemMessage(content=_render_system(prompt.system)),
+        SystemMessage(content=system),
         HumanMessage(content=user_message),
     ]
     try:
-        resp = await llm.ainvoke(messages)
+        return await llm.ainvoke(messages)
     except Exception as exc:  # noqa: BLE001
-        logger.warning("ticker LLM 调用失败 prompt=%s: %s", prompt_name, exc)
-        return ""
-    content = getattr(resp, "content", "") or ""
-    return str(content)
+        logger.warning("ticker LLM 调用失败 prompt=%s: %s", spec.key, exc)
+        return None
 
 
 async def infer_code_batch(candidates: list[str]) -> dict[str, Any]:
@@ -545,8 +552,8 @@ async def infer_code_batch(candidates: list[str]) -> dict[str, Any]:
     if not candidates:
         return {}
     user_message = json.dumps(candidates, ensure_ascii=False)
-    content = await _call_ticker_llm("infer_code", user_message)
-    return _extract_json_dict(content)
+    out = await _call_ticker_llm(INFER_CODE_SPEC, user_message)
+    return dict(out.root) if out is not None else {}
 
 
 async def split_ticker_keywords(candidates: list[str]) -> dict[str, Any]:
@@ -557,8 +564,8 @@ async def split_ticker_keywords(candidates: list[str]) -> dict[str, Any]:
     if not candidates:
         return {}
     user_message = f"标的列表：{json.dumps(candidates, ensure_ascii=False)}"
-    content = await _call_ticker_llm("tokenize", user_message)
-    return _extract_json_dict(content)
+    out = await _call_ticker_llm(SPLIT_KEYWORDS_SPEC, user_message)
+    return dict(out.root) if out is not None else {}
 
 
 async def judge_ticker_type(candidates: list[str]) -> dict[str, Any]:
@@ -569,8 +576,8 @@ async def judge_ticker_type(candidates: list[str]) -> dict[str, Any]:
     if not candidates:
         return {}
     user_message = json.dumps(candidates, ensure_ascii=False)
-    content = await _call_ticker_llm("judge_type", user_message)
-    return _extract_json_dict(content)
+    out = await _call_ticker_llm(JUDGE_TYPE_SPEC, user_message)
+    return dict(out.root) if out is not None else {}
 
 
 async def rank_candidates(
@@ -612,9 +619,8 @@ async def rank_candidates(
         f"用户期望品种：{expected_transaction_type}\n"
         f"标的列表：{json.dumps(payload, ensure_ascii=False)}"
     )
-    content = await _call_ticker_llm("rank", user_message)
-    ranked = _extract_json_list(content)
-    return [c for c in ranked if isinstance(c, str)]
+    out = await _call_ticker_llm(RANK_SPEC, user_message)
+    return list(out.ranked_codes) if out is not None else []
 
 
 __all__ = [

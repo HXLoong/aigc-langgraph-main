@@ -1,10 +1,12 @@
 # ADR 0022 · 代码迁移完成后的提示词治理模型
 
-- 状态：**已采纳**（2026-09-15 用户拍板 D1 采用模型 B；D2 / D3 / D5 / D6 已落地；D4 零风险档已落 v1，低风险档与需业务确认档按报告第七节推进）
-- 日期：2026-09-15
+- 状态：**已废弃**（2026-09-16）—— 本 ADR 引入的治理机制已全量从代码库移除；正文保留为历史决策记录
+- 日期：2026-09-15（废弃：2026-09-16）
 - 起源：客户反馈 Dify 迁移过来的提示词"太臃肿、冗余多"；专题评估见 [docs/prompt-maintainability-assessment.md](../prompt-maintainability-assessment.md)
 - 修订：[ADR 0003](./0003-prompt-versioning-by-file-coexistence.md)（删除第二种版本化形态）、[ADR 0001 D5](./0001-rewrite-app-with-harness-first.md)（处置表登记制改为 manifest + lint）
 - 作者：图灵科技 + Tony
+
+> **废弃说明（2026-09-16）**：manifest + lint 治理机制全量移除——~~`app/prompts/_manifest.yaml`~~、~~`scripts/prompt_inventory.py`~~（`--check` / `--strict` lint、上游漂移告警、清单报表）、`promote_langfuse_prompt.py` 的 gray 登记、~~`tests/test_prompt_inventory.py`~~ 及相关交叉核对测试均已删除；改提示词不再要求 manifest 登记与 eval 门，走普通 PR review。提示词契约治理由 [ADR 0023](./0023-prompt-as-code-langgraph.md)（PromptSpec 注册表）承担。
 
 ## 上下文
 
@@ -34,13 +36,13 @@
 
 采用 B。落地方式：
 
-- manifest 每条镜像自 Dify 的条目登记 `dify: {file, node_id, system_sha256}`（上次同步时上游节点 system 的 sha）；`scripts/prompt_inventory.py` 的 `check_upstream` 在上游节点变化时输出「上游有更新待人工 diff 合入」告警、上游存在但未映射的 llm 节点告警（如 1786439000001「互换-全新下单交易对手识别」），映射的节点不存在才 fail
+- manifest 每条镜像自 Dify 的条目登记 `dify: {file, node_id, system_sha256}`（上次同步时上游节点 system 的 sha）；~~`scripts/prompt_inventory.py`~~ 的 `check_upstream` 在上游节点变化时输出「上游有更新待人工 diff 合入」告警、上游存在但未映射的 llm 节点告警（如 1786439000001「互换-全新下单交易对手识别」），映射的节点不存在才 fail
 - `tests/test_prompt_governance.py` 的逐字相等断言退役，改为「每个镜像条目都声明了 dify 映射且节点存在」+「本地修改不阻断」
 - 零风险瘦身直接落 v1（`manifest.changelog` 登记）；`swap/intent_v2` / `place_order_v2` 因已与 v1 产生业务规则代差且失去用途而删除，多模态三个 v2 保留待 eval
 - Dify 侧同步方向仍是单向（sync → export → 人工 diff）；`dify/sync.py` 对主干 app 的导出文件名改为 `场外交易-test.yml`（治理读取的那份），`主干工作流.yml` 冻结为 2026-08 拓扑参照
 - M4 全量切换后业务方书面同意 Dify 下线（roadmap 既有门），Dify 停止更新，上游告警自然归零
 
-### D2 · `app/prompts/_manifest.yaml` 是活跃/灰度/非活跃的机器可读真源（已落地）
+### D2 · ~~`app/prompts/_manifest.yaml`~~ 是活跃/灰度/非活跃的机器可读真源（已落地，2026-09-16 移除）
 
 - 每个 `.md` 必须登记 `status: active | gray | inactive`；`scripts/prompt_inventory.py --check` 进 CI 守四条不变量：
   1. 目录 ↔ manifest 双向无孤儿
@@ -53,7 +55,7 @@
 
 ### D3 · 版本化形态收敛为一种：同目录并存 + `_versions.yaml`（已落地）
 
-- 删除 `compose_prompt()` 与 `Settings.swap_prompt_version`（#159 遗留裁决），`tests/test_prompt_inventory.py` 防复活
+- 删除 `compose_prompt()` 与 `Settings.swap_prompt_version`（#159 遗留裁决），~~`tests/test_prompt_inventory.py`~~ 防复活
 - `promote_langfuse_prompt.py` 产出的 `_v{N+1}.md` 同样按 D2 登记为 `gray`
 - ">2 并存版本视为治理债"由 manifest 的 `gray` 条目数可见化；转正时 v2→v1 并注销条目
 

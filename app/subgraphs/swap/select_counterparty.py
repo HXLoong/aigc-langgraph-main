@@ -23,7 +23,7 @@ from app.graph.business_params import validated_place_params
 from app.graph.safe_node import safe_node
 from app.graph.state import AgentState, TraceEntry
 from app.llm.clients import get_qwen_complex
-from app.prompts import load_prompt
+from app.prompts.spec import PromptSpec, register
 from app.subgraphs.swap.aggregate import apply_counterparty
 from app.subgraphs.swap.models import SwapSelectCounterpartyOutput
 
@@ -51,6 +51,15 @@ def _build_user_message(state: AgentState) -> str:
     )
 
 
+SPEC = register(PromptSpec(
+    category="swap",
+    name="select_counterparty",
+    output_model=SwapSelectCounterpartyOutput,
+    inputs=("raw_text", "swap_counterparties", "quote_content"),
+    user_builder=_build_user_message,
+))
+
+
 @safe_node
 async def swap_select_counterparty(state: AgentState) -> dict[str, Any]:
     """swap.select_counterparty 节点。
@@ -59,16 +68,9 @@ async def swap_select_counterparty(state: AgentState) -> dict[str, Any]:
     用 LLM 指针 + swap_counterparties 确定性查表覆盖 placeOrderShortname，
     写回 state['place_params']。
     """
-    prompt = load_prompt("swap", "select_counterparty")
     llm = get_qwen_complex().with_structured_output(SwapSelectCounterpartyOutput)
-
-    user_message = _build_user_message(state)
-    result: Any = await llm.ainvoke(
-        [
-            ("system", prompt.system),
-            ("user", user_message),
-        ]
-    )
+    messages, _prompt_name = SPEC.build_messages(state)
+    result: Any = await llm.ainvoke(messages)
 
     place_params = state.get("place_params") or {}
     order_list = [dict(item) for item in (place_params.get("orderList") or [])]

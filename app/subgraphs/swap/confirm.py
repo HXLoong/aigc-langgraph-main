@@ -1,22 +1,22 @@
 """swap.confirm 节点 · 互换确认（confirm_order / confirm_cancel_order / confirm_modify_order 共用一个节点函数）。
 
-DSL v2 把 Dify 的三个确认节点拆回独立提示词（互换-节点-确认下单 / 确认撤单 /
-确认改单，字段规则彼此已有差异——确认下单要求提取 quote_content 中**所有**
-订单号，确认撤单/确认改单只提取一个），本文件保留 ADR 0001 D5 的"合并成
-1 个 Python 节点函数"架构决策（三者共用 orderId-only schema、只靠
-intent 切换 prompt + expected_action），按 intent 动态加载对应 prompt 文件：
+瘦身 P1（docs/swap-prompt-slimming-assessment.md 病灶 2）：原 LLM 调用的唯一任务
+是提取 H- 订单号，改为 app/subgraphs/swap/order_id.py 确定性提取——零幻觉、
+零成本、零延迟。三个子意图共用本节点函数（ADR 0001 D5 架构决策），只靠 intent
+切换来源优先级（1:1 对照原三提示词）：
 
-    confirm_order          → app/prompts/swap/confirm_order.md
-    confirm_cancel_order   → app/prompts/swap/confirm_cancel.md
-    confirm_modify_order   → app/prompts/swap/confirm_modify.md
+    confirm_order          → quote 全部（不遗漏），quote 无则 raw
+    confirm_cancel_order   → quote 优先，否则 raw
+    confirm_modify_order   → quote 优先，否则 raw
+
+被替换的 3 个提示词文件已同批删除（另含旧合并版快照 confirm.md）。
 
 互换-确认下单二次校验（DSL v2 if-else，仅 confirm_order 分支有）：
-raw_content 必须包含"确认下单/确定下单/确认订单/下单确认"之一，否则不调用
-LLM、不调后端，直接写 state['error']（由 render 走 CLAUDE.md 核心原则第 8 条
-的 cascade 兜底文案，语义等价于 Dify false 分支的"存储消息意图"兜底应答）。
-该检查只依赖 raw_content，与 LLM 输出无关，因此在本节点里前置执行，避免
-校验失败时仍浪费一次 LLM 调用（Dify 原图是先调 LLM 再校验，行为对外一致，
-仅节省成本）。
+raw_content 必须包含"确认下单/确定下单/确认订单/下单确认"之一，否则不调后端，
+直接写 state['error']（由 render 走 CLAUDE.md 核心原则第 8 条的 cascade 兜底
+文案，语义等价于 Dify false 分支的"存储消息意图"兜底应答）。该检查只依赖
+raw_content，因此在本节点里前置执行（Dify 原图是先调 LLM 再校验，行为对外
+一致，仅节省成本）。
 
 输入：raw_text + quote_content + intent
 输出：state['confirm'] = {action, orderList}
@@ -25,8 +25,6 @@ action 取值：
 - "place"  → confirm_order
 - "cancel" → confirm_cancel_order
 - "modify" → confirm_modify_order
-
-LLM：thinking 模型 + with_structured_output（ADR 0010）。
 """
 from __future__ import annotations
 

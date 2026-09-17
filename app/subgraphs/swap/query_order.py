@@ -2,7 +2,7 @@
 
 瘦身 P1(docs/swap-prompt-slimming-assessment.md 病灶 2):原 LLM 调用的唯一
 任务是提取 H- 订单号,改为确定性提取。原提示词 app/prompts/swap/query_order.md
-保留为非活跃资产。行为约定 1:1 对照原提示词:raw 优先,否则 quote。
+已删除(零加载点即删,ADR 0022)。行为约定 1:1 对照原提示词:raw 优先,否则 quote。
 
 输入:raw_text + quote_content
 输出:state['query_filter'] = {orderList} + 后端调用结果

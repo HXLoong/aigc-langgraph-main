@@ -130,18 +130,16 @@ def test_business_branch_persists_latest_intent_after_operate(
     monkeypatch: pytest.MonkeyPatch, isolated_workflow: AsyncMock,
     product_type: str, intent: str, product_number: int, raw: str,
 ) -> None:
-    from app.subgraphs.close.models import CloseIntentOutput, QueryStatusParams
-    from app.subgraphs.option.models import OptionIntentOutput, OptionQueryParams
+    from app.subgraphs.close.models import CloseIntentOutput
+    from app.subgraphs.option.models import OptionIntentOutput
     from app.subgraphs.swap.models import SwapIntentOutput
 
     llm_outputs = {
         "option": {
             "app.subgraphs.option.intent.get_qwen_structured": OptionIntentOutput(type="query_order_status"),
-            "app.subgraphs.option.extract_query.get_qwen_thinking": OptionQueryParams(),
         },
         "option_close": {
             "app.subgraphs.close.intent.get_qwen_thinking": CloseIntentOutput(type="close_order_order_query"),
-            "app.subgraphs.close.query_status.get_qwen_thinking": QueryStatusParams(),
         },
         "swap": {
             "app.subgraphs.swap.intent.get_qwen_thinking": SwapIntentOutput(type="query_order_status"),

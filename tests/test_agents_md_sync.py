@@ -2,7 +2,7 @@
 
 团队主用 Codex；Codex 只读 AGENTS.md（根 + 逐级子目录）与 .agents/skills/<name>/SKILL.md，
 不读 CLAUDE.md / .claude/rules / .claude/skills。为避免两套口径漂移，全部由
-scripts/sync_agents_md.py 生成，CI --check 守同步。
+scripts/sync_agents_md.py 生成，提交前 --check 守同步。
 """
 from __future__ import annotations
 

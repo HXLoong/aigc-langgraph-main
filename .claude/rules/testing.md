@@ -3,11 +3,11 @@
 ## 三层测试金字塔
 
 ```
-   E2E 集成测试 (tests/test_e2e.py)     ← 慢，少，Mock LLM + Mock 后端
+   E2E 集成测试 (tests/integration/ + tests/test_cascade_e2e.py)   ← 慢，少，Mock LLM + Mock 后端
    ─────────────────────────────
-   子图 / 节点测试 (tests/test_*.py)   ← 中等，覆盖关键路径
+   子图 / 节点测试 (tests/subgraphs/ · tests/nodes/ · tests/graph/) ← 中等，覆盖关键路径
    ─────────────────────────────
-   模型与路由测试 (tests/test_models.py) ← 快，多，纯函数单测
+   模型与路由测试 (tests/subgraphs/*/test_models.py · tests/test_intent_route.py) ← 快，多，纯函数单测
 ```
 
 ## pytest 约定
@@ -20,18 +20,17 @@
 
 ```python
 # ❌ 错误：patch 原定义位置
-monkeypatch.setattr("app.tools.otc_backend.OtcBackendClient", factory)
-# 因为 swap.py 已经 `from app.tools.otc_backend import OtcBackendClient`
-# 名字绑到 swap 模块了，改原模块不生效
+monkeypatch.setattr("app.tools.option_client.OptionClientHttpx", factory)
+# 因为 option/backend.py 与 close/backend.py 都 `from ... import OptionClientHttpx`
+# 名字已绑到各自模块，改原模块不生效
 
-# ✅ 正确：patch 所有使用点
+# ✅ 正确：patch 所有使用点（先例：tests/test_inquiry_continuation.py）
 for target in (
-    "app.tools.otc_backend.OtcBackendClient",
-    "app.subgraphs.swap.OtcBackendClient",
-    "app.subgraphs.option.OtcBackendClient",
-    "app.subgraphs.close.OtcBackendClient",
+    "app.subgraphs.option.backend.OptionClientHttpx",
+    "app.subgraphs.close.backend.OptionClientHttpx",
 ):
     monkeypatch.setattr(target, factory)
+# swap / ticker 同理：app.subgraphs.swap.backend.SwapClientHttpx、app/subgraphs/ticker 的 _make_client
 ```
 
 ## E2E 测试
@@ -47,9 +46,9 @@ for target in (
 
 ## Golden Set
 
-- 所有新增意图必须在 `tests/fixtures/golden.jsonl` 加至少 2 条用例
-- golden 格式见文件顶部注释
-- 跑评估：`python scripts/langfuse_eval.py --local <fixture>`（`eval_golden.py` 为旧入口）
+- 所有新增意图必须在 `tests/fixtures/categories/` 加至少 2 条用例（现役数据源，`scripts/check_fixture_consistency.py` 校验一致性）
+- case 格式沿用对应文件既有方言（详见 `scripts/ai_test_langgraph/README.md`）
+- 跑评估：`python scripts/langfuse_eval.py --local <fixture>`
 
 ## 提交前自检
 
@@ -65,7 +64,7 @@ mypy app/                                     # 类型无错
 - ✅ 新增 Pydantic 模型 → 加字段校验测试
 - ✅ 新增业务逻辑分支 → 加 E2E 覆盖
 - ✅ 修 bug → 先写复现测试，再修
-- ⚠️ 改活跃提示词 → 走 ADR 0022 D4 分档 + eval 门（PASS ≥ 上一版），`prompt(<scope>)` commit；改 `.md` 必须同步 `app/prompts/_manifest.yaml`
+- ⚠️ 改活跃提示词 → 直接改 `.md` + 普通 PR review，`prompt(<scope>)` commit；需要时自行跑 `scripts/langfuse_eval.py` 验证
 
 ## 跑慢测试的技巧
 

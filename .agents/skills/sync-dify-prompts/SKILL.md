@@ -38,9 +38,11 @@ done
 
 ### Step 3：准备映射表
 
-Dify YAML 节点标题 → 项目 prompt 路径：**以 `app/prompts/_manifest.yaml` 为准**（ADR 0022），下表只列当前活跃映射；
-非活跃文件（swap 5 个订单号节点 / `swap/confirm.md` / `option/intent_extract.md` / `option/param_limit.md`）已去 LLM 化或归档，
-不再同步；`ticker/completeness.md` 已删除（确定性校验替代）。同步后跑 `python scripts/prompt_inventory.py --check`。
+Dify YAML 节点标题 → 项目 prompt 路径：下表列当前活跃映射（以 `app/prompts/` 目录与代码加载点为准）；
+已删除不再同步：swap 订单号类 6 个（cancel_order / query_order / confirm_order / confirm_cancel / confirm_modify / 旧合并版 confirm）、
+option 4 个 Q- 节点（extract_cancel / extract_cancel_place / extract_confirm_cancel / extract_query）、
+option_close 4 个 CO- 节点（cancel_close / confirm_close / confirm_cancel / query_status）、
+`option/intent_extract.md`、`option/param_limit.md`、`ticker/completeness.md`。
 
 | Dify 节点标题 | 项目路径 |
 |---|---|
@@ -52,11 +54,10 @@ Dify YAML 节点标题 → 项目 prompt 路径：**以 `app/prompts/_manifest.y
 | 图片-互换-请求下单参数解析 | `app/prompts/swap/image_extract.md` |
 | 互换-图片识别 | `app/prompts/swap/image_ocr.md` |
 | 期权-意图识别 | `app/prompts/option/intent.md` |
-| 期权-节点-询价 / 下单 / 确认下单 / 取消下单 / 确认撤单 / 撤单请求 / 查询订单状态 | `app/prompts/option/extract_{inquiry,place,confirm_place,cancel_place,confirm_cancel,cancel,query}.md` |
+| 期权-节点-询价 / 下单 / 确认下单 | `app/prompts/option/extract_{inquiry,place,confirm_place}.md` |
 | 期权平仓-意图识别 | `app/prompts/option_close/intent.md` |
 | 请求下单和确认全部平仓参数提取 | `app/prompts/option_close/place_close.md` |
 | 期权平仓-持仓查询参数提取 | `app/prompts/option_close/holding_query.md` |
-| 确认平仓 / 撤单参数提取 / 确认撤单参数提取 / 平仓订单查询 | `app/prompts/option_close/{confirm_close,cancel_close,confirm_cancel,query_status}.md` |
 | 大模型推断对应标的代码 / 标的代码和code的拆分 / 大模型判断标的类型 / 大模型排序并过滤 | `app/prompts/ticker/{infer_code,tokenize,judge_type,rank}.md` |
 
 ### Step 4：对每对做 diff
@@ -120,14 +121,14 @@ cp $TEMP/dify主工作流/互换-节点-意图识别.md app/prompts/swap/intent.
 ### Step 8：回归验证
 
 ```bash
-# 加载测试（确认没破坏 md 格式）
-pytest tests/test_prompts_and_history.py -v
+# 加载测试（确认没破坏 md 格式与 spec 契约）
+pytest tests/test_prompt_loader.py tests/test_prompt_spec.py -q
 
-# E2E 测试
-pytest tests/test_e2e.py -v
+# 回归测试
+pytest tests/ -q
 
-# golden set 评估（建议手动跑，需要服务运行中）
-# python scripts/eval_golden.py tests/fixtures/golden.jsonl
+# fixture 评估（建议手动跑，需要服务运行中）
+# python scripts/langfuse_eval.py --local tests/fixtures/categories
 ```
 
 ### Step 9：清理

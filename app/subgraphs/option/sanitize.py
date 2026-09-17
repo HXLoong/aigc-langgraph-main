@@ -10,8 +10,8 @@ Dify 原节点（spec/code_nodes/期权开仓-前置清洗.py）在 LLM 输出�
   入口会 NPE，保留原字符串"null"落未知意图模板反而安全——本子图不涉及顶层
   type/operate 的 LLM 自由输出，故不适用，仅移植 orderList 清洗逻辑）
 
-供 7 个 extract 节点在写 state 业务字段 / 调 `call_option_backend` 之前统一调用，
-避免 LLM 偶发吐出字面量字符串 "null" 污染下游卡片渲染与后端请求。
+供 extract 节点与 `call_option_backend` 在写 state 业务字段 / 组装后端请求
+之前统一调用，避免 LLM 偶发吐出字面量字符串 "null" 污染下游卡片渲染与后端请求。
 """
 from __future__ import annotations
 

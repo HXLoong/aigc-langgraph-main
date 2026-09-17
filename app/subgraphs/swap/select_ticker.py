@@ -25,7 +25,7 @@ from app.graph.business_params import validated_place_params
 from app.graph.safe_node import safe_node
 from app.graph.state import AgentState, TraceEntry
 from app.llm.clients import get_qwen_complex
-from app.prompts import load_prompt
+from app.prompts.spec import PromptSpec, register
 from app.subgraphs.swap.aggregate import apply_underlying
 from app.subgraphs.swap.models import SwapSelectTickerOutput
 
@@ -40,6 +40,15 @@ def _build_user_message(state: AgentState) -> str:
         f"quote_content：{quote_content}\n"
         f"candidate_list：{candidate_list_str}"
     )
+
+
+SPEC = register(PromptSpec(
+    category="swap",
+    name="select_ticker",
+    output_model=SwapSelectTickerOutput,
+    inputs=("raw_text", "quote_content", "quote_ticker_candidates"),
+    user_builder=_build_user_message,
+))
 
 
 @safe_node
@@ -71,16 +80,9 @@ async def swap_select_ticker(state: AgentState) -> dict[str, Any]:
             ],
         }
 
-    prompt = load_prompt("swap", "select_ticker")
     llm = get_qwen_complex().with_structured_output(SwapSelectTickerOutput)
-
-    user_message = _build_user_message(state)
-    result: Any = await llm.ainvoke(
-        [
-            ("system", prompt.system),
-            ("user", user_message),
-        ]
-    )
+    messages, _prompt_name = SPEC.build_messages(state)
+    result: Any = await llm.ainvoke(messages)
 
     apply_underlying(order_list, [p.model_dump() for p in result.picks], candidate_list)
 

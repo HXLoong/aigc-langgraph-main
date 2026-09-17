@@ -50,7 +50,7 @@ USE_DIFY_SHADOW=true DIFY_BASE_URL=$DIFY_BASE_URL DIFY_API_KEY=$DIFY_API_KEY \
     python -m harness run --category ${CATEGORY:-} --out runs/run-dify-$(date +%s)
 ```
 
-> 具体环境变量名以 `harness/runner.py` 实装为准。M1 阶段 runner 只调用 LangGraph，M3 启用 shadow 模式后会暴露 Dify 切换开关。
+> 现行双跑由 `scripts/shadow_compare.py` 承接（`DRY_RUN_BACKEND` 模式可用）；具体环境变量与参数以该脚本实装为准。
 
 ### Step 3：跑 diff
 

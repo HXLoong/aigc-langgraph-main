@@ -6,11 +6,11 @@
                   字段语义写在 Field(description=...)，通过 function calling schema 下发；
                   提示词正文不再维护 JSON 骨架 / 字段表
 - `injects`       system 段里由代码渲染的 `{{#...#}}` 占位符 → 渲染器（AgentState → str），
-                  未登记的占位符视为悬空（prompt_inventory --strict）
+                  登记的占位符必须在 `.md` system 段真实存在（构造期校验）
 - `user_builder`  AgentState → user 消息（规则文本只能住在 .md，代码只拼变量）
 - `gray`          是否走 `_versions.yaml` 灰度（resolve_prompt_version）
 
-注册表 `all_specs()` 供测试与 lint 交叉核对 manifest（output_model / injects）与 AgentState。
+注册表 `all_specs()` 供测试交叉核对 AgentState / 输出契约。
 """
 from __future__ import annotations
 

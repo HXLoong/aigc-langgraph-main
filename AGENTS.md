@@ -1,5 +1,5 @@
 <!-- 自动生成：python scripts/sync_agents_md.py —— 禁止手改。
-     真源是 CLAUDE.md + .claude/rules/*.md；改那里再重新生成，CI（governance job）会校验同步。 -->
+     真源是 CLAUDE.md + .claude/rules/*.md；改那里再重新生成，提交前跑 python scripts/sync_agents_md.py --check 校验同步。 -->
 
 
 # otc-agent · 图灵科技 Project Memory
@@ -22,19 +22,18 @@ docker compose -f infra/langfuse/docker-compose.yml --env-file infra/langfuse/.e
 # 启动应用
 uvicorn app.main:app --reload                # FastAPI（POST /v1/workflows/run，兼容 Dify）
 
-# 测试（841 passed + 14 skipped，约 2 分钟，行覆盖率 82%）
+# 测试（1864 passed + 15 skipped，约 3 分钟）
 pytest tests/ -v                             # 全套
 pytest tests/test_smoke.py -v                # 仅 smoke
 pytest -k "not e2e"                          # 跳过 e2e
 
 # 评估（M3 主用入口：DeepSeek Judge + per-turn 富集 JSON 写到 Langfuse Cloud）
-python scripts/langfuse_eval.py --local tests/fixtures/unified_golden.jsonl --concurrency 4   # 全量 350+
-python scripts/langfuse_eval.py --local tests/fixtures/unified_golden.jsonl --ids opt-001,opt-018 --concurrency 2
+python scripts/langfuse_eval.py --local tests/fixtures/categories --concurrency 4   # 全量（现役数据源，350+ 条）
+python scripts/langfuse_eval.py --local tests/fixtures/categories --ids case-025,case-026 --concurrency 2
 
 # Harness CLI（备用 / 本地快速 smoke，无 Judge）
-python -m harness run                        # 跑 golden 全集
-python -m harness diff <run-a> <run-b>       # 比对两次 run
-python -m harness sync-golden                # tests/fixtures/*.jsonl ↔ LangFuse dataset
+python -m harness doctor                     # 环境体检（/health /ready）
+python -m harness run                        # 跑 fixture（默认 tests/fixtures/categories/，参数见 --help）
 
 # 真后端探针（M3 联调）
 python scripts/probe_real_backend_e2e.py
@@ -83,27 +82,26 @@ app/
 ├── observability/           # tracing.py + metrics.py（Prometheus 兼容 /metrics）
 └── prompts/                 # Dify 提示词资产（router / swap / option / option_close / ticker）
 
-harness/                     # 评测台（与 app/ 解耦，仅 import build_main_graph）
-├── golden.py                # golden.jsonl 加载
-├── runner.py                # 跑 case + dump trace 到 LangFuse
-├── differ.py                # 字段级 diff（按业务对象路径）
-├── reporter.py              # JSON + markdown 报告（按 source 桶分别统计）
+harness/                     # 评测台（经 HTTP 调本地 /v1/workflows/run，与 app/ 解耦）
+├── golden.py                # categories fixture 加载（两方言归一化）
+├── multi_turn.py            # 多轮 case 的 HTTP runner
+├── differ.py                # 字段级 diff（按业务对象路径）+ 文本 / 结构化断言
 ├── langfuse_client.py       # LangFuse SDK 封装（v4 OTel-based）
 ├── token_tracker.py         # LLM token / 成本估算
 ├── case_generator/          # LLM 对抗式 paraphrase 生成 C 桶
-└── cli.py                   # python -m harness <run|diff|sync-golden|...>
+└── cli.py                   # python -m harness <doctor|run> + 报告渲染
 
-scripts/                     # langfuse_eval.py（Judge 评估，M3 主用） / eval_golden.py / probe_*_e2e.py
+scripts/                     # langfuse_eval.py（Judge 评估，M3 主用） / probe_*.py
                              # upload_golden_to_langfuse.py / promote_langfuse_prompt.py / canary_status.py
                              # rollback_canary.sh / run_alerts.py / llm_cost_report.py / shadow_compare.py 等
 
 infra/langfuse/              # LangFuse self-hosted Docker Compose（PG + ClickHouse + Redis + MinIO + Web + Worker）
-docs/adr/                    # 架构决定 ADR 0000-0021（共 22 篇）+ README 索引
+docs/adr/                    # 架构决定 ADR 0000-0023（共 24 篇）+ README 索引
 docs/api-contracts/          # Java 后端真实业务 API 契约
 docs/m3-m4-roadmap.md        # M3/M4 端到端任务图（6 个交付面，2026-05-11 修订）
 docs/on-call-runbook.md      # 上线 on-call SOP
-tests/                       # 841 passed + 14 skipped；行覆盖率 82%
-tests/fixtures/              # golden.jsonl（350+ 条）+ golden_ticker_2026-05.jsonl（34 条）
+tests/                       # 1864 passed + 15 skipped
+tests/fixtures/              # categories/（现役，6 文件 / 389 条）+ unified_golden.jsonl / old_typing/（归档）
 ```
 
 ## 团队工具链：Claude Code 与 Codex 共用一份纪律
@@ -116,7 +114,7 @@ tests/fixtures/              # golden.jsonl（350+ 条）+ golden_ticker_2026-05
 - `.agents/skills/<name>/` = `.claude/skills/<name>/`（frontmatter 收敛为 Agent Skills 标准的 `name` / `description` / `metadata`）
   + `.claude/agents/*.md`（Codex 无 subagent，转为同名技能，调用时以该角色执行）；Codex 里用 `$name` 显式调用
 
-改纪律或流程只改 `CLAUDE.md` / `.claude/**`，再跑生成脚本一起提交；governance CI `--check` 守同步。
+改纪律或流程只改 `CLAUDE.md` / `.claude/**`，再跑生成脚本一起提交；提交前跑 `python scripts/sync_agents_md.py --check` 守同步。
 
 ## 子目录陷阱页（按需加载）
 
@@ -136,7 +134,7 @@ tests/fixtures/              # golden.jsonl（350+ 条）+ golden_ticker_2026-05
    - 写测试 → 跑到 RED（测试失败） → 写最小修复代码 → 跑到 GREEN → 全量回归
    - 禁止先改代码再补测试，也禁止跳过 RED 验证
    - `.claude/skills/test-driven-development/SKILL.md` 流程 包含完整 workflow，修改代码前调用
-6. **git 里的提示词是唯一真源，Dify 只是上游输入**（ADR 0022 D1，2026-09-15）—— 改活跃提示词走 ADR 0022 D4 分档：零风险档直接改 v1，低风险 / 需业务确认档走 `*_v2.md` 灰度 + eval 门；每次改动在 `app/prompts/_manifest.yaml` 该条目 `changelog` 登记，`prompt(<scope>)` commit。Dify 侧更新由 `scripts/prompt_inventory.py --check` 告警后人工 diff 合入，不再一键覆盖
+6. **git 里的提示词是唯一真源，Dify 只是上游输入** —— 改提示词直接改 `app/prompts/**/*.md` + 普通 PR review，`prompt(<scope>)` commit；Dify 侧更新走 `dify/sync.py` → `scripts/export_dify_prompts.py` → 人工 diff 选择性合入，不要一键覆盖
 7. **标的代码必须 from_goats=True** —— Ticker Agent 的绝对约束（ADR 0008）
 8. **节点失败必须 cascade 防御** —— 任一节点写入 `state['error']` 后，下游 conditional 路由必须检查并跳到 fallback render，禁止 cascade 失败。具体：主图 `_route_by_product` 与每子图首节点后的 conditional 都加 `if state.get('error'): return 'fallback'`。fallback 节点输出友好回复（"我没完全理解你的意思，能换种说法重新告诉我吗"）+ trace 记录原 fail 节点名。LLM 解析失败由 `with_structured_output` 自带 1 次重试 + `@safe_node` 兜底捕获 ValidationError 写入 error；不走 HITL（HITL 仅用于 ADR 0006 的业务参数二次确认场景）
 
@@ -220,7 +218,7 @@ tests/fixtures/              # golden.jsonl（350+ 条）+ golden_ticker_2026-05
 修完跑对应 case 确认：
 
 ```bash
-.venv/bin/python scripts/langfuse_eval.py --local tests/fixtures/unified_golden.jsonl --ids opt-001,opt-018 --concurrency 2
+.venv/bin/python scripts/langfuse_eval.py --local tests/fixtures/categories --ids case-025,case-026 --concurrency 2
 ```
 
 ## 绝对禁止
@@ -250,7 +248,7 @@ ADR 0016 把"M3 = shadow 双跑"重新定义为"M3 = 工程联调闭环 + 评估
 **已完成（六大交付面）**：
 
 1. **代码完整性** ✅：24 节点蓝图 → 主干 20 节点已落地；P2 辅助节点（place_order_image / place_order_excel / image_recognize）按线上流量增量补
-2. **数据集完整性** ✅：golden.jsonl 已扩到 350+；fixture 职责矩阵 + 一致性 lint 已就位（PR #109）；按 B / C / D 桶分别维护
+2. **数据集完整性** ✅：fixture 集已扩到 350+；fixture 职责矩阵 + 一致性 lint 已就位（PR #109）；按 B / C / D 桶分别维护
 3. **客户现场部署能力** ✅：infra/langfuse self-hosted、`scripts/deploy-customer.sh`（C1.13 / Issue #58）、`.env.customer.template`（C1.12 / Issue #52）、私有化部署文档（C1.11 / Issue #51）
 4. **联调与回归** ✅：真后端 e2e 探针（`scripts/probe_*_e2e.py`，D2.1–D2.6 + Dx.1–Dx.2 已 closed）+ DeepSeek Judge 评估（`scripts/langfuse_eval.py`）+ business 子图 → 真 client → mock_api 全链路（PR #110，27 测试）
 5. **可观测 + 运维** ✅：`/metrics` Prometheus 端点（C1.5 / Issue #50） + 5xx 计数闭环（PR #104） + P95 延迟告警（PR #103） + LLM 成本监控（C1.7 / Issue #56） + 阈值一致性 CI lint（PR #106） + on-call 应急回切剧本（PR #99） + `scripts/rollback_canary.sh`（PR #98）
@@ -292,7 +290,7 @@ ADR 0016 把"M3 = shadow 双跑"重新定义为"M3 = 工程联调闭环 + 评估
 | **D · 客户历史真实输入** | 反映真实分布；必须业务方人工标注 expected 后才能合入 | 无硬性阈值（M3 持续累积，作补充参考）|
 | ~~A · 历史企微日志抽样~~ | 暂搁，被 D 桶替代 | — |
 
-harness reporter 输出按桶分别统计；CI 维护一致性 lint（详见 `scripts/check_fixture_consistency.py`）。
+按桶 PASS 率与退出门口径见 `docs/m3-m4-roadmap.md`；`scripts/check_fixture_consistency.py` 守 fixture 一致性 lint（提交前本地跑）。
 
 详见：
 
@@ -326,25 +324,14 @@ Single-context 布局：根目录 `CONTEXT.md` + `docs/adr/`。详见 `docs/agen
 
 # 提示词管理规则
 
-> 真源与状态机：[ADR 0022](../../docs/adr/0022-prompt-governance-after-code-migration.md)；
-> 清单：`app/prompts/_manifest.yaml`（`python scripts/prompt_inventory.py` 打印，`--check` 进 CI）；
-> 局部陷阱：`app/prompts/CLAUDE.md`。本文件只写"怎么做"，不复制清单与节点数（以 manifest 为准）。
-
-## 三态与守护
-
-| status | 含义 | lint 不变量 |
-|---|---|---|
-| `active` | 生产加载 | `loader` 文件里必须有 `load_prompt("<cat>", "<name>")` / `resolve_prompt_version(...)` 或 `loader_call` helper 调用 |
-| `gray` | ADR 0003 灰度位（`*_v2.md`），由 `_versions.yaml` / `OTC_PROMPT_<CAT>_<NAME>_VERSION` 切流 | 记录 `base_system_sha256`；v1 之后被改 → 必须重做 diff 并写 `drift_acknowledged: {at_base_sha, note}`；`expires` 到期未转正 → 警告 |
-| `inactive` | 无加载点的资产 | `reason` 必填（保留理由 + 可删条件）；`app/` 内零 `load_prompt` 引用 |
-
-`--strict` 加严项（ADR 0022 D5 目标态，逐步收敛）：system 段里未在 `injects` 登记的 `{{#…#}}` 占位符视为**悬空**；走 `with_structured_output`（有 `output_model`）的文件里的 JSON 格式禁令视为死重。
+> 真源与契约：[ADR 0023](../../docs/adr/0023-prompt-as-code-langgraph.md)（PromptSpec）；版本化 / 灰度：[ADR 0003](../../docs/adr/0003-prompt-versioning-by-file-coexistence.md)。
+> 局部陷阱：`app/prompts/CLAUDE.md`。本文件只写"怎么做"。
 
 ## 占位符纪律（2026-09-15 反转）
 
 Dify 的 `{{#node_id.var#}}` 在 Dify 由工作流引擎渲染；LangGraph 里**没有渲染层**。所以：
 
-- 代码确实注入的占位符 → 在节点里 `system.replace(...)` 渲染（先例：`close/holding_query.py` 对手列表、`ticker/tools.py` 当前日期），并在 manifest `injects` 登记
+- 代码确实注入的占位符 → 在 `PromptSpec.injects` 登记渲染器（先例：`close/holding_query.py` 对手列表、`ticker/tools.py` 日期占位符）
 - 代码不注入的占位符 → 是悬空规则，LLM 看到的是变量名；属零风险删除档，围绕它的整段规则一起删
 
 ## 加载方式（ADR 0023：一个 LLM 节点 = 一个 PromptSpec）
@@ -372,25 +359,25 @@ result = await model.with_structured_output(SwapIntentOutput).ainvoke(messages)
 - 节点默认只用 system 段 + 代码拼变量的 user；user 里若有**规则文本**，写进 `.md` 的 `[user]` 段用 `{{var}}` 占位，`user_builder` 里用 `load_prompt(...).render_user(**vars)` 渲染（先例 `swap/place_order.md`）
 - **禁止**把提示词正文硬编码进 Python（含"后置追加一段格式指令"这种写法）；**禁止**在 `.md` 里维护 JSON 骨架 / 字段表——字段语义只写在 Pydantic `Field(description=)`
 - 共享拼装（历史、对手列表、JSON 列表）只在 `app/prompts/blocks.py` 定义一次，不在子图里复制
-- `injects` 必须与 manifest 该条目的 `injects` 一致（`tests/test_prompt_spec.py` 交叉核对）；`prompt_inventory.py --check` 把 `PromptSpec(category=, name=)` 视为加载点
-- 灰度节点必须把 `build_messages` 返回的 `prompt_name` 写进 `TraceEntry.llm_output["prompt_name"]`（ADR 0003 硬前置，harness reporter 按此分桶）
-- 尚未迁到 PromptSpec 的节点（close 5 个、swap select_* / multimodal、ticker、router）仍是 `load_prompt` / `resolve_prompt_version` 直调，按 ADR 0023 D5 分批迁移
+- `injects` 登记的占位符必须在 `.md` system 段里真实存在，`build_messages` 构造期校验（`tests/test_prompt_spec.py`）
+- 灰度节点必须把 `build_messages` 返回的 `prompt_name` 写进 `TraceEntry.llm_output["prompt_name"]`（ADR 0003 硬前置：进 `_versions.yaml` 前必须先写 trace，否则版本对比失真）
+- 全部 18 个 LLM 节点已迁至 PromptSpec（2026-09-17：第二 / 三批迁移 28 个，D 批去 LLM 化再移除 option 4 + close 4 个；2026-09-17 option 收尾批再移除 2 个——extract_place / extract_confirm_place 改确定性 `place_params.py`）；节点内剩余 `load_prompt` 直调仅限 `[user]` 模板渲染（`user_builder` 中 `load_prompt(...).render_user(...)`，先例 `swap/place_order.py`、`swap/fresh_counterparty.py`），system 一律经 `SPEC.render_system`
 
 ## 来源优先级（ADR 0014 D3-2）
 
-生产真源永远是 git 里的 `app/prompts/**/*.md`；`USE_LANGFUSE_PROMPTS=true` 只允许开发/staging 演练，生产开启即 fail-fast。LangFuse 演练稿用 `scripts/promote_langfuse_prompt.py` 晋升为 `_v{N+1}.md`（自动登记 manifest `gray`），再走 PR。
+生产真源永远是 git 里的 `app/prompts/**/*.md`；`USE_LANGFUSE_PROMPTS=true` 只允许开发/staging 演练，生产开启即 fail-fast。LangFuse 演练稿用 `scripts/promote_langfuse_prompt.py` 晋升为 `_v{N+1}.md`，再走 PR。
 
 ## 改提示词的三条路
 
 | 场景 | 做法 | 门槛 |
 |---|---|---|
-| 瘦身 / 修规则（ADR 0022 D4 三档） | 零风险档直接改 v1；低风险档与需业务确认档走 `*_v2.md` 灰度位；都在 manifest `changelog` 加一行 | eval PASS ≥ v1 基线；`prompt(<scope>)` commit |
-| Dify 侧有更新 | `python dify/sync.py`（凭据只从 `DIFY_EMAIL` / `DIFY_PASSWORD` 环境变量读）→ `scripts/export_dify_prompts.py`（默认不覆盖已存在文件）→ 人工 diff 选择性合入 | 不要一键覆盖；`prompt_inventory.py --check` 会按 manifest `dify.system_sha256` 告警哪些节点有上游更新，合入后更新该 sha |
-| 新 LLM 节点 | `.md` 放对目录 + Pydantic Output 模型（每字段 `Field(description=)`）+ `PromptSpec` 声明 + `@safe_node` 节点 + manifest 登记（`output_model` / `injects`）+ golden case | `prompt_inventory.py --check` 通过 |
+| 瘦身 / 修规则 | 直接改 `app/prompts/**/*.md`；需要时先跑 `scripts/langfuse_eval.py` 对比 | 普通 PR review；`prompt(<scope>)` commit |
+| Dify 侧有更新 | `python dify/sync.py`（凭据只从 `DIFY_EMAIL` / `DIFY_PASSWORD` 环境变量读）→ `scripts/export_dify_prompts.py`（默认不覆盖已存在文件）→ 人工 diff 选择性合入 | 不要一键覆盖 |
+| 新 LLM 节点 | `.md` 放对目录 + Pydantic Output 模型（每字段 `Field(description=)`）+ `PromptSpec` 声明 + `@safe_node` 节点 + golden case | 普通 PR review |
 
 ## 字符数 / 延迟
 
-用 `python scripts/prompt_inventory.py` 看 system 字符与估算 tokens（÷1.6）；单请求开销按调用链累加（`docs/prompt-maintainability-assessment.md` 第二节）。当前最重路径：互换图片下单 ≈54K tokens、平仓下单 ≈37K、互换文本下单 ≈36K。
+单请求开销按调用链上各 `.md` system 字符 ÷1.6 估算 tokens 累加（基线盘点见 `docs/prompt-maintainability-assessment.md` 第二节）。当前最重路径：互换图片下单 ≈54K tokens、平仓下单 ≈37K、互换文本下单 ≈36K。
 
 ## Loader 缓存
 
@@ -398,10 +385,10 @@ result = await model.with_structured_output(SwapIntentOutput).ainvoke(messages)
 
 ## 相关 ADR
 
-- ADR 0001 D5：改写决定登记表（资产状态部分已由 manifest 接管）
+- ADR 0001 D5：改写决定登记表
 - ADR 0003：同目录并存 + `_versions.yaml` 灰度（唯一版本化形态）
 - ADR 0014：LangFuse 作为演练区，git 为真源
-- ADR 0022：代码迁移完成后的提示词治理模型
+- ADR 0022：代码迁移完成后的提示词治理模型（**已废弃**）
 - ADR 0023：提示词即代码（PromptSpec / AgentState inputs / Pydantic description 输出契约）
 
 
@@ -412,11 +399,11 @@ result = await model.with_structured_output(SwapIntentOutput).ainvoke(messages)
 ## 三层测试金字塔
 
 ```
-   E2E 集成测试 (tests/test_e2e.py)     ← 慢，少，Mock LLM + Mock 后端
+   E2E 集成测试 (tests/integration/ + tests/test_cascade_e2e.py)   ← 慢，少，Mock LLM + Mock 后端
    ─────────────────────────────
-   子图 / 节点测试 (tests/test_*.py)   ← 中等，覆盖关键路径
+   子图 / 节点测试 (tests/subgraphs/ · tests/nodes/ · tests/graph/) ← 中等，覆盖关键路径
    ─────────────────────────────
-   模型与路由测试 (tests/test_models.py) ← 快，多，纯函数单测
+   模型与路由测试 (tests/subgraphs/*/test_models.py · tests/test_intent_route.py) ← 快，多，纯函数单测
 ```
 
 ## pytest 约定
@@ -429,18 +416,17 @@ result = await model.with_structured_output(SwapIntentOutput).ainvoke(messages)
 
 ```python
 # ❌ 错误：patch 原定义位置
-monkeypatch.setattr("app.tools.otc_backend.OtcBackendClient", factory)
-# 因为 swap.py 已经 `from app.tools.otc_backend import OtcBackendClient`
-# 名字绑到 swap 模块了，改原模块不生效
+monkeypatch.setattr("app.tools.option_client.OptionClientHttpx", factory)
+# 因为 option/backend.py 与 close/backend.py 都 `from ... import OptionClientHttpx`
+# 名字已绑到各自模块，改原模块不生效
 
-# ✅ 正确：patch 所有使用点
+# ✅ 正确：patch 所有使用点（先例：tests/test_inquiry_continuation.py）
 for target in (
-    "app.tools.otc_backend.OtcBackendClient",
-    "app.subgraphs.swap.OtcBackendClient",
-    "app.subgraphs.option.OtcBackendClient",
-    "app.subgraphs.close.OtcBackendClient",
+    "app.subgraphs.option.backend.OptionClientHttpx",
+    "app.subgraphs.close.backend.OptionClientHttpx",
 ):
     monkeypatch.setattr(target, factory)
+# swap / ticker 同理：app.subgraphs.swap.backend.SwapClientHttpx、app/subgraphs/ticker 的 _make_client
 ```
 
 ## E2E 测试
@@ -456,9 +442,9 @@ for target in (
 
 ## Golden Set
 
-- 所有新增意图必须在 `tests/fixtures/golden.jsonl` 加至少 2 条用例
-- golden 格式见文件顶部注释
-- 跑评估：`python scripts/langfuse_eval.py --local <fixture>`（`eval_golden.py` 为旧入口）
+- 所有新增意图必须在 `tests/fixtures/categories/` 加至少 2 条用例（现役数据源，`scripts/check_fixture_consistency.py` 校验一致性）
+- case 格式沿用对应文件既有方言（详见 `scripts/ai_test_langgraph/README.md`）
+- 跑评估：`python scripts/langfuse_eval.py --local <fixture>`
 
 ## 提交前自检
 
@@ -474,7 +460,7 @@ mypy app/                                     # 类型无错
 - ✅ 新增 Pydantic 模型 → 加字段校验测试
 - ✅ 新增业务逻辑分支 → 加 E2E 覆盖
 - ✅ 修 bug → 先写复现测试，再修
-- ⚠️ 改活跃提示词 → 走 ADR 0022 D4 分档 + eval 门（PASS ≥ 上一版），`prompt(<scope>)` commit；改 `.md` 必须同步 `app/prompts/_manifest.yaml`
+- ⚠️ 改活跃提示词 → 直接改 `.md` + 普通 PR review，`prompt(<scope>)` commit；需要时自行跑 `scripts/langfuse_eval.py` 验证
 
 ## 跑慢测试的技巧
 

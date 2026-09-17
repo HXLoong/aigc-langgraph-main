@@ -15,9 +15,14 @@ from pydantic import BaseModel
 import app.main as app_main
 from app.config import get_settings
 from app.subgraphs.option.models import (
-    OptionInquiryParams,
+    OptionInquiryRawParams,
     OptionIntentOutput,
-    OptionPlaceParams,
+)
+from app.subgraphs.ticker.models import (
+    InferCodeOutput,
+    JudgeTypeOutput,
+    RankOutput,
+    SplitKeywordsOutput,
 )
 from app.tools.message_client import MessageClientHttpx
 from app.tools.option_client import OptionClientHttpx
@@ -62,13 +67,27 @@ def inquiry_workflow(
     monkeypatch.setattr("app.nodes.persist._write_to_mysql", AsyncMock())
 
     # 保留真实 tokenizer / resolver / ticker HTTP，仅替换外部 LLM。
-    async def ticker_llm_response(messages):
+    async def ticker_llm_response(model, messages):
         content = messages[-1].content
-        result = {"300773.SZ": ["300773.SZ"]} if "300773" in content else {}
-        return MagicMock(content=json.dumps(result))
+        hit = {"300773.SZ": ["300773.SZ"]} if "300773" in content else {}
+        if model is JudgeTypeOutput:
+            # judge 仅影响期货日期规整；迁移前 stub 值同样不命中 FUTURE 分支
+            return JudgeTypeOutput.model_validate({})
+        if model is SplitKeywordsOutput:
+            return SplitKeywordsOutput.model_validate(hit)
+        if model is InferCodeOutput:
+            return InferCodeOutput.model_validate(hit)
+        return RankOutput(ranked_codes=[])
+
+    def make_structured(model):
+        class _Structured:
+            async def ainvoke(self, messages):
+                return await ticker_llm_response(model, messages)
+
+        return _Structured()
 
     infer_llm = MagicMock()
-    infer_llm.ainvoke = AsyncMock(side_effect=ticker_llm_response)
+    infer_llm.with_structured_output = MagicMock(side_effect=make_structured)
     monkeypatch.setattr("app.subgraphs.ticker.tools.get_qwen_standard", lambda: infer_llm)
     from app.nodes.intent_route import UnknownIntentOutput
     _patch_llm(monkeypatch, "app.nodes.intent_route.get_qwen_thinking",
@@ -137,9 +156,9 @@ def test_two_turn_inquiry_continues_history_and_sends_order_id_with_tenor(
     )
     extract_llm = _patch_llm(
         monkeypatch, "app.subgraphs.option.extract_inquiry.get_qwen_thinking",
-        OptionInquiryParams, [
+        OptionInquiryRawParams, [
             {"orderList": [{"stockCode": "300773.SZ", "optionType": "欧式看涨",
-                            "strikePercentage": 80}]},
+                            "strikePercentage": "80%"}]},
             {"orderList": [{"orderId": "Q-20260907-000001", "tenor": "1M"}]},
         ],
     )
@@ -207,9 +226,6 @@ def test_order_extraction_preserves_tenor_for_backend_intent_correction(
     client, calls = inquiry_workflow
     _patch_llm(monkeypatch, "app.subgraphs.option.intent.get_qwen_structured",
                OptionIntentOutput, [{"type": "place_order_from_quote"}])
-    _patch_llm(monkeypatch, "app.subgraphs.option.extract_place.get_qwen_thinking",
-               OptionPlaceParams,
-               [{"orderList": [{"orderId": "Q-20260907-000001", "tenor": "1M"}]}])
     response = client.post("/v1/workflows/run", json={
         "conversation_id": "backend-corrects-intent",
         "inputs": {"raw_content": "1M", "quote_content": INQUIRY_CARD,
@@ -218,7 +234,11 @@ def test_order_extraction_preserves_tenor_for_backend_intent_correction(
     assert response.status_code == 200, response.text
     assert response.json()["data"]["status"] == "succeeded"
     assert calls[0][1]["type"] == "place_order_from_quote"
-    assert calls[0][1]["orderList"] == [{"orderId": "Q-20260907-000001", "tenor": "1M"}]
+    assert calls[0][1]["orderList"] == [{
+        "orderId": "Q-20260907-000001", "stockCode": "300773.SZ",
+        "optionType": "欧式看涨", "tenor": "1M", "strikePercentage": 80.0,
+        "hasFastExecutionIntent": False,
+    }]
     assert response.json()["answer"] == UPDATED_CARD
 
 
@@ -231,17 +251,16 @@ def test_business_subgraphs_do_not_duplicate_checkpoint_history(
     inquiry_workflow: tuple[TestClient, list[tuple[str, dict[str, Any]]]],
     product: str, raw: str,
 ) -> None:
-    from app.subgraphs.close.models import CloseIntentOutput, QueryStatusParams
-    from app.subgraphs.option.models import OptionQueryParams
+    from app.subgraphs.close.models import CloseIntentOutput
     from app.subgraphs.swap.models import SwapIntentOutput
 
     cases = {
         "option": ("option", OptionIntentOutput, "query_order_status",
-                   "extract_query", OptionQueryParams, "get_qwen_structured"),
+                   "extract_query", None, "get_qwen_structured"),
         "swap": ("swap", SwapIntentOutput, "query_order_status",
                  "query_order", None, "get_qwen_thinking"),
         "option_close": ("close", CloseIntentOutput, "close_order_order_query",
-                         "query_status", QueryStatusParams, "get_qwen_thinking"),
+                         "query_status", None, "get_qwen_thinking"),
     }
     category, intent_schema, intent, extract_node, extract_schema, intent_factory = cases[product]
     _patch_llm(monkeypatch, f"app.subgraphs.{category}.intent.{intent_factory}",

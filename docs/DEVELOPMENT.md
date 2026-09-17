@@ -29,7 +29,7 @@ uvicorn app.main:app --reload --port 8000
 # 跑测试
 pytest tests/ -v                       # 全部
 pytest tests/ -v -k "swap"             # 只跑互换
-pytest tests/test_e2e.py -v            # 只跑 E2E
+pytest tests/integration/ tests/test_cascade_e2e.py -v   # 只跑集成 / E2E
 pytest --cov=app/                      # 覆盖率
 
 # 代码质量
@@ -38,7 +38,7 @@ ruff format app/ tests/                # 格式化
 mypy app/                              # 类型
 
 # 评估
-python scripts/eval_golden.py tests/fixtures/golden.jsonl
+python scripts/langfuse_eval.py --local tests/fixtures/categories
 python scripts/shadow_compare.py --langgraph ... --dify ... --sample ...
 
 # 提示词
@@ -57,7 +57,7 @@ python scripts/export_dify_prompts.py <dify-yaml-dir> <out-dir>
 ## 最佳实践
 
 ### 状态设计
-- 新增 State 字段 → 先改 `app/state.py`，再在节点里用
+- 新增 State 字段 → 先改 `app/graph/state.py`，再在节点里用（`app/state.py` 仅剩兼容 shim）
 - 不要在节点里"偷偷"塞新字段（会破坏类型提示和测试）
 
 ### 节点函数
@@ -67,30 +67,30 @@ python scripts/export_dify_prompts.py <dify-yaml-dir> <out-dir>
 
 ### LLM 调用
 - 用 `with_structured_output(PydanticModel)`，不要手工解析 JSON
-- 意图分类用 `get_qwen_standard()`
-- 复杂参数提取用 `get_qwen_thinking()`
-- 图片 OCR 用 `get_qwen_vl()`
+- 统一从 `app/llm/clients.py` 取工厂（全量 DeepSeek-V4-pro，ADR 0020；函数名沿用 `get_qwen_*`）
+- 意图 / 参数提取节点用 `get_qwen_thinking()`（先例：swap/intent、option/extract_*）；swap 复杂提取用 `get_qwen_complex()`
+- 图片 OCR 用 `get_qwen_vl()`；跨线程场景用非缓存 `make_qwen_thinking()`
 
 ### HTTP 调用
-- 统一走 `OtcBackendClient`（重试 + mock 友好）
+- 统一走 `OptionClient` / `SwapClient` / `TickerClient` 三个 Protocol（ADR 0001 D2；重试 + 可 mock）
 - 不要直接用 httpx.AsyncClient
 
 ### 提示词管理
-- **不要**改 `app/prompts/*.md` 内容
-- **要**通过 `load_prompt(category, name)` 加载
-- 新增提示词走 `/migrate-prompt` skill
+- git `.md` 是唯一真源：改提示词直接改 `app/prompts/**/*.md` + 普通 PR（`prompt(<scope>)` commit）
+- Dify 侧更新走 `dify/sync.py` → `scripts/export_dify_prompts.py` → 人工 diff 选择性合入，不要一键覆盖
+- 新 LLM 节点按 ADR 0023 建 `PromptSpec`（`app/prompts/spec.py`，先例 `app/subgraphs/swap/intent.py`）；`/migrate-prompt` skill 可辅助迁移
 
 ## 常见代码片段
 
 ### 新加一个节点
 ```python
-from app.nodes.common import safe_node
-from app.state import AgentState
+from app.graph.safe_node import safe_node
+from app.graph.state import AgentState
 
 @safe_node
 async def my_node(state: AgentState) -> dict[str, Any]:
     # 读 state
-    raw = state["wechat_input"]["raw_content"]
+    raw = state.get("raw_text", "")
 
     # 做工作
     result = await do_something(raw)
@@ -104,20 +104,28 @@ async def my_node(state: AgentState) -> dict[str, Any]:
 
 ### 新加一个 LLM 节点
 ```python
-from app.llm.clients import get_qwen_standard
-from app.prompts import load_prompt
-from app.subgraphs.xxx_models import MyOutput
+from app.graph.safe_node import safe_node
+from app.graph.state import AgentState
+from app.llm.clients import get_qwen_thinking
+from app.prompts.spec import PromptSpec, register
+from app.subgraphs.swap.models import MyOutput
+
+
+def _build_user_message(state: AgentState) -> str:
+    return f"raw_content：{state.get('raw_text', '') or ''}"
+
+
+SPEC = register(PromptSpec(
+    category="swap", name="something", output_model=MyOutput,
+    inputs=("raw_text",), user_builder=_build_user_message,
+))
+
 
 @safe_node
 async def extract_something(state: AgentState) -> dict[str, Any]:
-    prompt = load_prompt("swap", "something")
-    llm = get_qwen_standard().with_structured_output(MyOutput)
-
-    user_msg = f"raw={state['wechat_input']['raw_content']}"
-    result: MyOutput = await llm.ainvoke([
-        ("system", prompt.system),
-        ("user", user_msg),
-    ])
+    messages, prompt_name = SPEC.build_messages(state)
+    llm = get_qwen_thinking().with_structured_output(MyOutput)
+    result: MyOutput = await llm.ainvoke(messages)
     return {"...": result.xxx, "trace": [...]}
 ```
 
@@ -157,11 +165,11 @@ ORDER BY step_index;
 - 查 trace 各节点 duration_ms
 - 大概率是 LLM 节点慢：
   - 换更快的模型（standard 代替 thinking）
-  - 缩短提示词（但 Dify 原始提示词不要改）
+  - 缩短提示词（业务规则语义不变；git `.md` 为真源，改动走普通 PR）
   - 减少不必要的节点（Agent 循环次数）
 
 ### 当准确率下降
-- 跑 `eval_golden.py` 定位失败 category
+- 跑 `scripts/langfuse_eval.py --local <fixture>` 定位失败 category
 - 用 `dify-reviewer` agent 做对齐分析
 - 检查是否提示词被意外改动：`git log app/prompts/`
 

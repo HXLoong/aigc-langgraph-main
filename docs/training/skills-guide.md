@@ -73,7 +73,7 @@ $EDITOR .claude/skills/my-skill/SKILL.md
 # 2. 生成 Codex 侧产物（AGENTS.md + .agents/skills/）
 python scripts/sync_agents_md.py
 
-# 3. 自检（governance CI 也跑这一步，不同步即红）
+# 3. 自检（提交前也跑这一步，不同步请重新生成后再提交）
 python scripts/sync_agents_md.py --check
 
 # 4. 一起提交
@@ -104,7 +104,7 @@ argument-hint: "<必填参数> [可选参数]"     # 可选；值含 [ ] 或 : �
 
 ## 5. 常见问题
 
-**Q：我在 Codex 里改了 `.agents/skills/xxx/SKILL.md`，为什么 CI 红了？**
+**Q：我在 Codex 里改了 `.agents/skills/xxx/SKILL.md`，为什么校验不过？**
 因为它是生成物。改 `.claude/skills/xxx/SKILL.md` 再跑 `python scripts/sync_agents_md.py`。
 
 **Q：`description` 应该写多长？**
@@ -122,6 +122,6 @@ Claude Code：`~/.claude/skills/<name>/SKILL.md`；Codex：`~/.agents/skills/<na
 ## 6. 相关文件
 
 - 根 `CLAUDE.md`「团队工具链」段：真源与生成物的约定
-- `scripts/sync_agents_md.py`：生成器（`--check` 进 governance CI）
-- `.claude/rules/prompt-management.md`：改提示词必须遵守的规则（ADR 0022）
+- `scripts/sync_agents_md.py`：生成器（`--check` 供提交前自检）
+- `.claude/rules/prompt-management.md`：改提示词必须遵守的规则（ADR 0023 + 0003）
 - `.claude/skills/test-driven-development/SKILL.md`：TDD 完整流程

@@ -271,7 +271,7 @@ class LangGraphClientContractTest(unittest.TestCase):
             "category": "swap/confirm",
             "type": "positive",
             "source": "csv/swap/row135",
-            "_source": "tests/fixtures/golden.jsonl",
+            "_source": "tests/fixtures/categories/swap_prod_data.jsonl",
             "send_text": "第一轮",
             "expected": {"product_type": "swap", "intent": "place_order_request"},
             "sub_scenes": [
@@ -325,7 +325,7 @@ class LangGraphClientContractTest(unittest.TestCase):
             build_case_trace_metadata("互换回归", scenario),
             {
                 "task_name": "互换回归",
-                "dataset": "tests/fixtures/golden.jsonl",
+                "dataset": "tests/fixtures/categories/swap_prod_data.jsonl",
                 "case_id": "swap-135",
                 "case_name": "swap-135",
                 "category": "swap/confirm",

@@ -101,7 +101,7 @@ async def _write_to_mysql(
             host=host, port=port, user=user, password=password, db=db,
             charset="utf8mb4", autocommit=True,
         ),
-        timeout=5.0,
+        timeout=settings.persist_timeout_seconds,
     )
     try:
         async with conn.cursor() as cur:

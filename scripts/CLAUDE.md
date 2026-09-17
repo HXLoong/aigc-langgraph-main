@@ -9,19 +9,17 @@
 | 脚本 | 用途 |
 |---|---|
 | `langfuse_eval.py` | **M3 主用**：DeepSeek Judge + per-turn JSON → Langfuse |
-| `langfuse_eval_clean.py` | 清理 Langfuse 旧 run 记录 |
-| `eval_golden.py` | 旧版本地评估（保留兼容）|
-| `run_option_eval.sh` / `run_real_llm_harness.sh` | 评估封装 |
 
 ### 真后端探针（M3 联调）
 
 | 脚本 | 用途 |
 |---|---|
-| `probe_real_backend.py` / `probe_real_backend_e2e.py` | 通用真后端连通性 |
+| `probe_real_backend_e2e.py` | 通用真后端连通性 |
 | `probe_swap_write_e2e.py` | 互换下单写后端 |
 | `probe_option_write_e2e.py` | 期权下单写后端 |
 | `probe_close_write_e2e.py` | 平仓下单写后端 |
-| `probe_ticker_e2e.py` / `probe_ticker_d2_4.py` | 标的识别真后端 |
+| `probe_ticker_e2e.py` | 标的识别真后端 |
+| `probe_fast_query.py` | 快速询价 GOATS 解析交互式探针（不调后端询价接口）|
 
 > 探针**不参与**自动 CI（依赖真后端 + VPN）。本地或客户现场手动跑。
 
@@ -42,32 +40,25 @@
 | 脚本 | 用途 |
 |---|---|
 | `deploy-customer.sh` | 客户私有化部署一键脚本 |
-| `dev.sh` / `start_backend.sh` | 本地开发起服务 |
 
-### CI lint
+### 一致性 lint（提交前本地跑）
 
 | 脚本 | 用途 |
 |---|---|
 | `check_alert_threshold_consistency.py` | 告警阈值一致性 lint |
-| `check_fixture_consistency.py` | golden fixture 一致性 lint |
+| `check_fixture_consistency.py` | fixture 一致性 lint（categories）|
 | `check_adr_refs.py` | ADR 互引虚悬 + 引用路径存在性 lint（跳过删除线段）|
 
 ### 数据维护
 
 | 脚本 | 用途 |
 |---|---|
-| `convert_testcase_to_jsonl.py` | 客户原始用例 → golden.jsonl |
-| `merge_golden.py` | 合并多个 golden 文件 |
-| `upload_dataset_to_langfuse.py` | golden → Langfuse dataset |
+| `convert_csv_to_excel.py` | CSV 测试集 → 单个 Excel 工作簿（每 CSV 一个 sheet）|
+| `convert_jsonl_to_csv.py` | JSONL 测试集 → 逐步中文 CSV（仅标准库）|
+| `upload_golden_to_langfuse.py` | 本地 categories fixture → Langfuse dataset |
+| `cleanup_checkpoints.py` | checkpoint 三表按线程清理（客户现场运维）|
 | `export_dify_prompts.py` | Dify YAML → app/prompts/**/*.md |
-| `prompt_inventory.py` | 提示词清单 + 治理 lint（`--check` 进 CI；`_manifest.yaml` 为真源，ADR 0022）|
-| `sync_agents_md.py` | CLAUDE.md + .claude/{rules,skills,agents} → AGENTS.md + .agents/skills/（Codex 读取；`--check` 进 governance CI，产物禁止手改）|
-
-### 一次性 / Demo
-
-| 脚本 | 用途 |
-|---|---|
-| `demo_closed_loop.py` | 闭环 demo（教学/演示用）|
+| `sync_agents_md.py` | CLAUDE.md + .claude/{rules,skills,agents} → AGENTS.md + .agents/skills/（Codex 读取；`--check` 供提交前自检，产物禁止手改）|
 
 ## 写新脚本的约定
 

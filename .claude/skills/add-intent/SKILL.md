@@ -48,10 +48,9 @@ allowed-tools: Read, Write, Edit, Glob, Grep, Bash
 
 ### Step 6：测试
 调用 `test-generator` subagent（或直接补测试）：
-- `test_models.py`：新 Pydantic 模型的字段测试
-- `test_models.py` 路由函数映射测试
-- `test_e2e.py`：1-2 条 E2E 用例（mock LLM）
-- `tests/fixtures/golden.jsonl`：2 条端到端 case
+- `tests/subgraphs/<product>/test_models.py`：新 Pydantic 模型字段 + 路由函数映射测试
+- `tests/subgraphs/<product>/test_graph_routing.py`：1-2 条图路由用例（mock LLM）
+- `tests/fixtures/categories/`：2 条端到端 case（现役数据源）
 
 ### Step 7：跑验证
 ```bash
@@ -62,14 +61,15 @@ pytest tests/ -v -k "$1"     # 只跑相关子图测试
 
 ### Step 8：最终清单
 给用户一份改动清单：
-- [ ] `<product>_models.py`: 加 `IntentType` + `<Intent>Output`
-- [ ] `<product>.py`: 加 `extract_<intent>` 节点 + 路由 + 子图 edges
+- [ ] `app/subgraphs/<product>/models.py`: 加 `IntentType` + `<Intent>Output`
+- [ ] `app/subgraphs/<product>/<node>.py`: 加 `extract_<intent>` 节点 + `PromptSpec`
+- [ ] 子图 `graph.py`: 路由 + edges
 - [ ] `app/prompts/<product>/<intent>.md`: 提示词（源自 Dify 或新写）
-- [ ] `tests/test_models.py`: 模型和路由测试
-- [ ] `tests/test_e2e.py`: E2E 测试
-- [ ] `tests/fixtures/golden.jsonl`: golden case
+- [ ] `tests/subgraphs/<product>/test_models.py`: 模型和路由测试
+- [ ] `tests/subgraphs/<product>/test_graph_routing.py`: 图路由测试
+- [ ] `tests/fixtures/categories/`: end-to-end case
 - [ ] `pytest tests/ -v` 全通过
-- [ ] （可选）`app/state.py`：若需要新的 State 字段
+- [ ] （可选）`app/graph/state.py`：若需要新的 State 字段
 
 ## 禁止
 

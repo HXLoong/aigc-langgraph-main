@@ -38,15 +38,15 @@ curl $QWEN_API_BASE/models -H "Authorization: Bearer $QWEN_API_KEY"
 
 ### Q: 消息识别为 unknown
 **排查**：
-1. 查 `trace` 里 `route_product` 的 decision 字段
-2. 对照 `app/nodes/route.py` 里的关键词列表
+1. 查 `trace` 里 `intent_route` 的 decision 字段
+2. 对照 `app/nodes/route_rules.py` 里的关键词 / 正则列表
 3. 若关键词确实没覆盖，提 PR 加关键词
 
 ### Q: 意图识别错了（swap 识别成 option）
 **排查**：
 1. 查 `raw_content` 里的关键词优先级
 2. 路由规则是"关键词优先"，若同时命中，第一个赢
-3. `app/nodes/route.py` 的规则顺序：
+3. `app/nodes/route_rules.py` 的规则顺序：
    - 平仓单号正则 > 附件 > 关键词（平仓 > 互换 > 期权）
 
 ### Q: 标的识别返回空
@@ -77,11 +77,10 @@ curl $QWEN_API_BASE/models -H "Authorization: Bearer $QWEN_API_KEY"
 
 ### Q: E2E 测试失败，mock 的后端方法没被调用
 **原因**：Python mock 陷阱。要 patch "使用点"，不是定义处。
-**解决**：在 `tests/test_e2e.py::mock_backend` fixture 里，必须 patch：
-- `app.tools.otc_backend.OtcBackendClient`（定义处）
-- `app.subgraphs.swap.OtcBackendClient`（使用点）
-- `app.subgraphs.option.OtcBackendClient`（使用点）
-- `app.subgraphs.close.OtcBackendClient`（使用点）
+**解决**：按使用点 monkeypatch（先例：`tests/test_inquiry_continuation.py`），例如：
+- `app.subgraphs.option.backend.OptionClientHttpx` / `app.subgraphs.close.backend.OptionClientHttpx`（option 与 close 共用同一类，两处都要 patch）
+- `app.subgraphs.swap.backend.SwapClientHttpx`
+- `app.subgraphs.ticker` 的 `_make_client`
 
 ### Q: 测试依赖 langgraph 没安装就报错
 **解决**：
