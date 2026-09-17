@@ -46,7 +46,7 @@ class TestBuildAgentHeaders:
 def _make_client(handler) -> GoatsAgentClientHttpx:
     transport = httpx.MockTransport(handler)
     return GoatsAgentClientHttpx(
-        base_url="http://goats.test/api/",
+        base_url="http://goats.test/",
         client_id="C", client_secret="S", extapp_salt="X",
         transport=transport,
     )
@@ -78,14 +78,28 @@ class TestParseRfqInstrument:
         assert out["code"] == 0
         assert out["api_data_result_obj"] == {"instrument": "600519.SH"}
         assert not out["errMsg"]
+        assert out["reason"] is None
 
     @pytest.mark.asyncio
-    @pytest.mark.parametrize("code,message,expected", [
-        (40301, "无询价权限", "无询价权限"),
-        (50001, "无需回复", IGNORE_REPLY_SENTINEL),
-        (40001, "", ""),
+    async def test_api_suffix_base_is_normalized_to_single_prefix(self):
+        """#178：base 带 /api 尾缀（历史写法）归一后，最终路径仍只含一次 /api。"""
+        def handler(request: httpx.Request) -> httpx.Response:
+            assert request.url.path == "/api/internal/agent/option_rfq_instrument_parser"
+            return httpx.Response(200, json={"errCode": {"code": 200}, "data": {"ok": 1}})
+
+        client = GoatsAgentClientHttpx(
+            "http://goats.test/api/", "C", "S", "X", transport=httpx.MockTransport(handler)
+        )
+        out = await client.parse_rfq_instrument("q", "R", "U")
+        assert out["code"] == 0
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("code,message,expected,expected_reason", [
+        (40301, "无询价权限", "无询价权限", "business_40301"),
+        (50001, "无需回复", IGNORE_REPLY_SENTINEL, "sentinel_50001"),
+        (40001, "", "", "business_40001"),
     ])
-    async def test_business_error(self, code, message, expected):
+    async def test_business_error(self, code, message, expected, expected_reason):
         body = {"errCode": {"code": code}, "errMsg": message,
                 "data": {"instrument": "must-not-be-forwarded"}}
         out = await _make_client(lambda _: httpx.Response(200, json=body)).parse_rfq_instrument(
@@ -95,18 +109,24 @@ class TestParseRfqInstrument:
         assert out["errMsg"] == expected
         assert out["api_data_result_obj"] is None
         assert out["http_status"] == 200
+        assert out["reason"] == expected_reason
 
     @pytest.mark.asyncio
-    @pytest.mark.parametrize("body", [
-        {}, [], None, {"errCode": None}, {"errCode": {"code": 200}},
-        {"errCode": {"code": 200}, "data": "invalid"},
+    @pytest.mark.parametrize("body,expected_reason", [
+        ({}, "err_code_invalid"),
+        ([], "body_not_dict"),
+        ({"errCode": None}, "err_code_invalid"),
+        ({"errCode": {"code": 200}}, "data_missing"),
+        ({"errCode": {"code": 200}, "data": "invalid"}, "data_missing"),
     ])
-    async def test_malformed_response_is_failure(self, body):
+    async def test_malformed_response_is_failure(self, body, expected_reason):
         out = await _make_client(lambda _: httpx.Response(200, json=body)).parse_rfq_instrument(
             "q", "R", "U"
         )
         assert out["code"] == 500
         assert out["api_data_result_obj"] is None
+        assert out["errMsg"] == "快速询价参数解析服务异常，请稍后重试或联系交易员。"
+        assert out["reason"] == expected_reason
 
     @pytest.mark.asyncio
     async def test_invalid_json(self):
@@ -114,6 +134,18 @@ class TestParseRfqInstrument:
             "q", "R", "U"
         )
         assert out["code"] == 500
+        assert out["errMsg"] == "快速询价参数解析服务异常，请稍后重试或联系交易员。"
+        assert out["reason"] == "invalid_json"
+
+    @pytest.mark.asyncio
+    async def test_json_null_body_is_failure(self):
+        """JSON 字面量 null 响应（httpx 的 json=None 不会发送 body，需用 text="null" 构造）。"""
+        out = await _make_client(
+            lambda _: httpx.Response(200, text="null")
+        ).parse_rfq_instrument("q", "R", "U")
+        assert out["code"] == 500
+        assert out["errMsg"] == "快速询价参数解析服务异常，请稍后重试或联系交易员。"
+        assert out["reason"] == "body_not_dict"
 
     @pytest.mark.asyncio
     async def test_network_error(self):
@@ -122,7 +154,19 @@ class TestParseRfqInstrument:
 
         out = await _make_client(handler).parse_rfq_instrument("q", "R", "U")
         assert out["code"] == 500
-        assert out["errMsg"]  # 对齐 DSL:错误文案透传给用户
+        # 对齐 DSL:网络场景沿用原文案透传给用户
+        assert out["errMsg"] == "快速询价暂不可用,请检查网络"
+        assert out["reason"] == "network_error"
+
+    @pytest.mark.asyncio
+    async def test_timeout_reason(self):
+        def handler(request: httpx.Request) -> httpx.Response:
+            raise httpx.ReadTimeout("slow")
+
+        out = await _make_client(handler).parse_rfq_instrument("q", "R", "U")
+        assert out["code"] == 500
+        assert out["errMsg"] == "快速询价暂不可用,请检查网络"
+        assert out["reason"] == "timeout"
 
     @pytest.mark.asyncio
     async def test_http_500(self):
@@ -131,6 +175,8 @@ class TestParseRfqInstrument:
 
         out = await _make_client(handler).parse_rfq_instrument("q", "R", "U")
         assert out["code"] == 500
+        assert out["errMsg"] == "快速询价参数解析服务异常，请稍后重试或联系交易员。"
+        assert out["reason"] == "http_502"
 
 
 class TestQueryInstruction:

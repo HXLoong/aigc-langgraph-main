@@ -106,8 +106,10 @@ SECURITIES_INSTRUMENT_URL=http://127.0.0.1:8099/admin-api/integration/securities
    `scripts/deploy-customer.sh`（自带预检 + smoke 自检）
 
 已知坑（真后端联调前必读）：
-- **#178** · 两个 GOATS 客户端对 `goats_base_url` 的 `/api` 前缀拼法矛盾，真实环境必有
-  一方 404 且**静默降级不抛错**——联调前先澄清
+- **#178（2026-09-18 定案）** · GOATS agent 路径统一为 `GOATS_BASE_URL`（主机根，或带
+  `/api` 尾缀，客户端归一）+ 客户端补全 `/api/internal/agent/*`。此前 `goats_agent_client`
+  漏前缀，在 tstgoats 被 APISIX 网关以 405 / 静态页拒绝（快速询价恒报"参数解析服务异常"）；
+  两个客户端已统一，单测锁定两种基址写法，实调（tstgoats）验证通过
 - 后端 dedup：多轮 case 间隔太短会撞"正在处理，请勿重复提交"；workaround 只允许放在
   `scripts/langfuse_eval.py`（turn 间 sleep），**严禁进业务代码**（根 CLAUDE.md P0 红线）
 

@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import json
-from types import SimpleNamespace
 from unittest.mock import Mock
 
 import httpx
@@ -78,7 +77,7 @@ class TestQuickInquiry:
             requests.append(json.loads(request.content))
             return httpx.Response(200, json={"code": 0, "data": "询价卡片"})
 
-        agent = GoatsAgentClientHttpx("http://goats.test/api", "C", "S", "X",
+        agent = GoatsAgentClientHttpx("http://goats.test", "C", "S", "X",
             transport=httpx.MockTransport(lambda _: httpx.Response(200, json={
                 "errCode": {"code": 200}, "errMsg": None, "data": rfq_data,
             })))
@@ -118,9 +117,9 @@ class TestQuickInquiry:
                 "data": {"windCode": "600519.SH", "tenor": ["1M"]},
             })
 
-        agent = GoatsAgentClientHttpx("http://goats.test/api", "C", "S", "X",
+        agent = GoatsAgentClientHttpx("http://goats.test", "C", "S", "X",
                                       transport=httpx.MockTransport(handler))
-        backend = FakeOptionClient(SimpleNamespace(code=0, data="询价卡片", msg=None))
+        backend = FakeOptionClient({"code": 0, "data": "询价卡片", "msg": None})
 
         def make_backend():
             events.append("backend")
@@ -138,15 +137,20 @@ class TestQuickInquiry:
         assert dumped["optionRfq"] == {"windCode": "600519.SH", "tenor": ["1M"]}
 
     @pytest.mark.asyncio
-    @pytest.mark.parametrize("status,body,code,reply", [
-        (200, {"errCode": {"code": 40301}, "errMsg": "无询价权限"}, 40301, "无询价权限"),
-        (200, {"errCode": {"code": 50001}, "errMsg": "忽略"}, 50001, IGNORE_REPLY_SENTINEL),
-        (200, {"errCode": {"code": 40001}, "errMsg": ""}, 40001, ""),
-        (502, {}, 500, "快速询价暂不可用,请检查网络"),
-        (200, {}, 500, "快速询价暂不可用,请检查网络"),
+    @pytest.mark.parametrize("status,body,code,reply,reason", [
+        (200, {"errCode": {"code": 40301}, "errMsg": "无询价权限"}, 40301, "无询价权限", "business_40301"),
+        (
+            200, {"errCode": {"code": 50001}, "errMsg": "忽略"},
+            50001, IGNORE_REPLY_SENTINEL, "sentinel_50001",
+        ),
+        (200, {"errCode": {"code": 40001}, "errMsg": ""}, 40001, "", "business_40001"),
+        (502, {}, 500, "快速询价参数解析服务异常，请稍后重试或联系交易员。", "http_502"),
+        (200, {}, 500, "快速询价参数解析服务异常，请稍后重试或联系交易员。", "err_code_invalid"),
     ])
-    async def test_parser_failure_never_calls_backend(self, monkeypatch, status, body, code, reply):
-        agent = GoatsAgentClientHttpx("http://goats.test/api", "C", "S", "X",
+    async def test_parser_failure_never_calls_backend(
+        self, monkeypatch, status, body, code, reply, reason
+    ):
+        agent = GoatsAgentClientHttpx("http://goats.test", "C", "S", "X",
             transport=httpx.MockTransport(lambda _: httpx.Response(status, json=body)))
         backend_factory = Mock(side_effect=AssertionError("backend must not be called"))
         monkeypatch.setattr(fq, "_make_agent_client", lambda: agent)
@@ -156,6 +160,7 @@ class TestQuickInquiry:
         assert out["api_code"] == code
         assert out["reply_text"] == reply
         assert out["api_result"] == reply
+        assert out["trace"][0].decision == f"rfq_parser_error:{reason}"
 
     @pytest.mark.asyncio
     async def test_rfq_error_passthrough(self, monkeypatch):
@@ -164,13 +169,14 @@ class TestQuickInquiry:
         out = await quick_inquiry({"raw_text": "参与型看涨 茅台", "room_id": "R"})
         assert out["api_code"] == 500
         assert out["reply_text"] == "快速询价暂不可用,请检查网络"
+        assert out["trace"][0].decision == "rfq_parser_error:unknown"
 
     @pytest.mark.asyncio
     async def test_success_calls_backend_with_option_rfq(self, monkeypatch):
         agent = FakeAgentClient(
             rfq={"code": 0, "errMsg": "", "api_data_result_obj": {"windCode": "600519.SH"}}
         )
-        backend = FakeOptionClient(SimpleNamespace(code=0, data="询价卡片", msg=None))
+        backend = FakeOptionClient({"code": 0, "data": "询价卡片", "msg": None})
         monkeypatch.setattr(fq, "_make_agent_client", lambda: agent)
         monkeypatch.setattr(fq, "_make_option_client", lambda: backend)
         out = await quick_inquiry(
@@ -188,12 +194,27 @@ class TestQuickInquiry:
     @pytest.mark.asyncio
     async def test_backend_500_mapped(self, monkeypatch):
         agent = FakeAgentClient(rfq={"code": 0, "errMsg": "", "api_data_result_obj": {}})
-        backend = FakeOptionClient(SimpleNamespace(code=500, data=None, msg="ignored"))
+        backend = FakeOptionClient({"code": 500, "data": None, "msg": "ignored"})
         monkeypatch.setattr(fq, "_make_agent_client", lambda: agent)
         monkeypatch.setattr(fq, "_make_option_client", lambda: backend)
         out = await quick_inquiry({"raw_text": "q", "room_id": "R"})
         assert out["api_code"] == 500
         assert out["reply_text"] == "交易指令服务暂不可用"
+
+
+class TestErrorCopyDisambiguation:
+    def test_three_failure_texts_are_distinct_and_stage_labeled(self):
+        import app.tools.goats_agent_client as goats
+
+        texts = {
+            goats._RFQ_UNAVAILABLE_MSG,
+            goats._RFQ_RESPONSE_INVALID_MSG,
+            fq._SERVICE_UNAVAILABLE,
+        }
+        assert len(texts) == 3
+        assert "请检查网络" in goats._RFQ_UNAVAILABLE_MSG
+        assert "参数解析" in goats._RFQ_RESPONSE_INVALID_MSG
+        assert "交易指令服务" in fq._SERVICE_UNAVAILABLE
 
 
 class TestExistingCommand:
