@@ -110,13 +110,40 @@ def _is_image_case(case: GoldenCase) -> bool:
     return any(m in full_text for m in _IMAGE_MARKERS)
 
 
+def _langfuse_enabled() -> bool:
+    """langfuse v4 CallbackHandler 只读 os.environ；双 key 齐才算启用。"""
+    return bool(os.environ.get("LANGFUSE_PUBLIC_KEY") and os.environ.get("LANGFUSE_SECRET_KEY"))
+
+
+def _graph_callbacks() -> list:
+    """图级全局注入已删除（ADR 0024 D5）：eval 自己把 LangFuse handler 放进 config。"""
+    if not _langfuse_enabled():
+        return []
+    try:
+        from langfuse.langchain import CallbackHandler
+
+        return [CallbackHandler()]
+    except Exception as exc:  # noqa: BLE001
+        print(f"LangFuse CallbackHandler 不可用，per-node span 缺失：{exc}")
+        return []
+
+
 async def run_langgraph_pipeline(*, item, **kwargs):
     inp = item.input if isinstance(item.input, dict) else json.loads(item.input)
     turns_data = inp.get("turns", [])
     cp = InMemorySaver()
     graph = build_main_graph(cp)
     conversation_id = str(uuid.uuid4())
-    config = {"configurable": {"thread_id": conversation_id}}
+    # 与生产 routes._build_run_config 同一契约：thread + session + 审计 trace_id
+    config = {
+        "configurable": {"thread_id": conversation_id},
+        "metadata": {
+            "trace_id": uuid.uuid4().hex,
+            "langfuse_session_id": conversation_id,
+            "langfuse_tags": ["eval"],
+        },
+        "callbacks": _graph_callbacks(),
+    }
     results = []
     failure: dict | None = None
     for t in turns_data:

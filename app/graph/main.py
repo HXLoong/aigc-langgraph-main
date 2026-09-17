@@ -75,7 +75,6 @@ def _route_after_intent(state: AgentState) -> str:
 def build_main_graph(
     checkpointer: BaseCheckpointSaver | None = None,
     message_client_factory: Callable[[], MessageClient] | None = None,
-    attach_langfuse_callbacks: bool = True,
 ) -> CompiledStateGraph:
     """组装并编译主图（DSL v2 拓扑）。
 
@@ -138,46 +137,9 @@ def build_main_graph(
     g.add_edge("render", "record_history")
     g.add_edge("record_history", END)
 
-    compiled = (
-        g.compile(checkpointer=checkpointer)
-        if checkpointer is not None
-        else g.compile()
-    )
-    return _attach_langfuse_callbacks(compiled) if attach_langfuse_callbacks else compiled
-
-
-def _attach_langfuse_callbacks(compiled: CompiledStateGraph) -> CompiledStateGraph:
-    """如果配置了 Langfuse，自动把 CallbackHandler 注入到 graph 调用，
-    让云端 eval / 业务调用都能拿到 per-node trace（LLM 调用 / latency / token）。
-
-    使用 with_config 而不是 monkey-patch ainvoke：with_config 是 LangChain 官方
-    机制，会把默认 callbacks 通过 RunnableConfig.merge 合并到每次调用，调用方
-    自带的 callbacks 仍然生效。
-    """
-    try:
-        from app.config import get_settings
-        settings = get_settings()
-        if not (settings.enable_langfuse and settings.langfuse_public_key and settings.langfuse_secret_key):
-            return compiled
-
-        import os
-
-        from langfuse.langchain import CallbackHandler  # type: ignore[import-not-found]
-
-        # langfuse v4 CallbackHandler 只读 os.environ；先回填 env
-        os.environ.setdefault("LANGFUSE_PUBLIC_KEY", settings.langfuse_public_key)
-        os.environ.setdefault("LANGFUSE_SECRET_KEY", settings.langfuse_secret_key)
-        os.environ.setdefault("LANGFUSE_BASE_URL", settings.langfuse_base_url)
-
-        handler = CallbackHandler()
-        return compiled.with_config(callbacks=[handler])
-    except Exception as exc:  # noqa: BLE001
-        # Langfuse 未安装 / 网络异常 → 不阻断业务，返回未包装图；
-        # #155 裁决：从静默升为 warning——生产 LangFuse 挂掉必须有信号
-        import logging
-
-        logging.getLogger(__name__).warning("Langfuse CallbackHandler 注入失败，trace 降级：%s", exc)
-        return compiled
+    # LangFuse 不在图级注入（ADR 0024 D5）：统一由 app/api/routes.py 按请求把 handler 放进
+    # config["callbacks"]，生产与开发同一条 trace_id / session 契约
+    return g.compile(checkpointer=checkpointer) if checkpointer is not None else g.compile()
 
 
 __all__ = ["build_main_graph"]

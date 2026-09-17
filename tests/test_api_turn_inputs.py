@@ -73,7 +73,7 @@ async def turn_api(monkeypatch):
     saver = InMemorySaver(serde=JsonPlusSerializer(allowed_msgpack_modules=[
         ("app.graph.state", name) for name in ("TickerCandidate", "Message", "TraceEntry")
     ]))
-    graph = build_main_graph(checkpointer=saver, attach_langfuse_callbacks=False)
+    graph = build_main_graph(checkpointer=saver)
     await graph.aupdate_state(CONFIG, {
         "tickers": [TickerCandidate(windCode="600519.SH", from_goats=True)],
         "place_params": {"orderList": [{"placeOrderWindCode": "600519.SH"}]},

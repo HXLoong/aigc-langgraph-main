@@ -1,10 +1,8 @@
 """FastAPI 入口（ADR 0001 D6 + ADR 0014 D8）。
 
-启动时编译主图并挂载到 app.state。**LangFuse 回调不在本层注入**：
-
-- development：由 `app/api/routes.py` 走请求级 trace（支持测试工作台的用例级父 Trace）
-- 其它环境：由 `app/graph/main.py` 的 `_attach_langfuse_callbacks` 注入全局回调
-  （见 `attach_langfuse_callbacks` 的取值，两处互斥，避免同一请求产生两条 Trace）
+启动时编译主图并挂载到 app.state。**LangFuse 回调不在本层注入**：所有环境统一由
+`app/api/routes.py` 走请求级 trace（ADR 0024 D5），`config.metadata` 携带
+trace_id / langfuse_session_id / langfuse_user_id。
 """
 from __future__ import annotations
 
@@ -62,7 +60,6 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     app.state.main_graph = build_main_graph(
         checkpointer=checkpointer,
         message_client_factory=message_client_factory,
-        attach_langfuse_callbacks=settings.environment != "development",
     )
     logger.info("main graph compiled")
 

@@ -66,11 +66,10 @@ def parse_traceparent(value: str | None) -> tuple[str, str] | None:
 
 
 def _enabled() -> bool:
-    """LangFuse 是否具备启用条件（environment + 开关 + 双 key）。"""
+    """LangFuse 是否具备启用条件（开关 + 双 key；ADR 0024 D5：所有环境同一条请求级路径）。"""
     settings = get_settings()
     return bool(
-        settings.environment == "development"
-        and settings.enable_langfuse
+        settings.enable_langfuse
         and settings.langfuse_public_key
         and settings.langfuse_secret_key
     )
@@ -94,6 +93,7 @@ def _ensure_client() -> Any | None:
             public_key=settings.langfuse_public_key,
             secret_key=settings.langfuse_secret_key,
             host=settings.langfuse_base_url,
+            environment=getattr(settings, "environment", None) or "default",
         )
     except ImportError as exc:
         logger.warning("langfuse 未安装或版本不兼容：%s", exc)
@@ -114,17 +114,19 @@ async def attach_request_trace(
     Args:
         request_trace_id: 业务审计 ID；自建 Trace 时复用为 LangFuse Trace ID，
             保证 `node_trace.trace_id` 与 LangFuse trace 同值可直查（ADR 0004/#156）
-        traceparent: 调用方传入的 W3C traceparent；仅 development 环境生效
-            （见 `_enabled`），非 dev 环境恒被忽略
+        traceparent: 调用方传入的 W3C traceparent；仅 `trust_inbound_traceparent=true`
+            时生效（测试工作台等可信网络），否则恒被忽略
     """
     settings = get_settings()
     if not _enabled():
         return RequestTrace()
 
-    # 不为入站 traceparent 设独立信任开关：本函数仅在 environment == development
-    # 下生效（见 _enabled），该环境按可信网络假设运行，且注入只影响 trace 归属、
-    # 不影响业务数据。生产/预发下 traceparent 恒被忽略。
-    parent_context = parse_traceparent(traceparent)
+    # 信任边界由独立开关承担（ADR 0024 D5）；注入只影响 trace 归属，不影响业务数据
+    parent_context = (
+        parse_traceparent(traceparent)
+        if getattr(settings, "trust_inbound_traceparent", False)
+        else None
+    )
     langfuse_trace_id = parent_context[0] if parent_context else request_trace_id
 
     # 必须先注册进程级 client：CallbackHandler(public_key=) 内部 get_client 只在已注册实例里查，

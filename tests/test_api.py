@@ -266,6 +266,7 @@ def _patch_langfuse(
             langfuse_public_key="public",
             langfuse_secret_key="secret",
             langfuse_base_url="https://langfuse.test",
+            trust_inbound_traceparent=True,  # 测试工作台场景：信任父 Trace（ADR 0024 D5 独立开关）
         ),
     )
     monkeypatch.setattr(observability_tracing, "_langfuse_client", None)
@@ -324,10 +325,9 @@ async def test_parent_trace_context_used(
 
 
 @pytest.mark.asyncio
-async def test_traceparent_ignored_outside_development(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """非 development 环境忽略 traceparent —— 信任边界由 environment 门禁承担。"""
+async def test_traceparent_ignored_unless_trusted(monkeypatch: pytest.MonkeyPatch) -> None:
+    """ADR 0024 D5：traceparent 信任由独立开关 trust_inbound_traceparent 承担，不再绑死 environment；
+    LangFuse 请求级 trace 在生产同样生效（此前生产走裸 CallbackHandler，trace_id 契约是死码）。"""
     captured: dict[str, object] = {}
     _patch_langfuse(monkeypatch, captured)
     monkeypatch.setattr(
@@ -339,17 +339,37 @@ async def test_traceparent_ignored_outside_development(
             langfuse_public_key="public",
             langfuse_secret_key="secret",
             langfuse_base_url="https://langfuse.test",
+            trust_inbound_traceparent=False,
         ),
     )
-
     trace = await observability_tracing.attach_request_trace(
-        request_trace_id="3" * 32,
-        traceparent=f"00-{'1' * 32}-{'2' * 16}-01",
+        request_trace_id="3" * 32, traceparent=f"00-{'1' * 32}-{'2' * 16}-01"
     )
+    assert trace.handler is not None, "生产环境也必须接入请求级 trace"
+    assert trace.langfuse_trace_id == "3" * 32  # 未信任 → 自建 trace，忽略父 trace
 
-    # 生产环境不启用请求级 trace：既不注入 handler，也不接受外部 trace id
-    assert trace.handler is None
-    assert trace.langfuse_trace_id is None
+
+@pytest.mark.asyncio
+async def test_traceparent_used_when_trusted_in_production(monkeypatch: pytest.MonkeyPatch) -> None:
+    captured: dict[str, object] = {}
+    _patch_langfuse(monkeypatch, captured)
+    monkeypatch.setattr(
+        observability_tracing,
+        "get_settings",
+        lambda: SimpleNamespace(
+            environment="production",
+            enable_langfuse=True,
+            langfuse_public_key="public",
+            langfuse_secret_key="secret",
+            langfuse_base_url="https://langfuse.test",
+            trust_inbound_traceparent=True,
+        ),
+    )
+    trace = await observability_tracing.attach_request_trace(
+        request_trace_id="3" * 32, traceparent=f"00-{'1' * 32}-{'2' * 16}-01"
+    )
+    assert trace.langfuse_trace_id == "1" * 32
+    assert captured["client"]["environment"] == "production"
 
 
 @pytest.mark.asyncio

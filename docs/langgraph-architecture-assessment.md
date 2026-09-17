@@ -157,6 +157,7 @@ LangGraph + LangFuse 的原生契约是"一个 thread = 一个 session，每次 
 | **重构 7 · history_messages 窗口**：`merge_history` reducer（按 id 合并 + 最近 N 条），`HISTORY_WINDOW_MESSAGES` 默认 40 | `app/graph/state.py`、`app/config.py`、`.env.customer.template`、`tests/graph/test_reducers.py` | 第三节 R4（无界增长）|
 | **阶段 0 续 · saver 连接池 + 探针自愈 + /ready 软硬分离**：`aiomysql.create_pool` + `pool_recycle`，`probe_checkpointer()`，硬依赖才 503 | `app/checkpointer/factory.py`、`app/config.py`、`app/observability/health_probes.py`、`app/api/health.py`、`tests/test_checkpointer_wiring.py`、`tests/observability/` | 第三节 R1、第四节 P0-5 |
 | **阶段 0 续 2 · 请求级幂等 + LLM 指标 callback**：`message_log` 去重回放（`REQUEST_IDEMPOTENCY`）；`LLMMetricsCallback` 常驻 config.callbacks | `app/api/idempotency.py`、`app/api/routes.py`、`app/main.py`、`app/observability/llm_metrics.py`、`sql/schema.sql`、`tests/test_api_idempotency.py`、`tests/observability/test_llm_metrics_callback.py` | 第三节 R2、第四节 P0-3 |
+| **阶段 0 续 3 · LangFuse 注入统一**：删图级注入与 environment 分叉，请求级 handler 全环境生效，traceparent 信任独立开关，eval 同契约 | `app/observability/tracing.py`、`app/graph/main.py`、`app/main.py`、`app/config.py`、`scripts/langfuse_eval.py`、`tests/test_api.py`、`tests/test_langfuse_eval_pipeline.py` | 第四节 P0-1 / P0-2 |
 
 **未在本环境落地、需团队决策或真实环境**：CI 触发恢复（团队 2026-05-12 主动暂停，用户指示暂缓）、revoke 明文 Dify API key（用户指示暂缓）、连接池 / 幂等在真实 MySQL / TDSQL 上的验证、`history_messages` 窗口 N 与重构 6 的现场 eval 校准、`expected_action` 提升顶层（Java 契约改法待定）、`POST /v1/runs`（需 Java 联动）。
 
