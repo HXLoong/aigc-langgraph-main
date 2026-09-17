@@ -108,6 +108,11 @@ print(...)                  # 生产代码不要 print
 logger.info(f"msg={msg_id}")  # 不要 f-string（丢失结构化日志能力）
 ```
 
+日志由 `app/observability/logs.py` 统一配置（structlog 接管 stdlib，ADR 0024 D5）：`LOG_FORMAT=json` 时每条是一行
+JSON，`/v1/workflows/run` 期间自动带 `trace_id` / `conversation_id` / `message_id`（contextvars，
+`bound_request_context`）。不要在模块里 `basicConfig` / 自己加 handler；需要额外上下文键用
+`structlog.contextvars.bind_contextvars`，不要拼进消息文本。
+
 ## 命名
 
 - `snake_case` for 函数、变量

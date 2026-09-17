@@ -62,13 +62,14 @@ def safe_node(
                 existing_trace: list[TraceEntry] = list(raw_trace.value or [])
                 if not any(_is_same_node(entry, node_name) for entry in existing_trace):
                     existing_trace.append(TraceEntry(node=node_name, elapsed_ms=elapsed_ms))
-                update["trace"] = Overwrite(existing_trace)
+                update["trace"] = Overwrite(_stamp_elapsed(existing_trace, node_name, elapsed_ms))
             else:
                 existing_trace = update.setdefault("trace", [])
                 if not any(_is_same_node(entry, node_name) for entry in existing_trace):
                     existing_trace.append(
                         TraceEntry(node=node_name, elapsed_ms=elapsed_ms)
                     )
+                update["trace"] = _stamp_elapsed(existing_trace, node_name, elapsed_ms)
 
             # C1.5 监控埋点：节点完成成功
             emit_node_completed(node=node_name, status="ok", elapsed_ms=elapsed_ms)
@@ -104,6 +105,20 @@ def safe_node(
             }
 
     return wrapper
+
+
+def _stamp_elapsed(entries: list[Any], node_name: str, elapsed_ms: int) -> list[Any]:
+    """单一计时（ADR 0024 D5）：节点自己写的本节点条目缺 elapsed_ms 时补上，否则
+    node_trace.duration_ms 恒 NULL；已有值与其它节点的条目不动。"""
+    stamped: list[Any] = []
+    for entry in entries:
+        if _is_same_node(entry, node_name):
+            if isinstance(entry, TraceEntry) and entry.elapsed_ms is None:
+                entry = entry.model_copy(update={"elapsed_ms": elapsed_ms})
+            elif isinstance(entry, dict) and entry.get("elapsed_ms") is None:
+                entry = {**entry, "elapsed_ms": elapsed_ms}
+        stamped.append(entry)
+    return stamped
 
 
 def _is_same_node(entry: Any, node_name: str) -> bool:

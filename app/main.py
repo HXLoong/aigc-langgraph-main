@@ -21,6 +21,7 @@ from app.checkpointer.factory import close_checkpointer, init_checkpointer
 from app.config import get_settings
 from app.graph.main import build_main_graph
 from app.observability import tracing
+from app.observability.logs import configure_logging_from_settings
 from app.observability.metrics import emit_http_response, get_collector
 from app.tools.http_pool import close_shared_http_client, open_shared_http_client
 from app.tools.message_client import MessageClientHttpx
@@ -36,6 +37,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     # #153 裁决（ADR 0009/0021）：checkpointer 接线——多轮状态持久化是生产正确性。
     # 显式启用即硬依赖（init 失败直接抛，不静默降级）；生产未启用 fail-fast。
     settings = get_settings()
+    configure_logging_from_settings(settings)  # ADR 0024 D5：structlog 接管 stdlib，日志带 trace_id
     # ADR 0024 D3：业务后端 HTTP 连接池随进程生命周期，各 Client 复用
     await open_shared_http_client(timeout=settings.backend_timeout_seconds)
     checkpointer = None

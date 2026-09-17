@@ -23,6 +23,7 @@ from app.api.turn_state import inputs_to_state
 from app.config import get_settings
 from app.graph.state import AgentState
 from app.observability.llm_metrics import LLMMetricsCallback
+from app.observability.logs import bound_request_context
 from app.observability.metrics import emit_intent_latency
 from app.observability.tracing import attach_request_trace
 
@@ -164,22 +165,26 @@ async def run_workflow(
     config["callbacks"] = [LLMMetricsCallback()] + ([trace.handler] if trace.handler is not None else [])
 
     t0 = time.perf_counter()
-    try:
-        # ADR 0024 D4：图内无 interrupt、单轮无需中途恢复，退出时落一次 checkpoint 即可，
-        # 避免默认 "async" 每个 superstep 都写 MySQL（单连接 saver 上是队头阻塞源）
-        final_state: AgentState = await graph.ainvoke(
-            initial_state, config=config, durability="exit"
-        )
-        status: Literal["succeeded", "failed", "stopped"] = (
-            "failed" if final_state.get("error") else "succeeded"
-        )
-        error_msg = (
-            final_state["error"].message if final_state.get("error") else None
-        )
-    except Exception as exc:  # noqa: BLE001
-        final_state = {}
-        status = "failed"
-        error_msg = f"{type(exc).__name__}: {exc}"
+    # ADR 0024 D5：整次图调用期间的每条日志都带 trace_id / conversation_id / message_id
+    with bound_request_context(
+        trace_id=request_trace_id, conversation_id=conversation_id, message_id=message_id
+    ):
+        try:
+            # ADR 0024 D4：图内无 interrupt、单轮无需中途恢复，退出时落一次 checkpoint 即可，
+            # 避免默认 "async" 每个 superstep 都写 MySQL（单连接 saver 上是队头阻塞源）
+            final_state: AgentState = await graph.ainvoke(
+                initial_state, config=config, durability="exit"
+            )
+            status: Literal["succeeded", "failed", "stopped"] = (
+                "failed" if final_state.get("error") else "succeeded"
+            )
+            error_msg = (
+                final_state["error"].message if final_state.get("error") else None
+            )
+        except Exception as exc:  # noqa: BLE001
+            final_state = {}
+            status = "failed"
+            error_msg = f"{type(exc).__name__}: {exc}"
 
     elapsed = time.perf_counter() - t0
     # #157 裁决：端到端 P95 数据源（ADR 0017/0019 退出门与 p95_latency_degraded 告警）
