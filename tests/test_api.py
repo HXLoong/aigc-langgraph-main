@@ -196,7 +196,11 @@ def test_development_response_exposes_matching_langfuse_trace_link(
     assert outputs["trace_url"].endswith(outputs["langfuse_trace_id"])
     graph = client.app.state.main_graph
     assert graph.config is not None
-    assert graph.config["callbacks"] == [handler]
+    # ADR 0024 D5：LLM 指标 callback 常驻，LangFuse handler 并列
+    from app.observability.llm_metrics import LLMMetricsCallback
+
+    assert handler in graph.config["callbacks"]
+    assert any(isinstance(cb, LLMMetricsCallback) for cb in graph.config["callbacks"])
 
 
 def test_test_workbench_request_joins_case_trace(

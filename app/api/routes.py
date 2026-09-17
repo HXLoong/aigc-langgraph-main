@@ -18,8 +18,10 @@ from typing import Any, Literal
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, ConfigDict, Field
 
+from app.api.idempotency import PROCESSING_NOTICE, IdempotencyStore
 from app.config import get_settings
 from app.graph.state import AgentState
+from app.observability.llm_metrics import LLMMetricsCallback
 from app.observability.metrics import emit_intent_latency
 from app.observability.tracing import attach_request_trace
 
@@ -126,6 +128,27 @@ async def run_workflow(
     request_trace_id = uuid.uuid4().hex
     initial_state["trace_id"] = request_trace_id
 
+    # ADR 0024 D4：请求级幂等——同一企微 message_id 重投不重跑整图（重跑 = 重复下单）
+    store: IdempotencyStore | None = getattr(request.app.state, "idempotency_store", None)
+    message_id = initial_state.get("message_id")
+    idem_key = str(message_id) if message_id not in (None, "") else None
+    if store is not None and idem_key is not None:
+        existing = await _idempotency_begin(store, idem_key, initial_state)
+        if existing is not None:
+            answer = existing.reply_text if existing.status == "done" else PROCESSING_NOTICE
+            return DifyWorkflowRunResponse(
+                workflow_run_id=workflow_run_id,
+                task_id=task_id,
+                conversation_id=conversation_id,
+                answer=answer or "",
+                data=DifyWorkflowRunData(
+                    id=workflow_run_id, status="succeeded",
+                    outputs={"replayed": True, "trace_id": request_trace_id,
+                             "idempotency_status": existing.status},
+                    created_at=created_at, finished_at=int(time.time()),
+                ),
+            )
+
     config = _build_run_config(
         conversation_id=conversation_id,
         trace_id=request_trace_id,
@@ -136,8 +159,8 @@ async def run_workflow(
         request_trace_id=request_trace_id,
         traceparent=request.headers.get("traceparent"),
     )
-    if trace.handler is not None:
-        config["callbacks"] = [trace.handler]
+    # LLM 指标 callback 常驻（ADR 0024 D5）；LangFuse handler 接入成功时并列
+    config["callbacks"] = [LLMMetricsCallback()] + ([trace.handler] if trace.handler is not None else [])
 
     t0 = time.perf_counter()
     try:
@@ -166,6 +189,9 @@ async def run_workflow(
         elapsed_ms=int(elapsed * 1000),
     )
     finished_at = int(time.time())
+
+    if store is not None and idem_key is not None:
+        await _idempotency_complete(store, idem_key, final_state, error_msg, int(elapsed * 1000))
 
     # 必须等图完成：persist 已记录 set-intent 的失败 trace 后才返回 502。
     # 使用固定文案，不透传后端响应、URL、鉴权信息或异常堆栈。
@@ -206,6 +232,39 @@ async def run_workflow(
 # ============================================================
 # Helpers
 # ============================================================
+
+
+async def _idempotency_begin(store: IdempotencyStore, key: str, state: AgentState):  # type: ignore[no-untyped-def]
+    """存储故障只 warning：幂等是加固，不阻断业务（此时退化为无幂等）。"""
+    try:
+        return await store.begin(
+            key,
+            conversation_id=str(state.get("conversation_id") or ""),
+            user_id=str(state.get("user_id") or ""),
+            room_id=str(state.get("room_id") or ""),
+            raw_text=str(state.get("raw_text") or ""),
+        )
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("idempotency begin 失败，本次不做幂等：%s", exc)
+        return None
+
+
+async def _idempotency_complete(
+    store: IdempotencyStore, key: str, final_state: AgentState, error_msg: str | None, latency_ms: int
+) -> None:
+    try:
+        await store.complete(
+            key,
+            reply_text=final_state.get("reply_text"),
+            product_type=final_state.get("product_type"),
+            intent=final_state.get("intent"),
+            api_code=final_state.get("api_code"),
+            api_result=final_state.get("api_result"),
+            error=error_msg,
+            latency_ms=latency_ms,
+        )
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("idempotency complete 失败：%s", exc)
 
 
 #: 图递归上限(架构体检 2026-08 改进 A):现图均为 DAG,50 为防御纵深上限;

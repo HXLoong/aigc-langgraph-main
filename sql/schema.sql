@@ -21,6 +21,7 @@ CREATE TABLE IF NOT EXISTS message_log (
     api_result      TEXT            COMMENT '后端返回内容',
     error           TEXT            COMMENT '错误信息',
     processed_by    VARCHAR(32)     COMMENT 'langgraph / dify 标记',
+    reply_text      MEDIUMTEXT      COMMENT '回复文本（请求级幂等回放，ADR 0024 D4；NULL = 处理中）',
     latency_ms      INT             COMMENT '端到端耗时',
     created_at      TIMESTAMP(3)    NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
     UNIQUE KEY uk_message_id (message_id),
@@ -81,3 +82,6 @@ CREATE TABLE IF NOT EXISTS user_feedback (
     KEY idx_message (message_id),
     KEY idx_type (feedback_type, created_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='用户反馈';
+
+-- 2026-09-17 ADR 0024 D4 存量变更（无 alembic，手工执行）：
+-- ALTER TABLE message_log ADD COLUMN reply_text MEDIUMTEXT COMMENT '回复文本（请求级幂等回放；NULL = 处理中）' AFTER processed_by;

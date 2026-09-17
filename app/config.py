@@ -107,6 +107,9 @@ class Settings(BaseSettings):
     # 从 Langfuse 拉提示词（需同时 enable_langfuse=true）
     use_langfuse_prompts: bool = False
 
+    # === 请求级幂等（ADR 0024 D4）：同一企微 message_id 重投不重跑图，需业务库 message_log ===
+    request_idempotency: bool = False
+
     # === 会话记忆窗口（ADR 0024 D4）===
     # history_messages 只保留最近 N 条（user + assistant 各算 1 条；40 ≈ 20 轮）。
     # 企微群 thread 长期存在，无界累加会撑大 prompt / checkpoint；N 由现场 eval 校准
