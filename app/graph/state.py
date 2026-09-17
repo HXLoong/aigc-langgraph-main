@@ -214,6 +214,11 @@ class AgentState(TypedDict, total=False):
     query_filter: dict[str, Any] | None
     close_params: dict[str, Any] | None
 
+    # -------- swap 选择链指针通道（ADR 0024 重构 3：选对手 ‖ 选标的 并行）--------
+    # 两个 LLM 节点只产出指针，确定性查表覆盖由 swap_apply_picks 汇合节点完成后清空
+    swap_counterparty_picks: dict[str, Any] | None  # {hasSignal, picks: [{orderId, letter, directName}]}
+    swap_ticker_picks: list[dict[str, Any]] | None  # [{orderId, seq, directRef}]
+
     # -------- ticker 消歧 --------
     # 多命中分差不足时收集到此处，render 节点生成消歧卡片（Issue #20）
     ticker_hitl_candidates: list[dict[str, Any]] | None

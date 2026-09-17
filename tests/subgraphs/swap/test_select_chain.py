@@ -22,6 +22,7 @@ import pytest
 
 import app.subgraphs.swap.select_counterparty as sc_module
 import app.subgraphs.swap.select_ticker as st_module
+from app.subgraphs.swap.apply_picks import swap_apply_picks
 from app.subgraphs.swap.models import (
     SwapCounterpartyPick,
     SwapSelectCounterpartyOutput,
@@ -144,8 +145,11 @@ def _sc_state(**overrides: object) -> dict:
 
 
 class TestSwapSelectCounterpartyNode:
+    """ADR 0024 重构 3：节点只产出 LLM 指针（swap_counterparty_picks），不再直接改 place_params，
+    以便与 select_ticker 并行；确定性查表覆盖由 swap_apply_picks 汇合节点完成。"""
+
     @pytest.mark.asyncio
-    async def test_letter_pick_overwrites_shortname(
+    async def test_emits_picks_channel_not_place_params(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         _patch_llm(
@@ -156,56 +160,17 @@ class TestSwapSelectCounterpartyNode:
             ),
         )
         out = await swap_select_counterparty(_sc_state())
-        assert out["place_params"]["orderList"][0]["placeOrderShortname"] == "测试111"
-        assert out["place_params"]["expected_action"] == "place"
+        assert "place_params" not in out
+        assert out["swap_counterparty_picks"]["hasSignal"] is True
+        assert out["swap_counterparty_picks"]["picks"][0]["letter"] == "B"
 
     @pytest.mark.asyncio
-    async def test_direct_name_pick_overwrites(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        _patch_llm(
-            monkeypatch,
-            sc_module,
-            SwapSelectCounterpartyOutput(
-                hasSignal=True,
-                picks=[SwapCounterpartyPick(orderId="H-1", directName="临沂阿凡提")],
-            ),
-        )
-        out = await swap_select_counterparty(_sc_state())
-        assert out["place_params"]["orderList"][0]["placeOrderShortname"] == "临沂阿凡提"
-
-    @pytest.mark.asyncio
-    async def test_no_signal_keeps_original(
+    async def test_no_signal_emits_empty_picks(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         _patch_llm(monkeypatch, sc_module, SwapSelectCounterpartyOutput(hasSignal=False))
         out = await swap_select_counterparty(_sc_state())
-        assert out["place_params"]["orderList"][0]["placeOrderShortname"] == "旧对手"
-
-    @pytest.mark.asyncio
-    async def test_signal_with_empty_picks_keeps_original(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        _patch_llm(
-            monkeypatch, sc_module, SwapSelectCounterpartyOutput(hasSignal=True, picks=[])
-        )
-        out = await swap_select_counterparty(_sc_state())
-        assert out["place_params"]["orderList"][0]["placeOrderShortname"] == "旧对手"
-
-    @pytest.mark.asyncio
-    async def test_unresolvable_pick_keeps_original(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        """指针解析不到对手 → 非破坏性保留原值。"""
-        _patch_llm(
-            monkeypatch,
-            sc_module,
-            SwapSelectCounterpartyOutput(
-                hasSignal=True, picks=[SwapCounterpartyPick(orderId="H-1", letter="Z")]
-            ),
-        )
-        out = await swap_select_counterparty(_sc_state())
-        assert out["place_params"]["orderList"][0]["placeOrderShortname"] == "旧对手"
+        assert out["swap_counterparty_picks"] == {"hasSignal": False, "picks": []}
 
     @pytest.mark.asyncio
     async def test_trace_records_signal_and_pick_count(
@@ -224,14 +189,6 @@ class TestSwapSelectCounterpartyNode:
         assert trace[0].node == "swap_select_counterparty"
         assert trace[0].decision == "hasSignal=True,picks=1"
         assert trace[0].llm_output is not None
-
-    @pytest.mark.asyncio
-    async def test_missing_place_params_defaults_to_empty_order_list(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        _patch_llm(monkeypatch, sc_module, SwapSelectCounterpartyOutput(hasSignal=False))
-        out = await swap_select_counterparty({"raw_text": "x"})
-        assert out["place_params"] == {"expected_action": "", "orderList": []}
 
     @pytest.mark.asyncio
     async def test_safe_node_catches_llm_error(
@@ -268,64 +225,31 @@ def _st_state(**overrides: object) -> dict:
 
 
 class TestSwapSelectTickerNode:
+    """同上：只产出 swap_ticker_picks 指针；candidate_list 为空时跳过 LLM 并产出空指针。"""
+
     @pytest.mark.asyncio
     async def test_empty_candidate_list_skips_llm(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """candidate_list 为空 → 不可能切标的，跳过 LLM 调用（Dify 原节点语义）。"""
         ainvoke = _patch_llm(
             monkeypatch, st_module, SwapSelectTickerOutput(picks=[])
         )
-        out = await swap_select_ticker(
-            _st_state(quote_ticker_candidates=[], place_params={
-                "expected_action": "place",
-                "orderList": [{"placeOrderWindCode": "旧标的"}],
-            })
-        )
+        out = await swap_select_ticker(_st_state(quote_ticker_candidates=[]))
         assert ainvoke.await_count == 0
-        assert out["place_params"]["orderList"][0]["placeOrderWindCode"] == "旧标的"
+        assert out["swap_ticker_picks"] == []
+        assert "place_params" not in out
         assert out["trace"][0].decision == "skipped:no_candidate_list"
 
     @pytest.mark.asyncio
-    async def test_seq_pick_overwrites_windcode(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    async def test_emits_picks_channel(self, monkeypatch: pytest.MonkeyPatch) -> None:
         _patch_llm(
             monkeypatch,
             st_module,
             SwapSelectTickerOutput(picks=[SwapTickerPick(orderId="H-1", seq=2)]),
         )
         out = await swap_select_ticker(_st_state())
-        assert out["place_params"]["orderList"][0]["placeOrderWindCode"] == "00700.HK"
-        assert out["place_params"]["expected_action"] == "place"
-
-    @pytest.mark.asyncio
-    async def test_direct_ref_pick_overwrites(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        _patch_llm(
-            monkeypatch,
-            st_module,
-            SwapSelectTickerOutput(picks=[SwapTickerPick(orderId="H-1", directRef="贵州茅台")]),
-        )
-        out = await swap_select_ticker(_st_state())
-        assert out["place_params"]["orderList"][0]["placeOrderWindCode"] == "600519.SH"
-
-    @pytest.mark.asyncio
-    async def test_empty_picks_keeps_original(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        _patch_llm(monkeypatch, st_module, SwapSelectTickerOutput(picks=[]))
-        out = await swap_select_ticker(_st_state())
-        assert out["place_params"]["orderList"][0]["placeOrderWindCode"] == "旧标的"
-
-    @pytest.mark.asyncio
-    async def test_unresolvable_pick_keeps_original(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        _patch_llm(
-            monkeypatch,
-            st_module,
-            SwapSelectTickerOutput(picks=[SwapTickerPick(orderId="H-1", seq=99)]),
-        )
-        out = await swap_select_ticker(_st_state())
-        assert out["place_params"]["orderList"][0]["placeOrderWindCode"] == "旧标的"
+        assert "place_params" not in out
+        assert out["swap_ticker_picks"][0]["seq"] == 2
 
     @pytest.mark.asyncio
     async def test_trace_records_pick_count(self, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -340,14 +264,6 @@ class TestSwapSelectTickerNode:
         assert trace[0].decision == "picks=1"
 
     @pytest.mark.asyncio
-    async def test_missing_place_params_defaults_to_empty_order_list(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        _patch_llm(monkeypatch, st_module, SwapSelectTickerOutput(picks=[]))
-        out = await swap_select_ticker({"quote_ticker_candidates": _CANDIDATES})
-        assert out["place_params"] == {"expected_action": "", "orderList": []}
-
-    @pytest.mark.asyncio
     async def test_safe_node_catches_llm_error(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
@@ -359,3 +275,75 @@ class TestSwapSelectTickerNode:
         out = await swap_select_ticker(_st_state())
         assert out["error"] is not None
         assert out["error"].node == "swap_select_ticker"
+
+
+# ============================================================
+# swap_apply_picks（汇合节点：确定性查表覆盖草稿）
+# ============================================================
+
+
+def _ap_state(**overrides: object) -> dict:
+    state: dict = {
+        "swap_counterparties": _TRS,
+        "quote_ticker_candidates": _CANDIDATES,
+        "place_params": {
+            "expected_action": "place",
+            "orderList": [{"orderId": "H-1", "placeOrderShortname": "旧对手",
+                           "placeOrderWindCode": "旧标的"}],
+        },
+        "swap_counterparty_picks": {"hasSignal": False, "picks": []},
+        "swap_ticker_picks": [],
+    }
+    state.update(overrides)
+    return state
+
+
+class TestSwapApplyPicks:
+    @pytest.mark.asyncio
+    async def test_applies_both_picks_and_keeps_expected_action(self) -> None:
+        out = await swap_apply_picks(_ap_state(
+            swap_counterparty_picks={"hasSignal": True, "picks": [{"orderId": "H-1", "letter": "B"}]},
+            swap_ticker_picks=[{"orderId": "H-1", "seq": 2}],
+        ))
+        order = out["place_params"]["orderList"][0]
+        assert order["placeOrderShortname"] == "测试111"
+        assert order["placeOrderWindCode"] == "00700.HK"
+        assert out["place_params"]["expected_action"] == "place"
+
+    @pytest.mark.asyncio
+    async def test_direct_name_and_direct_ref(self) -> None:
+        out = await swap_apply_picks(_ap_state(
+            swap_counterparty_picks={"hasSignal": True, "picks": [{"orderId": "H-1", "directName": "临沂阿凡提"}]},
+            swap_ticker_picks=[{"orderId": "H-1", "directRef": "贵州茅台"}],
+        ))
+        order = out["place_params"]["orderList"][0]
+        assert order["placeOrderShortname"] == "临沂阿凡提"
+        assert order["placeOrderWindCode"] == "600519.SH"
+
+    @pytest.mark.asyncio
+    async def test_no_signal_and_empty_picks_keep_original(self) -> None:
+        out = await swap_apply_picks(_ap_state())
+        order = out["place_params"]["orderList"][0]
+        assert order["placeOrderShortname"] == "旧对手"
+        assert order["placeOrderWindCode"] == "旧标的"
+
+    @pytest.mark.asyncio
+    async def test_unresolvable_picks_keep_original(self) -> None:
+        out = await swap_apply_picks(_ap_state(
+            swap_counterparty_picks={"hasSignal": True, "picks": [{"orderId": "H-1", "letter": "Z"}]},
+            swap_ticker_picks=[{"orderId": "H-1", "seq": 99}],
+        ))
+        order = out["place_params"]["orderList"][0]
+        assert order["placeOrderShortname"] == "旧对手"
+        assert order["placeOrderWindCode"] == "旧标的"
+
+    @pytest.mark.asyncio
+    async def test_missing_picks_and_place_params_default_empty(self) -> None:
+        out = await swap_apply_picks({"raw_text": "x"})
+        assert out["place_params"] == {"expected_action": "", "orderList": []}
+
+    @pytest.mark.asyncio
+    async def test_clears_pick_channels_after_apply(self) -> None:
+        out = await swap_apply_picks(_ap_state())
+        assert out["swap_counterparty_picks"] is None
+        assert out["swap_ticker_picks"] is None

@@ -6,7 +6,7 @@
 - `_route_swap_entry`：text / image / excel 三入口分流
 - `_route_after_swap_intent`：6 个真实意图 + unknown 兜底 + cascade
 - `_route_after_place_order`：引用消息判空 → 选择链 / 全新对手识别 / cascade
-- `_route_after_select_counterparty` / `_route_after_select_ticker`：顺序推进 + cascade
+- `_route_after_apply_picks`：选对手 ‖ 选标的 并行后汇合 + cascade
 - `_route_after_multimodal`：图片/Excel 提取后 → 提交 / cascade
 - `_has_usable_quote`：quote_content 判空（None / "" / "null" / 空白）
 
@@ -35,10 +35,9 @@ from app.subgraphs.swap import intent as intent_module
 from app.subgraphs.swap import place_order as po_module
 from app.subgraphs.swap.graph import (
     _has_usable_quote,
+    _route_after_apply_picks,
     _route_after_multimodal,
     _route_after_place_order,
-    _route_after_select_counterparty,
-    _route_after_select_ticker,
     _route_after_swap_intent,
     _route_swap_entry,
 )
@@ -200,7 +199,8 @@ class TestRouteAfterSwapIntent:
 class TestRouteAfterPlaceOrder:
     def test_usable_quote_goes_to_counterparty(self) -> None:
         state = {"quote_content": "订单H-1（序号1）："}
-        assert _route_after_place_order(state) == "swap_select_counterparty"
+        # ADR 0024 重构 3：选对手 ‖ 选标的 并行分支（两个 LLM 调用同一 superstep）
+        assert _route_after_place_order(state) == ["swap_select_counterparty", "swap_select_ticker"]
 
     def test_no_quote_goes_to_fresh_counterparty(self) -> None:
         assert _route_after_place_order({}) == "swap_recognize_fresh_counterparty"
@@ -219,17 +219,11 @@ class TestRouteAfterPlaceOrder:
 
 
 class TestRouteAfterSelectChain:
-    def test_after_counterparty_goes_to_ticker(self) -> None:
-        assert _route_after_select_counterparty({}) == "swap_select_ticker"
+    def test_after_apply_picks_goes_to_submit(self) -> None:
+        assert _route_after_apply_picks({}) == "swap_place_order_submit"
 
-    def test_after_counterparty_error(self) -> None:
-        assert _route_after_select_counterparty({"error": MagicMock()}) == "swap_unknown"
-
-    def test_after_ticker_goes_to_submit(self) -> None:
-        assert _route_after_select_ticker({}) == "swap_place_order_submit"
-
-    def test_after_ticker_error(self) -> None:
-        assert _route_after_select_ticker({"error": MagicMock()}) == "swap_unknown"
+    def test_after_apply_picks_error(self) -> None:
+        assert _route_after_apply_picks({"error": MagicMock()}) == "swap_unknown"
 
     def test_after_multimodal_goes_to_submit(self) -> None:
         assert _route_after_multimodal({}) == "swap_place_order_submit"
@@ -334,13 +328,10 @@ class TestSwapGraphEndToEnd:
         )
 
         trace_nodes = [e.node for e in final.get("trace", [])]
-        assert trace_nodes == [
-            "swap_intent",
-            "swap_place_order",
-            "swap_select_counterparty",
-            "swap_select_ticker",
-            "swap_place_order_submit",
-        ]
+        # 选对手 ‖ 选标的 并行，两者顺序不定；其余节点顺序固定
+        assert trace_nodes[:2] == ["swap_intent", "swap_place_order"]
+        assert set(trace_nodes[2:4]) == {"swap_select_counterparty", "swap_select_ticker"}
+        assert trace_nodes[4:] == ["swap_apply_picks", "swap_place_order_submit"]
         order = final["place_params"]["orderList"][0]
         assert order["placeOrderShortname"] == "临沂阿凡提"
         assert order["placeOrderWindCode"] == "00700.HK"
