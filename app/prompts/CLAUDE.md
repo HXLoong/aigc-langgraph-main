@@ -7,7 +7,7 @@
 
 - **目录名是 `option_close/`，不是 `close/`**（历史命名）；子图代码侧是 `app/subgraphs/close/`，两边不对称
 - **`_versions.yaml`** 才是 ADR 0003 A/B 灰度的真源；不要在 Python 里写死版本。当前无灰度位，需要时新建 `<name>_v{N}.md` 并登记
-- **git `.md` 是唯一生产真源**（ADR 0024 D1）：Dify 已退出上游地位，没有同步 / 导出链路；YAML 快照冻结在 tag `dify-assets-frozen-20260917`
+- **git `.md` 是唯一生产真源**（ADR 0024 D1）：Dify 已退出上游地位，没有同步 / 导出链路；YAML 快照冻结在 tag `dify-assets-frozen-20260917（指向 commit fddd94e；tag 仅存本地，远端拒绝 tag 推送，维护者可从该 sha 重建）`
 - **一个 LLM 节点 = 一个 `PromptSpec`**（`app/prompts/spec.py`，ADR 0023）：`inputs` 必须是 AgentState 字段（构造期校验）、
   `output_model` 每个字段写 `Field(description=)`（输出语义唯一真源，`.md` 不再放 JSON 骨架）、`injects` 登记 `.md` 里由代码渲染的占位符、
   `user_builder` 只拼变量。共享积木在 `blocks.py`，不要在子图复制 `_format_history`
