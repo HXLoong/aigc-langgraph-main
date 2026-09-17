@@ -38,4 +38,4 @@ _versions.yaml（灰度配置，如 swap.intent = 95% intent / 5% intent_v2）
   - **A/B 实验位**（`*_v2.md` 等）：新版满一个金丝雀周期 + 稳定 7 天后清理、去后缀；
   - **Dify 原始快照 / 回滚资产**（冻结的 `intent_extract.md` 等；`*.dify_original.md` 已于 DSL v2 迁移删除）：曾按 ADR 0022 D6 在 ~~`app/prompts/_manifest.yaml`~~ 登记为 `inactive` 并写保留理由与可删条件；manifest 机制已于 2026-09-16 废弃移除，清理时以 git 历史与文件内注释为准。
 - ">2 个并存版本视为治理债"目前**无执行机制且已被突破**（`swap/place_order` 3 变体；`ticker/tokenize*.md` 双死文件）——裁决见 [#159](https://github.com/GZTL-AI/aigc-langgraph/issues/159)。
-- Dify 同步策略：原决策要求"拉下来的新版放 `_v{N+1}.md`、不覆盖原文件"。#159 已补保护：`scripts/export_dify_prompts.py` 默认跳过已存在文件，只有显式 `--overwrite` 才允许覆盖；覆盖前仍须人工 diff。
+- Dify 同步策略：原决策要求"拉下来的新版放 `_v{N+1}.md`、不覆盖原文件"。#159 曾补保护（export_dify_prompts.py 默认跳过已存在文件）；2026-09-17 同步 / 导出链路随 ADR 0024 D1 整体退役，本条不再适用。

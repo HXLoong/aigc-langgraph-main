@@ -37,10 +37,6 @@ python scripts/probe_swap_write_e2e.py
 python scripts/probe_option_write_e2e.py
 python scripts/probe_close_write_e2e.py
 python scripts/probe_ticker_e2e.py
-
-# Dify 同步（保留资产）
-export DIFY_EMAIL="..." DIFY_PASSWORD="..."
-python dify/sync.py                          # 拉最新 YAML → dify/yaml/
 ```
 
 ## 项目结构（M2 完成、M3 进行中）
@@ -76,7 +72,7 @@ app/
 ├── llm/clients.py           # LLM 统一工厂：全量 DeepSeek-V4-pro（ADR 0020，thinking 关闭 + structured output 走 function_calling 适配）
 ├── checkpointer/factory.py  # AIOMySQLSaver
 ├── observability/           # tracing.py + metrics.py（Prometheus 兼容 /metrics）
-└── prompts/                 # Dify 提示词资产（router / swap / option / option_close / ticker）
+└── prompts/                 # 提示词资产（git 唯一真源，ADR 0024 D1；router / swap / option / option_close / ticker）
 
 harness/                     # 评测台（经 HTTP 调本地 /v1/workflows/run，与 app/ 解耦）
 ├── golden.py                # categories fixture 加载（两方言归一化）
@@ -130,7 +126,7 @@ tests/fixtures/              # categories/（A 方言，6 文件 / 389 条）+ u
    - 写测试 → 跑到 RED（测试失败） → 写最小修复代码 → 跑到 GREEN → 全量回归
    - 禁止先改代码再补测试，也禁止跳过 RED 验证
    - `/test-driven-development` skill 包含完整 workflow，修改代码前调用
-6. **git 里的提示词是唯一真源，Dify 只是上游输入** —— 改提示词直接改 `app/prompts/**/*.md` + 普通 PR review，`prompt(<scope>)` commit；Dify 侧更新走 `dify/sync.py` → `scripts/export_dify_prompts.py` → 人工 diff 选择性合入，不要一键覆盖
+6. **git 里的提示词是唯一真源** —— 改提示词直接改 `app/prompts/**/*.md` + 普通 PR review，`prompt(<scope>)` commit；Dify 已退出上游地位（ADR 0024 D1），YAML 快照冻结在 tag `dify-assets-frozen-20260917`，不再有同步 / 导出链路
 7. **标的代码必须 from_goats=True** —— Ticker Agent 的绝对约束（ADR 0008）
 8. **节点失败必须 cascade 防御** —— 任一节点写入 `state['error']` 后，下游 conditional 路由必须检查并跳到 fallback render，禁止 cascade 失败。具体：主图 `_route_by_product` 与每子图首节点后的 conditional 都加 `if state.get('error'): return 'fallback'`。fallback 节点输出友好回复（"我没完全理解你的意思，能换种说法重新告诉我吗"）+ trace 记录原 fail 节点名。LLM 解析失败由 `with_structured_output` 自带 1 次重试 + `@safe_node` 兜底捕获 ValidationError 写入 error；不走 HITL（HITL 仅用于 ADR 0006 的业务参数二次确认场景）
 

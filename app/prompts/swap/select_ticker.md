@@ -1,8 +1,5 @@
 # 互换-选择标的
 
-- **node_id**: `1780652892832`
-- **model**: `external-deepseek-v4-pro-non-thinking`
-
 ## [system]
 
 ```
@@ -39,12 +36,4 @@
 - 【多订单】quote 两笔(序号1 单号H-AAA 有候选1..5、待补对手；序号2 无候选)；raw=“序号1，2，c” → {"picks":[{"orderId":"H-AAA","orderSeq":1,"idx":0,"seq":2,"directRef":null}]}  （“序号1”定位到序号1候选块、标的切seq2、orderId填H-AAA；“c”归对手节点）
 
 输出：{"picks":[{"orderId":..|null,"orderSeq":..|null,"idx":候选块下标,"seq":x|null,"directRef":代码或名称|null}]}；seq/directRef 必须恰好一个非空；未切→{"picks":[]}。只吐指针。
-```
-
-## [user]
-
-```
-raw_content：{{#1755072621769.raw_content#}}
-quote_content：{{#1755072621769.quote_content#}}
-candidate_list：{{#1772773805306.candidateListStr#}}
 ```

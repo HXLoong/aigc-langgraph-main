@@ -1,8 +1,5 @@
 # 图片-互换-请求下单参数解析
 
-- **node_id**: `1764841677781`
-- **model**: `external-deepseek-v4-pro-non-thinking`
-
 ## [system]
 
 ```

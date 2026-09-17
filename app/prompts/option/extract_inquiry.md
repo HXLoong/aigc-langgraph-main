@@ -1,7 +1,5 @@
 # 期权-节点-询价（Dify DSL v2 同步版）
 
-- **node_id**: `1779330004958`
-- **model**: `external-deepseek-v4-flash-non-thinking`
 - **决策来源**: Dify DSL v2 迁移（分支 feature/dify-dsl-migration，P2 option 域）
 - **范围**: 仅处理 `new_inquiry` 意图（期权询价/换标）
 - **operate**: 固定 `"询价"`（节点内部按 intent 推导写入 payload，不经 LLM）

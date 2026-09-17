@@ -3,43 +3,38 @@
 
 # app/prompts · 局部约定
 
-> 提示词管理规则见 `.claude/rules/prompt-management.md`（来源优先级 / 改写纪律 / Dify 同步 / 占位符）。
+> 提示词管理规则见 `.claude/rules/prompt-management.md`（来源优先级 / 改写纪律 / 占位符）。
 > 子目录布局见根 `CLAUDE.md` 的「项目结构」段。本文件只补**易错点 + 文件格式 + 字符数提示**。
 
 ## 易错点
 
-- **目录名是 `option_close/`，不是 `close/`**（沿用 Dify 命名）；子图代码侧是 `app/subgraphs/close/`，两边不对称
-- **`_versions.yaml`** 才是 ADR 0003 A/B 灰度的真源；不要在 Python 里写死版本
-- **git `.md` 是唯一生产真源，Dify YAML 只是上游输入**：Dify 侧更新走 `sync.py` → `export_dify_prompts.py` → 人工 diff 合入，不要一键覆盖。
-- 3 个 `swap/*_v2.md` 灰度位（image_extract / excel_extract / image_ocr；intent_v2 / place_order_v2 已删），
-  由 `_versions.yaml` / `OTC_PROMPT_SWAP_*_VERSION` 控制、默认 0 流量
+- **目录名是 `option_close/`，不是 `close/`**（历史命名）；子图代码侧是 `app/subgraphs/close/`，两边不对称
+- **`_versions.yaml`** 才是 ADR 0003 A/B 灰度的真源；不要在 Python 里写死版本。当前无灰度位，需要时新建 `<name>_v{N}.md` 并登记
+- **git `.md` 是唯一生产真源**（ADR 0024 D1）：Dify 已退出上游地位，没有同步 / 导出链路；YAML 快照冻结在 tag `dify-assets-frozen-20260917`
 - **一个 LLM 节点 = 一个 `PromptSpec`**（`app/prompts/spec.py`，ADR 0023）：`inputs` 必须是 AgentState 字段（构造期校验）、
   `output_model` 每个字段写 `Field(description=)`（输出语义唯一真源，`.md` 不再放 JSON 骨架）、`injects` 登记 `.md` 里由代码渲染的占位符、
   `user_builder` 只拼变量。共享积木在 `blocks.py`，不要在子图复制 `_format_history`
-- `[user]` 段：默认只作 Dify 原始输入形态的参照，user 消息由 `user_builder` 拼变量；**只有**当 user 含规则文本时才把规则写进
-  `[user]` 段用 `{{var}}` 占位并经 `render_user()` 渲染（先例 `swap/place_order.md`），这类节点的 `[user]` 段是运行时契约
+- `[user]` 段**只有**当 user 含规则文本时才存在（`swap/place_order.md`、`swap/fresh_counterparty.md`），用 `{{var}}` 占位并经
+  `render_user()` 渲染，是运行时契约；其它节点没有 `[user]` 段，user 消息由 `user_builder` 拼变量
 
 ## .md 文件格式约定（4-backtick 外层 fence 才不会被内层 ``` 提前闭合）
 
 ````markdown
 # 提示词标题
-- **node_id**: `1755073106378`         # 来自 Dify YAML
-- **model**: `qwen3-30b-a3b`
 
 ## [system]
 ```
-<system 提示词内容，保留 {{#node.var#}} 占位符原样>
+<system 提示词内容；由代码渲染的 {{var}} 须在 PromptSpec.injects 登记>
 ```
 
-## [user]
+## [user]        ← 仅当 user 含规则文本时才有
 ```
-<user 模板>
+<user 模板，{{var}} 经 render_user() 渲染>
 ```
 ````
 
-占位符 `{{#node_id.var#}}`：Dify 由引擎渲染，LangGraph 没有渲染层。代码确实注入的占位符在 `PromptSpec.injects` 登记渲染器
-（先例：`close/holding_query.py`、`ticker/tools.py` 日期占位符）；
-代码不注入的就是悬空规则，属零风险删除档——不要指望 LLM 把变量名当上下文。
+占位符：现役 system 占位符只有 `{{counterparty_list}}`（`close/holding_query.py`、`swap/multimodal.py`）与 `{{current_date}}`
+（`ticker/tools.py`），均在 `PromptSpec.injects` 登记；代码不注入的占位符就是悬空规则，属零风险删除档——不要指望 LLM 把变量名当上下文。
 
 ## 字符数提示（影响延迟）
 

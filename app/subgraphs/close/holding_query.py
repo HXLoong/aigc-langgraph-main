@@ -4,10 +4,10 @@
 从 Java 侧预查 JSON 解析，字段 ctptyId/shortName/longName/sort）
 输出：state['close_params'] = HoldingQueryParams.model_dump() → 调真后端 query 接口
 
-交易对手列表注入：Dify 原 system 里的 `{{#1772773805306.optionListStr#}}` 对应 Dify code
-节点 `json.dumps(option_list, ensure_ascii=False)`；本节点在送 LLM 前做同样的确定性渲染
-（ADR 0022 D5：占位符只允许出现在代码确实注入了值的位置）。此前占位符原样发给 LLM，
-keyCtptyIdList 的模糊匹配规则整段悬空，任何"对手XX"都会命中哨兵 99999999（评估 OC-01）。
+交易对手列表注入：system 里的 `{{counterparty_list}}` 由 SPEC.injects 在送 LLM 前渲染成
+`json.dumps(option_list, ensure_ascii=False)`（ADR 0023：占位符只允许出现在代码确实注入了值
+的位置）。此前占位符曾原样发给 LLM，keyCtptyIdList 的模糊匹配规则整段悬空，任何"对手XX"
+都会命中哨兵 99999999（评估 OC-01）。
 
 LLM：thinking 模型 + with_structured_output。
 prompt：app/prompts/option_close/holding_query.md。
@@ -38,8 +38,8 @@ SPEC = register(PromptSpec(
     inputs=("raw_text", "option_counterparties"),
     user_builder=_build_user_message,
     injects={
-        # Dify code 节点 optionListStr = json.dumps(option_list)，同口径渲染
-        "{{#1772773805306.optionListStr#}}": lambda s: blocks.json_list(s.get("option_counterparties")),
+        # 后端预查的期权对手列表，JSON 渲染进 system（keyCtptyIdList 模糊匹配规则依赖它）
+        "{{counterparty_list}}": lambda s: blocks.json_list(s.get("option_counterparties")),
     },
 ))
 

@@ -476,8 +476,8 @@ class TestParamsUpdateShape:
 
 @pytest.mark.asyncio
 class TestOcrCounterpartyInjection:
-    """评估 C-27 / --strict：image_ocr.md 的 {{#1772773805306.optionListStr#}} 此前原样发给 VL
-    模型；现按 Dify code 节点同口径渲染为 state["swap_counterparties"] 的 JSON（ADR 0022 D5）。"""
+    """评估 C-27 / --strict：image_ocr.md 的 {{counterparty_list}} 此前原样发给 VL
+    模型；现渲染为 state["swap_counterparties"] 的 JSON（ADR 0022 D5）。"""
 
     async def test_placeholder_rendered(self, monkeypatch: pytest.MonkeyPatch) -> None:
         ocr_llm, _ = _mock_llm(monkeypatch, _PARAMS)

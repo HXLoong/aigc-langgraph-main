@@ -1,8 +1,5 @@
 # 互换-选择交易对手
 
-- **node_id**: `1780652808839`
-- **model**: `external-deepseek-v4-pro-non-thinking`
-
 ## [system]
 
 ```
@@ -36,12 +33,4 @@
 - 同上两笔都待补对手；raw=“a”(无序号) → 应用到所有待补对手订单 → {"hasSignal":true,"picks":[{"orderId":"H-AAA","orderSeq":1,"idx":null,"letter":"A","ordinal":null,"directName":null},{"orderId":"H-BBB","orderSeq":2,"idx":null,"letter":"A","ordinal":null,"directName":null}]}
 - quote 两笔都待补对手(序号1 H-AAA；序号2 H-BBB)；raw=“序号1，2，c” → “c”在“序号1，”作用域内→只归序号1 → {"hasSignal":true,"picks":[{"orderId":"H-AAA","orderSeq":1,"idx":null,"letter":"C","ordinal":null,"directName":null}]} （序号2不补；“2”是标的归标的节点）
 - quote 单订单**参数齐全**(交易对手：X 已填、无任何【待补充】)；raw=“Y”(Y 是 shortname_list 中某简称) → 这是换手改参 → {"hasSignal":true,"picks":[{"orderId":"H-AAA","orderSeq":null,"idx":null,"letter":null,"ordinal":null,"directName":"Y"}]}（订单不待补对手也照样改，orderId 逐字符取 quote 单号）
-```
-
-## [user]
-
-```
-raw_content：{{#1755072621769.raw_content#}}
-shortname_list：{{#1772773805306.trsListStr#}}
-quote_content：{{#1755072621769.quote_content#}}
 ```

@@ -25,7 +25,7 @@ def _spec(**kw) -> PromptSpec:
         output_model=_Out,
         inputs=("raw_text", "option_counterparties"),
         user_builder=lambda s: f"用户输入：{s.get('raw_text', '')}",
-        injects={"{{#1772773805306.optionListStr#}}": lambda s: blocks.json_list(s.get("option_counterparties"))},
+        injects={"{{counterparty_list}}": lambda s: blocks.json_list(s.get("option_counterparties"))},
     )
     base.update(kw)
     return PromptSpec(**base)
@@ -44,7 +44,7 @@ class TestPromptSpec:
         assert prompt_name == "holding_query"
         (role_s, system), (role_u, user) = messages
         assert role_s == "system" and role_u == "user"
-        assert "{{#1772773805306.optionListStr#}}" not in system
+        assert "{{counterparty_list}}" not in system
         assert "阿凡提" in system
         assert user == "用户输入：查对手阿凡提的持仓"
 

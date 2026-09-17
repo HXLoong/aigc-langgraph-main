@@ -1,8 +1,5 @@
 # 互换-节点-下单
 
-- **node_id**: `1776160580437`
-- **model**: `external-deepseek-v4-pro-non-thinking`
-
 ## [system]
 
 ```

@@ -90,8 +90,8 @@ IMAGE_OCR_SPEC = register(PromptSpec(
     inputs=("conversation_id", "swap_counterparties"),
     user_builder=_ocr_user_from_state,
     injects={
-        # Dify code 节点 json.dumps(optionList…) 同口径（评估 C-27）
-        "{{#1772773805306.optionListStr#}}": lambda s: blocks.json_list(s.get("swap_counterparties")),
+        # 后端预查的互换对手列表，JSON 渲染进 system（评估 C-27）
+        "{{counterparty_list}}": lambda s: blocks.json_list(s.get("swap_counterparties")),
     },
     gray=True,
 ))
@@ -155,8 +155,7 @@ async def swap_image_order(state: AgentState) -> dict[str, Any]:
     if not urls:
         raise ValueError("互换-图片链:无可用图片文件")
 
-    # Dify 原 system 的 {{#1772773805306.optionListStr#}} 由 code 节点 json.dumps 注入；
-    # 互换图片链按同口径渲染（SPEC.injects，ADR 0022 D5，评估 C-27）
+    # system 里的 {{counterparty_list}} 由 SPEC.injects 渲染成对手列表 JSON（ADR 0023，评估 C-27）
     ocr_system, _ocr_prompt_name = IMAGE_OCR_SPEC.render_system(state)
     vl = get_qwen_vl()
     content: list[dict[str, Any]] = [{"type": "text", "text": ocr_system}]

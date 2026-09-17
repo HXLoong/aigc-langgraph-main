@@ -41,10 +41,6 @@ python scripts/probe_swap_write_e2e.py
 python scripts/probe_option_write_e2e.py
 python scripts/probe_close_write_e2e.py
 python scripts/probe_ticker_e2e.py
-
-# Dify 同步（保留资产）
-export DIFY_EMAIL="..." DIFY_PASSWORD="..."
-python dify/sync.py                          # 拉最新 YAML → dify/yaml/
 ```
 
 ## 项目结构（M2 完成、M3 进行中）
@@ -80,7 +76,7 @@ app/
 ├── llm/clients.py           # LLM 统一工厂：全量 DeepSeek-V4-pro（ADR 0020，thinking 关闭 + structured output 走 function_calling 适配）
 ├── checkpointer/factory.py  # AIOMySQLSaver
 ├── observability/           # tracing.py + metrics.py（Prometheus 兼容 /metrics）
-└── prompts/                 # Dify 提示词资产（router / swap / option / option_close / ticker）
+└── prompts/                 # 提示词资产（git 唯一真源，ADR 0024 D1；router / swap / option / option_close / ticker）
 
 harness/                     # 评测台（经 HTTP 调本地 /v1/workflows/run，与 app/ 解耦）
 ├── golden.py                # categories fixture 加载（两方言归一化）
@@ -134,7 +130,7 @@ tests/fixtures/              # categories/（A 方言，6 文件 / 389 条）+ u
    - 写测试 → 跑到 RED（测试失败） → 写最小修复代码 → 跑到 GREEN → 全量回归
    - 禁止先改代码再补测试，也禁止跳过 RED 验证
    - `.claude/skills/test-driven-development/SKILL.md` 流程 包含完整 workflow，修改代码前调用
-6. **git 里的提示词是唯一真源，Dify 只是上游输入** —— 改提示词直接改 `app/prompts/**/*.md` + 普通 PR review，`prompt(<scope>)` commit；Dify 侧更新走 `dify/sync.py` → `scripts/export_dify_prompts.py` → 人工 diff 选择性合入，不要一键覆盖
+6. **git 里的提示词是唯一真源** —— 改提示词直接改 `app/prompts/**/*.md` + 普通 PR review，`prompt(<scope>)` commit；Dify 已退出上游地位（ADR 0024 D1），YAML 快照冻结在 tag `dify-assets-frozen-20260917`，不再有同步 / 导出链路
 7. **标的代码必须 from_goats=True** —— Ticker Agent 的绝对约束（ADR 0008）
 8. **节点失败必须 cascade 防御** —— 任一节点写入 `state['error']` 后，下游 conditional 路由必须检查并跳到 fallback render，禁止 cascade 失败。具体：主图 `_route_by_product` 与每子图首节点后的 conditional 都加 `if state.get('error'): return 'fallback'`。fallback 节点输出友好回复（"我没完全理解你的意思，能换种说法重新告诉我吗"）+ trace 记录原 fail 节点名。LLM 解析失败由 `with_structured_output` 自带 1 次重试 + `@safe_node` 兜底捕获 ValidationError 写入 error；不走 HITL（HITL 仅用于 ADR 0006 的业务参数二次确认场景）
 
@@ -328,12 +324,13 @@ Single-context 布局：根目录 `CONTEXT.md` + `docs/adr/`。详见 `docs/agen
 > 真源与契约：[ADR 0023](../../docs/adr/0023-prompt-as-code-langgraph.md)（PromptSpec）；版本化 / 灰度：[ADR 0003](../../docs/adr/0003-prompt-versioning-by-file-coexistence.md)。
 > 局部陷阱：`app/prompts/CLAUDE.md`。本文件只写"怎么做"。
 
-## 占位符纪律（2026-09-15 反转）
+## 占位符纪律
 
-Dify 的 `{{#node_id.var#}}` 在 Dify 由工作流引擎渲染；LangGraph 里**没有渲染层**。所以：
+`.md` 里的 `{{var}}` 没有独立渲染层，只有两种合法形态（Dify 时代的 `{{#node_id.var#}}` 已全部改为原生名，ADR 0024 D1）：
 
-- 代码确实注入的占位符 → 在 `PromptSpec.injects` 登记渲染器（先例：`close/holding_query.py` 对手列表、`ticker/tools.py` 日期占位符）
-- 代码不注入的占位符 → 是悬空规则，LLM 看到的是变量名；属零风险删除档，围绕它的整段规则一起删
+- system 段占位符 → 在 `PromptSpec.injects` 登记渲染器（现役：`{{counterparty_list}}` 见 `close/holding_query.py` / `swap/multimodal.py`，`{{current_date}}` 见 `ticker/tools.py`），`build_messages` 构造期校验存在性
+- `[user]` 段占位符 → 只在 user 含规则文本的节点存在（`swap/place_order.md`、`swap/fresh_counterparty.md`），经 `render_user()` 渲染；其它节点没有 `[user]` 段，user 消息由 `user_builder` 拼变量
+- 代码不注入的占位符是悬空规则，LLM 看到的是变量名；属零风险删除档，围绕它的整段规则一起删
 
 ## 加载方式（ADR 0023：一个 LLM 节点 = 一个 PromptSpec）
 
@@ -373,7 +370,6 @@ result = await model.with_structured_output(SwapIntentOutput).ainvoke(messages)
 | 场景 | 做法 | 门槛 |
 |---|---|---|
 | 瘦身 / 修规则 | 直接改 `app/prompts/**/*.md`；需要时先跑 `scripts/langfuse_eval.py` 对比 | 普通 PR review；`prompt(<scope>)` commit |
-| Dify 侧有更新 | `python dify/sync.py`（凭据只从 `DIFY_EMAIL` / `DIFY_PASSWORD` 环境变量读）→ `scripts/export_dify_prompts.py`（默认不覆盖已存在文件）→ 人工 diff 选择性合入 | 不要一键覆盖 |
 | 新 LLM 节点 | `.md` 放对目录 + Pydantic Output 模型（每字段 `Field(description=)`）+ `PromptSpec` 声明 + `@safe_node` 节点 + golden case | 普通 PR review |
 
 ## 字符数 / 延迟

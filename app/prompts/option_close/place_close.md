@@ -1,8 +1,5 @@
 # 请求下单和确认全部平仓参数提取
 
-- **node_id**: `1772602519902`
-- **model**: `external-deepseek-v4-pro-non-thinking`
-
 ## [system]
 
 ```
@@ -810,20 +807,4 @@ Remaining `21.6` is an unmatched bare decimal. Pattern C applies: 21.6 → close
 ```json
 {"closeOrderList":[{"orderId":"CO-00000000-AAAA0002","internalTradeId":null,"closeOrderNotionalDelta":"2500000","closeOrderType":"限价单","closeOrderPrice":21.6,"closeOrderPovRatio":null,"closeOrderAlgoStartTime":null,"closeOrderAlgoEndTime":null,"confirmFullClose":null,"hasFastExecutionIntent":false}]}
 ```
-```
-
-## [user]
-
-```
-User input: {{#1755072621769.raw_content#}}
-Holding map (code parsing result): {{#1772677545585.holdingMap#}}
-Error order ID list: {{#1772677545585.errorOrderIds#}}
-Full-close confirmation order ID list: {{#1772677545585.fullCloseIds#}}
-Pure error order ID list: {{#1772677545585.pureErrorOrderIds#}}
-Pure error order count: {{#1772677545585.pureErrorOrderCount#}}
-Holding map candidate count: {{#1772677545585.holdingMapCandidateCount#}}
-Has single holding candidate: {{#1772677545585.hasSingleHoldingCandidate#}}
-Single holding candidate order ID: {{#1772677545585.singleHoldingCandidateOrderId#}}
-quote_content：{{#1755072621769.quote_content#}}
-orderList：{{#1776755964286.orderList#}}
 ```

@@ -3,12 +3,13 @@
 > 真源与契约：[ADR 0023](../../docs/adr/0023-prompt-as-code-langgraph.md)（PromptSpec）；版本化 / 灰度：[ADR 0003](../../docs/adr/0003-prompt-versioning-by-file-coexistence.md)。
 > 局部陷阱：`app/prompts/CLAUDE.md`。本文件只写"怎么做"。
 
-## 占位符纪律（2026-09-15 反转）
+## 占位符纪律
 
-Dify 的 `{{#node_id.var#}}` 在 Dify 由工作流引擎渲染；LangGraph 里**没有渲染层**。所以：
+`.md` 里的 `{{var}}` 没有独立渲染层，只有两种合法形态（Dify 时代的 `{{#node_id.var#}}` 已全部改为原生名，ADR 0024 D1）：
 
-- 代码确实注入的占位符 → 在 `PromptSpec.injects` 登记渲染器（先例：`close/holding_query.py` 对手列表、`ticker/tools.py` 日期占位符）
-- 代码不注入的占位符 → 是悬空规则，LLM 看到的是变量名；属零风险删除档，围绕它的整段规则一起删
+- system 段占位符 → 在 `PromptSpec.injects` 登记渲染器（现役：`{{counterparty_list}}` 见 `close/holding_query.py` / `swap/multimodal.py`，`{{current_date}}` 见 `ticker/tools.py`），`build_messages` 构造期校验存在性
+- `[user]` 段占位符 → 只在 user 含规则文本的节点存在（`swap/place_order.md`、`swap/fresh_counterparty.md`），经 `render_user()` 渲染；其它节点没有 `[user]` 段，user 消息由 `user_builder` 拼变量
+- 代码不注入的占位符是悬空规则，LLM 看到的是变量名；属零风险删除档，围绕它的整段规则一起删
 
 ## 加载方式（ADR 0023：一个 LLM 节点 = 一个 PromptSpec）
 
@@ -48,7 +49,6 @@ result = await model.with_structured_output(SwapIntentOutput).ainvoke(messages)
 | 场景 | 做法 | 门槛 |
 |---|---|---|
 | 瘦身 / 修规则 | 直接改 `app/prompts/**/*.md`；需要时先跑 `scripts/langfuse_eval.py` 对比 | 普通 PR review；`prompt(<scope>)` commit |
-| Dify 侧有更新 | `python dify/sync.py`（凭据只从 `DIFY_EMAIL` / `DIFY_PASSWORD` 环境变量读）→ `scripts/export_dify_prompts.py`（默认不覆盖已存在文件）→ 人工 diff 选择性合入 | 不要一键覆盖 |
 | 新 LLM 节点 | `.md` 放对目录 + Pydantic Output 模型（每字段 `Field(description=)`）+ `PromptSpec` 声明 + `@safe_node` 节点 + golden case | 普通 PR review |
 
 ## 字符数 / 延迟

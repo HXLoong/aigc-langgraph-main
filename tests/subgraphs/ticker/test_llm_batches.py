@@ -226,7 +226,7 @@ async def test_infer_code_system_has_current_date(monkeypatch: pytest.MonkeyPatc
     fake = _install(monkeypatch, InferCodeOutput.model_validate({}))
     await infer_code_batch(["沪铜主力"])
     system = fake.ainvoke.call_args.args[0][0].content
-    assert "1775913928411.date" not in system
+    assert "{{current_date}}" not in system
     assert _today_zh() in system
 
 
@@ -235,5 +235,5 @@ async def test_rank_system_has_current_date(monkeypatch: pytest.MonkeyPatch) -> 
     fake = _install(monkeypatch, RankOutput(ranked_codes=[]))
     await rank_candidates("沪铜", [_FakeCandidate("CU2610.SHF")])
     system = fake.ainvoke.call_args.args[0][0].content
-    assert "{{#1775820054722.date#}}" not in system
+    assert "{{current_date}}" not in system
     assert _today_zh() in system

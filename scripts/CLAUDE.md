@@ -57,7 +57,6 @@
 | `convert_jsonl_to_csv.py` | JSONL 测试集 → 逐步中文 CSV（仅标准库）|
 | `upload_golden_to_langfuse.py` | 本地 categories fixture → Langfuse dataset |
 | `cleanup_checkpoints.py` | checkpoint 三表按线程清理（客户现场运维）|
-| `export_dify_prompts.py` | Dify YAML → app/prompts/**/*.md |
 | `sync_agents_md.py` | CLAUDE.md + .claude/{rules,skills,agents} → AGENTS.md + .agents/skills/（Codex 读取；`--check` 供提交前自检，产物禁止手改）|
 
 ## 写新脚本的约定

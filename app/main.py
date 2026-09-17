@@ -80,7 +80,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
 
 app = FastAPI(
     title="otc-agent-langgraph",
-    description="场外衍生品 AI 指令助手 — LangGraph 替换 Dify",
+    description="场外衍生品 AI 指令助手（LangGraph）",
     version="0.2.0-m1",
     lifespan=lifespan,
 )

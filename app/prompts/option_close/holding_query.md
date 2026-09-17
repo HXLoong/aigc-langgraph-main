@@ -1,8 +1,5 @@
 # 期权平仓-持仓查询参数提取
 
-- **node_id**: `1772614623517`
-- **model**: `external-deepseek-v4-flash-non-thinking`
-
 ## [system]
 
 ```
@@ -129,7 +126,7 @@
 
 
 ## 交易对手列表
-{{#1772773805306.optionListStr#}}
+{{counterparty_list}}
 
 ## 输出要求
 
@@ -139,10 +136,4 @@
 {"closeable_only": true, "internalTradeIdList": ["OPTG-SZZSCF20250030"], "keyCtptyIdList": [10049], "underlyingInsNameList": ["贵州茅台"], "underlyingInsIdList": ["600519.SH"], "insFamilyList": ["EQUITY"], "contractTypeList": ["AUTOCALL"]}
 ```
 
-```
-
-## [user]
-
-```
-用户输入：{{#1755072621769.raw_content#}}
 ```

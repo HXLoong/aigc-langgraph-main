@@ -1,7 +1,5 @@
 # 期权-意图识别（Dify DSL v2 同步版）
 
-- **node_id**: `1755073106378`
-- **model**: `external-qwen3.6-35b-a3b-non-thinking`
 - **决策来源**: Dify DSL v2 迁移（分支 feature/dify-dsl-migration，P2 option 域）
 - **范围**: 8 个 option 基础意图（不含 close_order_*，归 close 子图；不再含
   `request_modify_order` / `confirm_modify_order`——期权无独立改单流程，改参数统一归
@@ -207,14 +205,4 @@ cancel vs request_cancel 区分:
 
 ---
 
-```
-
-## [user]
-
-```
-raw_content：用户原始消息
-quote_content：用户引用消息
-history_query_str：历史对话
-bot_name_list：机器人名称列表
-shortname_list：候选交易对手列表
 ```
