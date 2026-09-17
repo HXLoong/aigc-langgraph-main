@@ -11,10 +11,9 @@ from typing import Any
 import pytest
 
 from app.subgraphs.close.backend import call_close_backend
-from app.tools.models import CommonResult
 
 
-def _patch_operate(monkeypatch: pytest.MonkeyPatch, result: CommonResult) -> list[Any]:
+def _patch_operate(monkeypatch: pytest.MonkeyPatch, result: dict[str, Any]) -> list[Any]:
     captured: list[Any] = []
 
     async def _fake_operate(self, req):  # type: ignore[no-untyped-def]
@@ -41,7 +40,7 @@ class TestCallCloseBackend:
     async def test_missing_context_returns_empty_dict_without_network(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        captured = _patch_operate(monkeypatch, CommonResult(code=0, data="x"))
+        captured = _patch_operate(monkeypatch, {"code": 0, "data": "x"})
         result = await call_close_backend(
             {"raw_text": "x"}, intent="close_order_query", close_order_req_vo={}
         )
@@ -51,7 +50,7 @@ class TestCallCloseBackend:
     async def test_sends_close_order_req_vo_not_order_list(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        captured = _patch_operate(monkeypatch, CommonResult(code=0, data="ok"))
+        captured = _patch_operate(monkeypatch, {"code": 0, "data": "ok"})
         req_vo = {"confirmOrderNoList": ["CO-A"]}
         await call_close_backend(
             FULL_STATE, intent="close_order_confirm", close_order_req_vo=req_vo
@@ -66,7 +65,7 @@ class TestCallCloseBackend:
     async def test_sanitizes_null_literal_before_sending(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        captured = _patch_operate(monkeypatch, CommonResult(code=0, data="ok"))
+        captured = _patch_operate(monkeypatch, {"code": 0, "data": "ok"})
         req_vo = {"queryOrderNoList": ["null", "CO-B"]}
         await call_close_backend(
             FULL_STATE, intent="close_order_order_query", close_order_req_vo=req_vo
@@ -77,7 +76,7 @@ class TestCallCloseBackend:
     async def test_success_returns_code_and_data_verbatim(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        _patch_operate(monkeypatch, CommonResult(code=0, msg="ok", data="真实回执文案"))
+        _patch_operate(monkeypatch, {"code": 0, "msg": "ok", "data": "真实回执文案"})
         result = await call_close_backend(
             FULL_STATE, intent="close_order_query", close_order_req_vo={}
         )
@@ -89,7 +88,7 @@ class TestCallCloseBackend:
         """CLAUDE.md P0：不掩盖后端真实响应——失败时透传 msg，不本地伪造成功文案。"""
         _patch_operate(
             monkeypatch,
-            CommonResult(code=500, msg="交易指令服务暂不可用", data=None),
+            {"code": 500, "msg": "交易指令服务暂不可用", "data": None},
         )
         result = await call_close_backend(
             FULL_STATE, intent="close_order_request", close_order_req_vo={}
@@ -99,7 +98,7 @@ class TestCallCloseBackend:
     async def test_context_fields_mapped_from_state(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        captured = _patch_operate(monkeypatch, CommonResult(code=0, data="ok"))
+        captured = _patch_operate(monkeypatch, {"code": 0, "data": "ok"})
         await call_close_backend(
             FULL_STATE, intent="close_order_query", close_order_req_vo={}
         )

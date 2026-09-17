@@ -15,7 +15,6 @@ from app.subgraphs.close import cancel_close as cancel_module
 from app.subgraphs.close import confirm_close as confirm_module
 from app.subgraphs.close.cancel_close import close_cancel_close
 from app.subgraphs.close.confirm_close import close_confirm_close
-from app.tools.models import CommonResult
 
 _QUOTE_TWO = (
     "1. CO-20260304-4FE9C941（OPT-SZZSCF20260001）\n"
@@ -226,7 +225,7 @@ class TestCloseCancelCloseNode:
 
         async def _fake_operate(self, req):  # type: ignore[no-untyped-def]
             captured.append(req)
-            return CommonResult(code=0, msg="ok", data="撤单请求已提交")
+            return {"code": 0, "msg": "ok", "data": "撤单请求已提交"}
 
         monkeypatch.setattr(
             "app.tools.option_client.OptionClientHttpx.operate",

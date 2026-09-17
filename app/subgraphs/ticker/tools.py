@@ -527,7 +527,10 @@ RANK_SPEC = register(PromptSpec(
 async def _call_ticker_llm(spec: PromptSpec, user_message: str) -> Any | None:
     """按 SPEC 渲染 system（含日期注入）+ structured output 调用非 thinking 模型。
 
-    失败（网络异常 / 解析失败）返回 None，交由调用方按空结果降级处理，不抛出阻塞管线。
+    失败重试一次后返回 None，交由调用方按空结果降级处理，不抛出阻塞管线
+    （CLAUDE.md 既有约定：解析失败自带 1 次重试）。schema-echo 的根修在
+    models.py：命名字段 `results` 给 function calling 提供参数锚点，从源头
+    消除"把 schema 骨架当参数补全"的触发条件。
     """
     system, _prompt_name = spec.render_system({})
     model = spec.output_model
@@ -537,11 +540,16 @@ async def _call_ticker_llm(spec: PromptSpec, user_message: str) -> Any | None:
         SystemMessage(content=system),
         HumanMessage(content=user_message),
     ]
-    try:
-        return await llm.ainvoke(messages)
-    except Exception as exc:  # noqa: BLE001
-        logger.warning("ticker LLM 调用失败 prompt=%s: %s", spec.key, exc)
-        return None
+    last_error: Exception | None = None
+    for attempt in (1, 2):
+        try:
+            return await llm.ainvoke(messages)
+        except Exception as exc:  # noqa: BLE001
+            last_error = exc
+            if attempt == 1:
+                logger.warning("ticker LLM 首次调用失败将重试 prompt=%s: %s", spec.key, exc)
+    logger.warning("ticker LLM 调用失败 prompt=%s（重试后仍失败）: %s", spec.key, last_error)
+    return None
 
 
 async def infer_code_batch(candidates: list[str]) -> dict[str, Any]:
@@ -553,7 +561,7 @@ async def infer_code_batch(candidates: list[str]) -> dict[str, Any]:
         return {}
     user_message = json.dumps(candidates, ensure_ascii=False)
     out = await _call_ticker_llm(INFER_CODE_SPEC, user_message)
-    return dict(out.root) if out is not None else {}
+    return dict(out.results) if out is not None else {}
 
 
 async def split_ticker_keywords(candidates: list[str]) -> dict[str, Any]:
@@ -565,7 +573,7 @@ async def split_ticker_keywords(candidates: list[str]) -> dict[str, Any]:
         return {}
     user_message = f"标的列表：{json.dumps(candidates, ensure_ascii=False)}"
     out = await _call_ticker_llm(SPLIT_KEYWORDS_SPEC, user_message)
-    return dict(out.root) if out is not None else {}
+    return dict(out.results) if out is not None else {}
 
 
 async def judge_ticker_type(candidates: list[str]) -> dict[str, Any]:
@@ -577,12 +585,12 @@ async def judge_ticker_type(candidates: list[str]) -> dict[str, Any]:
         return {}
     user_message = json.dumps(candidates, ensure_ascii=False)
     out = await _call_ticker_llm(JUDGE_TYPE_SPEC, user_message)
-    return dict(out.root) if out is not None else {}
+    return dict(out.results) if out is not None else {}
 
 
 async def rank_candidates(
     keyword: str,
-    results: list[Any],
+    results: list[dict[str, Any]],
     predicted_ins_family: str = "",
     expected_transaction_type: str = "",
 ) -> list[str]:
@@ -601,15 +609,15 @@ async def rank_candidates(
         return []
     payload = [
         {
-            "windCode": r.wind_code,
-            "insShtDesc": r.ins_sht_desc,
-            "insLngDesc": r.ins_lng_desc,
-            "insFamily": getattr(r, "insFamily", None),
-            "currency": getattr(r, "currency", None),
-            "exchange": getattr(r, "exchange", None),
-            "tradableNow": getattr(r, "tradableNow", None),
-            "hasPermission": getattr(r, "hasPermission", None),
-            "transactionTypes": getattr(r, 'transaction_type_lists', None),
+            "windCode": r.get("windCode"),
+            "insShtDesc": r.get("insShtDesc"),
+            "insLngDesc": r.get("insLngDesc"),
+            "insFamily": r.get("insFamily"),
+            "currency": r.get("currency"),
+            "exchange": r.get("exchange"),
+            "tradableNow": r.get("tradableNow"),
+            "hasPermission": r.get("hasPermission"),
+            "transactionTypes": r.get("transactionTypeLists"),
         }
         for r in results
     ]

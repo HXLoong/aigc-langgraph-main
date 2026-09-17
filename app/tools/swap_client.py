@@ -8,14 +8,13 @@ from __future__ import annotations
 from datetime import datetime
 from decimal import Decimal
 from enum import StrEnum
-from typing import Protocol
+from typing import Any, Protocol
 
 import httpx
 from pydantic import ConfigDict, Field, field_validator
 
 from app.tools.http_pool import acquire_http_client
 from app.tools.models import (
-    CommonResult,
     GoatsAlgoType,
     GoatsOrderDirection,
     GoatsPriceType,
@@ -113,17 +112,20 @@ class SwapOrderOpenApiSaveReqVO(WireModel):
 
 
 class SwapClient(Protocol):
-    """互换操作客户端协议。"""
+    """互换操作客户端协议。
+
+    响应一律原样 dict 透传（Java 后端数据不做 Pydantic 建模/校验，2026-09 决定）。
+    """
 
     async def operate(
         self, req: SwapOrderOpenApiSaveReqVO
-    ) -> CommonResult: ...
+    ) -> dict[str, Any]: ...
 
-    async def get(self, order_id: str) -> CommonResult: ...
+    async def get(self, order_id: str) -> dict[str, Any]: ...
 
     async def get_conversation_orders(
         self, conversation_id: str
-    ) -> CommonResult: ...
+    ) -> dict[str, Any]: ...
 
 
 # ============================================================
@@ -177,17 +179,17 @@ class SwapClientHttpx:
 
     async def operate(
         self, req: SwapOrderOpenApiSaveReqVO
-    ) -> CommonResult:
+    ) -> dict[str, Any]:
         intent_value = req.type.value if hasattr(req.type, "value") else str(req.type)
         if self._dry_run and intent_value not in self._READ_INTENTS:
             from app.observability.metrics import emit_dry_run_intercept
 
             emit_dry_run_intercept("swap", f"operate:{intent_value}")
-            return CommonResult(
-                code=0,
-                msg="dry-run intercepted",
-                data={"orderId": f"DRY-RUN-{intent_value}"},
-            )
+            return {
+                "code": 0,
+                "msg": "dry-run intercepted",
+                "data": {"orderId": f"DRY-RUN-{intent_value}"},
+            }
 
         from app.tools.exceptions import translate_httpx_errors
 
@@ -199,9 +201,10 @@ class SwapClientHttpx:
         ):
             r = await client.post(url, json=payload, headers=self._headers, timeout=self._timeout)
             r.raise_for_status()
-            return CommonResult.model_validate(r.json())
+            response_body: dict[str, Any] = r.json()
+            return response_body
 
-    async def get(self, order_id: str) -> CommonResult:
+    async def get(self, order_id: str) -> dict[str, Any]:
         from app.tools.exceptions import translate_httpx_errors
 
         url = f"{self._base_url}/admin-api/swap-order/get"
@@ -211,11 +214,12 @@ class SwapClientHttpx:
         ):
             r = await client.get(url, params={"orderId": order_id}, headers=self._headers, timeout=self._timeout)
             r.raise_for_status()
-            return CommonResult.model_validate(r.json())
+            response_body: dict[str, Any] = r.json()
+            return response_body
 
     async def get_conversation_orders(
         self, conversation_id: str
-    ) -> CommonResult:
+    ) -> dict[str, Any]:
         from app.tools.exceptions import translate_httpx_errors
 
         url = f"{self._base_url}/admin-api/swap-order/get-conversation-orders"
@@ -230,4 +234,5 @@ class SwapClientHttpx:
                 timeout=self._timeout,
             )
             r.raise_for_status()
-            return CommonResult.model_validate(r.json())
+            response_body: dict[str, Any] = r.json()
+            return response_body

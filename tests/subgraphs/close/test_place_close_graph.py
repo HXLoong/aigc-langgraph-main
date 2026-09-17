@@ -10,7 +10,6 @@ from langgraph.graph.state import CompiledStateGraph
 from app.subgraphs.close import place_close as pc_module
 from app.subgraphs.close.models import CloseOrderItem, ClosePlaceParams
 from app.subgraphs.close.place_close import build_place_close_graph, close_place_close
-from app.tools.models import CommonResult
 
 STAGES = (
     "place_close_parse",
@@ -34,7 +33,7 @@ def _patch_llm(monkeypatch: pytest.MonkeyPatch, params: ClosePlaceParams) -> Asy
 
 def _patch_query(monkeypatch: pytest.MonkeyPatch, holdings: list[dict[str, Any]]) -> None:
     async def _fake_query(self, order_ids=None, contract_codes=None, **kwargs):  # type: ignore[no-untyped-def]
-        return CommonResult(code=0, msg="ok", data=holdings)
+        return {"code": 0, "msg": "ok", "data": holdings}
 
     monkeypatch.setattr(
         "app.subgraphs.close.place_close.OptionClientHttpx.query_close_orders", _fake_query
@@ -46,7 +45,7 @@ def _patch_operate(monkeypatch: pytest.MonkeyPatch) -> MagicMock:
 
     async def _fake_operate(self, req):  # type: ignore[no-untyped-def]
         captured(req)
-        return CommonResult(code=0, msg="ok", data="backend-card")
+        return {"code": 0, "msg": "ok", "data": "backend-card"}
 
     monkeypatch.setattr("app.subgraphs.close.place_close.OptionClientHttpx.operate", _fake_operate)
     return captured

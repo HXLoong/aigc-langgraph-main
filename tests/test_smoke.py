@@ -35,7 +35,6 @@ async def test_main_graph_e2e_swap_keyword(
         SwapPlaceOrderParams,
     )
     from app.subgraphs.ticker.resolver import TickerResolution
-    from app.tools.models import CommonResult
 
     def _patch(module: object, value: object, fn: str = "get_qwen_thinking") -> None:
         fake_llm = MagicMock()
@@ -45,7 +44,7 @@ async def test_main_graph_e2e_swap_keyword(
         monkeypatch.setattr(module, fn, lambda: fake_base)
 
     async def _fake_operate(self, req):  # type: ignore[no-untyped-def]
-        return CommonResult(code=0, msg="ok", data={"orderId": "H-20260828-0000000001"})
+        return {"code": 0, "msg": "ok", "data": {"orderId": "H-20260828-0000000001"}}
 
     monkeypatch.setattr(
         "app.tools.swap_client.SwapClientHttpx.operate", _fake_operate
@@ -213,7 +212,6 @@ async def test_main_graph_e2e_option_close_order_no(
         CloseOrderItem,
         ClosePlaceParams,
     )
-    from app.tools.models import CommonResult
 
     def _patch(module: object, value: object, fn: str = "get_qwen_thinking") -> None:
         fake_llm = MagicMock()
@@ -223,10 +221,10 @@ async def test_main_graph_e2e_option_close_order_no(
         monkeypatch.setattr(module, fn, lambda: fake_base)
 
     async def _fake_query_close_orders(self, order_ids=None, contract_codes=None):  # type: ignore[no-untyped-def]
-        return CommonResult(code=0, msg="ok", data=[])
+        return {"code": 0, "msg": "ok", "data": []}
 
     async def _fake_operate(self, req):  # type: ignore[no-untyped-def]
-        return CommonResult(code=0, msg="ok", data="mock-backend-result")
+        return {"code": 0, "msg": "ok", "data": "mock-backend-result"}
 
     monkeypatch.setattr(
         "app.tools.option_client.OptionClientHttpx.query_close_orders",

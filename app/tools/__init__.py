@@ -36,7 +36,6 @@ from app.tools.swap_client import (
 from app.tools.ticker_client import (
     KeywordItem,
     SecuritiesInstrumentReqVO,
-    SecuritiesInstrumentRespVO,
     TickerClient,
     TickerClientHttpx,
 )
@@ -65,7 +64,6 @@ __all__ = [
     # ticker
     "KeywordItem",
     "SecuritiesInstrumentReqVO",
-    "SecuritiesInstrumentRespVO",
     "TickerClient",
     "TickerClientHttpx",
 ]

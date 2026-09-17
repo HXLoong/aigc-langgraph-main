@@ -111,7 +111,7 @@ async def test_case_026_backend_orders_keep_their_ticker(monkeypatch, codes) -> 
     _patch_llm(monkeypatch, params)
     # Exercise request DTO construction too; only the external client is mocked.
     monkeypatch.setattr(ei_module, "call_option_backend", call_option_backend)
-    operate = AsyncMock(return_value=MagicMock(code=0, data="inquiry reply"))
+    operate = AsyncMock(return_value={"code": 0, "data": "inquiry reply"})
     monkeypatch.setattr(
         "app.subgraphs.option.backend.OptionClientHttpx",
         lambda: MagicMock(operate=operate),

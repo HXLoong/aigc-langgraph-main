@@ -88,7 +88,7 @@ async def test_swap_backend_real_path_via_mock_api(
 ) -> None:
     """业务 backend → 真 client → ASGITransport → mock_api 全链路 6 个 swap intent。
 
-    这条链路任何一环坏（payload 字段名错、URL 写错、CommonResult 反序列化变化）
+    这条链路任何一环坏（payload 字段名错、URL 写错、响应透传路径变化）
     都会在这里捕获 —— 与之前 unittest.mock 版本互补。
     """
     monkeypatch.setattr(

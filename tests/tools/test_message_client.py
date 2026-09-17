@@ -44,8 +44,8 @@ async def test_transient_failure_retries_once_after_100ms(
     )
     result = await client.set_intent(request_body)
 
-    assert result.code == 0
-    assert result.data is True
+    assert result["code"] == 0
+    assert result["data"] is True
     assert len(requests) == 2
     assert requests[0].content == requests[1].content
     sleep.assert_awaited_once_with(0.1)
@@ -98,7 +98,7 @@ async def test_set_intent_uses_java_wire_contract_and_auth_even_in_dry_run(
     result = await MessageClientHttpx(transport=httpx.MockTransport(handler)).set_intent(
         request_body,
     )
-    assert result.code == 0
+    assert result["code"] == 0
     assert len(requests) == 1
     request = requests[0]
     assert request.method == "POST"

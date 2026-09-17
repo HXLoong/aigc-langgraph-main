@@ -19,21 +19,27 @@ from app.subgraphs.ticker.models import (
 
 class TestTickerOutputModels:
     def test_dict_models_validate_dynamic_mappings(self):
-        assert InferCodeOutput.model_validate({"贵州茅台": ["600519.SH"]}).root == {
-            "贵州茅台": ["600519.SH"]
-        }
-        assert SplitKeywordsOutput.model_validate({"02513智谱": ["02513"]}).root == {
-            "02513智谱": ["02513"]
-        }
-        assert JudgeTypeOutput.model_validate({"贵州茅台": "EQUITY"}).root == {
-            "贵州茅台": "EQUITY"
-        }
+        """数据装在命名字段 results 下（schema-echo 根修的锚点形态）。"""
+        assert InferCodeOutput.model_validate(
+            {"results": {"贵州茅台": ["600519.SH"]}}
+        ).results == {"贵州茅台": ["600519.SH"]}
+        assert SplitKeywordsOutput.model_validate(
+            {"results": {"02513智谱": ["02513"]}}
+        ).results == {"02513智谱": ["02513"]}
+        assert JudgeTypeOutput.model_validate(
+            {"results": {"贵州茅台": "EQUITY"}}
+        ).results == {"贵州茅台": "EQUITY"}
 
     def test_dict_models_reject_wrong_value_types(self):
         with pytest.raises(ValidationError):
-            InferCodeOutput.model_validate({"贵州茅台": "600519.SH"})
+            InferCodeOutput.model_validate({"results": {"贵州茅台": "600519.SH"}})
         with pytest.raises(ValidationError):
-            SplitKeywordsOutput.model_validate({"02513智谱": [1, 2]})
+            SplitKeywordsOutput.model_validate({"results": {"02513智谱": [1, 2]}})
+
+    def test_dict_models_require_results_anchor(self):
+        """裸 object（旧 RootModel 形态）缺 results 锚点必须校验失败。"""
+        with pytest.raises(ValidationError):
+            InferCodeOutput.model_validate({"贵州茅台": ["600519.SH"]})
 
     def test_rank_output_is_plain_model(self):
         assert RankOutput(ranked_codes=["600519.SH"]).ranked_codes == ["600519.SH"]
@@ -46,3 +52,11 @@ class TestTickerOutputModels:
             assert tool["type"] == "function"
             parameters = tool["function"]["parameters"]
             assert parameters["type"] == "object"
+
+    def test_dict_models_expose_named_results_property(self):
+        """schema-echo 根修锁：工具 schema 必须带 properties.results 锚点（禁止裸 object）。"""
+        for model in (InferCodeOutput, SplitKeywordsOutput, JudgeTypeOutput):
+            tool = convert_to_openai_tool(model)
+            parameters = tool["function"]["parameters"]
+            assert "results" in parameters["properties"]
+            assert parameters["properties"]["results"]["type"] == "object"

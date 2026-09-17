@@ -13,7 +13,6 @@ from pydantic import ConfigDict, Field, field_validator
 
 from app.tools.http_pool import acquire_http_client
 from app.tools.models import (
-    CommonResult,
     GoatsOrderDirection,
     GoatsPriceType,
 )
@@ -154,17 +153,20 @@ class FinancialOrderOpenApiSaveReqVO(WireModel):
 
 
 class OptionClient(Protocol):
-    """期权操作客户端协议。"""
+    """期权操作客户端协议。
+
+    响应一律原样 dict 透传（Java 后端数据不做 Pydantic 建模/校验，2026-09 决定）。
+    """
 
     async def operate(
         self, req: FinancialOrderOpenApiSaveReqVO
-    ) -> CommonResult: ...
+    ) -> dict[str, Any]: ...
 
     async def query_close_orders(
         self,
         order_ids: list[str] | None = None,
         contract_codes: list[str] | None = None,
-    ) -> CommonResult: ...
+    ) -> dict[str, Any]: ...
 
 
 # ============================================================
@@ -227,17 +229,17 @@ class OptionClientHttpx:
 
     async def operate(
         self, req: FinancialOrderOpenApiSaveReqVO
-    ) -> CommonResult:
+    ) -> dict[str, Any]:
         intent_value = req.type.value if hasattr(req.type, "value") else str(req.type)
         if self._dry_run and intent_value not in self._READ_INTENTS:
             from app.observability.metrics import emit_dry_run_intercept
 
             emit_dry_run_intercept("option", f"operate:{intent_value}")
-            return CommonResult(
-                code=0,
-                msg="dry-run intercepted",
-                data={"orderId": f"DRY-RUN-{intent_value}"},
-            )
+            return {
+                "code": 0,
+                "msg": "dry-run intercepted",
+                "data": {"orderId": f"DRY-RUN-{intent_value}"},
+            }
 
         from app.tools.exceptions import translate_httpx_errors
 
@@ -250,7 +252,8 @@ class OptionClientHttpx:
         ):
             r = await client.post(url, json=payload, headers=self._headers, timeout=self._timeout)
             r.raise_for_status()
-            return CommonResult.model_validate(r.json())
+            response_body: dict[str, Any] = r.json()
+            return response_body
 
     async def query_close_orders(
         self,
@@ -258,7 +261,7 @@ class OptionClientHttpx:
         contract_codes: list[str] | None = None,
         room_id: str | None = None,
         message_id: int | None = None,
-    ) -> CommonResult:
+    ) -> dict[str, Any]:
         """查可平仓订单数据（contracts §2.x）。
 
         真后端按 orderIds + contractCodes 过滤；roomId/messageId 对齐
@@ -281,4 +284,5 @@ class OptionClientHttpx:
         ):
             r = await client.post(url, json=payload, headers=self._headers, timeout=self._timeout)
             r.raise_for_status()
-            return CommonResult.model_validate(r.json())
+            response_body: dict[str, Any] = r.json()
+            return response_body

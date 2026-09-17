@@ -15,7 +15,6 @@ from app.config import get_settings
 from app.graph.main import build_main_graph
 from app.nodes.intent_route import UnknownIntentOutput
 from app.tools.message_client import MessageClientHttpx
-from app.tools.models import CommonResult
 
 
 @pytest.fixture()
@@ -158,7 +157,7 @@ def test_business_branch_persists_latest_intent_after_operate(
         async def operate(self, req):
             events.append("operate")
             operate_requests.append(req)
-            return CommonResult(code=0, data="BACKEND_CARD")
+            return {"code": 0, "data": "BACKEND_CARD"}
 
     monkeypatch.setattr("app.subgraphs.option.backend.OptionClientHttpx", BusinessClient)
     monkeypatch.setattr("app.subgraphs.close.backend.OptionClientHttpx", BusinessClient)

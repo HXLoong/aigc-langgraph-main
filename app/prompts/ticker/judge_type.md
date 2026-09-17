@@ -18,6 +18,7 @@
 
 ## 输出格式
 严格输出纯 JSON，禁止使用 markdown 代码块包裹，禁止任何额外文字。
-key 必须是原始输入项原文，value 是上述枚举之一或空串：
-{"原始输入1": "EQUITY", "原始输入2": "FUND", "原始输入3": ""}
+【参数形态硬约束 - 极重要】结果必须**直接是**下面这一形态：数据全部放在 `results` 字段里；禁止出现 properties / additionalProperties / parameters / items / type / title 等 JSON Schema 关键字——那是 schema 描述，不是数据。
+`results` 的 key 必须是原始输入项原文，value 是上述枚举之一或空串：
+{"results": {"原始输入1": "EQUITY", "原始输入2": "FUND", "原始输入3": ""}}
 ```

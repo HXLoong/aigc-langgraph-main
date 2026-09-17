@@ -30,15 +30,17 @@ def ticker_api(monkeypatch):
         if options["reverse"]:
             candidates.reverse()
         if model is JudgeTypeOutput:
-            return JudgeTypeOutput.model_validate({value: "EQUITY" for value in candidates})
+            return JudgeTypeOutput.model_validate(
+                {"results": {value: "EQUITY" for value in candidates}}
+            )
         data = {
             value: ([value, value.split(".")[0], "858"] if value.upper().startswith("000858")
                     else ["600519.SH"] if value == "茅台" else [value])
             for value in candidates
         }
         if model is SplitKeywordsOutput:
-            return SplitKeywordsOutput.model_validate(data)
-        return InferCodeOutput.model_validate(data)
+            return SplitKeywordsOutput.model_validate({"results": data})
+        return InferCodeOutput.model_validate({"results": data})
 
     def make_structured(model):
         class _Structured:

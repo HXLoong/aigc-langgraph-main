@@ -59,9 +59,9 @@ def graph_boundaries(
                      SwapIntentOutput(type="place_order_request"))
     patch_structured(monkeypatch, place_order, "get_qwen_complex", params)
     empty_outputs = {
-        InferCodeOutput: InferCodeOutput.model_validate({}),
-        SplitKeywordsOutput: SplitKeywordsOutput.model_validate({}),
-        JudgeTypeOutput: JudgeTypeOutput.model_validate({}),
+        InferCodeOutput: InferCodeOutput.model_validate({"results": {}}),
+        SplitKeywordsOutput: SplitKeywordsOutput.model_validate({"results": {}}),
+        JudgeTypeOutput: JudgeTypeOutput.model_validate({"results": {}}),
         RankOutput: RankOutput(ranked_codes=[]),
     }
 
