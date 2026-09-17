@@ -52,12 +52,18 @@ async def my_node(state: AgentState) -> dict[str, Any]:
     result = await risky_operation()
     return {"result": result}
 
-# ✅ 正确：HTTP 客户端用 tenacity
-@retry(stop=stop_after_attempt(3),
-       wait=wait_exponential(multiplier=0.5, max=4.0),
-       retry=retry_if_exception_type(httpx.TimeoutException))
-async def _post(self, path, payload):
+# ✅ 正确：只读 IO 节点（LLM / 后端查询）用 @io_node + add_io_node 注册（ADR 0024 D3）
+#    可重试异常（BackendUnreachableError / LLM 限流超时）穿透给 LangGraph RetryPolicy，
+#    耗尽后由节点级 error_handler 落 state['error']；写类节点永远用 @safe_node，不重试
+from app.graph.retry import add_io_node, io_node
+
+@io_node
+async def swap_query_order(state: AgentState) -> dict[str, Any]:
     ...
+add_io_node(g, "swap_query_order", swap_query_order)
+
+# ❌ 错误：在 Client 里自己写 tenacity 重试——重试对图不可见，且写类接口重试会重复下单
+# ❌ 错误：每次请求 new httpx.AsyncClient()——走 app.tools.http_pool.acquire_http_client（lifespan 单例池）
 
 # ❌ 错误：裸 try/except Exception
 try:
@@ -101,6 +107,11 @@ logger.info("msg=%s latency=%dms", msg_id, latency)   # 用 % 格式化
 print(...)                  # 生产代码不要 print
 logger.info(f"msg={msg_id}")  # 不要 f-string（丢失结构化日志能力）
 ```
+
+日志由 `app/observability/logs.py` 统一配置（structlog 接管 stdlib，ADR 0024 D5）：`LOG_FORMAT=json` 时每条是一行
+JSON，`/v1/workflows/run` 期间自动带 `trace_id` / `conversation_id` / `message_id`（contextvars，
+`bound_request_context`）。不要在模块里 `basicConfig` / 自己加 handler；需要额外上下文键用
+`structlog.contextvars.bind_contextvars`，不要拼进消息文本。
 
 ## 命名
 

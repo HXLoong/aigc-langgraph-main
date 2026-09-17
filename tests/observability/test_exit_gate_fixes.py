@@ -33,17 +33,19 @@ class TestCascadeDenominator:
 
 
 class TestP95ExcludesNodeSamples:
-    def test_node_labeled_buckets_ignored(self) -> None:
-        """带 node= label 的桶（emit_node_completed 写入）不进 P95。"""
-        text = """
-otc_agent_intent_latency_ms_bucket{product_type="unknown",intent="unknown",node="ingest",le="100"} 50
-otc_agent_intent_latency_ms_bucket{product_type="unknown",intent="unknown",node="ingest",le="+Inf"} 50
-otc_agent_intent_latency_ms_bucket{product_type="swap",intent="place_order_request",le="5000"} 10
-otc_agent_intent_latency_ms_bucket{product_type="swap",intent="place_order_request",le="+Inf"} 10
-"""
-        result = parse_prometheus_metrics(text)
-        # 只剩端到端样本（10 条全落在 le=5000 桶内）→ P95 ≤ 5000
-        assert 0 < result["p95_latency_ms"] <= 5000
+    def test_node_samples_live_in_their_own_histogram(self) -> None:
+        """ADR 0024 D5：节点延迟独立直方图，P95 解析器无需再按 node= label 过滤。"""
+        from app.observability import metrics
+
+        metrics.get_collector().reset()
+        for _ in range(50):
+            metrics.emit_node_completed(node="ingest", status="ok", elapsed_ms=40)
+        for _ in range(10):
+            metrics.emit_intent_latency("swap", "place_order_request", 4000)
+        result = parse_prometheus_metrics(metrics.get_collector().render_prometheus())
+        metrics.get_collector().reset()
+        # 只有端到端样本进 P95（10 条全在 le=5000 桶）；50 条 40ms 节点样本不拉低它
+        assert 2000 < result["p95_latency_ms"] <= 5000
 
     def test_request_level_buckets_counted(self) -> None:
         text = """

@@ -7,7 +7,7 @@ request_cancel_order（针对已正式送出订单的撤单请求）。原 LLM �
 "全部撤单"未指定时从 quote 取全部；均无 → orderId: null。
 
 输入：raw_text + quote_content
-输出：state['cancel_params'] = {expected_action: "request_cancel", orderList} + 后端调用结果
+输出：state['expected_action'] = "cancel" + state['cancel_params'] = {orderList} + 后端调用结果
 """
 from __future__ import annotations
 
@@ -36,9 +36,8 @@ async def option_extract_cancel(state: AgentState) -> dict[str, Any]:
     )
 
     return {
-        "cancel_params": validated_cancel_params(
-            expected_action="request_cancel", orderList=order_list
-        ),
+        "expected_action": "cancel",
+        "cancel_params": validated_cancel_params(orderList=order_list),
         **backend,
         "trace": [
             TraceEntry(

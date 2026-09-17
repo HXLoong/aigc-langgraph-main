@@ -1,29 +1,27 @@
 """提示词加载器。
 
-从 `app/prompts/**/*.md` 中加载由 `scripts/export_dify_prompts.py` 导出的提示词。
+从 `app/prompts/**/*.md` 加载提示词（git 是唯一真源，ADR 0024 D1）。
 当 ENABLE_LANGFUSE=true 且 use_langfuse_prompts=true 时，优先从 Langfuse 拉取，
 失败时回退到本地 .md 文件。
 
 md 格式约定：
     # 提示词标题
-    - **node_id**: `...`
-    - **model**: `...`
 
     ## [system]
     ```
-    <system 提示词内容>
+    <system 提示词内容；由代码渲染的 {{var}} 占位符须在 PromptSpec.injects 登记>
     ```
 
-    ## [user]
+    ## [user]        ← 仅当 user 含规则文本时才有（先例 swap/place_order.md）
     ```
-    <user 模板，可能包含 {{#node.var#}} 变量占位符>
+    <user 模板，{{var}} 经 render_user() 渲染>
     ```
 
 使用方式：
     from app.prompts import load_prompt
     p = load_prompt("swap", "intent")
     # p.system → str
-    # p.user_template → str（原始 Dify 占位符未替换）
+    # p.user_template → str（{{var}} 未渲染）
     # p.config → dict（Langfuse 附带的 model / temperature 等，本地加载时为 None）
 """
 from __future__ import annotations
@@ -48,16 +46,11 @@ class Prompt:
     """单条提示词，包含 system 与 user 两部分。"""
     name: str
     system: str
-    user_template: str   # 可能包含 Dify 占位符 {{#xxx.yyy#}}
+    user_template: str   # {{var}} 模板；无 [user] 段时为空串
     config: dict | None = None  # Langfuse 附带的 model / temperature 等
 
     def render_user(self, **kwargs: str) -> str:
-        """把 user_template 中的 {{variable_name}} 占位符替换成实际值。
-
-        注意：此方法只替换简单的 {{name}} 占位符。
-        Dify 原始占位符（{{#node_id.var#}}）会被保留在原文中，
-        视为大模型能够理解的上下文信息。
-        """
+        """把 user_template 中的 {{variable_name}} 占位符替换成实际值；未提供的占位符原样保留。"""
         text = self.user_template
         for k, v in kwargs.items():
             text = text.replace("{{" + k + "}}", str(v) if v is not None else "")

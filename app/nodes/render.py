@@ -9,7 +9,7 @@ from typing import Any
 
 from app.config import get_settings
 from app.graph.safe_node import safe_node
-from app.graph.state import AgentState
+from app.graph.state import AgentState, TraceEntry
 from app.observability.metrics import emit_fallback, emit_hitl
 
 # ============================================================
@@ -123,6 +123,12 @@ def _render_close_card(o: dict[str, Any], state: AgentState) -> str:
 
 @safe_node
 async def render(state: AgentState) -> dict[str, Any]:
+    """渲染回复；每个分支在 trace 里留下 decision（ADR 0024 D3：决策树可观测）。"""
+    update, decision = _render_branch(state)
+    return {**update, "trace": [TraceEntry(node="render", decision=decision)]}
+
+
+def _render_branch(state: AgentState) -> tuple[dict[str, Any], str]:
     """生成 reply_text，供 API 层透传企微。
 
     优先级：
@@ -139,16 +145,15 @@ async def render(state: AgentState) -> dict[str, Any]:
     """
     # 1. 子图已生成 reply_text → 透传
     if state.get("reply_text"):
-        return {}
+        return {}, "passthrough"
 
-    place = state.get("place_params") or {}
     product_type = state.get("product_type")
     api_result = state.get("api_result")
     is_option = product_type in ("option", "option_close")
 
     # 业务卡片与拒绝消息均由后端生成，优先于本地 HITL/零命中状态且不改写。
     if api_result is not None:
-        return {"reply_text": str(api_result)}
+        return {"reply_text": str(api_result)}, "api_result"
 
     err = state.get("error")
     err_type = None
@@ -158,23 +163,23 @@ async def render(state: AgentState) -> dict[str, Any]:
         )
     if is_option and err_type == "MissingBackendContextError":
         emit_fallback(reason="option_backend_missing_context")
-        return {"reply_text": _OPTION_MISSING_CONTEXT_REPLY}
+        return {"reply_text": _OPTION_MISSING_CONTEXT_REPLY}, "error:option_backend_missing_context"
     if is_option and err_type == "EmptyBackendResultError":
         emit_fallback(reason="option_backend_empty_result")
-        return {"reply_text": _OPTION_NO_RESULT_REPLY}
+        return {"reply_text": _OPTION_NO_RESULT_REPLY}, "error:option_backend_empty_result"
     if product_type == "swap" and err_type == "MissingBackendContextError":
         emit_fallback(reason="swap_backend_missing_context")
-        return {"reply_text": _SWAP_MISSING_CONTEXT_REPLY}
+        return {"reply_text": _SWAP_MISSING_CONTEXT_REPLY}, "error:swap_backend_missing_context"
     if product_type == "swap" and err_type == "EmptyBackendResultError":
         emit_fallback(reason="swap_backend_empty_result")
-        return {"reply_text": _SWAP_NO_RESULT_REPLY}
+        return {"reply_text": _SWAP_NO_RESULT_REPLY}, "error:swap_backend_empty_result"
 
     # HITL 消歧
     hitl = state.get("ticker_hitl_candidates")
     if hitl:
         emit_hitl(node="render")
         emit_fallback(reason="hitl_card")
-        return {"reply_text": _format_hitl_card(hitl)}
+        return {"reply_text": _format_hitl_card(hitl)}, "hitl_card"
 
 
     # 4. 0 命中（标的为空且无有效订单参数）
@@ -183,21 +188,21 @@ async def render(state: AgentState) -> dict[str, Any]:
     if tickers is not None and len(tickers) == 0 and bool(place_params):
         emit_fallback(reason="zero_match")
         raw_text = (state.get("raw_text") or "")[:40]
-        return {"reply_text": _ZERO_HIT_TMPL.format(raw_text=raw_text)}
+        return {"reply_text": _ZERO_HIT_TMPL.format(raw_text=raw_text)}, "zero_match"
 
 
     # error → 区分不可达 vs 一般 cascade fail
     if err is not None:
         if err_type == "BackendUnreachableError":
             emit_fallback(reason="backend_unreachable")
-            return {"reply_text": _UNREACHABLE_REPLY}
+            return {"reply_text": _UNREACHABLE_REPLY}, "error:backend_unreachable"
         emit_fallback(reason="cascade_fail")
-        return {"reply_text": _ERROR_REPLY}
+        return {"reply_text": _ERROR_REPLY}, "error:cascade_fail"
 
     # 7. product_type unknown
     if state.get("product_type") == "unknown":
         emit_fallback(reason="unknown_product_type")
-        return {"reply_text": "未识别到有效指令，请明确指定产品（期权/互换）和操作（询价/下单/撤单等）。"}
+        return {"reply_text": "未识别到有效指令，请明确指定产品（期权/互换）和操作（询价/下单/撤单等）。"}, "unknown_product_type"
 
     # 7b. known product + unknown_intent（option/swap/option_close 都用同一兜底）
     # Round 11 eval 暴露：option_unknown 节点只写 trace 不写 reply，render 也没分支
@@ -206,13 +211,13 @@ async def render(state: AgentState) -> dict[str, Any]:
         emit_fallback(reason="unknown_intent")
         quote = state.get("quote_content") or ""
         if "请引用本消息" in quote or "-----" in quote:
-            return {"reply_text": "未能识别您的指令，请按引用消息中提示的格式补充缺失参数（如交易对手、名义本金、建仓指令等）。"}
-        return {"reply_text": "未能识别您的指令，请重新描述（例如：询价、下单、撤单、平仓等）。"}
+            return {"reply_text": "未能识别您的指令，请按引用消息中提示的格式补充缺失参数（如交易对手、名义本金、建仓指令等）。"}, "unknown_intent:quoted_template"
+        return {"reply_text": "未能识别您的指令，请重新描述（例如：询价、下单、撤单、平仓等）。"}, "unknown_intent"
 
     intent = state.get("intent") or ""
     if product_type == "swap" and intent in _SWAP_OPERATE_INTENTS:
         emit_fallback(reason="swap_backend_no_result")
-        return {"reply_text": _SWAP_NO_RESULT_REPLY}
+        return {"reply_text": _SWAP_NO_RESULT_REPLY}, "swap_backend_no_result"
 
     # 8. 从结构化参数生成期权业务回复
     close = state.get("close_params") or {}
@@ -228,7 +233,7 @@ async def render(state: AgentState) -> dict[str, Any]:
             "reply_text": (
                 f"已收到期权平仓确认请求，平仓订单（{order_str}）已提交，等待交易员审核。"
             )
-        }
+        }, "option_close_confirm"
 
     # 8b. 期权确认下单；互换确认结果必须来自 operate。
     # intent 守卫：仅 confirm_* 意图本轮才走此分支，避免 multi-turn state 泄漏。
@@ -237,23 +242,23 @@ async def render(state: AgentState) -> dict[str, Any]:
         and confirm.get("orderList")
         and "confirm" in intent
     ):
-        return {"reply_text": "期权订单已确认提交，订单已接收、等待交易员审核。"}
+        return {"reply_text": "期权订单已确认提交，订单已接收、等待交易员审核。"}, "option_confirm_place"
 
     # 期权询价没有后端结果时绝不本地拼装报价卡片。
-    if product_type == "option" and place.get("expected_action") == "inquiry":
+    if product_type == "option" and state.get("expected_action") == "inquiry":
         emit_fallback(reason="option_backend_no_result")
-        return {"reply_text": _OPTION_NO_RESULT_REPLY}
+        return {"reply_text": _OPTION_NO_RESULT_REPLY}, "option_backend_no_result"
 
     if close.get("closeOrderList"):
-        return {"reply_text": _render_close_card(close["closeOrderList"][0], state)}
+        return {"reply_text": _render_close_card(close["closeOrderList"][0], state)}, "close_card"
     if cancel.get("cancelOrderNoList"):
-        return {"reply_text": f"已收到撤单请求，订单号: {', '.join(cancel['cancelOrderNoList'])}"}
+        return {"reply_text": f"已收到撤单请求，订单号: {', '.join(cancel['cancelOrderNoList'])}"}, "cancel_ack"
 
     # 撤单 intent 但未抽到订单号（quote_content 不是订单卡）→ 引导用户引用
     if "cancel" in intent:
-        return {"reply_text": "未识别到要撤销的订单号，请引用上次询价/下单的消息卡后回复【撤单】。"}
+        return {"reply_text": "未识别到要撤销的订单号，请引用上次询价/下单的消息卡后回复【撤单】。"}, "cancel_missing_order_no"
     # 确认意图但未抽到订单号 → 同样引导
     if "confirm" in intent:
-        return {"reply_text": "未识别到要确认的订单号，请引用上次报价/订单卡后回复【确认下单】或【确认撤单】。"}
+        return {"reply_text": "未识别到要确认的订单号，请引用上次报价/订单卡后回复【确认下单】或【确认撤单】。"}, "confirm_missing_order_no"
 
-    return {}
+    return {}, "no_reply"

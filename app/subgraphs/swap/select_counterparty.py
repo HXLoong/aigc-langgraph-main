@@ -8,8 +8,9 @@
 
 输入：raw_text（=raw_content）/ swap_counterparties（=shortname_list）/
       quote_content
-输出：state['place_params']（orderList[i].placeOrderShortname 被指针覆盖，
-      非破坏——LLM 无信号或解析空时保留 swap.place_order 抽取的原值）
+输出：state['swap_counterparty_picks']（LLM 指针 {hasSignal, picks}）。确定性查表覆盖
+      placeOrderShortname 收敛到 swap_apply_picks 汇合节点（ADR 0024 重构 3），本节点
+      因而可与 swap.select_ticker 并行
 
 LLM：complex 模型（对齐 Dify external-deepseek-v4-pro-non-thinking）+
      with_structured_output（ADR 0010）。
@@ -19,12 +20,10 @@ from __future__ import annotations
 
 from typing import Any
 
-from app.graph.business_params import validated_place_params
-from app.graph.safe_node import safe_node
+from app.graph.retry import io_node
 from app.graph.state import AgentState, TraceEntry
 from app.llm.clients import get_qwen_complex
 from app.prompts.spec import PromptSpec, register
-from app.subgraphs.swap.aggregate import apply_counterparty
 from app.subgraphs.swap.models import SwapSelectCounterpartyOutput
 
 
@@ -60,34 +59,22 @@ SPEC = register(PromptSpec(
 ))
 
 
-@safe_node
+@io_node
 async def swap_select_counterparty(state: AgentState) -> dict[str, Any]:
     """swap.select_counterparty 节点。
 
-    读取 state['place_params']['orderList']（swap.place_order 已产出的草稿），
-    用 LLM 指针 + swap_counterparties 确定性查表覆盖 placeOrderShortname，
-    写回 state['place_params']。
+    只产出 LLM 指针到 state['swap_counterparty_picks']；覆盖草稿的确定性查表在
+    swap_apply_picks 完成。
     """
     llm = get_qwen_complex().with_structured_output(SwapSelectCounterpartyOutput)
     messages, _prompt_name = SPEC.build_messages(state)
     result: Any = await llm.ainvoke(messages)
 
-    place_params = state.get("place_params") or {}
-    order_list = [dict(item) for item in (place_params.get("orderList") or [])]
-    trs_list = state.get("swap_counterparties") or []
-
-    apply_counterparty(
-        order_list,
-        result.has_signal,
-        [p.model_dump() for p in result.picks],
-        trs_list,
-    )
-
     return {
-        "place_params": validated_place_params(
-            expected_action=place_params.get("expected_action", ""),
-            orderList=order_list,
-        ),
+        "swap_counterparty_picks": {
+            "hasSignal": result.has_signal,
+            "picks": [p.model_dump() for p in result.picks],
+        },
         "trace": [
             TraceEntry(
                 node="swap_select_counterparty",

@@ -15,7 +15,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from app.graph.safe_node import safe_node
+from app.graph.retry import io_node
 from app.graph.state import AgentState, TraceEntry
 from app.llm.clients import get_qwen_thinking
 from app.prompts import blocks
@@ -53,7 +53,7 @@ SPEC = register(PromptSpec(
 ))
 
 
-@safe_node
+@io_node
 async def swap_intent(state: AgentState) -> dict[str, Any]:
     """swap.intent 节点。
 

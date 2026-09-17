@@ -158,14 +158,14 @@ class TestCounterpartyListInjection:
     async def test_placeholder_rendered_with_state_counterparties(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """Dify 原 system 里的 {{#1772773805306.optionListStr#}} 曾原样发给 LLM，
+        """system 里的 {{counterparty_list}} 曾原样发给 LLM（未注入），
         keyCtptyIdList 的模糊匹配规则整段悬空，任何"对手XX"都会输出哨兵 99999999。"""
         ainvoke = _patch_llm(monkeypatch, HoldingQueryParams(closeable_only=False))
         await close_holding_query(
             {"raw_text": "查对手阿凡提的持仓", "option_counterparties": self._CPS}
         )
         system_content = ainvoke.call_args.args[0][0][1]
-        assert "{{#1772773805306.optionListStr#}}" not in system_content
+        assert "{{counterparty_list}}" not in system_content
         assert "临沂阿凡提" in system_content
         assert "10049" in system_content
 

@@ -20,6 +20,7 @@ from typing import Any, Protocol
 import httpx
 
 from app.config import get_settings
+from app.tools.http_pool import acquire_http_client
 
 RFQ_PARSER_PATH = "/internal/agent/option_rfq_instrument_parser"
 INSTRUCTION_QUERY_PATH = "/internal/agent/instruction/query"
@@ -97,14 +98,13 @@ class GoatsAgentClientHttpx:
     ) -> tuple[int | None, httpx.Response | None]:
         """返回 (http_status, response);网络异常 → (None, None)。"""
         try:
-            async with httpx.AsyncClient(
-                # 内网 GOATS 直连，避免 Windows 系统代理返回 502。
-                timeout=timeout, transport=self._transport, trust_env=False
-            ) as client:
+            # 内网 GOATS 直连（池 trust_env=False，避免 Windows 系统代理返回 502）
+            async with acquire_http_client(timeout=timeout, transport=self._transport) as client:
                 resp = await client.post(
                     self._base_url + path,
                     headers=self._headers(room_id, user_id),
                     json=body,
+                    timeout=timeout,
                 )
                 return resp.status_code, resp
         except httpx.HTTPError:

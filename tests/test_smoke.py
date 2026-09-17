@@ -118,8 +118,9 @@ async def test_main_graph_e2e_swap_keyword(
     assert any(
         e.decision == "rule→互换-文本" for e in intent_route_entries
     )
-    # 验证 swap.place_order 真节点写入了 place_params
-    assert final.get("place_params", {}).get("expected_action") == "place"
+    # 验证 swap.place_order 真节点写入了 place_params 与顶层 expected_action
+    assert final.get("expected_action") == "place"
+    assert "orderList" in final.get("place_params", {})
 
 
 @pytest.mark.asyncio
@@ -185,6 +186,8 @@ async def test_main_graph_trace_is_isolated_per_turn(
 
     expected = [
         "ingest", "pre_route", "intent_route", "fallback", "persist_intent", "persist", "render",
+        "remember_confirmed_params",  # ADR 0024 D4：ConversationMemory 写入点
+        "record_history",  # ADR 0024 阶段 0：record_history 纳入 @safe_node，自动记 trace
     ]
     assert [entry.node for entry in first["trace"]] == expected
     assert [entry.node for entry in second["trace"]] == expected

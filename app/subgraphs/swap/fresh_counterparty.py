@@ -22,10 +22,10 @@ def _user_from_state(state: AgentState) -> str:
         ensure_ascii=False,
     )
     prompt = load_prompt("swap", "fresh_counterparty")
-    return prompt.render_user(**{
-        "#1755072621769.raw_content#": state.get("raw_text") or "",
-        "#1772773805306.trsShortListStr#": shortname_list,
-    })
+    return prompt.render_user(
+        raw_content=state.get("raw_text") or "",
+        shortname_list=shortname_list,
+    )
 
 
 SPEC = register(PromptSpec(

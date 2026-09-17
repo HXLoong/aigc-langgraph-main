@@ -52,19 +52,36 @@ class TestIngestPerTurnReset:
         update = await ingest(state)  # type: ignore[arg-type]
         assert update.get("error") is None
 
-    async def test_ingest_preserves_business_state(self) -> None:
-        """业务字段（tickers/history_messages/conversation_id 等）不该被 ingest 清除。"""
+    async def test_ingest_resets_business_objects_but_keeps_memory(self) -> None:
+        """ADR 0024 D2：业务对象是 per-turn 的——上一轮残留的 place_params / cancel_params /
+        close_params 会被 render 当本轮结果渲染成"已收到撤单请求"（状态串线）。
+        ingest 统一清空；跨轮记忆只保留 history_messages（与入口字段 conversation_id 等）。"""
         state: dict = {
             "raw_text": "确认下单",
             "tickers": ["dummy_ticker"],
+            "place_params": {"orderList": [{}]},
+            "expected_action": "place",
+            "cancel_params": {"cancelOrderNoList": ["H-1"]},
             "history_messages": ["msg1"],
             "conversation_id": "conv-001",
         }
         update = await ingest(state)  # type: ignore[arg-type]
-        # tickers / history_messages / conversation_id 不应出现在 update 里
-        # （ingest 不动业务对象，保留原值）
-        assert "tickers" not in update
+        for key in (
+            "tickers", "expected_action", "place_params", "cancel_params", "confirm", "query_filter",
+            "close_params", "ticker_hitl_candidates", "swap_counterparty_picks", "swap_ticker_picks",
+        ):
+            assert key in update and update[key] is None, key
         assert "history_messages" not in update
+        assert "conversation_id" not in update
+        assert "last_confirmed_params" not in update, "ConversationMemory 跨轮保留"
+
+    async def test_ingest_resets_trace_for_new_turn(self) -> None:
+        """一轮的边界只在 ingest 维护：trace 用 Overwrite 清空上一轮，再记本轮 ingest。"""
+        from langgraph.types import Overwrite
+
+        update = await ingest({"raw_text": "x", "trace": ["stale-entry"]})  # type: ignore[arg-type]
+        assert isinstance(update["trace"], Overwrite)
+        assert [e.node for e in update["trace"].value] == ["ingest"]
 
 
 @pytest.mark.asyncio

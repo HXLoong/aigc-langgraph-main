@@ -1,6 +1,6 @@
 # GOATS API 接口测试
 
-测试 GOATS 对客机器人全部 20 个后端接口，覆盖期权、互换、交易对手、Dify。
+测试 GOATS 对客机器人全部 20 个后端接口，覆盖期权、互换、交易对手。
 
 ## 一键运行
 
@@ -39,7 +39,6 @@ python tests/api/test_15_trs_withdraw.py      # 互换撤单（链式：下单�
 | 17 | test_17_trs_replace_results.py | 互换改单状态查询 | 下单 → 改单 → 查状态 |
 | 18 | test_18_ctpty_list.py | 交易对手查询 | - |
 | 19 | test_19_trading_hours.py | 交易时间配置查询 | - |
-| 20 | test_20_dify_rerank.py | Dify 大模型 rerank | - |
 
 ## 文件结构
 
@@ -50,7 +49,6 @@ tests/api/
 ├── README.md
 ├── test_01_option_rfq.py
 ├── ...
-└── test_20_dify_rerank.py
 ```
 
 ## 依赖
@@ -61,5 +59,4 @@ tests/api/
 ## 说明
 
 - 链式接口（撤单、改单、状态查询）内部已包含前置步骤，直接运行即可
-- Dify 接口需要 Bearer token，已在 `_utils.py` 中配置
 - 接口 05（期权撤单）在测试环境无可撤订单时返回 50003，属正常行为

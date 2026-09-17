@@ -1,8 +1,5 @@
 # 大模型判断标的类型
 
-- **node_id**: `1782200000003`
-- **model**: `external-deepseek-v4-pro-non-thinking`
-
 ## [system]
 
 ```
@@ -23,11 +20,4 @@
 严格输出纯 JSON，禁止使用 markdown 代码块包裹，禁止任何额外文字。
 key 必须是原始输入项原文，value 是上述枚举之一或空串：
 {"原始输入1": "EQUITY", "原始输入2": "FUND", "原始输入3": ""}
-```
-
-## [user]
-
-```
-{{#1775735613760.result#}}
-
 ```

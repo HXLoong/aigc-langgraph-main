@@ -1,8 +1,5 @@
 # 期权平仓-意图识别
 
-- **node_id**: `1772589205439`
-- **model**: `external-qwen3.6-35b-a3b-non-thinking`
-
 ## [system]
 
 ```
@@ -203,12 +200,5 @@
 
 
 仅输出一个意图code（如 close_order_query），不要输出其他任何内容。如果无法识别为以上任何意图，则输出 unknown_intent。
-
-```
-
-## [user]
-
-```
-{{#1755072621769.raw_content#}}
 
 ```

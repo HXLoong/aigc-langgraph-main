@@ -17,12 +17,12 @@ class TestOutputByteIdentical:
     """输出必须与历史直接写 dict 的形状逐字节一致（只含调用方提供的键）。"""
 
     def test_swap_place(self) -> None:
-        out = validated_place_params(expected_action="place", orderList=[{"orderId": "H-1"}])
-        assert out == {"expected_action": "place", "orderList": [{"orderId": "H-1"}]}
+        out = validated_place_params(orderList=[{"orderId": "H-1"}])
+        assert out == {"orderList": [{"orderId": "H-1"}]}
 
     def test_option_inquiry_empty_orderlist(self) -> None:
-        out = validated_place_params(expected_action="inquiry", orderList=[])
-        assert out == {"expected_action": "inquiry", "orderList": []}
+        out = validated_place_params(orderList=[])
+        assert out == {"orderList": []}
 
     def test_swap_cancel_only_orderlist(self) -> None:
         assert validated_cancel_params(orderList=[{"a": 1}]) == {"orderList": [{"a": 1}]}
@@ -51,7 +51,14 @@ class TestValidationFailsFast:
 
     def test_wrong_type_rejected(self) -> None:
         with pytest.raises(ValidationError):
-            validated_place_params(expected_action="place", orderList="not-a-list")
+            validated_place_params(orderList="not-a-list")
+
+    def test_expected_action_no_longer_lives_in_envelopes(self) -> None:
+        """ADR 0024 D2：动作类别是 AgentState 顶层字段，信封再收该键即 fail-fast。"""
+        with pytest.raises(ValidationError):
+            validated_place_params(expected_action="place", orderList=[])
+        with pytest.raises(ValidationError):
+            validated_cancel_params(expected_action="cancel", orderList=[])
 
     def test_confirm_unknown_key_rejected(self) -> None:
         with pytest.raises(ValidationError):

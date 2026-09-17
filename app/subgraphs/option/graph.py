@@ -23,13 +23,14 @@ from langgraph.graph import END, START, StateGraph
 from langgraph.graph.state import CompiledStateGraph
 
 from app.graph.cascade import has_error
+from app.graph.retry import add_io_node
 from app.graph.safe_node import safe_node
-from app.graph.state import AgentState, TraceEntry
+from app.graph.state import AgentState, SubgraphOutput, TraceEntry
 from app.subgraphs.option.extract_cancel import option_extract_cancel
 from app.subgraphs.option.extract_cancel_place import option_extract_cancel_place
 from app.subgraphs.option.extract_confirm_cancel import option_extract_confirm_cancel
 from app.subgraphs.option.extract_confirm_place import option_extract_confirm_place
-from app.subgraphs.option.extract_inquiry import option_extract_inquiry
+from app.subgraphs.option.extract_inquiry import build_inquiry_graph
 from app.subgraphs.option.extract_place import option_extract_place
 from app.subgraphs.option.extract_query import option_extract_query
 from app.subgraphs.option.intent import option_intent
@@ -71,15 +72,15 @@ def _route_after_option_intent(state: AgentState) -> str:
 
 def build_option_graph() -> CompiledStateGraph:
     """构建 option 子图（7 意图 : 7 真节点一一对应，Dify DSL v2）。"""
-    g: StateGraph = StateGraph(AgentState)
-    g.add_node("option_intent", option_intent)
-    g.add_node("option_extract_inquiry", option_extract_inquiry)
+    g: StateGraph = StateGraph(AgentState, output_schema=SubgraphOutput)
+    add_io_node(g, "option_intent", option_intent)
+    g.add_node("option_extract_inquiry", build_inquiry_graph())  # 子图原生嵌入（ADR 0024 D3）
     g.add_node("option_extract_place", option_extract_place)
     g.add_node("option_extract_confirm_place", option_extract_confirm_place)
     g.add_node("option_extract_cancel_place", option_extract_cancel_place)
     g.add_node("option_extract_cancel", option_extract_cancel)
     g.add_node("option_extract_confirm_cancel", option_extract_confirm_cancel)
-    g.add_node("option_extract_query", option_extract_query)
+    add_io_node(g, "option_extract_query", option_extract_query)
     g.add_node("option_unknown", option_unknown)
 
     g.add_edge(START, "option_intent")

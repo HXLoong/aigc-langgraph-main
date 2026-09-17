@@ -5,12 +5,12 @@
 windCode）。
 
 只在 place_order_request 分支、且 quote_content 非空且非 "null" 时调用
-（图 3-4 段边）；swap.select_counterparty 之后顺序执行（LangGraph 并行非必需）。
+（图 3-4 段边）；与 swap.select_counterparty 并行（ADR 0024 重构 3）。
 
 输入：raw_text（=raw_content）/ quote_content /
       quote_ticker_candidates（=candidate_list）
-输出：state['place_params']（orderList[i].placeOrderWindCode 被指针覆盖，
-      非破坏——candidate_list 为空、或 LLM 未切换/解析空时保留原值）
+输出：state['swap_ticker_picks']（LLM 指针列表；candidate_list 为空 → [] 且跳过 LLM）。
+      确定性查表覆盖 placeOrderWindCode 收敛到 swap_apply_picks 汇合节点
 
 LLM：complex 模型（对齐 Dify external-deepseek-v4-pro-non-thinking）+
      with_structured_output（ADR 0010）。
@@ -21,12 +21,10 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from app.graph.business_params import validated_place_params
-from app.graph.safe_node import safe_node
+from app.graph.retry import io_node
 from app.graph.state import AgentState, TraceEntry
 from app.llm.clients import get_qwen_complex
 from app.prompts.spec import PromptSpec, register
-from app.subgraphs.swap.aggregate import apply_underlying
 from app.subgraphs.swap.models import SwapSelectTickerOutput
 
 
@@ -51,27 +49,19 @@ SPEC = register(PromptSpec(
 ))
 
 
-@safe_node
+@io_node
 async def swap_select_ticker(state: AgentState) -> dict[str, Any]:
     """swap.select_ticker 节点。
 
-    读取 state['place_params']['orderList']（swap.place_order / 已经过
-    swap.select_counterparty 覆盖的草稿），用 LLM 指针 +
-    quote_ticker_candidates 确定性查表覆盖 placeOrderWindCode，写回
-    state['place_params']。
+    只产出 LLM 指针到 state['swap_ticker_picks']；覆盖草稿的确定性查表在
+    swap_apply_picks 完成。
     """
     candidate_list = state.get("quote_ticker_candidates") or []
 
-    place_params = state.get("place_params") or {}
-    order_list = [dict(item) for item in (place_params.get("orderList") or [])]
-
     if not candidate_list:
-        # Dify 原节点语义：candidate_list 为空 → 不可能切标的，跳过 LLM 调用
+        # candidate_list 为空 → 不可能切标的，跳过 LLM 调用
         return {
-            "place_params": validated_place_params(
-                expected_action=place_params.get("expected_action", ""),
-                orderList=order_list,
-            ),
+            "swap_ticker_picks": [],
             "trace": [
                 TraceEntry(
                     node="swap_select_ticker",
@@ -84,13 +74,8 @@ async def swap_select_ticker(state: AgentState) -> dict[str, Any]:
     messages, _prompt_name = SPEC.build_messages(state)
     result: Any = await llm.ainvoke(messages)
 
-    apply_underlying(order_list, [p.model_dump() for p in result.picks], candidate_list)
-
     return {
-        "place_params": validated_place_params(
-            expected_action=place_params.get("expected_action", ""),
-            orderList=order_list,
-        ),
+        "swap_ticker_picks": [p.model_dump() for p in result.picks],
         "trace": [
             TraceEntry(
                 node="swap_select_ticker",

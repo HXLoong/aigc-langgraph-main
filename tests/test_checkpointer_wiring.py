@@ -18,7 +18,10 @@ import app.main as app_main
 
 
 def _settings(environment: str, use_cp: bool) -> SimpleNamespace:
-    return SimpleNamespace(environment=environment, use_mysql_checkpointer=use_cp)
+    return SimpleNamespace(
+        environment=environment, use_mysql_checkpointer=use_cp, backend_timeout_seconds=30.0,
+        log_level="INFO", log_format="console",
+    )
 
 
 class TestLifespanWiring:
@@ -71,3 +74,113 @@ def test_settings_field_default_off() -> None:
     from app.config import Settings
 
     assert Settings.model_fields["use_mysql_checkpointer"].default is False
+
+
+class _FakePool:
+    def __init__(self) -> None:
+        self.closed = False
+        self.wait_closed_called = False
+
+    def close(self) -> None:
+        self.closed = True
+
+    async def wait_closed(self) -> None:
+        self.wait_closed_called = True
+
+
+class _FakeSaver:
+    instances: list[_FakeSaver] = []
+    # 真实 saver 的连接串解析是纯函数，直接复用
+    from langgraph.checkpoint.mysql.aio import AIOMySQLSaver as _Real
+
+    parse_conn_string = staticmethod(_Real.parse_conn_string)
+
+    def __init__(self, conn, serde=None) -> None:  # type: ignore[no-untyped-def]
+        self.conn = conn
+        self.serde = serde
+        self.setup_called = False
+        _FakeSaver.instances.append(self)
+
+    async def setup(self) -> None:
+        self.setup_called = True
+
+
+def _pool_settings() -> SimpleNamespace:
+    return SimpleNamespace(
+        checkpoint_mysql_uri="mysql://u:p@h:3307/db",
+        checkpoint_pool_minsize=2,
+        checkpoint_pool_maxsize=7,
+        checkpoint_pool_recycle_seconds=1234,
+    )
+
+
+@pytest.mark.asyncio
+async def test_init_checkpointer_uses_connection_pool_with_recycle(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """ADR 0024 D4：from_conn_string 只持有一条连接、无重连（saver 内部一把锁串行化全部 IO，
+    连接被 wait_timeout 杀掉后全站失忆）。生产必须用 aiomysql 连接池 + pool_recycle。"""
+    from unittest.mock import AsyncMock
+
+    import app.checkpointer.factory as factory
+
+    pool = _FakePool()
+    create_pool = AsyncMock(return_value=pool)
+    _FakeSaver.instances.clear()
+    monkeypatch.setattr(factory, "get_settings", _pool_settings)
+    monkeypatch.setattr(factory.aiomysql, "create_pool", create_pool)
+    monkeypatch.setattr(factory, "AIOMySQLSaver", _FakeSaver)
+
+    saver = await factory.init_checkpointer()
+    try:
+        kwargs = create_pool.call_args.kwargs
+        assert kwargs["host"] == "h" and kwargs["port"] == 3307 and kwargs["db"] == "db"
+        assert kwargs["autocommit"] is True
+        assert kwargs["minsize"] == 2 and kwargs["maxsize"] == 7
+        assert kwargs["pool_recycle"] == 1234
+        assert saver.conn is pool, "saver 必须持有连接池而不是单条连接"
+        assert saver.setup_called
+        allowed = {name for _mod, name in saver.serde._allowed_msgpack_modules}  # noqa: SLF001
+        assert {"TickerCandidate", "Message", "TraceEntry"} <= allowed
+    finally:
+        await factory.close_checkpointer()
+    assert pool.closed and pool.wait_closed_called
+
+
+@pytest.mark.asyncio
+async def test_probe_checkpointer_uses_saver_pool(monkeypatch: pytest.MonkeyPatch) -> None:
+    """/ready 的 mysql 探针必须打 saver 自己的连接池，而不是另开一条新连接。"""
+    from contextlib import asynccontextmanager
+    from unittest.mock import AsyncMock, MagicMock
+
+    import app.checkpointer.factory as factory
+
+    cur = MagicMock()
+    cur.execute = AsyncMock()
+    cur.fetchone = AsyncMock(return_value=(1,))
+
+    @asynccontextmanager
+    async def _cursor():  # type: ignore[no-untyped-def]
+        yield cur
+
+    conn = MagicMock()
+    conn.cursor = _cursor
+
+    @asynccontextmanager
+    async def _acquire():  # type: ignore[no-untyped-def]
+        yield conn
+
+    pool = MagicMock()
+    pool.acquire = _acquire
+    monkeypatch.setattr(factory, "_pool", pool)
+    await factory.probe_checkpointer()
+    cur.execute.assert_awaited_once_with("SELECT 1")
+
+
+@pytest.mark.asyncio
+async def test_probe_checkpointer_without_pool_raises() -> None:
+    import app.checkpointer.factory as factory
+
+    factory._pool = None  # noqa: SLF001
+    with pytest.raises(RuntimeError):
+        await factory.probe_checkpointer()

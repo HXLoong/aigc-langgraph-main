@@ -5,15 +5,14 @@ M2 阶段：intent_route 已实现真三层路由（ADR 0015）；子图逐一�
 """
 from __future__ import annotations
 
-from collections.abc import Awaitable, Callable
-from typing import Any
+from collections.abc import Callable
 
-from langchain_core.runnables import RunnableConfig, RunnableLambda
+from langchain_core.runnables import RunnableLambda
 from langgraph.checkpoint.base import BaseCheckpointSaver
 from langgraph.graph import END, START, StateGraph
 from langgraph.graph.state import CompiledStateGraph
-from langgraph.types import Overwrite
 
+from app.graph.retry import add_io_node
 from app.graph.state import AgentState
 from app.nodes.fallback import fallback
 from app.nodes.fast_query import (
@@ -28,6 +27,7 @@ from app.nodes.persist import persist
 from app.nodes.persist_intent import make_persist_intent
 from app.nodes.pre_route import pre_route
 from app.nodes.record_history import record_history
+from app.nodes.remember_confirmed import remember_confirmed_params
 from app.nodes.render import render
 from app.subgraphs.close import build_close_graph
 from app.subgraphs.option import build_option_graph
@@ -74,36 +74,14 @@ def _route_after_intent(state: AgentState) -> str:
 # ============================================================
 
 
-def _as_subgraph_node(
-    graph: CompiledStateGraph,
-) -> Callable[[AgentState, RunnableConfig], Awaitable[dict[str, Any]]]:
-    """让父图直接接收子图已经合并完成的 reducer 字段。"""
-
-    async def run(state: AgentState, config: RunnableConfig) -> dict[str, Any]:
-        result = await graph.ainvoke(state, config=config)
-        updates: dict[str, Any] = dict(result)
-        for key in ("trace", "history_messages"):
-            if key in result:
-                updates[key] = Overwrite(result[key])
-        return updates
-
-    return run
-
-
-def _reset_turn_trace(_: AgentState) -> dict[str, Any]:
-    """新 turn 开始时清空上一轮 trace。"""
-    return {"trace": Overwrite([])}
-
-
 def build_main_graph(
     checkpointer: BaseCheckpointSaver | None = None,
     message_client_factory: Callable[[], MessageClient] | None = None,
-    attach_langfuse_callbacks: bool = True,
 ) -> CompiledStateGraph:
     """组装并编译主图（DSL v2 拓扑）。
 
     流程：
-        START → reset_turn_trace → ingest → [route_entry] →
+        START → ingest（一轮边界：清 trace / per-turn 输出与业务对象，ADR 0024 D2）→ [route_entry] →
             quick_inquiry | existing_command_query          （前置分支,直达 persist）
           | pre_route → intent_route → [route_after_intent] →
                 swap | option | option_close | fallback
@@ -115,23 +93,24 @@ def build_main_graph(
     """
     g: StateGraph = StateGraph(AgentState)
 
-    g.add_node("reset_turn_trace", _reset_turn_trace)
     g.add_node("ingest", ingest)
     g.add_node("quick_inquiry", quick_inquiry)
-    g.add_node("existing_command_query", existing_command_query)
+    add_io_node(g, "existing_command_query", existing_command_query)
     g.add_node("pre_route", pre_route)
-    g.add_node("intent_route", intent_route)
-    g.add_node("swap", _as_subgraph_node(build_swap_graph()))
-    g.add_node("option", _as_subgraph_node(build_option_graph()))
-    g.add_node("option_close", _as_subgraph_node(build_close_graph()))
+    add_io_node(g, "intent_route", intent_route)
+    # ADR 0024 D3：子图原生嵌入。子图 output_schema=SubgraphOutput 限定写回面，
+    # trace 按 id 合并（merge_by_id），父图不再需要 ainvoke + Overwrite 手工包装
+    g.add_node("swap", build_swap_graph())
+    g.add_node("option", build_option_graph())
+    g.add_node("option_close", build_close_graph())
     g.add_node("fallback", fallback)
     g.add_node("persist_intent", RunnableLambda(make_persist_intent(message_client_factory)))
     g.add_node("persist", persist)
     g.add_node("render", render)
+    g.add_node("remember_confirmed_params", remember_confirmed_params)
     g.add_node("record_history", record_history)
 
-    g.add_edge(START, "reset_turn_trace")
-    g.add_edge("reset_turn_trace", "ingest")
+    g.add_edge(START, "ingest")
     g.add_conditional_edges(
         "ingest",
         _route_entry,
@@ -158,49 +137,13 @@ def build_main_graph(
         g.add_edge(sub, "persist")
     g.add_edge("persist_intent", "persist")
     g.add_edge("persist", "render")
-    g.add_edge("render", "record_history")
+    g.add_edge("render", "remember_confirmed_params")
+    g.add_edge("remember_confirmed_params", "record_history")
     g.add_edge("record_history", END)
 
-    compiled = (
-        g.compile(checkpointer=checkpointer)
-        if checkpointer is not None
-        else g.compile()
-    )
-    return _attach_langfuse_callbacks(compiled) if attach_langfuse_callbacks else compiled
-
-
-def _attach_langfuse_callbacks(compiled: CompiledStateGraph) -> CompiledStateGraph:
-    """如果配置了 Langfuse，自动把 CallbackHandler 注入到 graph 调用，
-    让云端 eval / 业务调用都能拿到 per-node trace（LLM 调用 / latency / token）。
-
-    使用 with_config 而不是 monkey-patch ainvoke：with_config 是 LangChain 官方
-    机制，会把默认 callbacks 通过 RunnableConfig.merge 合并到每次调用，调用方
-    自带的 callbacks 仍然生效。
-    """
-    try:
-        from app.config import get_settings
-        settings = get_settings()
-        if not (settings.enable_langfuse and settings.langfuse_public_key and settings.langfuse_secret_key):
-            return compiled
-
-        import os
-
-        from langfuse.langchain import CallbackHandler  # type: ignore[import-not-found]
-
-        # langfuse v4 CallbackHandler 只读 os.environ；先回填 env
-        os.environ.setdefault("LANGFUSE_PUBLIC_KEY", settings.langfuse_public_key)
-        os.environ.setdefault("LANGFUSE_SECRET_KEY", settings.langfuse_secret_key)
-        os.environ.setdefault("LANGFUSE_BASE_URL", settings.langfuse_base_url)
-
-        handler = CallbackHandler()
-        return compiled.with_config(callbacks=[handler])
-    except Exception as exc:  # noqa: BLE001
-        # Langfuse 未安装 / 网络异常 → 不阻断业务，返回未包装图；
-        # #155 裁决：从静默升为 warning——生产 LangFuse 挂掉必须有信号
-        import logging
-
-        logging.getLogger(__name__).warning("Langfuse CallbackHandler 注入失败，trace 降级：%s", exc)
-        return compiled
+    # LangFuse 不在图级注入（ADR 0024 D5）：统一由 app/api/routes.py 按请求把 handler 放进
+    # config["callbacks"]，生产与开发同一条 trace_id / session 契约
+    return g.compile(checkpointer=checkpointer) if checkpointer is not None else g.compile()
 
 
 __all__ = ["build_main_graph"]

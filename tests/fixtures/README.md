@@ -25,19 +25,34 @@
 
 当前主集已由历史的 `g` 编号、单轮平铺结构迁移为产品编号和 `conversation` 结构。恢复独立锚点文件，避免为了满足旧检查而覆盖当前主集或改写其编号。快照用于历史追溯，不代表其中所有旧意图仍适用于当前业务契约。
 
-## 3. 测试工作台兼容性
+## 3. 现役加载器：`harness/golden.py`（ADR 0024 D6）
 
-`scripts/ai_test_langgraph` 会扫描本目录下的 JSONL 文件，并兼容三种记录：
+`harness.golden.load_golden()` 是唯一现役加载器（`python -m harness run` 与
+`scripts/langfuse_eval.py --local` 共用），默认发现 `categories/*.jsonl` + 本目录
+`unified_golden.jsonl`，共 1310 条（多轮 260 条），三种方言归一化为同一 `GoldenCase`：
 
-- 当前黄金集的 `id + conversation[]` 格式：按顺序执行全部 `raw_content`；后续轮次的
-  `quote_desc` 非空时引用上一轮实际回复。
-- 标的集的 `id + raw_content` 单轮格式。
-- 历史回归的 `name + send_text + sub_scenes[]` 格式，可为每轮配置独立断言。
+| 方言 | 文件 | 形状 | case 级 `expected` 落点 |
+| --- | --- | --- | --- |
+| A | `categories/*.jsonl` | `name/caseNo + send_text + sub_scenes[]`，每轮可带独立断言 | 首轮 |
+| B | `unified_golden.jsonl` | `id + conversation[{raw_content, quote_desc}]` + `expected{product_type, intent, output}` | 单轮：首轮；多轮：`any_turn`（任一已执行轮同时命中 product_type + intent 即通过，因为 B 的 expected 描述的是焦点轮，可能是末轮或中间轮） |
+| raw | 标的回归集 | `id + raw_content` 单轮 | 首轮 |
 
-工作台当前确定性校验 `expected.product_type`、`expected.intent`、`winner/winners`、
-`needs_hitl` 以及 `response_contains`、`response_not_contains` 等文本规则；
-`expected.output` 仅保留为人工或 Judge 评估说明。常用格式和示例见
-[LangGraph 自动化测试工具](../../scripts/ai_test_langgraph/README.md)。
+B 方言约定：后续轮 `quote_desc` 非空 → 引用上一轮实际回复；首轮的 `quote_desc`（198 条上下文
+依赖 case）无回复可引，只保留在 `TurnSpec.quote_desc` 供概览与人工判读。某轮 `raw_content`
+为空（当前 48 条，用户文本被写进了 `quote_desc`）的 case 会被标 `skip_reason`，加载计数照常但
+runner / eval 跳过并打印数量；这类记录与 9 条 `product_type=query`（运行时无此取值）都在
+`scripts/check_fixture_consistency.py --verbose` 的 WARNING 里列出，归 Issue #113 业务方 review。
+
+一个文件只放一种方言：`categories/` 出现 `conversation` / `raw_content`、或 `unified_golden.jsonl`
+出现 `send_text` / `sub_scenes` 都是 lint 错误；id 跨两份文件唯一。
+
+harness 的判定口径：`PASS` / `FAIL` / `REJECTED`（后端业务拒绝且无其它 diff，单独成桶，不计入 PASS 率）；
+早停（节点错误 / 业务拒绝 / 技术错误）后未执行的轮次逐轮记 `runtime` 失败，多轮 case 不会因早停静默通过。
+`--backend dry-run` 要求服务端 `/health` 报告 `backend_mode=dry-run`（`DRY_RUN_BACKEND=true`），否则拒绝启动；
+反之 `--backend real|mock` 打在 dry-run 服务端也会被拦，避免拿假结果当回归基线。
+
+`scripts/ai_test_langgraph/` 是早期工作台，仍能读三种记录，但已不是 gate（ADR 0024 D6 标
+deprecated），新增校验只进 `harness/`。
 
 ## 4. 一致性要求
 
@@ -49,13 +64,12 @@
 
 ## 5. 更新与检查
 
-```powershell
-$env:PYTHONUTF8 = '1'
-.venv/Scripts/python.exe scripts/merge_golden.py
-.venv/Scripts/python.exe scripts/check_fixture_consistency.py --verbose
+```bash
+python scripts/check_fixture_consistency.py --verbose   # A + B 两份现役文件；WARNING 为业务方待修数据
+python -m harness run --data tests/fixtures/unified_golden.jsonl --limit 5   # 只跑 B 方言
 ```
 
-新增或修改业务回归记录时，先更新当前主集，再执行同步与一致性检查。历史 QA 和业务种子快照保持可追溯，不用于覆盖当前业务预期。
+新增或修改业务回归记录时，按文件方言写入，再跑一致性检查（历史 `merge_golden.py` 已不存在，不再有"同步"步骤）。历史 QA 和业务种子快照保持可追溯，不用于覆盖当前业务预期。
 
 ## 6. 全新交易对手节点回归集
 

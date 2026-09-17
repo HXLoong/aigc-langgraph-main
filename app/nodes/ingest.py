@@ -8,6 +8,8 @@ from __future__ import annotations
 import uuid
 from typing import Any
 
+from langgraph.types import Overwrite
+
 from app.graph.safe_node import safe_node
 from app.graph.state import AgentState
 from app.observability.canary import is_canary_room
@@ -22,11 +24,14 @@ async def ingest(state: AgentState) -> dict[str, Any]:
     （contracts §2.1 §3.1）放进 state。本节点不做任何业务决策，
     product_type 路由完全交给 `intent_route`。
 
-    Per-turn 输出重置：reply_text / api_result / api_code / error 是当轮节点的产物，
-    多轮 case 在 LangGraph checkpoint 模式下前一轮的值会留在 state，导致 render
-    检测到非空 reply_text 直接 return {} 跳过本轮渲染，最终回复用旧值。ingest
-    显式清空这些字段保证每轮干净起步。业务对象（tickers/history_messages/place_params
-    等）保留不动，多轮上下文照常工作。
+    一轮的边界只在这里维护（ADR 0024 D2）：
+    - per-turn 输出：reply_text / api_result / api_code / error 清空（否则 render 看到上一轮
+      非空 reply_text 直接跳过本轮渲染）
+    - per-turn 业务对象：tickers / place_params / cancel_params / confirm / query_filter /
+      close_params / ticker_hitl_candidates / swap 选择链指针通道清空。评估核实没有任何业务
+      节点把它们当"上一轮结果"读，唯一的读者是 render——残留会被渲染成"已收到撤单请求"
+      （状态串线）。跨轮记忆只保留 history_messages（与入口字段）
+    - trace：Overwrite 清空上一轮，本轮从 ingest 起记（@safe_node 会把自身条目写进 Overwrite）
 
     G5.1 金丝雀监控：每条请求按 roomId 判定 is_canary，emit metric。
     F4.2 期间非 canary 流量计数 ≥ 1 触发告警（误切 Webhook 兜底）。
@@ -44,4 +49,17 @@ async def ingest(state: AgentState) -> dict[str, Any]:
         "api_result": None,
         "api_code": None,
         "error": None,
+        # per-turn 业务对象（ADR 0024 D2）
+        "expected_action": None,
+        "tickers": None,
+        "place_params": None,
+        "cancel_params": None,
+        "confirm": None,
+        "query_filter": None,
+        "close_params": None,
+        "ticker_hitl_candidates": None,
+        "swap_counterparty_picks": None,
+        "swap_ticker_picks": None,
+        # 一轮边界：清上一轮 trace
+        "trace": Overwrite([]),
     }

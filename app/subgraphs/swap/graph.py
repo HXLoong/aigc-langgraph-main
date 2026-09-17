@@ -6,7 +6,8 @@ ADR 0001 D5/D6 + grill-with-docs 第 1 决策 + DSL v2「主干工作流」互�
 
     START → swap_intent → [route_by_intent]
         → swap_place_order → [quote_content 非空且非 "null"?]
-              ├─ 是 → swap_select_counterparty → swap_select_ticker → swap_place_order_submit
+              ├─ 是 → (swap_select_counterparty ‖ swap_select_ticker) → swap_apply_picks
+              │       → swap_place_order_submit
               └─ 否 → swap_recognize_fresh_counterparty → swap_place_order_submit
         → swap_confirm      (confirm_order / confirm_cancel_order /
                              confirm_modify_order，共用节点函数按 intent 切 prompt)
@@ -40,8 +41,10 @@ from langgraph.graph import END, START, StateGraph
 from langgraph.graph.state import CompiledStateGraph
 
 from app.graph.cascade import has_error
+from app.graph.retry import add_io_node
 from app.graph.safe_node import safe_node
-from app.graph.state import AgentState, TraceEntry
+from app.graph.state import AgentState, SubgraphOutput, TraceEntry
+from app.subgraphs.swap.apply_picks import swap_apply_picks
 from app.subgraphs.swap.cancel import swap_cancel
 from app.subgraphs.swap.confirm import swap_confirm
 from app.subgraphs.swap.fresh_counterparty import swap_recognize_fresh_counterparty
@@ -113,18 +116,18 @@ def _route_after_swap_intent(state: AgentState) -> str:
     return _INTENT_TO_NODE.get(intent, "swap_unknown")
 
 
-def _route_after_place_order(state: AgentState) -> str:
+def _route_after_place_order(state: AgentState) -> str | list[str]:
     """swap.place_order 后路由：互换-引用消息判空 if-else。
 
-    quote_content 非空且非 "null" → 需要标的/对手候选选择链（select_counterparty
-    → select_ticker）；否则先识别并校验全新下单交易对手，再提交。
+    quote_content 非空且非 "null" → 选对手 ‖ 选标的 **并行**分支（两个 LLM 调用同一
+    superstep，ADR 0024 重构 3），汇合到 swap_apply_picks；否则先识别并校验全新下单
+    交易对手，再提交。
     """
     if has_error(state):
         return "swap_unknown"
-    return (
-        "swap_select_counterparty" if _has_usable_quote(state)
-        else "swap_recognize_fresh_counterparty"
-    )
+    if _has_usable_quote(state):
+        return ["swap_select_counterparty", "swap_select_ticker"]
+    return "swap_recognize_fresh_counterparty"
 
 
 def _route_after_fresh_counterparty(state: AgentState) -> str:
@@ -132,31 +135,27 @@ def _route_after_fresh_counterparty(state: AgentState) -> str:
     return "swap_unknown" if has_error(state) else "swap_place_order_submit"
 
 
-def _route_after_select_counterparty(state: AgentState) -> str:
-    """swap.select_counterparty 后路由：cascade 防御，顺序进 select_ticker。"""
-    return "swap_unknown" if has_error(state) else "swap_select_ticker"
-
-
-def _route_after_select_ticker(state: AgentState) -> str:
-    """swap.select_ticker 后路由：cascade 防御，顺序进提交节点。"""
+def _route_after_apply_picks(state: AgentState) -> str:
+    """swap.apply_picks 汇合后路由：任一并行分支或汇合节点出错 → 兜底，否则提交。"""
     return "swap_unknown" if has_error(state) else "swap_place_order_submit"
 
 
 def build_swap_graph() -> CompiledStateGraph:
     """构建 swap 子图（主路由 6/6 意图全覆盖 + place_order 选择链）。"""
-    g: StateGraph = StateGraph(AgentState)
-    g.add_node("swap_intent", swap_intent)
-    g.add_node("swap_place_order", swap_place_order)
+    g: StateGraph = StateGraph(AgentState, output_schema=SubgraphOutput)
+    add_io_node(g, "swap_intent", swap_intent)
+    add_io_node(g, "swap_place_order", swap_place_order)
     g.add_node("swap_recognize_fresh_counterparty", RunnableLambda(swap_recognize_fresh_counterparty))
-    g.add_node("swap_select_counterparty", swap_select_counterparty)
-    g.add_node("swap_select_ticker", swap_select_ticker)
+    add_io_node(g, "swap_select_counterparty", swap_select_counterparty)
+    add_io_node(g, "swap_select_ticker", swap_select_ticker)
+    g.add_node("swap_apply_picks", swap_apply_picks)
     g.add_node("swap_place_order_submit", swap_place_order_submit)
     g.add_node("swap_confirm", swap_confirm)
     g.add_node("swap_cancel", swap_cancel)
-    g.add_node("swap_query_order", swap_query_order)
+    add_io_node(g, "swap_query_order", swap_query_order)
     g.add_node("swap_unknown", swap_unknown)
-    g.add_node("swap_image_order", swap_image_order)
-    g.add_node("swap_excel_order", swap_excel_order)
+    add_io_node(g, "swap_image_order", swap_image_order)
+    add_io_node(g, "swap_excel_order", swap_excel_order)
 
     g.add_conditional_edges(
         START,
@@ -192,6 +191,7 @@ def build_swap_graph() -> CompiledStateGraph:
         _route_after_place_order,
         {
             "swap_select_counterparty": "swap_select_counterparty",
+            "swap_select_ticker": "swap_select_ticker",
             "swap_recognize_fresh_counterparty": "swap_recognize_fresh_counterparty",
             "swap_unknown": "swap_unknown",
         },
@@ -204,17 +204,12 @@ def build_swap_graph() -> CompiledStateGraph:
             "swap_unknown": "swap_unknown",
         },
     )
+    # 并行分支汇合：两条边都进 swap_apply_picks，LangGraph 在同一 superstep 完成后再执行汇合节点
+    g.add_edge("swap_select_counterparty", "swap_apply_picks")
+    g.add_edge("swap_select_ticker", "swap_apply_picks")
     g.add_conditional_edges(
-        "swap_select_counterparty",
-        _route_after_select_counterparty,
-        {
-            "swap_select_ticker": "swap_select_ticker",
-            "swap_unknown": "swap_unknown",
-        },
-    )
-    g.add_conditional_edges(
-        "swap_select_ticker",
-        _route_after_select_ticker,
+        "swap_apply_picks",
+        _route_after_apply_picks,
         {
             "swap_place_order_submit": "swap_place_order_submit",
             "swap_unknown": "swap_unknown",

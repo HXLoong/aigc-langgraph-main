@@ -1,4 +1,15 @@
-"""Loader for the two active fixture dialects under tests/fixtures/categories."""
+"""现役 fixture 加载器：三种方言归一化为 GoldenCase（ADR 0024 D6）。
+
+- A 方言（`tests/fixtures/categories/*.jsonl`）：`name/caseNo + send_text + sub_scenes[]`，
+  每轮可带独立断言；case 级 `expected` 落到首轮。
+- B 方言（`tests/fixtures/unified_golden.jsonl`）：`id + conversation[{raw_content, quote_desc}]`
+  + case 级 `expected{product_type, intent, output}`。单轮时 expected 落到首轮；多轮时
+  expected 描述的是整段对话中的焦点轮（swap/confirm 是末轮、option/place_from_quote 是中间轮），
+  不落到任何一轮，改为 `expected_scope="any_turn"`：任一已执行轮命中即通过。
+- raw 方言（`id + raw_content` 单轮，标的回归集）：等价于单轮 A。
+
+一个文件只放一种方言；`categories/` 不接受 B / raw 字段（`scripts/check_fixture_consistency.py`）。
+"""
 from __future__ import annotations
 
 import json
@@ -17,6 +28,9 @@ class TurnSpec(BaseModel):
     send_text: str
     at_bot: bool = False
     quote_previous: bool | None = None
+    #: B 方言的引用说明原文（"用户引用上一条机器人消息"）；首轮标注了引用的上下文依赖 case
+    #: 无上一轮回复可引，只能留在这里供概览与人工判读
+    quote_desc: str = ""
     expected: dict[str, Any] = Field(default_factory=dict)
     response_contains: list[str] = Field(default_factory=list)
     response_contains_any: list[str] = Field(default_factory=list)
@@ -33,6 +47,14 @@ class GoldenCase(BaseModel):
     name: str = ""
     case_no: str = ""
     scene: str = ""
+    #: a / b / raw，见模块 docstring
+    dialect: str = "a"
+    #: first_turn：case 级 expected 已复制到 turns[0].expected（A、单轮 B、raw）；
+    #: any_turn：多轮 B，case 级 expected 由 differ.check_case_assertions 对所有已执行轮判定
+    expected_scope: str = "first_turn"
+    #: 非空即不可执行（如 B 方言某轮 raw_content 为空——用户文本被写进了 quote_desc，Issue #113）；
+    #: 加载与计数照常，runner / eval 用 select_runnable 跳过并显式报数
+    skip_reason: str = ""
     turns: list[TurnSpec] = Field(default_factory=list)
     expected: dict[str, Any] = Field(default_factory=dict)
     expected_output: str = ""
@@ -81,11 +103,56 @@ def _turn_from_object(
     )
 
 
-def normalize_case(obj: dict[str, Any], *, origin: str) -> GoldenCase:
-    legacy = {key for key in ("conversation", "raw_content") if key in obj}
-    if legacy:
-        raise ValueError(f"{origin}: legacy fields are not supported: {sorted(legacy)}")
+def _detect_dialect(obj: dict[str, Any], *, origin: str) -> str:
+    has_a = "send_text" in obj or "sub_scenes" in obj
+    has_b = "conversation" in obj
+    has_raw = "raw_content" in obj
+    if sum((has_a, has_b, has_raw)) > 1:
+        raise ValueError(f"{origin}: mixed dialects in one case (send_text / conversation / raw_content)")
+    if has_b:
+        return "b"
+    if has_raw:
+        return "raw"
+    return "a"
 
+
+def _b_turns(obj: dict[str, Any], *, origin: str) -> tuple[list[TurnSpec], str]:
+    """conversation[] → turns；返回 (turns, skip_reason)。缺 raw_content 键是 schema 错误；
+    键在但为空是数据缺陷：不抛，整条 case 标记不可执行。"""
+    conversation = obj.get("conversation")
+    if not isinstance(conversation, list) or not conversation:
+        raise ValueError(f"{origin}: conversation must be a non-empty list")
+    turns: list[TurnSpec] = []
+    empty_turns: list[int] = []
+    for index, turn in enumerate(conversation):
+        if not isinstance(turn, dict):
+            raise ValueError(f"{origin}: conversation[{index}] must be an object")
+        raw_content = turn.get("raw_content")
+        if not isinstance(raw_content, str):
+            raise ValueError(f"{origin}: conversation[{index}] requires raw_content")
+        if not raw_content.strip():
+            empty_turns.append(index)
+        quote_desc = str(turn.get("quote_desc") or "")
+        turns.append(
+            TurnSpec(
+                scene=f"第 {index + 1} 轮" if index else "",
+                send_text=raw_content,
+                at_bot=index == 0,
+                # 首轮无上一轮回复可引：quote_desc 只记录，不转成 quote_previous
+                quote_previous=(True if quote_desc else None) if index else None,
+                quote_desc=quote_desc,
+            )
+        )
+    skip_reason = (
+        f"conversation{empty_turns} has empty raw_content (user text lives in quote_desc)"
+        if empty_turns
+        else ""
+    )
+    return turns, skip_reason
+
+
+def normalize_case(obj: dict[str, Any], *, origin: str) -> GoldenCase:
+    dialect = _detect_dialect(obj, origin=origin)
     case_id = obj.get("id") or obj.get("caseNo")
     if not isinstance(case_id, str) or not case_id.strip():
         raise ValueError(f"{origin}: id or caseNo is required")
@@ -97,7 +164,18 @@ def normalize_case(obj: dict[str, Any], *, origin: str) -> GoldenCase:
     if not isinstance(expected, dict):
         raise ValueError(f"{origin}: expected must be an object")
 
-    turns = [_turn_from_object(obj, origin=origin, default_at_bot=True)]
+    expected_scope = "first_turn"
+    skip_reason = ""
+    if dialect == "b":
+        turns, skip_reason = _b_turns(obj, origin=origin)
+        if len(turns) == 1:
+            turns[0].expected = expected
+        else:
+            expected_scope = "any_turn"
+    elif dialect == "raw":
+        turns = [_turn_from_object({**obj, "send_text": obj["raw_content"]}, origin=origin, default_at_bot=True)]
+    else:
+        turns = [_turn_from_object(obj, origin=origin, default_at_bot=True)]
     sub_scenes = obj.get("sub_scenes") or []
     if not isinstance(sub_scenes, list):
         raise ValueError(f"{origin}: sub_scenes must be a list")
@@ -120,6 +198,9 @@ def normalize_case(obj: dict[str, Any], *, origin: str) -> GoldenCase:
         name=name,
         case_no=case_no,
         scene=str(obj.get("scene") or ""),
+        dialect=dialect,
+        expected_scope=expected_scope,
+        skip_reason=skip_reason,
         turns=turns,
         expected=expected,
         expected_output=str(expected.get("output") or ""),
@@ -141,15 +222,30 @@ def build_overview(case: GoldenCase) -> str:
     ]
     for i, turn in enumerate(case.turns, 1):
         if i > 1 and turn.quote_previous is not False:
-            lines.append(f"  第{i}轮: send_text={turn.send_text}; 引用上一轮机器人回复")
+            note = "引用上一轮机器人回复"
+        elif turn.quote_desc:
+            note = f"标注引用（首轮不可回放）: {turn.quote_desc}"
         else:
-            lines.append(f"  第{i}轮: send_text={turn.send_text}; 无引用")
+            note = "无引用"
+        lines.append(f"  第{i}轮: send_text={turn.send_text}; {note}")
     return "\n".join(lines)
 
 
+#: B 方言现役文件（ADR 0024 D6 并入默认发现）
+UNIFIED_FIXTURE_NAME = "unified_golden.jsonl"
+
+
 def discover_fixtures(root: Path = Path("tests/fixtures")) -> list[Path]:
-    categories = root / "categories" if root.name != "categories" else root
-    return sorted(categories.glob("*.jsonl"))
+    """现役数据源：categories/*.jsonl（A）+ 根目录 unified_golden.jsonl（B，存在即纳入）。"""
+    if root.name == "categories":
+        categories, fixtures_root = root, root.parent
+    else:
+        categories, fixtures_root = root / "categories", root
+    paths = sorted(categories.glob("*.jsonl"))
+    unified = fixtures_root / UNIFIED_FIXTURE_NAME
+    if unified.is_file():
+        paths.append(unified)
+    return paths
 
 
 def load_golden(
@@ -209,6 +305,15 @@ def filter_by_category(
         for case in cases
         if not category_prefix or case.category.startswith(category_prefix)
     ]
+
+
+def select_runnable(cases: Iterable[GoldenCase]) -> tuple[list[GoldenCase], list[GoldenCase]]:
+    """按 skip_reason 分成 (可执行, 跳过)；调用方必须把跳过数打印出来，不得静默。"""
+    runnable: list[GoldenCase] = []
+    skipped: list[GoldenCase] = []
+    for case in cases:
+        (skipped if case.skip_reason else runnable).append(case)
+    return runnable, skipped
 
 
 def filter_by_ids(cases: Iterable[GoldenCase], ids: list[str] | None) -> list[GoldenCase]:

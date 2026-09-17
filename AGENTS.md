@@ -33,7 +33,7 @@ python scripts/langfuse_eval.py --local tests/fixtures/categories --ids case-025
 
 # Harness CLI（备用 / 本地快速 smoke，无 Judge）
 python -m harness doctor                     # 环境体检（/health /ready）
-python -m harness run                        # 跑 fixture（默认 tests/fixtures/categories/，参数见 --help）
+python -m harness run --backend real|mock|dry-run   # 跑 fixture（默认 categories/ + unified_golden.jsonl；--backend 对照服务端 /health.backend_mode 把关；REJECTED 单独成桶不算 PASS）
 
 # 真后端探针（M3 联调）
 python scripts/probe_real_backend_e2e.py
@@ -41,10 +41,6 @@ python scripts/probe_swap_write_e2e.py
 python scripts/probe_option_write_e2e.py
 python scripts/probe_close_write_e2e.py
 python scripts/probe_ticker_e2e.py
-
-# Dify 同步（保留资产）
-export DIFY_EMAIL="..." DIFY_PASSWORD="..."
-python dify/sync.py                          # 拉最新 YAML → dify/yaml/
 ```
 
 ## 项目结构（M2 完成、M3 进行中）
@@ -80,7 +76,7 @@ app/
 ├── llm/clients.py           # LLM 统一工厂：全量 DeepSeek-V4-pro（ADR 0020，thinking 关闭 + structured output 走 function_calling 适配）
 ├── checkpointer/factory.py  # AIOMySQLSaver
 ├── observability/           # tracing.py + metrics.py（Prometheus 兼容 /metrics）
-└── prompts/                 # Dify 提示词资产（router / swap / option / option_close / ticker）
+└── prompts/                 # 提示词资产（git 唯一真源，ADR 0024 D1；router / swap / option / option_close / ticker）
 
 harness/                     # 评测台（经 HTTP 调本地 /v1/workflows/run，与 app/ 解耦）
 ├── golden.py                # categories fixture 加载（两方言归一化）
@@ -96,12 +92,12 @@ scripts/                     # langfuse_eval.py（Judge 评估，M3 主用） / 
                              # rollback_canary.sh / run_alerts.py / llm_cost_report.py / shadow_compare.py 等
 
 infra/langfuse/              # LangFuse self-hosted Docker Compose（PG + ClickHouse + Redis + MinIO + Web + Worker）
-docs/adr/                    # 架构决定 ADR 0000-0023（共 24 篇）+ README 索引
+docs/adr/                    # 架构决定 ADR 0000-0024（共 25 篇）+ README 索引
 docs/api-contracts/          # Java 后端真实业务 API 契约
 docs/m3-m4-roadmap.md        # M3/M4 端到端任务图（6 个交付面，2026-05-11 修订）
 docs/on-call-runbook.md      # 上线 on-call SOP
 tests/                       # 1864 passed + 15 skipped
-tests/fixtures/              # categories/（现役，6 文件 / 389 条）+ unified_golden.jsonl / old_typing/（归档）
+tests/fixtures/              # categories/（A 方言，6 文件 / 389 条）+ unified_golden.jsonl（B 方言，921 条，harness 默认并入）+ old_typing/（归档）
 ```
 
 ## 团队工具链：Claude Code 与 Codex 共用一份纪律
@@ -128,13 +124,13 @@ tests/fixtures/              # categories/（现役，6 文件 / 389 条）+ uni
 
 1. **提示词不硬编码在代码里** —— 从 `app/prompts/**/*.md` 加载；LLM 节点用 `PromptSpec`（`app/prompts/spec.py`，ADR 0023）声明 `inputs`（AgentState 字段）/ `output_model` / `injects` / `user_builder`，`SPEC.build_messages(state)` 拼消息；user 里的规则文本住 `.md` `[user]` 段，代码只供变量；共享拼装用 `app/prompts/blocks.py`，不在子图里复制 `_format_history`
 2. **LLM 输出用 `with_structured_output(PydanticModel)`** —— 绝不手工解析 JSON；输出模型每个字段写 `Field(description=)`，这是输出语义的唯一真源（经 function calling schema 下发），提示词正文不再维护 JSON 骨架 / 字段表
-3. **每个节点用 `@safe_node` 装饰** —— 异常降级到 `state['error']`，不让图崩
+3. **每个节点用 `@safe_node` 装饰** —— 异常降级到 `state['error']`，不让图崩；只读 IO 节点（LLM / 后端查询）改用 `@io_node` + `add_io_node` 注册挂 `RetryPolicy`，写类节点绝不自动重试（ADR 0024 D3）
 4. **State 字段只通过 TypedDict 约定** —— 新增字段必须先在 `app/graph/state.py` 中声明
 5. **TDD 强制**（`.claude/skills/test-driven-development/SKILL.md` 流程）—— 任何 bug fix / 新功能必须先写失败测试：
    - 写测试 → 跑到 RED（测试失败） → 写最小修复代码 → 跑到 GREEN → 全量回归
    - 禁止先改代码再补测试，也禁止跳过 RED 验证
    - `.claude/skills/test-driven-development/SKILL.md` 流程 包含完整 workflow，修改代码前调用
-6. **git 里的提示词是唯一真源，Dify 只是上游输入** —— 改提示词直接改 `app/prompts/**/*.md` + 普通 PR review，`prompt(<scope>)` commit；Dify 侧更新走 `dify/sync.py` → `scripts/export_dify_prompts.py` → 人工 diff 选择性合入，不要一键覆盖
+6. **git 里的提示词是唯一真源** —— 改提示词直接改 `app/prompts/**/*.md` + 普通 PR review，`prompt(<scope>)` commit；Dify 已退出上游地位（ADR 0024 D1），YAML 快照冻结在 tag `dify-assets-frozen-20260917（指向 commit fddd94e；tag 仅存本地，远端拒绝 tag 推送，维护者可从该 sha 重建）`，不再有同步 / 导出链路
 7. **标的代码必须 from_goats=True** —— Ticker Agent 的绝对约束（ADR 0008）
 8. **节点失败必须 cascade 防御** —— 任一节点写入 `state['error']` 后，下游 conditional 路由必须检查并跳到 fallback render，禁止 cascade 失败。具体：主图 `_route_by_product` 与每子图首节点后的 conditional 都加 `if state.get('error'): return 'fallback'`。fallback 节点输出友好回复（"我没完全理解你的意思，能换种说法重新告诉我吗"）+ trace 记录原 fail 节点名。LLM 解析失败由 `with_structured_output` 自带 1 次重试 + `@safe_node` 兜底捕获 ValidationError 写入 error；不走 HITL（HITL 仅用于 ADR 0006 的业务参数二次确认场景）
 
@@ -195,9 +191,9 @@ tests/fixtures/              # categories/（现役，6 文件 / 389 条）+ uni
 | 现象 | 根因 | 文件 |
 |---|---|---|
 | 第2轮路由走了 LLM 而非 quote_marker | `_QUOTE_MARKERS` 未覆盖实际标记 | `app/nodes/intent_route.py` |
-| reply 含"无法识别"但未问标的 | `make_initial_state` 设了 `tickers=[]` 覆盖 checkpoint | `app/state.py` |
+| reply 含"无法识别"但未问标的 | 入口把 `tickers` 写成 `[]`（零命中分支误触发）；入口唯一路径是 `inputs_to_state`，不得写业务对象默认值 | `app/api/turn_state.py` |
 | option place_order 显示"互换订单参数" | render 第3分支缺 `product_type=="swap"` 条件 | `app/nodes/render.py` |
-| 多轮 tickers/params 丢失 | `make_initial_state` 不应对业务字段设默认值 | `app/state.py` |
+| 多轮 tickers/params 丢失 | 业务对象是 per-turn（ingest 清空，ADR 0024 D2）；跨轮上下文只靠 `history_messages` + `last_confirmed_params`（上一轮已确认订单号，裸确认链路回退读它） | `app/nodes/ingest.py` / `app/nodes/remember_confirmed.py` |
 | 后端返回"订单不存在" | 参数中 orderId/Q- 单号提取错误 | 子图 extract 节点 + 提示词 |
 
 ### 2. TDD 修复（强制）
@@ -295,7 +291,8 @@ ADR 0016 把"M3 = shadow 双跑"重新定义为"M3 = 工程联调闭环 + 评估
 详见：
 
 - 领域语言：`@CONTEXT.md`
-- 架构决定：`@docs/adr/`（ADR 0000-0023 共 24 篇，索引见 `docs/adr/README.md`）
+- 架构决定：`@docs/adr/`（ADR 0000-0024 共 25 篇，索引见 `docs/adr/README.md`）
+- LangGraph 原生重构评估与路线：`@docs/langgraph-architecture-assessment.md` + ADR 0024
 - Java 契约：`@docs/api-contracts/java-backend.md`
 - M3/M4 路线图：`@docs/m3-m4-roadmap.md`
 - on-call SOP：`@docs/on-call-runbook.md` + `@docs/troubleshooting-sop.md`
@@ -327,12 +324,13 @@ Single-context 布局：根目录 `CONTEXT.md` + `docs/adr/`。详见 `docs/agen
 > 真源与契约：[ADR 0023](../../docs/adr/0023-prompt-as-code-langgraph.md)（PromptSpec）；版本化 / 灰度：[ADR 0003](../../docs/adr/0003-prompt-versioning-by-file-coexistence.md)。
 > 局部陷阱：`app/prompts/CLAUDE.md`。本文件只写"怎么做"。
 
-## 占位符纪律（2026-09-15 反转）
+## 占位符纪律
 
-Dify 的 `{{#node_id.var#}}` 在 Dify 由工作流引擎渲染；LangGraph 里**没有渲染层**。所以：
+`.md` 里的 `{{var}}` 没有独立渲染层，只有两种合法形态（Dify 时代的 `{{#node_id.var#}}` 已全部改为原生名，ADR 0024 D1）：
 
-- 代码确实注入的占位符 → 在 `PromptSpec.injects` 登记渲染器（先例：`close/holding_query.py` 对手列表、`ticker/tools.py` 日期占位符）
-- 代码不注入的占位符 → 是悬空规则，LLM 看到的是变量名；属零风险删除档，围绕它的整段规则一起删
+- system 段占位符 → 在 `PromptSpec.injects` 登记渲染器（现役：`{{counterparty_list}}` 见 `close/holding_query.py` / `swap/multimodal.py`，`{{current_date}}` 见 `ticker/tools.py`），`build_messages` 构造期校验存在性
+- `[user]` 段占位符 → 只在 user 含规则文本的节点存在（`swap/place_order.md`、`swap/fresh_counterparty.md`），经 `render_user()` 渲染；其它节点没有 `[user]` 段，user 消息由 `user_builder` 拼变量
+- 代码不注入的占位符是悬空规则，LLM 看到的是变量名；属零风险删除档，围绕它的整段规则一起删
 
 ## 加载方式（ADR 0023：一个 LLM 节点 = 一个 PromptSpec）
 
@@ -372,7 +370,6 @@ result = await model.with_structured_output(SwapIntentOutput).ainvoke(messages)
 | 场景 | 做法 | 门槛 |
 |---|---|---|
 | 瘦身 / 修规则 | 直接改 `app/prompts/**/*.md`；需要时先跑 `scripts/langfuse_eval.py` 对比 | 普通 PR review；`prompt(<scope>)` commit |
-| Dify 侧有更新 | `python dify/sync.py`（凭据只从 `DIFY_EMAIL` / `DIFY_PASSWORD` 环境变量读）→ `scripts/export_dify_prompts.py`（默认不覆盖已存在文件）→ 人工 diff 选择性合入 | 不要一键覆盖 |
 | 新 LLM 节点 | `.md` 放对目录 + Pydantic Output 模型（每字段 `Field(description=)`）+ `PromptSpec` 声明 + `@safe_node` 节点 + golden case | 普通 PR review |
 
 ## 字符数 / 延迟

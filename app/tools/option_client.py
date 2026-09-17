@@ -11,6 +11,7 @@ from typing import Any, Protocol
 import httpx
 from pydantic import ConfigDict, Field, field_validator
 
+from app.tools.http_pool import acquire_http_client
 from app.tools.models import (
     CommonResult,
     GoatsOrderDirection,
@@ -245,9 +246,9 @@ class OptionClientHttpx:
         payload = req.model_dump(mode="json", exclude_none=True)
         async with (
             translate_httpx_errors("option"),
-            httpx.AsyncClient(**self._client_kwargs()) as client,
+            acquire_http_client(timeout=self._timeout, transport=self._transport) as client,
         ):
-            r = await client.post(url, json=payload, headers=self._headers)
+            r = await client.post(url, json=payload, headers=self._headers, timeout=self._timeout)
             r.raise_for_status()
             return CommonResult.model_validate(r.json())
 
@@ -276,8 +277,8 @@ class OptionClientHttpx:
             payload["messageId"] = message_id
         async with (
             translate_httpx_errors("option"),
-            httpx.AsyncClient(**self._client_kwargs()) as client,
+            acquire_http_client(timeout=self._timeout, transport=self._transport) as client,
         ):
-            r = await client.post(url, json=payload, headers=self._headers)
+            r = await client.post(url, json=payload, headers=self._headers, timeout=self._timeout)
             r.raise_for_status()
             return CommonResult.model_validate(r.json())

@@ -39,7 +39,7 @@
 - manifest 每条镜像自 Dify 的条目登记 `dify: {file, node_id, system_sha256}`（上次同步时上游节点 system 的 sha）；~~`scripts/prompt_inventory.py`~~ 的 `check_upstream` 在上游节点变化时输出「上游有更新待人工 diff 合入」告警、上游存在但未映射的 llm 节点告警（如 1786439000001「互换-全新下单交易对手识别」），映射的节点不存在才 fail
 - `tests/test_prompt_governance.py` 的逐字相等断言退役，改为「每个镜像条目都声明了 dify 映射且节点存在」+「本地修改不阻断」
 - 零风险瘦身直接落 v1（`manifest.changelog` 登记）；`swap/intent_v2` / `place_order_v2` 因已与 v1 产生业务规则代差且失去用途而删除，多模态三个 v2 保留待 eval
-- Dify 侧同步方向仍是单向（sync → export → 人工 diff）；`dify/sync.py` 对主干 app 的导出文件名改为 `场外交易-test.yml`（治理读取的那份），`主干工作流.yml` 冻结为 2026-08 拓扑参照
+- Dify 侧同步方向仍是单向（sync → export → 人工 diff）；dify/sync.py 对主干 app 的导出文件名改为 场外交易-test.yml（治理读取的那份），主干工作流.yml 冻结为 2026-08 拓扑参照（**2026-09-17：整条链路随 ADR 0024 D1 移除**）
 - M4 全量切换后业务方书面同意 Dify 下线（roadmap 既有门），Dify 停止更新，上游告警自然归零
 
 ### D2 · ~~`app/prompts/_manifest.yaml`~~ 是活跃/灰度/非活跃的机器可读真源（已落地，2026-09-16 移除）

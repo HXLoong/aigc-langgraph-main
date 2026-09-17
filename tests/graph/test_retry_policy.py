@@ -1,0 +1,200 @@
+"""IO 节点 RetryPolicy + @safe_node 分工（ADR 0024 D3）。
+
+- 只读 IO 节点（LLM / 后端查询）用 @io_node：可重试异常穿透到 LangGraph RetryPolicy，
+  重试耗尽由节点级 error_handler 落 state['error']；
+- 写类节点（下单 / 撤单 / 确认 / 平仓）保持 @safe_node：绝不自动重试（金融正确性）。
+"""
+from __future__ import annotations
+
+from typing import Any
+
+import pytest
+from langgraph.graph import END, START, StateGraph
+
+from app.graph.retry import IO_RETRYABLE, add_io_node, io_node, is_retryable
+from app.graph.safe_node import safe_node
+from app.graph.state import AgentState, ErrorInfo
+from app.observability import metrics
+from app.tools.exceptions import BackendUnreachableError, EmptyBackendResultError
+
+
+@pytest.fixture(autouse=True)
+def _reset_metrics() -> Any:
+    metrics.get_collector().reset()
+    yield
+    metrics.get_collector().reset()
+
+
+def test_retryable_set_is_transient_only() -> None:
+    import httpx
+    import openai
+
+    assert is_retryable(BackendUnreachableError("swap", "timeout"))
+    assert is_retryable(httpx.ConnectError("refused"))
+    assert is_retryable(openai.APITimeoutError(request=httpx.Request("POST", "http://llm")))
+    assert not is_retryable(EmptyBackendResultError("swap", 0))
+    assert not is_retryable(ValueError("bad json"))
+    assert BackendUnreachableError in IO_RETRYABLE
+
+
+@pytest.mark.asyncio
+async def test_io_node_reraises_retryable_and_counts_retry_metric() -> None:
+    @io_node
+    async def reader(state: AgentState) -> dict[str, Any]:
+        raise BackendUnreachableError("swap", "timeout")
+
+    with pytest.raises(BackendUnreachableError):
+        await reader({})  # type: ignore[arg-type]
+    assert metrics.get_collector().get_counter(
+        metrics.METRIC_NODE_TOTAL, {"node": "reader", "status": "retry"}
+    ) == 1
+
+
+@pytest.mark.asyncio
+async def test_io_node_swallows_non_retryable_like_safe_node() -> None:
+    @io_node
+    async def reader(state: AgentState) -> dict[str, Any]:
+        raise EmptyBackendResultError("swap", 0)
+
+    update = await reader({})  # type: ignore[arg-type]
+    assert isinstance(update["error"], ErrorInfo) and update["error"].type == "EmptyBackendResultError"
+
+
+@pytest.mark.asyncio
+async def test_plain_safe_node_still_swallows_retryable() -> None:
+    """写类节点保持旧语义：超时也不重试，直接落 error 交 render 出"系统暂时不可用"。"""
+    @safe_node
+    async def writer(state: AgentState) -> dict[str, Any]:
+        raise BackendUnreachableError("swap", "timeout")
+
+    update = await writer({})  # type: ignore[arg-type]
+    assert update["error"].type == "BackendUnreachableError"
+
+
+def _graph(fn: Any) -> Any:
+    g = StateGraph(AgentState)
+    add_io_node(g, "io", fn, max_attempts=3, initial_interval=0.001)
+    g.add_edge(START, "io")
+    g.add_edge("io", END)
+    return g.compile()
+
+
+@pytest.mark.asyncio
+async def test_graph_retries_transient_failure_then_succeeds() -> None:
+    calls = {"n": 0}
+
+    @io_node
+    async def flaky(state: AgentState) -> dict[str, Any]:
+        calls["n"] += 1
+        if calls["n"] < 3:
+            raise BackendUnreachableError("swap", "timeout")
+        return {"intent": "query_order_status"}
+
+    final = await _graph(flaky).ainvoke({"raw_text": "x"})
+    assert calls["n"] == 3
+    assert final.get("error") is None
+    assert final["intent"] == "query_order_status"
+
+
+@pytest.mark.asyncio
+async def test_graph_retry_exhausted_lands_in_state_error_with_trace() -> None:
+    calls = {"n": 0}
+
+    @io_node
+    async def dead(state: AgentState) -> dict[str, Any]:
+        calls["n"] += 1
+        raise BackendUnreachableError("swap", "connect_error")
+
+    final = await _graph(dead).ainvoke({"raw_text": "x"})
+    assert calls["n"] == 3, "max_attempts=3 → 恰好 3 次"
+    err = final["error"]
+    assert isinstance(err, ErrorInfo)
+    assert (err.node, err.type) == ("io", "BackendUnreachableError")
+    assert "connect_error" in err.message
+    decisions = [(e.node, e.decision) for e in final["trace"]]
+    assert ("io", "error:retry_exhausted") in decisions
+
+
+@pytest.mark.asyncio
+async def test_graph_non_retryable_runs_once() -> None:
+    calls = {"n": 0}
+
+    @io_node
+    async def bad(state: AgentState) -> dict[str, Any]:
+        calls["n"] += 1
+        raise EmptyBackendResultError("swap", 0)
+
+    final = await _graph(bad).ainvoke({"raw_text": "x"})
+    assert calls["n"] == 1
+    assert final["error"].type == "EmptyBackendResultError"
+
+
+def test_add_io_node_rejects_function_without_io_node_decorator() -> None:
+    @safe_node
+    async def writer(state: AgentState) -> dict[str, Any]:
+        return {}
+
+    g = StateGraph(AgentState)
+    with pytest.raises(TypeError, match="@io_node"):
+        add_io_node(g, "writer", writer)
+
+
+#: 只读 IO 节点：必须带 RetryPolicy + error_handler
+READ_NODES: dict[str, set[str]] = {
+    "main": {"intent_route", "existing_command_query"},
+    "swap": {
+        "swap_intent", "swap_place_order", "swap_select_counterparty", "swap_select_ticker",
+        "swap_query_order", "swap_image_order", "swap_excel_order",
+    },
+    "option": {"option_intent", "option_extract_query"},
+    "inquiry": {"inquiry_fast_parse", "inquiry_precheck", "inquiry_extract", "inquiry_resolve"},
+    "close": {"close_intent", "close_holding_query", "close_query_status"},
+    "place_close": {"place_close_fetch_orders", "place_close_extract"},
+    "ticker": {"infer_codes", "split_keywords", "judge_type", "resolve_org_item"},
+}
+#: 写类节点：绝不自动重试
+WRITE_NODES: dict[str, set[str]] = {
+    "main": {"quick_inquiry"},
+    "swap": {"swap_place_order_submit", "swap_confirm", "swap_cancel"},
+    "option": {
+        "option_extract_inquiry", "option_extract_place", "option_extract_confirm_place",
+        "option_extract_cancel", "option_extract_cancel_place", "option_extract_confirm_cancel",
+    },
+    "inquiry": {"inquiry_fast_submit", "inquiry_submit"},
+    "close": {"close_confirm_close", "close_cancel_close", "close_confirm_cancel"},
+    "place_close": {"place_close_submit"},
+}
+
+
+def _builders() -> dict[str, Any]:
+    from app.graph.main import build_main_graph
+    from app.subgraphs.close.graph import build_close_graph
+    from app.subgraphs.close.place_close import build_place_close_graph
+    from app.subgraphs.option.extract_inquiry import build_inquiry_graph
+    from app.subgraphs.option.graph import build_option_graph
+    from app.subgraphs.swap.graph import build_swap_graph
+    from app.subgraphs.ticker.graph import build_ticker_graph
+
+    return {
+        "main": build_main_graph().builder,
+        "swap": build_swap_graph().builder,
+        "option": build_option_graph().builder,
+        "inquiry": build_inquiry_graph().builder,
+        "close": build_close_graph().builder,
+        "place_close": build_place_close_graph().builder,
+        "ticker": build_ticker_graph().builder,
+    }
+
+
+def test_real_graphs_retry_reads_and_never_writes() -> None:
+    builders = _builders()
+    for graph_name, names in READ_NODES.items():
+        for name in names:
+            spec = builders[graph_name].nodes[name]
+            assert spec.retry_policy is not None, f"{graph_name}.{name} 缺 RetryPolicy"
+            if graph_name != "ticker":  # ticker 子图异常穿透到父节点的 safe_node，不需要 handler
+                assert spec.error_handler_node, f"{graph_name}.{name} 缺 error_handler"
+    for graph_name, names in WRITE_NODES.items():
+        for name in names:
+            spec = builders[graph_name].nodes[name]
+            assert spec.retry_policy is None, f"{graph_name}.{name} 是写类节点，不得自动重试"

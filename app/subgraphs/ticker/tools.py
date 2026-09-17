@@ -490,8 +490,8 @@ INFER_CODE_SPEC = register(PromptSpec(
     inputs=(),
     user_builder=_helper_user_from_state,
     injects={
-        # Dify JS 节点注入的当前日期（TRJ-01；infer_code.md 原文是四重花括号）
-        "{{{{#1775913928411.date#}}}}": lambda s: current_date_str(),
+        # 当前日期（TRJ-01）：LLM 判断合约月份 / 到期需要"今天"
+        "{{current_date}}": lambda s: current_date_str(),
     },
 ))
 
@@ -518,8 +518,8 @@ RANK_SPEC = register(PromptSpec(
     inputs=(),
     user_builder=_helper_user_from_state,
     injects={
-        # Dify JS 节点注入的当前日期（TRJ-01）
-        "{{#1775820054722.date#}}": lambda s: current_date_str(),
+        # 当前日期（TRJ-01）
+        "{{current_date}}": lambda s: current_date_str(),
     },
 ))
 

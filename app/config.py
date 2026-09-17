@@ -37,6 +37,9 @@ class Settings(BaseSettings):
 
     # === 超时预算（plan0916 §6.1 / A 批：集中配置；默认值与历史散点一致）===
     llm_timeout_seconds: float = 60.0        # LLM 客户端（app/llm/clients.py 六个工厂）
+    # ADR 0024 D3：只读 IO 节点（LLM / 后端查询）的 LangGraph RetryPolicy；写类节点不重试
+    node_retry_max_attempts: int = 3
+    node_retry_initial_interval_seconds: float = 0.5
     backend_timeout_seconds: float = 30.0    # Option / Swap / Ticker / Message 四个后端 Client 默认
     persist_timeout_seconds: float = 5.0     # node_trace 写库连接（app/nodes/persist.py）
     multimodal_fetch_timeout_seconds: float = 30.0  # 图片 / Excel 远端文件下载（swap/multimodal.py）
@@ -74,16 +77,26 @@ class Settings(BaseSettings):
 
     # === 可观测性 ===
     log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR"] = "INFO"
+    # ADR 0024 D5：结构化日志格式；auto = development 彩色控制台、其余 JSON（每条带 trace_id）
+    log_format: Literal["auto", "json", "console"] = "auto"
     environment: Literal["development", "staging", "production"] = "development"
     enable_langfuse: bool = False
     langfuse_public_key: str = ""
     langfuse_secret_key: str = ""
     langfuse_base_url: str = "https://cloud.langfuse.com"
     langfuse_project: str = "otc-agent"
+    # 是否信任入站 W3C traceparent（把请求挂到调用方父 Trace）。仅可信网络（测试工作台）开启；
+    # 与 environment 解耦（ADR 0024 D5）
+    trust_inbound_traceparent: bool = False
 
     # === Checkpointer（ADR 0009/0021，#153 接线）===
     # 生产必须 true（多轮状态持久化）；开发/CI 默认 false 避免 MySQL 依赖与脏 checkpoint
     use_mysql_checkpointer: bool = False
+    # checkpoint 连接池（ADR 0024 D4）：from_conn_string 单连接无重连，生产禁用；
+    # pool_recycle 必须小于 MySQL / TDSQL proxy 的 wait_timeout（默认 8h），30 分钟保守
+    checkpoint_pool_minsize: int = Field(default=1, ge=1)
+    checkpoint_pool_maxsize: int = Field(default=10, ge=1)
+    checkpoint_pool_recycle_seconds: int = Field(default=1800, ge=1)
 
     # === 灰度切换 ===
     use_langgraph: bool = True
@@ -101,6 +114,14 @@ class Settings(BaseSettings):
 
     # 从 Langfuse 拉提示词（需同时 enable_langfuse=true）
     use_langfuse_prompts: bool = False
+
+    # === 请求级幂等（ADR 0024 D4）：同一企微 message_id 重投不重跑图，需业务库 message_log ===
+    request_idempotency: bool = False
+
+    # === 会话记忆窗口（ADR 0024 D4）===
+    # history_messages 只保留最近 N 条（user + assistant 各算 1 条；40 ≈ 20 轮）。
+    # 企微群 thread 长期存在，无界累加会撑大 prompt / checkpoint；N 由现场 eval 校准
+    history_window_messages: int = Field(default=40, ge=2)
 
 
 @lru_cache(maxsize=1)

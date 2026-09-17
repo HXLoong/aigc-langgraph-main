@@ -30,7 +30,8 @@ async def test_render_zero_match_triggers_when_place_params_has_content() -> Non
     """place_params 有实质内容（真实 inquiry 路径）+ tickers=[] → 才触发零命中提示。"""
     state: dict = {
         "tickers": [],
-        "place_params": {"expected_action": "inquiry", "orderList": []},
+        "expected_action": "inquiry",
+        "place_params": {"orderList": []},
         "raw_text": "这个标的abc",
     }
     update = await render(state)  # type: ignore[arg-type]
@@ -45,13 +46,12 @@ async def test_render_zero_match_triggers_when_place_params_has_content() -> Non
 
 @pytest.mark.asyncio
 async def test_render_option_place_order_does_not_show_swap_params() -> None:
-    """option place_order_from_quote：place_params.expected_action=place 时
+    """option place_order_from_quote：expected_action=place 时
     product_type=option，render 不应产生'-----互换订单参数-----'。
     """
     state: dict = {
         "product_type": "option",
         "place_params": {
-            "expected_action": "place",
             "orderList": [{"stockCode": "600519.SH", "optionType": "看涨"}],
         },
         "raw_text": "200万，市价下单",
@@ -69,8 +69,8 @@ async def test_option_inquiry_without_backend_result_never_fabricates_quote() ->
         "product_type": "option",
         "intent": "new_inquiry",
         "tickers": [{"windCode": "300773.SZ", "insShtDesc": "拉卡拉"}],
+        "expected_action": "inquiry",
         "place_params": {
-            "expected_action": "inquiry",
             "orderList": [
                 {
                     "stockCode": "300773.SZ",
@@ -100,7 +100,8 @@ async def test_option_backend_result_has_priority_and_is_passed_through_exactly(
         "ticker_hitl_candidates": [
             {"keyword": "拉卡拉", "candidates": [{"windCode": "300773.SZ"}]}
         ],
-        "place_params": {"expected_action": "inquiry", "orderList": []},
+        "expected_action": "inquiry",
+        "place_params": {"orderList": []},
         "api_result": card,
     }
 
@@ -143,7 +144,6 @@ async def test_render_swap_backend_result_has_priority_and_is_passed_through_exa
     state: dict = {
         "product_type": "swap",
         "place_params": {
-            "expected_action": "place",
             "orderList": [{
                 "placeOrderWindCode": "600519.SH",
                 "placeOrderOrderDirection": "BUY",
@@ -180,7 +180,6 @@ async def test_render_swap_backend_error_never_fabricates_order_card(
     state: dict = {
         "product_type": "swap",
         "place_params": {
-            "expected_action": "place",
             "orderList": [{
                 "placeOrderWindCode": "600519.SH",
                 "placeOrderOrderDirection": "BUY",
@@ -224,7 +223,7 @@ async def test_render_swap_operate_intent_without_backend_result_never_fabricate
     state: dict = {
         "product_type": "swap",
         "intent": intent,
-        "place_params": {"expected_action": "place", "orderList": order_list},
+        "place_params": {"orderList": order_list},
         "confirm": {"action": "place", "orderList": order_list},
         "cancel_params": {"orderList": order_list},
         "query_filter": {"orderList": order_list},

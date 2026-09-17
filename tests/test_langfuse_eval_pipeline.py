@@ -44,11 +44,13 @@ class _BackendCodeFailingGraph(_FailingFirstTurnGraph):
 class _RecordingGraph:
     def __init__(self) -> None:
         self.calls: list[tuple[str, str]] = []
+        self.configs: list[dict] = []
 
     async def ainvoke(self, state: dict, config: dict) -> dict:
         self.calls.append(
             (state["conversation_id"], config["configurable"]["thread_id"])
         )
+        self.configs.append(config)
         return {
             **state,
             "product_type": "option",
@@ -146,3 +148,26 @@ async def test_pipeline_stops_after_first_nonzero_api_code(
     assert output["failure"]["kind"] == "business_reject"
     assert output["failure"]["api_code"] == 50301
     assert output["remaining_turns"] == 1
+
+
+@pytest.mark.asyncio
+async def test_pipeline_config_carries_langfuse_callbacks_and_session(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """ADR 0024 D5：图级全局注入已删除，eval 必须自己把 LangFuse handler 放进 config，
+    并带 langfuse_session_id / trace_id，与生产 routes 同一契约。"""
+    graph = _RecordingGraph()
+    sentinel = object()
+    monkeypatch.setattr(langfuse_eval, "build_main_graph", lambda _cp: graph)
+    monkeypatch.setattr(langfuse_eval, "_TURN_INTERVAL_SECONDS", 0)
+    monkeypatch.setattr(langfuse_eval, "_graph_callbacks", lambda: [sentinel])
+    item = SimpleNamespace(
+        id="case-cb",
+        input={"turns": [{"send_text": "询价", "quote_previous": False}]},
+        expected_output="",
+    )
+    await langfuse_eval.run_langgraph_pipeline(item=item)
+    cfg = graph.configs[0]
+    assert sentinel in cfg["callbacks"]
+    assert cfg["metadata"]["langfuse_session_id"] == cfg["configurable"]["thread_id"]
+    assert cfg["metadata"]["trace_id"]

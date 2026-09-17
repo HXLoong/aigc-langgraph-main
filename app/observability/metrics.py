@@ -228,6 +228,7 @@ def get_collector() -> MetricsCollector:
 # 指标名称（与文档 / Prometheus 查询保持一致）
 METRIC_NODE_TOTAL = "otc_agent_node_total"
 METRIC_INTENT_LATENCY = "otc_agent_intent_latency_ms"
+METRIC_NODE_LATENCY = "otc_agent_node_latency_ms"  # ADR 0024 D5：节点延迟独立直方图（此前寄生在 intent 直方图）
 METRIC_FALLBACK_TOTAL = "otc_agent_fallback_total"
 METRIC_HITL_TOTAL = "otc_agent_hitl_total"
 METRIC_LLM_TOTAL = "otc_agent_llm_total"
@@ -245,15 +246,11 @@ METRIC_OPTION_BACKEND_EMPTY_RESULT_TOTAL = (
 
 
 def emit_node_completed(node: str, status: str = "ok", elapsed_ms: int | None = None) -> None:
-    """节点完成时 emit。status: ok / error"""
+    """节点完成时 emit。status: ok / error / retry（可重试异常穿透给 RetryPolicy 的一次尝试）"""
     coll = get_collector()
     coll.inc_counter(METRIC_NODE_TOTAL, {"node": node, "status": status})
     if elapsed_ms is not None:
-        coll.observe_histogram(
-            METRIC_INTENT_LATENCY,
-            elapsed_ms,
-            {"product_type": "unknown", "intent": "unknown", "node": node},
-        )
+        coll.observe_histogram(METRIC_NODE_LATENCY, elapsed_ms, {"node": node})
 
 
 def emit_intent_latency(product_type: str, intent: str, elapsed_ms: int) -> None:
@@ -421,6 +418,7 @@ __all__ = [
     "get_collector",
     "METRIC_NODE_TOTAL",
     "METRIC_INTENT_LATENCY",
+    "METRIC_NODE_LATENCY",
     "METRIC_FALLBACK_TOTAL",
     "METRIC_HITL_TOTAL",
     "METRIC_LLM_TOTAL",

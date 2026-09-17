@@ -5,12 +5,12 @@
 - 业务子图节点（swap.place_order / option.extract_inquiry / close.place_close）
   通过 `await resolve_ticker_full(raw_text)` 拿 TickerResolution，对底层实现无感
 - 默认解析行为与返回类型不变；互换可通过 keyword-only 参数启用订单上下文过滤。
-- 内部管线已切换为新 DSL 12 节点版本（见 tools.py 顶部说明）：
-    候选提取(tokenize) -> 格式化(format_candidate_list) -> 空短路
-    -> asyncio.gather(infer_code_batch, split_ticker_keywords, judge_ticker_type)
-    -> merge_and_validate（确定性）
-    -> 逐 orgStr：GOATS search_securities_instrument + rank_candidates(LLM 排序过滤)
-    -> 取 top1 windCode 作为 winner
+- 内部管线是一张 LangGraph 子图（`app/subgraphs/ticker/graph.py`，ADR 0024 D3）：
+    extract_candidates(tokenize + 过滤 + 格式化) -> 空短路
+    -> 三路并行分支 infer_codes / split_keywords / judge_type -> merge_candidates
+    -> Send fan-out：逐 orgStr resolve_org_item（GOATS search + rank LLM）并行
+    -> assemble：按输入顺序汇总、去重、组装 TickerCandidate
+  节点函数留在本模块（测试按 `resolver.<name>` monkeypatch 边界），graph.py 只负责拓扑
 - `from_goats=True` 是 CLAUDE.md 硬约束（ADR 0008）：凡进入输出的标的必须经 GOATS
   校验存在性，这是本项目对 Dify 行为的有意增强（新 DSL 的"标的智能化推断和分词
   工具"本身不含 GOATS 校验步骤），不因 DSL 无此步而删除
@@ -19,10 +19,12 @@
 """
 from __future__ import annotations
 
-import asyncio
 import logging
+import operator
 import re
-from typing import Any, NamedTuple
+from typing import Annotated, Any, NamedTuple, TypedDict
+
+from langgraph.types import Send
 
 from app.graph.state import TickerCandidate
 from app.subgraphs.ticker.context import mask_order_context
@@ -117,8 +119,39 @@ async def resolve_ticker(raw_text: str) -> list[TickerCandidate]:
 
 
 # ============================================================
-# 实现：新管线编排（tokenize 候选提取 -> 并行 LLM -> 合并校验 -> GOATS + rank）
+# 实现：LangGraph 子图（节点函数 + 私有 State；拓扑见 graph.py）
 # ============================================================
+
+
+class OrgWinner(TypedDict):
+    """单个 orgStr 的解析结果；index 保证 Send 并行后按输入顺序汇总。"""
+
+    index: int
+    org_str: str
+    winner: Any  # SecuritiesInstrumentRespVO | None
+
+
+class TickerState(TypedDict, total=False):
+    """ticker 子图私有 State（不与 AgentState 共享）。"""
+
+    raw_text: str
+    candidates: list[str]
+    infer_codes: dict[str, Any]
+    split_codes: dict[str, Any]
+    ins_family: dict[str, Any]
+    # merge_candidates 产物：待并行解析的 org 条目 + 已确定的 winner
+    pending_items: list[dict[str, Any]]
+    winners: Annotated[list[OrgWinner], operator.add]
+    resolved: list[TickerCandidate]
+
+
+class OrgItemInput(TypedDict):
+    """Send 给 resolve_org_item 的载荷。"""
+
+    index: int
+    org_str: str
+    keywords: list[dict[str, Any]]
+    predicted_family: str
 
 
 async def _search_goats(
@@ -175,43 +208,49 @@ async def _resolve_one_org_item(
     return None
 
 
-async def _resolve_pipeline(raw_text: str) -> TickerResolution:
-    """新 12 节点管线的本地编排实现。
+# ---------- 节点 ----------
 
-    流程：
-    1. tokenize(raw_text) 提取候选（P1 范围内本地替代"候选标的提取"，见 tools.py 说明）
-    2. 过滤噪音候选（单字符 / 非 4-6 位纯数字 / 订单号前缀）
-    3. format_candidate_list 格式化去重
-    4. 空 → 短路返回空结果
-    5. asyncio.gather 并行调 3 个 LLM：infer_code_batch / split_ticker_keywords /
-       judge_ticker_type
-    6. merge_and_validate 合并 + 确定性校验完整标的
-    7. 逐 orgStr：GOATS 查询 + rank LLM 排序过滤 → winner
-    8. winner 去重后组装 TickerCandidate（from_goats=True 硬约束）
-    """
-    raw_candidates = tokenize.invoke({"raw_text": raw_text})
+
+async def extract_candidates(state: TickerState) -> dict[str, Any]:
+    """tokenize 提取候选 → 过滤噪音（单字符 / 非 4-6 位纯数字 / 订单号前缀）→ 格式化去重。"""
+    raw_candidates = tokenize.invoke({"raw_text": state["raw_text"]})
     filtered = _filter_noise_candidates(raw_candidates)
-    candidates = format_candidate_list(filtered)
-    if not candidates:
-        return TickerResolution(resolved=[], hitl_pending=[])
+    return {"candidates": format_candidate_list(filtered)}
 
-    infer_codes: dict[str, Any]
-    split_codes: dict[str, Any]
-    ins_family: dict[str, Any]
-    infer_codes, split_codes, ins_family = await asyncio.gather(
-        infer_code_batch(candidates),
-        split_ticker_keywords(candidates),
-        judge_ticker_type(candidates),
+
+def route_after_extract(state: TickerState) -> list[str] | str:
+    """无候选 → 直接汇总（空结果）；否则三路 LLM 并行。"""
+    if not state.get("candidates"):
+        return "assemble"
+    return ["infer_codes", "split_keywords", "judge_type"]
+
+
+async def infer_codes(state: TickerState) -> dict[str, Any]:
+    return {"infer_codes": await infer_code_batch(state["candidates"])}
+
+
+async def split_keywords(state: TickerState) -> dict[str, Any]:
+    return {"split_codes": await split_ticker_keywords(state["candidates"])}
+
+
+async def judge_type(state: TickerState) -> dict[str, Any]:
+    return {"ins_family": await judge_ticker_type(state["candidates"])}
+
+
+async def merge_candidates(state: TickerState) -> dict[str, Any]:
+    """merge_and_validate + 完整代码权威校验；产出待并行解析条目与已确定 winner。
+
+    - 输入中的完整代码（600519.SH 形态）先独立走 GOATS 精确校验，不与 LLM 派生的
+      裸数字 / 名称混在同一请求；即使 LLM 漏掉也照常校验，顺序不由 LLM 决定
+    - 裸数字候选只能补充已验证成功的来源词，不再发起模糊查询
+    """
+    raw_text = state["raw_text"]
+    ins_family = state.get("ins_family") or {}
+    merged = merge_and_validate(
+        state.get("infer_codes") or {}, state.get("split_codes") or {}, ins_family
     )
-
-    merged = merge_and_validate(infer_codes, split_codes, ins_family)
-
     client = _make_client()
-    resolved: list[TickerCandidate] = []
-    by_code: dict[str, TickerCandidate] = {}
-    input_candidates = set(candidates)
 
-    # 完整代码先独立校验，禁止与 LLM 派生的裸数字/名称在同一请求中查询。
     explicit = list(dict.fromkeys(_EXPLICIT_CODE_RE.findall(raw_text)))
     exact_results: dict[str, SecuritiesInstrumentRespVO | None] = {}
     guarded_roots: dict[str, list[SecuritiesInstrumentRespVO]] = {}
@@ -228,30 +267,60 @@ async def _resolve_pipeline(raw_text: str) -> TickerResolution:
             matches = guarded_roots.setdefault(root.lstrip("0") or "0", [])
             if winner is not None:
                 matches.append(winner)
-    # 即使 LLM 漏掉完整代码，输入中的代码仍然接受权威校验；顺序不由 LLM 决定。
     explicit_keys = {code.upper() for code in explicit}
     merged = [{"orgStr": code, "keywords": []} for code in explicit] + [
         item for item in merged if item["orgStr"].upper() not in explicit_keys
     ]
 
-    for item in merged:
+    known: list[OrgWinner] = []
+    pending: list[dict[str, Any]] = []
+    for index, item in enumerate(merged):
         org_str = item["orgStr"]
         keywords = item["keywords"]
-        predicted_family = str(ins_family.get(org_str) or "")
-
         if _EXPLICIT_CODE_RE.fullmatch(org_str) and _code_identity(org_str) in exact_results:
-            winner = exact_results[_code_identity(org_str)]
+            known.append({"index": index, "org_str": org_str,
+                          "winner": exact_results[_code_identity(org_str)]})
         elif org_str.isdigit() and (org_str.lstrip("0") or "0") in guarded_roots:
-            # 裸数字候选仅可补充已经验证成功的来源词，不再发起模糊查询。
             matches = guarded_roots[org_str.lstrip("0") or "0"]
-            winner = matches[0] if len(matches) == 1 else None
+            known.append({"index": index, "org_str": org_str,
+                          "winner": matches[0] if len(matches) == 1 else None})
         else:
             keywords = [k for k in keywords if not (
                 k["keyword"].isdigit() and (k["keyword"].lstrip("0") or "0") in guarded_roots
             )]
-            winner = await _resolve_one_org_item(client, org_str, keywords, predicted_family)
+            pending.append({
+                "index": index, "org_str": org_str, "keywords": keywords,
+                "predicted_family": str(ins_family.get(org_str) or ""),
+            })
+    return {"pending_items": pending, "winners": known}
+
+
+def fan_out_org_items(state: TickerState) -> list[Send] | str:
+    """按 orgStr Send 并行解析；无待解析条目 → 直接汇总。"""
+    pending = state.get("pending_items") or []
+    if not pending:
+        return "assemble"
+    return [Send("resolve_org_item", item) for item in pending]
+
+
+async def resolve_org_item(item: OrgItemInput) -> dict[str, Any]:
+    """Send 目标：单个 orgStr 的 GOATS 查询 + rank。"""
+    winner = await _resolve_one_org_item(
+        _make_client(), item["org_str"], item["keywords"], item["predicted_family"]
+    )
+    return {"winners": [{"index": item["index"], "org_str": item["org_str"], "winner": winner}]}
+
+
+async def assemble(state: TickerState) -> dict[str, Any]:
+    """按输入顺序汇总 winner，按 windCode 去重，组装 TickerCandidate（from_goats=True 硬约束）。"""
+    input_candidates = set(state.get("candidates") or [])
+    resolved: list[TickerCandidate] = []
+    by_code: dict[str, TickerCandidate] = {}
+    for entry in sorted(state.get("winners") or [], key=lambda w: w["index"]):
+        winner = entry["winner"]
         if winner is None:
             continue
+        org_str = entry["org_str"]
         code_key = winner.wind_code.strip().upper()
         source_keywords = [org_str] if org_str in input_candidates else []
         if code_key in by_code:
@@ -260,7 +329,6 @@ async def _resolve_pipeline(raw_text: str) -> TickerResolution:
                 if keyword not in existing.source_keywords:
                     existing.source_keywords.append(keyword)
             continue
-
         resolved.append(
             TickerCandidate(
                 windCode=winner.wind_code,
@@ -273,8 +341,15 @@ async def _resolve_pipeline(raw_text: str) -> TickerResolution:
             )
         )
         by_code[code_key] = resolved[-1]
+    return {"resolved": resolved}
 
-    return TickerResolution(resolved=resolved, hitl_pending=[])
+
+async def _resolve_pipeline(raw_text: str) -> TickerResolution:
+    """跑 ticker 子图（拓扑见 graph.py）。"""
+    from app.subgraphs.ticker.graph import get_ticker_graph
+
+    final = await get_ticker_graph().ainvoke({"raw_text": raw_text})
+    return TickerResolution(resolved=list(final.get("resolved") or []), hitl_pending=[])
 
 
-__all__ = ["TickerResolution", "resolve_ticker", "resolve_ticker_full"]
+__all__ = ["TickerResolution", "TickerState", "resolve_ticker", "resolve_ticker_full"]

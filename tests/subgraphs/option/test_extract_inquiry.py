@@ -164,7 +164,8 @@ async def test_inquiry_binds_by_unique_identity_and_preserves_unresolved_values(
     assert [order["stockCode"] for order in sent] == expected
     assert [order["tenor"] for order in sent] == [item.tenor for item in params.order_list]
     assert [order["stockCode"] for order in result["place_params"]["orderList"]] == originals
-    bindings = result["trace"][0].llm_output["ticker_bindings"]
+    summary = next(e for e in result["trace"] if e.node == "option_extract_inquiry")
+    bindings = summary.llm_output["ticker_bindings"]
     assert [binding["backend_stock_code"] for binding in bindings] == expected
     assert [binding["original_stock_code"] for binding in bindings] == originals
     assert [binding["result"] for binding in bindings] == [
@@ -220,7 +221,8 @@ class TestOptionExtractInquiryNode:
             {"raw_text": "期权询价 腾讯 欧式看涨 行权价100% 1个月"}
         )
 
-        assert result["place_params"]["expected_action"] == "inquiry"
+        assert result["expected_action"] == "inquiry"
+        assert "expected_action" not in result["place_params"]
         assert result["place_params"]["orderList"][0]["stockCode"] == "腾讯"
         tickers = result.get("tickers", [])
         assert len(tickers) >= 1
@@ -296,7 +298,7 @@ class TestOptionExtractInquiryNode:
         result = await option_extract_inquiry(
             {"raw_text": "雪球询价 腾讯"}
         )
-        trace = result.get("trace", [])
+        trace = [e for e in result.get("trace", []) if e.node == "option_extract_inquiry"]
         assert len(trace) == 1
         decision = trace[0].decision
         assert "action=inquiry" in decision
@@ -329,7 +331,7 @@ class TestOptionExtractInquiryNode:
         )
         result = await option_extract_inquiry({"raw_text": "x"})
         assert result.get("error") is not None
-        assert result["error"].node == "option_extract_inquiry"
+        assert result["error"].node == "inquiry_extract", "拆子图后错误归因到 LLM 阶段"
 
     async def test_raw_fragments_normalized_to_canonical(
         self, monkeypatch: pytest.MonkeyPatch
@@ -387,7 +389,7 @@ class TestOptionExtractInquiryNode:
         assert [(o["tenor"], o["strikePercentage"]) for o in orders] == [
             ("1M", 100.0), ("1M", 103.0), ("3M", 100.0), ("3M", 103.0),
         ]
-        assert "orders=4" in result["trace"][0].decision
+        assert "orders=4" in next(e for e in result["trace"] if e.node == "option_extract_inquiry").decision
         sent = ei_module.call_option_backend.call_args.kwargs["order_list"]
         assert [(o["tenor"], o["strikePercentage"]) for o in sent] == [
             ("1M", 100.0), ("1M", 103.0), ("3M", 100.0), ("3M", 103.0),

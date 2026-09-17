@@ -1,10 +1,8 @@
 """FastAPI 入口（ADR 0001 D6 + ADR 0014 D8）。
 
-启动时编译主图并挂载到 app.state。**LangFuse 回调不在本层注入**：
-
-- development：由 `app/api/routes.py` 走请求级 trace（支持测试工作台的用例级父 Trace）
-- 其它环境：由 `app/graph/main.py` 的 `_attach_langfuse_callbacks` 注入全局回调
-  （见 `attach_langfuse_callbacks` 的取值，两处互斥，避免同一请求产生两条 Trace）
+启动时编译主图并挂载到 app.state。**LangFuse 回调不在本层注入**：所有环境统一由
+`app/api/routes.py` 走请求级 trace（ADR 0024 D5），`config.metadata` 携带
+trace_id / langfuse_session_id / langfuse_user_id。
 """
 from __future__ import annotations
 
@@ -17,11 +15,15 @@ from fastapi.responses import PlainTextResponse
 from starlette.middleware.base import BaseHTTPMiddleware
 
 from app.api.health import router as health_router
+from app.api.idempotency import MySQLIdempotencyStore
 from app.api.routes import router as api_router
 from app.checkpointer.factory import close_checkpointer, init_checkpointer
 from app.config import get_settings
 from app.graph.main import build_main_graph
+from app.observability import tracing
+from app.observability.logs import configure_logging_from_settings
 from app.observability.metrics import emit_http_response, get_collector
+from app.tools.http_pool import close_shared_http_client, open_shared_http_client
 from app.tools.message_client import MessageClientHttpx
 
 logger = logging.getLogger(__name__)
@@ -35,6 +37,9 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     # #153 裁决（ADR 0009/0021）：checkpointer 接线——多轮状态持久化是生产正确性。
     # 显式启用即硬依赖（init 失败直接抛，不静默降级）；生产未启用 fail-fast。
     settings = get_settings()
+    configure_logging_from_settings(settings)  # ADR 0024 D5：structlog 接管 stdlib，日志带 trace_id
+    # ADR 0024 D3：业务后端 HTTP 连接池随进程生命周期，各 Client 复用
+    await open_shared_http_client(timeout=settings.backend_timeout_seconds)
     checkpointer = None
     if getattr(settings, "use_mysql_checkpointer", False):
         checkpointer = await init_checkpointer()
@@ -49,10 +54,18 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     )
     if message_client_factory is None:
         logger.info("development environment: intent persistence disabled")
+    # ADR 0024 D4：请求级幂等 store（生产开启；业务库 message_log）
+    app.state.idempotency_store = None
+    if getattr(settings, "request_idempotency", False):
+        if not settings.business_mysql_uri:
+            raise RuntimeError("REQUEST_IDEMPOTENCY=true 需要 BUSINESS_MYSQL_URI")
+        app.state.idempotency_store = MySQLIdempotencyStore(
+            settings.business_mysql_uri, timeout_seconds=settings.persist_timeout_seconds
+        )
+        logger.info("request idempotency store 已接线（message_log）")
     app.state.main_graph = build_main_graph(
         checkpointer=checkpointer,
         message_client_factory=message_client_factory,
-        attach_langfuse_callbacks=settings.environment != "development",
     )
     logger.info("main graph compiled")
 
@@ -60,12 +73,14 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
 
     if checkpointer is not None:
         await close_checkpointer()
+    await close_shared_http_client()
+    tracing.flush()  # ADR 0024 D5：滚动更新 / SIGTERM 不丢尾部 trace
     logger.info("stopping otc-agent-langgraph")
 
 
 app = FastAPI(
     title="otc-agent-langgraph",
-    description="场外衍生品 AI 指令助手 — LangGraph 替换 Dify",
+    description="场外衍生品 AI 指令助手（LangGraph）",
     version="0.2.0-m1",
     lifespan=lifespan,
 )

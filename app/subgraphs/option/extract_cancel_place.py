@@ -8,7 +8,7 @@ Dify DSL v2 迁移新增节点（对应 `期权-节点-取消下单`，node_id=1
 均无 → orderId: null。
 
 输入：raw_text + quote_content
-输出：state['cancel_params'] = {expected_action: "cancel_request", orderList} + 后端调用结果
+输出：state['expected_action'] = "cancel" + state['cancel_params'] = {orderList} + 后端调用结果
 """
 from __future__ import annotations
 
@@ -37,9 +37,8 @@ async def option_extract_cancel_place(state: AgentState) -> dict[str, Any]:
     )
 
     return {
-        "cancel_params": validated_cancel_params(
-            expected_action="cancel_request", orderList=order_list
-        ),
+        "expected_action": "cancel",
+        "cancel_params": validated_cancel_params(orderList=order_list),
         **backend,
         "trace": [
             TraceEntry(

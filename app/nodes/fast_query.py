@@ -12,6 +12,7 @@ from __future__ import annotations
 import json
 from typing import Any
 
+from app.graph.retry import io_node
 from app.graph.safe_node import safe_node
 from app.graph.state import AgentState, TraceEntry
 from app.tools.goats_agent_client import make_goats_agent_client
@@ -98,7 +99,7 @@ async def quick_inquiry(state: AgentState) -> dict[str, Any]:
     }
 
 
-@safe_node
+@io_node
 async def existing_command_query(state: AgentState) -> dict[str, Any]:
     """存量兼容交易查询:GOATS instruction/query;恒回静默哨兵。"""
     query = state.get("raw_text", "") or ""

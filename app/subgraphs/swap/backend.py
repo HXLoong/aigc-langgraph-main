@@ -20,6 +20,7 @@ from typing import Any
 
 from app.graph.state import AgentState, TickerCandidate
 from app.subgraphs.swap.prewash import sanitize_order_list
+from app.tools.bot_context import BotContext, normalize_message_id
 from app.tools.exceptions import EmptyBackendResultError, MissingBackendContextError
 from app.tools.swap_client import (
     SwapClientHttpx,
@@ -32,30 +33,15 @@ logger = logging.getLogger(__name__)
 
 
 def _message_id(value: Any) -> int:
-    if isinstance(value, int):
-        return value
-    digits = "".join(ch for ch in str(value) if ch.isdigit())
-    return int(digits[-18:]) if digits else 0
+    return normalize_message_id(value)
 
 
 def _context(state: AgentState) -> dict[str, Any]:
-    raw = state.get("raw_text", "") or ""
-    quote = state.get("quote_content")
-    return {
-        "conversationId": state.get("conversation_id", "") or "",
-        "messageId": _message_id(state.get("message_id", 0)),
-        "messageContent": raw if not quote else f"{raw}\n{quote}",
-        "rawContent": raw,
-        "quoteContent": quote,
-        "quoteAppinfo": state.get("quote_appinfo"),
-        "userId": state.get("user_id", "") or "",
-        "roomId": state.get("room_id", "") or "",
-        "guid": state.get("guid"),
-        # DSL v2「互换开仓」新增字段：操作者（替代旧 userId 语义，见
-        # app/graph/state.py operator_user_id docstring）；state 未填时留空串，
-        # SwapOrderOpenApiSaveReqVO 是 extra="allow"，透传给后端即可。
-        "operatorUserId": state.get("operator_user_id", "") or "",
-    }
+    """机器人上下文 → Java ReqVO 字段；唯一定义在 app/tools/bot_context.py。"""
+    wire = BotContext.from_state(state).to_wire()
+    # 互换 operate 未填操作者透传空串（ReqVO extra="allow"）
+    wire["operatorUserId"] = wire["operatorUserId"] or ""
+    return wire
 
 
 def _is_empty_backend_result(value: Any) -> bool:
@@ -138,13 +124,7 @@ async def call_swap_backend(
     Raises:
         MissingBackendContextError: 缺少调用后端必需的机器人上下文字段。
     """
-    missing_fields = [
-        field
-        for field in ("conversation_id", "room_id", "user_id")
-        if not state.get(field)
-    ]
-    if _message_id(state.get("message_id")) <= 0:
-        missing_fields.append("message_id")
+    missing_fields = BotContext.from_state(state).missing_required()
     if missing_fields:
         logger.error(
             "swap backend call blocked: missing_fields=%s",

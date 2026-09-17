@@ -67,7 +67,7 @@ def _summarize(state: dict[str, Any]) -> dict[str, Any]:
         }
     place = state.get("place_params")
     if place:
-        summary["place_params_action"] = place.get("expected_action")
+        summary["place_params_action"] = state.get("expected_action")
         summary["place_params_order_count"] = len(place.get("orderList") or [])
     cancel = state.get("cancel_params")
     if cancel:

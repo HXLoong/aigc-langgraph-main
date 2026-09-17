@@ -1,8 +1,5 @@
 # 互换-节点-意图识别
 
-- **node_id**: `1776159951508`
-- **model**: `external-qwen3.6-35b-a3b-non-thinking`
-
 ## [system]
 
 ```
@@ -467,15 +464,4 @@ quote_content: "请确认是否撤单..."
 
 用户:你好
 输出: {"type": "unknown_intent"}
-```
-
-## [user]
-
-```
-raw_content：{{#1755072621769.raw_content#}}
------------------------------------
-quote_content：{{#1755072621769.quote_content#}}
------------------------------------
-shortname_list：{{#1772773805306.trsShortListStr#}}
------------------------------------
 ```

@@ -13,14 +13,14 @@ from __future__ import annotations
 from typing import Any
 
 from app.graph.business_params import validated_query_filter
-from app.graph.safe_node import safe_node
+from app.graph.retry import io_node
 from app.graph.state import AgentState, TraceEntry
 from app.subgraphs.close.aggregate import build_close_order_req_vo
 from app.subgraphs.close.backend import call_close_backend
 from app.subgraphs.close.order_id import extract_for_query
 
 
-@safe_node
+@io_node
 async def close_query_status(state: AgentState) -> dict[str, Any]:
     """close.query_status 节点（确定性提取）。"""
     order_nos = extract_for_query(state.get("raw_text"))

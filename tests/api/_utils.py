@@ -8,8 +8,6 @@ from typing import Any
 import requests
 
 BASE_URL = "http://tstgoats.gf.com.cn"
-DIFY_BASE_URL = "http://agent.smart-zone-dev.gf.com.cn"
-DIFY_API_KEY = "app-0gZMM7e4jdPL3J32nfVwqA6Y"
 CLIENT_ID = "TL_AGENT"
 CLIENT_SECRET = "tltest"
 SALT = "aaa"

@@ -380,10 +380,8 @@ def parse_prometheus_metrics(text: str) -> dict[str, Any]:
             ):
                 result["canary_traffic_non_canary"] += value
             elif name_part == "otc_agent_intent_latency_ms_bucket":
-                # #157 裁决：剔除节点级样本（emit_node_completed 带 node= label 写入），
-                # P95 只统计端到端请求样本（routes.py 出口 emit_intent_latency，无 node label）
-                if 'node="' in labels_str:
-                    continue
+                # 端到端请求样本（routes.py 出口 emit_intent_latency）；节点级延迟在
+                # otc_agent_node_latency_ms 独立直方图（ADR 0024 D5），不会混进来
                 le = _extract_le(labels_str)
                 if le is not None:
                     latency_buckets[le] = latency_buckets.get(le, 0.0) + value

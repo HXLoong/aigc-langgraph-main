@@ -19,6 +19,7 @@ from __future__ import annotations
 from typing import Any
 
 from app.graph.business_params import validated_confirm
+from app.graph.memory import memory_order_ids
 from app.graph.safe_node import safe_node
 from app.graph.state import AgentState, TraceEntry
 from app.subgraphs.option.backend import call_option_backend
@@ -34,6 +35,11 @@ async def option_extract_confirm_place(state: AgentState) -> dict[str, Any]:
         state.get("quote_content"),
         history_texts(state.get("history_messages")),
     )
+    if parsed and all(item.get("order_id") is None for item in parsed):
+        # 裸确认下单 → 上一轮询价卡记下的单号（ADR 0024 D4）；引用卡里的单号已在 parsed 里优先
+        remembered = memory_order_ids(state, "option")
+        if remembered:
+            parsed = [{**parsed[0], "order_id": order_id} for order_id in remembered]
     validated = OptionConfirmPlaceParams.model_validate({"orderList": parsed})
     order_list = [item.model_dump() for item in validated.order_list]
 
@@ -44,6 +50,7 @@ async def option_extract_confirm_place(state: AgentState) -> dict[str, Any]:
     )
 
     return {
+        "expected_action": "place",
         "confirm": validated_confirm(action="place", orderList=order_list),
         **backend,
         "trace": [

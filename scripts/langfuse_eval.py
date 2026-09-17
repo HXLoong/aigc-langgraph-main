@@ -47,8 +47,15 @@ sys.path.insert(0, str(PROJECT_ROOT))
 from langgraph.checkpoint.memory import InMemorySaver
 from app.graph.main import build_main_graph
 from app.prompts import load_prompt
-from app.state import WechatInput, make_initial_state
-from harness.golden import GoldenCase, build_overview, filter_by_category, filter_by_ids, load_golden
+from app.api.turn_state import inputs_to_state
+from harness.golden import (
+    GoldenCase,
+    build_overview,
+    filter_by_category,
+    filter_by_ids,
+    load_golden,
+    select_runnable,
+)
 from harness.multi_turn import early_stop_kind, quote_for_turn
 
 DATASET_NAME = "otc-option-golden"
@@ -74,17 +81,17 @@ def _fmt_trace(trace_entries) -> str:
 
 # ── Task ──
 async def _run_graph_once(graph, config, raw_content, has_mention=True, turn=1, quote_content=None):
-    wx = WechatInput(
-        conversation_id=config["configurable"]["thread_id"],
-        message_id=secrets.randbelow(900_000_000_000_000) + 100_000_000_000_000,
-        room_id=os.environ.get("EVAL_ROOM_ID", "eval-room"),
-        user_id=os.environ.get("EVAL_USER_ID", "eval-user"),
-        guid="",
-        raw_content=raw_content,
-        quote_content=quote_content,
-    )
-    state = make_initial_state(wx)
-    state["at_bot"] = has_mention
+    # 与生产 routes 同一条入口（ADR 0024 D2）：Dify 形态 inputs → inputs_to_state
+    state = inputs_to_state({
+        "rawContent": raw_content,
+        "quoteContent": quote_content,
+        "messageId": secrets.randbelow(900_000_000_000_000) + 100_000_000_000_000,
+        "roomId": os.environ.get("EVAL_ROOM_ID", "eval-room"),
+        "userId": os.environ.get("EVAL_USER_ID", "eval-user"),
+        "guid": "",
+        "at_bot": has_mention,
+    })
+    state["conversation_id"] = config["configurable"]["thread_id"]
     result = await graph.ainvoke(state, config=config)
     return result
 
@@ -110,13 +117,40 @@ def _is_image_case(case: GoldenCase) -> bool:
     return any(m in full_text for m in _IMAGE_MARKERS)
 
 
+def _langfuse_enabled() -> bool:
+    """langfuse v4 CallbackHandler 只读 os.environ；双 key 齐才算启用。"""
+    return bool(os.environ.get("LANGFUSE_PUBLIC_KEY") and os.environ.get("LANGFUSE_SECRET_KEY"))
+
+
+def _graph_callbacks() -> list:
+    """图级全局注入已删除（ADR 0024 D5）：eval 自己把 LangFuse handler 放进 config。"""
+    if not _langfuse_enabled():
+        return []
+    try:
+        from langfuse.langchain import CallbackHandler
+
+        return [CallbackHandler()]
+    except Exception as exc:  # noqa: BLE001
+        print(f"LangFuse CallbackHandler 不可用，per-node span 缺失：{exc}")
+        return []
+
+
 async def run_langgraph_pipeline(*, item, **kwargs):
     inp = item.input if isinstance(item.input, dict) else json.loads(item.input)
     turns_data = inp.get("turns", [])
     cp = InMemorySaver()
     graph = build_main_graph(cp)
     conversation_id = str(uuid.uuid4())
-    config = {"configurable": {"thread_id": conversation_id}}
+    # 与生产 routes._build_run_config 同一契约：thread + session + 审计 trace_id
+    config = {
+        "configurable": {"thread_id": conversation_id},
+        "metadata": {
+            "trace_id": uuid.uuid4().hex,
+            "langfuse_session_id": conversation_id,
+            "langfuse_tags": ["eval"],
+        },
+        "callbacks": _graph_callbacks(),
+    }
     results = []
     failure: dict | None = None
     for t in turns_data:
@@ -161,7 +195,7 @@ async def run_langgraph_pipeline(*, item, **kwargs):
                         }
                     )
 
-            # place_params 简化（保留 expected_action + orderList 字段，去掉 None 减少噪音）
+            # place_params 简化（顶层 expected_action + orderList 字段，去掉 None 减少噪音）
             pp = rs.get("place_params") or {}
             orders_raw = pp.get("orderList", [])
             orders_simple = [
@@ -178,7 +212,7 @@ async def run_langgraph_pipeline(*, item, **kwargs):
             ]
             place_simple = (
                 {
-                    "action": pp.get("expected_action"),
+                    "action": rs.get("expected_action"),
                     "orderList": orders_simple,
                 }
                 if pp
@@ -458,6 +492,7 @@ class _LocalItem:
                     "send_text": turn.send_text,
                     "at_bot": turn.at_bot,
                     "quote_previous": turn.quote_previous,
+                    "quote_desc": turn.quote_desc,
                 }
                 for turn in case.turns
             ]
@@ -470,6 +505,9 @@ async def run_local(
 ):
     cases = load_golden(golden_paths)
     print(f"加载 {len(cases)} 条 (local)")
+    cases, unrunnable = select_runnable(cases)
+    if unrunnable:
+        print(f"跳过不可执行 case: {len(unrunnable)} 条 (某轮 raw_content 为空，见 skip_reason；Issue #113)")
     if _SKIP_IMAGE_CASES:
         skipped = [case for case in cases if _is_image_case(case)]
         cases = [case for case in cases if not _is_image_case(case)]

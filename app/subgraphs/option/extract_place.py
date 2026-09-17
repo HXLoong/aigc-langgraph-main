@@ -10,7 +10,7 @@ Q- 订单的参数修改请求，intent 节点统一归为 `place_order_from_quo
 `OptionPlaceParams` 校验补齐完整字段集。
 
 输入：raw_text + quote_content + history_messages
-输出：state['place_params'] = {expected_action: "place", orderList}
+输出：state['expected_action'] = "place" + state['place_params'] = {orderList}
 """
 from __future__ import annotations
 
@@ -29,7 +29,7 @@ async def option_extract_place(state: AgentState) -> dict[str, Any]:
     """option.extract_place 节点。
 
     出参约定：
-    - place_params: dict 含 expected_action="place" + orderList
+    - expected_action="place" + place_params: {orderList}
     - trace: 单条 TraceEntry，记录订单数 + orderType 分布
     """
     parsed = parse_place_params(
@@ -49,7 +49,8 @@ async def option_extract_place(state: AgentState) -> dict[str, Any]:
     )
 
     return {
-        "place_params": validated_place_params(expected_action="place", orderList=order_list),
+        "expected_action": "place",
+        "place_params": validated_place_params(orderList=order_list),
         **backend,
         "trace": [TraceEntry(node="option_extract_place", decision=decision)],
     }

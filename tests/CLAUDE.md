@@ -8,7 +8,7 @@
 ```
 tests/
 ├── conftest.py            # 全局 pytest 配置（仅占位；根纪律禁止用 autouse 绕过真实业务路径）
-├── fixtures/              # categories/（现役数据源）+ unified_golden.jsonl / old_typing/（归档）+ README.md
+├── fixtures/              # categories/（A 方言）+ unified_golden.jsonl（B 方言，harness 默认并入）+ old_typing/（归档）+ README.md
 ├── api/                   # FastAPI 路由测试
 ├── nodes/                 # 节点级测试（intent_route / render / fallback ...）
 ├── subgraphs/{swap,option,close,ticker}/  # 子图级测试

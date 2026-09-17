@@ -221,7 +221,7 @@ aigc-langgraph/
 │   ├── llm/clients.py            # Qwen 工厂（standard / thinking / VL / 35b-a3b）
 │   ├── checkpointer/factory.py   # AIOMySQLSaver
 │   ├── observability/            # tracing + metrics（/metrics 端点）
-│   └── prompts/                  # Dify 提示词资产
+│   └── prompts/                  # 提示词资产（git 唯一真源）
 ├── harness/                      # 评测台 CLI
 ├── infra/langfuse/               # LangFuse self-hosted compose
 ├── docs/adr/                     # 20 个架构决定（ADR 0000-0019）

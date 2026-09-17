@@ -14,3 +14,22 @@ class TestBuildRunConfig:
         cfg = _build_run_config(conversation_id="c-9", trace_id="t-9")
         assert cfg["configurable"]["thread_id"] == "c-9"
         assert cfg["metadata"]["trace_id"] == "t-9"
+
+
+class TestLangfuseDimensions:
+    """ADR 0024 D5：config.metadata 必须携带 LangFuse 会话 / 用户 / 标签维度，
+    否则多轮在 LangFuse 里是 N 条互不关联的 trace。"""
+
+    def test_session_and_user(self):
+        cfg = _build_run_config(
+            conversation_id="c-9", trace_id="t-9", user_id="u-1", environment="staging"
+        )
+        md = cfg["metadata"]
+        assert md["langfuse_session_id"] == "c-9"
+        assert md["langfuse_user_id"] == "u-1"
+        assert "staging" in md["langfuse_tags"]
+
+    def test_user_optional(self):
+        cfg = _build_run_config(conversation_id="c-9", trace_id="t-9")
+        assert "langfuse_user_id" not in cfg["metadata"]
+        assert cfg["metadata"]["langfuse_session_id"] == "c-9"

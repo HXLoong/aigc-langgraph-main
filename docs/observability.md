@@ -115,6 +115,16 @@ HTTP 响应计数。由 `HTTPMetricsMiddleware` 在每次请求结束时 emit。
 
 ---
 
+### 2.8 `otc_agent_node_latency_ms{node}` — Histogram（ADR 0024 D5）
+
+节点级执行延迟，`@safe_node` / `@io_node` 在每次节点完成（ok / error / retry）时观测；bucket 同 2.2。
+此前节点延迟寄生在 2.2 的 intent 直方图里（`product_type="unknown"` + `node` label），P95 解析器只能靠
+字符串过滤剔除；现在两者彻底分离：2.2 只有端到端请求样本，本指标只有节点样本。
+
+**衍生指标**：
+- 最慢节点 = `histogram_quantile(0.95, sum by (node, le) (rate(otc_agent_node_latency_ms_bucket[5m])))`
+- 与 `node_trace.duration_ms`（同一计时点，`@safe_node` 补到节点自写的 TraceEntry 上）可交叉核对
+
 ## 3. `/metrics` Endpoint
 
 应用启动后，访问：
@@ -307,6 +317,24 @@ DDL 已在 `sql/schema.sql:34`，写入路径在 `app/nodes/persist.py`（M1 占
 - **C1.7（#56）** · LLM 成本监控（依赖本任务）
 - **C1.8（#57）** · trace 双写（依赖本任务）
 - **D2.6** · `/health` `/ready` 健康检查端点（与 `/metrics` 并列）
+
+---
+
+## 11. 结构化日志（ADR 0024 D5）
+
+`app/observability/logs.py`：structlog 接管 stdlib logging。业务代码继续 `logging.getLogger(__name__)` +
+`%` 格式化，不需要改写；根 handler 把每条记录渲染成 JSON（`LOG_FORMAT=json`，生产推荐）或彩色控制台
+（`console`；`auto` 在 development 取控制台、其余取 JSON），级别取 `LOG_LEVEL`。
+
+`/v1/workflows/run` 整次图调用期间，`trace_id` / `conversation_id` / `message_id` 经 contextvars 绑定，
+图内任何模块、任何节点、任何重试打的日志都自动带这三个键，与 `node_trace.trace_id`、LangFuse
+`metadata.trace_id`、响应 `outputs.trace_id` 同源——排障时按一个 id 在日志 / 库表 / LangFuse 三处对齐。
+
+```json
+{"event": "node=swap_confirm retryable=BackendUnreachableError: swap: timeout", "level": "warning",
+ "logger": "app.graph.safe_node", "timestamp": "2026-09-17T08:00:00Z",
+ "trace_id": "8f1c…", "conversation_id": "wx-room-1", "message_id": 1234567890}
+```
 
 ---
 

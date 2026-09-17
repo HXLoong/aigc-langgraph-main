@@ -1,5 +1,8 @@
 #!/usr/bin/env python3
-"""Validate the active categories fixture directory."""
+"""Validate the active fixtures: categories/*.jsonl (A dialect) + unified_golden.jsonl (B dialect).
+
+ADR 0024 D6：两份现役数据源同受 lint；一个文件只放一种方言，id 跨文件唯一。
+"""
 from __future__ import annotations
 
 import argparse
@@ -10,6 +13,9 @@ from pathlib import Path
 from typing import Any
 
 ROOT = Path(__file__).resolve().parents[1]
+UNIFIED_FIXTURE_NAME = "unified_golden.jsonl"
+#: 运行时 product_type 取值（app/graph/state.py ProductType）；fixture 标了别的值只告警不阻断
+KNOWN_PRODUCT_TYPES = ("swap", "option", "option_close", "unknown")
 
 
 def _lines(value: Any) -> list[str] | None:
@@ -18,6 +24,82 @@ def _lines(value: Any) -> list[str] | None:
     if isinstance(value, list) and all(isinstance(item, str) for item in value):
         return [item.strip() for item in value if item.strip()]
     return None
+
+
+def _iter_jsonl(path: Path, errors: list[str]):
+    lines = path.read_text(encoding="utf-8").splitlines()
+    if not lines:
+        errors.append(f"{path}: empty file")
+        return
+    for line_number, raw_line in enumerate(lines, start=1):
+        line = raw_line.strip()
+        if not line or line.startswith("#"):
+            continue
+        origin = f"{path}:{line_number}"
+        try:
+            obj = json.loads(line)
+        except json.JSONDecodeError as exc:
+            errors.append(f"{origin}: invalid JSON: {exc}")
+            continue
+        if not isinstance(obj, dict):
+            errors.append(f"{origin}: case must be an object")
+            continue
+        yield origin, obj
+
+
+def validate_unified(path: Path, ids: list[str]) -> tuple[list[str], list[str]]:
+    """B 方言 lint：id + conversation[].raw_content + expected{product_type, intent}；返回 (errors, warnings)。"""
+    errors: list[str] = []
+    warnings: list[str] = []
+    for origin, obj in _iter_jsonl(path, errors):
+        a_fields = sorted(key for key in ("send_text", "sub_scenes", "name") if key in obj)
+        if a_fields:
+            errors.append(f"{origin}: fields {a_fields} belong to the A dialect (categories/), not {path.name}")
+        case_id = obj.get("id")
+        if not isinstance(case_id, str) or not case_id.strip():
+            errors.append(f"{origin}: missing id")
+        else:
+            ids.append(case_id)
+        if not isinstance(obj.get("category"), str) or not obj["category"].strip():
+            errors.append(f"{origin}: missing category")
+        conversation = obj.get("conversation")
+        if not isinstance(conversation, list) or not conversation:
+            errors.append(f"{origin}: conversation must be a non-empty list")
+        else:
+            for index, turn in enumerate(conversation):
+                if not isinstance(turn, dict) or not isinstance(turn.get("raw_content"), str):
+                    errors.append(f"{origin}: conversation[{index}] missing raw_content")
+                elif not turn["raw_content"].strip():
+                    warnings.append(
+                        f"{origin}: {obj.get('id')!r} conversation[{index}] raw_content is empty"
+                        " (unrunnable, harness skips it; Issue #113 业务方 review)"
+                    )
+        expected = obj.get("expected")
+        if not isinstance(expected, dict):
+            errors.append(f"{origin}: expected must be an object")
+            continue
+        for field_name in ("product_type", "intent"):
+            if not isinstance(expected.get(field_name), str) or not expected[field_name].strip():
+                errors.append(f"{origin}: expected.{field_name} is required")
+        product_type = expected.get("product_type")
+        if isinstance(product_type, str) and product_type not in KNOWN_PRODUCT_TYPES:
+            warnings.append(
+                f"{origin}: {case_id!r} expected.product_type={product_type!r} is not a runtime ProductType"
+                f" {KNOWN_PRODUCT_TYPES} (Issue #113 业务方 review)"
+            )
+    return errors, warnings
+
+
+def _unified_path(root: Path) -> Path:
+    fixtures_root = root.parent if root.name == "categories" else root
+    return fixtures_root / UNIFIED_FIXTURE_NAME
+
+
+def collect_warnings(root: Path) -> list[str]:
+    unified = _unified_path(root)
+    if not unified.is_file():
+        return []
+    return validate_unified(unified, [])[1]
 
 
 def validate(root: Path, verbose: bool = False) -> list[str]:
@@ -48,9 +130,11 @@ def validate(root: Path, verbose: bool = False) -> list[str]:
             if not isinstance(obj, dict):
                 errors.append(f"{origin}: case must be an object")
                 continue
-            legacy = {key for key in ("conversation", "raw_content") if key in obj}
-            if legacy:
-                errors.append(f"{origin}: legacy fields: {sorted(legacy)}")
+            b_fields = sorted(key for key in ("conversation", "raw_content") if key in obj)
+            if b_fields:
+                errors.append(
+                    f"{origin}: fields {b_fields} belong to the B dialect ({UNIFIED_FIXTURE_NAME}), not categories/"
+                )
             case_id = obj.get("id") or obj.get("caseNo")
             if not isinstance(case_id, str) or not case_id.strip():
                 errors.append(f"{origin}: missing id/caseNo")
@@ -73,11 +157,19 @@ def validate(root: Path, verbose: bool = False) -> list[str]:
                 for index, sub_scene in enumerate(sub_scenes):
                     if not isinstance(sub_scene, dict) or not isinstance(sub_scene.get("send_text"), str) or not sub_scene["send_text"].strip():
                         errors.append(f"{origin}: sub_scenes[{index}] missing send_text")
+    unified = _unified_path(root)
+    warnings: list[str] = []
+    if unified.is_file():
+        unified_errors, warnings = validate_unified(unified, ids)
+        errors.extend(unified_errors)
+        paths.append(unified)
     for duplicate, count in Counter(ids).items():
         if count > 1:
             errors.append(f"duplicate id {duplicate!r}: {count} occurrences")
     if verbose:
         print(f"validated {len(paths)} fixture files and {len(ids)} cases")
+        for warning in warnings:
+            print(f"WARNING: {warning}")
     return errors
 
 

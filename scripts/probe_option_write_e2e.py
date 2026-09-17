@@ -70,7 +70,7 @@ def _summarize_state(state: dict[str, Any]) -> dict[str, Any]:
         for t in tickers[:3]
     ]
     place = state.get("place_params") or {}
-    summary["place_params_expected_action"] = place.get("expected_action")
+    summary["place_params_expected_action"] = state.get("expected_action")
     orders = place.get("orderList") or []
     summary["place_params_order_count"] = len(orders)
     if orders:

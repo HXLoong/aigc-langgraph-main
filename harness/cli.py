@@ -12,8 +12,19 @@ from typing import Any
 
 import httpx
 
-from harness.differ import FieldDiff, check_structured_assertions, check_text_assertions
-from harness.golden import GoldenCase, filter_by_category, filter_by_ids, load_golden
+from harness.differ import (
+    FieldDiff,
+    check_case_assertions,
+    check_structured_assertions,
+    check_text_assertions,
+)
+from harness.golden import (
+    GoldenCase,
+    filter_by_category,
+    filter_by_ids,
+    load_golden,
+    select_runnable,
+)
 from harness.multi_turn import MultiTurnResult, run_case_multi
 
 
@@ -24,29 +35,55 @@ def _paths(values: list[str] | None) -> list[Path] | Path | None:
     return paths[0] if len(paths) == 1 else paths
 
 
-def _turn_diffs(case: GoldenCase, result: MultiTurnResult) -> dict[int, list[FieldDiff]]:
-    diffs: dict[int, list[FieldDiff]] = {}
+def _turn_diffs(
+    case: GoldenCase, result: MultiTurnResult, backend: str = "real"
+) -> dict[int | str, list[FieldDiff]]:
+    diffs: dict[int | str, list[FieldDiff]] = {}
     for outcome, spec in zip(result.turns, case.turns, strict=False):
-        turn_diffs = check_text_assertions(outcome.reply_text, spec)
+        turn_diffs = check_text_assertions(outcome.reply_text, spec, allow_dry_run=backend == "dry-run")
         turn_diffs.extend(check_structured_assertions(outcome.outputs, spec.expected))
         diffs[outcome.index] = turn_diffs
-    if result.failure and not result.turns:
-        diffs[result.failure["turn"]] = [
-            FieldDiff(path="runtime", expected="successful HTTP response", actual=result.failure)
-        ]
+    if case.expected_scope == "any_turn":
+        case_diffs = check_case_assertions([outcome.outputs for outcome in result.turns], case.expected)
+        if case_diffs:
+            diffs["case"] = case_diffs
+    if result.failure:
+        # 早停后未执行的轮次逐轮显式记失败（ADR 0024 D6），多轮 case 不得因早停静默通过
+        stop_turn, kind = result.failure.get("turn"), result.failure.get("kind")
+        for index in range(len(result.turns) + 1, len(case.turns) + 1):
+            diffs[index] = [
+                FieldDiff(
+                    path="runtime",
+                    expected="turn executed",
+                    actual=f"not executed: early stop at turn {stop_turn} ({kind})",
+                )
+            ]
     return diffs
 
 
-def _report_case(case: GoldenCase, result: MultiTurnResult, diffs: dict[int, list[FieldDiff]]) -> dict[str, Any]:
+def _case_status(result: MultiTurnResult, diffs: dict[int | str, list[FieldDiff]]) -> str:
+    """PASS / FAIL / REJECTED：业务拒绝不算 PASS，单独成桶（ADR 0024 D6）。"""
+    if any(diffs.values()):
+        return "FAIL"
+    if result.failure is None:
+        return "PASS"
+    return "REJECTED" if result.failure.get("kind") == "business_reject" else "FAIL"
+
+
+def _report_case(
+    case: GoldenCase, result: MultiTurnResult, diffs: dict[int | str, list[FieldDiff]]
+) -> dict[str, Any]:
+    status = _case_status(result, diffs)
     return {
         "case_id": case.id,
         "category": case.category,
+        "dialect": case.dialect,
+        "case_diff": [item.model_dump() for item in diffs.get("case", [])],
         "source_path": case.source_path,
         "source_line": case.source_line,
         "conversation_id": result.conversation_id,
-        "passed": not any(diffs.values()) and (
-            not result.failure or result.failure.get("kind") == "business_reject"
-        ),
+        "status": status,
+        "passed": status == "PASS",
         "failure": result.failure,
         "turns": [
             {
@@ -70,20 +107,32 @@ def _report_case(case: GoldenCase, result: MultiTurnResult, diffs: dict[int, lis
     }
 
 
+def _summarize(reports: list[dict[str, Any]]) -> dict[str, Any]:
+    counts = {status: sum(1 for r in reports if r["status"] == status) for status in ("PASS", "FAIL", "REJECTED")}
+    return {
+        "total": len(reports),
+        "passed": counts["PASS"],
+        "failed": counts["FAIL"],
+        "rejected": counts["REJECTED"],
+        "pass_rate": counts["PASS"] / len(reports) if reports else 0.0,
+    }
+
+
 def _render_markdown(reports: list[dict[str, Any]]) -> str:
-    passed = sum(1 for report in reports if report["passed"])
+    summary = _summarize(reports)
     lines = [
         "# Harness Regression Report",
         "",
-        f"- PASS: {passed}",
-        f"- FAIL: {len(reports) - passed}",
-        f"- TOTAL: {len(reports)}",
+        f"- PASS: {summary['passed']}",
+        f"- FAIL: {summary['failed']}",
+        f"- REJECTED: {summary['rejected']}  (backend business reject; not counted as PASS)",
+        f"- TOTAL: {summary['total']}",
         "",
         "| case | category | status | failure |",
         "|---|---|---|---|",
     ]
     for report in reports:
-        status = "PASS" if report["passed"] else "FAIL"
+        status = report["status"]
         lines.append(
             f"| `{report['case_id']}` | `{report['category']}` | {status} | "
             f"{report.get('failure') or ''} |"
@@ -91,7 +140,27 @@ def _render_markdown(reports: list[dict[str, Any]]) -> str:
     return "\n".join(lines) + "\n"
 
 
-async def _doctor(base_url: str, checkpoint: str = "none") -> int:
+#: --backend 取值 → 服务端 /health.backend_mode 必须是什么（mock 只是把真后端 URL 指向 mock_api）
+_REQUIRED_SERVER_MODE = {"real": "real", "mock": "real", "dry-run": "dry-run"}
+
+
+def _backend_gate(backend: str | None, server_mode: str | None) -> str | None:
+    """返回阻断原因；None 表示放行。旧服务端不报模式时只对 dry-run 严格（不能假定写类已被拦截）。"""
+    if backend is None:
+        return None
+    wanted = _REQUIRED_SERVER_MODE[backend]
+    if server_mode is None:
+        return (
+            "--backend dry-run requires the server to report backend_mode=dry-run in /health; got none"
+            if backend == "dry-run"
+            else None
+        )
+    if server_mode != wanted:
+        return f"--backend {backend} needs server backend_mode={wanted}, but /health reports {server_mode!r}"
+    return None
+
+
+async def _doctor(base_url: str, checkpoint: str = "none", backend: str | None = None) -> int:
     async with httpx.AsyncClient(base_url=base_url.rstrip("/"), timeout=10.0) as client:
         try:
             health = await client.get("/health")
@@ -103,6 +172,14 @@ async def _doctor(base_url: str, checkpoint: str = "none") -> int:
     print(f"health={health.status_code}")
     print(f"ready={ready.status_code} {ready.text[:500]}")
     if not health.is_success:
+        return 2
+    try:
+        server_mode = health.json().get("backend_mode")
+    except ValueError:
+        server_mode = None
+    reason = _backend_gate(backend, server_mode)
+    if reason:
+        print(f"ERROR: {reason}", file=sys.stderr)
         return 2
     if ready.is_success:
         return 0
@@ -142,11 +219,9 @@ def _resolve_eval_ids(user_id: str | None, room_id: str | None) -> tuple[str, st
 
 
 async def _run(args: argparse.Namespace) -> int:
-    gate = await _doctor(args.base_url, args.checkpoint)
+    gate = await _doctor(args.base_url, args.checkpoint, backend=args.backend)
     if args.check_backend or gate != 0:
         return gate
-    if args.backend == "dry-run":
-        print("WARNING: dry-run must be configured in the already running uvicorn process")
     user_id, room_id = _resolve_eval_ids(args.user_id, args.room_id)
     if not user_id or not room_id:
         print(
@@ -157,6 +232,9 @@ async def _run(args: argparse.Namespace) -> int:
     cases = filter_by_ids(
         filter_by_category(load_golden(_paths(args.data)), args.category), args.case
     )
+    cases, skipped = select_runnable(cases)
+    if skipped:
+        print(f"skipped {len(skipped)} unrunnable cases (skip_reason set), e.g. {skipped[0].id}: {skipped[0].skip_reason}")
     if args.limit is not None:
         cases = cases[: args.limit]
     if not cases:
@@ -174,10 +252,10 @@ async def _run(args: argparse.Namespace) -> int:
             room_id=room_id,
             turn_interval=args.turn_interval,
         )
-        diffs = _turn_diffs(case, result)
+        diffs = _turn_diffs(case, result, backend=args.backend)
         report = _report_case(case, result, diffs)
         reports.append(report)
-        print(f"[{'PASS' if report['passed'] else 'FAIL'}] {case.id} ({case.category})")
+        print(f"[{report['status']}] {case.id} ({case.category})")
         if args.stop_on_fail and not report["passed"]:
             break
 
@@ -189,17 +267,14 @@ async def _run(args: argparse.Namespace) -> int:
             (failures / f"{report['case_id']}.json").write_text(
                 json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8"
             )
-    passed = sum(1 for report in reports if report["passed"])
     summary = {
-        "total": len(reports),
-        "passed": passed,
-        "failed": len(reports) - passed,
-        "pass_rate": passed / len(reports) if reports else 0.0,
+        **_summarize(reports),
         "backend": args.backend,
         "checkpoint": args.checkpoint,
         "base_url": args.base_url,
         "reports": reports,
     }
+    passed = summary["passed"]
     (out_dir / "summary.json").write_text(
         json.dumps(summary, ensure_ascii=False, indent=2), encoding="utf-8"
     )

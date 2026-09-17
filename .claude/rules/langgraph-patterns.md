@@ -2,11 +2,11 @@
 
 ## State 设计
 
-- 在 `app/state.py` 统一管理 `AgentState`（TypedDict）
+- 在 `app/graph/state.py` 统一管理 `AgentState`（TypedDict）；一轮输入的唯一入口是 `app/api/turn_state.py::inputs_to_state`
 - 新增字段必须：
   1. 在 TypedDict 中声明类型
   2. 若需要并行合并（如 `trace`），加 `Annotated[list, add]`
-  3. 在 `make_initial_state()` 中给默认值
+  3. per-turn 字段在 `app/nodes/ingest.py` 重置；入口 `app/api/turn_state.py::inputs_to_state` 不写业务对象默认值（ADR 0024 D2）；跨轮记忆只有 `history_messages` 与 `last_confirmed_params`（主图 `remember_confirmed_params` 写入，确认链路裸确认时经 `app/graph/memory.py::memory_order_ids` 读，显式引用 / 单号永远优先）
 
 ```python
 class AgentState(TypedDict, total=False):
@@ -38,6 +38,12 @@ async def my_node(state: AgentState) -> dict[str, Any]:
 - 节点只返回**需要更新的字段**，LangGraph 会自动 merge
 - 不要修改传入的 state（immutable 对待）
 - trace 用 list 形式（reducer 会累加）
+- **只读 IO 节点**（意图识别 / 参数抽取 / 后端查询）用 `@io_node` 并以 `add_io_node(g, name, fn)` 注册：
+  可重试异常穿透给 `RetryPolicy`（`NODE_RETRY_MAX_ATTEMPTS`，默认 3），耗尽后节点级 `error_handler`
+  落 `state['error']`（trace decision `error:retry_exhausted`）；**写类节点**（下单 / 撤单 / 确认 / 平仓）
+  保持 `@safe_node`，绝不自动重试。`tests/graph/test_retry_policy.py` 守护读写分类清单
+- 调后端只经 `call_*_backend(state, ...)`：适配层在边界处 `BotContext.from_state(state)`，协议层只吃
+  `BotContext`（`app/tools/bot_context.py`），业务对象进不了请求拼装
 
 ## 条件路由
 

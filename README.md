@@ -95,14 +95,13 @@ app/                        # LangGraph 应用层
 ├── llm/clients.py          # LLM 统一工厂：全量 DeepSeek-V4-pro（ADR 0020；函数名沿用 get_qwen_*）
 ├── checkpointer/factory.py # AIOMySQLSaver
 ├── observability/          # tracing + metrics（Prometheus 兼容 /metrics）
-└── prompts/                # Dify 提示词资产（router / swap / option / option_close / ticker）
+└── prompts/                # 提示词资产（git 唯一真源；router / swap / option / option_close / ticker）
 
 harness/                    # 评测台 CLI（python -m harness <doctor|run>，经 HTTP 调本地 /v1/workflows/run）
 scripts/                    # langfuse_eval.py / probe_*.py / promote_*.py / canary_*.sh ...
 infra/langfuse/             # LangFuse self-hosted Docker Compose（PG + ClickHouse + Redis + MinIO + Web + Worker）
-docs/adr/                   # 架构决定 ADR 0000-0023（共 24 篇）+ README 索引
+docs/adr/                   # 架构决定 ADR 0000-0024（共 25 篇）+ README 索引
 docs/api-contracts/         # Java 后端真实业务 API 契约
-dify/                       # Dify 同步工具（保留历史 YAML 资产）
 tests/                      # 1864 passed + 15 skipped
 tests/fixtures/             # golden.jsonl（350+ 条）+ golden_ticker_2026-05.jsonl
 ```

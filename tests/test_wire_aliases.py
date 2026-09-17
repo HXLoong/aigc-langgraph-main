@@ -44,7 +44,6 @@ def test_rfq_alias_preserves_numeric_normalization_and_json(key: str) -> None:
 
 def test_state_envelope_preserves_only_explicit_alias_keys() -> None:
     assert validated_place_params(orderList=[]) == {"orderList": []}
-    assert validated_place_params(expected_action="place") == {"expected_action": "place"}
     assert validated_place_params(order_list=[{"orderId": "Q-1"}]) == {
         "orderList": [{"orderId": "Q-1"}],
     }

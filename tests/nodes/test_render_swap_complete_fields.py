@@ -42,7 +42,7 @@ async def test_order_fields_never_rebuild_backend_card(
     state: AgentState = {
         "product_type": "swap",
         "intent": "place_order_request",
-        "place_params": {"expected_action": "place", "orderList": [order]},
+        "place_params": {"orderList": [order]},
         "tickers": [TickerCandidate(windCode="600519.SH", insShtDesc="贵州茅台", from_goats=True)],
         "api_result": backend_reply,
     }

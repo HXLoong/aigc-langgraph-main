@@ -80,7 +80,7 @@ test(e2e): 新增 2 条雪球询价的 golden case
 - [ ] `ruff check app/ tests/` 零警告
 - [ ] 如果改了提示词加载：跑 `python scripts/langfuse_eval.py --local <fixture>`，准确率不低于上一版
 - [ ] 如果新增节点/意图：golden set 加了 case
-- [ ] 如果改了 State：`make_initial_state()` 同步更新
+- [ ] 如果改了 State：`app/api/turn_state.py::inputs_to_state` 与 `app/nodes/ingest.py` 的 per-turn 重置同步更新
 - [ ] 如果改了 pyproject.toml 依赖：说明原因
 - [ ] 没有硬编码 secret
 - [ ] 中文变更说明（供国内团队 review）
@@ -106,8 +106,8 @@ test(e2e): 新增 2 条雪球询价的 golden case
 ## 冲突解决
 
 提示词文件（`app/prompts/**/*.md`）冲突：
-- **永远选 Dify 原始版本**，不要手工 merge
-- 若是两个 PR 同时更新提示词：重新跑一次 `export_dify_prompts.py`
+- **以本仓 git 版本为准，按业务语义手工 merge**（ADR 0024 D1：Dify YAML 已冻结，不再是真源）
+- 若是两个 PR 同时更新提示词：以 main 为基线逐条比对业务规则，合并后跑对应 golden 子集 eval
 
 State / 子图代码冲突：
 - 先读懂两个 PR 的意图，不要简单选一边

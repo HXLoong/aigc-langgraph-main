@@ -18,7 +18,12 @@ from typing import Any, Literal
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, ConfigDict, Field
 
+from app.api.idempotency import PROCESSING_NOTICE, IdempotencyStore
+from app.api.turn_state import inputs_to_state
+from app.config import get_settings
 from app.graph.state import AgentState
+from app.observability.llm_metrics import LLMMetricsCallback
+from app.observability.logs import bound_request_context
 from app.observability.metrics import emit_intent_latency
 from app.observability.tracing import attach_request_trace
 
@@ -100,7 +105,7 @@ async def run_workflow(
 
     # 把 inputs 解构成 AgentState（按 contracts §2.1 §3.1 的 9 个机器人上下文字段）
     try:
-        initial_state = _inputs_to_state(req.inputs)
+        initial_state = inputs_to_state(req.inputs)
         conversation_id = _resolve_conversation_id(req)
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
@@ -125,29 +130,61 @@ async def run_workflow(
     request_trace_id = uuid.uuid4().hex
     initial_state["trace_id"] = request_trace_id
 
+    # ADR 0024 D4：请求级幂等——同一企微 message_id 重投不重跑整图（重跑 = 重复下单）
+    store: IdempotencyStore | None = getattr(request.app.state, "idempotency_store", None)
+    message_id = initial_state.get("message_id")
+    idem_key = str(message_id) if message_id not in (None, "") else None
+    if store is not None and idem_key is not None:
+        existing = await _idempotency_begin(store, idem_key, initial_state)
+        if existing is not None:
+            answer = existing.reply_text if existing.status == "done" else PROCESSING_NOTICE
+            return DifyWorkflowRunResponse(
+                workflow_run_id=workflow_run_id,
+                task_id=task_id,
+                conversation_id=conversation_id,
+                answer=answer or "",
+                data=DifyWorkflowRunData(
+                    id=workflow_run_id, status="succeeded",
+                    outputs={"replayed": True, "trace_id": request_trace_id,
+                             "idempotency_status": existing.status},
+                    created_at=created_at, finished_at=int(time.time()),
+                ),
+            )
+
     config = _build_run_config(
-        conversation_id=conversation_id, trace_id=request_trace_id
+        conversation_id=conversation_id,
+        trace_id=request_trace_id,
+        user_id=str(initial_state.get("user_id") or "") or None,
+        environment=get_settings().environment,
     )
     trace = await attach_request_trace(
         request_trace_id=request_trace_id,
         traceparent=request.headers.get("traceparent"),
     )
-    if trace.handler is not None:
-        config["callbacks"] = [trace.handler]
+    # LLM 指标 callback 常驻（ADR 0024 D5）；LangFuse handler 接入成功时并列
+    config["callbacks"] = [LLMMetricsCallback()] + ([trace.handler] if trace.handler is not None else [])
 
     t0 = time.perf_counter()
-    try:
-        final_state: AgentState = await graph.ainvoke(initial_state, config=config)
-        status: Literal["succeeded", "failed", "stopped"] = (
-            "failed" if final_state.get("error") else "succeeded"
-        )
-        error_msg = (
-            final_state["error"].message if final_state.get("error") else None
-        )
-    except Exception as exc:  # noqa: BLE001
-        final_state = {}
-        status = "failed"
-        error_msg = f"{type(exc).__name__}: {exc}"
+    # ADR 0024 D5：整次图调用期间的每条日志都带 trace_id / conversation_id / message_id
+    with bound_request_context(
+        trace_id=request_trace_id, conversation_id=conversation_id, message_id=message_id
+    ):
+        try:
+            # ADR 0024 D4：图内无 interrupt、单轮无需中途恢复，退出时落一次 checkpoint 即可，
+            # 避免默认 "async" 每个 superstep 都写 MySQL（单连接 saver 上是队头阻塞源）
+            final_state: AgentState = await graph.ainvoke(
+                initial_state, config=config, durability="exit"
+            )
+            status: Literal["succeeded", "failed", "stopped"] = (
+                "failed" if final_state.get("error") else "succeeded"
+            )
+            error_msg = (
+                final_state["error"].message if final_state.get("error") else None
+            )
+        except Exception as exc:  # noqa: BLE001
+            final_state = {}
+            status = "failed"
+            error_msg = f"{type(exc).__name__}: {exc}"
 
     elapsed = time.perf_counter() - t0
     # #157 裁决：端到端 P95 数据源（ADR 0017/0019 退出门与 p95_latency_degraded 告警）
@@ -158,6 +195,9 @@ async def run_workflow(
         elapsed_ms=int(elapsed * 1000),
     )
     finished_at = int(time.time())
+
+    if store is not None and idem_key is not None:
+        await _idempotency_complete(store, idem_key, final_state, error_msg, int(elapsed * 1000))
 
     # 必须等图完成：persist 已记录 set-intent 的失败 trace 后才返回 502。
     # 使用固定文案，不透传后端响应、URL、鉴权信息或异常堆栈。
@@ -200,39 +240,67 @@ async def run_workflow(
 # ============================================================
 
 
+async def _idempotency_begin(store: IdempotencyStore, key: str, state: AgentState):  # type: ignore[no-untyped-def]
+    """存储故障只 warning：幂等是加固，不阻断业务（此时退化为无幂等）。"""
+    try:
+        return await store.begin(
+            key,
+            conversation_id=str(state.get("conversation_id") or ""),
+            user_id=str(state.get("user_id") or ""),
+            room_id=str(state.get("room_id") or ""),
+            raw_text=str(state.get("raw_text") or ""),
+        )
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("idempotency begin 失败，本次不做幂等：%s", exc)
+        return None
+
+
+async def _idempotency_complete(
+    store: IdempotencyStore, key: str, final_state: AgentState, error_msg: str | None, latency_ms: int
+) -> None:
+    try:
+        await store.complete(
+            key,
+            reply_text=final_state.get("reply_text"),
+            product_type=final_state.get("product_type"),
+            intent=final_state.get("intent"),
+            api_code=final_state.get("api_code"),
+            api_result=final_state.get("api_result"),
+            error=error_msg,
+            latency_ms=latency_ms,
+        )
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("idempotency complete 失败：%s", exc)
+
+
 #: 图递归上限(架构体检 2026-08 改进 A):现图均为 DAG,50 为防御纵深上限;
 #: 未来引入循环子图时按 CLAUDE.md 指引单独收紧(复杂子图 25)
 GRAPH_RECURSION_LIMIT = 50
 
 
-def _build_run_config(conversation_id: str, trace_id: str) -> dict:
-    """构造 graph.ainvoke 的 RunnableConfig(thread 绑定 + trace 关联 + 递归上限)。"""
+def _build_run_config(
+    conversation_id: str,
+    trace_id: str,
+    user_id: str | None = None,
+    environment: str | None = None,
+) -> dict:
+    """构造 graph.ainvoke 的 RunnableConfig(thread 绑定 + trace 关联 + 递归上限)。
+
+    metadata 里的 `langfuse_*` 键由 langfuse v4 CallbackHandler 读取（ADR 0024 D5）：
+    session = conversation_id 让多轮在 LangFuse 里串成一个 Session；user / tags 供聚合过滤。
+    """
+    metadata: dict[str, Any] = {
+        "trace_id": trace_id,
+        "langfuse_session_id": conversation_id,
+        "langfuse_tags": [environment or "unknown"],
+    }
+    if user_id:
+        metadata["langfuse_user_id"] = user_id
     return {
         "configurable": {"thread_id": conversation_id},
-        "metadata": {"trace_id": trace_id},
+        "metadata": metadata,
         "recursion_limit": GRAPH_RECURSION_LIMIT,
     }
-
-
-# Dify inputs 字段名（Java 透传）→ AgentState 字段名 映射
-_INPUT_FIELD_ALIASES = {
-    "raw_text": ("rawContent", "raw_content"),
-    "message_id": ("messageId", "message_id"),
-    "user_id": ("userId", "user_id"),
-    "room_id": ("roomId", "room_id"),
-    "guid": ("guid",),
-    "message_content": ("messageContent", "message_content"),
-    "quote_content": ("quoteContent", "quote_content"),
-    "quote_appinfo": ("quoteAppinfo", "quote_appinfo"),
-    "fast_query": ("fast_query", "fastQuery"),
-    "at_bot": ("at_bot", "atBot"),
-    "existing_command": ("existing_command", "existingCommand"),
-    "bot_name": ("bot_name", "botName"),
-    "operator_user_id": ("operator_user_id", "operatorUserId"),
-    "option_counterparties_raw": ("option_counterparties", "optionCounterparties"),
-    "swap_counterparties_raw": ("swap_counterparties", "swapCounterparties"),
-    "input_files": ("files", "sysFiles"),
-}
 
 
 def _resolve_conversation_id(req: DifyWorkflowRunRequest) -> str | None:
@@ -255,36 +323,6 @@ def _resolve_conversation_id(req: DifyWorkflowRunRequest) -> str | None:
     return resolved
 
 
-def _inputs_to_state(inputs: dict[str, Any]) -> AgentState:
-    """把 Dify inputs 转成 AgentState（接受 camelCase 和 snake_case 两种）。"""
-    state: dict[str, Any] = {}
-    for target, aliases in _INPUT_FIELD_ALIASES.items():
-        provided = [(alias, inputs[alias]) for alias in aliases if alias in inputs]
-        if not provided:
-            continue
-
-        first_alias, first_value = provided[0]
-        conflicting_aliases = [
-            alias for alias, value in provided[1:] if value != first_value
-        ]
-        if conflicting_aliases:
-            alias_names = ", ".join([first_alias, *conflicting_aliases])
-            raise ValueError(f"输入字段 {target} 的别名值冲突: {alias_names}")
-
-        state[target] = first_value
-
-    if "raw_text" not in state and "message_content" in state:
-        state["raw_text"] = state["message_content"]
-    # checkpoint 会合并输入：缺省的当轮字段也要显式写入，避免继承上轮路由/附件。
-    # 业务对象和历史消息仍由 checkpoint 保留，不能在此补空值。
-    for key in ("fast_query", "existing_command", "at_bot", "quote_content", "quote_appinfo"):
-        state.setdefault(key, None)
-    state.setdefault("input_files", [])
-    state.setdefault("raw_text", "")
-    state.setdefault("message_content", "")
-    return state  # type: ignore[return-value]
-
-
 def _format_trace(trace: list[Any]) -> str:
     """把逐节点 trace 压成 `node[decision] → ...` 单行字符串。"""
     parts: list[str] = []
@@ -304,11 +342,14 @@ def _state_to_outputs(state: AgentState) -> dict[str, Any]:
         "product_type": state.get("product_type"),
         "tickers": [
             t.model_dump() if hasattr(t, "model_dump") else t
-            for t in state.get("tickers", [])
+            for t in state.get("tickers") or []
         ],
         "trace": _format_trace(state.get("trace", [])),
     }
-    # M1 阶段：业务对象用 dict 占位，直接 dump
+    expected_action = state.get("expected_action")
+    if expected_action is not None:
+        outputs["expected_action"] = expected_action
+    # 业务对象运行时为 dict，直接 dump
     for key in (
         "place_params",
         "cancel_params",
@@ -321,8 +362,13 @@ def _state_to_outputs(state: AgentState) -> dict[str, Any]:
         "api_result",
     ):
         v = state.get(key)
-        if v is not None:
-            outputs[key] = v
+        if v is None:
+            continue
+        if key in ("place_params", "cancel_params") and expected_action is not None:
+            # wire 兼容投影（ADR 0024 D2）：state 内 expected_action 已是顶层字段，
+            # 既有读者（探针脚本 / 日志解析）仍从信封里读，这里只投影不改写 state
+            v = {"expected_action": expected_action, **v}
+        outputs[key] = v
     return outputs
 
 

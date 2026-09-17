@@ -1,27 +1,42 @@
-"""option.extract_inquiry 节点 · 期权询价参数提取（含 ticker resolver 集成）。
+"""option.extract_inquiry · 期权询价子图（ADR 0024 D3：三条管线做成图边，错误归因到阶段）。
 
-输入：raw_text + quote_content + history_messages
-输出：state['place_params'] = {expected_action: "inquiry", orderList: [...]}
-      state['tickers'] = list[TickerCandidate]（来自 ticker resolver）
+    START ─┬─ 快速询价关键词 → inquiry_fast_parse ─┬─ GOATS 解析成功 → inquiry_fast_submit → END
+           │                                       └─ 解析为空 ↓
+           └─ inquiry_precheck ─┬─ 代码型标的不在池 → inquiry_reject → END
+                                └─ inquiry_extract(LLM) → inquiry_resolve(ticker) → inquiry_submit → END
 
-**首次集成 ticker resolver**：
-- LLM 只抽取原文片段（stockCode 字段保留用户原话）
-- 节点同步调用 resolve_ticker(raw_text) 拿 from_goats=True 候选
-- 写到 state['tickers']，供下游审计 / 后端调用使用
+- 只读阶段（GOATS 解析 / 标的预检 / LLM 抽取 / 标的解析）是 @io_node，挂 RetryPolicy；
+  两个提交阶段调后端询价（建单），@safe_node 不重试
+- 私有中间态 `iq_*` 住在 InquiryState，不外泄（output_schema=InquiryOutput）
+- 每阶段一条 TraceEntry；终点节点另写一条 `option_extract_inquiry` 汇总条目，沿用既有
+  decision 口径（`fast_inquiry product=` / `invalid_ticker` / `action=inquiry, orders=…`）
+- 测试 monkeypatch 边界不变：resolve_ticker / resolve_ticker_full / get_qwen_thinking /
+  call_option_backend 仍从本模块查找；GOATS 解析从 app.tools.goats_rfq 查找
 
-归一化（OPT-07 下沉，2026-09）：tenor / 百分号 / 名义本金 / 参与率由
-`normalize.py` 确定性完成，"/" 多值按笛卡尔积展开——LLM 不再承担格式换算。
-
-LLM：thinking 模型 + with_structured_output（ADR 0010）。
-prompt：app/prompts/option/extract_inquiry.md（Dify DSL v2 同步版）。
+归一化（OPT-07）：tenor / 百分号 / 名义本金 / 参与率由 `normalize.py` 确定性完成，
+"/" 多值按笛卡尔积展开——LLM 不再承担格式换算。prompt：app/prompts/option/extract_inquiry.md。
 """
 from __future__ import annotations
 
-from typing import Any
+import re
+from functools import lru_cache
+from typing import Annotated, Any, TypedDict
+
+from langgraph.graph import END, START, StateGraph
+from langgraph.graph.state import CompiledStateGraph
 
 from app.graph.business_params import validated_place_params
+from app.graph.cascade import has_error
+from app.graph.retry import add_io_node, io_node
 from app.graph.safe_node import safe_node
-from app.graph.state import AgentState, TraceEntry
+from app.graph.state import (
+    AgentState,
+    ErrorInfo,
+    ExpectedAction,
+    TickerCandidate,
+    TraceEntry,
+    merge_by_id,
+)
 from app.llm.clients import get_qwen_thinking
 from app.prompts.spec import PromptSpec, register
 from app.subgraphs.option.backend import _with_resolved_ticker, call_option_backend
@@ -31,17 +46,16 @@ from app.subgraphs.option.prompting import EXTRACT_INPUTS, extract_user
 from app.subgraphs.option.sanitize import sanitize_order_list
 from app.subgraphs.ticker.resolver import resolve_ticker, resolve_ticker_full
 
-#: 快速询价 / 雪球 / 参与型识别关键词（命中则不走 LLM，直传 GOATS instrument parser）
+#: 快速询价 / 雪球 / 参与型识别关键词（命中则先走 GOATS instrument parser，不走 LLM）
 _FAST_INQUIRY_MARKERS = ("快速询价", "雪球", "参与型", "敲入", "敲出")
+#: 代码型标的：命中则先查标的池，不在池直接拒绝（不调 LLM）
+_CODE_LIKE_RE = re.compile(r"\d{5,6}[.\s]|[A-Z]{2,6}\d+|L\d{4,}")
+_INVALID_TICKER_REPLY = "抱歉！标的代码（或标的名称）不在标的池内，无法自动报价，请联系对口销售或交易员。"
 
 
 def _is_fast_inquiry(text: str) -> bool:
     """检测 raw_text 是否是快速询价 / 雪球类强信号场景。"""
-    if not text:
-        return False
-    return any(m in text for m in _FAST_INQUIRY_MARKERS)
-
-
+    return bool(text) and any(m in text for m in _FAST_INQUIRY_MARKERS)
 
 
 SPEC = register(PromptSpec(
@@ -53,134 +67,268 @@ SPEC = register(PromptSpec(
 ))
 
 
-@safe_node
-async def option_extract_inquiry(state: AgentState) -> dict[str, Any]:
-    """option.extract_inquiry 节点。
+class InquiryState(AgentState, total=False):
+    """询价子图私有 State：AgentState + `iq_*` 中间态。"""
 
-    出参约定：
-    - place_params: {expected_action: "inquiry", orderList: [...]}
-    - tickers: list[TickerCandidate]（resolver 输出，from_goats=True）
-    - trace: 单条 TraceEntry，记录订单数 + 标的数
-    """
+    iq_rfq_data: dict[str, Any] | None
+    iq_reject_reply: str | None
+    iq_raw_params: dict[str, Any]
+    iq_order_list: list[dict[str, Any]]
+    iq_types: list[str]
+    iq_backend_order_list: list[dict[str, Any]]
+    iq_bindings: list[dict[str, Any]]
+    iq_hitl: list[dict[str, Any]]
+
+
+class InquiryOutput(TypedDict, total=False):
+    """子图对 option 图 / 父图的写回面。"""
+
+    expected_action: ExpectedAction | None
+    place_params: dict[str, Any] | None
+    tickers: list[TickerCandidate]
+    ticker_hitl_candidates: list[dict[str, Any]] | None
+    reply_text: str | None
+    api_result: str | dict[str, Any] | list[Any] | None
+    api_code: int | None
+    trace: Annotated[list[TraceEntry], merge_by_id]
+    error: ErrorInfo | None
+
+
+# ============================================================
+# 阶段节点
+# ============================================================
+
+
+@io_node
+async def inquiry_fast_parse(state: InquiryState) -> dict[str, Any]:
+    """快速询价 / 雪球：原文直传 GOATS instrument parser 拿 parsed 字段（只读）。"""
+    from app.tools.goats_rfq import parse_rfq_instrument
+
     raw_text = state.get("raw_text", "") or ""
+    rfq_data = await parse_rfq_instrument(raw_text)
+    return {
+        "iq_rfq_data": rfq_data or None,
+        "trace": [TraceEntry(node="inquiry_fast_parse", decision="parsed" if rfq_data else "empty")],
+    }
 
-    # 0a. 快速询价 / 雪球 / 参与型 → 直接转发给 GOATS instrument parser，跳过 LLM 抽取
-    # 与 Dify 工作流"判断快速询价"分支对齐：用户输入这类强信号关键词时，原文直传
-    # GOATS endpoint 拿 parsed 字段（productType/tenor/knockInPrice/...），再带着这些
-    # 字段调现有 option/operate backend 拿正式询价回复
-    if _is_fast_inquiry(raw_text):
-        from app.tools.goats_rfq import parse_rfq_instrument
 
-        rfq_data = await parse_rfq_instrument(raw_text)
-        if rfq_data:
-            # 把 GOATS parser 返回的字段填到 optionRfq 调后端
-            # 把 GOATS parser 字段透传给 backend (含 fuzzyCodeList / productSubtypeList 等扩展字段)
-            option_rfq = {
-                "chatType": rfq_data.get("chatType"),
-                "chatInstrument": rfq_data.get("chatInstrument") or raw_text,
-                "productType": rfq_data.get("productType"),
-                "tenor": rfq_data.get("tenor"),
-                "strike": [str(s) for s in (rfq_data.get("strike") or [])],
-                "knockInPrice": [str(p) for p in (rfq_data.get("knockInPrice") or [])],
-                "knockOutPrice": [str(p) for p in (rfq_data.get("knockOutPrice") or [])],
-                "estimateMargin": [str(m) for m in (rfq_data.get("estimateMargin") or [])],
-                "fuzzyCodeList": rfq_data.get("fuzzyCodeList") or [],
-                "productSubtypeList": rfq_data.get("productSubtypeList") or [],
-                "participateRate": [str(p) for p in (rfq_data.get("participateRate") or [])],
-            }
-            backend = await call_option_backend(
-                state,
-                intent="new_inquiry",
-                option_rfq=option_rfq,
-            )
-            # 不写 place_params/tickers，让 render 走 step 5 直接透传 backend api_result
-            return {
-                **backend,
-                "trace": [
-                    TraceEntry(
-                        node="option_extract_inquiry",
-                        decision=f"fast_inquiry product={rfq_data.get('productType')}",
-                        llm_output={"rfq_data": rfq_data},
-                    )
-                ],
-            }
+@safe_node
+async def inquiry_fast_submit(state: InquiryState) -> dict[str, Any]:
+    """把 GOATS parser 字段透传给 option/operate 拿正式询价回复（建单，不重试）。"""
+    raw_text = state.get("raw_text", "") or ""
+    rfq_data = state.get("iq_rfq_data") or {}
+    option_rfq = {
+        "chatType": rfq_data.get("chatType"),
+        "chatInstrument": rfq_data.get("chatInstrument") or raw_text,
+        "productType": rfq_data.get("productType"),
+        "tenor": rfq_data.get("tenor"),
+        "strike": [str(s) for s in (rfq_data.get("strike") or [])],
+        "knockInPrice": [str(p) for p in (rfq_data.get("knockInPrice") or [])],
+        "knockOutPrice": [str(p) for p in (rfq_data.get("knockOutPrice") or [])],
+        "estimateMargin": [str(m) for m in (rfq_data.get("estimateMargin") or [])],
+        "fuzzyCodeList": rfq_data.get("fuzzyCodeList") or [],
+        "productSubtypeList": rfq_data.get("productSubtypeList") or [],
+        "participateRate": [str(p) for p in (rfq_data.get("participateRate") or [])],
+    }
+    backend = await call_option_backend(state, intent="new_inquiry", option_rfq=option_rfq)
+    # 不写 place_params / tickers，让 render 直接透传 backend api_result
+    return {
+        **backend,
+        "trace": [
+            TraceEntry(node="inquiry_fast_submit", decision=f"api_code={backend.get('api_code')}"),
+            TraceEntry(
+                node="option_extract_inquiry",
+                decision=f"fast_inquiry product={rfq_data.get('productType')}",
+                llm_output={"rfq_data": rfq_data},
+            ),
+        ],
+    }
 
-    # 0. 无效标的预检（代码格式但不在池→直接拒绝，不调 LLM）
-    import re as _re_ticker
-    _has_code_like = bool(_re_ticker.search(
-        r"\d{5,6}[.\s]|[A-Z]{2,6}\d+|L\d{4,}", raw_text
-    ))
-    if _has_code_like:
-        _tickers = await resolve_ticker(raw_text)
-        if not _tickers:
-            return {
-                "place_params": validated_place_params(expected_action="inquiry", orderList=[]),
-                "tickers": [],
-                "reply_text": "抱歉！标的代码（或标的名称）不在标的池内，无法自动报价，请联系对口销售或交易员。",
-                "trace": [TraceEntry(node="option_extract_inquiry", decision="invalid_ticker")],
-            }
 
-    # 1. LLM 只抽取原文片段（thinking 模型 + structured output）
+@io_node
+async def inquiry_precheck(state: InquiryState) -> dict[str, Any]:
+    """无效标的预检：代码格式但不在池 → 标记拒绝，不调 LLM。"""
+    raw_text = state.get("raw_text", "") or ""
+    if not _CODE_LIKE_RE.search(raw_text):
+        return {"iq_reject_reply": None, "trace": [TraceEntry(node="inquiry_precheck", decision="no_code_like")]}
+    tickers = await resolve_ticker(raw_text)
+    if tickers:
+        return {"iq_reject_reply": None, "trace": [TraceEntry(node="inquiry_precheck", decision="code_in_pool")]}
+    return {
+        "iq_reject_reply": _INVALID_TICKER_REPLY,
+        "trace": [TraceEntry(node="inquiry_precheck", decision="code_not_in_pool")],
+    }
+
+
+@safe_node
+async def inquiry_reject(state: InquiryState) -> dict[str, Any]:
+    """早退出口：标的不在池，写业务回复，不调后端。"""
+    return {
+        "expected_action": "inquiry",
+        "place_params": validated_place_params(orderList=[]),
+        "tickers": [],
+        "reply_text": state.get("iq_reject_reply"),
+        "trace": [
+            TraceEntry(node="inquiry_reject", decision="invalid_ticker"),
+            TraceEntry(node="option_extract_inquiry", decision="invalid_ticker"),
+        ],
+    }
+
+
+@io_node
+async def inquiry_extract(state: InquiryState) -> dict[str, Any]:
+    """LLM 只抽取原文片段（thinking 模型 + structured output），再确定性归一化 + 笛卡尔积展开。"""
     messages, _prompt_name = SPEC.build_messages(state)
     llm = get_qwen_thinking().with_structured_output(OptionInquiryRawParams)
     raw_params: Any = await llm.ainvoke(messages)
-
-    # 2. 归一化（tenor / 百分号 / 名义本金 / 参与率）+ "/" 多值笛卡尔积展开（OPT-07）
     params = OptionInquiryParams.model_validate(
         {"orderList": expand_inquiry_items(raw_params.order_list)}
     )
+    order_list = sanitize_order_list([item.model_dump() for item in params.order_list])
+    return {
+        "iq_raw_params": raw_params.model_dump(),
+        "iq_order_list": order_list,
+        "iq_types": [item.option_type for item in params.order_list if item.option_type],
+        "trace": [TraceEntry(node="inquiry_extract", decision=f"orders={len(order_list)}")],
+    }
 
-    # 3. ticker resolver 识别标的（含 HITL 信号）
+
+@io_node
+async def inquiry_resolve(state: InquiryState) -> dict[str, Any]:
+    """ticker resolver 识别标的（含 HITL 信号）并按身份绑定到订单。"""
+    raw_text = state.get("raw_text", "") or ""
     resolution = await resolve_ticker_full(raw_text)
     tickers = resolution.resolved
-    order_list = sanitize_order_list([item.model_dump() for item in params.order_list])
-    backend_order_list = []
-    ticker_bindings = []
-    for index, item in enumerate(order_list):
+    backend_order_list: list[dict[str, Any]] = []
+    bindings: list[dict[str, Any]] = []
+    for index, item in enumerate(state.get("iq_order_list") or []):
         backend_order, match_result = _with_resolved_ticker(dict(item), tickers)
         backend_order_list.append(backend_order)
-        ticker_bindings.append({
+        bindings.append({
             "order_index": index,
             "original_stock_code": item.get("stockCode"),
             "backend_stock_code": backend_order.get("stockCode"),
             "result": match_result,
         })
+    return {
+        "tickers": tickers,
+        "iq_backend_order_list": backend_order_list,
+        "iq_bindings": bindings,
+        "iq_hitl": list(resolution.hitl_pending),
+        "trace": [
+            TraceEntry(
+                node="inquiry_resolve",
+                decision=f"tickers={len(tickers)},hitl={len(resolution.hitl_pending)}",
+            )
+        ],
+    }
 
-    types = [item.option_type for item in params.order_list if item.option_type]
+
+@safe_node
+async def inquiry_submit(state: InquiryState) -> dict[str, Any]:
+    """调真后端询价（建单，不重试）；汇总条目沿用 option_extract_inquiry 名。"""
+    order_list = state.get("iq_order_list") or []
+    tickers = state.get("tickers") or []
+    hitl = state.get("iq_hitl") or []
+    backend = await call_option_backend(
+        state, intent="new_inquiry", order_list=state.get("iq_backend_order_list") or []
+    )
     decision = (
         f"action=inquiry,"
-        f" orders={len(params.order_list)},"
+        f" orders={len(order_list)},"
         f" tickers={len(tickers)},"
-        f" types={types},"
-        f" hitl={len(resolution.hitl_pending)}"
+        f" types={state.get('iq_types') or []},"
+        f" hitl={len(hitl)}"
     )
-
-    backend = await call_option_backend(
-        state,
-        intent="new_inquiry",
-        order_list=backend_order_list,
-    )
-
-    out: dict = {
-        "place_params": validated_place_params(expected_action="inquiry", orderList=order_list),
+    out: dict[str, Any] = {
+        "expected_action": "inquiry",
+        "place_params": validated_place_params(orderList=order_list),
         "tickers": tickers,
         **backend,
         "trace": [
+            TraceEntry(node="inquiry_submit", decision=f"api_code={backend.get('api_code')}"),
             TraceEntry(
                 node="option_extract_inquiry",
                 decision=decision,
                 llm_output={
-                    "raw_params": raw_params.model_dump(),
+                    "raw_params": state.get("iq_raw_params"),
                     "tickers_count": len(tickers),
-                    "hitl_count": len(resolution.hitl_pending),
-                    "ticker_bindings": ticker_bindings,
+                    "hitl_count": len(hitl),
+                    "ticker_bindings": state.get("iq_bindings") or [],
                 },
-            )
+            ),
         ],
     }
-    if resolution.hitl_pending:
-        out["ticker_hitl_candidates"] = resolution.hitl_pending
+    if hitl:
+        out["ticker_hitl_candidates"] = hitl
     return out
 
 
-__all__ = ["option_extract_inquiry"]
+# ============================================================
+# 拓扑
+# ============================================================
+
+
+def _route_start(state: InquiryState) -> str:
+    return "inquiry_fast_parse" if _is_fast_inquiry(state.get("raw_text", "") or "") else "inquiry_precheck"
+
+
+def _route_after_fast_parse(state: InquiryState) -> str:
+    if has_error(state):
+        return END
+    return "inquiry_fast_submit" if state.get("iq_rfq_data") else "inquiry_precheck"
+
+
+def _route_after_precheck(state: InquiryState) -> str:
+    if has_error(state):
+        return END
+    return "inquiry_reject" if state.get("iq_reject_reply") else "inquiry_extract"
+
+
+def _route_or_end(next_node: str):  # type: ignore[no-untyped-def]
+    def _router(state: InquiryState) -> str:
+        return END if has_error(state) else next_node
+
+    return _router
+
+
+def build_inquiry_graph() -> CompiledStateGraph:
+    g: StateGraph = StateGraph(InquiryState, output_schema=InquiryOutput)
+    add_io_node(g, "inquiry_fast_parse", inquiry_fast_parse)
+    g.add_node("inquiry_fast_submit", inquiry_fast_submit)
+    add_io_node(g, "inquiry_precheck", inquiry_precheck)
+    g.add_node("inquiry_reject", inquiry_reject)
+    add_io_node(g, "inquiry_extract", inquiry_extract)
+    add_io_node(g, "inquiry_resolve", inquiry_resolve)
+    g.add_node("inquiry_submit", inquiry_submit)
+
+    g.add_conditional_edges(START, _route_start, ["inquiry_fast_parse", "inquiry_precheck"])
+    g.add_conditional_edges("inquiry_fast_parse", _route_after_fast_parse,
+                            ["inquiry_fast_submit", "inquiry_precheck", END])
+    g.add_conditional_edges("inquiry_precheck", _route_after_precheck,
+                            ["inquiry_reject", "inquiry_extract", END])
+    g.add_conditional_edges("inquiry_extract", _route_or_end("inquiry_resolve"), ["inquiry_resolve", END])
+    g.add_conditional_edges("inquiry_resolve", _route_or_end("inquiry_submit"), ["inquiry_submit", END])
+    g.add_edge("inquiry_fast_submit", END)
+    g.add_edge("inquiry_reject", END)
+    g.add_edge("inquiry_submit", END)
+    return g.compile(name="option_extract_inquiry")
+
+
+@lru_cache(maxsize=1)
+def get_inquiry_graph() -> CompiledStateGraph:
+    return build_inquiry_graph()
+
+
+async def option_extract_inquiry(state: AgentState) -> dict[str, Any]:
+    """façade：跑询价子图并返回写回面（供直接调用 / 测试；option 图原生嵌入编译图）。"""
+    return await get_inquiry_graph().ainvoke(state)
+
+
+__all__ = [
+    "InquiryOutput",
+    "InquiryState",
+    "build_inquiry_graph",
+    "get_inquiry_graph",
+    "option_extract_inquiry",
+]

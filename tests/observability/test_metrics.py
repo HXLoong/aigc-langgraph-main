@@ -59,6 +59,19 @@ def test_emit_node_completed_writes_counter() -> None:
     ) == 1
 
 
+def test_node_latency_has_its_own_histogram_and_never_pollutes_intent_p95() -> None:
+    """ADR 0024 D5：节点延迟此前寄生在 intent 直方图上（product_type=unknown + node label），
+    alerts 只能靠字符串过滤剔除；现在独立为 otc_agent_node_latency_ms{node}。"""
+    metrics.emit_node_completed(node="swap_intent", status="ok", elapsed_ms=150)
+    metrics.emit_node_completed(node="swap_intent", status="error", elapsed_ms=50)
+    coll = metrics.get_collector()
+    assert coll.get_quantile(metrics.METRIC_NODE_LATENCY, 0.5, {"node": "swap_intent"}) is not None
+    output = coll.render_prometheus()
+    assert 'otc_agent_node_latency_ms_bucket{node="swap_intent"' in output
+    intent_lines = [line for line in output.splitlines() if line.startswith(metrics.METRIC_INTENT_LATENCY)]
+    assert intent_lines == [], "节点样本不得进入 intent 直方图"
+
+
 def test_emit_fallback_categorizes_reason() -> None:
     metrics.emit_fallback("cascade_fail")
     metrics.emit_fallback("zero_match")

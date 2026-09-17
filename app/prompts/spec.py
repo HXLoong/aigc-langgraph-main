@@ -5,7 +5,7 @@
 - `output_model`  with_structured_output 的 Pydantic 模型——输出契约的唯一真源，
                   字段语义写在 Field(description=...)，通过 function calling schema 下发；
                   提示词正文不再维护 JSON 骨架 / 字段表
-- `injects`       system 段里由代码渲染的 `{{#...#}}` 占位符 → 渲染器（AgentState → str），
+- `injects`       system 段里由代码渲染的 `{{var}}` 占位符 → 渲染器（AgentState → str），
                   登记的占位符必须在 `.md` system 段真实存在（构造期校验）
 - `user_builder`  AgentState → user 消息（规则文本只能住在 .md，代码只拼变量）
 - `gray`          是否走 `_versions.yaml` 灰度（resolve_prompt_version）

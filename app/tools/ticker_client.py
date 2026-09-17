@@ -10,6 +10,7 @@ from typing import Any, Protocol
 import httpx
 from pydantic import BaseModel, ConfigDict, Field
 
+from app.tools.http_pool import acquire_http_client
 from app.tools.models import CommonResult
 from app.wire_model import WireModel
 
@@ -124,9 +125,9 @@ class TickerClientHttpx:
         payload = req.model_dump(mode="json", exclude_none=True)
         async with (
             translate_httpx_errors("ticker"),
-            httpx.AsyncClient(**self._client_kwargs()) as client,
+            acquire_http_client(timeout=self._timeout, transport=self._transport) as client,
         ):
-            r = await client.request("GET", url, json=payload, headers=self._headers)
+            r = await client.request("GET", url, json=payload, headers=self._headers, timeout=self._timeout)
             r.raise_for_status()
             result = CommonResult.model_validate(r.json())
             data: Any = result.data or []
@@ -138,9 +139,9 @@ class TickerClientHttpx:
         url = f"{self._base_url}/admin-api/counterparty/info/instrument-inference-prompt"
         async with (
             translate_httpx_errors("ticker"),
-            httpx.AsyncClient(**self._client_kwargs()) as client,
+            acquire_http_client(timeout=self._timeout, transport=self._transport) as client,
         ):
-            r = await client.get(url, headers=self._headers)
+            r = await client.get(url, headers=self._headers, timeout=self._timeout)
             r.raise_for_status()
             result = CommonResult.model_validate(r.json())
             return str(result.data or "")
@@ -154,9 +155,9 @@ class TickerClientHttpx:
         params = {"roomId": room_id} if room_id else None
         async with (
             translate_httpx_errors("ticker"),
-            httpx.AsyncClient(**self._client_kwargs()) as client,
+            acquire_http_client(timeout=self._timeout, transport=self._transport) as client,
         ):
-            r = await client.get(url, params=params, headers=self._headers)
+            r = await client.get(url, params=params, headers=self._headers, timeout=self._timeout)
             r.raise_for_status()
             result = CommonResult.model_validate(r.json())
             data: Any = result.data or []

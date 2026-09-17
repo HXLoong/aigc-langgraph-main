@@ -73,7 +73,7 @@ async def turn_api(monkeypatch):
     saver = InMemorySaver(serde=JsonPlusSerializer(allowed_msgpack_modules=[
         ("app.graph.state", name) for name in ("TickerCandidate", "Message", "TraceEntry")
     ]))
-    graph = build_main_graph(checkpointer=saver, attach_langfuse_callbacks=False)
+    graph = build_main_graph(checkpointer=saver)
     await graph.aupdate_state(CONFIG, {
         "tickers": [TickerCandidate(windCode="600519.SH", from_goats=True)],
         "place_params": {"orderList": [{"placeOrderWindCode": "600519.SH"}]},
@@ -124,8 +124,9 @@ async def test_omitted_turn_inputs_restore_normal_route(turn_api, first_inputs, 
     for key in ("fast_query", "existing_command", "at_bot", "quote_content", "quote_appinfo"):
         assert second[key] is None
     assert second["input_files"] == []
+    # ADR 0024 D2：业务对象 per-turn，不再跨轮残留（跨轮记忆只有 history_messages）
     for key in ("tickers", "place_params", "cancel_params"):
-        assert second[key] == first[key]
+        assert second[key] is None
     assert second["history_messages"][:len(first["history_messages"])] == first["history_messages"]
 
 

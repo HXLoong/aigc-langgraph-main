@@ -1,8 +1,5 @@
 # unknown意图兜底识别
 
-- **node_id**: `1779435568671`
-- **model**: `external-qwen3.6-35b-a3b-non-thinking`
-
 ## [system]
 
 ```
@@ -380,12 +377,4 @@
 
 
   输出（只输出 1 行枚举值，不要任何其他字符）：
-```
-
-## [user]
-
-```
-  query: {{#1755072621769.raw_content#}}
-
-  quote_content: {{#1755072621769.quote_content#}}
 ```

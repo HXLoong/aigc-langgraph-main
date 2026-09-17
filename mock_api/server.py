@@ -515,33 +515,6 @@ async def trading_hours_config():
         {"transactionType": "CROSS_OTHER", "tradingHoursStart": f"{today()} 08:30:00", "tradingHoursEnd": f"{today()} 20:10:00", "region": None, "exchangeList": None},
     ])
 
-
-# ============================================================
-# DIFY 工作流（1 个）
-# ============================================================
-
-
-@app.post("/v1/workflows/run")
-async def dify_rerank():
-    """20. 大模型 rerank 标的列表。"""
-    return {
-        "task_id": "556a6022-7a4d-4e43-be8c-f12136e769b9",
-        "workflow_run_id": "f44f69db-ad29-431b-a985-e8983c9e2ea8",
-        "data": {
-            "id": "f44f69db-ad29-431b-a985-e8983c9e2ea8",
-            "workflow_id": "9acd5dee-a1a8-4b7d-8eb4-2d69fea19e2e",
-            "status": "succeeded",
-            "outputs": {"result": ["0200.HK"]},
-            "error": None,
-            "elapsed_time": 2.783889,
-            "total_tokens": 1999,
-            "total_steps": 6,
-            "created_at": 1777535594,
-            "finished_at": 1777535597,
-        },
-    }
-
-
 # ============================================================
 # 健康检查 + 路由清单
 # ============================================================

@@ -1,6 +1,4 @@
 # 互换-全新下单交易对手识别
-- **node_id**: `1786439000001`
-- **model**: `external-deepseek-v4-pro-non-thinking`
 
 ## [system]
 ```
@@ -18,6 +16,6 @@
 
 ## [user]
 ```
-raw_content：{{#1755072621769.raw_content#}}
-shortname_list：{{#1772773805306.trsShortListStr#}}
+raw_content：{{raw_content}}
+shortname_list：{{shortname_list}}
 ```

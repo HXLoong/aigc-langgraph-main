@@ -8,7 +8,6 @@ from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
-import yaml
 
 from app.graph.state import AgentState
 
@@ -34,7 +33,6 @@ def fresh_state(names: list[str | None] | None = None) -> AgentState:
             {"sort": "A", "shortName": "聚鸣价值精选", "ctptyId": "1", "longName": "后台全称"},
         ],
         "place_params": {
-            "expected_action": "place",
             "orderList": [
                 {
                     "placeOrderShortname": name,
@@ -190,9 +188,12 @@ async def test_invalid_structured_output_enters_safe_node_error(
     assert state == original
 
 
-async def test_model_receives_original_dify_templates_raw_text_and_candidate_json_only(
+async def test_model_receives_md_system_and_raw_text_plus_candidate_json_only(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """ADR 0024 D1：git `.md` 是唯一真源——模型收到的 system 就是 fresh_counterparty.md 的
+    system 段，user 只含原文 + 候选对手 JSON（{{raw_content}} / {{shortname_list}} 经 render_user 渲染），
+    不夹带历史、引用或其它上下文；输出契约由 Pydantic 模型定义（必填 hasSignal / matches，禁止多余键）。"""
     from app.prompts import load_prompt
     from app.subgraphs.swap.fresh_counterparty import swap_recognize_fresh_counterparty
     from app.subgraphs.swap.models import SwapFreshCounterpartyOutput
@@ -203,26 +204,19 @@ async def test_model_receives_original_dify_templates_raw_text_and_candidate_jso
     output = await swap_recognize_fresh_counterparty(state)
     assert not output.get("error")
 
-    root = Path(__file__).resolve().parents[3]
-    workflow = yaml.safe_load((root / "dify/yaml/场外交易-test.yml").read_text(encoding="utf-8"))
-    source = next(n["data"] for n in workflow["workflow"]["graph"]["nodes"]
-                  if n["id"] == "1786439000001")
-    system, user = [p["text"] for p in source["prompt_template"]]
     prompt = load_prompt("swap", "fresh_counterparty")
-    assert prompt.system == system
-    assert prompt.user_template == user
+    assert "{{raw_content}}" in prompt.user_template and "{{shortname_list}}" in prompt.user_template
     expected_user = (
         "raw_content：NVDA 1453股 883.9758限价 聚鸣价值精选\nshortname_list："
         + json.dumps([{"sort": "A", "shortName": "聚鸣价值精选"}], ensure_ascii=False)
     )
-    assert invoke.await_args.args[0] == [("system", system), ("user", expected_user)]
+    assert invoke.await_args.args[0] == [("system", prompt.system), ("user", expected_user)]
 
     schema = SwapFreshCounterpartyOutput.model_json_schema()
-    dify_schema = source["structured_output"]["schema"]
-    assert schema["required"] == dify_schema["required"]
+    assert schema["required"] == ["hasSignal", "matches"]
     assert schema["additionalProperties"] is False
     match_schema = schema["$defs"]["SwapFreshCounterpartyMatch"]
-    assert match_schema["required"] == dify_schema["properties"]["matches"]["items"]["required"]
+    assert match_schema["required"] == ["shortName", "evidence"]
     assert match_schema["additionalProperties"] is False
 
 

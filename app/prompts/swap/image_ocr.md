@@ -1,8 +1,5 @@
 # 互换-图片识别
 
-- **node_id**: `1761213989319`
-- **model**: `external-qwen3-vl-235b-a22b-instruct`
-
 ## [system]
 
 ```
@@ -17,7 +14,7 @@
 
 
 当前系统中已注册的有效交易对手有：
-{{#1772773805306.optionListStr#}}
+{{counterparty_list}}
 
 
 ---

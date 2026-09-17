@@ -80,7 +80,8 @@ async def test_hitl_multiple_keywords() -> None:
 async def test_zero_tickers_with_place_params_produces_hint() -> None:
     state = _state(
         tickers=[],
-        place_params={"expected_action": "place", "orderList": []},
+        expected_action="place",
+        place_params={"orderList": []},
         raw_text="帮我买个神秘标的XYZ",
     )
     result = await render(state)
@@ -130,7 +131,8 @@ async def test_swap_without_backend_result_reports_failure() -> None:
         intent="place_order_request",
         product_type="swap",
         tickers=[TickerCandidate(windCode="600519.SH", insShtDesc="贵州茅台", from_goats=True)],
-        place_params={"expected_action": "place", "orderList": []},
+        expected_action="place",
+        place_params={"orderList": []},
     )
     result = await render(state)
     assert result["reply_text"] == (
@@ -157,7 +159,8 @@ async def test_hitl_takes_priority_over_zero_tickers() -> None:
             }
         ],
         tickers=[],
-        place_params={"expected_action": "inquiry", "orderList": []},
+        expected_action="inquiry",
+        place_params={"orderList": []},
     )
     result = await render(state)
     assert "00700.HK" in result["reply_text"]

@@ -30,10 +30,12 @@ class _CapturingGraph:
     def __init__(self) -> None:
         self.initial_state: dict | None = None
         self.config: dict | None = None
+        self.invoke_kwargs: dict | None = None
 
-    async def ainvoke(self, state: dict, config: dict) -> dict:
+    async def ainvoke(self, state: dict, config: dict, **kwargs: object) -> dict:
         self.initial_state = state
         self.config = config
+        self.invoke_kwargs = dict(kwargs)
         return {
             **state,
             "product_type": "swap",
@@ -194,7 +196,11 @@ def test_development_response_exposes_matching_langfuse_trace_link(
     assert outputs["trace_url"].endswith(outputs["langfuse_trace_id"])
     graph = client.app.state.main_graph
     assert graph.config is not None
-    assert graph.config["callbacks"] == [handler]
+    # ADR 0024 D5：LLM 指标 callback 常驻，LangFuse handler 并列
+    from app.observability.llm_metrics import LLMMetricsCallback
+
+    assert handler in graph.config["callbacks"]
+    assert any(isinstance(cb, LLMMetricsCallback) for cb in graph.config["callbacks"])
 
 
 def test_test_workbench_request_joins_case_trace(
@@ -260,6 +266,7 @@ def _patch_langfuse(
             langfuse_public_key="public",
             langfuse_secret_key="secret",
             langfuse_base_url="https://langfuse.test",
+            trust_inbound_traceparent=True,  # 测试工作台场景：信任父 Trace（ADR 0024 D5 独立开关）
         ),
     )
     monkeypatch.setattr(observability_tracing, "_langfuse_client", None)
@@ -318,10 +325,9 @@ async def test_parent_trace_context_used(
 
 
 @pytest.mark.asyncio
-async def test_traceparent_ignored_outside_development(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """非 development 环境忽略 traceparent —— 信任边界由 environment 门禁承担。"""
+async def test_traceparent_ignored_unless_trusted(monkeypatch: pytest.MonkeyPatch) -> None:
+    """ADR 0024 D5：traceparent 信任由独立开关 trust_inbound_traceparent 承担，不再绑死 environment；
+    LangFuse 请求级 trace 在生产同样生效（此前生产走裸 CallbackHandler，trace_id 契约是死码）。"""
     captured: dict[str, object] = {}
     _patch_langfuse(monkeypatch, captured)
     monkeypatch.setattr(
@@ -333,17 +339,37 @@ async def test_traceparent_ignored_outside_development(
             langfuse_public_key="public",
             langfuse_secret_key="secret",
             langfuse_base_url="https://langfuse.test",
+            trust_inbound_traceparent=False,
         ),
     )
-
     trace = await observability_tracing.attach_request_trace(
-        request_trace_id="3" * 32,
-        traceparent=f"00-{'1' * 32}-{'2' * 16}-01",
+        request_trace_id="3" * 32, traceparent=f"00-{'1' * 32}-{'2' * 16}-01"
     )
+    assert trace.handler is not None, "生产环境也必须接入请求级 trace"
+    assert trace.langfuse_trace_id == "3" * 32  # 未信任 → 自建 trace，忽略父 trace
 
-    # 生产环境不启用请求级 trace：既不注入 handler，也不接受外部 trace id
-    assert trace.handler is None
-    assert trace.langfuse_trace_id is None
+
+@pytest.mark.asyncio
+async def test_traceparent_used_when_trusted_in_production(monkeypatch: pytest.MonkeyPatch) -> None:
+    captured: dict[str, object] = {}
+    _patch_langfuse(monkeypatch, captured)
+    monkeypatch.setattr(
+        observability_tracing,
+        "get_settings",
+        lambda: SimpleNamespace(
+            environment="production",
+            enable_langfuse=True,
+            langfuse_public_key="public",
+            langfuse_secret_key="secret",
+            langfuse_base_url="https://langfuse.test",
+            trust_inbound_traceparent=True,
+        ),
+    )
+    trace = await observability_tracing.attach_request_trace(
+        request_trace_id="3" * 32, traceparent=f"00-{'1' * 32}-{'2' * 16}-01"
+    )
+    assert trace.langfuse_trace_id == "1" * 32
+    assert captured["client"]["environment"] == "production"
 
 
 @pytest.mark.asyncio
@@ -601,7 +627,7 @@ def test_top_level_user_fills_missing_backend_user_id(
             return CommonResult(code=0, data="BACKEND_CARD")
 
     class _BackendCallingGraph:
-        async def ainvoke(self, state: dict, config: dict) -> dict:
+        async def ainvoke(self, state: dict, config: dict, **kwargs: object) -> dict:
             backend_result = await option_backend.call_option_backend(
                 state,
                 intent="new_inquiry",
@@ -690,3 +716,53 @@ def test_workflows_run_emits_end_to_end_latency(client: TestClient) -> None:
         and 'product_type="swap"' in line
     ]
     assert e2e_lines, "端到端延迟样本（product_type=swap 且无 node label）未写入"
+
+
+def test_graph_invoked_with_exit_durability(client: TestClient) -> None:
+    """ADR 0024 D4：图内无 interrupt，单轮无需中途恢复；durability="exit" 把每轮
+    十几次 superstep 落盘降到退出时一次，语义零损失。"""
+    client.post("/v1/workflows/run", json={"inputs": {"rawContent": "100万"}, "user": "u-1"})
+    graph = client.app.state.main_graph
+    assert graph.invoke_kwargs is not None
+    assert graph.invoke_kwargs.get("durability") == "exit"
+
+
+def test_run_config_carries_langfuse_session_and_user(client: TestClient) -> None:
+    client.post(
+        "/v1/workflows/run",
+        json={"inputs": {"rawContent": "100万", "conversationId": "conv-9", "userId": "u-9"}, "user": "u-9"},
+    )
+    md = client.app.state.main_graph.config["metadata"]
+    assert md["langfuse_session_id"] == "conv-9"
+    assert md["langfuse_user_id"] == "u-9"
+
+
+@pytest.mark.asyncio
+async def test_langfuse_client_registered_before_handler_on_parent_trace(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """tracing.py 缺陷：CallbackHandler(public_key=) 内部 get_client 只在已注册实例里查，
+    父 Trace 分支此前提前 return、从不调用 _ensure_client → handler 静默 no-op。"""
+    captured: dict[str, object] = {}
+    _patch_langfuse(monkeypatch, captured)
+    order: list[str] = []
+    real_ensure = observability_tracing._ensure_client
+
+    def _ensure() -> object:
+        order.append("client")
+        return real_ensure()
+
+    monkeypatch.setattr(observability_tracing, "_ensure_client", _ensure)
+    fake_handler_cls = sys.modules["langfuse.langchain"].CallbackHandler
+    original_init = fake_handler_cls.__init__
+
+    def _init(self: object, **kwargs: object) -> None:
+        order.append("handler")
+        original_init(self, **kwargs)
+
+    monkeypatch.setattr(fake_handler_cls, "__init__", _init)
+
+    await observability_tracing.attach_request_trace(
+        request_trace_id="3" * 32, traceparent=f"00-{'1' * 32}-{'2' * 16}-01"
+    )
+    assert order[:2] == ["client", "handler"], order
