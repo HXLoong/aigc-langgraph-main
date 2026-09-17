@@ -220,7 +220,8 @@ class TestOptionExtractInquiryNode:
             {"raw_text": "期权询价 腾讯 欧式看涨 行权价100% 1个月"}
         )
 
-        assert result["place_params"]["expected_action"] == "inquiry"
+        assert result["expected_action"] == "inquiry"
+        assert "expected_action" not in result["place_params"]
         assert result["place_params"]["orderList"][0]["stockCode"] == "腾讯"
         tickers = result.get("tickers", [])
         assert len(tickers) >= 1

@@ -53,7 +53,7 @@ async def test_render_never_recalculates_quantity_or_price(
         "product_type": "swap",
         "intent": "place_order_request",
         "raw_text": raw_text,
-        "place_params": {"expected_action": "place", "orderList": [order]},
+        "place_params": {"orderList": [order]},
         "api_result": backend_reply,
     }
     original = deepcopy(state)

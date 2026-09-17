@@ -189,7 +189,6 @@ async def test_place_order_submit_node_writes_api_code(
     result = await po_module.swap_place_order_submit(
         {
             "place_params": {
-                "expected_action": "place",
                 "orderList": [
                     {"placeOrderWindCode": "00700.HK", "placeOrderQuantity": 1000}
                 ],
@@ -202,7 +201,8 @@ async def test_place_order_submit_node_writes_api_code(
     )
     assert result["api_code"] == 0
     assert result["api_result"] == card
-    assert result["place_params"]["expected_action"] == "place"
+    assert "expected_action" not in result["place_params"]
+    assert "expected_action" not in result  # 提交节点不改写本轮动作
     # 后端返回真订单号 → 回写到 orderList[0].orderId，但不改写 api_result
     assert result["place_params"]["orderList"][0]["orderId"] == "H-20260910-0000000001"
 
@@ -239,4 +239,4 @@ async def test_place_order_node_no_backend_call(
     )
     assert "api_code" not in result
     fake_client.operate.assert_not_called()
-    assert result["place_params"]["expected_action"] == "place"
+    assert result["expected_action"] == "place"

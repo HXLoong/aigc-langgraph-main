@@ -188,7 +188,7 @@ async def run_langgraph_pipeline(*, item, **kwargs):
                         }
                     )
 
-            # place_params 简化（保留 expected_action + orderList 字段，去掉 None 减少噪音）
+            # place_params 简化（顶层 expected_action + orderList 字段，去掉 None 减少噪音）
             pp = rs.get("place_params") or {}
             orders_raw = pp.get("orderList", [])
             orders_simple = [
@@ -205,7 +205,7 @@ async def run_langgraph_pipeline(*, item, **kwargs):
             ]
             place_simple = (
                 {
-                    "action": pp.get("expected_action"),
+                    "action": rs.get("expected_action"),
                     "orderList": orders_simple,
                 }
                 if pp

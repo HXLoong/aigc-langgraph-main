@@ -1,7 +1,7 @@
 """option.extract_inquiry 节点 · 期权询价参数提取（含 ticker resolver 集成）。
 
 输入：raw_text + quote_content + history_messages
-输出：state['place_params'] = {expected_action: "inquiry", orderList: [...]}
+输出：state['expected_action'] = "inquiry" + state['place_params'] = {orderList: [...]}
       state['tickers'] = list[TickerCandidate]（来自 ticker resolver）
 
 **首次集成 ticker resolver**：
@@ -58,7 +58,7 @@ async def option_extract_inquiry(state: AgentState) -> dict[str, Any]:
     """option.extract_inquiry 节点。
 
     出参约定：
-    - place_params: {expected_action: "inquiry", orderList: [...]}
+    - expected_action="inquiry" + place_params: {orderList: [...]}
     - tickers: list[TickerCandidate]（resolver 输出，from_goats=True）
     - trace: 单条 TraceEntry，记录订单数 + 标的数
     """
@@ -114,7 +114,8 @@ async def option_extract_inquiry(state: AgentState) -> dict[str, Any]:
         _tickers = await resolve_ticker(raw_text)
         if not _tickers:
             return {
-                "place_params": validated_place_params(expected_action="inquiry", orderList=[]),
+                "expected_action": "inquiry",
+                "place_params": validated_place_params(orderList=[]),
                 "tickers": [],
                 "reply_text": "抱歉！标的代码（或标的名称）不在标的池内，无法自动报价，请联系对口销售或交易员。",
                 "trace": [TraceEntry(node="option_extract_inquiry", decision="invalid_ticker")],
@@ -162,7 +163,8 @@ async def option_extract_inquiry(state: AgentState) -> dict[str, Any]:
     )
 
     out: dict = {
-        "place_params": validated_place_params(expected_action="inquiry", orderList=order_list),
+        "expected_action": "inquiry",
+        "place_params": validated_place_params(orderList=order_list),
         "tickers": tickers,
         **backend,
         "trace": [

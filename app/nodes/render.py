@@ -147,7 +147,6 @@ def _render_branch(state: AgentState) -> tuple[dict[str, Any], str]:
     if state.get("reply_text"):
         return {}, "passthrough"
 
-    place = state.get("place_params") or {}
     product_type = state.get("product_type")
     api_result = state.get("api_result")
     is_option = product_type in ("option", "option_close")
@@ -246,7 +245,7 @@ def _render_branch(state: AgentState) -> tuple[dict[str, Any], str]:
         return {"reply_text": "期权订单已确认提交，订单已接收、等待交易员审核。"}, "option_confirm_place"
 
     # 期权询价没有后端结果时绝不本地拼装报价卡片。
-    if product_type == "option" and place.get("expected_action") == "inquiry":
+    if product_type == "option" and state.get("expected_action") == "inquiry":
         emit_fallback(reason="option_backend_no_result")
         return {"reply_text": _OPTION_NO_RESULT_REPLY}, "option_backend_no_result"
 

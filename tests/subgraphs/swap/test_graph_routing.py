@@ -267,7 +267,7 @@ class TestSwapGraphEndToEnd:
             "swap_place_order_submit",
         ]
         assert final.get("intent") == "place_order_request"
-        assert final.get("place_params", {}).get("expected_action") == "place"
+        assert final.get("expected_action") == "place"
         assert "swap_todo" not in trace_nodes
         # ticker 集成验证
         tickers = final.get("tickers", [])

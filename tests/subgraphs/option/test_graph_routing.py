@@ -106,7 +106,7 @@ async def test_place_order_from_quote_routes_to_extract_place(
     assert "option_extract_place" in trace_nodes
     assert "option_todo" not in trace_nodes
     assert final.get("intent") == "place_order_from_quote"
-    assert final.get("place_params", {}).get("expected_action") == "place"
+    assert final.get("expected_action") == "place"
 
 
 @pytest.mark.asyncio
@@ -120,6 +120,7 @@ async def test_confirm_order_routes_to_extract_confirm_place(
     trace_nodes = [e.node for e in final.get("trace", [])]
     assert "option_extract_confirm_place" in trace_nodes
     assert final.get("confirm", {}).get("action") == "place"
+    assert final.get("expected_action") == "place"
 
 
 @pytest.mark.asyncio
@@ -132,7 +133,7 @@ async def test_cancel_order_request_routes_to_extract_cancel_place(
     final = await graph.ainvoke({**_BASE_STATE, "raw_text": "取消下单"})
     trace_nodes = [e.node for e in final.get("trace", [])]
     assert "option_extract_cancel_place" in trace_nodes
-    assert final.get("cancel_params", {}).get("expected_action") == "cancel_request"
+    assert final.get("expected_action") == "cancel"
 
 
 @pytest.mark.asyncio
@@ -145,7 +146,7 @@ async def test_request_cancel_order_routes_to_extract_cancel(
     final = await graph.ainvoke({**_BASE_STATE, "raw_text": "撤单 Q-1"})
     trace_nodes = [e.node for e in final.get("trace", [])]
     assert "option_extract_cancel" in trace_nodes
-    assert final.get("cancel_params", {}).get("expected_action") == "request_cancel"
+    assert final.get("expected_action") == "cancel"
 
 
 @pytest.mark.asyncio

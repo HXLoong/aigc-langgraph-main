@@ -358,6 +358,7 @@ async def place_close_validate(state: PlaceCloseState) -> dict[str, Any]:
 async def place_close_reject(state: PlaceCloseState) -> dict[str, Any]:
     """早退出口：写 close_params + 引导文案，不调后端。汇总条目沿用 close_place_close 名。"""
     return {
+        "expected_action": "close",
         "close_params": validated_close_params(closeOrderList=state.get("pc_close_orders") or []),
         "reply_text": state.get("pc_reject_reply"),
         "intent": "close_order_request",
@@ -388,6 +389,7 @@ async def place_close_submit(state: PlaceCloseState) -> dict[str, Any]:
     full_closes = sum(1 for item in close_list if item.confirm_full_close)
     decision = f"orders={len(close_list)}, types={types}, full_close={full_closes}"
     return {
+        "expected_action": "close",
         "close_params": validated_close_params(closeOrderList=close_order_list_dump),
         **backend,
         "intent": "close_order_request",

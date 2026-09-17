@@ -73,6 +73,7 @@ class TestSwapConfirmNode:
             }
         )
         assert out["confirm"]["action"] == "place"
+        assert out["expected_action"] == "place"
         ids = [o["orderId"] for o in out["confirm"]["orderList"]]
         assert ids == [ORDER, ORDER2]
         assert calls[0]["intent"] == "confirm_order"
@@ -90,6 +91,7 @@ class TestSwapConfirmNode:
             }
         )
         assert out["confirm"]["action"] == "cancel"
+        assert out["expected_action"] == "cancel"
         assert out["confirm"]["orderList"][0]["orderId"] == ORDER
         assert calls[0]["intent"] == "confirm_cancel_order"
 
@@ -106,6 +108,7 @@ class TestSwapConfirmNode:
             }
         )
         assert out["confirm"]["action"] == "modify"
+        assert out["expected_action"] == "modify"
 
     @pytest.mark.asyncio
     async def test_orderid_can_be_null(self, monkeypatch: pytest.MonkeyPatch) -> None:

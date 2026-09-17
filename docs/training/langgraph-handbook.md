@@ -997,10 +997,8 @@ async def swap_place_order(state: AgentState) -> dict:
 
     action = _expected_action(params)
     return {
-        "place_params": {
-            "expected_action": action,
-            "orderList": [item.model_dump() for item in params.orderList],
-        },
+        "expected_action": action,  # AgentState 顶层字段（ADR 0024 D2）
+        "place_params": {"orderList": [item.model_dump() for item in params.orderList]},
         "tickers": tickers,
         "trace": [TraceEntry(node="swap_place_order", decision=f"action={action}")],
     }
@@ -1534,10 +1532,8 @@ async def swap_place_order(state: AgentState) -> dict[str, Any]:
 
     action = _expected_action(params)
     return {
-        "place_params": {
-            "expected_action": action,
-            "orderList": [item.model_dump() for item in params.orderList],
-        },
+        "expected_action": action,  # AgentState 顶层字段（ADR 0024 D2）
+        "place_params": {"orderList": [item.model_dump() for item in params.orderList]},
         "tickers": tickers,
         "trace": [TraceEntry(
             node="swap_place_order",
@@ -1721,7 +1717,7 @@ async def test_swap_graph_routes_to_place_order(mock_llms, mock_backend):
 
     assert final["intent"] == "place_order_request"
     assert "place_params" in final
-    assert final["place_params"]["expected_action"] == "place"
+    assert final["expected_action"] == "place"
 ```
 
 > **第 9 章会详细讲 conftest.py + mock_llms + mock_backend fixture 怎么写**。
@@ -2844,7 +2840,7 @@ async def test_swap_graph_e2e_place_order(monkeypatch):
 
     assert final["intent"] == "place_order_request"
     assert "place_params" in final
-    assert final["place_params"]["expected_action"] == "place"
+    assert final["expected_action"] == "place"
     assert len(final["place_params"]["orderList"]) == 1
 ```
 

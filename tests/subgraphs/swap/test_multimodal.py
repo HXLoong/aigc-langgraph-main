@@ -176,7 +176,8 @@ class TestImageOrder:
                 "input_files": [{"type": "image", "url": "http://img/1.png"}],
             }
         )
-        assert out["place_params"]["expected_action"] == "place"
+        assert out["expected_action"] == "place"
+        assert "expected_action" not in out["place_params"]
         assert out["place_params"]["orderList"][0]["placeOrderWindCode"] == "600519.SH"
         assert out["intent"] == "place_order_request"
         assert ocr_llm.ainvoke.await_count == 1
@@ -301,7 +302,7 @@ class TestImageOrder:
         out = await swap_image_order(
             {"raw_text": "", "input_files": [{"type": "image", "url": "http://i/1.png"}]}
         )
-        assert out["place_params"]["expected_action"] == "modify"
+        assert out["expected_action"] == "modify"
 
     @pytest.mark.asyncio
     async def test_trace_node_name(self, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -439,7 +440,7 @@ class TestExcelOrder:
         out = await swap_excel_order(
             {"raw_text": "", "input_files": [{"remote_url": "http://f/x.xlsx"}]}
         )
-        assert out["place_params"]["expected_action"] == "modify"
+        assert out["expected_action"] == "modify"
 
     @pytest.mark.asyncio
     async def test_trace_node_and_row_count(self, monkeypatch: pytest.MonkeyPatch) -> None:

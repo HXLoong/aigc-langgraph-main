@@ -64,7 +64,7 @@ _Avoid_: action（与下单 algorithm type 的 "action" 字段冲突）、type�
 _Avoid_: stock（仅指股票）、symbol（不准确）、underlying（仅期权语境）
 
 **Confirm 节点的 action 参数**：
-合并版 `swap.confirm(action: "place" | "cancel" | "modify")`——同一个节点处理三种动作的二次确认，调用方传入 expected_action。
+合并版 `swap.confirm(action: "place" | "cancel" | "modify")`——同一个节点处理三种动作的二次确认，动作由 intent 推导并写入 AgentState 顶层 `expected_action`（ADR 0024 D2；`place` / `modify` / `cancel` / `inquiry` / `close`）。
 _Avoid_: 三个独立的"确认下单 / 确认撤单 / 确认改单"节点（已合并）
 
 ## Relationships

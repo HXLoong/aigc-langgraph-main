@@ -55,6 +55,7 @@ async def close_confirm_cancel(state: AgentState) -> dict[str, Any]:
     )
 
     return {
+        "expected_action": "cancel",
         "confirm": validated_confirm(
             action="cancel_close", confirmCancelOrderNoList=confirm_cancel_ids
         ),

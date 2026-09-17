@@ -44,6 +44,7 @@ async def option_extract_confirm_place(state: AgentState) -> dict[str, Any]:
     )
 
     return {
+        "expected_action": "place",
         "confirm": validated_confirm(action="place", orderList=order_list),
         **backend,
         "trace": [

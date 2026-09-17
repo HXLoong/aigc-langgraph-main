@@ -32,7 +32,8 @@ class TestExtractCancelNode:
         result = await option_extract_cancel(
             {"raw_text": "撤单 Q-20250616-000017", "intent": "request_cancel_order"}
         )
-        assert result["cancel_params"]["expected_action"] == "request_cancel"
+        assert result["expected_action"] == "cancel"
+        assert "expected_action" not in result["cancel_params"]
         assert result["cancel_params"]["orderList"] == [{"orderId": "Q-20250616-000017"}]
         assert backend.await_args.kwargs["order_list"] == [{"orderId": "Q-20250616-000017"}]
 

@@ -43,6 +43,7 @@ async def swap_cancel(state: AgentState) -> dict[str, Any]:
     )
 
     return {
+        "expected_action": "cancel",
         "cancel_params": validated_cancel_params(orderList=order_list),
         **backend,
         "trace": [

@@ -50,6 +50,7 @@ async def ingest(state: AgentState) -> dict[str, Any]:
         "api_code": None,
         "error": None,
         # per-turn 业务对象（ADR 0024 D2）
+        "expected_action": None,
         "tickers": None,
         "place_params": None,
         "cancel_params": None,

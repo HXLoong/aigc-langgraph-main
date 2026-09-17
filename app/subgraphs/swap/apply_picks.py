@@ -34,10 +34,7 @@ async def swap_apply_picks(state: AgentState) -> dict[str, Any]:
         apply_underlying(order_list, ticker_picks, candidate_list)
 
     return {
-        "place_params": validated_place_params(
-            expected_action=place_params.get("expected_action", ""),
-            orderList=order_list,
-        ),
+        "place_params": validated_place_params(orderList=order_list),
         "swap_counterparty_picks": None,
         "swap_ticker_picks": None,
         "trace": [

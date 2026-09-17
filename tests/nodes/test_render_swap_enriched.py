@@ -50,7 +50,6 @@ async def test_local_context_never_enriches_backend_reply(
         "intent": "place_order_request",
         "raw_text": raw_text,
         "place_params": {
-            "expected_action": "place",
             "orderList": [{"placeOrderWindCode": wind_code}],
         },
         "tickers": [

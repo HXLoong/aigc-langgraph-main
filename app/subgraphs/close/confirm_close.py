@@ -57,6 +57,7 @@ async def close_confirm_close(state: AgentState) -> dict[str, Any]:
     )
 
     return {
+        "expected_action": "close",
         "confirm": validated_confirm(action="close", confirmOrderNoList=confirm_ids),
         **backend,
         "trace": [

@@ -34,7 +34,8 @@ class TestOptionExtractCancelPlaceNode:
                 "intent": "cancel_order_request",
             }
         )
-        assert result["cancel_params"]["expected_action"] == "cancel_request"
+        assert result["expected_action"] == "cancel"
+        assert "expected_action" not in result["cancel_params"]
         assert result["cancel_params"]["orderList"] == [{"orderId": "Q-20250616-000017"}]
         assert backend.await_args.kwargs["order_list"] == [{"orderId": "Q-20250616-000017"}]
 

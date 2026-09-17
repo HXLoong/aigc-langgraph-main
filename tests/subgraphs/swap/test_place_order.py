@@ -175,7 +175,8 @@ class TestSwapPlaceOrderNode:
             {"raw_text": "互换下单 腾讯 1000 股 限价"}
         )
 
-        assert result["place_params"]["expected_action"] == "place"
+        assert result["expected_action"] == "place"
+        assert "expected_action" not in result["place_params"]
         assert result["place_params"]["orderList"][0]["placeOrderQuantity"] == 1000
         tickers = result.get("tickers", [])
         assert any("700" in t.wind_code and t.wind_code.endswith(".HK") for t in tickers)
@@ -195,7 +196,7 @@ class TestSwapPlaceOrderNode:
         )
         _patch_llm(monkeypatch, params)
         result = await swap_place_order({"raw_text": "改 H-20260304-0001 价格 350"})
-        assert result["place_params"]["expected_action"] == "modify"
+        assert result["expected_action"] == "modify"
 
     async def test_multi_distinct_tickers(
         self, monkeypatch: pytest.MonkeyPatch

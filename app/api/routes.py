@@ -341,7 +341,10 @@ def _state_to_outputs(state: AgentState) -> dict[str, Any]:
         ],
         "trace": _format_trace(state.get("trace", [])),
     }
-    # M1 阶段：业务对象用 dict 占位，直接 dump
+    expected_action = state.get("expected_action")
+    if expected_action is not None:
+        outputs["expected_action"] = expected_action
+    # 业务对象运行时为 dict，直接 dump
     for key in (
         "place_params",
         "cancel_params",
@@ -354,8 +357,13 @@ def _state_to_outputs(state: AgentState) -> dict[str, Any]:
         "api_result",
     ):
         v = state.get(key)
-        if v is not None:
-            outputs[key] = v
+        if v is None:
+            continue
+        if key in ("place_params", "cancel_params") and expected_action is not None:
+            # wire 兼容投影（ADR 0024 D2）：state 内 expected_action 已是顶层字段，
+            # 既有读者（探针脚本 / 日志解析）仍从信封里读，这里只投影不改写 state
+            v = {"expected_action": expected_action, **v}
+        outputs[key] = v
     return outputs
 
 

@@ -34,7 +34,6 @@ def fresh_state(names: list[str | None] | None = None) -> AgentState:
             {"sort": "A", "shortName": "聚鸣价值精选", "ctptyId": "1", "longName": "后台全称"},
         ],
         "place_params": {
-            "expected_action": "place",
             "orderList": [
                 {
                     "placeOrderShortname": name,

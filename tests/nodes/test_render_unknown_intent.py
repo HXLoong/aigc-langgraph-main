@@ -62,7 +62,8 @@ class TestRenderUnknownIntent:
         state: dict = {
             "product_type": "option",
             "intent": "new_inquiry",
-            "place_params": {"expected_action": "inquiry", "orderList": []},
+            "expected_action": "inquiry",
+        "place_params": {"orderList": []},
             "tickers": [],
         }
         update = await render(state)  # type: ignore[arg-type]

@@ -138,10 +138,8 @@ def _params_update(
 ) -> dict[str, Any]:
     action = _expected_action(params)
     return {
-        "place_params": {
-            "expected_action": action,
-            "orderList": [item.model_dump() for item in params.order_list],
-        },
+        "expected_action": action,
+        "place_params": {"orderList": [item.model_dump() for item in params.order_list]},
         "intent": "place_order_request",
         "trace": [
             TraceEntry(node=node, decision=decision, llm_output={"prompt_name": prompt_name})

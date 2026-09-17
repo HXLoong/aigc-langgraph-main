@@ -167,6 +167,9 @@ class ErrorInfo(BaseModel):
 
 ProductType = Literal["swap", "option", "option_close", "unknown"]
 
+#: 本轮动作类别（ADR 0024 D2）：place 下单 / modify 改单 / cancel 撤单类 / inquiry 询价 / close 平仓
+ExpectedAction = Literal["place", "modify", "cancel", "inquiry", "close"]
+
 
 # ============================================================
 # AgentState
@@ -227,6 +230,9 @@ class AgentState(TypedDict, total=False):
 
     # -------- 业务对象（#160/ADR 0001 D6：运行时为 dict，写入必须经
     # app/graph/business_params.py 的 validated_* 校验——形状的唯一权威）--------
+    #: 本轮要对后端执行的动作类别（ADR 0024 D2 顶层化）：写类节点写入，render / 输出层读取；
+    #: 查询类意图为 None。与 Java operate 的 type 无关——那条由 intent 驱动
+    expected_action: ExpectedAction | None
     tickers: list[TickerCandidate]
     place_params: dict[str, Any] | None
     cancel_params: dict[str, Any] | None
@@ -266,6 +272,7 @@ class SubgraphOutput(TypedDict, total=False):
     """
 
     intent: str
+    expected_action: ExpectedAction | None
     tickers: list[TickerCandidate]
     place_params: dict[str, Any] | None
     cancel_params: dict[str, Any] | None

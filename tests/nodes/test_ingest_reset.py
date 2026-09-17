@@ -59,14 +59,15 @@ class TestIngestPerTurnReset:
         state: dict = {
             "raw_text": "确认下单",
             "tickers": ["dummy_ticker"],
-            "place_params": {"expected_action": "place", "orderList": [{}]},
+            "place_params": {"orderList": [{}]},
+            "expected_action": "place",
             "cancel_params": {"cancelOrderNoList": ["H-1"]},
             "history_messages": ["msg1"],
             "conversation_id": "conv-001",
         }
         update = await ingest(state)  # type: ignore[arg-type]
         for key in (
-            "tickers", "place_params", "cancel_params", "confirm", "query_filter",
+            "tickers", "expected_action", "place_params", "cancel_params", "confirm", "query_filter",
             "close_params", "ticker_hitl_candidates", "swap_counterparty_picks", "swap_ticker_picks",
         ):
             assert key in update and update[key] is None, key

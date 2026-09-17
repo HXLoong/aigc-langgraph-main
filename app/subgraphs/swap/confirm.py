@@ -32,7 +32,7 @@ from typing import Any
 
 from app.graph.business_params import validated_confirm
 from app.graph.safe_node import safe_node
-from app.graph.state import AgentState, ErrorInfo, TraceEntry
+from app.graph.state import AgentState, ErrorInfo, ExpectedAction, TraceEntry
 from app.subgraphs.swap.backend import call_swap_backend
 from app.subgraphs.swap.intent import CONFIRM_ORDER_KEYWORDS
 from app.subgraphs.swap.order_id import (
@@ -45,7 +45,7 @@ from app.subgraphs.swap.order_id import (
 _CONFIRM_ORDER_KEYWORDS: tuple[str, ...] = CONFIRM_ORDER_KEYWORDS
 
 
-def _expected_action(intent: str | None) -> str:
+def _expected_action(intent: str | None) -> ExpectedAction:
     """根据 intent 推 expected_action（合并版 3 子意图）。
 
     - confirm_order → "place"
@@ -116,6 +116,7 @@ async def swap_confirm(state: AgentState) -> dict[str, Any]:
     )
 
     return {
+        "expected_action": action,
         "confirm": validated_confirm(action=action, orderList=order_list),
         **backend,
         "trace": [

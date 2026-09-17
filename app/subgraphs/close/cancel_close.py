@@ -67,6 +67,7 @@ async def close_cancel_close(state: AgentState) -> dict[str, Any]:
     )
 
     return {
+        "expected_action": "cancel",
         "cancel_params": validated_cancel_params(cancelOrderNoList=order_nos),
         **backend,
         "trace": [

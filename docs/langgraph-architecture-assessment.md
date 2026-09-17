@@ -159,8 +159,9 @@ LangGraph + LangFuse 的原生契约是"一个 thread = 一个 session，每次 
 | **阶段 0 续 2 · 请求级幂等 + LLM 指标 callback**：`message_log` 去重回放（`REQUEST_IDEMPOTENCY`）；`LLMMetricsCallback` 常驻 config.callbacks | `app/api/idempotency.py`、`app/api/routes.py`、`app/main.py`、`app/observability/llm_metrics.py`、`sql/schema.sql`、`tests/test_api_idempotency.py`、`tests/observability/test_llm_metrics_callback.py` | 第三节 R2、第四节 P0-3 |
 | **阶段 0 续 3 · LangFuse 注入统一**：删图级注入与 environment 分叉，请求级 handler 全环境生效，traceparent 信任独立开关，eval 同契约 | `app/observability/tracing.py`、`app/graph/main.py`、`app/main.py`、`app/config.py`、`scripts/langfuse_eval.py`、`tests/test_api.py`、`tests/test_langfuse_eval_pipeline.py` | 第四节 P0-1 / P0-2 |
 | **阶段 1 起步 · 入口唯一化 + flush**：`inputs_to_state` 为生产 / eval 共用入口，删 M1 兼容层；退出前 flush LangFuse | `app/api/turn_state.py`、`app/api/routes.py`、`scripts/langfuse_eval.py`、`app/observability/tracing.py`、`app/main.py`、`tests/test_multiturn_state.py` | 第二节（eval 与生产初始化路径不同）、第四节 P1-5 |
+| **阶段 1 · `expected_action` 提升顶层**：`ExpectedAction` Literal + `AgentState.expected_action`（per-turn，SubgraphOutput 放行）；信封去键 fail-fast；13 个写类节点写顶层，render 读顶层；outputs 顶层暴露 + 投影回信封做 wire 兼容 | `app/graph/state.py`、`app/graph/business_params.py`、`app/nodes/{ingest,render}.py`、`app/api/routes.py`、swap / option / close 写类节点、`tests/graph/test_state_schema.py`、`tests/test_state_to_outputs.py` | 第二节（`expected_action` 藏在 dict 里，12+ 处读写维持隐式状态机）|
 
-**未在本环境落地、需团队决策或真实环境**：CI 触发恢复（团队 2026-05-12 主动暂停，用户指示暂缓）、revoke 明文 Dify API key（用户指示暂缓）、连接池 / 幂等在真实 MySQL / TDSQL 上的验证、`history_messages` 窗口 N 与重构 6 的现场 eval 校准、`expected_action` 提升顶层（Java 契约改法待定）、`POST /v1/runs`（需 Java 联动）。
+**未在本环境落地、需团队决策或真实环境**：CI 触发恢复（团队 2026-05-12 主动暂停，用户指示暂缓）、revoke 明文 Dify API key（用户指示暂缓）、连接池 / 幂等在真实 MySQL / TDSQL 上的验证、`history_messages` 窗口 N 与重构 6 的现场 eval 校准、`outputs.place_params.expected_action` 投影的下线时机（需确认无外部读者）、`POST /v1/runs`（需 Java 联动）。
 
 ## 附录 A · 五路评审证据索引
 

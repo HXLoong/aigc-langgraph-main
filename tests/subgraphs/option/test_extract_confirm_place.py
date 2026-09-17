@@ -45,6 +45,7 @@ class TestOptionExtractConfirmPlaceNode:
             {"raw_text": "确认下单", "quote_content": _QUOTE_CARD}
         )
         assert result["confirm"]["action"] == "place"
+        assert result["expected_action"] == "place"
         item = _item(result)
         assert item["orderId"] == "Q-20250616-000011"
         assert item["stockCode"] == "300098.SZ"

@@ -11,7 +11,7 @@ DSL v2 拓扑（互换-意图路由 true 分支）：
         → swap_place_order_submit（本文件，互换开仓-前置清洗[code] → 互换开仓[code]）
 
 输入：raw_text + quote_content + swap_counterparties + history_messages
-输出：state['place_params'] = {expected_action, orderList}
+输出：state['expected_action'] + state['place_params'] = {orderList}
       state['tickers'] = list[TickerCandidate]（来自 ticker resolver）
 
 关键约定：
@@ -35,7 +35,7 @@ from typing import Any
 
 from app.graph.business_params import validated_place_params
 from app.graph.safe_node import safe_node
-from app.graph.state import AgentState, TraceEntry
+from app.graph.state import AgentState, ExpectedAction, TraceEntry
 from app.llm.clients import get_qwen_complex
 from app.prompts import load_prompt
 from app.prompts.spec import PromptSpec, register
@@ -84,7 +84,7 @@ SPEC = register(PromptSpec(
 ))
 
 
-def _expected_action(params: SwapPlaceOrderParams) -> str:
+def _expected_action(params: SwapPlaceOrderParams) -> ExpectedAction:
     """根据 orderList 中是否有 orderId 推导 expected_action。
 
     swap 下单/改单共用 place_order_request 意图（ADR 0001 D5 / CONTEXT.md）：
@@ -101,7 +101,7 @@ async def swap_place_order(state: AgentState) -> dict[str, Any]:
     """swap.place_order 节点（提取阶段，不调后端）。
 
     出参约定：
-    - place_params: {expected_action, orderList}（草稿，标的/对手候选覆盖 + 后端
+    - expected_action + place_params: {orderList}（草稿，标的/对手候选覆盖 + 后端
       提交由下游 swap_select_counterparty / swap_select_ticker /
       swap_place_order_submit 接力完成）
     - tickers: list[TickerCandidate]（resolver 输出，from_goats=True）
@@ -153,7 +153,8 @@ async def swap_place_order(state: AgentState) -> dict[str, Any]:
     )
 
     out: dict = {
-        "place_params": validated_place_params(expected_action=action, orderList=order_list),
+        "expected_action": action,
+        "place_params": validated_place_params(orderList=order_list),
         "tickers": tickers,
         "trace": [
             TraceEntry(
@@ -188,7 +189,6 @@ async def swap_place_order_submit(state: AgentState) -> dict[str, Any]:
     原样透传 api_result，不使用回写后的参数重新渲染。
     """
     place_params = state.get("place_params") or {}
-    action = place_params.get("expected_action", "")
     order_list = [dict(item) for item in (place_params.get("orderList") or [])]
 
     backend = await call_swap_backend(
@@ -216,7 +216,7 @@ async def swap_place_order_submit(state: AgentState) -> dict[str, Any]:
                 order_list[i]["orderId"] = oid
 
     return {
-        "place_params": validated_place_params(expected_action=action, orderList=order_list),
+        "place_params": validated_place_params(orderList=order_list),
         **backend,
         "trace": [
             TraceEntry(

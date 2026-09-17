@@ -18,11 +18,13 @@ from app.wire_model import WireModel
 
 
 class PlaceParams(WireModel):
-    """下单/改单/询价参数信封（swap.place_order / option.extract_*）。"""
+    """下单/改单/询价参数信封（swap.place_order / option.extract_*）。
+
+    动作类别不在信封里：见 AgentState.expected_action（ADR 0024 D2）。
+    """
 
     model_config = ConfigDict(extra="forbid")
 
-    expected_action: str = ""
     order_list: list[dict[str, Any]] = Field(alias="orderList", default_factory=list)
 
 
@@ -31,7 +33,6 @@ class CancelParams(WireModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    expected_action: str = ""
     order_list: list[dict[str, Any]] = Field(alias="orderList", default_factory=list)
     cancel_order_no_list: list[str] = Field(alias="cancelOrderNoList", default_factory=list)
 

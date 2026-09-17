@@ -39,7 +39,7 @@ async def test_hitl_card_branch() -> None:
 @pytest.mark.asyncio
 async def test_zero_match_branch() -> None:
     out = await render({
-        "product_type": "option", "tickers": [], "place_params": {"expected_action": "place", "orderList": [{}]},
+        "product_type": "option", "tickers": [], "expected_action": "place", "place_params": {"orderList": [{}]},
         "raw_text": "x",
     })
     assert _decision(out) == "zero_match"

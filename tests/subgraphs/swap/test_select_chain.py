@@ -136,7 +136,6 @@ def _sc_state(**overrides: object) -> dict:
         "quote_content": "单号：H-1",
         "swap_counterparties": _TRS,
         "place_params": {
-            "expected_action": "place",
             "orderList": [{"orderId": "H-1", "placeOrderShortname": "旧对手"}],
         },
     }
@@ -216,7 +215,6 @@ def _st_state(**overrides: object) -> dict:
         "quote_content": "单号：H-1",
         "quote_ticker_candidates": _CANDIDATES,
         "place_params": {
-            "expected_action": "place",
             "orderList": [{"orderId": "H-1", "placeOrderWindCode": "旧标的"}],
         },
     }
@@ -287,7 +285,6 @@ def _ap_state(**overrides: object) -> dict:
         "swap_counterparties": _TRS,
         "quote_ticker_candidates": _CANDIDATES,
         "place_params": {
-            "expected_action": "place",
             "orderList": [{"orderId": "H-1", "placeOrderShortname": "旧对手",
                            "placeOrderWindCode": "旧标的"}],
         },
@@ -300,7 +297,8 @@ def _ap_state(**overrides: object) -> dict:
 
 class TestSwapApplyPicks:
     @pytest.mark.asyncio
-    async def test_applies_both_picks_and_keeps_expected_action(self) -> None:
+    async def test_applies_both_picks_without_touching_expected_action(self) -> None:
+        """expected_action 是顶层字段（ADR 0024 D2），汇合节点只改 orderList，不碰它。"""
         out = await swap_apply_picks(_ap_state(
             swap_counterparty_picks={"hasSignal": True, "picks": [{"orderId": "H-1", "letter": "B"}]},
             swap_ticker_picks=[{"orderId": "H-1", "seq": 2}],
@@ -308,7 +306,8 @@ class TestSwapApplyPicks:
         order = out["place_params"]["orderList"][0]
         assert order["placeOrderShortname"] == "测试111"
         assert order["placeOrderWindCode"] == "00700.HK"
-        assert out["place_params"]["expected_action"] == "place"
+        assert "expected_action" not in out["place_params"]
+        assert "expected_action" not in out
 
     @pytest.mark.asyncio
     async def test_direct_name_and_direct_ref(self) -> None:
@@ -340,7 +339,7 @@ class TestSwapApplyPicks:
     @pytest.mark.asyncio
     async def test_missing_picks_and_place_params_default_empty(self) -> None:
         out = await swap_apply_picks({"raw_text": "x"})
-        assert out["place_params"] == {"expected_action": "", "orderList": []}
+        assert out["place_params"] == {"orderList": []}
 
     @pytest.mark.asyncio
     async def test_clears_pick_channels_after_apply(self) -> None:

@@ -37,6 +37,7 @@ async def option_extract_confirm_cancel(state: AgentState) -> dict[str, Any]:
     )
 
     return {
+        "expected_action": "cancel",
         "confirm": validated_confirm(action="cancel", orderList=order_list),
         **backend,
         "trace": [
