@@ -2,7 +2,7 @@
 
 设计原则：
 - 按业务对象聚合，不按节点输出扁平铺
-- reducer 字段（trace / history_messages）用 Annotated[..., merge_by_id] 按 id 合并（ADR 0024 D3）
+- reducer 字段：trace 用 merge_by_id 按 id 合并；history_messages 用 merge_history（按 id 合并 + 最近 N 条窗口，ADR 0024 D3/D4）
 - 业务参数字段 M1 阶段用 dict[str, Any] 占位，M2 阶段替换为具体 Pydantic 模型
 """
 from __future__ import annotations
@@ -57,6 +57,26 @@ def merge_by_id(left: list[Any] | None, right: list[Any] | None) -> list[Any]:
         seen.add(key)
         merged.append(item)
     return merged
+
+
+#: history_messages 窗口默认值（settings.history_window_messages 不可用时的兜底）
+DEFAULT_HISTORY_WINDOW = 40
+
+
+def _history_window() -> int:
+    try:
+        from app.config import get_settings
+
+        return int(get_settings().history_window_messages)
+    except Exception:  # noqa: BLE001 - 配置不可用（测试 / 脚本）时用默认窗口
+        return DEFAULT_HISTORY_WINDOW
+
+
+def merge_history(left: list[Any] | None, right: list[Any] | None) -> list[Any]:
+    """history_messages reducer：按 id 合并后只保留最近 N 条（ADR 0024 D4）。"""
+    merged = merge_by_id(left, right)
+    window = _history_window()
+    return merged[-window:] if window > 0 and len(merged) > window else merged
 
 
 # ============================================================
@@ -197,7 +217,7 @@ class AgentState(TypedDict, total=False):
     swap_input_mode: str | None  # text | image | excel（intent_route 写入,swap 子图分流）
 
     # -------- 历史 --------
-    history_messages: Annotated[list[Message], merge_by_id]
+    history_messages: Annotated[list[Message], merge_history]
 
     # -------- 业务路由 --------
     #: 单次 graph 调用的关联 ID（ADR 0004/#156：node_trace ↔ LangFuse 关联键）

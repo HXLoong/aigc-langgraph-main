@@ -103,7 +103,7 @@ DSL v2 迁移（2026-08）后，代码在 LangGraph 上跑通了全部业务链�
 
 - 正面：图、State、持久化、可观测、评估五层各有一份显式契约；金融三条 P0（单连接 saver、无幂等、敏感字段出境）在阶段 0 关闭；Dify 从"上游真源"变为历史参照，后续同步事故（SW-INC-01 类）不再可能发生。
 - 负面：阶段 1-3 约 8-10 周工程量；阶段 3 需 Java 侧联调发版；State 分层与子图 output schema 会让一批"子图顺手改父图字段"的隐式行为在类型层暴露，需要逐个显式化。
-- 未决：写路径提交前的 durability 裁决（与幂等设计一起在阶段 1 记录）；`history_messages` 窗口 N 的取值需 eval 校准；`option_close` / `close` 命名统一方向；Store 是否引入。
+- 未决：写路径提交前的 durability 裁决（与幂等设计一起在阶段 1 记录）；`history_messages` 窗口 N 的取值需 eval 校准（机制已落地，默认 40）；`option_close` / `close` 命名统一方向；Store 是否引入。
 
 ## 落地记录
 
@@ -114,6 +114,7 @@ DSL v2 迁移（2026-08）后，代码在 LangGraph 上跑通了全部业务链�
 - 2026-09-17 重构 4（D3，TDD）：`render` 18 分支决策树每个出口写 `TraceEntry(node="render", decision=…)`（`passthrough` / `api_result` / `hitl_card` / `zero_match` / `error:*` / `unknown_*` / `close_card` / `cancel_ack` / `no_reply` 等），回复文本零变化；eval 失败归因不再看不到 render 走了哪条分支。
 - 2026-09-17 重构 5（D3，TDD）：`close_place_close` 215 行 6 阶段厚节点拆成子图 `build_place_close_graph()`：`place_close_parse` → `fetch_orders` → `extract`（LLM）→ `normalize`（合并 + 确定性后处理）→ `validate` → `submit` / `reject`，两处早退（空列表、校验失败）做成图边，每阶段一条 TraceEntry，错误归因到具体阶段（如 `place_close_extract`）；私有 `PlaceCloseState`（AgentState + `pc_*` 中间态）+ `PlaceCloseOutput` output_schema，中间态不外泄；close 图 `add_node("close_place_close", build_place_close_graph())` 原生嵌入；`close_place_close(state)` façade 契约不变，汇总条目沿用 `close_place_close` 名兼容既有归因。
 - 2026-09-17 重构 6（D2，TDD）：业务对象 per-turn 语义落地——评估核实没有任何业务节点把上一轮的 `tickers` / `place_params` / `cancel_params` / `confirm` / `query_filter` / `close_params` 当结果读（唯一读者是 render，残留会被渲染成"已收到撤单请求"），`ingest` 统一清空这些字段与 `ticker_hitl_candidates` / swap 指针通道；一轮的边界收敛到 `ingest`（`trace` 用 `Overwrite([])` 重置，`@safe_node` 学会把自身条目写进 Overwrite），删除主图 `_reset_turn_trace` 节点；跨轮记忆只保留 `history_messages`。API 层对当轮输入字段的显式置空保留（输入必须由请求决定，不属于图内边界）。
+- 2026-09-17 重构 7（D4，TDD）：`history_messages` 窗口——reducer 改为 `merge_history`（按 id 合并后只保留最近 N 条），N 走 `Settings.history_window_messages`（默认 40 条 ≈ 20 轮，`.env.customer.template` 已登记），只影响超过 20 轮的长会话；N 的最终取值由现场 eval 校准。
 
 ## 附录 · Dify 残留分级清单（摘要）
 

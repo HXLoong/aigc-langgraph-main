@@ -42,3 +42,35 @@ def test_merge_by_id_falls_back_to_identity_for_dicts() -> None:
 def test_merge_by_id_keeps_plain_append_semantics() -> None:
     assert merge_by_id([], [TraceEntry(node="a")])[0].node == "a"
     assert merge_by_id([TraceEntry(node="a")], []) != []
+
+
+# ============================================================
+# history_messages 窗口 reducer（ADR 0024 D4：企微群 thread 长期存在，历史不能无界）
+# ============================================================
+
+
+def test_merge_history_keeps_only_last_n(monkeypatch) -> None:
+    from typing import get_type_hints
+
+    from app.graph import state as state_mod
+    from app.graph.state import AgentState, merge_history
+
+    monkeypatch.setattr(state_mod, "_history_window", lambda: 4)
+    left = [Message(role="user", content=str(i)) for i in range(3)]
+    right = [Message(role="assistant", content="a"), Message(role="user", content="b")]
+    merged = merge_history(left, right)
+    assert [m.content for m in merged] == ["2", "a", "b"][-4:] or [m.content for m in merged] == ["1", "2", "a", "b"]
+    assert len(merged) == 4
+    # 仍按 id 去重（原生子图回传完整 history 时不重复）
+    assert len(merge_history(merged, merged)) == 4
+    # AgentState 用的就是这个 reducer
+    hint = get_type_hints(AgentState, include_extras=True)["history_messages"]
+    assert hint.__metadata__[0] is merge_history
+
+
+def test_history_window_default_comes_from_settings() -> None:
+    from app.config import Settings
+    from app.graph.state import _history_window
+
+    assert Settings.model_fields["history_window_messages"].default == 40
+    assert _history_window() >= 2
