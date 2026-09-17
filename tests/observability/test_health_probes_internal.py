@@ -345,3 +345,24 @@ async def test_run_all_probes_total_timeout_returns_4_fails(monkeypatch) -> None
     assert {r.target for r in results} == {
         "mysql", "langfuse", "llm", "java_backend",
     }
+
+
+@pytest.mark.asyncio
+async def test_probe_mysql_uses_saver_pool_when_checkpointer_initialized(monkeypatch) -> None:
+    """ADR 0024 D4：saver 已接线时探针走 factory.probe_checkpointer（探的是 saver 自己的池），
+    绝不另开新连接——否则 saver 连接已死 /ready 仍会返回 ok。"""
+    from unittest.mock import AsyncMock
+
+    import app.checkpointer.factory as factory
+
+    monkeypatch.setattr(factory, "_pool", object())
+    probe = AsyncMock()
+    monkeypatch.setattr(factory, "probe_checkpointer", probe)
+
+    def _no_connect(*_a, **_k):  # type: ignore[no-untyped-def]
+        raise AssertionError("不应另开 aiomysql 连接")
+
+    with patch("aiomysql.connect", _no_connect):
+        result = await hp.probe_mysql()
+    assert result.status == "ok"
+    probe.assert_awaited_once()

@@ -109,16 +109,34 @@ def test_ready_java_backend_fail_returns_503() -> None:
     assert r.json()["checks"]["java_backend"] == "fail"
 
 
-def test_ready_llm_timeout_returns_503() -> None:
+def test_ready_llm_timeout_is_soft_dependency() -> None:
+    """ADR 0024 D5：LLM / LangFuse 是软依赖——失败只进 body（degraded）但保持 200，
+    否则可选观测依赖或上游抖动会把业务 Pod 摘出负载均衡。"""
     with (
         patch.object(hp, "probe_mysql", _stub_probe("mysql")),
         patch.object(hp, "probe_langfuse", _stub_probe("langfuse")),
-        patch.object(hp, "probe_llm", _stub_probe("llm", "fail", "timeout")),
+        patch.object(hp, "probe_llm", _stub_probe("llm", "fail", "TimeoutError")),
         patch.object(hp, "probe_java_backend", _stub_probe("java_backend")),
         TestClient(app) as client,
     ):
         r = client.get("/ready")
-    assert r.status_code == 503
+    assert r.status_code == 200
+    body = r.json()
+    assert body["status"] == "degraded"
+    assert body["checks"]["llm"] == "fail"
+
+
+def test_ready_langfuse_fail_is_soft_dependency() -> None:
+    with (
+        patch.object(hp, "probe_mysql", _stub_probe("mysql")),
+        patch.object(hp, "probe_langfuse", _stub_probe("langfuse", "fail", "ConnectError")),
+        patch.object(hp, "probe_llm", _stub_probe("llm")),
+        patch.object(hp, "probe_java_backend", _stub_probe("java_backend")),
+        TestClient(app) as client,
+    ):
+        r = client.get("/ready")
+    assert r.status_code == 200
+    assert r.json()["status"] == "degraded"
 
 
 def test_ready_emits_health_check_metric() -> None:

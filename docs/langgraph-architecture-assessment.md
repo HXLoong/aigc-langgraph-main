@@ -155,6 +155,7 @@ LangGraph + LangFuse 的原生契约是"一个 thread = 一个 session，每次 
 | **重构 5 · place_close 拆子图**：7 阶段节点 + 私有 State + output_schema，早退做成图边，错误归因到阶段 | `app/subgraphs/close/place_close.py`、`close/graph.py`、`tests/subgraphs/close/test_place_close_graph.py` | 第二节 2.1（215 行单节点 6 阶段）|
 | **重构 6 · 业务对象 per-turn + 一轮边界收敛到 ingest**：ingest 清空业务对象 / 指针通道 / trace（Overwrite），删 `_reset_turn_trace`；`@safe_node` Overwrite 感知 | `app/nodes/ingest.py`、`app/graph/safe_node.py`、`app/graph/main.py`、`tests/nodes/test_ingest_reset.py`、`tests/graph/test_safe_node_overwrite.py` | 第三节 R3（状态串线）、第二节（一轮边界分散三处）|
 | **重构 7 · history_messages 窗口**：`merge_history` reducer（按 id 合并 + 最近 N 条），`HISTORY_WINDOW_MESSAGES` 默认 40 | `app/graph/state.py`、`app/config.py`、`.env.customer.template`、`tests/graph/test_reducers.py` | 第三节 R4（无界增长）|
+| **阶段 0 续 · saver 连接池 + 探针自愈 + /ready 软硬分离**：`aiomysql.create_pool` + `pool_recycle`，`probe_checkpointer()`，硬依赖才 503 | `app/checkpointer/factory.py`、`app/config.py`、`app/observability/health_probes.py`、`app/api/health.py`、`tests/test_checkpointer_wiring.py`、`tests/observability/` | 第三节 R1、第四节 P0-5 |
 
 **未在本环境落地、需团队决策或真实 MySQL**：CI 触发恢复（团队 2026-05-12 主动暂停）、saver 连接池、请求级幂等（`message_log`）、LLM 指标 callback、`/ready` 软硬分离、`history_messages` 窗口（需 eval 校准 N）、revoke 明文 Dify API key。
 

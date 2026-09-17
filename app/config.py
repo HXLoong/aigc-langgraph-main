@@ -84,6 +84,11 @@ class Settings(BaseSettings):
     # === Checkpointer（ADR 0009/0021，#153 接线）===
     # 生产必须 true（多轮状态持久化）；开发/CI 默认 false 避免 MySQL 依赖与脏 checkpoint
     use_mysql_checkpointer: bool = False
+    # checkpoint 连接池（ADR 0024 D4）：from_conn_string 单连接无重连，生产禁用；
+    # pool_recycle 必须小于 MySQL / TDSQL proxy 的 wait_timeout（默认 8h），30 分钟保守
+    checkpoint_pool_minsize: int = Field(default=1, ge=1)
+    checkpoint_pool_maxsize: int = Field(default=10, ge=1)
+    checkpoint_pool_recycle_seconds: int = Field(default=1800, ge=1)
 
     # === 灰度切换 ===
     use_langgraph: bool = True
