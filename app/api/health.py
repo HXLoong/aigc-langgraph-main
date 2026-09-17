@@ -11,6 +11,7 @@ from __future__ import annotations
 from fastapi import APIRouter
 from fastapi.responses import JSONResponse
 
+from app.config import get_settings
 from app.observability.health_probes import run_all_probes
 from app.observability.metrics import get_collector
 
@@ -23,7 +24,9 @@ HARD_DEPENDENCIES: frozenset[str] = frozenset({"mysql", "java_backend"})
 
 @router.get("/health", include_in_schema=True)
 async def health() -> dict[str, str]:
-    return {"status": "ok", "service": "otc-agent-langgraph"}
+    # backend_mode：写类后端调用是否被 dry-run 拦截（ADR 0024 D6：harness --backend 据此把关）
+    mode = "dry-run" if get_settings().dry_run_backend else "real"
+    return {"status": "ok", "service": "otc-agent-langgraph", "backend_mode": mode}
 
 
 @router.get("/ready", include_in_schema=True)

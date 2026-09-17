@@ -53,7 +53,10 @@ def diff_fields(
     return diffs
 
 
-def check_text_assertions(reply_text: str, spec: TurnSpec) -> list[FieldDiff]:
+def check_text_assertions(
+    reply_text: str, spec: TurnSpec, *, allow_dry_run: bool = False
+) -> list[FieldDiff]:
+    """文本断言；`allow_dry_run=True`（harness --backend dry-run）时 DRY-RUN 标记不算失败。"""
     failures: list[FieldDiff] = []
     for expected in spec.response_contains:
         if expected not in reply_text:
@@ -65,7 +68,7 @@ def check_text_assertions(reply_text: str, spec: TurnSpec) -> list[FieldDiff]:
     for forbidden in spec.response_not_contains:
         if forbidden in reply_text:
             failures.append(FieldDiff(path="response_not_contains", expected=forbidden, actual=reply_text))
-    if "DRY-RUN-" in reply_text:
+    if "DRY-RUN-" in reply_text and not allow_dry_run:
         failures.append(FieldDiff(path="runtime", expected="real backend result", actual="dry-run interception"))
     return failures
 

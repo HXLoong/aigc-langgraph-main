@@ -35,6 +35,19 @@ def test_health_returns_ok() -> None:
     assert body["service"] == "otc-agent-langgraph"
 
 
+@pytest.mark.parametrize(("dry_run", "mode"), [(False, "real"), (True, "dry-run")])
+def test_health_reports_backend_mode(monkeypatch: pytest.MonkeyPatch, dry_run: bool, mode: str) -> None:
+    """ADR 0024 D6：harness `--backend` 真生效的前提是服务端如实报告自己的写类拦截模式。"""
+    from app import config as config_mod
+    from app.api import health as health_mod
+
+    settings = config_mod.get_settings().model_copy(update={"dry_run_backend": dry_run})
+    monkeypatch.setattr(health_mod, "get_settings", lambda: settings)
+    with TestClient(app) as client:
+        body = client.get("/health").json()
+    assert body["backend_mode"] == mode
+
+
 # ============================================================
 # /ready · readiness · 分支覆盖
 # ============================================================

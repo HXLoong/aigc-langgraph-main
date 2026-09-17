@@ -282,6 +282,107 @@ def _stub_cli_httpx(
     )
 
 
+def _health_handler(backend_mode: str | None):
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/health":
+            body: dict = {"status": "ok"}
+            if backend_mode is not None:
+                body["backend_mode"] = backend_mode
+            return httpx.Response(200, json=body)
+        return httpx.Response(200, json={"status": "ok", "checks": {"mysql": "ok"}})
+
+    return handler
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("server_mode", "wanted", "code"),
+    [
+        ("real", "real", 0),
+        ("real", "mock", 0),
+        ("dry-run", "dry-run", 0),
+        ("real", "dry-run", 2),  # 想 dry-run 却打在真后端 → 会真下单，必须拦
+        ("dry-run", "real", 2),  # 想跑真回归却打在 dry-run → 结果是假的，必须拦
+        (None, "dry-run", 2),  # 旧服务端不报模式，dry-run 不能假定安全
+        (None, "real", 0),
+    ],
+)
+async def test_doctor_gates_backend_mode(
+    monkeypatch: pytest.MonkeyPatch, server_mode: str | None, wanted: str, code: int
+) -> None:
+    """ADR 0024 D6：`--backend` 不再只是打印警告，而是对照服务端 /health.backend_mode 把关。"""
+    _stub_cli_httpx(monkeypatch, _health_handler(server_mode))
+    assert await cli_module._doctor("http://test", "none", backend=wanted) == code
+
+
+def test_text_assertions_tolerate_dry_run_marker_only_when_asked() -> None:
+    spec = GoldenCase(id="x", category="swap", turns=[{"send_text": "a"}]).turns[0]
+    assert check_text_assertions("下单成功 DRY-RUN-place_order_request", spec)
+    assert not check_text_assertions("下单成功 DRY-RUN-place_order_request", spec, allow_dry_run=True)
+
+
+def _result(case: GoldenCase, turns: list, failure: dict | None = None):
+    from harness.multi_turn import MultiTurnResult
+
+    return MultiTurnResult(
+        case_id=case.id, conversation_id="c", turns=turns, failure=failure,
+        remaining_turns=len(case.turns) - len(turns),
+    )
+
+
+def test_report_buckets_business_reject_separately() -> None:
+    """D6：业务拒绝不算 PASS，单独成桶 REJECTED；有 diff 的仍是 FAIL。"""
+    case = GoldenCase(id="opt-1", category="option/inquiry", turns=[{"send_text": "a"}])
+    reject = {"turn": 1, "kind": "business_reject", "api_code": 400, "api_result": "参数缺失"}
+    result = _result(case, [_outcome(1, "option", "new_inquiry")], failure=reject)
+    report = cli_module._report_case(case, result, cli_module._turn_diffs(case, result))
+    assert report["status"] == "REJECTED" and report["passed"] is False
+
+    ok = _result(case, [_outcome(1, "option", "new_inquiry")])
+    assert cli_module._report_case(case, ok, cli_module._turn_diffs(case, ok))["status"] == "PASS"
+
+    case_with_expect = GoldenCase(
+        id="opt-2", category="option/inquiry", expected={"intent": "confirm_order"},
+        turns=[{"send_text": "a", "expected": {"intent": "confirm_order"}}],
+    )
+    bad = _result(case_with_expect, [_outcome(1, "option", "new_inquiry")], failure=reject)
+    report = cli_module._report_case(case_with_expect, bad, cli_module._turn_diffs(case_with_expect, bad))
+    assert report["status"] == "FAIL"
+
+
+def test_unexecuted_turns_after_early_stop_are_explicit_failures() -> None:
+    """D6：早停后未执行的轮次逐轮记 runtime 失败，多轮 case 不能因早停而静默通过。"""
+    case = GoldenCase(
+        id="opt-3", category="option/place_from_quote",
+        turns=[{"send_text": "a"}, {"send_text": "b", "quote_previous": True}, {"send_text": "c", "quote_previous": True}],
+    )
+    reject = {"turn": 1, "kind": "business_reject", "api_code": 400, "api_result": "x"}
+    result = _result(case, [_outcome(1, "option", "new_inquiry")], failure=reject)
+    diffs = cli_module._turn_diffs(case, result)
+    assert diffs[1] == []
+    assert [d.path for d in diffs[2]] == ["runtime"] and [d.path for d in diffs[3]] == ["runtime"]
+    assert "early stop at turn 1 (business_reject)" in diffs[2][0].actual
+    assert cli_module._report_case(case, result, diffs)["status"] == "FAIL"
+
+    tech = {"turn": 1, "kind": "technical_error", "error": {"type": "ConnectError", "message": "refused"}}
+    result = _result(case, [], failure=tech)
+    diffs = cli_module._turn_diffs(case, result)
+    assert sorted(diffs) == [1, 2, 3] and all(d[0].path == "runtime" for d in diffs.values())
+
+
+def test_summary_and_markdown_count_rejected_bucket() -> None:
+    reports = [
+        {"case_id": "a", "category": "c", "status": "PASS", "passed": True, "failure": None},
+        {"case_id": "b", "category": "c", "status": "REJECTED", "passed": False, "failure": {"kind": "business_reject"}},
+        {"case_id": "d", "category": "c", "status": "FAIL", "passed": False, "failure": None},
+    ]
+    summary = cli_module._summarize(reports)
+    assert (summary["passed"], summary["rejected"], summary["failed"]) == (1, 1, 1)
+    assert summary["pass_rate"] == 1 / 3
+    md = cli_module._render_markdown(reports)
+    assert "- REJECTED: 1" in md and "| `b` | `c` | REJECTED |" in md
+
+
 @pytest.mark.asyncio
 async def test_doctor_tolerates_mysql_only_failure(monkeypatch: pytest.MonkeyPatch) -> None:
     def handler(request: httpx.Request) -> httpx.Response:
@@ -296,7 +397,7 @@ async def test_doctor_tolerates_mysql_only_failure(monkeypatch: pytest.MonkeyPat
 
 @pytest.mark.asyncio
 async def test_run_blocks_when_gate_fails(monkeypatch: pytest.MonkeyPatch) -> None:
-    async def failing_gate(base_url: str, checkpoint: str = "none") -> int:
+    async def failing_gate(base_url: str, checkpoint: str = "none", **_: object) -> int:
         return 2
 
     monkeypatch.setattr(cli_module, "_doctor", failing_gate)
@@ -317,7 +418,7 @@ def test_resolve_eval_ids_prefers_explicit_then_dotenv(
 
 @pytest.mark.asyncio
 async def test_run_requires_eval_ids(monkeypatch: pytest.MonkeyPatch) -> None:
-    async def passing_gate(base_url: str, checkpoint: str = "none") -> int:
+    async def passing_gate(base_url: str, checkpoint: str = "none", **_: object) -> int:
         return 0
 
     monkeypatch.setattr(cli_module, "_doctor", passing_gate)

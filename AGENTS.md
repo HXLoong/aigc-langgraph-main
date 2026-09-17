@@ -33,7 +33,7 @@ python scripts/langfuse_eval.py --local tests/fixtures/categories --ids case-025
 
 # Harness CLI（备用 / 本地快速 smoke，无 Judge）
 python -m harness doctor                     # 环境体检（/health /ready）
-python -m harness run                        # 跑 fixture（默认 tests/fixtures/categories/，参数见 --help）
+python -m harness run --backend real|mock|dry-run   # 跑 fixture（默认 categories/ + unified_golden.jsonl；--backend 对照服务端 /health.backend_mode 把关；REJECTED 单独成桶不算 PASS）
 
 # 真后端探针（M3 联调）
 python scripts/probe_real_backend_e2e.py

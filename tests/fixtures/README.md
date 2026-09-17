@@ -46,6 +46,11 @@ runner / eval 跳过并打印数量；这类记录与 9 条 `product_type=query`
 一个文件只放一种方言：`categories/` 出现 `conversation` / `raw_content`、或 `unified_golden.jsonl`
 出现 `send_text` / `sub_scenes` 都是 lint 错误；id 跨两份文件唯一。
 
+harness 的判定口径：`PASS` / `FAIL` / `REJECTED`（后端业务拒绝且无其它 diff，单独成桶，不计入 PASS 率）；
+早停（节点错误 / 业务拒绝 / 技术错误）后未执行的轮次逐轮记 `runtime` 失败，多轮 case 不会因早停静默通过。
+`--backend dry-run` 要求服务端 `/health` 报告 `backend_mode=dry-run`（`DRY_RUN_BACKEND=true`），否则拒绝启动；
+反之 `--backend real|mock` 打在 dry-run 服务端也会被拦，避免拿假结果当回归基线。
+
 `scripts/ai_test_langgraph/` 是早期工作台，仍能读三种记录，但已不是 gate（ADR 0024 D6 标
 deprecated），新增校验只进 `harness/`。
 
