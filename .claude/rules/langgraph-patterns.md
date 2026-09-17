@@ -6,7 +6,7 @@
 - 新增字段必须：
   1. 在 TypedDict 中声明类型
   2. 若需要并行合并（如 `trace`），加 `Annotated[list, add]`
-  3. per-turn 字段在 `app/nodes/ingest.py` 重置；入口 `app/api/turn_state.py::inputs_to_state` 不写业务对象默认值（ADR 0024 D2）
+  3. per-turn 字段在 `app/nodes/ingest.py` 重置；入口 `app/api/turn_state.py::inputs_to_state` 不写业务对象默认值（ADR 0024 D2）；跨轮记忆只有 `history_messages` 与 `last_confirmed_params`（主图 `remember_confirmed_params` 写入，确认链路裸确认时经 `app/graph/memory.py::memory_order_ids` 读，显式引用 / 单号永远优先）
 
 ```python
 class AgentState(TypedDict, total=False):

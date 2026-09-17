@@ -15,6 +15,7 @@ from __future__ import annotations
 from typing import Any
 
 from app.graph.business_params import validated_confirm
+from app.graph.memory import memory_order_ids
 from app.graph.safe_node import safe_node
 from app.graph.state import AgentState, TraceEntry
 from app.subgraphs.option.backend import call_option_backend
@@ -27,6 +28,8 @@ async def option_extract_confirm_cancel(state: AgentState) -> dict[str, Any]:
     order_ids = extract_for_confirm_cancel(
         raw=state.get("raw_text"), quote=state.get("quote_content")
     )
+    if order_ids == [None]:
+        order_ids = list(memory_order_ids(state, "option")) or order_ids  # 裸确认撤单 → 记忆（ADR 0024 D4）
     order_list = [{"orderId": order_id} for order_id in order_ids]
     order_count = sum(1 for item in order_list if item["orderId"])
 

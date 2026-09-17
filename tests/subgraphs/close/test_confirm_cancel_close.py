@@ -258,3 +258,33 @@ class TestCloseCancelCloseNode:
         ]
         assert result.get("api_result") == "撤单请求已提交"
         assert result.get("api_code") == 0
+
+
+# ============================================================
+# ConversationMemory 回退（ADR 0024 D4）
+# ============================================================
+
+
+@pytest.mark.asyncio
+async def test_bare_confirm_close_falls_back_to_memory(monkeypatch: pytest.MonkeyPatch) -> None:
+    """无引用、无指定信号的"确认平仓"读上一轮平仓请求记下的 CO- 单号。"""
+    backend = _patch(monkeypatch, confirm_module)
+    result = await close_confirm_close({
+        "raw_text": "确认平仓", "quote_content": "",
+        "conversation_id": "c", "room_id": "r", "user_id": "u", "message_id": 1,
+        "last_confirmed_params": {"product_type": "option_close", "order_ids": ["CO-20260304-4FE9C941"]},
+    })
+    assert result["confirm"]["confirmOrderNoList"] == ["CO-20260304-4FE9C941"]
+    backend.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_specified_but_unresolvable_scope_does_not_use_memory(monkeypatch: pytest.MonkeyPatch) -> None:
+    """用户点名了序号 / 合约但引用里对不上 → 仍回请求补充，记忆不得扩大操作范围。"""
+    backend = _patch(monkeypatch, confirm_module)
+    result = await close_confirm_close({
+        "raw_text": "确认平仓 第3笔", "quote_content": "",
+        "last_confirmed_params": {"product_type": "option_close", "order_ids": ["CO-20260304-4FE9C941"]},
+    })
+    assert result["reply_text"] == confirm_module.SCOPE_UNRESOLVED_REPLY
+    backend.assert_not_awaited()

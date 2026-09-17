@@ -73,6 +73,7 @@ class TestIngestPerTurnReset:
             assert key in update and update[key] is None, key
         assert "history_messages" not in update
         assert "conversation_id" not in update
+        assert "last_confirmed_params" not in update, "ConversationMemory 跨轮保留"
 
     async def test_ingest_resets_trace_for_new_turn(self) -> None:
         """一轮的边界只在 ingest 维护：trace 用 Overwrite 清空上一轮，再记本轮 ingest。"""

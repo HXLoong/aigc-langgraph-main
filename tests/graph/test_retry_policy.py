@@ -147,6 +147,7 @@ READ_NODES: dict[str, set[str]] = {
         "swap_query_order", "swap_image_order", "swap_excel_order",
     },
     "option": {"option_intent", "option_extract_query"},
+    "inquiry": {"inquiry_fast_parse", "inquiry_precheck", "inquiry_extract", "inquiry_resolve"},
     "close": {"close_intent", "close_holding_query", "close_query_status"},
     "place_close": {"place_close_fetch_orders", "place_close_extract"},
     "ticker": {"infer_codes", "split_keywords", "judge_type", "resolve_org_item"},
@@ -159,6 +160,7 @@ WRITE_NODES: dict[str, set[str]] = {
         "option_extract_inquiry", "option_extract_place", "option_extract_confirm_place",
         "option_extract_cancel", "option_extract_cancel_place", "option_extract_confirm_cancel",
     },
+    "inquiry": {"inquiry_fast_submit", "inquiry_submit"},
     "close": {"close_confirm_close", "close_cancel_close", "close_confirm_cancel"},
     "place_close": {"place_close_submit"},
 }
@@ -168,6 +170,7 @@ def _builders() -> dict[str, Any]:
     from app.graph.main import build_main_graph
     from app.subgraphs.close.graph import build_close_graph
     from app.subgraphs.close.place_close import build_place_close_graph
+    from app.subgraphs.option.extract_inquiry import build_inquiry_graph
     from app.subgraphs.option.graph import build_option_graph
     from app.subgraphs.swap.graph import build_swap_graph
     from app.subgraphs.ticker.graph import build_ticker_graph
@@ -176,6 +179,7 @@ def _builders() -> dict[str, Any]:
         "main": build_main_graph().builder,
         "swap": build_swap_graph().builder,
         "option": build_option_graph().builder,
+        "inquiry": build_inquiry_graph().builder,
         "close": build_close_graph().builder,
         "place_close": build_place_close_graph().builder,
         "ticker": build_ticker_graph().builder,

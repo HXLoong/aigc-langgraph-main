@@ -31,6 +31,7 @@ from __future__ import annotations
 from typing import Any
 
 from app.graph.business_params import validated_confirm
+from app.graph.memory import memory_order_ids
 from app.graph.safe_node import safe_node
 from app.graph.state import AgentState, ErrorInfo, ExpectedAction, TraceEntry
 from app.subgraphs.swap.backend import call_swap_backend
@@ -101,6 +102,12 @@ async def swap_confirm(state: AgentState) -> dict[str, Any]:
         order_ids = extract_for_confirm_order(raw=raw, quote=quote)
     else:
         order_ids = extract_for_confirm_single(raw=raw, quote=quote)
+    source = "text"
+    if order_ids == [None]:
+        # 裸确认（无引用、无单号）→ ConversationMemory（ADR 0024 D4）；显式引用永远优先
+        remembered = memory_order_ids(state, "swap")
+        if remembered:
+            order_ids, source = list(remembered), "memory"
     order_list = [{"orderId": oid} for oid in order_ids]
 
     # action → SwapIntentionType 映射
@@ -122,7 +129,7 @@ async def swap_confirm(state: AgentState) -> dict[str, Any]:
         "trace": [
             TraceEntry(
                 node="swap_confirm",
-                decision=f"deterministic,action={action},orders={len(order_list)}",
+                decision=f"deterministic,action={action},orders={len(order_list)},source={source}",
             )
         ],
     }

@@ -193,7 +193,7 @@ tests/fixtures/              # categories/（A 方言，6 文件 / 389 条）+ u
 | 第2轮路由走了 LLM 而非 quote_marker | `_QUOTE_MARKERS` 未覆盖实际标记 | `app/nodes/intent_route.py` |
 | reply 含"无法识别"但未问标的 | 入口把 `tickers` 写成 `[]`（零命中分支误触发）；入口唯一路径是 `inputs_to_state`，不得写业务对象默认值 | `app/api/turn_state.py` |
 | option place_order 显示"互换订单参数" | render 第3分支缺 `product_type=="swap"` 条件 | `app/nodes/render.py` |
-| 多轮 tickers/params 丢失 | 业务对象是 per-turn（ingest 清空，ADR 0024 D2）；跨轮上下文只靠 `history_messages` | `app/nodes/ingest.py` |
+| 多轮 tickers/params 丢失 | 业务对象是 per-turn（ingest 清空，ADR 0024 D2）；跨轮上下文只靠 `history_messages` + `last_confirmed_params`（上一轮已确认订单号，裸确认链路回退读它） | `app/nodes/ingest.py` / `app/nodes/remember_confirmed.py` |
 | 后端返回"订单不存在" | 参数中 orderId/Q- 单号提取错误 | 子图 extract 节点 + 提示词 |
 
 ### 2. TDD 修复（强制）

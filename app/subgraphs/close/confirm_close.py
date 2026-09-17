@@ -13,6 +13,7 @@ from __future__ import annotations
 from typing import Any
 
 from app.graph.business_params import validated_confirm
+from app.graph.memory import memory_order_ids
 from app.graph.safe_node import safe_node
 from app.graph.state import AgentState, TraceEntry
 from app.subgraphs.close.aggregate import build_close_order_req_vo
@@ -37,6 +38,9 @@ async def close_confirm_close(state: AgentState) -> dict[str, Any]:
         confirm_ids = extract_for_close_orders(
             raw=state.get("raw_text"), quote=state.get("quote_content")
         )
+        if not confirm_ids:
+            # 无引用、无指定信号的裸确认 → 上一轮平仓请求记下的单号（ADR 0024 D4）
+            confirm_ids = memory_order_ids(state, "option_close")
     except CloseScopeError:
         return {
             "confirm": None,

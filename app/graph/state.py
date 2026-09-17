@@ -219,8 +219,11 @@ class AgentState(TypedDict, total=False):
     input_files: list[dict[str, Any]] | None  # [{type, extension, mime_type, url/base64...}]
     swap_input_mode: str | None  # text | image | excel（intent_route 写入,swap 子图分流）
 
-    # -------- 历史 --------
+    # -------- 历史 / ConversationMemory（跨轮持久化，ingest 不重置）--------
     history_messages: Annotated[list[Message], merge_history]
+    #: 上一轮已确认业务对象（ADR 0024 D4）：{product_type, intent, expected_action, order_ids, message_id}
+    #: 由主图 remember_confirmed_params 写入；确认链路裸确认时优先读它，显式引用 / 单号仍优先
+    last_confirmed_params: dict[str, Any] | None
 
     # -------- 业务路由 --------
     #: 单次 graph 调用的关联 ID（ADR 0004/#156：node_trace ↔ LangFuse 关联键）

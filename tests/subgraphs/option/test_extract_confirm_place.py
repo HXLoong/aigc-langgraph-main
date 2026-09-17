@@ -106,3 +106,25 @@ class TestOptionExtractConfirmPlaceNode:
         assert "action=place" in trace[0].decision
         assert "orders=2" in trace[0].decision
         assert backend.await_args.kwargs["order_list"] == result["confirm"]["orderList"]
+
+
+@pytest.mark.asyncio
+async def test_bare_confirm_fills_order_ids_from_memory(monkeypatch: pytest.MonkeyPatch) -> None:
+    """ADR 0024 D4：无引用、无单号的"确认下单"用上一轮询价卡记下的 Q- 单号。"""
+    backend = _patch(monkeypatch)
+    result = await option_extract_confirm_place({
+        "raw_text": "确认下单", "quote_content": "",
+        "last_confirmed_params": {"product_type": "option", "order_ids": ["Q-20250616-000011", "Q-20250616-000012"]},
+    })
+    assert [o["orderId"] for o in result["confirm"]["orderList"]] == ["Q-20250616-000011", "Q-20250616-000012"]
+    assert [o["orderId"] for o in backend.await_args.kwargs["order_list"]] == ["Q-20250616-000011", "Q-20250616-000012"]
+
+
+@pytest.mark.asyncio
+async def test_quoted_card_wins_over_memory(monkeypatch: pytest.MonkeyPatch) -> None:
+    _patch(monkeypatch)
+    result = await option_extract_confirm_place({
+        "raw_text": "确认下单", "quote_content": _QUOTE_CARD,
+        "last_confirmed_params": {"product_type": "option", "order_ids": ["Q-20250616-000099"]},
+    })
+    assert [o["orderId"] for o in result["confirm"]["orderList"]] == ["Q-20250616-000011"]

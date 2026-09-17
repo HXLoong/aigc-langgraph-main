@@ -27,6 +27,7 @@ from app.nodes.persist import persist
 from app.nodes.persist_intent import make_persist_intent
 from app.nodes.pre_route import pre_route
 from app.nodes.record_history import record_history
+from app.nodes.remember_confirmed import remember_confirmed_params
 from app.nodes.render import render
 from app.subgraphs.close import build_close_graph
 from app.subgraphs.option import build_option_graph
@@ -106,6 +107,7 @@ def build_main_graph(
     g.add_node("persist_intent", RunnableLambda(make_persist_intent(message_client_factory)))
     g.add_node("persist", persist)
     g.add_node("render", render)
+    g.add_node("remember_confirmed_params", remember_confirmed_params)
     g.add_node("record_history", record_history)
 
     g.add_edge(START, "ingest")
@@ -135,7 +137,8 @@ def build_main_graph(
         g.add_edge(sub, "persist")
     g.add_edge("persist_intent", "persist")
     g.add_edge("persist", "render")
-    g.add_edge("render", "record_history")
+    g.add_edge("render", "remember_confirmed_params")
+    g.add_edge("remember_confirmed_params", "record_history")
     g.add_edge("record_history", END)
 
     # LangFuse 不在图级注入（ADR 0024 D5）：统一由 app/api/routes.py 按请求把 handler 放进

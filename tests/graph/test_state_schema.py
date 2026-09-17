@@ -52,3 +52,11 @@ def test_expected_action_is_a_top_level_literal_field() -> None:
     assert "expected_action" in get_type_hints(SubgraphOutput), "子图写回面必须放行该键"
     assert "expected_action" not in PlaceParams.model_fields
     assert "expected_action" not in CancelParams.model_fields
+
+
+def test_last_confirmed_params_is_conversation_memory() -> None:
+    """ADR 0024 D2/D4：上一轮已确认业务对象跨轮持久化，确认链路优先读它而非从文本重抽单号。"""
+    assert "last_confirmed_params" in get_type_hints(AgentState)
+    from app.graph.state import SubgraphOutput
+
+    assert "last_confirmed_params" not in get_type_hints(SubgraphOutput), "只由主图记忆节点写入"
