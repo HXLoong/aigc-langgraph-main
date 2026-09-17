@@ -26,3 +26,11 @@ def test_business_subgraphs_declare_output_schema() -> None:
         out = set(build().output_channels)
         assert not (out & _PARENT_OWNED), (build.__name__, out & _PARENT_OWNED)
         assert out >= _SUBGRAPH_OWNED, (build.__name__, _SUBGRAPH_OWNED - out)
+
+
+def test_turn_boundary_lives_in_ingest_only() -> None:
+    """ADR 0024 D2：删除 _reset_turn_trace，一轮的边界只在 ingest 维护。"""
+    graph = build_main_graph(attach_langfuse_callbacks=False)
+    assert "reset_turn_trace" not in graph.nodes
+    edges = {(e.source, e.target) for e in graph.get_graph().edges}
+    assert ("__start__", "ingest") in edges

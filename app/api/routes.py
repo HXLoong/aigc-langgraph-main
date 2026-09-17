@@ -328,7 +328,7 @@ def _state_to_outputs(state: AgentState) -> dict[str, Any]:
         "product_type": state.get("product_type"),
         "tickers": [
             t.model_dump() if hasattr(t, "model_dump") else t
-            for t in state.get("tickers", [])
+            for t in state.get("tickers") or []
         ],
         "trace": _format_trace(state.get("trace", [])),
     }

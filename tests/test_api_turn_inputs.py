@@ -124,8 +124,9 @@ async def test_omitted_turn_inputs_restore_normal_route(turn_api, first_inputs, 
     for key in ("fast_query", "existing_command", "at_bot", "quote_content", "quote_appinfo"):
         assert second[key] is None
     assert second["input_files"] == []
+    # ADR 0024 D2：业务对象 per-turn，不再跨轮残留（跨轮记忆只有 history_messages）
     for key in ("tickers", "place_params", "cancel_params"):
-        assert second[key] == first[key]
+        assert second[key] is None
     assert second["history_messages"][:len(first["history_messages"])] == first["history_messages"]
 
 

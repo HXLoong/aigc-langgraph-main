@@ -14,6 +14,8 @@ import traceback
 from collections.abc import Awaitable, Callable
 from typing import Any
 
+from langgraph.types import Overwrite
+
 from app.graph.state import AgentState, ErrorInfo, TraceEntry
 from app.observability.metrics import emit_node_completed
 
@@ -43,12 +45,20 @@ def safe_node(fn: NodeFn) -> NodeFn:
             update = await fn(state)
             elapsed_ms = int((time.perf_counter() - t0) * 1000)
 
-            # 自动追加 trace（节点函数没自带 trace 字段时）
-            existing_trace: list[TraceEntry] = update.setdefault("trace", [])
-            if not any(_is_same_node(entry, node_name) for entry in existing_trace):
-                existing_trace.append(
-                    TraceEntry(node=node_name, elapsed_ms=elapsed_ms)
-                )
+            # 自动追加 trace（节点函数没自带 trace 字段时）。
+            # ADR 0024 D2：ingest 用 Overwrite([...]) 重置一轮边界，追加要写进 Overwrite 内部
+            raw_trace = update.get("trace")
+            if isinstance(raw_trace, Overwrite):
+                existing_trace: list[TraceEntry] = list(raw_trace.value or [])
+                if not any(_is_same_node(entry, node_name) for entry in existing_trace):
+                    existing_trace.append(TraceEntry(node=node_name, elapsed_ms=elapsed_ms))
+                update["trace"] = Overwrite(existing_trace)
+            else:
+                existing_trace = update.setdefault("trace", [])
+                if not any(_is_same_node(entry, node_name) for entry in existing_trace):
+                    existing_trace.append(
+                        TraceEntry(node=node_name, elapsed_ms=elapsed_ms)
+                    )
 
             # C1.5 监控埋点：节点完成成功
             emit_node_completed(node=node_name, status="ok", elapsed_ms=elapsed_ms)

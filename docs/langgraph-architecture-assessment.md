@@ -153,6 +153,7 @@ LangGraph + LangFuse 的原生契约是"一个 thread = 一个 session，每次 
 | **重构 3 · swap 选对手 ‖ 选标的 并行**：指针通道 + `swap_apply_picks` 汇合节点，`place_params` 语义不变 | `app/subgraphs/swap/{select_counterparty,select_ticker,apply_picks,graph}.py`、`app/graph/state.py`、`tests/subgraphs/swap/test_select_chain.py`、`test_graph_routing.py` | 第二节 2.1（被迫串行）|
 | **重构 4 · render 分支可观测**：`_render_branch` 返回 `(update, decision)`，每个出口一条带 decision 的 TraceEntry | `app/nodes/render.py`、`tests/nodes/test_render_decision.py` | 第二节 2.1（if/else 代替图边，零 trace）|
 | **重构 5 · place_close 拆子图**：7 阶段节点 + 私有 State + output_schema，早退做成图边，错误归因到阶段 | `app/subgraphs/close/place_close.py`、`close/graph.py`、`tests/subgraphs/close/test_place_close_graph.py` | 第二节 2.1（215 行单节点 6 阶段）|
+| **重构 6 · 业务对象 per-turn + 一轮边界收敛到 ingest**：ingest 清空业务对象 / 指针通道 / trace（Overwrite），删 `_reset_turn_trace`；`@safe_node` Overwrite 感知 | `app/nodes/ingest.py`、`app/graph/safe_node.py`、`app/graph/main.py`、`tests/nodes/test_ingest_reset.py`、`tests/graph/test_safe_node_overwrite.py` | 第三节 R3（状态串线）、第二节（一轮边界分散三处）|
 
 **未在本环境落地、需团队决策或真实 MySQL**：CI 触发恢复（团队 2026-05-12 主动暂停）、saver 连接池、请求级幂等（`message_log`）、LLM 指标 callback、`/ready` 软硬分离、`history_messages` 窗口（需 eval 校准 N）、revoke 明文 Dify API key。
 
