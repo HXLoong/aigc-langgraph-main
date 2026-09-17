@@ -71,3 +71,41 @@ def test_settings_field_default_off() -> None:
     from app.config import Settings
 
     assert Settings.model_fields["use_mysql_checkpointer"].default is False
+
+
+@pytest.mark.asyncio
+async def test_init_checkpointer_pins_serde_whitelist(monkeypatch: pytest.MonkeyPatch) -> None:
+    """ADR 0024 D4：生产 saver 必须固化 serde 白名单（与 tests/test_api_turn_inputs 一致），
+    否则 langgraph-checkpoint 收紧 permissive 默认后全量会话失忆。"""
+    from contextlib import asynccontextmanager
+
+    import app.checkpointer.factory as factory
+
+    captured: dict[str, object] = {}
+
+    class _Saver:
+        async def setup(self) -> None:
+            captured["setup"] = True
+
+    @asynccontextmanager
+    async def _from_conn_string(uri: str, *, serde=None):
+        captured["uri"] = uri
+        captured["serde"] = serde
+        yield _Saver()
+
+    monkeypatch.setattr(
+        factory, "get_settings", lambda: SimpleNamespace(checkpoint_mysql_uri="mysql://x")
+    )
+    monkeypatch.setattr(
+        factory, "AIOMySQLSaver", SimpleNamespace(from_conn_string=_from_conn_string)
+    )
+    await factory.init_checkpointer()
+    try:
+        serde = captured["serde"]
+        assert serde is not None, "from_conn_string 必须传 serde 白名单"
+        # JsonPlusSerializer 只以私有属性保存白名单；契约以 factory.CHECKPOINT_ALLOWED_MODELS 为准
+        allowed = {name for _mod, name in serde._allowed_msgpack_modules}  # noqa: SLF001
+        assert {"TickerCandidate", "Message", "TraceEntry"} <= allowed
+        assert set(factory.CHECKPOINT_ALLOWED_MODELS) <= set(serde._allowed_msgpack_modules)  # noqa: SLF001
+    finally:
+        await factory.close_checkpointer()

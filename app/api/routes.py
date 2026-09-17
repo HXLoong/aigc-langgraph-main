@@ -18,6 +18,7 @@ from typing import Any, Literal
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, ConfigDict, Field
 
+from app.config import get_settings
 from app.graph.state import AgentState
 from app.observability.metrics import emit_intent_latency
 from app.observability.tracing import attach_request_trace
@@ -126,7 +127,10 @@ async def run_workflow(
     initial_state["trace_id"] = request_trace_id
 
     config = _build_run_config(
-        conversation_id=conversation_id, trace_id=request_trace_id
+        conversation_id=conversation_id,
+        trace_id=request_trace_id,
+        user_id=str(initial_state.get("user_id") or "") or None,
+        environment=get_settings().environment,
     )
     trace = await attach_request_trace(
         request_trace_id=request_trace_id,
@@ -137,7 +141,11 @@ async def run_workflow(
 
     t0 = time.perf_counter()
     try:
-        final_state: AgentState = await graph.ainvoke(initial_state, config=config)
+        # ADR 0024 D4：图内无 interrupt、单轮无需中途恢复，退出时落一次 checkpoint 即可，
+        # 避免默认 "async" 每个 superstep 都写 MySQL（单连接 saver 上是队头阻塞源）
+        final_state: AgentState = await graph.ainvoke(
+            initial_state, config=config, durability="exit"
+        )
         status: Literal["succeeded", "failed", "stopped"] = (
             "failed" if final_state.get("error") else "succeeded"
         )
@@ -205,11 +213,27 @@ async def run_workflow(
 GRAPH_RECURSION_LIMIT = 50
 
 
-def _build_run_config(conversation_id: str, trace_id: str) -> dict:
-    """构造 graph.ainvoke 的 RunnableConfig(thread 绑定 + trace 关联 + 递归上限)。"""
+def _build_run_config(
+    conversation_id: str,
+    trace_id: str,
+    user_id: str | None = None,
+    environment: str | None = None,
+) -> dict:
+    """构造 graph.ainvoke 的 RunnableConfig(thread 绑定 + trace 关联 + 递归上限)。
+
+    metadata 里的 `langfuse_*` 键由 langfuse v4 CallbackHandler 读取（ADR 0024 D5）：
+    session = conversation_id 让多轮在 LangFuse 里串成一个 Session；user / tags 供聚合过滤。
+    """
+    metadata: dict[str, Any] = {
+        "trace_id": trace_id,
+        "langfuse_session_id": conversation_id,
+        "langfuse_tags": [environment or "unknown"],
+    }
+    if user_id:
+        metadata["langfuse_user_id"] = user_id
     return {
         "configurable": {"thread_id": conversation_id},
-        "metadata": {"trace_id": trace_id},
+        "metadata": metadata,
         "recursion_limit": GRAPH_RECURSION_LIMIT,
     }
 

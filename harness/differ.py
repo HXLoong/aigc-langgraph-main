@@ -73,12 +73,16 @@ def check_text_assertions(reply_text: str, spec: TurnSpec) -> list[FieldDiff]:
 def check_structured_assertions(
     outputs: dict[str, Any], expected: dict[str, Any]
 ) -> list[FieldDiff]:
-    """逐键比对 expected；`winners` 映射到 outputs.tickers[].wind_code 做集合比较。"""
+    """逐键比对 expected；`winners` 映射到 outputs.tickers[].windCode 做集合比较。
+
+    HTTP outputs 的 tickers 由 TickerCandidate.model_dump()（WireModel 默认 by_alias）产出，
+    键是协议 alias `windCode`，不是 Python 字段名 `wind_code`（ADR 0024 阶段 0 修正）。
+    """
     remaining = dict(expected)
     winners = remaining.pop("winners", None)
     diffs = diff_fields(remaining, outputs)
     if winners is not None:
-        actual = sorted(str(t.get("wind_code")) for t in outputs.get("tickers") or [])
+        actual = sorted(str(t.get("windCode")) for t in outputs.get("tickers") or [])
         if set(winners) != set(actual):
             diffs.append(FieldDiff(path="winners", expected=sorted(winners), actual=actual))
     return diffs

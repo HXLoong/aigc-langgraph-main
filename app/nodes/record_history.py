@@ -3,9 +3,11 @@ from __future__ import annotations
 
 from typing import Any
 
+from app.graph.safe_node import safe_node
 from app.graph.state import AgentState, Message
 
 
+@safe_node
 async def record_history(state: AgentState) -> dict[str, Any]:
     messages: list[Message] = []
     raw_text = state.get("raw_text") or ""

@@ -180,7 +180,8 @@ class AgentState(TypedDict, total=False):
     trace: Annotated[list[TraceEntry], add]
     error: ErrorInfo | None
 
-    # -------- 输出 --------
-    reply_text: str | None
-    api_result: str | None
+    # -------- 后端结果 --------
+    #: 后端 operate 的 result.data 原样透传：dict / list / 字符串消息三态
+    #: （swap/backend.py、close/backend.py），render 与提交节点按形态分支
+    api_result: str | dict[str, Any] | list[Any] | None
     api_code: int | None

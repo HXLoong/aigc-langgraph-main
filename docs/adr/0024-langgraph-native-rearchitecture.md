@@ -1,0 +1,122 @@
+# ADR 0024 · LangGraph 原生重构：退出 Dify 形态的目标架构与分阶段路线
+
+- 状态：**已采纳**（2026-09-17；阶段 0 首批已落地，见文末"落地记录"）
+- 日期：2026-09-17
+- 起源：用户要求"拉取最新 main，评估代码是否按 LangGraph 特性（checkpoint、共享 state、golden、LangFuse）开发，目的是彻底改造以前 Dify 的实现，用全新 LangGraph 架构做彻底重构"。评估报告：[docs/langgraph-architecture-assessment.md](../langgraph-architecture-assessment.md)
+- 修订：[ADR 0000](./0000-migrate-from-dify-to-langgraph.md) 后果段"需要长期维护 Dify YAML 同步工具、让业务方继续用 Dify UI 调整提示词"（**被取代**：Dify 不再是上游）；[ADR 0001 D3](./0001-rewrite-app-with-harness-first.md)"完全模拟 Dify Workflow Run API……跑稳后如需干净协议另开 ADR"（**本 ADR 即该 ADR**）；[ADR 0001 D6](./0001-rewrite-app-with-harness-first.md)（AgentState 分层）；[ADR 0009](./0009-mysql-version-and-tdsql-compatibility.md)（saver 连接与 CI 覆盖）；[ADR 0014](./0014-langfuse-as-harness-backend.md) D7（trace 关联键在生产必须生效）；沿用 [ADR 0021](./0021-text-confirm-replaces-interrupt.md)（文本二阶段确认）与 [ADR 0023](./0023-prompt-as-code-langgraph.md)（PromptSpec）
+- 作者：图灵科技 + Tony
+
+## 上下文
+
+DSL v2 迁移（2026-08）后，代码在 LangGraph 上跑通了全部业务链路，但评估显示它在四个决定性能力上仍是 Dify 形态（详见评估报告第一节评分卡）：
+
+1. **图**：子图靠手写 `ainvoke` + `Overwrite` 包装，无 input / output schema，1.x 的 Command / Send / RetryPolicy / durability 零使用；ticker 12 步管线是"Python 写的图"；`render` / `place_close` / `extract_inquiry` 是 Dify code 节点原样搬来的厚节点。
+2. **持久化**：checkpoint 除 `history_messages` 外只写不读；生产 saver 单连接无重连；无请求级幂等（重试即重复下单）；serde 未固化；`history_messages` 无界。
+3. **可观测**：生产走裸 `CallbackHandler`，trace_id 契约是死码；LangFuse 无 session / user；LLM 指标零调用导致告警永不触发；敏感字段明文。
+4. **评估**：CI 自 2026-05-12 不跑；主力 921 条数据集被主力加载器拒绝；`windCode` 别名 bug 让仅有的节点级期望恒假失败；写类链路零 `place_params` 期望。
+
+同时，两条现行纪律把 Dify 钉成业务真源：`app/nodes/route_rules.py:8`"改业务逻辑必须先改 Dify 源再同步"、`.claude/rules/git-workflow.md`"提示词冲突永远选 Dify 原始版本"。ADR 0022 已把 git 定为提示词真源，但代码与流程层的这两条没有同步撤销。
+
+## 决策
+
+### D1 · Dify 退出"上游"地位：代码即真源，Dify 资产冻结为历史参照
+
+- 撤销"改业务逻辑必须先改 Dify 源再同步"与"冲突永远选 Dify 原始版本"；`dify/yaml/` 与 `docs/archive/dify-originals/` 冻结（打 tag 后移除，见附录 C 级）。
+- 代码注释里"与 Dify 对齐 / 1:1 移植 / 同口径"的表述改写为业务语义陈述；测试断言以业务正确性而非"与 Dify 一样"为口径。
+- **边界**：`expected_action` / `place_params` / `confirm_modify_order` 等是 **Java 后端 operate 契约与 ADR 0001 D5 节点合并**的产物，不属 Dify 残留，不得按本决策清理。A 级保留清单见附录。
+
+### D2 · State 分层与子图契约
+
+`AgentState` 按生命周期分层（仍是一个 TypedDict，但字段按层分组并由 reducer / 重置规则约束）：
+
+| 层 | 字段 | 生命周期 |
+|---|---|---|
+| TurnInput | raw_text / quote_content / message_id / input_files / fast_query / at_bot / … | 每轮由 API 全量写入；缺省显式置空（单一位置） |
+| ConversationMemory | history_messages（**窗口 reducer**，保留最近 N 轮或 token 预算）、last_confirmed_params（上一轮已确认的业务对象，供确认链路读） | 跨轮持久化 |
+| BusinessObjects | tickers / place_params / cancel_params / confirm / query_filter / close_params；`expected_action` 提升为顶层 `Literal["place","modify","cancel","inquiry","close"]` | **per-turn**：ingest 统一重置，render 不得读上一轮残留 |
+| Engineering | trace（per-turn）、error、trace_id | 每轮重置 |
+
+- 三个业务子图声明 `output_schema`：只允许写回 BusinessObjects + reply / api_* + trace / error；父图路由键（`product_type` / `intent` / `swap_input_mode`）对子图只读。ticker 子图另有私有 state 与 input / output schema。
+- 一轮的边界只在一个位置维护（`ingest`），删除 `_reset_turn_trace` 与 API 层 `setdefault` 清理。
+
+### D3 · 图即架构：原生子图、Send 并行、RetryPolicy
+
+- 子图用 `add_node(name, compiled_subgraph)` 原生嵌入，删除 `_as_subgraph_node`。
+- ticker resolver 变真子图（在 ticker 子图目录新增 graph 编译入口）：候选格式化 → `Send` 按关键词 fan-out 3 路 LLM → merge_and_validate → GOATS 检索 + rank，每步一个节点、一条 TraceEntry。
+- swap 选对手 ‖ 选标的并行：`place_params` 按 order_index 合并的 reducer，或拆 `counterparty_picks` / `ticker_picks` 两通道 + join 节点。
+- `place_close`（6 阶段）、`render`（18 分支）、`extract_inquiry`（3 管线）拆为小节点或表驱动；每个分支写 `TraceEntry(decision=)`。
+- IO 节点（LLM / 后端）挂 `RetryPolicy`，可重试异常穿透到 LangGraph，重试耗尽才由 `@safe_node` 落 `error`；`@safe_node` 支持 `(state, config)` 与 `Runtime` 注入，HTTP 客户端提升为 lifespan 单例，协议层吃 `BotContext` 而非 `AgentState`。
+- 继续不用 `interrupt`（ADR 0021）；若未来企微侧支持回调确认，再评估 `interrupt` + `Command(resume)`。
+
+### D4 · 持久化契约（金融正确性）
+
+- saver 使用 `aiomysql` 连接池（`pool_recycle` 小于 MySQL `wait_timeout`），`from_conn_string` 单连接形态禁止用于生产；`/ready` 的 mysql 探针改为打 saver 自身。
+- 生产 serde 固化：`JsonPlusSerializer(allowed_msgpack_modules=[("app.graph.state", "TickerCandidate"|"Message"|"TraceEntry")])`，与测试一致。
+- `durability="exit"`：图内无 interrupt，单轮无需中途恢复；写路径（下单 / 平仓 / 确认）提交后端前是否额外落盘，由后续阶段按幂等设计裁决并记录。
+- 请求级幂等：路由层以 `(conversation_id, message_id)` 去重，启用 `message_log.uk_message_id`，冲突即回放上一次 `reply_text`，不重跑图；`node_trace` 加幂等键；schema 演进引入 alembic。
+- `history_messages` 窗口化；确认链路优先读 `last_confirmed_params` 而非从文本重抽单号。
+- CI 增加 MySQL service，至少一条 `AIOMySQLSaver` 真实多轮用例。
+- Store：仅当出现"同一客户跨群偏好"类诉求时引入，不预先建设。
+
+### D5 · 可观测契约
+
+- 单一请求级注入路径：删除图级 `_attach_langfuse_callbacks` 与 `environment == "development"` 分叉；`config.metadata` 携带 `trace_id` / `langfuse_session_id=conversation_id` / `langfuse_user_id` / `langfuse_tags=[environment, product…]`；`Langfuse(environment=)`。
+- LLM 指标接 callback（`on_llm_end` / `on_llm_error` → `emit_llm_call` / `emit_llm_tokens`，节点名取 `metadata["langgraph_node"]`），独立 `otc_agent_node_latency_ms{node}` 直方图。
+- 脱敏：`Langfuse(mask=)` + `TraceEntry` validator 字段级脱敏（对手名 / 数量 / 价格 / 原文），复用 `ticker/context.py:mask_order_context` 正则资产。
+- `/ready` 区分硬依赖（mysql / java 后端）与软依赖（langfuse / llm）；软依赖失败只进 body。
+- structlog + `trace_id` contextvar；lifespan 关闭段 `flush`。
+- `state["trace"]` → `node_trace` 双轨**保留**（金融审计与 LangFuse 保留期 / 可用性假设不同），只修口径与脱敏。
+- 暂不引入 `astream_events`（上游 Java 写死 blocking）。
+
+### D6 · 评估契约：harness 唯一 gate
+
+- CI 恢复 push / PR 触发（fast job < 2 min：ruff + fixture lint + ADR lint + `pytest -k "not e2e"`；慢 job 全量）。
+- `harness/` 为唯一 gate：并入 B 方言（`conversation[]`）加载器，可执行样本 389 → 1310、多轮 9 → 260；修 `windCode`；业务拒绝不算 PASS（单独桶）；早停后未执行轮次显式记失败；`--backend dry-run` 真生效。`scripts/langfuse_eval.py` 降为 Judge + LangFuse 上报薄层，`scripts/ai_test_langgraph/` 标 deprecated。
+- 写类 case 必须有 `expected.place_params`（从 `response_contains` 反向生成后人工抽检），fixture lint 守护；Judge 阈值 0.9 + 中间档定义；每个线上 P0/P1 先补 fixture 再修代码。
+- D 桶：`annotation_source` / `captured_at` / `redacted` 字段 + LangFuse trace → fixture 的反向脚本（新增于 `scripts/`）。
+
+### D7 · 协议原生化
+
+- 新增 `POST /v1/runs`：类型化 `RunRequest`（机器人上下文字段为一等模型，不再是 `inputs` 无 schema 字典）/ `RunResponse`（结构化 trace 数组、明确的 status / error），作为主实现。
+- Dify Workflow Run 形态降为独立的 wire 兼容 adapter 模块（`app/api/wire/` 下），仅为回滚期服务；G5.2b 后与 on-call 回切预案一起删除，回切预案改为"回滚上一版本 LangGraph"。
+- Java 侧 `agentUrl` 切换需联调发版，与阶段 3 同步。
+
+### D8 · 分阶段与门槛
+
+| 阶段 | 内容 | 门槛 |
+|---|---|---|
+| 0 通电与止血（1-2 周） | CI；`windCode`；saver 池 + serde + 探针；幂等；`durability="exit"`；LangFuse 维度 + 注入统一；LLM 指标；`/ready` 软硬分离；`record_history` safe_node；撤销两条 Dify 纪律；revoke 明文 key | pytest GREEN；6 条 winners 期望真实通过；CI 在 PR 上跑 |
+| 1 State 契约（2-3 周） | B 方言并入；`expected.place_params`；Judge 兜底与阈值；State 分层 + output schema；history 窗口；per-turn 重置；`make_initial_state` 退役；`expected_action` 顶层 | eval PASS ≥ 阶段 0；子图改父图路由键在类型级不可能 |
+| 2 子图原生化（3-4 周） | 原生嵌入；ticker 真子图；并行；拆厚节点；RetryPolicy；客户端单例；协议层解耦 | trace 每步可归因；节点延迟直方图有数据；eval ≥ 阶段 1 |
+| 3 协议原生化 + Dify 退役（2-3 周） | `/v1/runs`；adapter；元数据 / 死 `[user]` / 占位符 / 中文路由标签清理；注释与测试口径；C 级删除；文档 | Java 联调通过 |
+| 4 持续 | D 桶；覆盖矩阵；多模态样本；Store（按诉求） | 事故先补 fixture |
+
+每阶段的 eval 门在真 LLM + mock/dry-run 后端上跑；无 LLM 密钥的环境只能跑 pytest 与确定性 harness 断言，不得代替 eval 门。
+
+## 备选方案
+
+- **推倒重写一个新仓库**：丢掉已验证的业务规则（prewash / aggregate / reference_parser / sanitize 等确定性层）与 2700+ 条素材；且评估台不通电时新仓库同样无法证明等价。否决。
+- **只做 Dify 清理不动架构**：注释与文件删干净了，但子图包装、只写不读的 checkpoint、无 session 的 LangFuse、假绿的评估台原样保留，"彻底重构"名不副实。否决。
+- **先做子图原生化再修评估台**：无守护的重构，评估报告第五节已证明现役集守不住 `place_params` 与多轮。否决，评估台通电必须是阶段 0。
+
+## 后果
+
+- 正面：图、State、持久化、可观测、评估五层各有一份显式契约；金融三条 P0（单连接 saver、无幂等、敏感字段出境）在阶段 0 关闭；Dify 从"上游真源"变为历史参照，后续同步事故（SW-INC-01 类）不再可能发生。
+- 负面：阶段 1-3 约 8-10 周工程量；阶段 3 需 Java 侧联调发版；State 分层与子图 output schema 会让一批"子图顺手改父图字段"的隐式行为在类型层暴露，需要逐个显式化。
+- 未决：写路径提交前的 durability 裁决（与幂等设计一起在阶段 1 记录）；`history_messages` 窗口 N 的取值需 eval 校准；`option_close` / `close` 命名统一方向；Store 是否引入。
+
+## 落地记录
+
+- 2026-09-17 阶段 0 首批（本 ADR 同一 PR，TDD）：`harness/differ.py` `windCode` 修正 + 真实 `TickerCandidate` 契约测试；`record_history` 加 `@safe_node`；`AgentState.reply_text` 重复声明清理、`api_result` 类型改为 `str | dict | list | None`；`_build_run_config` 增加 `langfuse_session_id` / `langfuse_user_id` / `langfuse_tags`；`graph.ainvoke(..., durability="exit")`；生产 saver `serde` 白名单固化；`tracing.py` 客户端注册顺序修正；撤销 `route_rules.py` 与 `git-workflow.md` 两条"Dify 为真源"纪律。其余阶段 0 项（CI 触发恢复、saver 连接池、请求级幂等、LLM 指标 callback、`/ready` 软硬分离、revoke 明文 key）需团队决策或真实 MySQL 环境，列为待办。
+
+## 附录 · Dify 残留分级清单（摘要）
+
+- **A 保留**：`app/api/routes.py` wire schema + 502 语义 + `_INPUT_FIELD_ALIASES`；`app/tools/{swap,option}_client.py` 意图枚举；`app/tools/goats_rfq.py` 签名；`docs/on-call-runbook.md` 回切预案（G5.2b 后失效）。
+- **B 替换**（19-26 人日）：原生 endpoint + adapter；`DifyWorkflowRun*` 重命名；提示词 `node_id` / `model` 行；31 处死 `[user]` 段与占位符；`fresh_counterparty.py:24-28` hack；4 处 system 占位符命名；`intent_route.py:36-51` 中文标签；两条纪律；~110 处注释；~30 处测试；`option_close`/`close`；`app/main.py:68` description；活跃文档。
+- **C 删除**（4-6 人日）：`dify/`、`scripts/export_dify_prompts.py`、`scripts/shadow_compare.py` + 测试 + 指南、`sync-dify-prompts` / `migrate-prompt` / `shadow-test` 技能与 `dify-reviewer` / `prompt-migrator` agent（含 `.agents` 镜像）、`mock_api` rerank 桩、`tests/api/test_20_dify_rerank.py`、3 个 0 流量 `*_v2.md`、`docs/archive/dify-originals/`、日期型对比报告、ADR 0022 移 archive。
+- **安全**：`tests/api/_utils.py:12` 明文 Dify API key 需 revoke。
+
+## 关联
+
+- 评估报告：`docs/langgraph-architecture-assessment.md`
+- ADR 0000 / 0001 D3 D6 / 0009 / 0014 / 0021 / 0023（见文首修订关系）

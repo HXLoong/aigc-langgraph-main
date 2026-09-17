@@ -127,6 +127,12 @@ async def attach_request_trace(
     parent_context = parse_traceparent(traceparent)
     langfuse_trace_id = parent_context[0] if parent_context else request_trace_id
 
+    # 必须先注册进程级 client：CallbackHandler(public_key=) 内部 get_client 只在已注册实例里查，
+    # 查不到会静默返回 tracing_enabled=False 的假 client（首次请求 / 父 Trace 分支曾因此丢 trace）
+    client = _ensure_client()
+    if client is None:
+        return RequestTrace()
+
     try:
         from langfuse.langchain import CallbackHandler
         from langfuse.types import TraceContext
@@ -147,15 +153,11 @@ async def attach_request_trace(
         # 父 Trace 由调用方创建并持有链接，这里不重复查询
         return RequestTrace(handler=handler, langfuse_trace_id=langfuse_trace_id)
 
-    client = _ensure_client()
     url: str | None = None
-    if client is not None:
-        try:
-            url = await asyncio.to_thread(
-                client.get_trace_url, trace_id=langfuse_trace_id
-            )
-        except Exception as exc:  # noqa: BLE001 - 链接失败不影响 trace 上报
-            logger.warning("LangFuse trace 链接不可用：%s", exc)
+    try:
+        url = await asyncio.to_thread(client.get_trace_url, trace_id=langfuse_trace_id)
+    except Exception as exc:  # noqa: BLE001 - 链接失败不影响 trace 上报
+        logger.warning("LangFuse trace 链接不可用：%s", exc)
     return RequestTrace(handler=handler, langfuse_trace_id=langfuse_trace_id, url=url)
 
 

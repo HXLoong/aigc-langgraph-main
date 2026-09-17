@@ -106,8 +106,8 @@ test(e2e): 新增 2 条雪球询价的 golden case
 ## 冲突解决
 
 提示词文件（`app/prompts/**/*.md`）冲突：
-- **永远选 Dify 原始版本**，不要手工 merge
-- 若是两个 PR 同时更新提示词：重新跑一次 `export_dify_prompts.py`
+- **以本仓 git 版本为准，按业务语义手工 merge**（ADR 0024 D1：Dify YAML 已冻结，不再是真源）
+- 若是两个 PR 同时更新提示词：以 main 为基线逐条比对业务规则，合并后跑对应 golden 子集 eval
 
 State / 子图代码冲突：
 - 先读懂两个 PR 的意图，不要简单选一边

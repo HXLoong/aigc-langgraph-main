@@ -44,7 +44,7 @@
 
 ### D3 · 暴露给 Java Worker 的协议（落地一致）
 
-`POST /v1/workflows/run` 完全模拟 Dify Workflow Run API（`app/api/routes.py`），仅支持 **blocking**（Java 侧 `StockBotMessageServiceImpl.java` 写死 blocking，核查时行号已漂移至 :1885）。迁移期协议一致 → 回滚只需改 `agentUrl`；跑稳后如需干净协议另开 ADR。
+`POST /v1/workflows/run` 完全模拟 Dify Workflow Run API（`app/api/routes.py`），仅支持 **blocking**（Java 侧 `StockBotMessageServiceImpl.java` 写死 blocking，核查时行号已漂移至 :1885）。迁移期协议一致 → 回滚只需改 `agentUrl`；跑稳后如需干净协议另开 ADR —— **已另开：[ADR 0024](./0024-langgraph-native-rearchitecture.md) D7（原生 `POST /v1/runs`，Dify 形态降为回滚期 adapter）**。
 
 ### D4 · 标的查询职责归 LangGraph（endpoint 已存在，Java 工作量 0）
 

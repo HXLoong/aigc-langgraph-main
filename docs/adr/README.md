@@ -1,6 +1,6 @@
 # 架构决定记录（ADR）索引
 
-本目录收录 otc-agent 的全部架构决定：**ADR 0000-0023（共 24 篇）**。
+本目录收录 otc-agent 的全部架构决定：**ADR 0000-0024（共 25 篇）**。
 
 2026-08-27 全量整理（wayfinder map [#138](https://github.com/GZTL-AI/aigc-langgraph/issues/138)）：逐篇对照代码核查事实性声明后深度改写为**现状口径**——每篇读起来即当前实现；实现违背决策原意之处不洗白，以"实现偏离"小节标注并链接裁决 issue（[#153](https://github.com/GZTL-AI/aigc-langgraph/issues/153)–[#160](https://github.com/GZTL-AI/aigc-langgraph/issues/160)）。
 
@@ -32,10 +32,11 @@
 | [0021](./0021-text-confirm-replaces-interrupt.md) | 文本二阶段确认替代 interrupt + checkpointer 接线 | 已采纳 | 取代 **0006** interrupt 部分；修复 **0009** checkpointer 偏离 |
 | [0022](./0022-prompt-governance-after-code-migration.md) | 代码迁移完成后的提示词治理模型（manifest + lint / 版本化收敛 / 瘦身纪律） | **已废弃**（2026-09-16：manifest / lint 机制已移除；契约治理见 **0023**） | 修订 **0001 D5**、**0003**；沿用 **0014** D3-2 |
 | [0023](./0023-prompt-as-code-langgraph.md) | 提示词即代码：PromptSpec 把 AgentState 输入 / Pydantic 输出 / 占位符注入声明为节点契约 | 已采纳（12 节点试点落地，其余分两批） | 补 **0022** 契约层；修订 **0022 D5**；依赖 **0020** function calling |
+| [0024](./0024-langgraph-native-rearchitecture.md) | LangGraph 原生重构：退出 Dify 形态的目标架构（State 分层 / 原生子图 / 持久化与可观测契约 / harness 唯一 gate / 协议原生化）与四阶段路线 | 已采纳（阶段 0 首批已落地） | 取代 **0000** 后果段、落实 **0001 D3**"另开 ADR"；修订 **0001 D6**、**0009**、**0014 D7**；沿用 **0021**、**0023** |
 
 ## 按主题分组
 
-- **迁移与架构**：0000（为什么迁）→ 0001（怎么重写）→ 0002（Harness 三位一体）→ 0007（子图扩张规则）
+- **迁移与架构**：0000（为什么迁）→ 0001（怎么重写）→ 0002（Harness 三位一体）→ 0007（子图扩张规则）→ **0024（LangGraph 原生重构，退出 Dify 形态）**
 - **LLM 模型**：0010（Qwen 分工，历史）→ 0018（双轨制，历史存根）→ **0020（现行：全量 DeepSeek-V4-pro）**
 - **提示词管理**：0003（版本化机制）· 0011（option 拆分）· 0013（后端动态片段）· 0022（资产治理，已废弃）· **0023（提示词即代码 / PromptSpec）**
 - **数据与后端契约**：0009（MySQL/TDSQL）· 0012（标的查询走 HTTP）

@@ -86,30 +86,40 @@ def test_structured_assertions_compare_expected_fields() -> None:
 
 
 def test_structured_assertions_map_winners_to_ticker_codes() -> None:
-    """R1：fixture 期望 winners，HTTP outputs 只有 tickers[].wind_code。"""
+    """R1：fixture 期望 winners，HTTP outputs 的 tickers[] 按 wire alias 输出 windCode。"""
     assert not check_structured_assertions(
-        {"tickers": [{"wind_code": "600519.SH", "from_goats": True}]},
+        {"tickers": [{"windCode": "600519.SH", "from_goats": True}]},
         {"winners": ["600519.SH"]},
     )
     # 集合语义：忽略顺序、去重
     assert not check_structured_assertions(
-        {"tickers": [{"wind_code": "600519.SH"}, {"wind_code": "300750.SZ"}]},
+        {"tickers": [{"windCode": "600519.SH"}, {"windCode": "300750.SZ"}]},
         {"winners": ["300750.SZ", "600519.SH", "300750.SZ"]},
     )
     assert check_structured_assertions(
-        {"tickers": [{"wind_code": "601398.SH"}]},
+        {"tickers": [{"windCode": "601398.SH"}]},
         {"winners": ["600519.SH"]},
     )
+
+
+def test_structured_assertions_winners_use_real_ticker_wire_shape() -> None:
+    """契约测试：outputs.tickers 必须按 TickerCandidate.model_dump()（by_alias）真实形状比对，
+    防止 differ 再次固化 snake_case 别名（ADR 0024 阶段 0）。"""
+    from app.graph.state import TickerCandidate
+
+    dumped = TickerCandidate(windCode="600519.SH", from_goats=True).model_dump()
+    assert "windCode" in dumped and "wind_code" not in dumped
+    assert not check_structured_assertions({"tickers": [dumped]}, {"winners": ["600519.SH"]})
 
 
 def test_structured_assertions_winners_keeps_other_keys_direct() -> None:
     """R1：winners 之外的键仍按 diff_fields 直比；expected 无 winners 时跳过特判。"""
     assert check_structured_assertions(
-        {"tickers": [{"wind_code": "600519.SH"}], "product_type": "swap"},
+        {"tickers": [{"windCode": "600519.SH"}], "product_type": "swap"},
         {"winners": ["600519.SH"], "product_type": "option"},
     )
     assert not check_structured_assertions(
-        {"product_type": "option", "tickers": [{"wind_code": "600519.SH"}]},
+        {"product_type": "option", "tickers": [{"windCode": "600519.SH"}]},
         {"product_type": "option"},
     )
 
