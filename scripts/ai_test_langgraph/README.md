@@ -1,5 +1,8 @@
 # LangGraph 自动化测试工具
 
+> **状态：deprecated（ADR 0024 D6，2026-09-17）。** 唯一 gate 是 `harness/`（`python -m harness run`），
+> 三种 fixture 方言的现役加载器是 `harness/golden.py`；本目录仅作历史工作台保留，不再新增校验。
+
 这套工具默认按文件名排序读取本仓库 `tests/fixtures/categories/` 直属的全部 JSONL，并调用
 `aigc-langgraph` 暴露的 `POST /v1/workflows/run`。同时兼容旧版
 `name/send_text` 回归 JSONL。它不依赖 Dify App ID、Service

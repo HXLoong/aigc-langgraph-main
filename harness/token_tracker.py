@@ -32,7 +32,7 @@ class TokenUsage(BaseModel):
     total_tokens: int = 0
     by_model: dict[str, dict[str, int]] = Field(default_factory=dict)
 
-    def merge(self, other: "TokenUsage") -> "TokenUsage":
+    def merge(self, other: TokenUsage) -> TokenUsage:
         """合并两个 TokenUsage（用于跨 case 聚合）。返回新对象，不修改 self。"""
         merged = TokenUsage(
             call_count=self.call_count + other.call_count,

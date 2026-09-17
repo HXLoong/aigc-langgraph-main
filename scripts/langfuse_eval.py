@@ -48,7 +48,14 @@ from langgraph.checkpoint.memory import InMemorySaver
 from app.graph.main import build_main_graph
 from app.prompts import load_prompt
 from app.api.turn_state import inputs_to_state
-from harness.golden import GoldenCase, build_overview, filter_by_category, filter_by_ids, load_golden
+from harness.golden import (
+    GoldenCase,
+    build_overview,
+    filter_by_category,
+    filter_by_ids,
+    load_golden,
+    select_runnable,
+)
 from harness.multi_turn import early_stop_kind, quote_for_turn
 
 DATASET_NAME = "otc-option-golden"
@@ -485,6 +492,7 @@ class _LocalItem:
                     "send_text": turn.send_text,
                     "at_bot": turn.at_bot,
                     "quote_previous": turn.quote_previous,
+                    "quote_desc": turn.quote_desc,
                 }
                 for turn in case.turns
             ]
@@ -497,6 +505,9 @@ async def run_local(
 ):
     cases = load_golden(golden_paths)
     print(f"加载 {len(cases)} 条 (local)")
+    cases, unrunnable = select_runnable(cases)
+    if unrunnable:
+        print(f"跳过不可执行 case: {len(unrunnable)} 条 (某轮 raw_content 为空，见 skip_reason；Issue #113)")
     if _SKIP_IMAGE_CASES:
         skipped = [case for case in cases if _is_image_case(case)]
         cases = [case for case in cases if not _is_image_case(case)]

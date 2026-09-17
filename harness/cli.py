@@ -12,8 +12,19 @@ from typing import Any
 
 import httpx
 
-from harness.differ import FieldDiff, check_structured_assertions, check_text_assertions
-from harness.golden import GoldenCase, filter_by_category, filter_by_ids, load_golden
+from harness.differ import (
+    FieldDiff,
+    check_case_assertions,
+    check_structured_assertions,
+    check_text_assertions,
+)
+from harness.golden import (
+    GoldenCase,
+    filter_by_category,
+    filter_by_ids,
+    load_golden,
+    select_runnable,
+)
 from harness.multi_turn import MultiTurnResult, run_case_multi
 
 
@@ -24,12 +35,16 @@ def _paths(values: list[str] | None) -> list[Path] | Path | None:
     return paths[0] if len(paths) == 1 else paths
 
 
-def _turn_diffs(case: GoldenCase, result: MultiTurnResult) -> dict[int, list[FieldDiff]]:
-    diffs: dict[int, list[FieldDiff]] = {}
+def _turn_diffs(case: GoldenCase, result: MultiTurnResult) -> dict[int | str, list[FieldDiff]]:
+    diffs: dict[int | str, list[FieldDiff]] = {}
     for outcome, spec in zip(result.turns, case.turns, strict=False):
         turn_diffs = check_text_assertions(outcome.reply_text, spec)
         turn_diffs.extend(check_structured_assertions(outcome.outputs, spec.expected))
         diffs[outcome.index] = turn_diffs
+    if case.expected_scope == "any_turn":
+        case_diffs = check_case_assertions([outcome.outputs for outcome in result.turns], case.expected)
+        if case_diffs:
+            diffs["case"] = case_diffs
     if result.failure and not result.turns:
         diffs[result.failure["turn"]] = [
             FieldDiff(path="runtime", expected="successful HTTP response", actual=result.failure)
@@ -37,10 +52,14 @@ def _turn_diffs(case: GoldenCase, result: MultiTurnResult) -> dict[int, list[Fie
     return diffs
 
 
-def _report_case(case: GoldenCase, result: MultiTurnResult, diffs: dict[int, list[FieldDiff]]) -> dict[str, Any]:
+def _report_case(
+    case: GoldenCase, result: MultiTurnResult, diffs: dict[int | str, list[FieldDiff]]
+) -> dict[str, Any]:
     return {
         "case_id": case.id,
         "category": case.category,
+        "dialect": case.dialect,
+        "case_diff": [item.model_dump() for item in diffs.get("case", [])],
         "source_path": case.source_path,
         "source_line": case.source_line,
         "conversation_id": result.conversation_id,
@@ -157,6 +176,9 @@ async def _run(args: argparse.Namespace) -> int:
     cases = filter_by_ids(
         filter_by_category(load_golden(_paths(args.data)), args.category), args.case
     )
+    cases, skipped = select_runnable(cases)
+    if skipped:
+        print(f"skipped {len(skipped)} unrunnable cases (skip_reason set), e.g. {skipped[0].id}: {skipped[0].skip_reason}")
     if args.limit is not None:
         cases = cases[: args.limit]
     if not cases:

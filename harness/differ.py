@@ -88,5 +88,22 @@ def check_structured_assertions(
     return diffs
 
 
+def check_case_assertions(
+    turn_outputs: list[dict[str, Any]], expected: dict[str, Any]
+) -> list[FieldDiff]:
+    """case 级 any_turn 断言（多轮 B 方言）：任一已执行轮同时命中 expected 的全部结构化键即通过。
+
+    只比较 `output` 之外的键；失败时把每轮的对应实际值列出来便于定位焦点轮。
+    """
+    wanted = {k: v for k, v in expected.items() if k not in ASSERT_EXCLUDED_KEYS}
+    if not wanted:
+        return []
+    for outputs in turn_outputs:
+        if not check_structured_assertions(outputs, wanted):
+            return []
+    actual = [{key: outputs.get(key) for key in wanted} for outputs in turn_outputs]
+    return [FieldDiff(path="case.expected", expected=wanted, actual=actual)]
+
+
 def is_pass(diffs: list[FieldDiff]) -> bool:
     return not diffs
