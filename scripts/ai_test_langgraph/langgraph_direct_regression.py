@@ -26,6 +26,7 @@ from regression_support import (  # noqa: E402 - sibling script module
     DEFAULT_GUID,
     DEFAULT_OPTION_COUNTERPARTIES,
     DEFAULT_SWAP_COUNTERPARTIES,
+    JudgeCallable,
     RunnerError,
     env_value,
     evaluate_response,
@@ -245,6 +246,7 @@ def run_case(
     *,
     ignore_leading_mentions: bool,
     traceparent: str = "",
+    judge: JudgeCallable | None = None,
 ) -> CaseResult:
     name = str(scenario["name"])
     case_no = str(scenario.get("caseNo") or "")
@@ -292,6 +294,7 @@ def run_case(
                 turn_spec,
                 ignore_leading_mentions=ignore_leading_mentions,
                 outputs=dict(client.last_outputs),
+                judge=judge,
             )
             turns.append(
                 TurnResult(
@@ -334,6 +337,7 @@ def run_case_isolated(
     *,
     ignore_leading_mentions: bool,
     traceparent: str = "",
+    judge: JudgeCallable | None = None,
 ) -> CaseResult:
     started = time.monotonic()
     try:
@@ -342,6 +346,7 @@ def run_case_isolated(
             scenario,
             ignore_leading_mentions=ignore_leading_mentions,
             traceparent=traceparent,
+            judge=judge,
         )
     except Exception as exc:  # noqa: BLE001 - keep the remaining dataset running
         return CaseResult(
@@ -803,6 +808,14 @@ def main(argv: Sequence[str] | None = None) -> int:
             verify_tls=not args.insecure,
         )
         langfuse_client = build_langfuse_client(dotenv)
+        judge = None
+        try:
+            from line_judge import build_line_judge
+
+            judge = build_line_judge()
+        except Exception as exc:  # noqa: BLE001 - 裁判不可用不阻断回归
+            print(f"[WARN] LLM 断言裁判不可用：{exc}", file=sys.stderr)
+        print(f"LLM 断言裁判：{'已启用' if judge is not None else '未启用（纯确定性断言）'}")
         task_name = args.task_name.strip() or dataset_paths[0].stem
         emit_runner_event(args.runner_events, "run_started", total=len(selected))
         results = []
@@ -816,6 +829,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                     scenario,
                     ignore_leading_mentions=not args.keep_expected_mentions,
                     traceparent=case_trace.traceparent if case_trace else "",
+                    judge=judge,
                 )
                 if case_trace:
                     result.trace_id = case_trace.trace_id

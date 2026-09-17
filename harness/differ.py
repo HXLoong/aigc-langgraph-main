@@ -1,6 +1,7 @@
 """Deterministic assertions for normalized golden turns."""
 from __future__ import annotations
 
+import re
 from collections.abc import Collection
 from typing import Any
 
@@ -53,15 +54,36 @@ def diff_fields(
     return diffs
 
 
+#: 动态值（单号 / 合约编号）模糊匹配：Q- 截断前缀与完整单号、OPT-/CO-/H- 等编号
+#: （与 scripts/ai_test_langgraph/regression_support.normalize_dynamic_tokens 同口径）
+_ORDER_ID_RE = re.compile(r"(?<![A-Za-z0-9])Q-\d{4,}(?:-[A-Za-z0-9]+)?")
+_GENERIC_ID_RE = re.compile(r"(?<![A-Za-z0-9])[A-Z]{1,4}-\d{6,}(?:-[A-Za-z0-9]+)?")
+
+
+def normalize_dynamic_tokens(text: str) -> str:
+    """单号 / 合约编号等动态值 → 占位符（值本身差异不算差异）。"""
+    if not text:
+        return text
+    text = _ORDER_ID_RE.sub("Q-{id}", text)
+    return _GENERIC_ID_RE.sub("{id}", text)
+
+
 def check_text_assertions(
     reply_text: str, spec: TurnSpec, *, allow_dry_run: bool = False
 ) -> list[FieldDiff]:
-    """文本断言；`allow_dry_run=True`（harness --backend dry-run）时 DRY-RUN 标记不算失败。"""
+    """文本断言；`allow_dry_run=True`（harness --backend dry-run）时 DRY-RUN 标记不算失败。
+
+    单号 / 合约编号等动态值做模糊匹配（两侧归一后比较）；`response_not_contains` 保持字面匹配。
+    """
     failures: list[FieldDiff] = []
+    normalized_reply = normalize_dynamic_tokens(reply_text)
     for expected in spec.response_contains:
-        if expected not in reply_text:
+        if normalize_dynamic_tokens(expected) not in normalized_reply:
             failures.append(FieldDiff(path="response_contains", expected=expected, actual=reply_text))
-    if spec.response_contains_any and not any(item in reply_text for item in spec.response_contains_any):
+    if spec.response_contains_any and not any(
+        normalize_dynamic_tokens(item) in normalized_reply
+        for item in spec.response_contains_any
+    ):
         failures.append(
             FieldDiff(path="response_contains_any", expected=spec.response_contains_any, actual=reply_text)
         )
