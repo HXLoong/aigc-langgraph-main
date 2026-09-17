@@ -148,6 +148,8 @@ LangGraph + LangFuse 的原生契约是"一个 thread = 一个 session，每次 
 | `tracing.py` 先注册 client 再构造 handler（含父 Trace 分支） | `app/observability/tracing.py` | 第四节 P1-1 |
 | 撤销"改业务逻辑必须先改 Dify 源"与"冲突永远选 Dify 原始版本" | `app/nodes/route_rules.py`、`.claude/rules/git-workflow.md` | 第六节 B8 / C12 |
 
+| **重构 1 · 子图原生嵌入**：`merge_by_id` reducer（`TraceEntry` / `Message` 带不参与 dump 的 id）；`SubgraphOutput` output_schema；`add_node(name, compiled)` 替代 `_as_subgraph_node` | `app/graph/state.py`、`app/graph/main.py`、三个 `graph.py`、`tests/graph/test_reducers.py`、`tests/graph/test_subgraph_contract.py` | 第二节 2.3 前两行 |
+
 **未在本环境落地、需团队决策或真实 MySQL**：CI 触发恢复（团队 2026-05-12 主动暂停）、saver 连接池、请求级幂等（`message_log`）、LLM 指标 callback、`/ready` 软硬分离、`history_messages` 窗口（需 eval 校准 N）、revoke 明文 Dify API key。
 
 ## 附录 A · 五路评审证据索引

@@ -41,7 +41,7 @@ from langgraph.graph.state import CompiledStateGraph
 
 from app.graph.cascade import has_error
 from app.graph.safe_node import safe_node
-from app.graph.state import AgentState, TraceEntry
+from app.graph.state import AgentState, SubgraphOutput, TraceEntry
 from app.subgraphs.swap.cancel import swap_cancel
 from app.subgraphs.swap.confirm import swap_confirm
 from app.subgraphs.swap.fresh_counterparty import swap_recognize_fresh_counterparty
@@ -144,7 +144,7 @@ def _route_after_select_ticker(state: AgentState) -> str:
 
 def build_swap_graph() -> CompiledStateGraph:
     """构建 swap 子图（主路由 6/6 意图全覆盖 + place_order 选择链）。"""
-    g: StateGraph = StateGraph(AgentState)
+    g: StateGraph = StateGraph(AgentState, output_schema=SubgraphOutput)
     g.add_node("swap_intent", swap_intent)
     g.add_node("swap_place_order", swap_place_order)
     g.add_node("swap_recognize_fresh_counterparty", RunnableLambda(swap_recognize_fresh_counterparty))

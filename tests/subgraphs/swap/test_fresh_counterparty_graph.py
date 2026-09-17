@@ -122,7 +122,8 @@ async def test_fresh_all_holdings_reaches_backend_with_completed_counterparty(
     assert order["placeOrderOrderDirection"] == "SELL"
     assert order["placeOrderCloseIntent"] is True
     assert order["placeOrderEntrustRatio"] == 100
-    assert request["rawContent"] == final["raw_text"] == "平仓价值精选全部持仓"
+    # 子图 output_schema 只回传写回面（ADR 0024 D2），入口字段以传入 state 为准
+    assert request["rawContent"] == state["raw_text"] == "平仓价值精选全部持仓"
     # 既有后端上下文协议会把非空 quote（包括字面量 null）追加到 messageContent。
     assert request["messageContent"] == "平仓价值精选全部持仓" + (f"\n{quote}" if quote else "")
     assert [entry.node for entry in final["trace"]] == [

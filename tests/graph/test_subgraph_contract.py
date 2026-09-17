@@ -1,0 +1,28 @@
+"""子图契约守护（ADR 0024 D2/D3）。"""
+from __future__ import annotations
+
+from langgraph.graph.state import CompiledStateGraph
+
+from app.graph.main import build_main_graph
+from app.subgraphs.close import build_close_graph
+from app.subgraphs.option import build_option_graph
+from app.subgraphs.swap import build_swap_graph
+
+#: 父图路由键与入口字段：子图只读，不得出现在子图 output_schema
+_PARENT_OWNED = {"product_type", "swap_input_mode", "history_messages", "raw_text", "conversation_id"}
+#: 子图对父图的合法写回面
+_SUBGRAPH_OWNED = {"intent", "trace", "error", "place_params", "reply_text", "api_result", "api_code"}
+
+
+def test_business_subgraphs_are_embedded_natively() -> None:
+    """不再用 _as_subgraph_node 手写 ainvoke + Overwrite 包装。"""
+    graph = build_main_graph(attach_langfuse_callbacks=False)
+    for name in ("swap", "option", "option_close"):
+        assert isinstance(graph.nodes[name].bound, CompiledStateGraph), name
+
+
+def test_business_subgraphs_declare_output_schema() -> None:
+    for build in (build_swap_graph, build_option_graph, build_close_graph):
+        out = set(build().output_channels)
+        assert not (out & _PARENT_OWNED), (build.__name__, out & _PARENT_OWNED)
+        assert out >= _SUBGRAPH_OWNED, (build.__name__, _SUBGRAPH_OWNED - out)

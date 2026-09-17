@@ -2,12 +2,12 @@
 
 设计原则：
 - 按业务对象聚合，不按节点输出扁平铺
-- reducer 字段（trace / history_messages）用 Annotated[..., add] 累加
+- reducer 字段（trace / history_messages）用 Annotated[..., merge_by_id] 按 id 合并（ADR 0024 D3）
 - 业务参数字段 M1 阶段用 dict[str, Any] 占位，M2 阶段替换为具体 Pydantic 模型
 """
 from __future__ import annotations
 
-from operator import add
+import uuid
 from typing import Annotated, Any, Literal, TypedDict
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
@@ -15,11 +15,56 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 from app.wire_model import WireModel
 
 # ============================================================
+# 按 id 合并的 reducer（ADR 0024 D3）
+# ============================================================
+
+
+def _new_id() -> str:
+    return uuid.uuid4().hex
+
+
+class _Identified(BaseModel):
+    """带合并键的 state 列表元素。
+
+    原生子图节点会把**完整输出 state** 交回父图；trace / history_messages 若用 operator.add，
+    父图已有条目会被再加一遍。与 LangGraph `add_messages` 同款：每条带 id，reducer 按 id 去重。
+    id 不参与 dump（checkpoint / API outputs / 测试相等比较都看不到它）。
+    """
+
+    id: str = Field(default_factory=_new_id, exclude=True)
+
+    def __eq__(self, other: object) -> bool:
+        if not isinstance(other, BaseModel):
+            return NotImplemented
+        return type(self) is type(other) and self.model_dump() == other.model_dump()
+
+    __hash__ = None  # type: ignore[assignment]
+
+
+def _merge_key(item: Any) -> Any:
+    ident = getattr(item, "id", None)
+    return ident if isinstance(ident, str) and ident else id(item)
+
+
+def merge_by_id(left: list[Any] | None, right: list[Any] | None) -> list[Any]:
+    """list reducer：追加 right 中 left 尚未包含（按 id，无 id 则按对象身份）的元素。"""
+    merged = list(left or [])
+    seen = {_merge_key(item) for item in merged}
+    for item in right or []:
+        key = _merge_key(item)
+        if key in seen:
+            continue
+        seen.add(key)
+        merged.append(item)
+    return merged
+
+
+# ============================================================
 # 子模型
 # ============================================================
 
 
-class Message(BaseModel):
+class Message(_Identified):
     """历史消息（来自上次 checkpoint 加载）。"""
 
     model_config = ConfigDict(extra="allow")
@@ -66,7 +111,7 @@ def _truncate_trace_value(value: Any) -> Any:
     return value
 
 
-class TraceEntry(BaseModel):
+class TraceEntry(_Identified):
     """每节点决策痕迹（供 harness 失败定位 + ADR 0014 D7 失败报告）。
 
     llm_output / llm_input_excerpt 在写入时统一截断(TRACE_TEXT_LIMIT),
@@ -152,7 +197,7 @@ class AgentState(TypedDict, total=False):
     swap_input_mode: str | None  # text | image | excel（intent_route 写入,swap 子图分流）
 
     # -------- 历史 --------
-    history_messages: Annotated[list[Message], add]
+    history_messages: Annotated[list[Message], merge_by_id]
 
     # -------- 业务路由 --------
     #: 单次 graph 调用的关联 ID（ADR 0004/#156：node_trace ↔ LangFuse 关联键）
@@ -177,7 +222,7 @@ class AgentState(TypedDict, total=False):
     reply_text: str | None  # render 节点写入；API 层透传给企微
 
     # -------- 工程层 --------
-    trace: Annotated[list[TraceEntry], add]
+    trace: Annotated[list[TraceEntry], merge_by_id]
     error: ErrorInfo | None
 
     # -------- 后端结果 --------
@@ -185,3 +230,26 @@ class AgentState(TypedDict, total=False):
     #: （swap/backend.py、close/backend.py），render 与提交节点按形态分支
     api_result: str | dict[str, Any] | list[Any] | None
     api_code: int | None
+
+
+class SubgraphOutput(TypedDict, total=False):
+    """业务子图（swap / option / option_close）对父图的合法写回面（ADR 0024 D2）。
+
+    父图路由键（product_type / swap_input_mode）、入口字段与 history_messages 对子图只读：
+    子图内部仍以 AgentState 运行，但 compile 时 `output_schema=SubgraphOutput` 让其它键
+    的写入停在子图内，不再能改写父图。
+    """
+
+    intent: str
+    tickers: list[TickerCandidate]
+    place_params: dict[str, Any] | None
+    cancel_params: dict[str, Any] | None
+    confirm: dict[str, Any] | None
+    query_filter: dict[str, Any] | None
+    close_params: dict[str, Any] | None
+    ticker_hitl_candidates: list[dict[str, Any]] | None
+    reply_text: str | None
+    api_result: str | dict[str, Any] | list[Any] | None
+    api_code: int | None
+    trace: Annotated[list[TraceEntry], merge_by_id]
+    error: ErrorInfo | None

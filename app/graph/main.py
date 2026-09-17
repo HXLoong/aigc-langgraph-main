@@ -5,10 +5,10 @@ M2 阶段：intent_route 已实现真三层路由（ADR 0015）；子图逐一�
 """
 from __future__ import annotations
 
-from collections.abc import Awaitable, Callable
+from collections.abc import Callable
 from typing import Any
 
-from langchain_core.runnables import RunnableConfig, RunnableLambda
+from langchain_core.runnables import RunnableLambda
 from langgraph.checkpoint.base import BaseCheckpointSaver
 from langgraph.graph import END, START, StateGraph
 from langgraph.graph.state import CompiledStateGraph
@@ -74,22 +74,6 @@ def _route_after_intent(state: AgentState) -> str:
 # ============================================================
 
 
-def _as_subgraph_node(
-    graph: CompiledStateGraph,
-) -> Callable[[AgentState, RunnableConfig], Awaitable[dict[str, Any]]]:
-    """让父图直接接收子图已经合并完成的 reducer 字段。"""
-
-    async def run(state: AgentState, config: RunnableConfig) -> dict[str, Any]:
-        result = await graph.ainvoke(state, config=config)
-        updates: dict[str, Any] = dict(result)
-        for key in ("trace", "history_messages"):
-            if key in result:
-                updates[key] = Overwrite(result[key])
-        return updates
-
-    return run
-
-
 def _reset_turn_trace(_: AgentState) -> dict[str, Any]:
     """新 turn 开始时清空上一轮 trace。"""
     return {"trace": Overwrite([])}
@@ -121,9 +105,11 @@ def build_main_graph(
     g.add_node("existing_command_query", existing_command_query)
     g.add_node("pre_route", pre_route)
     g.add_node("intent_route", intent_route)
-    g.add_node("swap", _as_subgraph_node(build_swap_graph()))
-    g.add_node("option", _as_subgraph_node(build_option_graph()))
-    g.add_node("option_close", _as_subgraph_node(build_close_graph()))
+    # ADR 0024 D3：子图原生嵌入。子图 output_schema=SubgraphOutput 限定写回面，
+    # trace 按 id 合并（merge_by_id），父图不再需要 ainvoke + Overwrite 手工包装
+    g.add_node("swap", build_swap_graph())
+    g.add_node("option", build_option_graph())
+    g.add_node("option_close", build_close_graph())
     g.add_node("fallback", fallback)
     g.add_node("persist_intent", RunnableLambda(make_persist_intent(message_client_factory)))
     g.add_node("persist", persist)

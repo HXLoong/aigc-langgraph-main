@@ -108,6 +108,7 @@ DSL v2 迁移（2026-08）后，代码在 LangGraph 上跑通了全部业务链�
 ## 落地记录
 
 - 2026-09-17 阶段 0 首批（本 ADR 同一 PR，TDD）：`harness/differ.py` `windCode` 修正 + 真实 `TickerCandidate` 契约测试；`record_history` 加 `@safe_node`；`AgentState.reply_text` 重复声明清理、`api_result` 类型改为 `str | dict | list | None`；`_build_run_config` 增加 `langfuse_session_id` / `langfuse_user_id` / `langfuse_tags`；`graph.ainvoke(..., durability="exit")`；生产 saver `serde` 白名单固化；`tracing.py` 客户端注册顺序修正；撤销 `route_rules.py` 与 `git-workflow.md` 两条"Dify 为真源"纪律。其余阶段 0 项（CI 触发恢复、saver 连接池、请求级幂等、LLM 指标 callback、`/ready` 软硬分离、revoke 明文 key）需团队决策或真实 MySQL 环境，列为待办。
+- 2026-09-17 重构 1（D2 / D3，TDD）：`TraceEntry` / `Message` 增加不参与 dump 与相等比较的 `id`，`trace` / `history_messages` 的 reducer 由 `operator.add` 改为 `merge_by_id`（与 LangGraph `add_messages` 同款按 id 去重）；新增 `SubgraphOutput` TypedDict，三个业务子图 `StateGraph(AgentState, output_schema=SubgraphOutput)`，子图对 `product_type` / `swap_input_mode` / `history_messages` / 入口字段的写入停在子图内；主图改为 `add_node(name, compiled_subgraph)` 原生嵌入，删除 `_as_subgraph_node`。实验（`tests/graph/test_reducers.py` / `test_subgraph_contract.py`）证实：原生子图节点回传完整输出 state，`operator.add` 会把父图已有 trace 再加一遍，按 id 合并后零重复；`_reset_turn_trace` 暂留（一轮边界收敛到 ingest 待下一步）。
 
 ## 附录 · Dify 残留分级清单（摘要）
 

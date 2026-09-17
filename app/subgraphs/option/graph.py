@@ -24,7 +24,7 @@ from langgraph.graph.state import CompiledStateGraph
 
 from app.graph.cascade import has_error
 from app.graph.safe_node import safe_node
-from app.graph.state import AgentState, TraceEntry
+from app.graph.state import AgentState, SubgraphOutput, TraceEntry
 from app.subgraphs.option.extract_cancel import option_extract_cancel
 from app.subgraphs.option.extract_cancel_place import option_extract_cancel_place
 from app.subgraphs.option.extract_confirm_cancel import option_extract_confirm_cancel
@@ -71,7 +71,7 @@ def _route_after_option_intent(state: AgentState) -> str:
 
 def build_option_graph() -> CompiledStateGraph:
     """构建 option 子图（7 意图 : 7 真节点一一对应，Dify DSL v2）。"""
-    g: StateGraph = StateGraph(AgentState)
+    g: StateGraph = StateGraph(AgentState, output_schema=SubgraphOutput)
     g.add_node("option_intent", option_intent)
     g.add_node("option_extract_inquiry", option_extract_inquiry)
     g.add_node("option_extract_place", option_extract_place)
