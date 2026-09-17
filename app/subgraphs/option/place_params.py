@@ -9,6 +9,8 @@
 - orderType 关键词优先级：TWAP > POV（含"跟量"）> 限价单 > 市价单，与出现顺序无关
 - hasFastExecutionIntent 仅当出现快速执行关键词时 true；普通跟量 / 跟量+比例 → false
 - 名义本金换算复用 `normalize.py`（与询价链路同口径：1kw = 1万）
+- **多单分段**（"第一个单 … 第二个单 …"批量补参，case-026）：段数 == 引用回执订单数时
+  按序号逐单映射各自的 A 类参数与对手字母；否则回退为整段参数套用全部订单（历史行为）
 
 产出为 partial dict（snake_case），由节点经 Pydantic 容器校验后补齐为完整字段集。
 """
@@ -46,6 +48,8 @@ _TIME_RE = re.compile(r"(?<!\d)(\d{1,2}):(\d{2})(?!\d)")
 _OPP_LABEL_RE = re.compile(r"(?:交易对手|交易账号|交易账户)\s*[:：]?\s*(.+)")
 #: "用账号 12345测试 下单" 式（值后随下单 / 操作）
 _OPP_BARE_ACCOUNT_RE = re.compile(r"账号\s*[:：]?\s*(.+?)(?=(?:下单|操作|成交|$))")
+#: 交易对手后的选择动词（"交易对手选A / 选择B / 要A"）；剥离后剩单个字母时按选项字母解析
+_SELECT_VERB_RE = re.compile(r"^(?:选择|选定|选|要|用)\s*")
 _SHORT_NAME_STOP_RE = re.compile(r"[\r\n；;，,。！!？?]+")
 _SHORT_NAME_ACTION_SPLIT_RE = re.compile(r"(?=\s(?:市价|限价|POV|pov|TWAP|twap|下单|操作|确认))")
 _MENTION_RE = re.compile(r"@\S+")
@@ -54,6 +58,53 @@ _LETTER_RE = re.compile(r"(?<![A-Za-z0-9-])([A-Z])(?![A-Za-z0-9-])")
 _LETTER_ITEM_RE = re.compile(
     r"(?<![A-Za-z0-9])([A-Z])[.、）)]\s*(.+?)(?=\s+[A-Z][.、）)]|[\r\n；;，,]|$)"
 )
+
+# ============================================================
+# 多单分段（"第一个单 … 第二个单 …" 批量补参）
+# ============================================================
+
+#: 分段标记：第一个单 / 第2笔 / 第一单 …
+_ORDINAL_SEGMENT_RE = re.compile(r"第\s*([一二两三四五六七八九十\d]+)\s*(?:个)?\s*(?:单|笔)")
+_ORDINAL_VALUES = {
+    "一": 1,
+    "二": 2,
+    "两": 2,
+    "三": 3,
+    "四": 4,
+    "五": 5,
+    "六": 6,
+    "七": 7,
+    "八": 8,
+    "九": 9,
+    "十": 10,
+}
+
+
+def _ordinal_number(token: str) -> int | None:
+    return int(token) if token.isdigit() else _ORDINAL_VALUES.get(token)
+
+
+def _split_ordinal_segments(raw: str) -> list[str]:
+    """按"第N个单 / 第N笔"把 raw 切成逐单片段（按序号升序）。
+
+    批量补参场景（多询价下多单）："第一个单 …\n第二个单 …"，每段参数只作用于
+    对应序号订单。标记不足 2 个、序号不可解析或重复 → 返回 []（调用方回退旧行为）。
+    """
+    matches = list(_ORDINAL_SEGMENT_RE.finditer(raw))
+    if len(matches) < 2:
+        return []
+    numbered: list[tuple[int, str]] = []
+    for index, match in enumerate(matches):
+        number = _ordinal_number(match.group(1))
+        if number is None:
+            return []
+        start = match.end()
+        end = matches[index + 1].start() if index + 1 < len(matches) else len(raw)
+        numbered.append((number, raw[start:end].strip(" \t\r\n，,、；;。.")))
+    if len({number for number, _ in numbered}) != len(numbered):
+        return []
+    numbered.sort(key=lambda item: item[0])
+    return [segment for _, segment in numbered]
 
 # ============================================================
 # B 类：raw 优先 → 引用回执兜底
@@ -143,8 +194,14 @@ def _resolve_letter(letter: str, context: str) -> str | None:
 def _extract_short_name(raw: str, context: str) -> str | None:
     for match in _OPP_LABEL_RE.finditer(raw):
         cleaned = _clean_short_name(match.group(1))
-        if cleaned:
-            return cleaned
+        if not cleaned:
+            continue
+        letter = _SELECT_VERB_RE.sub("", cleaned).strip()
+        if len(letter) == 1 and letter.isalpha():
+            resolved = _resolve_letter(letter.upper(), context)
+            if resolved:
+                return resolved
+        return cleaned
     own_match = _OPP_BARE_ACCOUNT_RE.search(raw)
     if own_match:
         cleaned = _clean_short_name(own_match.group(1))
@@ -154,6 +211,23 @@ def _extract_short_name(raw: str, context: str) -> str | None:
     if len(letters) == 1:
         return _resolve_letter(letters.pop(), context)
     return None
+
+
+def _a_class_params(text: str, context: str) -> dict[str, Any]:
+    """A 类字段（只读 text）：orderType / notional / limitPrice / POV / TWAP / shortName。"""
+    order_type = _extract_order_type(text)
+    twap_start, twap_end = (
+        _extract_twap_times(text) if order_type == "TWAP" else (None, None)
+    )
+    return {
+        "notional_amount": normalize_notional(text),
+        "order_type": order_type,
+        "limit_price": _extract_limit_price(text),
+        "pov_ratio": _extract_pov_ratio(text) if order_type == "POV" else None,
+        "twap_start_time": twap_start,
+        "twap_end_time": twap_end,
+        "short_name": _extract_short_name(text, context),
+    }
 
 
 def _labeled(text: str, label: str) -> str | None:
@@ -258,35 +332,34 @@ def parse_place_params(
     raw_text = raw or ""
     quote_text = quote or ""
     context = "\n".join(text for text in (quote_text, *history_texts) if text)
-
-    order_type = _extract_order_type(raw_text)
-    twap_start, twap_end = (
-        _extract_twap_times(raw_text) if order_type == "TWAP" else (None, None)
-    )
-    common: dict[str, Any] = {
-        "notional_amount": normalize_notional(raw_text),
-        "order_type": order_type,
-        "limit_price": _extract_limit_price(raw_text),
-        "pov_ratio": _extract_pov_ratio(raw_text) if order_type == "POV" else None,
-        "twap_start_time": twap_start,
-        "twap_end_time": twap_end,
-        "short_name": _extract_short_name(raw_text, context),
-    }
-    fast_execution = _extract_fast_execution(raw_text)
     reference = _reference_fields(raw_text, quote_text)
 
-    items: list[dict[str, Any]] = []
-    for order_id in reference["order_ids"]:
-        items.append({
+    def _item(order_id: str | None, params: dict[str, Any], fast: bool) -> dict[str, Any]:
+        return {
             "order_id": order_id,
             "stock_code": reference["stock_code"],
             "option_type": reference["option_type"],
             "tenor": reference["tenor"],
             "strike_percentage": reference["strike_percentage"],
-            "has_fast_execution_intent": fast_execution,
-            **common,
-        })
-    return items
+            "has_fast_execution_intent": fast,
+            **params,
+        }
+
+    # 多单分段：段与引用回执订单按下标一一对应时才生效（数量不符不猜测映射）
+    segments = _split_ordinal_segments(raw_text)
+    if len(segments) >= 2 and len(segments) == len(reference["order_ids"]):
+        return [
+            _item(
+                order_id,
+                _a_class_params(segment, context),
+                _extract_fast_execution(segment),
+            )
+            for segment, order_id in zip(segments, reference["order_ids"], strict=True)
+        ]
+
+    common = _a_class_params(raw_text, context)
+    fast_execution = _extract_fast_execution(raw_text)
+    return [_item(order_id, common, fast_execution) for order_id in reference["order_ids"]]
 
 
 def parse_confirm_place_params(
@@ -299,19 +372,7 @@ def parse_confirm_place_params(
     quote_text = quote or ""
     context = "\n".join(text for text in (quote_text, *history_texts) if text)
 
-    order_type = _extract_order_type(raw_text)
-    twap_start, twap_end = (
-        _extract_twap_times(raw_text) if order_type == "TWAP" else (None, None)
-    )
-    common: dict[str, Any] = {
-        "notional_amount": normalize_notional(raw_text),
-        "order_type": order_type,
-        "limit_price": _extract_limit_price(raw_text),
-        "pov_ratio": _extract_pov_ratio(raw_text) if order_type == "POV" else None,
-        "twap_start_time": twap_start,
-        "twap_end_time": twap_end,
-        "short_name": _extract_short_name(raw_text, context),
-    }
+    common = _a_class_params(raw_text, context)
     reference = _reference_fields(raw_text, quote_text)
 
     return [
