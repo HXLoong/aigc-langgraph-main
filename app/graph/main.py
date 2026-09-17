@@ -12,6 +12,7 @@ from langgraph.checkpoint.base import BaseCheckpointSaver
 from langgraph.graph import END, START, StateGraph
 from langgraph.graph.state import CompiledStateGraph
 
+from app.graph.retry import add_io_node
 from app.graph.state import AgentState
 from app.nodes.fallback import fallback
 from app.nodes.fast_query import (
@@ -93,9 +94,9 @@ def build_main_graph(
 
     g.add_node("ingest", ingest)
     g.add_node("quick_inquiry", quick_inquiry)
-    g.add_node("existing_command_query", existing_command_query)
+    add_io_node(g, "existing_command_query", existing_command_query)
     g.add_node("pre_route", pre_route)
-    g.add_node("intent_route", intent_route)
+    add_io_node(g, "intent_route", intent_route)
     # ADR 0024 D3：子图原生嵌入。子图 output_schema=SubgraphOutput 限定写回面，
     # trace 按 id 合并（merge_by_id），父图不再需要 ainvoke + Overwrite 手工包装
     g.add_node("swap", build_swap_graph())

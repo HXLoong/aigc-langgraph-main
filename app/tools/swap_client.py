@@ -13,6 +13,7 @@ from typing import Protocol
 import httpx
 from pydantic import ConfigDict, Field, field_validator
 
+from app.tools.http_pool import acquire_http_client
 from app.tools.models import (
     CommonResult,
     GoatsAlgoType,
@@ -194,9 +195,9 @@ class SwapClientHttpx:
         payload = req.model_dump(mode="json", exclude_none=True)
         async with (
             translate_httpx_errors("swap"),
-            httpx.AsyncClient(**self._client_kwargs()) as client,
+            acquire_http_client(timeout=self._timeout, transport=self._transport) as client,
         ):
-            r = await client.post(url, json=payload, headers=self._headers)
+            r = await client.post(url, json=payload, headers=self._headers, timeout=self._timeout)
             r.raise_for_status()
             return CommonResult.model_validate(r.json())
 
@@ -206,9 +207,9 @@ class SwapClientHttpx:
         url = f"{self._base_url}/admin-api/swap-order/get"
         async with (
             translate_httpx_errors("swap"),
-            httpx.AsyncClient(**self._client_kwargs()) as client,
+            acquire_http_client(timeout=self._timeout, transport=self._transport) as client,
         ):
-            r = await client.get(url, params={"orderId": order_id}, headers=self._headers)
+            r = await client.get(url, params={"orderId": order_id}, headers=self._headers, timeout=self._timeout)
             r.raise_for_status()
             return CommonResult.model_validate(r.json())
 
@@ -220,12 +221,13 @@ class SwapClientHttpx:
         url = f"{self._base_url}/admin-api/swap-order/get-conversation-orders"
         async with (
             translate_httpx_errors("swap"),
-            httpx.AsyncClient(**self._client_kwargs()) as client,
+            acquire_http_client(timeout=self._timeout, transport=self._transport) as client,
         ):
             r = await client.post(
                 url,
                 json={"conversationId": conversation_id},
                 headers=self._headers,
+                timeout=self._timeout,
             )
             r.raise_for_status()
             return CommonResult.model_validate(r.json())

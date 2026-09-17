@@ -41,6 +41,7 @@ from langgraph.graph import END, START, StateGraph
 from langgraph.graph.state import CompiledStateGraph
 
 from app.graph.cascade import has_error
+from app.graph.retry import add_io_node
 from app.graph.safe_node import safe_node
 from app.graph.state import AgentState, SubgraphOutput, TraceEntry
 from app.subgraphs.swap.apply_picks import swap_apply_picks
@@ -142,19 +143,19 @@ def _route_after_apply_picks(state: AgentState) -> str:
 def build_swap_graph() -> CompiledStateGraph:
     """构建 swap 子图（主路由 6/6 意图全覆盖 + place_order 选择链）。"""
     g: StateGraph = StateGraph(AgentState, output_schema=SubgraphOutput)
-    g.add_node("swap_intent", swap_intent)
-    g.add_node("swap_place_order", swap_place_order)
+    add_io_node(g, "swap_intent", swap_intent)
+    add_io_node(g, "swap_place_order", swap_place_order)
     g.add_node("swap_recognize_fresh_counterparty", RunnableLambda(swap_recognize_fresh_counterparty))
-    g.add_node("swap_select_counterparty", swap_select_counterparty)
-    g.add_node("swap_select_ticker", swap_select_ticker)
+    add_io_node(g, "swap_select_counterparty", swap_select_counterparty)
+    add_io_node(g, "swap_select_ticker", swap_select_ticker)
     g.add_node("swap_apply_picks", swap_apply_picks)
     g.add_node("swap_place_order_submit", swap_place_order_submit)
     g.add_node("swap_confirm", swap_confirm)
     g.add_node("swap_cancel", swap_cancel)
-    g.add_node("swap_query_order", swap_query_order)
+    add_io_node(g, "swap_query_order", swap_query_order)
     g.add_node("swap_unknown", swap_unknown)
-    g.add_node("swap_image_order", swap_image_order)
-    g.add_node("swap_excel_order", swap_excel_order)
+    add_io_node(g, "swap_image_order", swap_image_order)
+    add_io_node(g, "swap_excel_order", swap_excel_order)
 
     g.add_conditional_edges(
         START,

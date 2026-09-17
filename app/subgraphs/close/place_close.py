@@ -38,6 +38,7 @@ from langgraph.graph.state import CompiledStateGraph
 
 from app.graph.business_params import validated_close_params
 from app.graph.cascade import has_error
+from app.graph.retry import add_io_node, io_node
 from app.graph.safe_node import safe_node
 from app.graph.state import AgentState, ErrorInfo, TickerCandidate, TraceEntry, merge_by_id
 from app.llm.clients import get_qwen_thinking
@@ -181,7 +182,7 @@ async def place_close_parse(state: PlaceCloseState) -> dict[str, Any]:
     }
 
 
-@safe_node
+@io_node
 async def place_close_fetch_orders(state: PlaceCloseState) -> dict[str, Any]:
     """步骤 2+3：获取订单信息 → 格式化订单数据。"""
     parsed = state["pc_parsed"]
@@ -197,7 +198,7 @@ async def place_close_fetch_orders(state: PlaceCloseState) -> dict[str, Any]:
     }
 
 
-@safe_node
+@io_node
 async def place_close_extract(state: PlaceCloseState) -> dict[str, Any]:
     """步骤 4：请求下单和确认全部平仓参数提取（LLM）。"""
     raw = state.get("raw_text", "") or ""
@@ -427,8 +428,8 @@ def _route_after_validate(state: PlaceCloseState) -> str:
 def build_place_close_graph() -> CompiledStateGraph:
     g: StateGraph = StateGraph(PlaceCloseState, output_schema=PlaceCloseOutput)
     g.add_node("place_close_parse", place_close_parse)
-    g.add_node("place_close_fetch_orders", place_close_fetch_orders)
-    g.add_node("place_close_extract", place_close_extract)
+    add_io_node(g, "place_close_fetch_orders", place_close_fetch_orders)
+    add_io_node(g, "place_close_extract", place_close_extract)
     g.add_node("place_close_normalize", place_close_normalize)
     g.add_node("place_close_validate", place_close_validate)
     g.add_node("place_close_submit", place_close_submit)

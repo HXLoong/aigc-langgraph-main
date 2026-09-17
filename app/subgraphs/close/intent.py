@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from app.graph.safe_node import safe_node
+from app.graph.retry import io_node
 from app.graph.state import AgentState, TraceEntry
 from app.llm.clients import get_qwen_thinking
 from app.prompts import blocks
@@ -35,7 +35,7 @@ SPEC = register(PromptSpec(
 ))
 
 
-@safe_node
+@io_node
 async def close_intent(state: AgentState) -> dict[str, Any]:
     """close.intent 节点。"""
     # ADR 0023：输出契约由 with_structured_output 的 schema 承担，不再在代码里追加格式指令

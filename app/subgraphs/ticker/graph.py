@@ -18,17 +18,22 @@ from functools import lru_cache
 from langgraph.graph import END, START, StateGraph
 from langgraph.graph.state import CompiledStateGraph
 
+from app.graph.retry import add_io_node
 from app.subgraphs.ticker import resolver as r
 
 
 def build_ticker_graph() -> CompiledStateGraph:
     g: StateGraph = StateGraph(r.TickerState)
     g.add_node("extract_candidates", r.extract_candidates)
-    g.add_node("infer_codes", r.infer_codes)
-    g.add_node("split_keywords", r.split_keywords)
-    g.add_node("judge_type", r.judge_type)
+    # 只读 IO（LLM / GOATS）：挂 RetryPolicy；异常穿透给父节点的 safe_node，不需要 handler
+    for io_name, io_fn in (
+        ("infer_codes", r.infer_codes),
+        ("split_keywords", r.split_keywords),
+        ("judge_type", r.judge_type),
+        ("resolve_org_item", r.resolve_org_item),
+    ):
+        add_io_node(g, io_name, io_fn, with_error_handler=False)
     g.add_node("merge_candidates", r.merge_candidates)
-    g.add_node("resolve_org_item", r.resolve_org_item)
     g.add_node("assemble", r.assemble)
 
     g.add_edge(START, "extract_candidates")

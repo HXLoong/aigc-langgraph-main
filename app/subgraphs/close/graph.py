@@ -25,6 +25,7 @@ from langgraph.graph import END, START, StateGraph
 from langgraph.graph.state import CompiledStateGraph
 
 from app.graph.cascade import has_error
+from app.graph.retry import add_io_node
 from app.graph.safe_node import safe_node
 from app.graph.state import AgentState, SubgraphOutput, TraceEntry
 from app.subgraphs.close.cancel_close import close_cancel_close
@@ -77,14 +78,14 @@ def _route_after_close_intent(state: AgentState) -> str:
 def build_close_graph() -> CompiledStateGraph:
     """构建 close 子图（7/7 真节点全部到位）。"""
     g: StateGraph = StateGraph(AgentState, output_schema=SubgraphOutput)
-    g.add_node("close_intent", close_intent)
-    g.add_node("close_holding_query", close_holding_query)
+    add_io_node(g, "close_intent", close_intent)
+    add_io_node(g, "close_holding_query", close_holding_query)
     # ADR 0024 重构 5：place_close 是子图（parse → fetch → extract → normalize → validate → submit/reject）
     g.add_node("close_place_close", build_place_close_graph())
     g.add_node("close_confirm_close", close_confirm_close)
     g.add_node("close_cancel_close", close_cancel_close)
     g.add_node("close_confirm_cancel", close_confirm_cancel)
-    g.add_node("close_query_status", close_query_status)
+    add_io_node(g, "close_query_status", close_query_status)
     g.add_node("close_unknown", close_unknown)
 
     g.add_edge(START, "close_intent")

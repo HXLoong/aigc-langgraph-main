@@ -37,6 +37,9 @@ class Settings(BaseSettings):
 
     # === 超时预算（plan0916 §6.1 / A 批：集中配置；默认值与历史散点一致）===
     llm_timeout_seconds: float = 60.0        # LLM 客户端（app/llm/clients.py 六个工厂）
+    # ADR 0024 D3：只读 IO 节点（LLM / 后端查询）的 LangGraph RetryPolicy；写类节点不重试
+    node_retry_max_attempts: int = 3
+    node_retry_initial_interval_seconds: float = 0.5
     backend_timeout_seconds: float = 30.0    # Option / Swap / Ticker / Message 四个后端 Client 默认
     persist_timeout_seconds: float = 5.0     # node_trace 写库连接（app/nodes/persist.py）
     multimodal_fetch_timeout_seconds: float = 30.0  # 图片 / Excel 远端文件下载（swap/multimodal.py）

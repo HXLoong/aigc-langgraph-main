@@ -21,7 +21,7 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from app.graph.safe_node import safe_node
+from app.graph.retry import io_node
 from app.graph.state import AgentState, TraceEntry
 from app.llm.clients import get_qwen_complex
 from app.prompts.spec import PromptSpec, register
@@ -49,7 +49,7 @@ SPEC = register(PromptSpec(
 ))
 
 
-@safe_node
+@io_node
 async def swap_select_ticker(state: AgentState) -> dict[str, Any]:
     """swap.select_ticker 节点。
 

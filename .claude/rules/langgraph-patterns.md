@@ -38,6 +38,12 @@ async def my_node(state: AgentState) -> dict[str, Any]:
 - 节点只返回**需要更新的字段**，LangGraph 会自动 merge
 - 不要修改传入的 state（immutable 对待）
 - trace 用 list 形式（reducer 会累加）
+- **只读 IO 节点**（意图识别 / 参数抽取 / 后端查询）用 `@io_node` 并以 `add_io_node(g, name, fn)` 注册：
+  可重试异常穿透给 `RetryPolicy`（`NODE_RETRY_MAX_ATTEMPTS`，默认 3），耗尽后节点级 `error_handler`
+  落 `state['error']`（trace decision `error:retry_exhausted`）；**写类节点**（下单 / 撤单 / 确认 / 平仓）
+  保持 `@safe_node`，绝不自动重试。`tests/graph/test_retry_policy.py` 守护读写分类清单
+- 调后端只经 `call_*_backend(state, ...)`：适配层在边界处 `BotContext.from_state(state)`，协议层只吃
+  `BotContext`（`app/tools/bot_context.py`），业务对象进不了请求拼装
 
 ## 条件路由
 

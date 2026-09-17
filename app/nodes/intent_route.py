@@ -22,7 +22,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
-from app.graph.safe_node import safe_node
+from app.graph.retry import io_node
 from app.graph.state import AgentState, ProductType, TraceEntry
 from app.llm.clients import get_qwen_thinking
 from app.nodes.route_rules import is_swap_transaction
@@ -78,7 +78,7 @@ async def _classify_with_llm(text: str, quote_content: str | None) -> str:
     return result.label
 
 
-@safe_node
+@io_node
 async def intent_route(state: AgentState) -> dict[str, Any]:
     """一级路由节点。
 

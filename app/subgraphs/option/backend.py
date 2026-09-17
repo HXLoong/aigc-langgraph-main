@@ -11,6 +11,7 @@ from app.observability.metrics import (
     emit_option_backend_missing_context,
 )
 from app.subgraphs.option.sanitize import sanitize_order_list
+from app.tools.bot_context import BotContext, normalize_message_id
 from app.tools.exceptions import EmptyBackendResultError, MissingBackendContextError
 from app.tools.option_client import (
     FinancialOrderOpenApiBaseSaveReqVO,
@@ -36,27 +37,13 @@ _INTENT_TO_OPERATE: dict[str, str] = {
 
 
 def _message_id(value: Any) -> int:
-    if isinstance(value, int):
-        return value
-    digits = "".join(ch for ch in str(value) if ch.isdigit())
-    return int(digits[-18:]) if digits else 0
+    return normalize_message_id(value)
 
 
 def _context(state: AgentState) -> dict[str, Any]:
-    raw = state.get("raw_text", "") or ""
-    quote = state.get("quote_content")
-    return {
-        "conversationId": state.get("conversation_id", "") or "",
-        "messageId": _message_id(state.get("message_id", 0)),
-        "messageContent": raw if not quote else f"{raw}\n{quote}",
-        "rawContent": raw,
-        "quoteContent": quote,
-        "quoteAppinfo": state.get("quote_appinfo"),
-        "userId": state.get("user_id", "") or "",
-        "roomId": state.get("room_id", "") or "",
-        "guid": state.get("guid"),
-        "operatorUserId": state.get("operator_user_id"),
-    }
+    """机器人上下文 → Java ReqVO 字段；唯一定义在 app/tools/bot_context.py。"""
+    wire = BotContext.from_state(state).to_wire()
+    return wire
 
 
 def _with_resolved_ticker(
@@ -114,13 +101,7 @@ async def call_option_backend(
     order_list: list[dict[str, Any]] | None = None,
     option_rfq: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    missing_fields = [
-        field
-        for field in ("conversation_id", "room_id", "user_id")
-        if not state.get(field)
-    ]
-    if _message_id(state.get("message_id")) <= 0:
-        missing_fields.append("message_id")
+    missing_fields = BotContext.from_state(state).missing_required()
     if missing_fields:
         logger.error(
             "option backend call blocked: missing_fields=%s",

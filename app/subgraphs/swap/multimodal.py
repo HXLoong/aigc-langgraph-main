@@ -19,7 +19,7 @@ import httpx
 import openpyxl
 
 from app.config import get_settings
-from app.graph.safe_node import safe_node
+from app.graph.retry import io_node
 from app.graph.state import AgentState, TraceEntry
 from app.llm.clients import get_qwen_structured, get_qwen_vl
 from app.prompts import blocks
@@ -147,7 +147,7 @@ def _params_update(
     }
 
 
-@safe_node
+@io_node
 async def swap_image_order(state: AgentState) -> dict[str, Any]:
     """互换-图片链:VL OCR → 参数提取 → place_params(提交由 submit 节点完成)。"""
     files = [f for f in (state.get("input_files") or []) if str(f.get("type", "")).lower() == "image"]
@@ -170,7 +170,7 @@ async def swap_image_order(state: AgentState) -> dict[str, Any]:
     return _params_update(params, "swap_image_order", f"images={len(urls)}", prompt_name)
 
 
-@safe_node
+@io_node
 async def swap_excel_order(state: AgentState) -> dict[str, Any]:
     """互换-Excel 链:下载解析(产品→交易对手)→ 参数提取 → place_params。"""
     files = state.get("input_files") or []

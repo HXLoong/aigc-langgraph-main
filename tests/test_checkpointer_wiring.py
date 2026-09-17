@@ -18,7 +18,9 @@ import app.main as app_main
 
 
 def _settings(environment: str, use_cp: bool) -> SimpleNamespace:
-    return SimpleNamespace(environment=environment, use_mysql_checkpointer=use_cp)
+    return SimpleNamespace(
+        environment=environment, use_mysql_checkpointer=use_cp, backend_timeout_seconds=30.0
+    )
 
 
 class TestLifespanWiring:

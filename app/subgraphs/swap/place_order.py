@@ -34,6 +34,7 @@ import re
 from typing import Any
 
 from app.graph.business_params import validated_place_params
+from app.graph.retry import io_node
 from app.graph.safe_node import safe_node
 from app.graph.state import AgentState, ExpectedAction, TraceEntry
 from app.llm.clients import get_qwen_complex
@@ -96,7 +97,7 @@ def _expected_action(params: SwapPlaceOrderParams) -> ExpectedAction:
     return "place"
 
 
-@safe_node
+@io_node
 async def swap_place_order(state: AgentState) -> dict[str, Any]:
     """swap.place_order 节点（提取阶段，不调后端）。
 

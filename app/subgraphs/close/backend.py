@@ -17,6 +17,7 @@ from typing import Any
 
 from app.graph.state import AgentState
 from app.subgraphs.close.aggregate import sanitize_close_order_req_vo
+from app.tools.bot_context import BotContext, normalize_message_id
 from app.tools.option_client import (
     CloseOrderReqVO,
     FinancialOrderOpenApiSaveReqVO,
@@ -26,26 +27,13 @@ from app.tools.option_client import (
 
 
 def _message_id(value: Any) -> int:
-    if isinstance(value, int):
-        return value
-    digits = "".join(ch for ch in str(value) if ch.isdigit())
-    return int(digits[-18:]) if digits else 0
+    return normalize_message_id(value)
 
 
 def _context(state: AgentState) -> dict[str, Any]:
-    raw = state.get("raw_text", "") or ""
-    quote = state.get("quote_content")
-    return {
-        "conversationId": state.get("conversation_id", "") or "",
-        "messageId": _message_id(state.get("message_id", 0)),
-        "messageContent": raw if not quote else f"{raw}\n{quote}",
-        "rawContent": raw,
-        "quoteContent": quote,
-        "quoteAppinfo": state.get("quote_appinfo"),
-        "userId": state.get("user_id", "") or "",
-        "roomId": state.get("room_id", "") or "",
-        "guid": state.get("guid"),
-    }
+    """机器人上下文 → Java ReqVO 字段；唯一定义在 app/tools/bot_context.py。"""
+    wire = BotContext.from_state(state).to_wire()
+    return wire
 
 
 async def call_close_backend(
@@ -67,7 +55,7 @@ async def call_close_backend(
         直接取后端返回的 `data`/`msg`，**不做本地二次加工**——CLAUDE.md P0：
         严禁掩盖后端真实响应）。
     """
-    if not state.get("conversation_id") or not state.get("room_id") or not state.get("user_id"):
+    if [f for f in BotContext.from_state(state).missing_required() if f != "message_id"]:
         return {}
 
     sanitized = sanitize_close_order_req_vo(close_order_req_vo)

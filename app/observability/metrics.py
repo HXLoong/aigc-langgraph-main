@@ -245,7 +245,7 @@ METRIC_OPTION_BACKEND_EMPTY_RESULT_TOTAL = (
 
 
 def emit_node_completed(node: str, status: str = "ok", elapsed_ms: int | None = None) -> None:
-    """节点完成时 emit。status: ok / error"""
+    """节点完成时 emit。status: ok / error / retry（可重试异常穿透给 RetryPolicy 的一次尝试）"""
     coll = get_collector()
     coll.inc_counter(METRIC_NODE_TOTAL, {"node": node, "status": status})
     if elapsed_ms is not None:

@@ -25,7 +25,11 @@ logger = logging.getLogger(__name__)
 NodeFn = Callable[[AgentState], Awaitable[dict[str, Any]]]
 
 
-def safe_node(fn: NodeFn) -> NodeFn:
+def safe_node(
+    fn: NodeFn | None = None,
+    *,
+    retryable: tuple[type[BaseException], ...] = (),
+) -> Any:
     """LangGraph 节点装饰器。
 
     用法:
@@ -34,7 +38,13 @@ def safe_node(fn: NodeFn) -> NodeFn:
             return {"intent": "place_order_request"}
 
     返回的 partial state dict 会被 LangGraph reducer 合并到全局 state。
+
+    retryable：这些异常**不**就地兜底，而是打一次 retry 指标后原样抛出，交给注册时挂的
+    LangGraph RetryPolicy 重试（ADR 0024 D3；只读 IO 节点用 app.graph.retry.io_node，
+    写类节点永远不要传——超时后重试可能重复下单）。
     """
+    if fn is None:
+        return functools.partial(safe_node, retryable=retryable)
 
     @functools.wraps(fn)
     async def wrapper(state: AgentState) -> dict[str, Any]:
@@ -67,6 +77,11 @@ def safe_node(fn: NodeFn) -> NodeFn:
 
         except Exception as exc:  # noqa: BLE001 - safe_node 本就是兜底
             elapsed_ms = int((time.perf_counter() - t0) * 1000)
+            if retryable and isinstance(exc, retryable):
+                # 穿透给 RetryPolicy；耗尽后由 retry_exhausted_handler 落 error
+                logger.warning("node=%s retryable=%s: %s", node_name, type(exc).__name__, exc)
+                emit_node_completed(node=node_name, status="retry", elapsed_ms=elapsed_ms)
+                raise
             logger.exception("node=%s error=%s", node_name, exc)
 
             # C1.5 监控埋点：节点抛异常（cascade fail 源头）

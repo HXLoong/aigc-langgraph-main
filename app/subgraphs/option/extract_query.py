@@ -13,13 +13,13 @@ from __future__ import annotations
 from typing import Any
 
 from app.graph.business_params import validated_query_filter
-from app.graph.safe_node import safe_node
+from app.graph.retry import io_node
 from app.graph.state import AgentState, TraceEntry
 from app.subgraphs.option.backend import call_option_backend
 from app.subgraphs.option.order_id import extract_for_query
 
 
-@safe_node
+@io_node
 async def option_extract_query(state: AgentState) -> dict[str, Any]:
     """option.extract_query 节点（query_order_status，确定性提取）。"""
     order_ids = extract_for_query(
