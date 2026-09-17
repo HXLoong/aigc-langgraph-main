@@ -20,6 +20,7 @@ from app.api.routes import router as api_router
 from app.checkpointer.factory import close_checkpointer, init_checkpointer
 from app.config import get_settings
 from app.graph.main import build_main_graph
+from app.observability import tracing
 from app.observability.metrics import emit_http_response, get_collector
 from app.tools.message_client import MessageClientHttpx
 
@@ -67,6 +68,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
 
     if checkpointer is not None:
         await close_checkpointer()
+    tracing.flush()  # ADR 0024 D5：滚动更新 / SIGTERM 不丢尾部 trace
     logger.info("stopping otc-agent-langgraph")
 
 

@@ -82,7 +82,7 @@ Java 后端业务 API → 交易系统
 ### 6. 资源层
 - `app/prompts/`：42 个 Dify 迁移提示词（.md，约 850K 字符；swap 瘦身 v2
   灰度共存中）；来源优先级 LangFuse → 本地文件（ADR 0014）
-- `app/state.py`：`make_initial_state()` + `WechatInput`（历史入口，非 shim）
+- `app/api/turn_state.py`：`inputs_to_state()`——一轮输入 → AgentState 的唯一入口（生产 routes 与 eval 共用；M1 的 `make_initial_state` 已删）
 - `app/config.py`：pydantic-settings，所有密钥走环境变量
 
 ## State 流转

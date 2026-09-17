@@ -2,11 +2,11 @@
 
 ## State 设计
 
-- 在 `app/state.py` 统一管理 `AgentState`（TypedDict）
+- 在 `app/graph/state.py` 统一管理 `AgentState`（TypedDict）；一轮输入的唯一入口是 `app/api/turn_state.py::inputs_to_state`
 - 新增字段必须：
   1. 在 TypedDict 中声明类型
   2. 若需要并行合并（如 `trace`），加 `Annotated[list, add]`
-  3. 在 `make_initial_state()` 中给默认值
+  3. per-turn 字段在 `app/nodes/ingest.py` 重置；入口 `app/api/turn_state.py::inputs_to_state` 不写业务对象默认值（ADR 0024 D2）
 
 ```python
 class AgentState(TypedDict, total=False):

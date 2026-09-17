@@ -53,9 +53,9 @@ class TestSticky:
         assert out["product_type"] == "swap"
 
 
-def test_make_initial_state_no_product_type_reset() -> None:
-    """eval 入口不得每轮重置 product_type（否则 checkpoint 粘性被覆盖）。"""
-    from app.state import make_initial_state
+def test_turn_state_entry_does_not_reset_product_type() -> None:
+    """入口不写 product_type，让 intent_route 的粘性继承读 checkpoint（ADR 0024：入口 = routes 同一路径）。"""
+    from app.api.turn_state import inputs_to_state
 
-    state = make_initial_state({"raw_content": "确认下单", "conversation_id": "c1"})
+    state = inputs_to_state({"rawContent": "确认下单", "conversationId": "c1"})
     assert "product_type" not in state

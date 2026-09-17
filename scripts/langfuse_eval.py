@@ -47,7 +47,7 @@ sys.path.insert(0, str(PROJECT_ROOT))
 from langgraph.checkpoint.memory import InMemorySaver
 from app.graph.main import build_main_graph
 from app.prompts import load_prompt
-from app.state import WechatInput, make_initial_state
+from app.api.turn_state import inputs_to_state
 from harness.golden import GoldenCase, build_overview, filter_by_category, filter_by_ids, load_golden
 from harness.multi_turn import early_stop_kind, quote_for_turn
 
@@ -74,17 +74,17 @@ def _fmt_trace(trace_entries) -> str:
 
 # ── Task ──
 async def _run_graph_once(graph, config, raw_content, has_mention=True, turn=1, quote_content=None):
-    wx = WechatInput(
-        conversation_id=config["configurable"]["thread_id"],
-        message_id=secrets.randbelow(900_000_000_000_000) + 100_000_000_000_000,
-        room_id=os.environ.get("EVAL_ROOM_ID", "eval-room"),
-        user_id=os.environ.get("EVAL_USER_ID", "eval-user"),
-        guid="",
-        raw_content=raw_content,
-        quote_content=quote_content,
-    )
-    state = make_initial_state(wx)
-    state["at_bot"] = has_mention
+    # 与生产 routes 同一条入口（ADR 0024 D2）：Dify 形态 inputs → inputs_to_state
+    state = inputs_to_state({
+        "rawContent": raw_content,
+        "quoteContent": quote_content,
+        "messageId": secrets.randbelow(900_000_000_000_000) + 100_000_000_000_000,
+        "roomId": os.environ.get("EVAL_ROOM_ID", "eval-room"),
+        "userId": os.environ.get("EVAL_USER_ID", "eval-user"),
+        "guid": "",
+        "at_bot": has_mention,
+    })
+    state["conversation_id"] = config["configurable"]["thread_id"]
     result = await graph.ainvoke(state, config=config)
     return result
 

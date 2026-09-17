@@ -163,4 +163,15 @@ async def attach_request_trace(
     return RequestTrace(handler=handler, langfuse_trace_id=langfuse_trace_id, url=url)
 
 
-__all__ = ["RequestTrace", "attach_request_trace", "parse_traceparent"]
+def flush() -> None:
+    """进程退出前把未导出的 span 刷出去（lifespan 关闭段调用；无 client 时无操作）。"""
+    client = _langfuse_client
+    if client is None:
+        return
+    try:
+        client.flush()
+    except Exception as exc:  # noqa: BLE001 - 退出路径不抛
+        logger.warning("LangFuse flush 失败：%s", exc)
+
+
+__all__ = ["RequestTrace", "attach_request_trace", "flush", "parse_traceparent"]

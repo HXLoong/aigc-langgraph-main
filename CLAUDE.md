@@ -191,9 +191,9 @@ tests/fixtures/              # categories/（现役，6 文件 / 389 条）+ uni
 | 现象 | 根因 | 文件 |
 |---|---|---|
 | 第2轮路由走了 LLM 而非 quote_marker | `_QUOTE_MARKERS` 未覆盖实际标记 | `app/nodes/intent_route.py` |
-| reply 含"无法识别"但未问标的 | `make_initial_state` 设了 `tickers=[]` 覆盖 checkpoint | `app/state.py` |
+| reply 含"无法识别"但未问标的 | 入口把 `tickers` 写成 `[]`（零命中分支误触发）；入口唯一路径是 `inputs_to_state`，不得写业务对象默认值 | `app/api/turn_state.py` |
 | option place_order 显示"互换订单参数" | render 第3分支缺 `product_type=="swap"` 条件 | `app/nodes/render.py` |
-| 多轮 tickers/params 丢失 | `make_initial_state` 不应对业务字段设默认值 | `app/state.py` |
+| 多轮 tickers/params 丢失 | 业务对象是 per-turn（ingest 清空，ADR 0024 D2）；跨轮上下文只靠 `history_messages` | `app/nodes/ingest.py` |
 | 后端返回"订单不存在" | 参数中 orderId/Q- 单号提取错误 | 子图 extract 节点 + 提示词 |
 
 ### 2. TDD 修复（强制）

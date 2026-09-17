@@ -57,7 +57,7 @@ python scripts/export_dify_prompts.py <dify-yaml-dir> <out-dir>
 ## 最佳实践
 
 ### 状态设计
-- 新增 State 字段 → 先改 `app/graph/state.py`，再在节点里用（`app/state.py` 仅剩兼容 shim）
+- 新增 State 字段 → 先改 `app/graph/state.py`，再在节点里用；per-turn 字段记得在 `app/nodes/ingest.py` 重置
 - 不要在节点里"偷偷"塞新字段（会破坏类型提示和测试）
 
 ### 节点函数
