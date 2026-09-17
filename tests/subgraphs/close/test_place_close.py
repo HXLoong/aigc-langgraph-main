@@ -182,8 +182,10 @@ class TestClosePlaceCloseNode:
         _patch_llm(monkeypatch, params)
         result = await close_place_close({"raw_text": "..."})
         trace = result.get("trace", [])
-        assert len(trace) == 1
-        decision = trace[0].decision
+        # 子图每阶段一条 + 汇总条目沿用 close_place_close 名（ADR 0024 重构 5）
+        summary = [e for e in trace if e.node == "close_place_close"]
+        assert len(summary) == 1
+        decision = summary[0].decision
         assert "orders=3" in decision
         assert "市价单" in decision
         assert "full_close=1" in decision
@@ -217,4 +219,5 @@ class TestClosePlaceCloseNode:
         )
         result = await close_place_close({"raw_text": "x"})
         assert result.get("error") is not None
-        assert result["error"].node == "close_place_close"
+        # ADR 0024 重构 5：错误归因到具体阶段
+        assert result["error"].node == "place_close_extract"

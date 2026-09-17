@@ -32,7 +32,7 @@ from app.subgraphs.close.confirm_cancel import close_confirm_cancel
 from app.subgraphs.close.confirm_close import close_confirm_close
 from app.subgraphs.close.holding_query import close_holding_query
 from app.subgraphs.close.intent import close_intent
-from app.subgraphs.close.place_close import close_place_close
+from app.subgraphs.close.place_close import build_place_close_graph
 from app.subgraphs.close.query_status import close_query_status
 
 
@@ -79,7 +79,8 @@ def build_close_graph() -> CompiledStateGraph:
     g: StateGraph = StateGraph(AgentState, output_schema=SubgraphOutput)
     g.add_node("close_intent", close_intent)
     g.add_node("close_holding_query", close_holding_query)
-    g.add_node("close_place_close", close_place_close)
+    # ADR 0024 重构 5：place_close 是子图（parse → fetch → extract → normalize → validate → submit/reject）
+    g.add_node("close_place_close", build_place_close_graph())
     g.add_node("close_confirm_close", close_confirm_close)
     g.add_node("close_cancel_close", close_cancel_close)
     g.add_node("close_confirm_cancel", close_confirm_cancel)
