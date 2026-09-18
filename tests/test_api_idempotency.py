@@ -117,6 +117,7 @@ def test_system_retry_suppresses_only_duplicate_notice_and_preserves_receipt(cli
     retry = client.post("/v1/workflows/run", json=retry_body).json()
     later = client.post("/v1/workflows/run", json=_body(901)).json()
     assert retry["answer"] == "IGNORE_REQUEST_NOT_REPLY_USER"
+    assert retry["data"]["outputs"]["reply_text"] == retry["answer"]
     assert retry["data"]["outputs"]["api_result"] == normal["answer"]
     assert retry["data"]["outputs"]["api_code"] == 900
     assert later["answer"] == normal["answer"]

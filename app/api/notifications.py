@@ -13,6 +13,7 @@ def project_retry_notification(response: dict[str, Any], inputs: Mapping[str, An
         return response
     projected = deepcopy(response)
     projected["answer"] = "IGNORE_REQUEST_NOT_REPLY_USER"
+    projected["data"]["outputs"]["reply_text"] = projected["answer"]
     projected["metadata"] = {**(projected.get("metadata") or {}),
                              "notification_suppressed": True,
                              "reason": "system_retry_duplicate"}
