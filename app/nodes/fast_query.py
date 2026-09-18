@@ -97,10 +97,7 @@ async def quick_inquiry(state: AgentState) -> dict[str, Any]:
     )
     result = await _make_option_client().operate(req)
     code = result.get("code")
-    if code == 0:
-        reply = result.get("data") or ""
-    else:
-        reply = result.get("msg") or "未知错误"
+    reply = (result.get("data") or "") if code == 0 else (result.get("msg") or "未知错误")
     return {
         "api_code": code,
         "api_result": str(reply),

@@ -16,6 +16,7 @@ from __future__ import annotations
 from typing import Any
 
 from app.execution.operations import capture_operation
+from app.extraction.identity import protect_identity_lists
 from app.extraction.locks import protect_orders
 from app.graph.state import AgentState
 from app.subgraphs.close.aggregate import sanitize_close_order_req_vo
@@ -60,9 +61,11 @@ async def call_close_backend(
     if [f for f in BotContext.from_state(state).missing_required() if f != "message_id"]:
         return {}
 
+    close_order_req_vo, identity_rejected = protect_identity_lists(state, close_order_req_vo)
     protected, rejected = protect_orders(
         state, close_order_req_vo.get("closeOrderList") or [], product="close",
     )
+    rejected = {**rejected, **identity_rejected}
     sanitized = sanitize_close_order_req_vo({**close_order_req_vo, "closeOrderList": protected})
     req = FinancialOrderOpenApiSaveReqVO(
         type=OptionIntentionType(intent),

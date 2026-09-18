@@ -67,3 +67,21 @@ async def test_locked_option_identity_protects_wire_and_returned_scope(monkeypat
         "field_records": {"option/cancel.orderList.0.orderId": FieldRecord(value=Q1, source="user", evidence=Q1, locked=True)}})
     assert client.operate.call_args.args[0].model_dump()["orderList"][0]["orderId"] == Q1
     assert result["cancel_params"]["orderList"][0]["orderId"] == Q1
+async def test_close_backend_protects_named_identity_array(monkeypatch):
+    from unittest.mock import AsyncMock, MagicMock
+
+    from app.extraction.fields import FieldRecord
+    from app.subgraphs.close import backend
+
+    original = "CO-20260918-00000001"
+    client = MagicMock(operate=AsyncMock(return_value={"code": 0, "data": "真实回执"}))
+    monkeypatch.setattr(backend, "OptionClientHttpx", lambda: client)
+    await backend.call_close_backend({
+        "message_id": 1, "user_id": "u", "room_id": "r", "conversation_id": "c",
+        "field_records": {"close/confirm_close.confirmOrderNoList.0":
+                          FieldRecord(value=original, source="user", locked=True)},
+    }, intent="close_order_confirm", close_order_req_vo={
+        "confirmOrderNoList": ["CO-20260918-00000002"],
+    })
+    payload = client.operate.await_args.args[0].model_dump(by_alias=True)
+    assert payload["closeOrderReqVO"]["confirmOrderNoList"] == [original]
