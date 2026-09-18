@@ -99,13 +99,9 @@ async def resolve_ticker_full(
     if not raw_text:
         return TickerResolution(resolved=[], hitl_pending=[])
 
-    try:
-        if filter_order_context:
-            raw_text = mask_order_context(raw_text, counterparty_shortnames or [])
-        return await _resolve_pipeline(raw_text)
-    except Exception as exc:  # noqa: BLE001
-        logger.warning("ticker resolver 异常: %s (raw=%r)", exc, raw_text[:60])
-        return TickerResolution(resolved=[], hitl_pending=[])
+    if filter_order_context:
+        raw_text = mask_order_context(raw_text, counterparty_shortnames or [])
+    return await _resolve_pipeline(raw_text)
 
 
 async def resolve_ticker(raw_text: str) -> list[TickerCandidate]:
@@ -156,18 +152,11 @@ class OrgItemInput(TypedDict):
 async def _search_goats(
     client: TickerClient, keyword_items: list[dict[str, Any]]
 ) -> list[dict[str, Any]]:
-    """单次 GOATS 批量查询（一个 orgStr 下全部 keyword 合并成一次请求），封装异常。"""
-    try:
-        req = SecuritiesInstrumentReqVO(
-            keywordItems=[
-                KeywordItem(keyword=k["keyword"], isFull=k["isFull"])
-                for k in keyword_items
-            ]
-        )
-        return await client.search_securities_instrument(req)
-    except Exception as exc:  # noqa: BLE001
-        logger.debug("securities-instrument/select 失败: %s", exc)
-        return []
+    """批量查询；故障交图层重试，空列表只表示真实零命中。"""
+    req = SecuritiesInstrumentReqVO(
+        keywordItems=[KeywordItem(keyword=k["keyword"], isFull=k["isFull"]) for k in keyword_items]
+    )
+    return await client.search_securities_instrument(req)
 
 
 async def _resolve_one_org_item(

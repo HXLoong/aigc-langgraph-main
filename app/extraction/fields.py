@@ -14,6 +14,10 @@ FieldSource = Literal["user", "inferred", "goats", "default"]
 EvidenceOrigin = Literal["raw", "quote", "history", "attachment"]
 
 
+class EvidenceError(ValueError):
+    """A model candidate cannot be traced to the supplied input."""
+
+
 class FieldCandidate(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -29,11 +33,11 @@ class FieldCandidate(BaseModel):
         key = self.origin if self.origin in {"raw", "quote"} else f"{self.origin}:{self.reference}"
         source = sources.get(key, "")
         if not self.value or not self.evidence or self.value not in self.evidence or self.evidence not in source:
-            raise ValueError("invalid field evidence")
+            raise EvidenceError("invalid field evidence")
         if re.fullmatch(r"[+-]?[0-9]+(?:\.[0-9]+)?", self.value) and not re.search(
             r"(?<![0-9.])" + re.escape(self.value) + r"(?![0-9.])", self.evidence,
         ):
-            raise ValueError("numeric evidence is part of a different value")
+            raise EvidenceError("numeric evidence is part of a different value")
         return self.value
 
 

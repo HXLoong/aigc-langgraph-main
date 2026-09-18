@@ -143,9 +143,10 @@ def test_add_io_node_rejects_function_without_io_node_decorator() -> None:
 READ_NODES: dict[str, set[str]] = {
     "main": {"intent_route", "existing_command_query"},
     "swap": {
-        "swap_intent", "swap_place_order", "swap_select_counterparty", "swap_select_ticker",
+        "swap_intent", "swap_select_counterparty", "swap_select_ticker",
         "swap_query_order", "swap_image_order", "swap_excel_order",
     },
+    "swap_place": {"swap_extract_candidates"},
     "option": {"option_intent", "option_extract_query"},
     "inquiry": {"inquiry_fast_parse", "inquiry_precheck", "inquiry_extract", "inquiry_resolve"},
     "close": {"close_intent", "close_holding_query", "close_query_status"},
@@ -173,11 +174,13 @@ def _builders() -> dict[str, Any]:
     from app.subgraphs.option.extract_inquiry import build_inquiry_graph
     from app.subgraphs.option.graph import build_option_graph
     from app.subgraphs.swap.graph import build_swap_graph
+    from app.subgraphs.swap.place_order import build_place_graph
     from app.subgraphs.ticker.graph import build_ticker_graph
 
     return {
         "main": build_main_graph().builder,
         "swap": build_swap_graph().builder,
+        "swap_place": build_place_graph().builder,
         "option": build_option_graph().builder,
         "inquiry": build_inquiry_graph().builder,
         "close": build_close_graph().builder,

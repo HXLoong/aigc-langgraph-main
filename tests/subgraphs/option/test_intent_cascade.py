@@ -71,13 +71,20 @@ async def test_option_intent_pydantic_validation_error_writes_error_to_state(
     )
     monkeypatch.setattr(intent_module, "get_qwen_structured", lambda: fake_llm)
 
-    result = await option_intent({"raw_text": "我想询价一个期权"})
+    from app.config import get_settings
+    settings = get_settings().model_copy(update={
+        "node_retry_max_attempts": 2, "node_retry_initial_interval_seconds": .001,
+    })
+    monkeypatch.setattr("app.graph.retry.get_settings", lambda: settings)
+    result = await build_option_graph().ainvoke(_BASE_STATE)
+    assert fake_llm.with_structured_output.return_value.ainvoke.await_count == 2
 
     assert result.get("error") is not None
     err = result["error"]
     assert err.node == "option_intent"
     assert "ValidationError" in err.type
     assert result.get("trace")
+
 
 
 @pytest.mark.asyncio

@@ -8,6 +8,7 @@ ADR 0001 D1 + ADR 0015：M1 smoke 已升级为含 intent_route 的端到端验�
 from __future__ import annotations
 
 import pytest
+from evidence_support import swap_candidate_output
 
 from app.graph.main import build_main_graph
 
@@ -38,7 +39,7 @@ async def test_main_graph_e2e_swap_keyword(
 
     def _patch(module: object, value: object, fn: str = "get_qwen_thinking") -> None:
         fake_llm = MagicMock()
-        fake_llm.ainvoke = AsyncMock(return_value=value)
+        fake_llm.ainvoke = AsyncMock(return_value=(swap_candidate_output(value) if isinstance(value, SwapPlaceOrderParams) else value))
         fake_base = MagicMock()
         fake_base.with_structured_output = MagicMock(return_value=fake_llm)
         monkeypatch.setattr(module, fn, lambda: fake_base)
@@ -72,12 +73,12 @@ async def test_main_graph_e2e_swap_keyword(
     graph = build_main_graph()
     final = await graph.ainvoke(
         {
-            "raw_text": "做一笔互换 100 手",
+            "raw_text": "买入一笔互换 100 手",
             "conversation_id": "smoke-1",
             "user_id": "u-smoke",
             "room_id": "r-smoke",
             "message_id": 1,
-            "message_content": "做一笔互换 100 手",
+            "message_content": "买入一笔互换 100 手",
             "history_messages": [
                 {"role": "user", "content": "上一轮消息"},
             ],
@@ -106,7 +107,7 @@ async def test_main_graph_e2e_swap_keyword(
     history = [Message.model_validate(message) for message in final["history_messages"]]
     assert [(message.role, message.content) for message in history] == [
         ("user", "上一轮消息"),
-        ("user", "做一笔互换 100 手"),
+        ("user", "买入一笔互换 100 手"),
         ("assistant", final["reply_text"]),
     ]
 

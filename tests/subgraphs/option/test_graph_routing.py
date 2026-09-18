@@ -4,6 +4,7 @@ from __future__ import annotations
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
+from evidence_support import candidate_output
 
 from app.subgraphs.option import build_option_graph
 from app.subgraphs.option import extract_cancel as cancel_module
@@ -37,7 +38,7 @@ def _patch(
     fn: str = "get_qwen_thinking",
 ) -> None:
     fake_llm = MagicMock()
-    fake_llm.ainvoke = AsyncMock(return_value=value)
+    fake_llm.ainvoke = AsyncMock(return_value=(candidate_output(value) if isinstance(value, OptionInquiryRawParams) else value))
     fake_base = MagicMock()
     fake_base.with_structured_output = MagicMock(return_value=fake_llm)
     monkeypatch.setattr(module, fn, lambda: fake_base)

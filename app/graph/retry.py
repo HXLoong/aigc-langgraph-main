@@ -19,11 +19,14 @@ from typing import Any
 
 import httpx
 import openai
+from langchain_core.exceptions import OutputParserException
 from langgraph.errors import NodeError
 from langgraph.graph import StateGraph
 from langgraph.types import RetryPolicy
+from pydantic import ValidationError
 
 from app.config import get_settings
+from app.extraction.fields import EvidenceError
 from app.graph.safe_node import safe_node
 from app.graph.state import ErrorInfo, TraceEntry
 from app.observability.metrics import emit_node_completed
@@ -38,6 +41,9 @@ IO_RETRYABLE: tuple[type[BaseException], ...] = (
     openai.APIConnectionError,
     openai.RateLimitError,
     openai.InternalServerError,
+    OutputParserException,
+    ValidationError,
+    EvidenceError,
 )
 
 _IO_NODE_FLAG = "__io_node__"

@@ -4,6 +4,7 @@ from __future__ import annotations
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
+from evidence_support import swap_candidate_output
 from pydantic import ValidationError
 
 from app.graph.state import TickerCandidate
@@ -31,7 +32,7 @@ def _patch_llm(
     monkeypatch: pytest.MonkeyPatch, params: SwapPlaceOrderParams
 ) -> AsyncMock:
     fake_llm = MagicMock()
-    fake_llm.ainvoke = AsyncMock(return_value=params)
+    fake_llm.ainvoke = AsyncMock(return_value=swap_candidate_output(params))
     fake_base = MagicMock()
     fake_base.with_structured_output = MagicMock(return_value=fake_llm)
     monkeypatch.setattr(po_module, "get_qwen_complex", lambda: fake_base)
@@ -172,7 +173,7 @@ class TestSwapPlaceOrderNode:
         )
         _patch_llm(monkeypatch, params)
         result = await swap_place_order(
-            {"raw_text": "互换下单 腾讯 1000 股 限价"}
+            {"raw_text": "互换下单 买入 腾讯 1000 股 限价"}
         )
 
         assert result["expected_action"] == "place"
@@ -233,7 +234,7 @@ class TestSwapPlaceOrderNode:
         result = await swap_place_order(
             {"raw_text": "互换下单 腾讯 100 股"}
         )
-        trace = result.get("trace", [])
+        trace = [entry for entry in result.get("trace", []) if entry.node == "swap_place_order"]
         assert len(trace) == 1
         decision = trace[0].decision
         assert "action=place" in decision
@@ -269,7 +270,7 @@ class TestSwapPlaceOrderNode:
         )
         result = await swap_place_order({"raw_text": "x"})
         assert result.get("error") is not None
-        assert result["error"].node == "swap_place_order"
+        assert result["error"].node == "swap_extract_candidates"
 
 
 class TestUserTemplateLivesInMarkdown:
@@ -280,10 +281,10 @@ class TestUserTemplateLivesInMarkdown:
         from app.subgraphs.swap.place_order import _build_user_message
 
         msg = _build_user_message(
-            {"swap_counterparties": [{"sort": "A", "shortName": "对手甲"}]},
+            {"raw_text": "买 600519 100股", "swap_counterparties": [{"sort": "A", "shortName": "对手甲"}]},
             {"raw_content_for_llm": "买 600519 100股", "quote_param_hints": "无"},
         )
-        assert "解析前先执行核心护栏6" in msg
+        assert '"sources"' in msg and '"counterparties"' in msg
         assert "买 600519 100股" in msg and "对手甲" in msg
         assert "{{" not in msg
 

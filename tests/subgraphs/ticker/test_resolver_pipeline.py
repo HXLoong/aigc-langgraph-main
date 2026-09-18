@@ -278,7 +278,7 @@ async def test_dedup_across_org_items_same_wind_code(
 
 
 @pytest.mark.asyncio
-async def test_pipeline_exception_returns_empty_not_raises(
+async def test_pipeline_exception_propagates_to_parent_graph(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setattr(
@@ -289,9 +289,8 @@ async def test_pipeline_exception_returns_empty_not_raises(
     monkeypatch.setattr(resolver_mod, "split_ticker_keywords", AsyncMock(return_value={}))
     monkeypatch.setattr(resolver_mod, "judge_ticker_type", AsyncMock(return_value={}))
 
-    resolution = await resolve_ticker_full("贵州茅台")
-
-    assert resolution == TickerResolution(resolved=[], hitl_pending=[])
+    with pytest.raises(RuntimeError, match="boom"):
+        await resolve_ticker_full("贵州茅台")
 
 
 # ============================================================

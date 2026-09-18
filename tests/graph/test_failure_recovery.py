@@ -33,7 +33,7 @@ async def test_two_failed_swap_selection_branches_merge_without_crashing(monkeyp
     model = MagicMock()
     model.with_structured_output.return_value.ainvoke = AsyncMock(side_effect=ValueError("bad output"))
     monkeypatch.setattr(graph_module, "swap_intent", intent)
-    monkeypatch.setattr(graph_module, "swap_place_order", extract)
+    monkeypatch.setattr(graph_module, "build_place_graph", lambda: extract)
     monkeypatch.setattr(select_counterparty, "get_qwen_complex", lambda: model)
     monkeypatch.setattr(select_ticker, "get_qwen_complex", lambda: model)
     backend = AsyncMock()

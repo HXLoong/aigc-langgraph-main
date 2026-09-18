@@ -24,6 +24,7 @@ from __future__ import annotations
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
+from evidence_support import swap_candidate_output
 
 import app.subgraphs.swap.multimodal as mm_module
 import app.subgraphs.swap.select_counterparty as sc_module
@@ -68,7 +69,7 @@ def _patch(
     fn: str = "get_qwen_thinking",
 ) -> AsyncMock:
     fake_llm = MagicMock()
-    fake_llm.ainvoke = AsyncMock(return_value=value)
+    fake_llm.ainvoke = AsyncMock(return_value=(swap_candidate_output(value) if module is po_module and isinstance(value, SwapPlaceOrderParams) else value))
     fake_base = MagicMock()
     fake_base.with_structured_output = MagicMock(return_value=fake_llm)
     monkeypatch.setattr(module, fn, lambda: fake_base)
@@ -261,7 +262,7 @@ class TestSwapGraphEndToEnd:
         graph = build_swap_graph()
         final = await graph.ainvoke(dict(_BASE_STATE))
 
-        trace_nodes = [e.node for e in final.get("trace", [])]
+        trace_nodes = [e.node for e in final.get("trace", []) if e.node not in {"swap_extract_candidates", "swap_normalize", "swap_resolve", "swap_place_result"}]
         assert trace_nodes == [
             "swap_intent", "swap_place_order", "swap_recognize_fresh_counterparty",
             "swap_place_order_submit",
@@ -313,6 +314,7 @@ class TestSwapGraphEndToEnd:
         final = await graph.ainvoke(
             {
                 **_BASE_STATE,
+                "raw_text": _BASE_STATE["raw_text"] + " H-1",
                 "quote_content": "订单H-1（序号1）：",
                 "swap_counterparties": [{"shortName": "临沂阿凡提", "sort": "A"}],
                 "quote_ticker_candidates": [
@@ -327,7 +329,7 @@ class TestSwapGraphEndToEnd:
             }
         )
 
-        trace_nodes = [e.node for e in final.get("trace", [])]
+        trace_nodes = [e.node for e in final.get("trace", []) if e.node not in {"swap_extract_candidates", "swap_normalize", "swap_resolve", "swap_place_result"}]
         # 选对手 ‖ 选标的 并行，两者顺序不定；其余节点顺序固定
         assert trace_nodes[:2] == ["swap_intent", "swap_place_order"]
         assert set(trace_nodes[2:4]) == {"swap_select_counterparty", "swap_select_ticker"}
@@ -358,7 +360,7 @@ class TestSwapGraphEndToEnd:
             }
         )
 
-        trace_nodes = [e.node for e in final.get("trace", [])]
+        trace_nodes = [e.node for e in final.get("trace", []) if e.node not in {"swap_extract_candidates", "swap_normalize", "swap_resolve", "swap_place_result"}]
         assert trace_nodes == ["swap_image_order", "swap_place_order_submit"]
         assert final["place_params"]["orderList"][0]["placeOrderWindCode"] == "600519.SH"
 
@@ -371,7 +373,7 @@ class TestSwapGraphEndToEnd:
         graph = build_swap_graph()
         final = await graph.ainvoke({**_BASE_STATE, "raw_text": "你好啊"})
 
-        trace_nodes = [e.node for e in final.get("trace", [])]
+        trace_nodes = [e.node for e in final.get("trace", []) if e.node not in {"swap_extract_candidates", "swap_normalize", "swap_resolve", "swap_place_result"}]
         assert "swap_intent" in trace_nodes
         assert "swap_unknown" in trace_nodes
         assert "swap_place_order" not in trace_nodes
@@ -393,7 +395,7 @@ class TestSwapGraphEndToEnd:
         final = await graph.ainvoke(dict(_BASE_STATE))
 
         assert final.get("error") is not None
-        trace_nodes = [e.node for e in final.get("trace", [])]
+        trace_nodes = [e.node for e in final.get("trace", []) if e.node not in {"swap_extract_candidates", "swap_normalize", "swap_resolve", "swap_place_result"}]
         assert "swap_unknown" in trace_nodes
         for unexpected in (
             "swap_place_order",

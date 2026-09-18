@@ -6,6 +6,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import httpx
 import pytest
+from evidence_support import candidate_output
 
 from app.nodes.render import render
 from app.subgraphs.swap import backend, place_order
@@ -38,7 +39,7 @@ async def test_swap_request_and_backend_reply_survive_real_http_chain(
         SwapOrderItem(
             placeOrderWindCode=symbol, placeOrderQuantity=quantity,
             placeOrderOrderDirection="SELL", placeOrderQuantityUnit="SHARE",
-            placeOrderPriceType="MarketOrder" if case == 0 else "LimitOrder",
+            placeOrderPriceType="MarketOrder" if case == 0 else None,
             placeOrderPrice=None if case == 0 else price,
             placeOrderAlgorithmType="POV" if case == 0 else "TWAP",
             placeOrderPovPercent=7 if case == 0 else None,
@@ -50,7 +51,7 @@ async def test_swap_request_and_backend_reply_survive_real_http_chain(
     ])
     original = params.model_dump()
     extract_llm = MagicMock()
-    extract_llm.with_structured_output.return_value.ainvoke = AsyncMock(return_value=params)
+    extract_llm.with_structured_output.return_value.ainvoke = AsyncMock(return_value=candidate_output(params, spellings={"SELL": "卖出", "SHARE": "股", "MarketOrder": "不限价", "POV": "pov", "TWAP": "均价", "1453": "1453" if case == 0 else "1,453", "3071": "3071" if case == 0 else "3,071"}))
     monkeypatch.setattr(place_order, "get_qwen_complex", lambda: extract_llm)
     patch_recognition(monkeypatch, {"hasSignal": True, "matches": [
         {"shortName": SHORTNAME, "evidence": SHORTNAME},
