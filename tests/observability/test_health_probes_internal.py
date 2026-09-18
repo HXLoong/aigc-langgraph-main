@@ -29,7 +29,7 @@ from app.observability import health_probes as hp
 def _fake_settings(**overrides) -> SimpleNamespace:
     """构造 settings stub。默认所有 probe 都"已配置"（待 _check 真跑）。"""
     base = {
-        "checkpoint_mysql_uri": "mysql://user:pw@127.0.0.1:3306/test_db",
+        "mysql_uri": "mysql://user:pw@127.0.0.1:3306/test_db",
         "enable_langfuse": True,
         "langfuse_base_url": "http://langfuse:3000",
         "qwen_api_base": "http://qwen:8000/v1",
@@ -77,8 +77,8 @@ async def test_probe_mysql_ok() -> None:
 
 @pytest.mark.asyncio
 async def test_probe_mysql_no_uri_returns_fail() -> None:
-    """checkpoint_mysql_uri 空 → RuntimeError('no_uri') → fail。"""
-    fake = _fake_settings(checkpoint_mysql_uri="")
+    """mysql_uri 空 → RuntimeError('no_uri') → fail。"""
+    fake = _fake_settings(mysql_uri="")
     with patch("app.config.get_settings", return_value=fake):
         result = await hp.probe_mysql()
     assert result.status == "fail"

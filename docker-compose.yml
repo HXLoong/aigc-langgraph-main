@@ -1,15 +1,14 @@
 # LangGraph 使用外部 Java MySQL；先在选中的数据库执行 sql/init.sql。
 # 容器连接宿主机：URI 主机用 host.docker.internal，不要用 localhost。
-# .env 的两个 URI 指向同一数据库；本 Compose 不创建 MySQL 或数据库。
+# .env 的 MYSQL_URI 指向 Java 数据库；本 Compose 不创建 MySQL 或数据库。
 
 services:
   app:
     build: .
     container_name: otc-agent-app
     environment:
-      # 业务库
-      CHECKPOINT_MYSQL_URI: ${CHECKPOINT_MYSQL_URI:?set shared Java database URI}
-      BUSINESS_MYSQL_URI: ${BUSINESS_MYSQL_URI:?set shared Java database URI}
+      # checkpoint、审计与幂等共用 Java 数据库
+      MYSQL_URI: ${MYSQL_URI:?set shared Java database URI}
       # LangFuse（ADR 0014）— 默认关闭，开启后需配 API Key
       ENABLE_LANGFUSE: "${ENABLE_LANGFUSE:-false}"
       # host.docker.internal 让容器内的 app 能访问宿主机上的 LangFuse 容器（macOS/Windows）
@@ -24,4 +23,3 @@ services:
     ports:
       - "8000:8000"
     command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
-

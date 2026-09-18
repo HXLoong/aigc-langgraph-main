@@ -80,12 +80,12 @@ async def _write_to_mysql(
 ) -> None:
     """批量写 trace 到 node_trace 表。
 
-    若 BUSINESS_MYSQL_URI 未配置或不可达，抛异常被上层捕获。
+    若 MYSQL_URI 未配置或不可达，抛异常被上层捕获。
     """
     settings = get_settings()
-    uri = settings.business_mysql_uri
+    uri = settings.mysql_uri
     if not uri:
-        raise RuntimeError("BUSINESS_MYSQL_URI 未配置")
+        raise RuntimeError("MYSQL_URI 未配置")
 
     host, port, user, password, db = _parse_mysql_uri(uri)
 

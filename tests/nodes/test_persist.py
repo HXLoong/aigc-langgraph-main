@@ -147,11 +147,11 @@ async def test_persist_mysql_failure_does_not_break() -> None:
 
 
 @pytest.mark.asyncio
-async def test_persist_missing_business_uri_does_not_crash() -> None:
-    """BUSINESS_MYSQL_URI 未配置时也不应崩。"""
+async def test_persist_missing_mysql_uri_does_not_crash() -> None:
+    """MYSQL_URI 未配置时也不应崩。"""
     trace = [TraceEntry(node="swap.intent")]
     with patch("app.nodes.persist.get_settings") as mock_settings:
-        mock_settings.return_value.business_mysql_uri = ""
+        mock_settings.return_value.mysql_uri = ""
         result = await persist({"trace": trace, "message_id": "m1", "conversation_id": "c1"})
     # 业务流程仍然正常
     assert "error" not in result

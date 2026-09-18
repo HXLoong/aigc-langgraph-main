@@ -95,10 +95,10 @@ class MySQLIdempotencyStore:
     """Persist a claim before execution and a complete HTTP snapshot afterwards."""
 
     def __init__(
-        self, business_mysql_uri: str, *, timeout_seconds: float = 5.0,
+        self, mysql_uri: str, *, timeout_seconds: float = 5.0,
         processing_timeout_seconds: float = 120.0,
     ) -> None:
-        self._conn_args = _parse_mysql_uri(business_mysql_uri)
+        self._conn_args = _parse_mysql_uri(mysql_uri)
         self._timeout = timeout_seconds
         self._processing_timeout = processing_timeout_seconds
 

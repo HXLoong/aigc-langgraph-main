@@ -20,7 +20,7 @@ async def test_shared_schema_roundtrip_and_startup_validation():
     clean = re.sub(r"(?m)^\s*--.*$", "", sql)
     assert not re.search(r"CREATE\s+DATABASE|\bUSE\b|\bGRANT\b", clean, re.I), "unsafe initializer"
     cls = importlib.import_module("app.checkpointer.mysql").LangGraphMySQLSaver
-    args = AIOMySQLSaver.parse_conn_string(get_settings().checkpoint_mysql_uri)
+    args = AIOMySQLSaver.parse_conn_string(get_settings().mysql_uri)
     assert args["host"] in {"localhost", "127.0.0.1"}
     database = "langgraph_test_" + uuid.uuid4().hex[:16]
     admin = await aiomysql.connect(**{**args, "db": None}, autocommit=True)

@@ -19,6 +19,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from app.config import get_settings
 from app.llm import clients as llm_clients
 from app.prompts import load_prompt
+from app.storage.mysql import connection_args
 from app.tools.ticker_client import TickerClientHttpx
 from harness.cli import _doctor, _render_markdown, _report_case, _summarize, _turn_diffs
 from harness.golden import GoldenCase, filter_by_ids, load_golden
@@ -99,10 +100,9 @@ class LocalJavaMessages:
 
 async def run(args: argparse.Namespace) -> int:
     settings = get_settings()
-    for url in (args.base_url, settings.otc_api_base_url, settings.business_mysql_uri):
+    for url in (args.base_url, settings.otc_api_base_url, settings.mysql_uri):
         require_local(url)
-    if not settings.eval_java_database:
-        raise ValueError("EVAL_JAVA_DATABASE must name the running local Java database")
+    database_args = connection_args(settings.mysql_uri)
     if not settings.eval_user_id or not settings.eval_room_id:
         raise ValueError("EVAL_USER_ID and EVAL_ROOM_ID are required")
     gate = await _doctor(args.base_url, checkpoint="mysql", backend="real")
@@ -117,11 +117,8 @@ async def run(args: argparse.Namespace) -> int:
     run_id = f"local-{time.strftime('%Y%m%d-%H%M%S')}"
     directory = Path(args.out or ".harness-runs") / run_id
     directory.mkdir(parents=True, exist_ok=False)
-    address = urlsplit(settings.business_mysql_uri)
     pool = await aiomysql.create_pool(
-        host=address.hostname, port=address.port or 3306, user=address.username,
-        password=address.password, db=settings.eval_java_database, autocommit=True,
-        charset="utf8mb4", minsize=1, maxsize=args.concurrency,
+        **database_args, autocommit=True, minsize=1, maxsize=args.concurrency,
     )
     fixtures = LocalJavaMessages(pool, run_id)
     semaphore = asyncio.Semaphore(args.concurrency)

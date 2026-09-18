@@ -60,10 +60,10 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     # ADR 0024 D4：请求级幂等 store（生产开启；业务库 message_log）
     app.state.idempotency_store = None
     if getattr(settings, "request_idempotency", False):
-        if not settings.business_mysql_uri:
-            raise RuntimeError("REQUEST_IDEMPOTENCY=true 需要 BUSINESS_MYSQL_URI")
+        if not settings.mysql_uri:
+            raise RuntimeError("REQUEST_IDEMPOTENCY=true 需要 MYSQL_URI")
         app.state.idempotency_store = MySQLIdempotencyStore(
-            settings.business_mysql_uri, timeout_seconds=settings.persist_timeout_seconds
+            settings.mysql_uri, timeout_seconds=settings.persist_timeout_seconds
         )
         logger.info("request idempotency store 已接线（message_log）")
     app.state.main_graph = build_main_graph(

@@ -76,7 +76,7 @@ mysql -h <HOST> -u <USER> -p -e "SELECT VERSION();"
 mysql -h <HOST> -P <PORT> -u <USER> -p --database=<JAVA_DATABASE> < sql/init.sql
 ```
 
-九张表均带 `langgraph_` 前缀，使用 `utf8mb4_general_ci`。两个 MySQL URI 选择同一库。
+九张表均带 `langgraph_` 前缀，使用 `utf8mb4_general_ci`。只需配置 `MYSQL_URI`，选择 Java 现有数据库。
 应用启动只校验结构和版本，不自动建表；运行账号只需自身前缀表的读写权限及元数据可见性。
 初始化/后续结构升级由具备 DDL 权限的部署账号执行。旧独立库保留，不自动迁移、删除历史。
 容器访问宿主机 MySQL 时使用 `host.docker.internal`，不要在容器内使用 localhost 指代宿主机。
@@ -139,7 +139,7 @@ chmod 600 .env  # 限制读权限
 
 参考 `.env.customer.template` 11 节注释。最少必填：
 
-- `CHECKPOINT_MYSQL_URI` / `BUSINESS_MYSQL_URI`（§2）
+- `MYSQL_URI`（§2）
 - `QWEN_API_BASE` / `QWEN_API_KEY` / `QWEN_MODEL_STANDARD`（DeepSeek）
 - `OTC_API_BASE_URL` / `OTC_API_SECRET`
 - `LANGFUSE_HOST` / `LANGFUSE_PUBLIC_KEY` / `LANGFUSE_SECRET_KEY`（§3）

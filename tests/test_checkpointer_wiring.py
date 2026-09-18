@@ -107,7 +107,7 @@ class _FakeSaver:
 
 def _pool_settings() -> SimpleNamespace:
     return SimpleNamespace(
-        checkpoint_mysql_uri="mysql://u:p@h:3307/db",
+        mysql_uri="mysql://u:p@h:3307/db",
         checkpoint_pool_minsize=2,
         checkpoint_pool_maxsize=7,
         checkpoint_pool_recycle_seconds=1234,

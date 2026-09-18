@@ -46,7 +46,7 @@
 pip install -e ".[dev]"
 
 # 2. 启动依赖
-# 先在 Java 现有数据库执行初始化；两个 MySQL URI 指向同一库
+# 先在 Java 现有数据库执行初始化；MYSQL_URI 为唯一数据库连接配置
 mysql -h <HOST> -P <PORT> -u <USER> -p --database=<JAVA_DATABASE> < sql/init.sql
 docker compose -f infra/langfuse/docker-compose.yml --env-file infra/langfuse/.env up -d
 

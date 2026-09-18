@@ -1,4 +1,4 @@
-"""Business database only; checkpoint migrations belong to AIOMySQLSaver."""
+"""共享 Java 数据库中的业务表迁移；checkpoint 表由 sql/init.sql 初始化。"""
 from __future__ import annotations
 
 import asyncio
@@ -19,7 +19,7 @@ def run_sync(connection: Connection) -> None:
 
 
 async def run_online() -> None:
-    engine = create_async_engine(get_settings().business_mysql_uri, poolclass=NullPool,
+    engine = create_async_engine(get_settings().mysql_uri, poolclass=NullPool,
                                  connect_args={"charset": "utf8mb4", "init_command": SESSION_INIT})
     try:
         async with engine.connect() as connection:

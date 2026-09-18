@@ -11,7 +11,7 @@ from app.config import get_settings
 
 @pytest.mark.skipif(os.getenv("RUN_LOCAL_MYSQL_TESTS") != "1", reason="requires local MySQL")
 async def test_failed_http_snapshot_survives_a_new_store_instance():
-    uri = get_settings().business_mysql_uri
+    uri = get_settings().mysql_uri
     address = urlsplit(uri)
     assert address.hostname in {"127.0.0.1", "localhost", "::1"}
     assert address.path == "/otc_goats_ai_trading_dev"

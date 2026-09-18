@@ -60,7 +60,7 @@ async def run(days: int, execute: bool) -> dict[str, int]:
     from app.config import get_settings
 
     cutoff = cutoff_iso(days)
-    conn_kw = _parse_mysql_uri(get_settings().checkpoint_mysql_uri)
+    conn_kw = _parse_mysql_uri(get_settings().mysql_uri)
     conn = await aiomysql.connect(autocommit=False, **conn_kw)
     stats: dict[str, int] = {"stale_threads": 0}
     try:

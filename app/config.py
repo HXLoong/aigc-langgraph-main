@@ -13,11 +13,9 @@ class Settings(BaseSettings):
         extra="ignore",
     )
 
-    # === MySQL：两个连接配置指向同一 Java 数据库，langgraph_ 表隔离 ===
-    # checkpoint：给 AIOMySQLSaver 用，需要 mysql://user:pass@host:port/db 格式
-    checkpoint_mysql_uri: str = Field(..., description="Java 共库连接，保存 langgraph_ checkpoint 表")
-    # 业务：给 SQLAlchemy 用，需要 mysql+aiomysql://user:pass@host:port/db 格式
-    business_mysql_uri: str = Field(..., description="同一 Java 共库连接，保存 langgraph_ 审计与幂等表")
+    # === MySQL：与 Java 共库，checkpoint、审计与幂等共用一个连接配置 ===
+    # 格式 mysql+aiomysql://user:password@host:port/database，表名以 langgraph_ 隔离。
+    mysql_uri: str = Field(..., description="Java 共库连接，保存 langgraph_ checkpoint、审计与幂等表")
 
     # === LLM ===
     qwen_api_base: str
@@ -66,7 +64,6 @@ class Settings(BaseSettings):
     eval_room_id: str = ""
     eval_user_id: str = ""
     eval_guid: str = ""
-    eval_java_database: str = ""
 
     # 标的池 MySQL（直连查询）—— 凭据走 .env，源码里只留空默认值
     ticker_mysql_host: str = ""

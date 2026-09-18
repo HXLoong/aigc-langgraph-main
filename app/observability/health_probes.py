@@ -43,7 +43,7 @@ async def _timed(target: str, coro: Awaitable[Any]) -> tuple[ProbeStatus, str | 
 
 
 async def probe_mysql() -> ProbeResult:
-    """SELECT 1：saver 已接线时打 saver 自己的连接池（ADR 0024 D4），否则直连 checkpoint_mysql_uri。"""
+    """SELECT 1：saver 已接线时打 saver 自己的连接池（ADR 0024 D4），否则直连 mysql_uri。"""
     from app.checkpointer import factory as checkpointer_factory
     from app.config import get_settings
 
@@ -56,7 +56,7 @@ async def probe_mysql() -> ProbeResult:
 
         import aiomysql
 
-        uri = get_settings().checkpoint_mysql_uri
+        uri = get_settings().mysql_uri
         if not uri:
             raise RuntimeError("no_uri")
         parsed = urlparse(uri)

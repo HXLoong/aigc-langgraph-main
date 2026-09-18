@@ -53,14 +53,27 @@ def test_local_eval_accepts_loopback_targets(url):
 async def test_java_database_must_be_explicit_before_any_network_call(monkeypatch):
     module = importlib.import_module("scripts.local_eval")
     settings = module.get_settings().model_copy(update={
-        "eval_java_database": "", "eval_user_id": "u", "eval_room_id": "r",
+        "mysql_uri": "mysql+aiomysql://user:pass@localhost:3308",
+        "eval_user_id": "u", "eval_room_id": "r",
     })
     monkeypatch.setattr(module, "get_settings", lambda: settings)
     doctor = AsyncMock(return_value=2)
     monkeypatch.setattr(module, "_doctor", doctor)
-    with pytest.raises(ValueError, match="EVAL_JAVA_DATABASE"):
+    with pytest.raises(ValueError, match="database"):
         await module.run(SimpleNamespace(base_url="http://127.0.0.1:8201"))
     doctor.assert_not_called()
+
+
+async def test_local_eval_uses_mysql_uri_without_separate_database_setting(monkeypatch):
+    module = importlib.import_module("scripts.local_eval")
+    monkeypatch.setattr(module, "get_settings", lambda: SimpleNamespace(
+        mysql_uri="mysql+aiomysql://user:pass@localhost:3308/shared_java",
+        otc_api_base_url="http://127.0.0.1:48080", eval_user_id="u", eval_room_id="r",
+    ))
+    doctor = AsyncMock(return_value=2)
+    monkeypatch.setattr(module, "_doctor", doctor)
+    assert await module.run(SimpleNamespace(base_url="http://127.0.0.1:8201")) == 2
+    doctor.assert_awaited_once()
 
 
 def test_empirical_percentiles_include_tail_for_small_samples():

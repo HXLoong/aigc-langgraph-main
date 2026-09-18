@@ -53,7 +53,7 @@ async def init_checkpointer() -> AIOMySQLSaver:
     settings = get_settings()
     logger.info("正在初始化 MySQL Checkpointer（连接池）...")
 
-    conn_kwargs = connection_args(settings.checkpoint_mysql_uri)
+    conn_kwargs = connection_args(settings.mysql_uri)
     _pool = await aiomysql.create_pool(
         **conn_kwargs,
         autocommit=True,  # 社区包硬要求
