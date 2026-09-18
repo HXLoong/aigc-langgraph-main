@@ -24,17 +24,26 @@ from app.graph.safe_node import safe_node
 from app.graph.state import AgentState, TraceEntry
 from app.subgraphs.option.backend import call_option_backend
 from app.subgraphs.option.models import OptionConfirmPlaceParams
-from app.subgraphs.option.place_params import history_texts, parse_confirm_place_params
+from app.subgraphs.option.place_params import (
+    OrderScopeError,
+    history_texts,
+    parse_confirm_place_params,
+)
 
 
 @safe_node
 async def option_extract_confirm_place(state: AgentState) -> dict[str, Any]:
     """option.extract_confirm_place 节点（confirm_order）。"""
-    parsed = parse_confirm_place_params(
-        state.get("raw_text"),
-        state.get("quote_content"),
-        history_texts(state.get("history_messages")),
-    )
+    try:
+        parsed = parse_confirm_place_params(
+            state.get("raw_text"),
+            state.get("quote_content"),
+            history_texts(state.get("history_messages")),
+        )
+    except OrderScopeError as exc:
+        return {"reply_text": str(exc), "trace": [TraceEntry(
+            node="option_extract_confirm_place", decision="order_scope_unresolved",
+        )]}
     if parsed and all(item.get("order_id") is None for item in parsed):
         # 裸确认下单 → 上一轮询价卡记下的单号（ADR 0024 D4）；引用卡里的单号已在 parsed 里优先
         remembered = memory_order_ids(state, "option")

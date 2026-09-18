@@ -12,6 +12,7 @@ prompt：`app/prompts/option/intent.md`（Dify DSL v2 同步版，node_id=175507
 """
 from __future__ import annotations
 
+import re
 from typing import Any
 
 from app.graph.retry import io_node
@@ -32,6 +33,8 @@ SPEC = register(PromptSpec(
 #: 兼容旧测试 / 调用点：user 消息拼装已收敛到 app/subgraphs/option/prompting.intent_user
 _build_user_message = intent_user
 
+_NEGATED_CONFIRM = re.compile(r"(?:不要|别|暂不|不再|取消|禁止|无需|先不|不想)[^。！!？?；;\n]{0,8}确认下单")
+
 
 @io_node
 async def option_intent(state: AgentState) -> dict[str, Any]:
@@ -45,6 +48,11 @@ async def option_intent(state: AgentState) -> dict[str, Any]:
     quote = state.get("quote_content") or ""
 
     # === 确定性快速路径（调 LLM 前） ===
+    if _NEGATED_CONFIRM.search(raw):
+        return {
+            "intent": "unknown_intent",
+            "trace": [TraceEntry(node="option_intent", decision="negated_confirmation")],
+        }
     if raw.strip() == "-":
         return {
             "intent": "confirm_order",

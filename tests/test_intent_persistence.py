@@ -115,7 +115,10 @@ def test_set_intent_failure_returns_502_and_persists_failure_trace(
         })
 
     assert response.status_code == 502, response.text
-    assert response.json() == {"detail": "消息会话与意图持久化失败，请稍后重试。"}
+    assert response.json() == {
+        "code": "internal_server_error", "status": 502,
+        "message": "消息会话与意图持久化失败，请稍后重试。",
+    }
     trace = isolated_workflow.call_args.args[0]
     assert any(entry.node == "persist_intent" and entry.decision == "error" for entry in trace)
 

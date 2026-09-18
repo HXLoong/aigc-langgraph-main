@@ -16,7 +16,7 @@ import uuid
 from typing import Any, Literal
 
 from fastapi import APIRouter, HTTPException, Request
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, computed_field
 
 from app.api.idempotency import PROCESSING_NOTICE, IdempotencyStore
 from app.api.turn_state import inputs_to_state
@@ -42,6 +42,8 @@ class DifyWorkflowRunRequest(BaseModel):
     model_config = ConfigDict(extra="allow")
 
     inputs: dict[str, Any] = Field(default_factory=dict)
+    query: str | None = None
+    files: list[dict[str, Any]] | None = None
     conversation_id: str | None = Field(
         default=None, description="Java 会话 ID；非空时原样复用，兼容 inputs 中的两种别名",
     )
@@ -76,6 +78,25 @@ class DifyWorkflowRunResponse(BaseModel):
     conversation_id: str = Field(alias="conversationId")
     answer: str
     data: DifyWorkflowRunData
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    event: Literal["message"] = "message"
+    mode: Literal["advanced-chat"] = "advanced-chat"
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+    @computed_field(alias="conversation_id")
+    @property
+    def canonical_conversation_id(self) -> str:
+        return self.conversation_id
+
+    @computed_field
+    @property
+    def message_id(self) -> str:
+        return self.id
+
+    @computed_field
+    @property
+    def created_at(self) -> int:
+        return self.data.created_at
 
 
 # ============================================================
@@ -105,7 +126,17 @@ async def run_workflow(
 
     # 把 inputs 解构成 AgentState（按 contracts §2.1 §3.1 的 9 个机器人上下文字段）
     try:
-        initial_state = inputs_to_state(req.inputs)
+        inputs = dict(req.inputs)
+        if req.query is not None and not any(
+            key in inputs for key in ("rawContent", "raw_content", "raw_text", "messageContent", "message_content")
+        ):
+            inputs["raw_content"] = req.query
+        if req.files is not None:
+            for key in ("files", "sysFiles"):
+                if key in inputs and inputs[key] != req.files:
+                    raise ValueError("顶层 files 与 inputs 附件冲突")
+            inputs["files"] = req.files
+        initial_state = inputs_to_state(inputs)
         conversation_id = _resolve_conversation_id(req)
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
@@ -206,6 +237,9 @@ async def run_workflow(
         raise HTTPException(
             status_code=502, detail="消息会话与意图持久化失败，请稍后重试。",
         )
+
+    if status == "failed" and not final_state.get("reply_text"):
+        raise HTTPException(status_code=502, detail="指令处理失败，请稍后重试。")
 
     outputs = _state_to_outputs(final_state)
     # 业务审计 ID：与 node_trace.trace_id / config.metadata.trace_id 同源，恒定暴露

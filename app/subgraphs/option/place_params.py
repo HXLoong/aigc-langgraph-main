@@ -80,31 +80,30 @@ _ORDINAL_VALUES = {
 }
 
 
+class OrderScopeError(ValueError):
+    """User-provided order scope cannot be resolved without guessing."""
+
+
 def _ordinal_number(token: str) -> int | None:
     return int(token) if token.isdigit() else _ORDINAL_VALUES.get(token)
 
 
-def _split_ordinal_segments(raw: str) -> list[str]:
-    """按"第N个单 / 第N笔"把 raw 切成逐单片段（按序号升序）。
-
-    批量补参场景（多询价下多单）："第一个单 …\n第二个单 …"，每段参数只作用于
-    对应序号订单。标记不足 2 个、序号不可解析或重复 → 返回 []（调用方回退旧行为）。
-    """
+def _split_ordinal_segments(raw: str) -> list[tuple[int, str]]:
+    """保留用户指定序号及顺序；重复和无效序号必须纠错。"""
     matches = list(_ORDINAL_SEGMENT_RE.finditer(raw))
-    if len(matches) < 2:
+    if not matches:
         return []
     numbered: list[tuple[int, str]] = []
     for index, match in enumerate(matches):
         number = _ordinal_number(match.group(1))
-        if number is None:
-            return []
+        if number is None or number < 1:
+            raise OrderScopeError("订单序号无效，请按引用中的序号补充参数。")
         start = match.end()
         end = matches[index + 1].start() if index + 1 < len(matches) else len(raw)
         numbered.append((number, raw[start:end].strip(" \t\r\n，,、；;。.")))
     if len({number for number, _ in numbered}) != len(numbered):
-        return []
-    numbered.sort(key=lambda item: item[0])
-    return [segment for _, segment in numbered]
+        raise OrderScopeError("订单序号重复，请按引用中的序号补充参数。")
+    return numbered
 
 # ============================================================
 # B 类：raw 优先 → 引用回执兜底
@@ -347,14 +346,17 @@ def parse_place_params(
 
     # 多单分段：段与引用回执订单按下标一一对应时才生效（数量不符不猜测映射）
     segments = _split_ordinal_segments(raw_text)
-    if len(segments) >= 2 and len(segments) == len(reference["order_ids"]):
+    if segments:
+        order_ids = reference["order_ids"]
+        if any(number > len(order_ids) or order_ids[number - 1] is None for number, _ in segments):
+            raise OrderScopeError("订单序号超出引用范围，请重新引用订单消息。")
         return [
             _item(
-                order_id,
+                order_ids[number - 1],
                 _a_class_params(segment, context),
                 _extract_fast_execution(segment),
             )
-            for segment, order_id in zip(segments, reference["order_ids"], strict=True)
+            for number, segment in segments
         ]
 
     common = _a_class_params(raw_text, context)
@@ -368,23 +370,9 @@ def parse_confirm_place_params(
     history_texts: Sequence[str] = (),
 ) -> list[dict[str, Any]]:
     """确认下单（confirm_order）的订单条目（A 类不含 hasFastExecutionIntent）。"""
-    raw_text = raw or ""
-    quote_text = quote or ""
-    context = "\n".join(text for text in (quote_text, *history_texts) if text)
-
-    common = _a_class_params(raw_text, context)
-    reference = _reference_fields(raw_text, quote_text)
-
     return [
-        {
-            "order_id": order_id,
-            "stock_code": reference["stock_code"],
-            "option_type": reference["option_type"],
-            "tenor": reference["tenor"],
-            "strike_percentage": reference["strike_percentage"],
-            **common,
-        }
-        for order_id in reference["order_ids"]
+        {key: value for key, value in item.items() if key != "has_fast_execution_intent"}
+        for item in parse_place_params(raw, quote, history_texts)
     ]
 
 

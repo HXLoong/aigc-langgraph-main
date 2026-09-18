@@ -21,7 +21,7 @@ from app.graph.safe_node import safe_node
 from app.graph.state import AgentState, TraceEntry
 from app.subgraphs.option.backend import call_option_backend
 from app.subgraphs.option.models import OptionPlaceParams
-from app.subgraphs.option.place_params import history_texts, parse_place_params
+from app.subgraphs.option.place_params import OrderScopeError, history_texts, parse_place_params
 
 
 @safe_node
@@ -32,11 +32,16 @@ async def option_extract_place(state: AgentState) -> dict[str, Any]:
     - expected_action="place" + place_params: {orderList}
     - trace: 单条 TraceEntry，记录订单数 + orderType 分布
     """
-    parsed = parse_place_params(
-        state.get("raw_text"),
-        state.get("quote_content"),
-        history_texts(state.get("history_messages")),
-    )
+    try:
+        parsed = parse_place_params(
+            state.get("raw_text"),
+            state.get("quote_content"),
+            history_texts(state.get("history_messages")),
+        )
+    except OrderScopeError as exc:
+        return {"reply_text": str(exc), "trace": [TraceEntry(
+            node="option_extract_place", decision="order_scope_unresolved",
+        )]}
     validated = OptionPlaceParams.model_validate({"orderList": parsed})
     order_list = [item.model_dump() for item in validated.order_list]
 

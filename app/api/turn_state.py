@@ -11,7 +11,7 @@ from app.graph.state import AgentState
 
 # Dify inputs 字段名（Java 透传）→ AgentState 字段名 映射
 INPUT_FIELD_ALIASES = {
-    "raw_text": ("rawContent", "raw_content"),
+    "raw_text": ("rawContent", "raw_content", "raw_text"),
     "message_id": ("messageId", "message_id"),
     "user_id": ("userId", "user_id"),
     "room_id": ("roomId", "room_id"),
