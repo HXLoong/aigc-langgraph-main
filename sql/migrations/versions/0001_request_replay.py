@@ -16,9 +16,11 @@ def upgrade() -> None:
         column["name"] for column in inspect(op.get_bind()).get_columns(MESSAGE_LOG)
     }
     for column in (
-        Column("reply_text", MEDIUMTEXT(), nullable=True),
-        Column("response_json", JSON(), nullable=True),
-        Column("http_status", SmallInteger(), nullable=False, server_default=text("200")),
+        Column("reply_text", MEDIUMTEXT(), nullable=True,
+               comment="回复文本（请求级幂等回放，ADR 0024 D4；NULL = 处理中）"),
+        Column("response_json", JSON(), nullable=True, comment="完整 HTTP 响应快照"),
+        Column("http_status", SmallInteger(), nullable=False, server_default=text("200"),
+               comment="首次响应的 HTTP 状态"),
     ):
         if column.name not in existing:
             op.add_column(MESSAGE_LOG, column)
