@@ -70,7 +70,7 @@ def _patch(
     fn: str = "get_qwen_thinking",
 ) -> AsyncMock:
     fake_llm = MagicMock()
-    fake_llm.ainvoke = AsyncMock(return_value=(swap_candidate_output(value) if module is po_module and isinstance(value, SwapPlaceOrderParams) else value))
+    fake_llm.ainvoke = mock_ainvoke(swap_candidate_output(value) if module is po_module and isinstance(value, SwapPlaceOrderParams) else value)
     fake_base = MagicMock()
     fake_base.with_structured_output = MagicMock(return_value=fake_llm)
     monkeypatch.setattr(module, fn, lambda: fake_base)
@@ -79,7 +79,7 @@ def _patch(
 
 def _patch_backend(monkeypatch: pytest.MonkeyPatch) -> MagicMock:
     fake_client = MagicMock()
-    fake_client.operate = AsyncMock(return_value={"code": 0, "data": {}, "msg": ""})
+    fake_client.operate = AsyncMock(return_value={"code": 0, "data": "后端原始回复", "msg": ""})
     monkeypatch.setattr(swap_backend_module, "SwapClientHttpx", lambda: fake_client)
     return fake_client
 
@@ -87,15 +87,24 @@ def _patch_backend(monkeypatch: pytest.MonkeyPatch) -> MagicMock:
 def _patch_vl_and_extract(
     monkeypatch: pytest.MonkeyPatch, params: SwapPlaceOrderParams
 ) -> None:
+    payload = swap_candidate_output(params).model_dump(by_alias=True)
+    words = []
+    for order in payload["orderList"]:
+        for candidate in order.values():
+            if candidate is not None:
+                candidate.update(origin="attachment", reference="file:0:image")
+                words.append(candidate["value"])
     ocr_llm = MagicMock()
-    ocr_llm.ainvoke = AsyncMock(return_value=MagicMock(content="OCR 文本"))
+    ocr_llm.with_structured_output.return_value.ainvoke = AsyncMock(return_value={"text": " ".join(words)})
     monkeypatch.setattr(mm_module, "get_qwen_vl", lambda: ocr_llm)
 
     extract_llm = MagicMock()
-    extract_llm.ainvoke = mock_ainvoke(params)
+    extract_llm.ainvoke = AsyncMock(return_value=mm_module.CANDIDATE_MODEL.model_validate(payload))
     factory = MagicMock()
     factory.with_structured_output = MagicMock(return_value=extract_llm)
     monkeypatch.setattr(mm_module, "get_qwen_structured", lambda: factory)
+    _patch_resolver(monkeypatch, [TickerCandidate(windCode=item.place_order_wind_code, from_goats=True)
+                                 for item in params.order_list if item.place_order_wind_code])
 
 
 _BASE_STATE: dict = {
@@ -281,7 +290,7 @@ class TestSwapGraphEndToEnd:
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         """有引用消息 → place_order → select_counterparty → select_ticker → submit。"""
-        _patch_resolver(monkeypatch, [])
+        _patch_resolver(monkeypatch, [TickerCandidate(windCode="00700.HK", insShtDesc="腾讯控股", from_goats=True)])
         _patch(monkeypatch, intent_module, intent_reply(SwapIntentOutput, type="place_order_request"))
         _patch(
             monkeypatch,
@@ -315,7 +324,7 @@ class TestSwapGraphEndToEnd:
         final = await graph.ainvoke(
             {
                 **_BASE_STATE,
-                "raw_text": _BASE_STATE["raw_text"] + " H-1",
+                "raw_text": _BASE_STATE["raw_text"] + " H-1，A，标的2",
                 "quote_content": "订单H-1（序号1）：",
                 "swap_counterparties": [{"shortName": "临沂阿凡提", "sort": "A"}],
                 "quote_ticker_candidates": [

@@ -12,7 +12,6 @@ import httpx
 import openpyxl
 import pytest
 from evidence_support import candidate_output, swap_candidate_output
-from langchain_core.messages import AIMessage
 
 from app.graph.state import AgentState
 from app.subgraphs.swap import (
@@ -40,14 +39,14 @@ from app.subgraphs.ticker.models import (
 )
 from app.tools.swap_client import SwapClientHttpx
 from app.tools.ticker_client import TickerClientHttpx
-from tests.intent_fixtures import intent_reply
+from tests.intent_fixtures import intent_reply, mock_ainvoke
 from tests.subgraphs.swap.test_fresh_counterparty import fresh_state, patch_recognition
 
 
 def patch_structured(
     monkeypatch: pytest.MonkeyPatch, module: Any, factory: str, output: Any,
 ) -> AsyncMock:
-    invoke = AsyncMock(return_value=(swap_candidate_output(output) if module is place_order and isinstance(output, SwapPlaceOrderParams) else output))
+    invoke = mock_ainvoke(swap_candidate_output(output) if module is place_order and isinstance(output, SwapPlaceOrderParams) else output)
     model = MagicMock()
     model.with_structured_output.return_value.ainvoke = invoke
     monkeypatch.setattr(module, factory, lambda: model)
@@ -56,6 +55,7 @@ def patch_structured(
 
 def graph_boundaries(
     monkeypatch: pytest.MonkeyPatch, params: SwapPlaceOrderParams,
+    *, ticker_rows: list[dict[str, Any]] | None = None,
 ) -> tuple[AgentState, list[dict[str, Any]]]:
     patch_structured(monkeypatch, intent, "get_qwen_thinking",
                      intent_reply(SwapIntentOutput, type="place_order_request"))
@@ -80,7 +80,7 @@ def graph_boundaries(
 
     def handle(request: httpx.Request) -> httpx.Response:
         if request.url.path == "/admin-api/integration/securities-instrument/select":
-            return httpx.Response(200, json={"code": 0, "data": []})
+            return httpx.Response(200, json={"code": 0, "data": ticker_rows or []})
         assert request.url.path == "/admin-api/swap-order/operate"
         assert request.method == "POST"
         requests.append(json.loads(request.content))
@@ -215,12 +215,13 @@ async def test_fresh_recognition_failure_stops_submission_and_reaches_fallback(
 async def test_reference_and_multimodal_paths_do_not_call_fresh_recognition(
     monkeypatch: pytest.MonkeyPatch, mode: str,
 ) -> None:
-    params = SwapPlaceOrderParams(orderList=[SwapOrderItem(placeOrderShortname="原有对手")])
-    state, requests = graph_boundaries(monkeypatch, params)
+    params = SwapPlaceOrderParams(orderList=[SwapOrderItem(placeOrderShortname="原有对手", placeOrderWindCode="NVDA.O")])
+    state, requests = graph_boundaries(monkeypatch, params, ticker_rows=[{"windCode": "NVDA.O", "insShtDesc": "英伟达"}])
+    state["swap_counterparties"] = [{"shortName": "原有对手", "sort": "A"}]
     invoke = patch_recognition(monkeypatch, {})
     invoke.side_effect = AssertionError("this path must not call fresh recognition")
     if mode == "quote":
-        state["raw_text"] = "对手改为原有对手"
+        state["raw_text"] = "保持原有对手 NVDA.O"
         state["quote_content"] = "引用订单 H-20260914-1234567890"
         patch_structured(monkeypatch, select_counterparty, "get_qwen_complex",
                          SwapSelectCounterpartyOutput(hasSignal=False))
@@ -228,9 +229,17 @@ async def test_reference_and_multimodal_paths_do_not_call_fresh_recognition(
     else:
         state["swap_input_mode"] = mode
         state["input_files"] = [{"type": mode, "url": "https://files.test/orders"}]
-        patch_structured(monkeypatch, multimodal, "get_qwen_structured", params)
+        reference = "file:0:image" if mode == "image" else "file:0:sheet:0:row:2"
+        candidates = candidate_output(params, origin="attachment")
+        for row in candidates.order_list:
+            for name in type(row).model_fields:
+                candidate = getattr(row, name)
+                if candidate is not None:
+                    candidate.reference = reference
+        patch_structured(monkeypatch, multimodal, "get_qwen_structured", candidates)
         if mode == "image":
-            vl = MagicMock(ainvoke=AsyncMock(return_value=AIMessage(content="订单图片文字")))
+            vl = MagicMock()
+            vl.with_structured_output.return_value.ainvoke = AsyncMock(return_value={"text": "原有对手 NVDA.O"})
             monkeypatch.setattr(multimodal, "get_qwen_vl", lambda: vl)
         else:
             workbook = openpyxl.Workbook()
