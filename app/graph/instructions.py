@@ -55,9 +55,16 @@ SPEC = register(PromptSpec(
 
 _GAP = re.compile(r"[\s，,；;。.、]*(?:(?:然后|接着|另外|并且|同时|再)[\s，,；;。.、]*)*")
 _ACTION = re.compile(r"确认(?:下单|平仓|撤单|改单)|买入|卖出|买|卖|询价|平仓|撤单|查询|下单")
+_BUSINESS_CONDITION = re.compile(
+    r"(?:成交|成功|完成).{0,3}(?:后|再|才|就)|(?:如果|若|等(?:待)?).{0,30}(?:成交|成功|完成)"
+)
 
 
 def validate_instruction_plan(raw: str, plan: InstructionPlan) -> list[dict[str, Any]]:
+    if len(plan.instructions) > 1 and _BUSINESS_CONDITION.search(raw):
+        # An HTTP response (even code=0) does not prove fill/order success. Until
+        # there is an authoritative condition/event contract, no partial write is safe.
+        raise ValueError("business-success conditional instructions require explicit later confirmation")
     previous_end = 0
     result: list[dict[str, Any]] = []
     for index, instruction in enumerate(plan.instructions):

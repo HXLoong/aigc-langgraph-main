@@ -38,6 +38,12 @@ async def test_planner_checks_original_spans_dependencies_and_coverage(monkeypat
     ):
         with pytest.raises(ValueError):
             module.validate_instruction_plan(raw, module.InstructionPlan(instructions=invalid))
+    conditional = "买甲；成交后卖乙"
+    with pytest.raises(ValueError, match="business-success"):
+        module.validate_instruction_plan(conditional, module.InstructionPlan(instructions=[
+            _instruction(conditional, "买甲"),
+            _instruction(conditional, "成交后卖乙", depends_on=[0]),
+        ]))
 
 
 async def test_native_send_isolates_preparation_and_batches_original_message_identity(monkeypatch):
