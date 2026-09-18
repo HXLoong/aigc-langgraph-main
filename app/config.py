@@ -35,6 +35,8 @@ class Settings(BaseSettings):
 
     # 初始 20/5/60 秒预算；最终配置根据本地真实回归与压测校准。
     llm_timeout_seconds: float = Field(default=20.0, gt=0)
+    llm_output_max_tokens: int = Field(default=800, ge=64, le=800)
+    llm_vision_max_tokens: int = Field(default=4096, ge=256, le=16384)
     request_timeout_seconds: float = Field(default=60.0, gt=0, le=80)
     response_reserve_seconds: float = Field(default=5.0, gt=0)
     # ADR 0024 D3：只读 IO 节点（LLM / 后端查询）的 LangGraph RetryPolicy；写类节点不重试

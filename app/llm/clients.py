@@ -79,6 +79,7 @@ def get_qwen_standard() -> ChatOpenAI:
         api_key=SecretStr(settings.qwen_api_key),
         temperature=0.0,
         timeout=settings.llm_timeout_seconds,
+        max_tokens=settings.llm_output_max_tokens,
         max_retries=0,
         extra_body=_thinking_off_extra_body(settings.qwen_model_standard),
     )
@@ -98,6 +99,7 @@ def get_qwen_thinking() -> ChatOpenAI:
         api_key=SecretStr(settings.qwen_api_key),
         temperature=0.0,
         timeout=settings.llm_timeout_seconds,
+        max_tokens=settings.llm_output_max_tokens,
         max_retries=0,
         extra_body=_thinking_off_extra_body(settings.qwen_model_thinking),
     )
@@ -116,6 +118,7 @@ def make_qwen_thinking() -> ChatOpenAI:
         api_key=SecretStr(settings.qwen_api_key),
         temperature=0.0,
         timeout=settings.llm_timeout_seconds,
+        max_tokens=settings.llm_output_max_tokens,
         max_retries=0,
         extra_body=_thinking_off_extra_body(settings.qwen_model_thinking),
     )
@@ -131,6 +134,7 @@ def get_qwen_structured() -> ChatOpenAI:
         api_key=SecretStr(settings.qwen_api_key),
         temperature=0.0,
         timeout=settings.llm_timeout_seconds,
+        max_tokens=settings.llm_output_max_tokens,
         max_retries=0,
         extra_body=_thinking_off_extra_body(settings.qwen_model_standard),
     )
@@ -146,6 +150,7 @@ def get_qwen_complex() -> ChatOpenAI:
         api_key=SecretStr(settings.qwen_api_key),
         temperature=0.0,
         timeout=settings.llm_timeout_seconds,
+        max_tokens=settings.llm_output_max_tokens,
         max_retries=0,
         extra_body=_thinking_off_extra_body(settings.qwen_model_complex),
     )
@@ -161,5 +166,6 @@ def get_qwen_vl() -> ChatOpenAI:
         api_key=SecretStr(settings.qwen_api_key),
         temperature=0.0,
         timeout=settings.llm_timeout_seconds,
+        max_tokens=settings.llm_vision_max_tokens,
         max_retries=0,
     )

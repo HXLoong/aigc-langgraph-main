@@ -48,6 +48,8 @@ def _fake_settings(model: str) -> SimpleNamespace:
         qwen_model_complex=model,
         qwen_model_vl="qwen-vl-max-latest",
         llm_timeout_seconds=60.0,
+        llm_output_max_tokens=800,
+        llm_vision_max_tokens=4096,
     )
 
 
@@ -111,6 +113,23 @@ class TestFactoryExtraBody:
 
 class _DummyOut(SimpleNamespace):
     pass
+
+
+@pytest.mark.parametrize("factory_name,expected", [
+    ("get_qwen_standard", 800), ("get_qwen_thinking", 800),
+    ("get_qwen_structured", 800), ("get_qwen_complex", 800),
+    ("make_qwen_thinking", 800), ("get_qwen_vl", 4096),
+])
+def test_factory_enforces_configured_output_budget(monkeypatch, factory_name, expected):
+    factory = getattr(clients, factory_name)
+    if hasattr(factory, "cache_clear"):
+        factory.cache_clear()
+    monkeypatch.setattr(clients, "get_settings", lambda: _fake_settings("deepseek-v4-pro"))
+    try:
+        assert factory().max_tokens == expected
+    finally:
+        if hasattr(factory, "cache_clear"):
+            factory.cache_clear()
 
 
 @pytest.mark.usefixtures("_clear_factory_caches")
