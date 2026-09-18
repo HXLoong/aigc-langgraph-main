@@ -44,7 +44,7 @@ def generate(java_root: Path, output: Path) -> None:
     lines = ["# 节点与字段迁移清单", "",
              "由 `python -m scripts.export_migration_inventory --java-root <local-java-api>` 生成。",
              "Java 只读。字段 JSON 是契约快照，运行时继续以 Pydantic 模型为真源。",
-             "Dify 节点 ID 未从原始 DSL 核实，不使用猜测 ID。旧字符数为本仓起点 c7be6f1 的 system 段。", "",
+             "实际 Dify 节点映射见 [完整节点清单](../node-migration-20260918.md)。旧字符数为本仓起点 c7be6f1 的 system 段。", "",
              "| 活跃 PromptSpec | 输出契约 | 原文证据契约 | system 字符（前 → 后） |",
              "|---|---|---|---|"]
     for key, spec in sorted(all_specs().items()):
@@ -56,7 +56,22 @@ def generate(java_root: Path, output: Path) -> None:
             before = str(len(_parse_prompt_md(old.stdout)[0]))
         after = len(load_prompt(spec.category, spec.name).system)
         model = spec.output_model.__name__ if spec.output_model else "文本"
-        evidence = "已接入" if model.endswith("Candidates") else "需逐项迁移/核对"
+        if model.endswith("Candidates"):
+            evidence = "原文候选核验 + Code 归一化"
+        elif key.endswith("/intent") or key == "router/unknown_intent":
+            evidence = "意图置信度/原文来源核验"
+        elif key in {"swap/select_counterparty", "swap/select_ticker"}:
+            evidence = "选择范围/原文核验 + 权威候选绑定"
+        elif key == "swap/fresh_counterparty":
+            evidence = "原文名称核验 + 授权名单绑定"
+        elif key == "swap/image_ocr":
+            evidence = "结构化转写，后续候选核验；非像素事实证明"
+        elif key == "router/split_instructions":
+            evidence = "连续原文覆盖/边界/依赖核验"
+        elif key.startswith("ticker/"):
+            evidence = "检索/排序候选；最终身份由 GOATS 校验"
+        else:
+            evidence = "需逐项核对"
         lines.append(f"| {key} | {model} | {evidence} | {before} → {after} |")
     lines += ["", "| 当前业务模型 | 声明字段数 |", "|---|---|"]
     lines += [f"| {model.__name__} | {len(model.model_fields)} |" for model in MODELS]
@@ -69,6 +84,6 @@ def generate(java_root: Path, output: Path) -> None:
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--java-root", type=Path, required=True)
-    parser.add_argument("--out", type=Path, default=Path("docs/migration-20260918"))
+    parser.add_argument("--out", type=Path, default=Path("tmp/migration-20260918"))
     args = parser.parse_args()
     generate(args.java_root, args.out)
