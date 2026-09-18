@@ -28,7 +28,8 @@ async def test_two_failed_swap_selection_branches_merge_without_crashing(monkeyp
 
     @io_node
     async def extract(state):
-        return {"place_params": {"orderList": []}, "quote_ticker_candidates": [{"candidates": []}]}
+        return {"place_params": {"orderList": []}, "swap_counterparties": [{"sort": "A", "shortName": "测试对手"}],
+        "quote_ticker_candidates": [{"candidates": []}]}
 
     model = MagicMock()
     model.with_structured_output.return_value.ainvoke = AsyncMock(side_effect=ValueError("bad output"))

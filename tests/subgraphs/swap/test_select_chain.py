@@ -168,7 +168,7 @@ class TestSwapSelectCounterpartyNode:
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         _patch_llm(monkeypatch, sc_module, SwapSelectCounterpartyOutput(hasSignal=False))
-        out = await swap_select_counterparty(_sc_state())
+        out = await swap_select_counterparty(_sc_state(raw_text="暂时不换对手"))
         assert out["swap_counterparty_picks"] == {"hasSignal": False, "picks": []}
 
     @pytest.mark.asyncio
@@ -186,7 +186,7 @@ class TestSwapSelectCounterpartyNode:
         trace = out["trace"]
         assert len(trace) == 1
         assert trace[0].node == "swap_select_counterparty"
-        assert trace[0].decision == "hasSignal=True,picks=1"
+        assert trace[0].decision == "code,hasSignal=True,picks=1"
         assert trace[0].llm_output is not None
 
     @pytest.mark.asyncio
@@ -198,7 +198,7 @@ class TestSwapSelectCounterpartyNode:
             return_value=MagicMock(ainvoke=AsyncMock(side_effect=RuntimeError("LLM down")))
         )
         monkeypatch.setattr(sc_module, "get_qwen_complex", lambda: fake_base)
-        out = await swap_select_counterparty(_sc_state())
+        out = await swap_select_counterparty(_sc_state(raw_text="帮我选一个适合的对手"))
         assert out["error"] is not None
         assert out["error"].node == "swap_select_counterparty"
         assert "LLM down" in out["error"].message
@@ -259,7 +259,7 @@ class TestSwapSelectTickerNode:
         out = await swap_select_ticker(_st_state())
         trace = out["trace"]
         assert trace[0].node == "swap_select_ticker"
-        assert trace[0].decision == "picks=1"
+        assert trace[0].decision == "llm,picks=1"
 
     @pytest.mark.asyncio
     async def test_safe_node_catches_llm_error(

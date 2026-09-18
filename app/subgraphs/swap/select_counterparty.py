@@ -25,6 +25,7 @@ from app.graph.state import AgentState, TraceEntry
 from app.llm.clients import get_qwen_complex
 from app.prompts.spec import PromptSpec, register
 from app.subgraphs.swap.models import SwapSelectCounterpartyOutput
+from app.subgraphs.swap.selection_rules import counterparty_choice
 
 
 def _format_shortname_list(counterparties: list[dict[str, Any]] | None) -> str:
@@ -66,9 +67,12 @@ async def swap_select_counterparty(state: AgentState) -> dict[str, Any]:
     只产出 LLM 指针到 state['swap_counterparty_picks']；覆盖草稿的确定性查表在
     swap_apply_picks 完成。
     """
-    llm = get_qwen_complex().with_structured_output(SwapSelectCounterpartyOutput)
-    messages, _prompt_name = SPEC.build_messages(state)
-    result: Any = await llm.ainvoke(messages)
+    result = counterparty_choice(state)
+    method = "code" if result is not None else "llm"
+    if result is None:
+        llm = get_qwen_complex().with_structured_output(SwapSelectCounterpartyOutput)
+        messages, _prompt_name = SPEC.build_messages(state)
+        result = SwapSelectCounterpartyOutput.model_validate(await llm.ainvoke(messages))
 
     return {
         "swap_counterparty_picks": {
@@ -78,7 +82,7 @@ async def swap_select_counterparty(state: AgentState) -> dict[str, Any]:
         "trace": [
             TraceEntry(
                 node="swap_select_counterparty",
-                decision=f"hasSignal={result.has_signal},picks={len(result.picks)}",
+                decision=f"{method},hasSignal={result.has_signal},picks={len(result.picks)}",
                 llm_output=result.model_dump(),
             )
         ],

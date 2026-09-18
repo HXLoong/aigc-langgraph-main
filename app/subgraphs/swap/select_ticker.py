@@ -26,6 +26,7 @@ from app.graph.state import AgentState, TraceEntry
 from app.llm.clients import get_qwen_complex
 from app.prompts.spec import PromptSpec, register
 from app.subgraphs.swap.models import SwapSelectTickerOutput
+from app.subgraphs.swap.selection_rules import ticker_choice
 
 
 def _build_user_message(state: AgentState) -> str:
@@ -70,16 +71,19 @@ async def swap_select_ticker(state: AgentState) -> dict[str, Any]:
             ],
         }
 
-    llm = get_qwen_complex().with_structured_output(SwapSelectTickerOutput)
-    messages, _prompt_name = SPEC.build_messages(state)
-    result: Any = await llm.ainvoke(messages)
+    result = ticker_choice(state)
+    method = "code" if result is not None else "llm"
+    if result is None:
+        llm = get_qwen_complex().with_structured_output(SwapSelectTickerOutput)
+        messages, _prompt_name = SPEC.build_messages(state)
+        result = SwapSelectTickerOutput.model_validate(await llm.ainvoke(messages))
 
     return {
         "swap_ticker_picks": [p.model_dump() for p in result.picks],
         "trace": [
             TraceEntry(
                 node="swap_select_ticker",
-                decision=f"picks={len(result.picks)}",
+                decision=f"{method},picks={len(result.picks)}",
                 llm_output=result.model_dump(),
             )
         ],
