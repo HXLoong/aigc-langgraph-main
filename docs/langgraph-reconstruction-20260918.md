@@ -15,7 +15,7 @@
 ## 交付清单
 
 - [ ] 本地 HTTP 回归基线、测试消息记录及参数级断言
-- [ ] 互换 CWAIJY-957 确认协议、期权否定确认与多单范围
+- [x] 互换 CWAIJY-957 确认协议、期权否定确认与多单范围
 - [ ] 当前 Java 契约字段清单及迁移映射
 - [ ] 期权、互换、平仓与共享 ticker 的确定性规则下沉
 - [ ] 字段 evidence / confidence / source、来源校验与字段锁定
@@ -109,3 +109,11 @@
 - 本地真实复验：同一 7 case / 13 turn 全部 PASS，P50 4.718s / P95、P99 10.795s；仅是小样本，不替代全量性能验收。报告 `.harness-runs/evidence-smoke-fixed/local-20260918-131741`（运行时包含本批未提交变更）。
 - 当前全量 pytest 2321 passed、15 skipped；随后新增 harness 两项 RED → GREEN。mypy、ruff 及生成纪律同步检查通过。
 - 实际字段与活跃节点清单见 `docs/migration-20260918/`，附只读 Java DTO 源码字段；未把缺失的 50 字段文件或 Dify ID 补成假数据。
+
+第九批：复核与本地验证。
+
+- 第八批恢复点：`c316995`。
+- 包含本地 MySQL 的全量验证：2324 passed、14 skipped；生成纪律同步、ruff、mypy 通过。
+- 复核消除 inquiry_precheck / inquiry_resolve 对 ticker 子图的整段重试；四个其余工具默认值也统一为 5 秒。新增 5 项 RED → GREEN，相关专项 305 passed。
+- 已完成的确认协议独立项可关闭；整份重构计划仍未完成，图片/Excel、平仓提取、选择节点证据与 Code 优先、多指令、独立不确定结果核对、全面脱敏检查及全量性能验收保留未完成状态。
+- 后续真实验收前置：配置匹配 categories 业务数据的 EVAL_USER_ID / EVAL_ROOM_ID，或由业务方补齐当前 GOATS 授权对手与持仓。不能通过本地伪造授权、弱化断言或替换后端回复消除这些失败。

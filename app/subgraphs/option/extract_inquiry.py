@@ -155,7 +155,7 @@ async def inquiry_fast_submit(state: InquiryState) -> dict[str, Any]:
     }
 
 
-@io_node
+@safe_node
 async def inquiry_precheck(state: InquiryState) -> dict[str, Any]:
     """无效标的预检：代码格式但不在池 → 标记拒绝，不调 LLM。"""
     raw_text = state.get("raw_text", "") or ""
@@ -229,7 +229,7 @@ async def inquiry_normalize(state: InquiryState) -> dict[str, Any]:
     }
 
 
-@io_node
+@safe_node
 async def inquiry_resolve(state: InquiryState) -> dict[str, Any]:
     """ticker resolver 识别标的（含 HITL 信号）并按身份绑定到订单。"""
     raw_text = state.get("raw_text", "") or ""
@@ -332,11 +332,11 @@ def build_inquiry_graph() -> CompiledStateGraph[InquiryState, None, AgentState, 
     g: StateGraph[InquiryState, None, AgentState, InquiryOutput] = StateGraph(InquiryState, input_schema=AgentState, output_schema=InquiryOutput)
     add_io_node(g, "inquiry_fast_parse", inquiry_fast_parse)
     g.add_node("inquiry_fast_submit", inquiry_fast_submit)
-    add_io_node(g, "inquiry_precheck", inquiry_precheck)
+    g.add_node("inquiry_precheck", inquiry_precheck)
     g.add_node("inquiry_reject", inquiry_reject)
     add_io_node(g, "inquiry_extract", inquiry_extract)
     g.add_node("inquiry_normalize", inquiry_normalize)
-    add_io_node(g, "inquiry_resolve", inquiry_resolve)
+    g.add_node("inquiry_resolve", inquiry_resolve)
     g.add_node("inquiry_submit", inquiry_submit)
 
     g.add_conditional_edges(START, _route_start, ["inquiry_fast_parse", "inquiry_precheck"])

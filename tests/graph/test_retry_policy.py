@@ -148,7 +148,7 @@ READ_NODES: dict[str, set[str]] = {
     },
     "swap_place": {"swap_extract_candidates"},
     "option": {"option_intent", "option_extract_query"},
-    "inquiry": {"inquiry_fast_parse", "inquiry_precheck", "inquiry_extract", "inquiry_resolve"},
+    "inquiry": {"inquiry_fast_parse", "inquiry_extract"},
     "close": {"close_intent", "close_holding_query", "close_query_status"},
     "place_close": {"place_close_fetch_orders", "place_close_extract"},
     "ticker": {"infer_codes", "split_keywords", "judge_type", "resolve_org_item"},
@@ -201,3 +201,10 @@ def test_real_graphs_retry_reads_and_never_writes() -> None:
         for name in names:
             spec = builders[graph_name].nodes[name]
             assert spec.retry_policy is None, f"{graph_name}.{name} 是写类节点，不得自动重试"
+
+
+def test_ticker_facades_do_not_repeat_the_whole_child_graph():
+    from app.subgraphs.option.extract_inquiry import build_inquiry_graph
+    graph = build_inquiry_graph().builder
+    for name in ("inquiry_precheck", "inquiry_resolve"):
+        assert graph.nodes[name].retry_policy is None

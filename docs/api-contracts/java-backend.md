@@ -320,11 +320,19 @@ FastAPI lifespan 显式注入 `MessageClientHttpx`，保证真实 HTTP 入口每
 `POST /v1/workflows/run` 在 `/set-intent` 最终失败后返回 **HTTP 502**：
 
 ```json
-{"detail": "消息会话与意图持久化失败，请稍后重试。"}
+{"code": "internal_server_error", "message": "消息会话与意图持久化失败，请稍后重试。", "status": 502}
 ```
 
-该响应不含正常 `answer` 或 Dify 成功响应数据。502 仅用于此消息持久化失败路径；
-成功响应结构、现有会话 ID 生成格式、交易 `/operate` 调用及其他失败语义不变。
+该响应不含正常 `answer` 或 Dify 成功响应数据。图执行失败且无可返回回复时也返回 502。
+全链路超过请求预算返回 504，`code=workflow_timeout`；启用幂等时保存完整响应供同一消息回放，
+不自动再次执行结果不确定的写入。默认 LLM/工具/请求预算为 20/5/60 秒，预留 5 秒完成响应落库；
+请求预算最大 80 秒，早于 Java 的 90 秒。
+
+入口仍为 `/v1/workflows/run`，支持顶层 `query` 和 `files`，原有 inputs 原文优先；附件冲突为 422。
+正常响应保留 `workflow_run_id/task_id/conversationId/answer/data`，同时返回
+`id/message_id/event/mode/metadata/conversation_id/created_at`；两个会话字段取同一值。
+`data.outputs.trace` 保留字符串形式，新增 `trace_entries` 供逐节点分析；失败时 outputs.error
+仅提供 E1–E5 分类、节点和异常类型，不返回内部错误详情或堆栈。
 会话 ID 按本文入口规则解析：三个兼容位置均为空才生成一次纯 UUID，已有 ID 原样复用；冲突返回 422。
 
 ## 7. 其他
