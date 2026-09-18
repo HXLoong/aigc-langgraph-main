@@ -19,8 +19,20 @@ from functools import lru_cache
 from typing import Any
 
 from langchain_openai import ChatOpenAI
+from openai import DefaultAsyncHttpxClient, DefaultHttpxClient
 
 from app.config import get_settings
+
+
+def _http_client_kwargs(trust_env: bool) -> dict[str, Any]:
+    """按 LLM 独立配置连接，非缓存工厂也独占连接池，避免跨 event loop 复用。"""
+    if trust_env:
+        return {}
+    return {
+        "http_client": DefaultHttpxClient(trust_env=False),
+        "http_async_client": DefaultAsyncHttpxClient(trust_env=False),
+        "openai_proxy": None,
+    }
 
 
 def _is_deepseek(model: str) -> bool:
@@ -67,6 +79,7 @@ def get_qwen_standard() -> ChatOpenAI:
         timeout=settings.llm_timeout_seconds,
         max_retries=2,
         extra_body=_thinking_off_extra_body(settings.qwen_model_standard),
+        **_http_client_kwargs(settings.llm_trust_env),
     )
 
 
@@ -86,6 +99,7 @@ def get_qwen_thinking() -> ChatOpenAI:
         timeout=settings.llm_timeout_seconds,
         max_retries=2,
         extra_body=_thinking_off_extra_body(settings.qwen_model_thinking),
+        **_http_client_kwargs(settings.llm_trust_env),
     )
 
 
@@ -104,6 +118,7 @@ def make_qwen_thinking() -> ChatOpenAI:
         timeout=settings.llm_timeout_seconds,
         max_retries=2,
         extra_body=_thinking_off_extra_body(settings.qwen_model_thinking),
+        **_http_client_kwargs(settings.llm_trust_env),
     )
 
 
@@ -119,6 +134,7 @@ def get_qwen_structured() -> ChatOpenAI:
         timeout=settings.llm_timeout_seconds,
         max_retries=2,
         extra_body=_thinking_off_extra_body(settings.qwen_model_standard),
+        **_http_client_kwargs(settings.llm_trust_env),
     )
 
 
@@ -134,6 +150,7 @@ def get_qwen_complex() -> ChatOpenAI:
         timeout=settings.llm_timeout_seconds,
         max_retries=2,
         extra_body=_thinking_off_extra_body(settings.qwen_model_complex),
+        **_http_client_kwargs(settings.llm_trust_env),
     )
 
 
@@ -148,4 +165,5 @@ def get_qwen_vl() -> ChatOpenAI:
         temperature=0.0,
         timeout=settings.llm_timeout_seconds,
         max_retries=2,
+        **_http_client_kwargs(settings.llm_trust_env),
     )

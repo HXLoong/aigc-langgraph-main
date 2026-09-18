@@ -8,6 +8,7 @@
 """
 from __future__ import annotations
 
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
@@ -48,6 +49,7 @@ def _fake_settings(model: str) -> SimpleNamespace:
         qwen_model_complex=model,
         qwen_model_vl="qwen-vl-max-latest",
         llm_timeout_seconds=60.0,
+        llm_trust_env=True,
     )
 
 
@@ -59,6 +61,7 @@ def _clear_factory_caches():
         clients.get_qwen_thinking,
         clients.get_qwen_structured,
         clients.get_qwen_complex,
+        clients.get_qwen_vl,
     ):
         fn.cache_clear()
     yield
@@ -67,8 +70,60 @@ def _clear_factory_caches():
         clients.get_qwen_thinking,
         clients.get_qwen_structured,
         clients.get_qwen_complex,
+        clients.get_qwen_vl,
     ):
         fn.cache_clear()
+
+
+@pytest.mark.usefixtures("_clear_factory_caches")
+@pytest.mark.parametrize(
+    "factory_name",
+    [
+        "get_qwen_standard", "get_qwen_thinking", "make_qwen_thinking",
+        "get_qwen_structured", "get_qwen_complex", "get_qwen_vl",
+    ],
+)
+@pytest.mark.parametrize("trust_env", [False, True])
+async def test_factory_respects_llm_trust_env(
+    monkeypatch: pytest.MonkeyPatch, factory_name: str, trust_env: bool
+) -> None:
+    settings = _fake_settings("external-deepseek-v4-pro")
+    settings.llm_trust_env = trust_env
+    monkeypatch.setattr(clients, "get_settings", lambda: settings)
+    monkeypatch.setenv("HTTP_PROXY", "http://127.0.0.1:7897")
+    monkeypatch.setenv("HTTPS_PROXY", "http://127.0.0.1:7897")
+    if not trust_env:
+        monkeypatch.setenv("OPENAI_PROXY", "http://127.0.0.1:7897")
+    llm = getattr(clients, factory_name)()
+    try:
+        assert llm.root_client._client.trust_env is trust_env
+        assert llm.root_async_client._client.trust_env is trust_env
+        if not trust_env:
+            assert llm.openai_proxy is None
+    finally:
+        llm.root_client.close()
+        await llm.root_async_client.close()
+
+
+@pytest.mark.parametrize("configured", [False, True])
+def test_llm_trust_env_loads_from_dotenv(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, configured: bool
+) -> None:
+    from app.config import Settings
+
+    monkeypatch.delenv("LLM_TRUST_ENV", raising=False)
+    env_file = tmp_path / ".env"
+    env_file.write_text("LLM_TRUST_ENV=false\n" if configured else "", encoding="utf-8")
+    settings = Settings(
+        _env_file=env_file,
+        checkpoint_mysql_uri="mysql://test:test@localhost/test",
+        business_mysql_uri="mysql+aiomysql://test:test@localhost/test",
+        qwen_api_base="https://llm.example/v1",
+        qwen_api_key="test-key",
+        otc_api_base_url="http://backend.example",
+        otc_api_secret="test-secret",
+    )
+    assert settings.model_dump().get("llm_trust_env") is (not configured)
 
 
 @pytest.mark.usefixtures("_clear_factory_caches")
