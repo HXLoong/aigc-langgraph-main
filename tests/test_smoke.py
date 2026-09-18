@@ -211,9 +211,8 @@ async def test_main_graph_e2e_option_close_order_no(
     from app.subgraphs.close import place_close as close_pc_module
     from app.subgraphs.close.models import (
         CloseIntentOutput,
-        CloseOrderItem,
-        ClosePlaceParams,
     )
+    from tests.subgraphs.close.candidate_fixtures import close_candidates
 
     def _patch(module: object, value: object, fn: str = "get_qwen_thinking") -> None:
         fake_llm = MagicMock()
@@ -222,7 +221,7 @@ async def test_main_graph_e2e_option_close_order_no(
         fake_base.with_structured_output = MagicMock(return_value=fake_llm)
         monkeypatch.setattr(module, fn, lambda: fake_base)
 
-    async def _fake_query_close_orders(self, order_ids=None, contract_codes=None):  # type: ignore[no-untyped-def]
+    async def _fake_query_close_orders(self, order_ids=None, contract_codes=None, **kwargs):  # type: ignore[no-untyped-def]
         return {"code": 0, "msg": "ok", "data": []}
 
     async def _fake_operate(self, req):  # type: ignore[no-untyped-def]
@@ -239,14 +238,7 @@ async def test_main_graph_e2e_option_close_order_no(
     _patch(close_intent_module, CloseIntentOutput(type="close_order_request"))
     _patch(
         close_pc_module,
-        ClosePlaceParams(
-            closeOrderList=[
-                CloseOrderItem(
-                    orderId="CO-20260304-ABCD1234",
-                    confirmFullClose=True,
-                )
-            ]
-        ),
+        close_candidates({"orderId": "CO-20260304-ABCD1234", "confirmFullClose": "全部"}),
         fn="get_qwen_thinking",
     )
 

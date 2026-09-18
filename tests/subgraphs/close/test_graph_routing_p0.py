@@ -10,15 +10,14 @@ from app.subgraphs.close import intent as intent_module
 from app.subgraphs.close import place_close as pc_module
 from app.subgraphs.close.models import (
     CloseIntentOutput,
-    CloseOrderItem,
-    ClosePlaceParams,
 )
+from tests.subgraphs.close.candidate_fixtures import close_candidates
 
 
 def _patch_close_backend_calls(monkeypatch: pytest.MonkeyPatch) -> None:
     """close.place_close 链路的两次真后端调用（获取订单信息 + 提交平仓）不打真网络。"""
 
-    async def _fake_query_close_orders(self, order_ids=None, contract_codes=None):  # type: ignore[no-untyped-def]
+    async def _fake_query_close_orders(self, order_ids=None, contract_codes=None, **kwargs):  # type: ignore[no-untyped-def]
         return {"code": 0, "msg": "ok", "data": []}
 
     async def _fake_operate(self, req):  # type: ignore[no-untyped-def]
@@ -54,15 +53,8 @@ async def test_close_order_request_routes_to_place_close(
     _patch(
         monkeypatch,
         pc_module,
-        ClosePlaceParams(
-            closeOrderList=[
-                CloseOrderItem(
-                    orderId="CO-20260304-AAAA0001",
-                    closeOrderNotionalDelta="2000000",
-                    closeOrderType="市价单",
-                )
-            ]
-        ),
+        close_candidates({"orderId": "CO-20260304-AAAA0001",
+                          "closeOrderNotionalDelta": "200万", "closeOrderType": "市价"}),
         fn="get_qwen_thinking",
     )
     _patch_close_backend_calls(monkeypatch)

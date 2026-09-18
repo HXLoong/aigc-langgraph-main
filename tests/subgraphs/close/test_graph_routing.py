@@ -9,7 +9,8 @@ import pytest
 from app.subgraphs.close import build_close_graph
 from app.subgraphs.close import holding_query as hq_module
 from app.subgraphs.close import intent as intent_module
-from app.subgraphs.close.models import CloseIntentOutput, HoldingQueryParams
+from app.subgraphs.close.models import CloseIntentOutput
+from tests.subgraphs.close.candidate_fixtures import holding_candidates
 
 
 def _patch_close_backend(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -33,7 +34,7 @@ def _patch_intent(monkeypatch: pytest.MonkeyPatch, intent_type: str) -> None:
     monkeypatch.setattr(intent_module, "get_qwen_thinking", lambda: fake_base)
 
 
-def _patch_holding_query(monkeypatch: pytest.MonkeyPatch, params: HoldingQueryParams) -> None:
+def _patch_holding_query(monkeypatch: pytest.MonkeyPatch, params: object) -> None:
     fake_llm = MagicMock()
     fake_llm.ainvoke = AsyncMock(return_value=params)
     fake_base = MagicMock()
@@ -54,7 +55,7 @@ async def test_close_query_routes_to_holding_query(
     _patch_intent(monkeypatch, "close_order_query")
     _patch_holding_query(
         monkeypatch,
-        HoldingQueryParams(closeable_only=False),
+        holding_candidates(),
     )
     _patch_close_backend(monkeypatch)
     graph = build_close_graph()
