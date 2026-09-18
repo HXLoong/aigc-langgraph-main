@@ -26,6 +26,7 @@ from app.api.idempotency import (
     UNCERTAIN_NOTICE,
     IdempotencyConflictError,
     IdempotencyStore,
+    response_is_uncertain,
 )
 from app.api.turn_state import inputs_to_state
 from app.config import get_settings
@@ -136,6 +137,7 @@ async def run_workflow(
 def _timeout_response() -> JSONResponse:
     return JSONResponse(status_code=504, content={
         "code": "workflow_timeout", "status": 504,
+        "idempotency_status": "uncertain",
         "message": "指令处理超时，执行结果待核对，请勿重复提交。",
     })
 
@@ -283,6 +285,7 @@ async def _execute_workflow(
     if timed_out:
         timeout_response = _timeout_response()
         body = {"code": "workflow_timeout", "status": 504,
+                "idempotency_status": "uncertain",
                 "message": "指令处理超时，执行结果待核对，请勿重复提交。"}
         if store is not None and idem_key is not None:
             await _idempotency_complete(store, idem_key, final_state, error_msg,
@@ -300,12 +303,16 @@ async def _execute_workflow(
         failure_message = "指令处理失败，请稍后重试。"
     if failure_message:
         failed_body = {"code": "internal_server_error", "message": failure_message, "status": 502}
+        if response_is_uncertain({"data": {"outputs": _state_to_outputs(final_state)}}):
+            failed_body["idempotency_status"] = "uncertain"
         if store is not None and idem_key is not None:
             await _idempotency_complete(store, idem_key, final_state, error_msg,
                                         int(elapsed * 1000), failed_body, 502)
         return JSONResponse(status_code=502, content=failed_body)
 
     outputs = _state_to_outputs(final_state)
+    if response_is_uncertain({"data": {"outputs": outputs}}):
+        outputs["idempotency_status"] = "uncertain"
     # 业务审计 ID：与 node_trace.trace_id / config.metadata.trace_id 同源，恒定暴露
     outputs["trace_id"] = request_trace_id
     # LangFuse 侧信息：仅在接入成功时存在

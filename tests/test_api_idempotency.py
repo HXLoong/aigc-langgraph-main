@@ -91,6 +91,20 @@ def test_successful_replay_keeps_all_business_outputs(client: TestClient) -> Non
     assert second["message_id"] == first["message_id"]
 
 
+def test_backend_timeout_is_marked_uncertain_in_first_response_and_replay(client: TestClient) -> None:
+    graph = client.app.state.main_graph
+    graph.ainvoke = AsyncMock(return_value={
+        "reply_text": "执行结果待核对",
+        "error": ErrorInfo(node="swap_confirm", type="BackendUnreachableError", message="timeout"),
+        "trace": [],
+    })
+    first = client.post("/v1/workflows/run", json=_body(86))
+    replay = client.post("/v1/workflows/run", json=_body(86))
+    assert first.json()["data"]["outputs"]["idempotency_status"] == "uncertain"
+    assert replay.json()["data"]["outputs"]["idempotency_status"] == "uncertain"
+    assert graph.ainvoke.await_count == 1
+
+
 def test_unavailable_idempotency_store_blocks_execution(client: TestClient) -> None:
     client.app.state.idempotency_store.begin = AsyncMock(side_effect=ConnectionError("down"))
     response = client.post("/v1/workflows/run", json=_body(82))
