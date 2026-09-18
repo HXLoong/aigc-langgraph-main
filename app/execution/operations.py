@@ -165,12 +165,12 @@ def batch_operations(prepared: list[dict[str, Any]]) -> list[dict[str, Any]]:
 
 
 async def execute_batches(
-    batches: list[dict[str, Any]], *, last_started: dict[str, float], blocked_keys: set[str],
+    batches: list[dict[str, Any]], *, last_finished: dict[str, float], blocked_keys: set[str],
     dedup_window_seconds: float, clock: Callable[[], float] = time.monotonic,
     sleep: Callable[[float], Awaitable[None]] = asyncio.sleep,
 ) -> tuple[dict[str, dict[str, Any]], dict[str, float], set[str]]:
     """Different dedup keys may run concurrently; each key remains ordered, no retries."""
-    started = dict(last_started)
+    finished = dict(last_finished)
     blocked = set(blocked_keys)
     groups: dict[str, list[dict[str, Any]]] = defaultdict(list)
     results: dict[str, dict[str, Any]] = {}
@@ -188,12 +188,11 @@ async def execute_batches(
             if key in blocked:
                 result = {**common, "status": "blocked", "reason": "prior_same_key_not_confirmed"}
             else:
-                remaining = started.get(key, float("-inf")) + dedup_window_seconds - clock()
+                remaining = finished.get(key, float("-inf")) + dedup_window_seconds - clock()
                 if remaining > 0:
                     await sleep(remaining)
                 operation = batch["operation"]
                 payload = operation["payload"]
-                started[key] = clock()
                 try:
                     if operation["product"] == "swap":
                         response = await SwapClientHttpx().operate(SwapOrderOpenApiSaveReqVO.model_validate(payload))
@@ -214,11 +213,14 @@ async def execute_batches(
                     # A client exception after dispatch cannot prove that no write occurred.
                     result = {**common, "status": "uncertain", "reason": "backend_result_unavailable",
                               "error_type": type(exc).__name__}
+                # Java acquires its dedup key after preprocessing, not at HTTP dispatch.
+                # A complete window after receiving the response safely covers that delay.
+                finished[key] = clock()
             for instruction_id in batch["instruction_ids"]:
                 results[instruction_id] = {"instruction_id": instruction_id, **deepcopy(result)}
 
     await asyncio.gather(*(run_group(key, group) for key, group in groups.items()))
-    return results, started, blocked
+    return results, finished, blocked
 
 
 def authoritative_order_id(result: dict[str, Any]) -> str | None:

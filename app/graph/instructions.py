@@ -121,7 +121,7 @@ class InstructionsState(AgentState, total=False):
     _dependencies: list[dict[str, Any]]
     _prepared: Annotated[list[dict[str, Any]], _merge_prepared]
     _results: dict[str, dict[str, Any]]
-    _last_started: dict[str, float]
+    _last_finished: dict[str, float]
     _blocked_keys: set[str]
 
 
@@ -149,7 +149,7 @@ def build_instructions_graph(
         base = {key: deepcopy(value) for key, value in state.items()
                 if not key.startswith("_") and key not in {"sub_instructions", "instruction_results"}}
         return {"_base": base, "_plan": plan, "_ready": [], "_prepared": [],
-                "_results": {}, "_last_started": {}, "_blocked_keys": set()}
+                "_results": {}, "_last_finished": {}, "_blocked_keys": set()}
 
     @safe_node
     async def schedule_instructions(state: InstructionsState) -> dict[str, Any]:
@@ -245,8 +245,8 @@ def build_instructions_graph(
                 operations.append(item)
             else:
                 results[item["instruction_id"]] = {key: value for key, value in item.items() if key != "trace"}
-        outcomes, started, blocked = await execute_batches(
-            batch_operations(operations), last_started=state["_last_started"],
+        outcomes, finished, blocked = await execute_batches(
+            batch_operations(operations), last_finished=state["_last_finished"],
             blocked_keys=state["_blocked_keys"], dedup_window_seconds=dedup_window_seconds,
             clock=clock, sleep=sleep,
         )
@@ -256,7 +256,7 @@ def build_instructions_graph(
                 outcomes[identity].update({key: item[key] for key in ("product_type", "intent")
                                            if item.get(key) is not None})
         results.update(outcomes)
-        return {"_results": results, "_last_started": started, "_blocked_keys": blocked}
+        return {"_results": results, "_last_finished": finished, "_blocked_keys": blocked}
 
     @safe_node
     async def finish_instructions(state: InstructionsState) -> dict[str, Any]:

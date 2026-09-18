@@ -136,7 +136,8 @@ async def test_partial_timeout_blocks_dependents_without_repeating_write(monkeyp
     assert "private-secret-text" not in str(diagnostic)
 
 
-async def test_dependent_distinct_operations_wait_dedup_window_and_keep_same_identity(monkeypatch):
+@pytest.mark.parametrize("response_latency", [0.0, 6.0])
+async def test_dependent_distinct_operations_wait_dedup_window_and_keep_same_identity(monkeypatch, response_latency):
     from app.execution import operations
     from app.graph.instructions import build_instructions_graph
     from app.subgraphs.swap.backend import call_swap_backend
@@ -156,6 +157,7 @@ async def test_dependent_distinct_operations_wait_dedup_window_and_keep_same_ide
 
     async def operate(req):
         sent.append((clock[0], req.message_id))
+        clock[0] += response_latency
         return {"code": 0, "data": "真实回复"}
 
     monkeypatch.setattr(operations, "SwapClientHttpx", lambda: MagicMock(operate=operate))
@@ -163,7 +165,7 @@ async def test_dependent_distinct_operations_wait_dedup_window_and_keep_same_ide
     plan = [_instruction(raw, "买甲"), _instruction(raw, "再买甲", depends_on=[0])]
     await build_instructions_graph(Worker(), clock=lambda: clock[0], sleep=sleep).ainvoke(_state(raw, plan))
     assert waits == [10.0]
-    assert sent == [(100.0, 1234567890123456789), (110.0, 1234567890123456789)]
+    assert sent == [(100.0, 1234567890123456789), (110.0 + response_latency, 1234567890123456789)]
 
 
 async def test_dependent_confirmation_never_synthesizes_quote(monkeypatch):
