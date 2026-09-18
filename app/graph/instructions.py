@@ -25,6 +25,7 @@ from app.graph.retry import io_node
 from app.graph.safe_node import safe_node
 from app.graph.state import AgentState, ErrorInfo, Message, TraceEntry
 from app.llm.clients import get_qwen_standard
+from app.observability.diagnostics import failure_diagnostic
 from app.prompts.spec import PromptSpec, register
 
 
@@ -211,7 +212,8 @@ def build_instructions_graph(
                                     dependency_product=dependency_product) as captured:
                 final = await worker_graph.ainvoke(base, config=config)
             if final.get("error"):
-                prepared = {"instruction_id": identity, "status": "failed", "reason": "preparation_failed"}
+                prepared = {"instruction_id": identity, "status": "failed", "reason": "preparation_failed",
+                            "diagnostic": failure_diagnostic(final)}
             elif len(captured.operations) == 1:
                 prepared = {"instruction_id": identity, "operation": captured.operations[0]}
             elif not captured.operations:
@@ -224,7 +226,10 @@ def build_instructions_graph(
             prepared["trace"] = final.get("trace") or []
         except Exception as exc:  # noqa: BLE001 - preserve independent instruction failures
             prepared = {"instruction_id": identity, "status": "failed", "reason": "preparation_failed",
-                        "error_type": type(exc).__name__}
+                        "error_type": type(exc).__name__, "diagnostic": {
+                            "code": "E3", "node": "prepare_instruction", "type": type(exc).__name__,
+                            "summary": "指令参数准备失败",
+                        }}
         return {"_prepared": [prepared]}
 
     @safe_node

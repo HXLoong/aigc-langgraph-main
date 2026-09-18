@@ -93,6 +93,7 @@ async def test_native_send_isolates_preparation_and_batches_original_message_ide
 async def test_partial_timeout_blocks_dependents_without_repeating_write(monkeypatch):
     from app.execution import operations
     from app.graph.instructions import build_instructions_graph
+    from app.graph.state import ErrorInfo
     from app.subgraphs.option.backend import call_option_backend
     from app.subgraphs.swap.backend import call_swap_backend
     from app.tools.exceptions import BackendUnreachableError
@@ -102,6 +103,10 @@ async def test_partial_timeout_blocks_dependents_without_repeating_write(monkeyp
     class Worker:
         async def ainvoke(self, state, config=None, **kwargs):
             prepared.append(state["raw_text"])
+            if state["raw_text"] == "错误指令":
+                return {**state, "error": ErrorInfo(
+                    node="place_close_normalize", type="EvidenceError", message="private-secret-text",
+                )}
             if "期权" in state["raw_text"]:
                 await call_option_backend(state, intent="place_order_from_quote", order_list=[{"orderId": "Q-1"}])
             else:
@@ -118,12 +123,15 @@ async def test_partial_timeout_blocks_dependents_without_repeating_write(monkeyp
 
     monkeypatch.setattr(operations, "SwapClientHttpx", lambda: MagicMock(operate=swap))
     monkeypatch.setattr(operations, "OptionClientHttpx", lambda: MagicMock(operate=option))
-    raw = "买甲；期权下单；再买乙"
+    raw = "买甲；期权下单；再买乙；错误指令"
     plan = [_instruction(raw, "买甲"), _instruction(raw, "期权下单"),
-            _instruction(raw, "再买乙", depends_on=[0])]
+            _instruction(raw, "再买乙", depends_on=[0]), _instruction(raw, "错误指令")]
     result = await build_instructions_graph(Worker()).ainvoke(_state(raw, plan))
     assert sorted(writes) == ["option", "swap"] and "再买乙" not in prepared
-    assert [item["status"] for item in result["instruction_results"]] == ["uncertain", "response_received", "blocked"]
+    assert [item["status"] for item in result["instruction_results"]] == ["uncertain", "response_received", "blocked", "failed"]
+    diagnostic = result["instruction_results"][3]["diagnostic"]
+    assert diagnostic["node"] == "place_close_normalize" and diagnostic["type"] == "EvidenceError"
+    assert "private-secret-text" not in str(diagnostic)
 
 
 async def test_dependent_distinct_operations_wait_dedup_window_and_keep_same_identity(monkeypatch):
