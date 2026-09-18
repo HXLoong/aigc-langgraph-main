@@ -125,6 +125,7 @@ class Settings(BaseSettings):
     # history_messages 只保留最近 N 条（user + assistant 各算 1 条；40 ≈ 20 轮）。
     # 企微群 thread 长期存在，无界累加会撑大 prompt / checkpoint；N 由现场 eval 校准
     history_window_messages: int = Field(default=40, ge=2)
+    conversation_idle_timeout_seconds: int = Field(default=1800, ge=60)
 
     @model_validator(mode="after")
     def validate_deadline_reserve(self) -> "Settings":

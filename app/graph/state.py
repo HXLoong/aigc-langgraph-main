@@ -255,6 +255,8 @@ class AgentState(TypedDict, total=False):
     #: 由主图 remember_confirmed_params 写入；确认链路裸确认时优先读它，显式引用 / 单号仍优先
     conversation_orders: list[dict[str, Any]]
     last_confirmed_params: dict[str, Any] | None
+    last_activity_at: float  # 最近一轮开始时间；仅图内部写入，不能由请求覆盖
+    session_status: Literal["active", "expired"]
 
     # -------- 业务路由 --------
     #: 单次 graph 调用的关联 ID（ADR 0004/#156：node_trace ↔ LangFuse 关联键）

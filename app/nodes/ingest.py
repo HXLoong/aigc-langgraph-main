@@ -6,12 +6,14 @@ product_type 由下游 `intent_route` 节点（ADR 0015 三层路由）负责。
 from __future__ import annotations
 
 import uuid
+from time import time
 from typing import Any
 
 from langgraph.types import Overwrite
 
+from app.config import get_settings
 from app.graph.safe_node import safe_node
-from app.graph.state import AgentState
+from app.graph.state import AgentState, TraceEntry
 from app.observability.canary import is_canary_room
 from app.observability.metrics import emit_canary_traffic
 
@@ -43,8 +45,16 @@ async def ingest(state: AgentState) -> dict[str, Any]:
         # ADR 0004/#156：单次调用关联 ID（API 入口 routes.py 已生成；此处兜底
         # 覆盖 eval 脚本 / harness 等直接 ainvoke 的路径）
         updates["trace_id"] = uuid.uuid4().hex
-    return {
+    now = time()
+    previous_activity = state.get("last_activity_at")
+    expired = (
+        previous_activity is not None
+        and now - previous_activity >= get_settings().conversation_idle_timeout_seconds
+    )
+    result: dict[str, Any] = {
         **updates,
+        "last_activity_at": now,
+        "session_status": "active",
         "reply_text": None,
         "api_result": None,
         "api_code": None,
@@ -64,3 +74,15 @@ async def ingest(state: AgentState) -> dict[str, Any]:
         # 一轮边界：清上一轮 trace
         "trace": Overwrite([]),
     }
+    if expired:
+        result.update({
+            "session_status": "expired",
+            "product_type": "unknown",
+            "intent": "",
+            "history_messages": Overwrite([]),
+            "last_confirmed_params": None,
+            "conversation_orders": [],
+            "reply_text": "会话已过期，请重新发送当前指令；如需确认订单，请引用最新订单消息。",
+            "trace": Overwrite([TraceEntry(node="ingest", decision="session:expired")]),
+        })
+    return result

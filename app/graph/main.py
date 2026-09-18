@@ -47,6 +47,8 @@ def _route_entry(state: AgentState) -> str:
     2. existing_command == "1" 且 at_bot == "0" → 存量兼容交易查询
     3. 其他 → pre_route（对手/候选提取）→ intent_route 一级路由
     """
+    if state.get("session_status") == "expired":
+        return "render"
     if is_fast_query(state):
         return "quick_inquiry"
     if is_existing_command(state):
@@ -119,6 +121,7 @@ def build_main_graph(
             "quick_inquiry": "quick_inquiry",
             "existing_command_query": "existing_command_query",
             "pre_route": "pre_route",
+            "render": "render",
         },
     )
     g.add_edge("pre_route", "intent_route")
