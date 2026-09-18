@@ -87,6 +87,7 @@ async def resolve_ticker_full(
     *,
     filter_order_context: bool = False,
     counterparty_shortnames: list[str] | None = None,
+    candidate_keywords: list[str] | None = None,
 ) -> TickerResolution:
     """标的识别（新管线入口，含 HITL 信号占位，Issue #20）。
 
@@ -96,9 +97,11 @@ async def resolve_ticker_full(
     Returns:
         TickerResolution(resolved, hitl_pending)
     """
-    if not raw_text:
+    if not raw_text and not candidate_keywords:
         return TickerResolution(resolved=[], hitl_pending=[])
 
+    if candidate_keywords is not None:
+        return await _resolve_pipeline(raw_text, candidate_keywords)
     if filter_order_context:
         raw_text = mask_order_context(raw_text, counterparty_shortnames or [])
     return await _resolve_pipeline(raw_text)
@@ -131,6 +134,7 @@ class TickerState(TypedDict, total=False):
 
     raw_text: str
     candidates: list[str]
+    candidate_keywords: list[str]
     infer_codes: dict[str, Any]
     split_codes: dict[str, Any]
     ins_family: dict[str, Any]
@@ -201,6 +205,8 @@ async def _resolve_one_org_item(
 
 async def extract_candidates(state: TickerState) -> dict[str, Any]:
     """tokenize 提取候选 → 过滤噪音（单字符 / 非 4-6 位纯数字 / 订单号前缀）→ 格式化去重。"""
+    if "candidate_keywords" in state:
+        return {"candidates": format_candidate_list(state["candidate_keywords"])}
     raw_candidates = tokenize.invoke({"raw_text": state["raw_text"]})
     filtered = _filter_noise_candidates(raw_candidates)
     return {"candidates": format_candidate_list(filtered)}
@@ -338,11 +344,14 @@ async def assemble(state: TickerState) -> dict[str, Any]:
     return {"resolved": resolved}
 
 
-async def _resolve_pipeline(raw_text: str) -> TickerResolution:
+async def _resolve_pipeline(raw_text: str, candidate_keywords: list[str] | None = None) -> TickerResolution:
     """跑 ticker 子图（拓扑见 graph.py）。"""
     from app.subgraphs.ticker.graph import get_ticker_graph
 
-    final = await get_ticker_graph().ainvoke({"raw_text": raw_text})
+    initial: TickerState = {"raw_text": raw_text}
+    if candidate_keywords is not None:
+        initial["candidate_keywords"] = candidate_keywords
+    final = await get_ticker_graph().ainvoke(initial)
     return TickerResolution(resolved=list(final.get("resolved") or []), hitl_pending=[])
 
 

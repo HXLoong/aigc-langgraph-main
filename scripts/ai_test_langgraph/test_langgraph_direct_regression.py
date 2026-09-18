@@ -355,3 +355,15 @@ class LangGraphClientContractTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class WorkflowFailureDetailsTest(unittest.TestCase):
+    def test_failure_displays_node_category_and_elapsed_time(self):
+        payload = {"data": {"status": "failed", "error": "指令处理失败，请核对输入或稍后重试。",
+            "outputs": {"diagnostic": {"code": "E4", "node": "swap_place_order_submit", "elapsed_ms": 5002,
+                                      "summary": "后端调用超时"}, "trace_id": "trace-123"}}}
+        with self.assertRaises(Exception) as captured:
+            parse_workflow_response(payload)
+        message = str(captured.exception)
+        for detail in ("E4", "swap_place_order_submit", "5002", "trace-123", "后端调用超时"):
+            self.assertIn(detail, message)

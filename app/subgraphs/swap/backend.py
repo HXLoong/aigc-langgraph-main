@@ -78,6 +78,9 @@ def _with_resolved_ticker(
             or not wind_code.strip()
         ):
             continue
+        requested_market = order.get("placeOrderTransactionType")
+        if requested_market and requested_market not in (data.get("transactionTypeLists") or []):
+            continue
         verified.append(data)
         if wind_code.strip().upper() == original_code:
             order["placeOrderWindCode"] = wind_code

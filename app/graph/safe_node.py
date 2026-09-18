@@ -19,6 +19,7 @@ from langgraph.types import Overwrite
 from app.extraction.locks import protect_update
 from app.graph.state import ErrorInfo, TraceEntry
 from app.observability.metrics import emit_node_completed
+from app.observability.tracing import report_handled_error
 
 logger = logging.getLogger(__name__)
 
@@ -103,7 +104,7 @@ def safe_node(
             # C1.5 监控埋点：节点抛异常（cascade fail 源头）
             emit_node_completed(node=node_name, status="error", elapsed_ms=elapsed_ms)
 
-            return {
+            failed = {
                 "error": ErrorInfo(
                     node=node_name,
                     type=type(exc).__name__,
@@ -118,6 +119,8 @@ def safe_node(
                     )
                 ],
             }
+            report_handled_error(failed)
+            return failed
 
     return wrapper
 

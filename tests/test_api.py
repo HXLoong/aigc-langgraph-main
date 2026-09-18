@@ -765,3 +765,16 @@ async def test_langfuse_client_registered_before_handler_on_parent_trace(
         request_trace_id="3" * 32, traceparent=f"00-{'1' * 32}-{'2' * 16}-01"
     )
     assert order[:2] == ["client", "handler"], order
+
+
+@pytest.mark.asyncio
+async def test_langfuse_callback_runs_inline_for_current_span_updates(monkeypatch):
+    captured = {}
+    _patch_langfuse(monkeypatch, captured)
+    monkeypatch.setattr(observability_tracing, "get_settings", lambda: SimpleNamespace(
+        environment="development", enable_langfuse=True, langfuse_public_key="public",
+        langfuse_secret_key="secret", langfuse_base_url="https://langfuse.test",
+        trust_inbound_traceparent=False,
+    ))
+    trace = await observability_tracing.attach_request_trace(request_trace_id="4"*32, traceparent=None)
+    assert trace.handler.run_inline is True

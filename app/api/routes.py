@@ -31,10 +31,11 @@ from app.api.turn_state import inputs_to_state
 from app.config import get_settings
 from app.graph.state import AgentState, ErrorInfo, TraceEntry
 from app.nodes.persist import persist
+from app.observability.diagnostics import failure_diagnostic
 from app.observability.llm_metrics import LLMMetricsCallback
 from app.observability.logs import bound_request_context
 from app.observability.metrics import emit_intent_latency
-from app.observability.tracing import attach_request_trace
+from app.observability.tracing import HandledErrorCallback, attach_request_trace
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -233,7 +234,9 @@ async def _execute_workflow(
         traceparent=request.headers.get("traceparent"),
     )
     # LLM 指标 callback 常驻（ADR 0024 D5）；LangFuse handler 接入成功时并列
-    config["callbacks"] = [LLMMetricsCallback()] + ([trace.handler] if trace.handler is not None else [])
+    config["callbacks"] = [LLMMetricsCallback()] + (
+        [HandledErrorCallback(trace.handler), trace.handler] if trace.handler is not None else []
+    )
 
     t0 = time.perf_counter()
     timed_out = False
@@ -452,6 +455,7 @@ def _state_to_outputs(state: AgentState) -> dict[str, Any]:
     }
     error = state.get("error")
     if error is not None:
+        outputs["diagnostic"] = failure_diagnostic(state)
         outputs["error"] = {"code": error.code, "node": error.node, "type": error.type,
                             "causes": [{"code": e.code, "node": e.node, "type": e.type}
                                        for e in error.causes]}

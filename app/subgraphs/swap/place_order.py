@@ -94,18 +94,35 @@ async def swap_normalize(state: SwapPlaceState) -> dict[str, Any]:
 @safe_node
 async def swap_resolve(state: SwapPlaceState) -> dict[str, Any]:
     # The ticker subgraph owns its leaf retries; do not retry the complete resolver again.
+    params = SwapPlaceOrderParams.model_validate(state.get("sp_params") or {})
+    # These are syntax labels for market enums, not a security/name data dictionary.
+    markets = {"HK_STOCK": "港股", "US_STOCK": "美股", "A_SHARE": "A股"}
+    query_names: dict[str, str] = {}
+    for item in params.order_list:
+        name = (item.place_order_wind_code or "").strip()
+        if name:
+            hint = markets.get(item.place_order_transaction_type or "", "")
+            query_names[f"{hint} {name}".strip()] = name
     resolution = await resolve_ticker_full(
         state.get("raw_text") or "", filter_order_context=True,
         counterparty_shortnames=[
             c["shortName"] for c in state.get("swap_counterparties") or []
             if isinstance(c.get("shortName"), str)
         ],
+        candidate_keywords=list(query_names),
     )
-    params = SwapPlaceOrderParams.model_validate(state.get("sp_params") or {})
+    # Preserve the original extraction identity after querying with an explicit market hint.
+    tickers = []
+    for ticker in resolution.resolved:
+        if hasattr(ticker, "source_keywords"):
+            names = list(ticker.source_keywords)
+            names.extend(query_names[k] for k in ticker.source_keywords if k in query_names)
+            ticker = ticker.model_copy(update={"source_keywords": list(dict.fromkeys(names))})
+        tickers.append(ticker)
     orders, bindings = [], []
     records: dict[str, FieldRecord] = {}
     for index, item in enumerate(params.order_list):
-        order, match = _with_resolved_ticker(item.model_dump(), resolution.resolved)
+        order, match = _with_resolved_ticker(item.model_dump(), tickers)
         orders.append(order)
         bindings.append({"order_index": index, "original_wind_code": item.place_order_wind_code,
                          "resolved_wind_code": order.get("placeOrderWindCode"), "result": match})
@@ -120,7 +137,7 @@ async def swap_resolve(state: SwapPlaceState) -> dict[str, Any]:
             )
     return {
         "sp_params": {"orderList": orders}, "sp_bindings": bindings,
-        "tickers": resolution.resolved, "field_records": records,
+        "tickers": tickers, "field_records": records,
         "ticker_hitl_candidates": list(resolution.hitl_pending) or None,
     }
 

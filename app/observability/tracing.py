@@ -22,8 +22,12 @@ import logging
 import re
 from dataclasses import dataclass
 from typing import Any
+from uuid import UUID
+
+from langchain_core.callbacks import BaseCallbackHandler
 
 from app.config import get_settings
+from app.observability.diagnostics import failure_diagnostic
 from app.observability.privacy import mask_sensitive
 
 logger = logging.getLogger(__name__)
@@ -34,6 +38,46 @@ _TRACEPARENT_RE = re.compile(
 
 #: 进程级 LangFuse client 单例（懒惰创建）
 _langfuse_client: Any | None = None
+
+
+def report_handled_error(state: dict[str, Any], observation: Any | None = None) -> None:
+    """Mark the current LangChain observation when a node returned an error as data."""
+    if not _enabled():
+        return
+    try:
+        detail = failure_diagnostic(state)
+        client = _ensure_client() if detail and observation is None else None
+        if (client is not None or observation is not None) and detail is not None:
+            status = f"{detail['code']} {detail['node']}: {detail['summary']}"
+            if detail["elapsed_ms"] is not None:
+                status += f" ({detail['elapsed_ms']} ms)"
+            if observation is not None:
+                observation.update(level="ERROR", status_message=status, metadata={"diagnostic": detail})
+            elif client is not None:
+                client.update_current_span(level="ERROR", status_message=status,
+                                           metadata={"diagnostic": detail})
+    except Exception as exc:
+        logger.warning("handled-error telemetry unavailable: %s", type(exc).__name__)
+
+
+class HandledErrorCallback(BaseCallbackHandler):
+    # Run before the Langfuse callback detaches/ends this chain's current observation.
+    run_inline = True
+
+    def __init__(self, handler: Any | None = None) -> None:
+        self._handler = handler
+
+    def on_chain_end(self, outputs: Any, *, run_id: UUID, **kwargs: Any) -> None:
+        if isinstance(outputs, dict) and outputs.get("error"):
+            # LangGraph child callbacks can leave an ended child in the current context.
+            # Langfuse 4.5 keeps active observations by LangChain run ID; use that identity
+            # before its on_chain_end removes the entry. This SDK seam has a live trace test.
+            if self._handler is not None:
+                observation = getattr(self._handler, "_runs", {}).get(run_id)
+                if observation is not None:
+                    report_handled_error(outputs, observation)
+            else:
+                report_handled_error(outputs)
 
 
 @dataclass(frozen=True, slots=True)
@@ -149,6 +193,9 @@ async def attach_request_trace(
             public_key=settings.langfuse_public_key,
             trace_context=trace_context,
         )
+        # The SDK attaches OTel context during callbacks. An executor-thread callback cannot
+        # propagate that ContextVar into the async node; inline execution preserves it.
+        handler.run_inline = True
     except Exception as exc:  # noqa: BLE001 - tracing 失败不阻断业务
         logger.warning("LangFuse trace 接入失败：%s", exc)
         return RequestTrace()
