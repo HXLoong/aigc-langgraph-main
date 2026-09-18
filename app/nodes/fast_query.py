@@ -65,10 +65,10 @@ async def quick_inquiry(state: AgentState) -> dict[str, Any]:
         # business_xxx / timeout / network_error）必须落 trace + 日志，禁止只留通用文案
         reason = rfq.get("reason") or "unknown"
         logger.warning(
-            "quick_inquiry rfq 解析失败 reason=%s http_status=%s raw=%s",
+            "quick_inquiry rfq 解析失败 reason=%s http_status=%s response_length=%s",
             reason,
             rfq.get("http_status"),
-            (rfq.get("raw_response") or "")[:300],
+            len(rfq.get("raw_response") or ""),
         )
         return {
             "api_code": rfq.get("code", 500),
@@ -99,8 +99,6 @@ async def quick_inquiry(state: AgentState) -> dict[str, Any]:
     code = result.get("code")
     if code == 0:
         reply = result.get("data") or ""
-    elif code == 500:
-        reply = _SERVICE_UNAVAILABLE
     else:
         reply = result.get("msg") or "未知错误"
     return {
