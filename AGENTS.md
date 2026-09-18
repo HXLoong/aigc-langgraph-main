@@ -488,5 +488,5 @@ pytest --cov=app.nodes.route    # 覆盖率
 # 附二：其余仓库规则（按需读取，同样具有约束力）
 
 - `.claude/rules/git-workflow.md` — Git 工作流
-- `.claude/rules/langgraph-patterns.md` — LangGraph 特定模式
+- `.claude/rules/langgraph-patterns.md` — LangGraph 模式
 - `.claude/rules/python-style.md` — Python 编码规范
