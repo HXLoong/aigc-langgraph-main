@@ -1,7 +1,7 @@
 """close 子图 P0 路由测试 · close_order_request → close_place_close。"""
 from __future__ import annotations
 
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import MagicMock
 
 import pytest
 
@@ -11,6 +11,7 @@ from app.subgraphs.close import place_close as pc_module
 from app.subgraphs.close.models import (
     CloseIntentOutput,
 )
+from tests.intent_fixtures import intent_reply, mock_ainvoke
 from tests.subgraphs.close.candidate_fixtures import close_candidates
 
 
@@ -34,7 +35,7 @@ def _patch_close_backend_calls(monkeypatch: pytest.MonkeyPatch) -> None:
 
 def _patch(monkeypatch: pytest.MonkeyPatch, module: object, value: object, fn: str = "get_qwen_thinking") -> None:
     fake_llm = MagicMock()
-    fake_llm.ainvoke = AsyncMock(return_value=value)
+    fake_llm.ainvoke = mock_ainvoke(value)
     fake_base = MagicMock()
     fake_base.with_structured_output = MagicMock(return_value=fake_llm)
     monkeypatch.setattr(module, fn, lambda: fake_base)
@@ -48,7 +49,7 @@ async def test_close_order_request_routes_to_place_close(
     _patch(
         monkeypatch,
         intent_module,
-        CloseIntentOutput(type="close_order_request"),
+        intent_reply(CloseIntentOutput, type="close_order_request"),
     )
     _patch(
         monkeypatch,

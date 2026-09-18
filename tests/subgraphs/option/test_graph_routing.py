@@ -20,6 +20,7 @@ from app.subgraphs.option.models import (
     OptionInquiryRawParams,
     OptionIntentOutput,
 )
+from tests.intent_fixtures import intent_reply
 
 #: 不含 conversation_id/user_id/room_id——保持 call_option_backend() 的早退门禁
 #: 生效（三者缺一即返回 {}），路由测试只关心 intent → 节点分发 + state 业务字段
@@ -70,7 +71,7 @@ def _patch_intent(monkeypatch: pytest.MonkeyPatch, intent_type: str) -> None:
     _patch(
         monkeypatch,
         intent_module,
-        OptionIntentOutput(type=intent_type),  # type: ignore[arg-type]
+        intent_reply(OptionIntentOutput, type=intent_type),  # type: ignore[arg-type]
         fn="get_qwen_structured",
     )
 

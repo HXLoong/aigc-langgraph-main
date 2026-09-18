@@ -15,6 +15,7 @@ from __future__ import annotations
 import re
 from typing import Any
 
+from app.extraction.intent_evidence import intent_records, source_payload
 from app.graph.retry import io_node
 from app.graph.state import AgentState, TraceEntry
 from app.llm.clients import get_qwen_structured
@@ -27,7 +28,7 @@ SPEC = register(PromptSpec(
     name="intent",
     output_model=OptionIntentOutput,
     inputs=INTENT_INPUTS,
-    user_builder=intent_user,
+    user_builder=lambda state: intent_user(state) + "\n" + source_payload(state),
 ))
 
 #: 兼容旧测试 / 调用点：user 消息拼装已收敛到 app/subgraphs/option/prompting.intent_user
@@ -74,16 +75,18 @@ async def option_intent(state: AgentState) -> dict[str, Any]:
 
     messages, _prompt_name = SPEC.build_messages(state)
     llm = get_qwen_structured().with_structured_output(OptionIntentOutput)
-    result: Any = await llm.ainvoke(messages)
+    result = OptionIntentOutput.model_validate(await llm.ainvoke(messages))
+    records = intent_records(result, state, scope="option/intent", value=result.type)
 
     intent = result.type
     return {
         "intent": intent,
+        "field_records": records,
         "trace": [
             TraceEntry(
                 node="option_intent",
                 decision=f"intent={intent}",
-                llm_output={"type": intent},
+                llm_output={"type": intent, "confidence": result.confidence, "evidence_count": len(result.evidence)},
             )
         ],
     }

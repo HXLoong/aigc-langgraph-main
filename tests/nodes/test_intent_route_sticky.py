@@ -10,11 +10,12 @@ from unittest.mock import AsyncMock
 import pytest
 
 import app.nodes.intent_route as ir
+from tests.intent_fixtures import route_reply
 
 
 @pytest.fixture()
 def _llm_unknown(monkeypatch: pytest.MonkeyPatch):
-    monkeypatch.setattr(ir, "_classify_with_llm", AsyncMock(return_value="unknown"))
+    monkeypatch.setattr(ir, "_classify_with_llm", AsyncMock(side_effect=lambda text, quote: route_reply("unknown", text)))
 
 
 class TestSticky:
@@ -42,7 +43,7 @@ class TestSticky:
         assert out["product_type"] == "unknown"
 
     async def test_llm_answer_beats_sticky(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        monkeypatch.setattr(ir, "_classify_with_llm", AsyncMock(return_value="期权-文本"))
+        monkeypatch.setattr(ir, "_classify_with_llm", AsyncMock(side_effect=lambda text, quote: route_reply("期权-文本", text)))
         state = {"raw_text": "帮我看看那个结构", "product_type": "swap"}
         out = await ir.intent_route(state)
         assert out["product_type"] == "option"

@@ -52,6 +52,7 @@ from app.subgraphs.swap.models import (
     SwapTickerPick,
 )
 from app.subgraphs.ticker.resolver import TickerResolution
+from tests.intent_fixtures import intent_reply, mock_ainvoke
 
 
 def _patch_resolver(
@@ -59,7 +60,7 @@ def _patch_resolver(
     candidates: list[TickerCandidate],
 ) -> None:
     resolution = TickerResolution(resolved=candidates, hitl_pending=[])
-    monkeypatch.setattr(po_module, "resolve_ticker_full", AsyncMock(return_value=resolution))
+    monkeypatch.setattr(po_module, "resolve_ticker_full", mock_ainvoke(resolution))
 
 
 def _patch(
@@ -91,7 +92,7 @@ def _patch_vl_and_extract(
     monkeypatch.setattr(mm_module, "get_qwen_vl", lambda: ocr_llm)
 
     extract_llm = MagicMock()
-    extract_llm.ainvoke = AsyncMock(return_value=params)
+    extract_llm.ainvoke = mock_ainvoke(params)
     factory = MagicMock()
     factory.with_structured_output = MagicMock(return_value=extract_llm)
     monkeypatch.setattr(mm_module, "get_qwen_structured", lambda: factory)
@@ -248,7 +249,7 @@ class TestSwapGraphEndToEnd:
             monkeypatch,
             [TickerCandidate(windCode="00700.HK", insShtDesc="腾讯控股", from_goats=True)],
         )
-        _patch(monkeypatch, intent_module, SwapIntentOutput(type="place_order_request"))
+        _patch(monkeypatch, intent_module, intent_reply(SwapIntentOutput, type="place_order_request"))
         _patch(
             monkeypatch,
             po_module,
@@ -281,7 +282,7 @@ class TestSwapGraphEndToEnd:
     ) -> None:
         """有引用消息 → place_order → select_counterparty → select_ticker → submit。"""
         _patch_resolver(monkeypatch, [])
-        _patch(monkeypatch, intent_module, SwapIntentOutput(type="place_order_request"))
+        _patch(monkeypatch, intent_module, intent_reply(SwapIntentOutput, type="place_order_request"))
         _patch(
             monkeypatch,
             po_module,
@@ -368,7 +369,7 @@ class TestSwapGraphEndToEnd:
     async def test_unknown_intent_routes_to_swap_unknown(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        _patch(monkeypatch, intent_module, SwapIntentOutput(type="unknown_intent"))
+        _patch(monkeypatch, intent_module, intent_reply(SwapIntentOutput, type="unknown_intent"))
 
         graph = build_swap_graph()
         final = await graph.ainvoke({**_BASE_STATE, "raw_text": "你好啊"})

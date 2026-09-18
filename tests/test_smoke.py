@@ -11,6 +11,7 @@ import pytest
 from evidence_support import swap_candidate_output
 
 from app.graph.main import build_main_graph
+from tests.intent_fixtures import intent_reply, mock_ainvoke, route_reply
 
 
 @pytest.mark.asyncio
@@ -51,7 +52,7 @@ async def test_main_graph_e2e_swap_keyword(
         "app.tools.swap_client.SwapClientHttpx.operate", _fake_operate
     )
 
-    _patch(swap_intent_module, SwapIntentOutput(type="place_order_request"))
+    _patch(swap_intent_module, intent_reply(SwapIntentOutput, type="place_order_request"))
     _patch(
         swap_po_module,
         SwapPlaceOrderParams(
@@ -131,7 +132,7 @@ async def test_main_graph_e2e_unknown_routes_to_fallback(
     from app.nodes import intent_route as intent_route_module
 
     async def fake_classify(text: str, quote_content: str | None = None) -> str:
-        return "unknown"
+        return route_reply('unknown', text)
 
     monkeypatch.setattr(intent_route_module, "_classify_with_llm", fake_classify)
 
@@ -164,7 +165,7 @@ async def test_main_graph_trace_is_isolated_per_turn(
     from app.nodes import intent_route as intent_route_module
 
     async def fake_classify(text: str, quote_content: str | None = None) -> str:
-        return "unknown"
+        return route_reply('unknown', text)
 
     monkeypatch.setattr(intent_route_module, "_classify_with_llm", fake_classify)
 
@@ -205,7 +206,7 @@ async def test_main_graph_e2e_option_close_order_no(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """ADR 0015 第 1 层：CO- 订单号 → close 子图 → close_order_request → place_close 真节点。"""
-    from unittest.mock import AsyncMock, MagicMock
+    from unittest.mock import MagicMock
 
     from app.subgraphs.close import intent as close_intent_module
     from app.subgraphs.close import place_close as close_pc_module
@@ -216,7 +217,7 @@ async def test_main_graph_e2e_option_close_order_no(
 
     def _patch(module: object, value: object, fn: str = "get_qwen_thinking") -> None:
         fake_llm = MagicMock()
-        fake_llm.ainvoke = AsyncMock(return_value=value)
+        fake_llm.ainvoke = mock_ainvoke(value)
         fake_base = MagicMock()
         fake_base.with_structured_output = MagicMock(return_value=fake_llm)
         monkeypatch.setattr(module, fn, lambda: fake_base)
@@ -235,7 +236,7 @@ async def test_main_graph_e2e_option_close_order_no(
         "app.tools.option_client.OptionClientHttpx.operate", _fake_operate
     )
 
-    _patch(close_intent_module, CloseIntentOutput(type="close_order_request"))
+    _patch(close_intent_module, intent_reply(CloseIntentOutput, type="close_order_request"))
     _patch(
         close_pc_module,
         close_candidates({"orderId": "CO-20260304-ABCD1234", "confirmFullClose": "全部"}),

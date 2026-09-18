@@ -12,12 +12,13 @@ from app.subgraphs.close.intent import (
     close_intent,
 )
 from app.subgraphs.close.models import CloseIntentOutput
+from tests.intent_fixtures import intent_reply, mock_ainvoke
 
 
 def _patch_llm(monkeypatch: pytest.MonkeyPatch, return_type: str) -> AsyncMock:
-    fake_output = CloseIntentOutput(type=return_type)  # type: ignore[arg-type]
+    fake_output = intent_reply(CloseIntentOutput, type=return_type)  # type: ignore[arg-type]
     fake_llm_with_schema = MagicMock()
-    fake_llm_with_schema.ainvoke = AsyncMock(return_value=fake_output)
+    fake_llm_with_schema.ainvoke = mock_ainvoke(fake_output)
     fake_base_llm = MagicMock()
     fake_base_llm.with_structured_output = MagicMock(
         return_value=fake_llm_with_schema
@@ -122,7 +123,7 @@ class TestCloseIntentNode:
         messages = ainvoke.call_args[0][0]
         system_content = messages[0][1]
         assert "工程层输出格式约束" not in system_content
-        assert system_content.rstrip().endswith("则输出 unknown_intent。")
+        assert "evidence" in system_content and "confidence" in system_content
 
     async def test_safe_node_catches_llm_error(
         self, monkeypatch: pytest.MonkeyPatch

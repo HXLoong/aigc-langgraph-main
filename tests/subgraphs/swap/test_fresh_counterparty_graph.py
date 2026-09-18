@@ -40,6 +40,7 @@ from app.subgraphs.ticker.models import (
 )
 from app.tools.swap_client import SwapClientHttpx
 from app.tools.ticker_client import TickerClientHttpx
+from tests.intent_fixtures import intent_reply
 from tests.subgraphs.swap.test_fresh_counterparty import fresh_state, patch_recognition
 
 
@@ -57,7 +58,7 @@ def graph_boundaries(
     monkeypatch: pytest.MonkeyPatch, params: SwapPlaceOrderParams,
 ) -> tuple[AgentState, list[dict[str, Any]]]:
     patch_structured(monkeypatch, intent, "get_qwen_thinking",
-                     SwapIntentOutput(type="place_order_request"))
+                     intent_reply(SwapIntentOutput, type="place_order_request"))
     patch_structured(monkeypatch, place_order, "get_qwen_complex", params)
     empty_outputs = {
         InferCodeOutput: InferCodeOutput.model_validate({"results": {}}),

@@ -9,6 +9,7 @@ import pytest
 
 import app.nodes.intent_route as intent_route_module
 from app.nodes.intent_route import intent_route
+from tests.intent_fixtures import route_reply
 
 # ============================================================
 # 节点级(LLM 兜底 monkeypatch 替身)
@@ -79,7 +80,7 @@ class TestIntentRouteNode:
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         async def fake(text, quote):
-            return "期权-文本"
+            return route_reply('期权-文本', text)
 
         monkeypatch.setattr(intent_route_module, "_classify_with_llm", fake)
         result = await intent_route({"raw_text": "做 纳指 一笔"})
@@ -91,7 +92,7 @@ class TestIntentRouteNode:
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         async def fake(text, quote):
-            return "unknown"
+            return route_reply('unknown', text)
 
         monkeypatch.setattr(intent_route_module, "_classify_with_llm", fake)
         result = await intent_route({"raw_text": "你好，在吗"})
@@ -100,7 +101,7 @@ class TestIntentRouteNode:
     @pytest.mark.asyncio
     async def test_empty_input(self, monkeypatch: pytest.MonkeyPatch) -> None:
         async def fake(text, quote):
-            return "unknown"
+            return route_reply('unknown', text)
 
         monkeypatch.setattr(intent_route_module, "_classify_with_llm", fake)
         result = await intent_route({})
@@ -134,7 +135,7 @@ class TestQuoteContentRouting:
 
         async def fake_classify(text: str, quote_content: str | None = None) -> str:
             llm_called.append(text)
-            return "互换-文本"  # LLM 若被调用会返回错误结果
+            return route_reply('互换-文本', text)  # LLM 若被调用会返回错误结果
 
         monkeypatch.setattr(intent_route_module, "_classify_with_llm", fake_classify)
 
@@ -156,7 +157,7 @@ class TestQuoteContentRouting:
 
         async def fake_classify(text: str, quote_content: str | None = None) -> str:
             llm_called.append(text)
-            return "期权-文本"
+            return route_reply('期权-文本', text)
 
         monkeypatch.setattr(intent_route_module, "_classify_with_llm", fake_classify)
 
@@ -178,7 +179,7 @@ class TestQuoteContentRouting:
 
         async def fake_classify(text: str, quote_content: str | None = None) -> str:
             llm_called.append(text)
-            return "期权-文本"
+            return route_reply('期权-文本', text)
 
         monkeypatch.setattr(intent_route_module, "_classify_with_llm", fake_classify)
 

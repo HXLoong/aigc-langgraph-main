@@ -10,6 +10,7 @@ from app.subgraphs.close import build_close_graph
 from app.subgraphs.close import holding_query as hq_module
 from app.subgraphs.close import intent as intent_module
 from app.subgraphs.close.models import CloseIntentOutput
+from tests.intent_fixtures import intent_reply, mock_ainvoke
 from tests.subgraphs.close.candidate_fixtures import holding_candidates
 
 
@@ -26,9 +27,9 @@ def _patch_close_backend(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def _patch_intent(monkeypatch: pytest.MonkeyPatch, intent_type: str) -> None:
-    fake_output = CloseIntentOutput(type=intent_type)  # type: ignore[arg-type]
+    fake_output = intent_reply(CloseIntentOutput, type=intent_type)  # type: ignore[arg-type]
     fake_llm = MagicMock()
-    fake_llm.ainvoke = AsyncMock(return_value=fake_output)
+    fake_llm.ainvoke = mock_ainvoke(fake_output)
     fake_base = MagicMock()
     fake_base.with_structured_output = MagicMock(return_value=fake_llm)
     monkeypatch.setattr(intent_module, "get_qwen_thinking", lambda: fake_base)
@@ -36,7 +37,7 @@ def _patch_intent(monkeypatch: pytest.MonkeyPatch, intent_type: str) -> None:
 
 def _patch_holding_query(monkeypatch: pytest.MonkeyPatch, params: object) -> None:
     fake_llm = MagicMock()
-    fake_llm.ainvoke = AsyncMock(return_value=params)
+    fake_llm.ainvoke = mock_ainvoke(params)
     fake_base = MagicMock()
     fake_base.with_structured_output = MagicMock(return_value=fake_llm)
     monkeypatch.setattr(hq_module, "get_qwen_thinking", lambda: fake_base)

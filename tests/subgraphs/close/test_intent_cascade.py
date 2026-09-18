@@ -63,7 +63,7 @@ async def test_close_intent_pydantic_validation_error_writes_error_to_state(
     """LLM 返回无效 type 字段 → ValidationError → @safe_node 捕获 → state['error']。"""
 
     def _raise(*_args, **_kwargs) -> None:
-        CloseIntentOutput(type="invalid_close_intent_type")  # type: ignore[arg-type]
+        CloseIntentOutput(type="invalid_close_intent_type", confidence=0.91, evidence=[{"text": "本轮意图模型测试输入", "origin": "raw"}])  # type: ignore[arg-type]
 
     fake_llm = MagicMock()
     fake_llm.with_structured_output = MagicMock(

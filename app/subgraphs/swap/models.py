@@ -9,6 +9,7 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from app.extraction.intent_evidence import IntentEvidenceOutput
 from app.wire_model import WireModel
 
 # ============================================================
@@ -28,7 +29,7 @@ SwapIntentType = Literal[
 ]
 
 
-class SwapIntentOutput(BaseModel):
+class SwapIntentOutput(IntentEvidenceOutput):
     """swap.intent 节点的 LLM 输出 schema。"""
 
     model_config = ConfigDict(extra="ignore")

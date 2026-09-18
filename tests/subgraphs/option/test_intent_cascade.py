@@ -63,7 +63,7 @@ async def test_option_intent_pydantic_validation_error_writes_error_to_state(
     """LLM 返回无效 type 字段 → ValidationError → @safe_node 捕获 → state['error']。"""
 
     def _raise(*_args, **_kwargs) -> None:
-        OptionIntentOutput(type="not_a_valid_option_intent")  # type: ignore[arg-type]
+        OptionIntentOutput(type="not_a_valid_option_intent", confidence=0.91, evidence=[{"text": "本轮意图模型测试输入", "origin": "raw"}])  # type: ignore[arg-type]
 
     fake_llm = MagicMock()
     fake_llm.with_structured_output = MagicMock(

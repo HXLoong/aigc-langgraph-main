@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import MagicMock
 
 import pytest
 
@@ -12,6 +12,7 @@ from app.subgraphs.swap.confirm import swap_confirm
 from app.subgraphs.swap.graph import build_swap_graph
 from app.subgraphs.swap.models import SwapIntentOutput
 from app.tools.swap_client import SwapClientHttpx
+from tests.intent_fixtures import intent_reply, mock_ainvoke
 
 CASES = json.loads(
     (Path(__file__).parents[2] / "fixtures" / "swap_confirmation_cases.json").read_text()
@@ -27,7 +28,7 @@ def capture_backend(monkeypatch: pytest.MonkeyPatch) -> list[dict]:
 
     monkeypatch.setattr(SwapClientHttpx, "operate", operate)
     # A classifier must not bypass the deterministic confirmation guard.
-    structured = MagicMock(ainvoke=AsyncMock(return_value=SwapIntentOutput(type="confirm_order")))
+    structured = MagicMock(ainvoke=mock_ainvoke(intent_reply(SwapIntentOutput, type="confirm_order")))
     model = MagicMock()
     model.with_structured_output.return_value = structured
     monkeypatch.setattr(intent_module, "get_qwen_thinking", lambda: model)

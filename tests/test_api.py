@@ -21,6 +21,7 @@ from app.subgraphs.swap import intent as swap_intent_module
 from app.subgraphs.swap import place_order as swap_place_order_module
 from app.subgraphs.swap.models import SwapIntentOutput, SwapPlaceOrderParams
 from app.subgraphs.ticker.resolver import TickerResolution
+from tests.intent_fixtures import intent_reply, mock_ainvoke
 
 
 class _CapturingGraph:
@@ -71,7 +72,7 @@ def test_workflows_run_returns_dify_compatible_schema(
 
     def fake_structured_llm(value: object) -> MagicMock:
         llm = MagicMock()
-        llm.ainvoke = AsyncMock(return_value=value)
+        llm.ainvoke = mock_ainvoke(value)
         base = MagicMock()
         base.with_structured_output.return_value = llm
         return base
@@ -79,7 +80,7 @@ def test_workflows_run_returns_dify_compatible_schema(
     monkeypatch.setattr(
         swap_intent_module,
         "get_qwen_thinking",
-        lambda: fake_structured_llm(SwapIntentOutput(type="place_order_request")),
+        lambda: fake_structured_llm(intent_reply(SwapIntentOutput, type="place_order_request")),
     )
     monkeypatch.setattr(
         swap_place_order_module,

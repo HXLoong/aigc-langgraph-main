@@ -15,6 +15,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from app.extraction.intent_evidence import intent_records, source_payload
 from app.graph.retry import io_node
 from app.graph.state import AgentState, TraceEntry
 from app.llm.clients import get_qwen_thinking
@@ -42,8 +43,8 @@ SPEC = register(PromptSpec(
     category="swap",
     name="intent",
     output_model=SwapIntentOutput,
-    inputs=("raw_text", "quote_content", "swap_counterparties", "conversation_id"),
-    user_builder=_build_user_message,
+    inputs=("raw_text", "quote_content", "history_messages", "swap_counterparties", "conversation_id"),
+    user_builder=lambda state: _build_user_message(state) + "\n" + source_payload(state),
     gray=True,
 ))
 
@@ -70,15 +71,17 @@ async def swap_intent(state: AgentState) -> dict[str, Any]:
 
     messages, prompt_name = SPEC.build_messages(state)
     llm = get_qwen_thinking().with_structured_output(SwapIntentOutput)
-    result: Any = await llm.ainvoke(messages)
+    result = SwapIntentOutput.model_validate(await llm.ainvoke(messages))
+    records = intent_records(result, state, scope="swap/intent", value=result.type)
 
     return {
         "intent": result.type,
+        "field_records": records,
         "trace": [
             TraceEntry(
                 node="swap_intent",
                 decision=f"intent={result.type} prompt={prompt_name}",
-                llm_output={"type": result.type, "prompt_name": prompt_name},
+                llm_output={"type": result.type, "prompt_name": prompt_name, "confidence": result.confidence, "evidence_count": len(result.evidence)},
             )
         ],
     }

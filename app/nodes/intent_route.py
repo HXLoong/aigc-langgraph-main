@@ -20,8 +20,9 @@ from __future__ import annotations
 import logging
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import Field
 
+from app.extraction.intent_evidence import IntentEvidenceOutput, intent_records, source_payload
 from app.graph.retry import io_node
 from app.graph.state import AgentState, ProductType, TraceEntry
 from app.llm.clients import get_qwen_thinking
@@ -41,8 +42,8 @@ _LABEL_MAP: dict[str, tuple[ProductType, str | None]] = {
 }
 
 
-class UnknownIntentOutput(BaseModel):
-    """LLM 兜底输出 schema(枚举值与提示词「只输出 1 行枚举值」约定一致)。"""
+class UnknownIntentOutput(IntentEvidenceOutput):
+    """LLM 兜底输出：枚举标签、置信度及原文证据。"""
 
     label: Literal["互换-文本", "期权-文本", "期权平仓-文本", "unknown"] = Field(
         description="一级路由标签，取 4 个枚举值之一"
@@ -60,22 +61,24 @@ SPEC = register(PromptSpec(
     category="router",
     name="unknown_intent",
     output_model=UnknownIntentOutput,
-    inputs=("raw_text", "quote_content"),
-    user_builder=_user_from_state,
+    inputs=("raw_text", "quote_content", "history_messages"),
+    user_builder=lambda state: _user_from_state(state) + "\n" + source_payload(state),
 ))
 
 
-async def _classify_with_llm(text: str, quote_content: str | None) -> str:
+async def _classify_with_llm(
+    text: str, quote_content: str | None, history_messages: Any = None,
+) -> UnknownIntentOutput:
     """LLM 兜底(unknown意图兜底识别):规则未命中的模糊样本分类。
 
-    入参保持 (text, quote_content)（测试按此签名 monkeypatch）；消息组装统一走 SPEC。
+    消息组装统一走 SPEC；可选历史包含原始消息 ID，用于多轮证据验证。
     """
     messages, _prompt_name = SPEC.build_messages(
-        {"raw_text": text, "quote_content": quote_content}
+        {"raw_text": text, "quote_content": quote_content, "history_messages": history_messages or []}
     )
     llm = get_qwen_thinking().with_structured_output(UnknownIntentOutput)
     result: Any = await llm.ainvoke(messages)
-    return UnknownIntentOutput.model_validate(result).label
+    return UnknownIntentOutput.model_validate(result)
 
 
 @io_node
@@ -94,10 +97,16 @@ async def intent_route(state: AgentState) -> dict[str, Any]:
     # 第 1 层:规则(含文件分类)
     label = is_swap_transaction(text, files=files, quote_content=quote)
     source = "rule"
+    records = {}
 
     # 第 2 层:LLM 兜底(仅文本 unknown;文件无法识别按 DSL 直接 fallback)
-    if label == "unknown" and not files:
-        label = await _classify_with_llm(text, quote)
+    if label == "unknown" and not files and text.strip():
+        result = UnknownIntentOutput.model_validate(
+            await _classify_with_llm(text, quote, state.get("history_messages"))
+            if state.get("history_messages") else await _classify_with_llm(text, quote)
+        )
+        records = intent_records(result, state, scope="router/intent", value=result.label)
+        label = result.label
         source = "llm"
 
     pt, mode = _LABEL_MAP.get(label, ("unknown", None))
@@ -109,8 +118,14 @@ async def intent_route(state: AgentState) -> dict[str, Any]:
         if prev in ("swap", "option", "option_close"):
             pt, mode = prev, "text"
             source, label = "sticky", prev
+            if records:
+                records["router/intent.model"] = records["router/intent"]
+                records["router/intent"] = records["router/intent"].model_copy(update={
+                    "value": prev, "source": "default", "confidence": None,
+                })
     update: dict[str, Any] = {
         "product_type": pt,
+        **({"field_records": records} if records else {}),
         "trace": [TraceEntry(node="intent_route", decision=f"{source}→{label}")],
     }
     if pt == "swap":

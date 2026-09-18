@@ -2,13 +2,14 @@
 
 from __future__ import annotations
 
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import MagicMock
 
 import pytest
 
 from app.subgraphs.close import build_close_graph
 from app.subgraphs.close import intent as intent_module
 from app.subgraphs.close.models import CloseIntentOutput
+from tests.intent_fixtures import intent_reply, mock_ainvoke
 
 
 def _patch_close_backend(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -38,7 +39,7 @@ def _forbid_deterministic_llms(monkeypatch: pytest.MonkeyPatch) -> None:
 def _patch_intent(monkeypatch: pytest.MonkeyPatch, intent_type: str) -> None:
     """close.intent 分类结果固定为 intent_type。"""
     fake_llm = MagicMock()
-    fake_llm.ainvoke = AsyncMock(return_value=CloseIntentOutput(type=intent_type))
+    fake_llm.ainvoke = mock_ainvoke(intent_reply(CloseIntentOutput, type=intent_type))
     fake_base = MagicMock()
     fake_base.with_structured_output = MagicMock(return_value=fake_llm)
     monkeypatch.setattr(intent_module, "get_qwen_thinking", lambda: fake_base)
