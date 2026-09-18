@@ -28,6 +28,7 @@ async def test_literal_ticker_choice_skips_model(monkeypatch, raw):
     monkeypatch.setattr(select_ticker, "get_qwen_complex", model)
     result = await select_ticker.swap_select_ticker({
         "raw_text": raw, "place_params": {"orderList": [{"orderId": ORDER}]},
+        "tickers": [{"windCode": "9618.HK", "from_goats": True}, {"windCode": "JD.O", "from_goats": True}],
         "quote_ticker_candidates": [{"orderId": ORDER, "candidates": [
             {"seq": 1, "code": "9618.HK", "name": "京东集团-SW"},
             {"seq": 2, "code": "JD.O", "name": "JD.COM"},

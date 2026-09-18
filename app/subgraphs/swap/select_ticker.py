@@ -22,11 +22,14 @@ import json
 from typing import Any
 
 from app.graph.retry import io_node
-from app.graph.state import AgentState, TraceEntry
+from app.graph.state import AgentState, TickerCandidate, TraceEntry
 from app.llm.clients import get_qwen_complex
 from app.prompts.spec import PromptSpec, register
 from app.subgraphs.swap.models import SwapSelectTickerOutput
-from app.subgraphs.swap.selection_rules import ticker_choice
+from app.subgraphs.swap.selection_rules import ticker_choice, validate_picks
+from app.subgraphs.ticker.resolver import _code_identity
+from app.subgraphs.ticker.tools import _make_client
+from app.tools.ticker_client import KeywordItem, SecuritiesInstrumentReqVO
 
 
 def _build_user_message(state: AgentState) -> str:
@@ -37,7 +40,8 @@ def _build_user_message(state: AgentState) -> str:
     return (
         f"raw_content：{raw_content}\n"
         f"quote_content：{quote_content}\n"
-        f"candidate_list：{candidate_list_str}"
+        f"candidate_list：{candidate_list_str}\n"
+        f"orders：{state.get('place_params') or {}}"
     )
 
 
@@ -45,9 +49,34 @@ SPEC = register(PromptSpec(
     category="swap",
     name="select_ticker",
     output_model=SwapSelectTickerOutput,
-    inputs=("raw_text", "quote_content", "quote_ticker_candidates"),
+    inputs=("raw_text", "quote_content", "quote_ticker_candidates", "place_params"),
     user_builder=_build_user_message,
 ))
+
+
+async def _verify_selected_codes(state: AgentState, picks: list[dict[str, Any]]) -> list[TickerCandidate]:
+    verified = [TickerCandidate.model_validate(item) for item in state.get("tickers") or []]
+    verified = [ticker for ticker in verified if ticker.from_goats]
+    known = {_code_identity(ticker.wind_code) for ticker in verified}
+    requested = {pick["directRef"] for pick in picks}
+    missing = [code for code in requested if _code_identity(code) not in known]
+    if missing:
+        rows = await _make_client().search_securities_instrument(SecuritiesInstrumentReqVO(
+            keywordItems=[KeywordItem(keyword=code, isFull=True) for code in sorted(missing)],
+        ))
+        missing_identities = {_code_identity(code) for code in missing}
+        verified.extend(TickerCandidate.model_validate({**row, "from_goats": True})
+                        for row in rows if isinstance(row.get("windCode"), str)
+                        and _code_identity(row["windCode"]) in missing_identities)
+    orders = (state.get("place_params") or {}).get("orderList") or []
+    for pick in picks:
+        market = orders[pick["idx"]].get("placeOrderTransactionType")
+        matches = [ticker for ticker in verified
+                   if _code_identity(ticker.wind_code) == _code_identity(pick["directRef"])
+                   and (not market or market in ticker.transaction_type_lists)]
+        if not matches:
+            raise ValueError("所选标的未通过 GOATS 与市场校验")
+    return verified
 
 
 @io_node
@@ -78,8 +107,11 @@ async def swap_select_ticker(state: AgentState) -> dict[str, Any]:
         messages, _prompt_name = SPEC.build_messages(state)
         result = SwapSelectTickerOutput.model_validate(await llm.ainvoke(messages))
 
+    picks = validate_picks(state, [pick.model_dump() for pick in result.picks], "ticker")
+    verified = await _verify_selected_codes(state, picks) if picks else state.get("tickers") or []
     return {
-        "swap_ticker_picks": [p.model_dump() for p in result.picks],
+        "swap_ticker_picks": picks,
+        "tickers": verified,
         "trace": [
             TraceEntry(
                 node="swap_select_ticker",
