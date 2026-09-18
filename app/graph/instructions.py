@@ -27,6 +27,7 @@ from app.graph.state import AgentState, ErrorInfo, Message, TraceEntry
 from app.llm.clients import get_qwen_standard
 from app.observability.diagnostics import failure_diagnostic
 from app.prompts.spec import PromptSpec, register
+from app.tools.bot_context import BotContext
 
 
 class Instruction(BaseModel):
@@ -205,8 +206,9 @@ def build_instructions_graph(
             base["history_messages"] = [*(base.get("history_messages") or []), Message(
                 role="assistant", content=response_text(dependency["api_result"]),
             )]
-        ownership = {"messageId": base.get("message_id"), "userId": base.get("user_id"),
-                     "roomId": base.get("room_id"), "conversationId": base.get("conversation_id")}
+        context = BotContext.from_state(base)
+        ownership = {"messageId": context.message_id, "userId": context.user_id,
+                     "roomId": context.room_id, "conversationId": context.conversation_id}
         try:
             with capture_operations(ownership, allowed_order_ids=allowed_order_ids,
                                     dependency_product=dependency_product) as captured:

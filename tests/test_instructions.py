@@ -46,7 +46,8 @@ async def test_planner_checks_original_spans_dependencies_and_coverage(monkeypat
         ]))
 
 
-async def test_native_send_isolates_preparation_and_batches_original_message_identity(monkeypatch):
+@pytest.mark.parametrize("message_identity", [1234567890123456789, "1234567890123456789"], ids=["int", "java-string"])
+async def test_native_send_isolates_preparation_and_batches_original_message_identity(monkeypatch, message_identity):
     from app.execution import operations
     from app.graph.instructions import build_instructions_graph
     from app.subgraphs.swap.backend import call_swap_backend
@@ -70,6 +71,7 @@ async def test_native_send_isolates_preparation_and_batches_original_message_ide
     monkeypatch.setattr(operations, "SwapClientHttpx", lambda: MagicMock(operate=operate))
     raw = "买甲；买乙"
     initial = _state(raw, [_instruction(raw, "买甲"), _instruction(raw, "买乙")])
+    initial["message_id"] = message_identity
     original = deepcopy(initial)
     result = await build_instructions_graph(Worker()).ainvoke(initial)
     assert initial == original and seen == [0, 0]
