@@ -23,6 +23,7 @@ from app.subgraphs.ticker.resolver import TickerResolution
 from app.tools.goats_agent_client import GoatsAgentClientHttpx
 from app.tools.option_client import OptionClientHttpx
 from app.tools.swap_client import SwapClientHttpx
+from tests.intent_fixtures import intent_reply, mock_ainvoke
 
 CONFIG = {"configurable": {"thread_id": "turn-inputs"}}
 ORDER_ID = "H-20260915-0000000001"
@@ -31,7 +32,7 @@ IMAGE = {"type": "image", "remote_url": "http://files.test/order.png"}
 
 def structured_llm(value):
     llm = MagicMock()
-    llm.with_structured_output.return_value.ainvoke = AsyncMock(return_value=value)
+    llm.with_structured_output.return_value.ainvoke = mock_ainvoke(value)
     return llm
 
 
@@ -41,10 +42,10 @@ async def turn_api(monkeypatch):
     connection.cursor.return_value.__aenter__.return_value.executemany = AsyncMock()
     monkeypatch.setattr(aiomysql, "connect", AsyncMock(return_value=connection))
     monkeypatch.setattr(intent, "get_qwen_thinking", lambda: structured_llm(
-        SwapIntentOutput(type="query_order_status"),
+        intent_reply(SwapIntentOutput, type="query_order_status"),
     ))
     monkeypatch.setattr(intent_route, "get_qwen_thinking", lambda: structured_llm(
-        UnknownIntentOutput(label="互换-文本"),
+        intent_reply(UnknownIntentOutput, label="互换-文本"),
     ))
     monkeypatch.setattr(multimodal, "get_qwen_vl", lambda: structured_llm(
         ImageTranscription(text="600519.SH"),
