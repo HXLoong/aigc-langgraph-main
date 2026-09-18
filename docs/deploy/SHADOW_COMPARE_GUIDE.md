@@ -63,7 +63,7 @@ python scripts/shadow_compare.py \
     --dify-api-key $DIFY_API_KEY \
     --sample sample_real_traffic.jsonl \
     --mysql-host mysql-prod.internal \
-    --mysql-db otc_agent_business \
+    --mysql-db otc_goats_ai_trading_dev \
     --mysql-user otc_agent \
     --mysql-password "$MYSQL_PASSWORD"
 ```
@@ -71,7 +71,7 @@ python scripts/shadow_compare.py \
 需要在业务库提前创建表：
 
 ```sql
-CREATE TABLE IF NOT EXISTS shadow_compare (
+CREATE TABLE IF NOT EXISTS langgraph_shadow_compare (
     id BIGINT AUTO_INCREMENT PRIMARY KEY,
     message_id VARCHAR(64) NOT NULL,
     primary_path VARCHAR(32) NOT NULL,

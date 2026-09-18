@@ -3,16 +3,16 @@
 C1.8（Issue #57）完整实现：
 
 - LangFuse：通过 CallbackHandler 自动写（M1 已接入，本节点不重复写）
-- MySQL `node_trace` 表：本节点把 `state["trace"]` 每条转一行写入
+- MySQL `langgraph_node_trace` 表：本节点把 `state["trace"]` 每条转一行写入
 
 设计原则（CLAUDE.md 原则 3 + C1.8 acceptance）：
 - 写 MySQL 失败**不阻塞业务主流程**：try/except + log.warn，不抛
 - LangFuse 与 MySQL **互相独立**：一方 down 不影响另一方
-- 用业务库（BUSINESS_MYSQL_URI），与 checkpoint 库隔离
+- 与 Java/checkpoint 共库，以 langgraph_ 表名前缀隔离
 
 业务订单审计场景：未来按 message_id / thread_id 在 node_trace 查全链路决策。
 
-表结构（sql/schema.sql:34）：
+表结构（sql/init.sql）：
     message_id / thread_id / node_name / step_index /
     input_preview / output_preview / status / error / duration_ms / created_at
 """
@@ -26,6 +26,7 @@ from typing import Any
 from app.config import get_settings
 from app.graph.safe_node import safe_node
 from app.graph.state import AgentState
+from app.storage.mysql import NODE_TRACE, SESSION_INIT, connection_args
 
 logger = logging.getLogger(__name__)
 
@@ -37,7 +38,7 @@ _ERROR_PREVIEW_MAX = 4096
 
 @safe_node
 async def persist(state: AgentState) -> dict[str, Any]:
-    """把 state['trace'] 写到 MySQL `node_trace` 表。
+    """把 state['trace'] 写到 MySQL `langgraph_node_trace` 表。
 
     幂等：基于 (message_id, step_index) 行内顺序——同一 message 重复写不会冲突，
     但会插入新一组（业务侧按 created_at 取最新）。
@@ -99,14 +100,14 @@ async def _write_to_mysql(
     conn = await asyncio.wait_for(
         aiomysql.connect(
             host=host, port=port, user=user, password=password, db=db,
-            charset="utf8mb4", autocommit=True,
+            charset="utf8mb4", init_command=SESSION_INIT, autocommit=True,
         ),
         timeout=settings.persist_timeout_seconds,
     )
     try:
         async with conn.cursor() as cur:
             sql = (
-                "INSERT INTO node_trace "
+                f"INSERT INTO {NODE_TRACE} "
                 "(message_id, thread_id, trace_id, node_name, step_index, "
                 " input_preview, output_preview, status, error, duration_ms) "
                 "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)"
@@ -182,14 +183,8 @@ def _parse_mysql_uri(uri: str) -> tuple[str, int, str, str, str]:
         mysql+aiomysql://user:pass@host:port/db
         mysql+aiomysql://user:pass@host:port/db?charset=utf8mb4
     """
-    rest = uri.split("://", 1)[1] if "://" in uri else uri
-    auth_part, _, host_part = rest.partition("@")
-    user, _, password = auth_part.partition(":")
-    host_db, _, _query = host_part.partition("?")
-    host_port, _, db = host_db.partition("/")
-    host, _, port_str = host_port.partition(":")
-    port = int(port_str) if port_str else 3306
-    return host, port, user, password, db
+    args = connection_args(uri)
+    return args["host"], args["port"], args["user"], args["password"], args["db"]
 
 
 __all__ = ["persist"]

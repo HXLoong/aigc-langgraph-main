@@ -15,3 +15,11 @@ def test_replay_migration_emits_additive_reviewable_sql():
     assert "ADD COLUMN response_json" in result.stdout
     assert "ADD COLUMN http_status" in result.stdout
     assert "DROP " not in result.stdout
+
+
+def test_migration_owns_only_prefixed_tables():
+    root = Path(__file__).resolve().parents[1]
+    result = subprocess.run([sys.executable, "-m", "alembic", "upgrade", "head", "--sql"], cwd=root, text=True, capture_output=True, check=True)
+    assert "ALTER TABLE langgraph_message_log" in result.stdout
+    assert "CREATE TABLE langgraph_alembic_version" in result.stdout
+    assert "ALTER TABLE message_log" not in result.stdout

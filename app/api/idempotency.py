@@ -12,6 +12,7 @@ import aiomysql
 import pymysql
 
 from app.nodes.persist import _parse_mysql_uri
+from app.storage.mysql import MESSAGE_LOG, SESSION_INIT
 
 PROCESSING_NOTICE = "该消息正在处理中，请勿重复提交。"
 UNCERTAIN_NOTICE = "该消息的执行结果待核对，请勿重复提交。"
@@ -105,7 +106,7 @@ class MySQLIdempotencyStore:
         host, port, user, password, db = self._conn_args
         return await asyncio.wait_for(
             aiomysql.connect(host=host, port=port, user=user, password=password, db=db,
-                             charset="utf8mb4", autocommit=True),
+                             charset="utf8mb4", init_command=SESSION_INIT, autocommit=True),
             timeout=self._timeout,
         )
 
@@ -117,7 +118,7 @@ class MySQLIdempotencyStore:
             async with conn.cursor() as cur:
                 try:
                     await cur.execute(
-                        "INSERT INTO message_log (message_id, conversation_id, room_id, user_id, "
+                        f"INSERT INTO {MESSAGE_LOG} (message_id, conversation_id, room_id, user_id, "
                         "raw_content, processed_by) VALUES (%s, %s, %s, %s, %s, %s)",
                         (message_id, conversation_id, room_id, user_id, raw_text, "langgraph"),
                     )
@@ -127,7 +128,7 @@ class MySQLIdempotencyStore:
                         raise
                 await cur.execute(
                     "SELECT reply_text, api_code, response_json, http_status, error, user_id, "
-                    "room_id, UNIX_TIMESTAMP(created_at) FROM message_log WHERE message_id = %s",
+                    f"room_id, UNIX_TIMESTAMP(created_at) FROM {MESSAGE_LOG} WHERE message_id = %s",
                     (message_id,),
                 )
                 row = await cur.fetchone()
@@ -155,7 +156,7 @@ class MySQLIdempotencyStore:
         try:
             async with conn.cursor() as cur:
                 await cur.execute(
-                    "UPDATE message_log SET reply_text = %s, product_type = %s, intent = %s, "
+                    f"UPDATE {MESSAGE_LOG} SET reply_text = %s, product_type = %s, intent = %s, "
                     "api_code = %s, api_result = %s, error = %s, latency_ms = %s, "
                     "response_json = %s, http_status = %s WHERE message_id = %s",
                     (reply_text if reply_text is not None else "", product_type, intent, api_code,

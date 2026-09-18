@@ -13,11 +13,11 @@ class Settings(BaseSettings):
         extra="ignore",
     )
 
-    # === MySQL ===
+    # === MySQL：两个连接配置指向同一 Java 数据库，langgraph_ 表隔离 ===
     # checkpoint：给 AIOMySQLSaver 用，需要 mysql://user:pass@host:port/db 格式
-    checkpoint_mysql_uri: str = Field(..., description="LangGraph checkpoint 库")
+    checkpoint_mysql_uri: str = Field(..., description="Java 共库连接，保存 langgraph_ checkpoint 表")
     # 业务：给 SQLAlchemy 用，需要 mysql+aiomysql://user:pass@host:port/db 格式
-    business_mysql_uri: str = Field(..., description="业务数据库")
+    business_mysql_uri: str = Field(..., description="同一 Java 共库连接，保存 langgraph_ 审计与幂等表")
 
     # === LLM ===
     qwen_api_base: str

@@ -30,6 +30,16 @@
 
 "在 TDSQL 上跑通 `.setup()`"验收已列入现场部署 checklist（ADR 0021 §2）。
 
+## 2026-09-18 共库调整
+
+业务与 checkpoint 改为使用 Java 现有 MySQL 数据库，全部表使用 `langgraph_` 前缀。
+本地目标为 `otc_goats_ai_trading_dev`；新表及 LangGraph 连接使用 `utf8mb4_general_ci`，
+checkpoint 的 JSON_TABLE 字符列也显式使用该规则，不改变 Java 现有表或服务器默认排序规则。
+
+`sql/init.sql` 是完整初始化入口，由调用方选择数据库；不创建库、不执行 USE 或授权。
+应用 startup 只读校验 schema，缺表/版本不符明确失败。固定社区 saver 3.0.0，项目适配层
+覆盖表名与查询规则；升级依赖时必须同步验证建表快照、读写及线程删除。旧库数据保留，不自动迁移。
+
 ## 备选方案
 
 - **PostgreSQL + 官方 checkpointer**：生产无 PostgreSQL，不可部署。

@@ -166,5 +166,5 @@ async def test_mysql_store_duplicate_key_reads_existing_row(monkeypatch: pytest.
     store = MySQLIdempotencyStore("mysql+aiomysql://u:p@h:3306/biz")
     rec = await store.begin("77", conversation_id="c", user_id="u", room_id="r", raw_text="x")
     assert rec is not None and rec.status == "done" and rec.reply_text == "上次回复"
-    assert "INSERT INTO message_log" in cur.execute.call_args_list[0].args[0]
+    assert "INSERT INTO langgraph_message_log" in cur.execute.call_args_list[0].args[0]
     assert "SELECT" in cur.execute.call_args_list[1].args[0]

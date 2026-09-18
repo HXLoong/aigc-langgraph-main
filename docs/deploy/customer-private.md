@@ -68,23 +68,18 @@ mysql -h <HOST> -u <USER> -p -e "SELECT VERSION();"
 
 不在版本区间内 → 阻塞，必须升级或换 Checkpointer（成本高，找工程团队评估）。
 
-### 2.2 创建两个库 + 账号
+### 2.2 在 Java 现有数据库初始化 LangGraph 表
 
-```sql
--- 业务库
-CREATE DATABASE otc_agent_business CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
-CREATE USER 'otc_agent'@'%' IDENTIFIED BY '<STRONG_PASSWORD>';
-GRANT SELECT, INSERT, UPDATE, DELETE, CREATE, ALTER, INDEX ON otc_agent_business.* TO 'otc_agent'@'%';
+使用已有账号连接 Java 数据库，由连接参数选择库；SQL 不创建数据库、不包含 USE 或授权。
 
--- Checkpoint 库（建议独立）
-CREATE DATABASE otc_agent_checkpoint CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
-CREATE USER 'otc_agent_cp'@'%' IDENTIFIED BY '<STRONG_PASSWORD>';
-GRANT SELECT, INSERT, UPDATE, DELETE, CREATE, ALTER, INDEX, DROP ON otc_agent_checkpoint.* TO 'otc_agent_cp'@'%';
-
-FLUSH PRIVILEGES;
+```bash
+mysql -h <HOST> -P <PORT> -u <USER> -p --database=<JAVA_DATABASE> < sql/init.sql
 ```
 
-**重要**：checkpoint 库账号需要 DDL 权限（CREATE/ALTER）—— AIOMySQLSaver 首次启动会自动建表。
+九张表均带 `langgraph_` 前缀，使用 `utf8mb4_general_ci`。两个 MySQL URI 选择同一库。
+应用启动只校验结构和版本，不自动建表；运行账号只需自身前缀表的读写权限及元数据可见性。
+初始化/后续结构升级由具备 DDL 权限的部署账号执行。旧独立库保留，不自动迁移、删除历史。
+容器访问宿主机 MySQL 时使用 `host.docker.internal`，不要在容器内使用 localhost 指代宿主机。
 
 ### 2.3 时区一致性
 

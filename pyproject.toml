@@ -11,7 +11,7 @@ dependencies = [
     # LangGraph + LangChain
     "langgraph>=1.2.10",
     "langgraph-checkpoint>=2.0.0",
-    "langgraph-checkpoint-mysql[aiomysql]>=3.0.0",  # 关键：MySQL checkpointer
+    "langgraph-checkpoint-mysql[aiomysql]==3.0.0",  # 关键：MySQL checkpointer
     "langchain>=0.3.0",
     "langchain-openai>=0.2.0",  # 兼容 Qwen OpenAI API
     # 数据库

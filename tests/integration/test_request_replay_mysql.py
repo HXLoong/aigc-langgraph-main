@@ -14,7 +14,7 @@ async def test_failed_http_snapshot_survives_a_new_store_instance():
     uri = get_settings().business_mysql_uri
     address = urlsplit(uri)
     assert address.hostname in {"127.0.0.1", "localhost", "::1"}
-    assert address.path == "/otc_agent_business"
+    assert address.path == "/otc_goats_ai_trading_dev"
     store = MySQLIdempotencyStore(uri)
     message_id = f"migration-test-{uuid.uuid4().hex}"
     context = dict(conversation_id=message_id, user_id="migration-test", room_id="migration-test", raw_text="schema probe")
@@ -34,7 +34,7 @@ async def test_failed_http_snapshot_survives_a_new_store_instance():
         try:
             async with conn.cursor() as cur:
                 await cur.execute(
-                    "DELETE FROM message_log WHERE message_id = %s AND user_id = %s",
+                    "DELETE FROM langgraph_message_log WHERE message_id = %s AND user_id = %s",
                     (message_id, "migration-test"),
                 )
         finally:

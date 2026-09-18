@@ -1,48 +1,15 @@
-# 业务依赖 + LangGraph 应用 compose（开发环境）
-#
-# 与 infra/langfuse/docker-compose.yml 互补：
-#   - 本文件：MySQL 业务库 + LangGraph FastAPI 应用
-#   - infra/langfuse/：LangFuse self-hosted（PG + ClickHouse + Redis + MinIO + Web + Worker）
-#
-# 启动顺序建议：
-#   1. docker compose -f infra/langfuse/docker-compose.yml --env-file infra/langfuse/.env up -d
-#   2. docker compose up -d mysql
-#   3. docker compose up -d app
+# LangGraph 使用外部 Java MySQL；先在选中的数据库执行 sql/init.sql。
+# 容器连接宿主机：URI 主机用 host.docker.internal，不要用 localhost。
+# .env 的两个 URI 指向同一数据库；本 Compose 不创建 MySQL 或数据库。
 
 services:
-  mysql:
-    image: mysql:8.0.36      # 8.0.19+，避开 9.6.0 的 MD5 问题（ADR 0009）
-    container_name: otc-agent-mysql
-    environment:
-      MYSQL_ROOT_PASSWORD: rootpassword
-      MYSQL_USER: otc_agent
-      MYSQL_PASSWORD: password
-    ports:
-      - "3306:3306"
-    volumes:
-      - mysql_data:/var/lib/mysql
-      - ./sql/init.sql:/docker-entrypoint-initdb.d/01-init.sql:ro
-    command:
-      - --character-set-server=utf8mb4
-      - --collation-server=utf8mb4_0900_ai_ci
-      - --default-authentication-plugin=mysql_native_password
-      - --lower-case-table-names=1
-    healthcheck:
-      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-uroot", "-prootpassword"]
-      interval: 5s
-      timeout: 3s
-      retries: 15
-
   app:
     build: .
     container_name: otc-agent-app
-    depends_on:
-      mysql:
-        condition: service_healthy
     environment:
       # 业务库
-      CHECKPOINT_MYSQL_URI: mysql://otc_agent:password@mysql:3306/otc_agent_checkpoint
-      BUSINESS_MYSQL_URI: mysql+aiomysql://otc_agent:password@mysql:3306/otc_agent_business
+      CHECKPOINT_MYSQL_URI: ${CHECKPOINT_MYSQL_URI:?set shared Java database URI}
+      BUSINESS_MYSQL_URI: ${BUSINESS_MYSQL_URI:?set shared Java database URI}
       # LangFuse（ADR 0014）— 默认关闭，开启后需配 API Key
       ENABLE_LANGFUSE: "${ENABLE_LANGFUSE:-false}"
       # host.docker.internal 让容器内的 app 能访问宿主机上的 LangFuse 容器（macOS/Windows）
@@ -50,11 +17,11 @@ services:
       LANGFUSE_HOST: "${LANGFUSE_HOST:-http://host.docker.internal:3000}"
       LANGFUSE_PUBLIC_KEY: "${LANGFUSE_PUBLIC_KEY:-}"
       LANGFUSE_SECRET_KEY: "${LANGFUSE_SECRET_KEY:-}"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     env_file:
       - .env
     ports:
       - "8000:8000"
     command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
 
-volumes:
-  mysql_data:
