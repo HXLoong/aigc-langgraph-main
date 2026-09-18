@@ -18,6 +18,7 @@ import logging
 import re
 from typing import Any
 
+from app.execution.operations import capture_operation
 from app.extraction.locks import protect_orders
 from app.graph.state import AgentState, TickerCandidate
 from app.subgraphs.swap.prewash import sanitize_order_list
@@ -149,6 +150,8 @@ async def call_swap_backend(
         ],
         **_context(state),
     )
+    if capture_operation("swap", req):
+        return {"field_records": rejected} if rejected else {}
     result = await SwapClientHttpx().operate(req)
     code = result.get("code")
     backend_result = result.get("data") if code == 0 else result.get("msg")

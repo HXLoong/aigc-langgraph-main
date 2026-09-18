@@ -5,6 +5,7 @@ import logging
 import re
 from typing import Any
 
+from app.execution.operations import capture_operation
 from app.extraction.locks import protect_orders
 from app.graph.state import AgentState
 from app.observability.metrics import (
@@ -127,6 +128,8 @@ async def call_option_backend(
         ),
         **_context(state),
     )
+    if capture_operation("option", req):
+        return {"field_records": rejected} if rejected else {}
     result = await OptionClientHttpx().operate(req)
     code = result.get("code")
     backend_result = result.get("data") if code == 0 else result.get("msg")
