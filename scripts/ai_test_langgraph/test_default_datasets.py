@@ -12,10 +12,10 @@ def test_default_cli_loads_all_categories_in_filename_order(capsys):
     expected = sorted((cli.REPO_ROOT / "tests/fixtures/categories").glob("*.jsonl"))
     assert len(expected) == 6
     assert cli.resolve_paths([]) == expected
-    assert len(cli.load_cases(cli.resolve_paths([]))) == 389
+    assert len(cli.load_cases(cli.resolve_paths([]))) == 388
     assert cli.main(["--dry-run", "--limit", "3"]) == 0
     output = capsys.readouterr().out
-    assert "加载 389 条，选中 3 条" in output
+    assert "加载 388 条，选中 3 条" in output
     assert "case-030" in output
 
 
@@ -25,7 +25,7 @@ def test_default_workbench_discovers_only_direct_categories():
     assert len(paths) == 6
     assert all(path.parent == Path("tests/fixtures/categories") for path in paths)
     assert [path.name for path in paths] == sorted(path.name for path in paths)
-    assert sum(item["cases"] for item in datasets) == 389
+    assert sum(item["cases"] for item in datasets) == 388
 
 
 def test_default_discovery_ignores_nested_and_archived_jsonl(tmp_path, monkeypatch):
