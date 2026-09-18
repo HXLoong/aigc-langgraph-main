@@ -15,7 +15,7 @@ placeOrderWindCode / placeOrderShortname 两个字段，其余字段原样保留
 """
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, cast
 
 
 def _as_int(x: Any) -> int | None:
@@ -50,7 +50,7 @@ def match_order_index(
     order_seq = _as_int(pick.get("orderSeq"))
     if order_seq is not None:
         for i, o in enumerate(order_list):
-            if o.get("orderId") is not None and id_to_seq.get(o.get("orderId")) == order_seq:
+            if o.get("orderId") is not None and id_to_seq.get(o["orderId"]) == order_seq:
                 return i
     idx = pick.get("idx")
     if isinstance(idx, int) and 0 <= idx < len(order_list):
@@ -86,7 +86,7 @@ def windcode_from_pick(
     if seq is not None and blk:
         for ca in blk.get("candidates", []):
             if ca.get("seq") == seq:
-                return ca.get("code")
+                return cast(str | None, ca.get("code"))
         return None
     ref = pick.get("directRef")
     if ref:
@@ -95,7 +95,7 @@ def windcode_from_pick(
             for ca in blk.get("candidates", []):
                 name = ca.get("name") or ""
                 if ca.get("code") == ref or name == ref or (name and (ref in name or name in ref)):
-                    return ca.get("code")
+                    return cast(str | None, ca.get("code"))
         return ref
     return None
 
@@ -107,7 +107,7 @@ def shortname_from_pick(pick: dict[str, Any], trs_list: list[dict[str, Any]]) ->
         name = str(name).strip()
         for t in trs_list:
             if t.get("shortName") == name:
-                return t.get("shortName")
+                return cast(str | None, t.get("shortName"))
         # 唯一连续子串才算简写命中；多命中不得按列表顺序取首项（select_counterparty.md
         # 「|M|=1 才是唯一简写」，Dify code 节点 1780652971845 同款，评估 SW-INC-06）
         matches = [t.get("shortName") for t in trs_list if name in (t.get("shortName") or "")]
@@ -125,7 +125,7 @@ def shortname_from_pick(pick: dict[str, Any], trs_list: list[dict[str, Any]]) ->
         return None
     for t in trs_list:
         if str(t.get("sort")).upper() == sort:
-            return t.get("shortName")
+            return cast(str | None, t.get("shortName"))
     return None
 
 

@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import json
 import re
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from functools import lru_cache
 from typing import Any
 
@@ -32,7 +32,7 @@ def _format_counterparty_list(counterparties: list[dict[str, Any]] | None) -> st
 
 
 def _build_user_message(
-    state: AgentState, hints: Mapping[str, str], prompt_name: str | None = None,
+    state: AgentState, hints: Mapping[str, Any], prompt_name: str | None = None,
 ) -> str:
     return json.dumps({
         "sources": evidence_sources(state),
@@ -143,14 +143,14 @@ async def swap_place_result(state: SwapPlaceState) -> dict[str, Any]:
     }
 
 
-def _next_stage(next_node: str):
+def _next_stage(next_node: str) -> Callable[[SwapPlaceState], str]:
     def route(state: SwapPlaceState) -> str:
         return END if has_error(state) or state.get("reply_text") else next_node
     return route
 
 
-def build_place_graph() -> CompiledStateGraph:
-    graph: StateGraph = StateGraph(SwapPlaceState, output_schema=SubgraphOutput)
+def build_place_graph() -> CompiledStateGraph[SwapPlaceState, None, AgentState, SubgraphOutput]:
+    graph: StateGraph[SwapPlaceState, None, AgentState, SubgraphOutput] = StateGraph(SwapPlaceState, input_schema=AgentState, output_schema=SubgraphOutput)
     add_io_node(graph, "swap_extract_candidates", swap_extract_candidates)
     graph.add_node("swap_normalize", swap_normalize)
     graph.add_node("swap_resolve", swap_resolve)
@@ -167,7 +167,7 @@ def build_place_graph() -> CompiledStateGraph:
 
 
 @lru_cache(maxsize=1)
-def get_place_graph() -> CompiledStateGraph:
+def get_place_graph() -> CompiledStateGraph[SwapPlaceState, None, AgentState, SubgraphOutput]:
     return build_place_graph()
 
 

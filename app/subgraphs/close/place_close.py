@@ -426,8 +426,8 @@ def _route_after_validate(state: PlaceCloseState) -> str:
     return "place_close_reject" if state.get("pc_reject_reply") else "place_close_submit"
 
 
-def build_place_close_graph() -> CompiledStateGraph:
-    g: StateGraph = StateGraph(PlaceCloseState, output_schema=PlaceCloseOutput)
+def build_place_close_graph() -> CompiledStateGraph[PlaceCloseState, None, AgentState, PlaceCloseOutput]:
+    g: StateGraph[PlaceCloseState, None, AgentState, PlaceCloseOutput] = StateGraph(PlaceCloseState, input_schema=AgentState, output_schema=PlaceCloseOutput)
     g.add_node("place_close_parse", place_close_parse)
     add_io_node(g, "place_close_fetch_orders", place_close_fetch_orders)
     add_io_node(g, "place_close_extract", place_close_extract)
@@ -453,7 +453,7 @@ def build_place_close_graph() -> CompiledStateGraph:
 
 
 @lru_cache(maxsize=1)
-def get_place_close_graph() -> CompiledStateGraph:
+def get_place_close_graph() -> CompiledStateGraph[PlaceCloseState, None, AgentState, PlaceCloseOutput]:
     return build_place_close_graph()
 
 

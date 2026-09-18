@@ -7,8 +7,9 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from collections.abc import Awaitable
 from dataclasses import dataclass
-from typing import Literal
+from typing import Any, Literal
 
 logger = logging.getLogger(__name__)
 
@@ -28,7 +29,7 @@ class ProbeResult:
     latency_ms: int | None = None
 
 
-async def _timed(target: str, coro) -> tuple[ProbeStatus, str | None, int]:
+async def _timed(target: str, coro: Awaitable[Any]) -> tuple[ProbeStatus, str | None, int]:
     import time
 
     t0 = time.monotonic()

@@ -6,26 +6,27 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Sequence
 from typing import Any
 
 from app.graph.state import Message
 
 
-def format_history(history: list[Message | dict[str, Any]] | None) -> str:
+def format_history(history: Sequence[Message | dict[str, Any]] | None) -> str:
     """历史对话 → "role: content" 逐行；兼容 Message 模型与 dict（checkpoint 反序列化两种形态）。"""
     if not history:
         return ""
     lines: list[str] = []
     for msg in history:
-        role = msg.role if hasattr(msg, "role") else msg.get("role", "user")  # type: ignore[union-attr]
-        content = msg.content if hasattr(msg, "content") else msg.get("content", "")  # type: ignore[union-attr]
+        role = msg.role if isinstance(msg, Message) else msg.get("role", "user")
+        content = msg.content if isinstance(msg, Message) else msg.get("content", "")
         lines.append(f"{role}: {content}")
     return "\n".join(lines)
 
 
 def shortnames(counterparties: list[dict[str, Any]] | None) -> list[str]:
     """对手精简列表 → shortName 列表（跳过空值）。"""
-    return [cp.get("shortName") for cp in (counterparties or []) if isinstance(cp, dict) and cp.get("shortName")]
+    return [str(cp["shortName"]) for cp in (counterparties or []) if isinstance(cp, dict) and cp.get("shortName")]
 
 
 def json_list(items: list[Any] | None) -> str:

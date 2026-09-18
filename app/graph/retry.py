@@ -95,7 +95,7 @@ async def retry_exhausted_handler(state: Any, error: NodeError) -> dict[str, Any
 
 
 def add_io_node(
-    g: StateGraph,
+    g: StateGraph[Any, Any, Any, Any],
     name: str,
     fn: Callable[..., Awaitable[dict[str, Any]]],
     *,

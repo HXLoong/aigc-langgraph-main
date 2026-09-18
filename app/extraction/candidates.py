@@ -5,6 +5,7 @@ import json
 import logging
 from collections.abc import Callable, Mapping
 from functools import cache
+from types import GenericAlias
 from typing import Any, TypeVar, get_args, get_origin
 
 from pydantic import BaseModel, ConfigDict, Field, create_model, model_validator
@@ -35,7 +36,7 @@ def _candidate_annotation(annotation: Any) -> Any:
         return candidate_model(annotation)
     if get_origin(annotation) is list:
         (element,) = get_args(annotation)
-        return list[_candidate_annotation(element)]
+        return GenericAlias(list, _candidate_annotation(element))
     return FieldCandidate | None
 
 
@@ -45,6 +46,7 @@ def candidate_model(canonical: type[BaseModel]) -> type[BaseModel]:
     for name, info in canonical.model_fields.items():
         annotation = _candidate_annotation(info.annotation)
         description = "只抽取归一化前的原文证据；" + (info.description or name)
+        default: Any
         if get_origin(annotation) is list:
             default = Field(default_factory=list, alias=info.alias, description=description)
         else:

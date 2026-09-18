@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import re
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
 from typing import Any
 
@@ -21,7 +21,7 @@ _CURRENCIES = {
     "EUR": ("欧元", "EUR"), "GBP": ("英镑", "GBP"), "JPY": ("日元", "JPY"),
     "AUD": ("澳元", "AUD"), "NZD": ("纽元", "NZD"), "CNH": ("离岸人民币", "CNH"),
 }
-_ENUMS = {
+_ENUMS: dict[str, dict[str, tuple[str, ...]]] = {
     "placeOrderOrderDirection": {
         "BUY": ("买入", "買入", "买", "買", "做多", "多头开仓", "BUY"),
         "SELL": ("卖出", "賣出", "卖", "賣", "平多", "卖出平仓", "SELL"),
@@ -179,7 +179,7 @@ def normalize_field(field: str, value: str, evidence: str | None = None) -> Any:
 def normalize_candidates(
     candidates: BaseModel, sources: Mapping[str, str], *, scope: str = "swap/place_order",
 ) -> tuple[SwapPlaceOrderParams, dict[str, FieldRecord]]:
-    def converter(alias: str):
+    def converter(alias: str) -> Callable[[str, FieldCandidate], Any]:
         def convert(value: str, candidate: FieldCandidate) -> Any:
             if alias == "placeOrderQuantity" and quantity_unit(value) == "AMOUNT":
                 return None  # the linked notional field is derived below from the same evidence

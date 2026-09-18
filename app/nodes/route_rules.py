@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import logging
 import re
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -120,7 +121,7 @@ def _is_quote_content_valid(quote_content: str | None) -> bool:
 
 def is_swap_transaction(
     instruction: str,
-    files: list[dict] | None = None,
+    files: list[dict[str, Any]] | None = None,
     quote_content: str | None = None,
 ) -> str:
     """文件优先分类:全图片 → 互换-图片;全 Excel → 互换-Excel;混合 → 无法识别文件类型。

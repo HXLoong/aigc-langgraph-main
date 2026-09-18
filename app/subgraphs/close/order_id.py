@@ -80,7 +80,7 @@ def extract_order_ids(text: str | None) -> list[str]:
 
 def is_order_id(value: str | None) -> bool:
     """校验 CO- 订单号形态（大小写不敏感）。"""
-    return bool(value) and ORDER_ID_RE.fullmatch(value.strip()) is not None
+    return value is not None and ORDER_ID_RE.fullmatch(value.strip()) is not None
 
 
 def _ordinal_value(token: str) -> int | None:
@@ -158,11 +158,11 @@ def _resolve_specified(raw: str, quote: str) -> list[str] | None:
         else:
             unresolved = True
     for code in contracts:
-        target = contract_map.get(code)
-        if target is None:
+        contract_target = contract_map.get(code)
+        if contract_target is None:
             unresolved = True
-        elif target not in selected:
-            selected.append(target)
+        elif contract_target not in selected:
+            selected.append(contract_target)
 
     if unresolved:
         raise CloseScopeError(

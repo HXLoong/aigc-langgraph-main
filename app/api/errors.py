@@ -7,7 +7,8 @@ from starlette.exceptions import HTTPException
 from starlette.responses import Response
 
 
-async def workflow_http_error(request: Request, exc: HTTPException) -> Response:
+async def workflow_http_error(request: Request, exc: Exception) -> Response:
+    assert isinstance(exc, HTTPException)
     if request.url.path != "/v1/workflows/run":
         return await http_exception_handler(request, exc)
     code = "internal_server_error" if exc.status_code >= 500 else "invalid_param"
@@ -18,7 +19,8 @@ async def workflow_http_error(request: Request, exc: HTTPException) -> Response:
     }, headers=exc.headers)
 
 
-async def workflow_validation_error(request: Request, exc: RequestValidationError) -> Response:
+async def workflow_validation_error(request: Request, exc: Exception) -> Response:
+    assert isinstance(exc, RequestValidationError)
     if request.url.path != "/v1/workflows/run":
         return await request_validation_exception_handler(request, exc)
     # Validation input values can contain credentials or client messages.

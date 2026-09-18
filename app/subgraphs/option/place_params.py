@@ -281,7 +281,7 @@ def _card_strike(text: str) -> float | None:
 
 def _reference_fields(raw: str, quote: str) -> dict[str, Any]:
     """B 类字段：raw 优先，引用回执兜底。"""
-    ids = extract_order_ids(raw) or extract_order_ids(quote) or [None]
+    ids: list[str | None] = [*(extract_order_ids(raw) or extract_order_ids(quote))] or [None]
 
     stock_code = (
         _raw_stock_code(raw)

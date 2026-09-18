@@ -11,6 +11,7 @@ from __future__ import annotations
 import asyncio
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from typing import Any
 
 import httpx
 
@@ -33,7 +34,7 @@ async def open_shared_http_client(
     global _shared
     async with _lock:
         if _shared is None or _shared.is_closed:
-            kwargs: dict = {
+            kwargs: dict[str, Any] = {
                 "timeout": timeout,
                 "trust_env": False,
                 "limits": httpx.Limits(
@@ -62,7 +63,7 @@ async def acquire_http_client(
         if transport is None and _shared is not None and not _shared.is_closed:
             yield _shared
             return
-        kwargs: dict = {"timeout": timeout, "trust_env": False}
+        kwargs: dict[str, Any] = {"timeout": timeout, "trust_env": False}
         if transport is not None:
             kwargs["transport"] = transport
         async with httpx.AsyncClient(**kwargs) as client:

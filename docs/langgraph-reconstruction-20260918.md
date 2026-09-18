@@ -90,3 +90,10 @@
 - LLM SDK max_retries=0，图只读节点默认最多 2 次尝试；写节点仍无重试。safe_node 保留 ParamSpec / config / Runtime 注入。
 - RED 10 failed → 局部 153 passed；补充真实调用墙钟取消 RED → GREEN。全量 2301 passed，唯一旧断言仍写死 30 秒，已随新默认值更新并单独复验。
 - E5 审计结构、不确定结果独立核对及完整性能验收仍待后续完成。
+
+第七批：类型检查收口。
+
+- 第六批恢复点：`389f572`。
+- 启用 Pydantic mypy 插件并补齐 PyMySQL/PyYAML 类型包；图泛型显式声明输入/内部/输出 State，补齐 Protocol 工厂、回调、HTTP 参数和动态 schema 边界类型。
+- mypy app/：120 个源文件零错误；全量 pytest 2302 passed、15 skipped；ruff 通过。
+- 新链路真实小样本：7 case / 13 turn，6 PASS / 1 FAIL。期权询价和平仓通过；互换失败定位到模型把 COMPO 前缀并入授权对手名称，下一批用 Code 优先匹配修复。报告 `.harness-runs/evidence-smoke/local-20260918-130703`。

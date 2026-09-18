@@ -16,20 +16,20 @@ from typing import Any
 from app.graph.retry import io_node
 from app.graph.safe_node import safe_node
 from app.graph.state import AgentState, TraceEntry
-from app.tools.goats_agent_client import make_goats_agent_client
-from app.tools.option_client import FinancialOrderOpenApiSaveReqVO
+from app.tools.goats_agent_client import GoatsAgentClient, make_goats_agent_client
+from app.tools.option_client import FinancialOrderOpenApiSaveReqVO, OptionClient
 
 _SERVICE_UNAVAILABLE = "交易指令服务暂不可用"
 
 logger = logging.getLogger(__name__)
 
 
-def _make_agent_client():
+def _make_agent_client() -> GoatsAgentClient:
     """工厂间接层(测试 patch 此名)。"""
     return make_goats_agent_client()
 
 
-def _make_option_client():
+def _make_option_client() -> OptionClient:
     """工厂间接层(测试 patch 此名)。"""
     from app.tools.option_client import OptionClientHttpx
 

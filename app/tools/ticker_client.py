@@ -89,9 +89,9 @@ class TickerClientHttpx:
         h.update(get_goats_auth_headers())
         return h
 
-    def _client_kwargs(self) -> dict:
+    def _client_kwargs(self) -> dict[str, Any]:
         """httpx.AsyncClient 构造参数（测试期可注入 transport）。"""
-        kw = {"timeout": self._timeout, "trust_env": False}
+        kw: dict[str, Any] = {"timeout": self._timeout, "trust_env": False}
         if self._transport is not None:
             kw["transport"] = self._transport
         return kw

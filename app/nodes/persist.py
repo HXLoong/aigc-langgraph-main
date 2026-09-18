@@ -47,7 +47,7 @@ async def persist(state: AgentState) -> dict[str, Any]:
         logger.debug("persist: empty trace, skip")
         return {}
 
-    message_id = state.get("message_id") or ""
+    message_id = str(state.get("message_id") or "")
     thread_id = state.get("conversation_id") or ""
     trace_id = state.get("trace_id") or ""
 
@@ -94,7 +94,7 @@ async def _write_to_mysql(
     ]
 
     # aiomysql 延迟导入：避免无 MySQL 部署的开发场景启动报错
-    import aiomysql  # type: ignore
+    import aiomysql
 
     conn = await asyncio.wait_for(
         aiomysql.connect(
@@ -119,7 +119,7 @@ async def _write_to_mysql(
 
 def _trace_entry_to_row(
     entry: Any, idx: int, message_id: str, thread_id: str, trace_id: str = "",
-) -> tuple:
+) -> tuple[Any, ...]:
     """把 TraceEntry / dict 转成 INSERT 行 tuple。"""
     # 鸭子类型：TraceEntry pydantic 模型 / dict
     if hasattr(entry, "model_dump"):

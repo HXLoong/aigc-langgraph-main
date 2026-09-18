@@ -290,7 +290,7 @@ def _evaluate_metric(name: str, ctx: AlertContext, state: AlertState) -> float:
         """counter 单调递增；理论上 current >= previous，应用重启会 reset
         让 previous > current。重启场景 delta 视为 0（避免负数当 burst）。"""
         d = current.get(key, 0) - previous.get(key, 0)
-        return max(d, 0.0)
+        return float(max(d, 0.0))
 
     if name == "http_5xx_spike":
         # 接 HTTPMetricsMiddleware 计数（PR #104）

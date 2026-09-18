@@ -6,6 +6,7 @@ M2 阶段：intent_route 已实现真三层路由（ADR 0015）；子图逐一�
 from __future__ import annotations
 
 from collections.abc import Callable
+from typing import Any
 
 from langchain_core.runnables import RunnableLambda
 from langgraph.checkpoint.base import BaseCheckpointSaver
@@ -75,9 +76,9 @@ def _route_after_intent(state: AgentState) -> str:
 
 
 def build_main_graph(
-    checkpointer: BaseCheckpointSaver | None = None,
+    checkpointer: BaseCheckpointSaver[Any] | None = None,
     message_client_factory: Callable[[], MessageClient] | None = None,
-) -> CompiledStateGraph:
+) -> CompiledStateGraph[AgentState, None, AgentState, AgentState]:
     """组装并编译主图（DSL v2 拓扑）。
 
     流程：
@@ -91,7 +92,7 @@ def build_main_graph(
     - intent_route 写 state['error'] → 跳 fallback
     - product_type == 'unknown' → 跳 fallback
     """
-    g: StateGraph = StateGraph(AgentState)
+    g: StateGraph[AgentState, None, AgentState, AgentState] = StateGraph(AgentState)
 
     g.add_node("ingest", ingest)
     g.add_node("quick_inquiry", quick_inquiry)

@@ -325,7 +325,7 @@ async def assemble(state: TickerState) -> dict[str, Any]:
             continue
         resolved.append(
             TickerCandidate(
-                windCode=wind_code,
+                wind_code=wind_code,
                 insShtDesc=winner.get("insShtDesc"),
                 insLngDesc=winner.get("insLngDesc"),
                 relevanceScore=winner.get("relevanceScore"),

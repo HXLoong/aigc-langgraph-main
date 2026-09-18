@@ -70,9 +70,9 @@ def _route_after_option_intent(state: AgentState) -> str:
     return _INTENT_TO_NODE.get(intent, "option_unknown")
 
 
-def build_option_graph() -> CompiledStateGraph:
+def build_option_graph() -> CompiledStateGraph[AgentState, None, AgentState, SubgraphOutput]:
     """构建 option 子图（7 意图 : 7 真节点一一对应，Dify DSL v2）。"""
-    g: StateGraph = StateGraph(AgentState, output_schema=SubgraphOutput)
+    g: StateGraph[AgentState, None, AgentState, SubgraphOutput] = StateGraph(AgentState, output_schema=SubgraphOutput)
     add_io_node(g, "option_intent", option_intent)
     g.add_node("option_extract_inquiry", build_inquiry_graph())  # 子图原生嵌入（ADR 0024 D3）
     g.add_node("option_extract_place", option_extract_place)

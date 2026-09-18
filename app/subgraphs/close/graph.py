@@ -75,9 +75,9 @@ def _route_after_close_intent(state: AgentState) -> str:
     return _INTENT_TO_NODE.get(intent, "close_unknown")
 
 
-def build_close_graph() -> CompiledStateGraph:
+def build_close_graph() -> CompiledStateGraph[AgentState, None, AgentState, SubgraphOutput]:
     """构建 close 子图（7/7 真节点全部到位）。"""
-    g: StateGraph = StateGraph(AgentState, output_schema=SubgraphOutput)
+    g: StateGraph[AgentState, None, AgentState, SubgraphOutput] = StateGraph(AgentState, output_schema=SubgraphOutput)
     add_io_node(g, "close_intent", close_intent)
     add_io_node(g, "close_holding_query", close_holding_query)
     # ADR 0024 重构 5：place_close 是子图（parse → fetch → extract → normalize → validate → submit/reject）

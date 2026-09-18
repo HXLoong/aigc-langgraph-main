@@ -190,7 +190,7 @@ async def inquiry_extract(state: InquiryState) -> dict[str, Any]:
     """LLM 只产出候选与证据；未验证的输出不能进入归一化或后端。"""
     messages, _prompt_name = SPEC.build_messages(state)
     llm = get_qwen_thinking().with_structured_output(CANDIDATE_MODEL)
-    candidates = await llm.ainvoke(messages)
+    candidates = CANDIDATE_MODEL.model_validate(await llm.ainvoke(messages))
     raw_params, records = unpack_candidates(
         OptionInquiryRawParams, candidates, evidence_sources(state), scope="option/inquiry",
     )
@@ -328,8 +328,8 @@ def _route_or_end(next_node: str):  # type: ignore[no-untyped-def]
     return _router
 
 
-def build_inquiry_graph() -> CompiledStateGraph:
-    g: StateGraph = StateGraph(InquiryState, output_schema=InquiryOutput)
+def build_inquiry_graph() -> CompiledStateGraph[InquiryState, None, AgentState, InquiryOutput]:
+    g: StateGraph[InquiryState, None, AgentState, InquiryOutput] = StateGraph(InquiryState, input_schema=AgentState, output_schema=InquiryOutput)
     add_io_node(g, "inquiry_fast_parse", inquiry_fast_parse)
     g.add_node("inquiry_fast_submit", inquiry_fast_submit)
     add_io_node(g, "inquiry_precheck", inquiry_precheck)
@@ -354,7 +354,7 @@ def build_inquiry_graph() -> CompiledStateGraph:
 
 
 @lru_cache(maxsize=1)
-def get_inquiry_graph() -> CompiledStateGraph:
+def get_inquiry_graph() -> CompiledStateGraph[InquiryState, None, AgentState, InquiryOutput]:
     return build_inquiry_graph()
 
 

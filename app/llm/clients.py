@@ -21,8 +21,9 @@ from typing import Any
 
 from langchain_core.language_models import LanguageModelInput
 from langchain_core.messages import AIMessage
-from langchain_core.runnables import RunnableConfig
+from langchain_core.runnables import Runnable, RunnableConfig
 from langchain_openai import ChatOpenAI
+from pydantic import BaseModel, SecretStr
 
 from app.config import get_settings
 
@@ -53,7 +54,7 @@ class _ChatLLM(ChatOpenAI):
     显式传入的 method 不覆盖；Qwen 走 langchain 默认行为。
     """
 
-    def with_structured_output(self, schema=None, **kwargs):  # type: ignore[override]
+    def with_structured_output(self, schema: dict[str, Any] | type | None = None, **kwargs: Any) -> Runnable[LanguageModelInput, dict[str, Any] | BaseModel]:
         if _is_deepseek(self.model_name) and "method" not in kwargs:
             kwargs["method"] = "function_calling"
         return super().with_structured_output(schema, **kwargs)
@@ -75,7 +76,7 @@ def get_qwen_standard() -> ChatOpenAI:
     return _ChatLLM(
         model=settings.qwen_model_standard,
         base_url=settings.qwen_api_base,
-        api_key=settings.qwen_api_key,
+        api_key=SecretStr(settings.qwen_api_key),
         temperature=0.0,
         timeout=settings.llm_timeout_seconds,
         max_retries=0,
@@ -94,7 +95,7 @@ def get_qwen_thinking() -> ChatOpenAI:
     return _ChatLLM(
         model=settings.qwen_model_thinking,
         base_url=settings.qwen_api_base,
-        api_key=settings.qwen_api_key,
+        api_key=SecretStr(settings.qwen_api_key),
         temperature=0.0,
         timeout=settings.llm_timeout_seconds,
         max_retries=0,
@@ -112,7 +113,7 @@ def make_qwen_thinking() -> ChatOpenAI:
     return _ChatLLM(
         model=settings.qwen_model_thinking,
         base_url=settings.qwen_api_base,
-        api_key=settings.qwen_api_key,
+        api_key=SecretStr(settings.qwen_api_key),
         temperature=0.0,
         timeout=settings.llm_timeout_seconds,
         max_retries=0,
@@ -127,7 +128,7 @@ def get_qwen_structured() -> ChatOpenAI:
     return _ChatLLM(
         model=settings.qwen_model_standard,
         base_url=settings.qwen_api_base,
-        api_key=settings.qwen_api_key,
+        api_key=SecretStr(settings.qwen_api_key),
         temperature=0.0,
         timeout=settings.llm_timeout_seconds,
         max_retries=0,
@@ -142,7 +143,7 @@ def get_qwen_complex() -> ChatOpenAI:
     return _ChatLLM(
         model=settings.qwen_model_complex,
         base_url=settings.qwen_api_base,
-        api_key=settings.qwen_api_key,
+        api_key=SecretStr(settings.qwen_api_key),
         temperature=0.0,
         timeout=settings.llm_timeout_seconds,
         max_retries=0,
@@ -157,7 +158,7 @@ def get_qwen_vl() -> ChatOpenAI:
     return _ChatLLM(
         model=settings.qwen_model_vl,
         base_url=settings.qwen_api_base,
-        api_key=settings.qwen_api_key,
+        api_key=SecretStr(settings.qwen_api_key),
         temperature=0.0,
         timeout=settings.llm_timeout_seconds,
         max_retries=0,

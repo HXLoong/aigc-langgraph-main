@@ -75,7 +75,7 @@ async def _classify_with_llm(text: str, quote_content: str | None) -> str:
     )
     llm = get_qwen_thinking().with_structured_output(UnknownIntentOutput)
     result: Any = await llm.ainvoke(messages)
-    return result.label
+    return UnknownIntentOutput.model_validate(result).label
 
 
 @io_node

@@ -140,9 +140,9 @@ def _route_after_apply_picks(state: AgentState) -> str:
     return "swap_unknown" if has_error(state) else "swap_place_order_submit"
 
 
-def build_swap_graph() -> CompiledStateGraph:
+def build_swap_graph() -> CompiledStateGraph[AgentState, None, AgentState, SubgraphOutput]:
     """构建 swap 子图（主路由 6/6 意图全覆盖 + place_order 选择链）。"""
-    g: StateGraph = StateGraph(AgentState, output_schema=SubgraphOutput)
+    g: StateGraph[AgentState, None, AgentState, SubgraphOutput] = StateGraph(AgentState, output_schema=SubgraphOutput)
     add_io_node(g, "swap_intent", swap_intent)
     g.add_node("swap_place_order", build_place_graph())
     g.add_node("swap_recognize_fresh_counterparty", RunnableLambda(swap_recognize_fresh_counterparty))

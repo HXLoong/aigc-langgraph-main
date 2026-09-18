@@ -91,17 +91,17 @@ class DifyWorkflowRunResponse(BaseModel):
     mode: Literal["advanced-chat"] = "advanced-chat"
     metadata: dict[str, Any] = Field(default_factory=dict)
 
-    @computed_field(alias="conversation_id")
+    @computed_field(alias="conversation_id")  # type: ignore[prop-decorator]
     @property
     def canonical_conversation_id(self) -> str:
         return self.conversation_id
 
-    @computed_field
+    @computed_field  # type: ignore[prop-decorator]
     @property
     def message_id(self) -> str:
         return self.id
 
-    @computed_field
+    @computed_field  # type: ignore[prop-decorator]
     @property
     def created_at(self) -> int:
         return self.data.created_at
@@ -193,7 +193,7 @@ async def _execute_workflow(
     # ADR 0024 D4：请求级幂等——同一企微 message_id 重投不重跑整图（重跑 = 重复下单）
     store: IdempotencyStore | None = getattr(request.app.state, "idempotency_store", None)
     message_id = initial_state.get("message_id")
-    idem_key = str(message_id) if message_id not in (None, "") else None
+    idem_key = str(message_id) if message_id is not None else None
     if store is not None and idem_key is not None:
         existing = await _idempotency_begin(store, idem_key, initial_state)
         if existing is not None:
@@ -251,9 +251,8 @@ async def _execute_workflow(
             status: Literal["succeeded", "failed", "stopped"] = (
                 "failed" if final_state.get("error") else "succeeded"
             )
-            error_msg = (
-                final_state["error"].message if final_state.get("error") else None
-            )
+            graph_error = final_state.get("error")
+            error_msg = graph_error.message if graph_error is not None else None
         except TimeoutError:
             final_state = {}
             status = "failed"
@@ -275,13 +274,13 @@ async def _execute_workflow(
     finished_at = int(time.time())
 
     if timed_out:
-        response = _timeout_response()
+        timeout_response = _timeout_response()
         body = {"code": "workflow_timeout", "status": 504,
                 "message": "指令处理超时，执行结果待核对，请勿重复提交。"}
         if store is not None and idem_key is not None:
             await _idempotency_complete(store, idem_key, final_state, error_msg,
                                         int(elapsed * 1000), body, 504)
-        return response
+        return timeout_response
 
     # 必须等图完成：persist 已记录 set-intent 的失败 trace 后才返回 502。
     # 使用固定文案，不透传后端响应、URL、鉴权信息或异常堆栈。
@@ -383,7 +382,7 @@ def _build_run_config(
     trace_id: str,
     user_id: str | None = None,
     environment: str | None = None,
-) -> dict:
+) -> dict[str, Any]:
     """构造 graph.ainvoke 的 RunnableConfig(thread 绑定 + trace 关联 + 递归上限)。
 
     metadata 里的 `langfuse_*` 键由 langfuse v4 CallbackHandler 读取（ADR 0024 D5）：
@@ -464,7 +463,7 @@ def _state_to_outputs(state: AgentState) -> dict[str, Any]:
         v = state.get(key)
         if v is None:
             continue
-        if key in ("place_params", "cancel_params") and expected_action is not None:
+        if key in ("place_params", "cancel_params") and expected_action is not None and isinstance(v, dict):
             # wire 兼容投影（ADR 0024 D2）：state 内 expected_action 已是顶层字段，
             # 既有读者（探针脚本 / 日志解析）仍从信封里读，这里只投影不改写 state
             v = {"expected_action": expected_action, **v}
