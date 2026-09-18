@@ -52,7 +52,8 @@ class TickerClient(Protocol):
     async def get_inference_prompt(self) -> str: ...
 
     async def list_counterparty(
-        self, room_id: str | None = None
+        self, room_id: str | None = None, *, user_id: str | None = None,
+        business_type: str | None = None, message_id: int | None = None,
     ) -> list[dict[str, Any]]: ...
 
 
@@ -127,12 +128,15 @@ class TickerClientHttpx:
             return str(envelope.get("data") or "")
 
     async def list_counterparty(
-        self, room_id: str | None = None
+        self, room_id: str | None = None, *, user_id: str | None = None,
+        business_type: str | None = None, message_id: int | None = None,
     ) -> list[dict[str, Any]]:
         from app.tools.exceptions import translate_httpx_errors
 
         url = f"{self._base_url}/admin-api/counterparty/info/list"
-        params = {"roomId": room_id} if room_id else None
+        params = {key: str(value) for key, value in {
+            "roomId": room_id, "userId": user_id, "type": business_type, "messageId": message_id,
+        }.items() if value is not None}
         async with (
             translate_httpx_errors("ticker"),
             acquire_http_client(timeout=self._timeout, transport=self._transport) as client,
@@ -140,5 +144,7 @@ class TickerClientHttpx:
             r = await client.get(url, params=params, headers=self._headers, timeout=self._timeout)
             r.raise_for_status()
             envelope: dict[str, Any] = r.json()
+            if envelope.get("code") != 0:
+                raise ValueError(f"counterparty lookup failed: code={envelope.get('code')}")
             rows: list[dict[str, Any]] = envelope.get("data") or []
             return rows

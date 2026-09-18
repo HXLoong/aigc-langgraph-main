@@ -63,6 +63,8 @@ class Settings(BaseSettings):
     # === 真实环境测试账号（D2.* probe / 阶段 2 联调用，不进生产路径）===
     eval_room_id: str = ""
     eval_user_id: str = ""
+    eval_guid: str = ""
+    eval_java_database: str = ""
 
     # 标的池 MySQL（直连查询）—— 凭据走 .env，源码里只留空默认值
     ticker_mysql_host: str = ""

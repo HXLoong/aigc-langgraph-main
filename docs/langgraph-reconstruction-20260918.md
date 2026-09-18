@@ -55,3 +55,12 @@
 - 审计顺序改为 render → remember → history → persist；序列化保留 trace/history 的稳定 ID。
 - 幂等存储不可用时阻止执行；过期未完成占位只标识结果待核对，不重新执行。
 - 后续仍需补独立不确定结果核对流程、ticker 只读异常传播和业务层完整规范迁移。
+
+第三批：本地 HTTP 回归准备完成。
+
+- 第二批恢复点：`47942fb`。
+- 新增 scripts/local_eval.py：限定应用/数据库为 loopback，准备真实 Java 消息，按用户/群/业务查询授权对手；共用 harness 判定与 HTTP runner。
+- Java 实际数据库为 otc_goats_ai_trading_dev；已通过 EVAL_JAVA_DATABASE 显式配置。本地首次误写到另一开发库的两条自建测试消息已按 ID+creator 删除。
+- 本地 staging + MySQL checkpoint + 请求幂等的小样本：case-030/case-031 共 4 轮全部 PASS；完整消息写回正常。报告 .harness-runs/local-20260918-111722。
+- 全量 pytest 2224 passed、15 skipped；随后新增 percentile 测试，局部 8 passed；ruff 通过。
+- 后续全量基线使用固定代码工作树，避免重构中途改提示词影响同一轮评估。
