@@ -12,6 +12,7 @@ from typing import Annotated, Any, Literal, TypedDict
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
+from app.extraction.fields import FieldRecord, merge_fields
 from app.wire_model import WireModel
 
 # ============================================================
@@ -247,6 +248,7 @@ class AgentState(TypedDict, total=False):
     #: 本轮要对后端执行的动作类别（ADR 0024 D2 顶层化）：写类节点写入，render / 输出层读取；
     #: 查询类意图为 None。与 Java operate 的 type 无关——那条由 intent 驱动
     expected_action: ExpectedAction | None
+    field_records: Annotated[dict[str, FieldRecord], merge_fields]
     tickers: list[TickerCandidate]
     place_params: dict[str, Any] | None
     cancel_params: dict[str, Any] | None
@@ -287,6 +289,7 @@ class SubgraphOutput(TypedDict, total=False):
 
     intent: str
     expected_action: ExpectedAction | None
+    field_records: Annotated[dict[str, FieldRecord], merge_fields]
     tickers: list[TickerCandidate]
     place_params: dict[str, Any] | None
     cancel_params: dict[str, Any] | None

@@ -68,3 +68,24 @@ def test_empirical_percentiles_include_tail_for_small_samples():
     assert module.latency_percentiles([10, 20, 30, 100]) == {
         "p50_ms": 20, "p95_ms": 100, "p99_ms": 100,
     }
+
+
+async def test_text_model_probe_checks_every_distinct_configured_model(monkeypatch):
+    module = importlib.import_module("scripts.local_eval")
+    from app.llm import clients
+
+    invoked = []
+    def factory(name):
+        async def invoke(messages):
+            invoked.append(name)
+            if name == "unsupported-ocr":
+                raise ValueError("Function call is not supported")
+            return {"status": "ready"}
+        return SimpleNamespace(model_name=name, openai_api_base="http://model.invalid",
+                               with_structured_output=lambda schema: SimpleNamespace(ainvoke=invoke))
+    for name in ("get_qwen_standard", "get_qwen_thinking"):
+        monkeypatch.setattr(clients, name, lambda: factory("text-model"))
+    monkeypatch.setattr(clients, "get_qwen_complex", lambda: factory("unsupported-ocr"))
+    with pytest.raises(ValueError, match="unsupported-ocr"):
+        await module.probe_text_models()
+    assert invoked == ["text-model", "unsupported-ocr"]

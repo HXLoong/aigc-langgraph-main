@@ -64,3 +64,11 @@
 - 本地 staging + MySQL checkpoint + 请求幂等的小样本：case-030/case-031 共 4 轮全部 PASS；完整消息写回正常。报告 .harness-runs/local-20260918-111722。
 - 全量 pytest 2224 passed、15 skipped；随后新增 percentile 测试，局部 8 passed；ruff 通过。
 - 后续全量基线使用固定代码工作树，避免重构中途改提示词影响同一轮评估。
+
+第四批：字段证据基础与模型能力预检。
+
+- 第三批恢复点：`62e7420`。
+- FieldCandidate 验证 value/evidence/来源及数字边界；FieldRecord 记录来源、置信度、锁定和拒绝次数，reducer 拒绝锁定值覆盖。接入 AgentState/子图输出、ingest 重置和 checkpoint 白名单；各业务提取节点的接入仍待逐项完成。
+- 388 条固定工作树运行完成，但 377 条因 QWEN_MODEL_COMPLEX=external-deepseek-ocr 不支持 Function call 失败；8 PASS/380 FAIL 是配置故障运行，不作为业务准确率或有效性能基线。
+- 已将本地复杂文本模型改为与标准/意图一致的 external-deepseek-v4-pro，三种文本工厂的真实结构化能力预检通过。回归脚本现在先检查所有不同文本模型，失败即停止。
+- 字段机制 11 个 RED → GREEN；全量 2237 passed、15 skipped；模型预检另做真实外部服务检查。

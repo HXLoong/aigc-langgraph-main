@@ -51,6 +51,7 @@ async def ingest(state: AgentState) -> dict[str, Any]:
         "error": None,
         # per-turn 业务对象（ADR 0024 D2）
         "expected_action": None,
+        "field_records": Overwrite({}),
         "tickers": None,
         "place_params": None,
         "cancel_params": None,

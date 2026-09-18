@@ -14,14 +14,41 @@ from typing import Any
 from urllib.parse import urlsplit
 
 import aiomysql
+from pydantic import BaseModel, ConfigDict, Field
 
 from app.config import get_settings
+from app.llm import clients as llm_clients
+from app.prompts import load_prompt
 from app.tools.ticker_client import TickerClientHttpx
 from harness.cli import _doctor, _render_markdown, _report_case, _summarize, _turn_diffs
 from harness.golden import GoldenCase, filter_by_ids, load_golden
 from harness.multi_turn import MultiTurnResult, run_case_multi
 
 logger = logging.getLogger(__name__)
+
+
+class CapabilityProbe(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    status: str = Field(description="结构化输出检查结果，固定为 ready")
+
+
+async def probe_text_models() -> list[dict[str, Any]]:
+    checked: set[tuple[str, str]] = set()
+    results: list[dict[str, Any]] = []
+    prompt = load_prompt("system", "capability_probe")
+    for factory in (llm_clients.get_qwen_standard, llm_clients.get_qwen_thinking, llm_clients.get_qwen_complex):
+        model = factory()
+        key = (str(model.openai_api_base), model.model_name)
+        if key not in checked:
+            try:
+                output = await model.with_structured_output(CapabilityProbe).ainvoke([("system", prompt.system)])
+                if CapabilityProbe.model_validate(output).status != "ready":
+                    raise ValueError("unexpected capability response")
+            except Exception as exc:
+                raise ValueError(f"structured output unavailable: {model.model_name}") from exc
+            checked.add(key)
+        results.append({"factory": factory.__name__, "model": model.model_name, "structured_output": True})
+    return results
 
 
 def require_local(url: str) -> None:
@@ -81,6 +108,7 @@ async def run(args: argparse.Namespace) -> int:
     gate = await _doctor(args.base_url, checkpoint="mysql", backend="real")
     if gate:
         return gate
+    models = await probe_text_models()
     cases = filter_by_ids(load_golden(Path(args.data)), args.case)
     if args.limit:
         cases = cases[:args.limit]
@@ -104,6 +132,7 @@ async def run(args: argparse.Namespace) -> int:
         "commit": subprocess.check_output(["git", "rev-parse", "HEAD"], text=True).strip(),
         "cases": len(cases), "turns": sum(len(case.turns) for case in cases),
         "model": settings.qwen_model_standard,
+        "models": models,
         "fixtures": {p.name: hashlib.sha256(p.read_bytes()).hexdigest() for p in Path(args.data).glob("*.jsonl")},
     }
     (directory / "manifest.json").write_text(json.dumps(manifest, ensure_ascii=False, indent=2))

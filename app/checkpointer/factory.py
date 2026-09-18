@@ -32,6 +32,7 @@ CHECKPOINT_ALLOWED_MODELS: tuple[tuple[str, str], ...] = (
     ("app.graph.state", "Message"),
     ("app.graph.state", "TraceEntry"),
     ("app.graph.state", "ErrorInfo"),
+    ("app.extraction.fields", "FieldRecord"),
 )
 
 
