@@ -51,6 +51,7 @@ class FieldRecord(BaseModel):
     confidence: float | None = Field(default=None, ge=0, le=1, description="模型原始置信度；确定性值可以为空")
     locked: bool = Field(default=False, description="当前指令/订单范围内已完成校验，不再允许覆盖")
     rejected_updates: int = Field(default=0, ge=0, description="被拒绝的锁定字段修改次数")
+    derived_from: list[str] = Field(default_factory=list, description="Code 合并多个来源时引用的原始字段记录路径")
 
 
 def merge_fields(

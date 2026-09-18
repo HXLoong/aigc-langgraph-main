@@ -187,14 +187,45 @@ def normalize_candidates(
         return convert
 
     converters = {info.alias or name: converter(info.alias or name) for name, info in SwapOrderItem.model_fields.items()}
+    raw_orders = candidates.model_dump(by_alias=True).get("orderList") or []
+    split_units: dict[int, tuple[str, FieldCandidate, FieldCandidate]] = {}
+    for index, raw_order in enumerate(raw_orders):
+        raw_quantity, raw_unit = raw_order.get("placeOrderQuantity"), raw_order.get("placeOrderQuantityUnit")
+        if not raw_quantity or not raw_unit:
+            continue
+        quantity_candidate, unit_candidate = FieldCandidate.model_validate(raw_quantity), FieldCandidate.model_validate(raw_unit)
+        quantity_value, unit_value = quantity_candidate.verify(sources), unit_candidate.verify(sources)
+        if (quantity_value is None or unit_value is None
+                or not re.fullmatch(r"[0-9]+(?:\.[0-9]+)?", quantity_value)
+                or unit_value.upper() in {"SHARE", "HAND", "AMOUNT"}):
+            continue
+        token = quantity_value + unit_value
+        if quantity_unit(token) is None:
+            raise ValueError("无法确定数量单位")
+        split_units[index] = (token, quantity_candidate, unit_candidate)
+
+        def scaled_quantity(value: str, candidate: FieldCandidate, *, token: str = token) -> Any:
+            return None if quantity_unit(token) == "AMOUNT" else normalize_field("placeOrderQuantity", token)
+
+        converters[f"{scope}.orderList.{index}.placeOrderQuantity"] = scaled_quantity
     params, records = unpack_candidates(SwapPlaceOrderParams, candidates, sources, scope=scope,
                                         normalizers=converters)
-    raw_orders = candidates.model_dump(by_alias=True).get("orderList") or []
     orders = []
     for index, item in enumerate(params.order_list):
         row = item.model_dump()
         original = raw_orders[index]
         prefix = f"{scope}.orderList.{index}."
+        if index in split_units:
+            _, quantity_candidate, unit_candidate = split_units[index]
+            dependencies = []
+            for field, candidate in (("placeOrderQuantity", quantity_candidate), ("placeOrderQuantityUnit", unit_candidate)):
+                path = prefix + field + ".candidate"
+                records[path] = records[prefix + field].model_copy(update={"value": candidate.value})
+                dependencies.append(path)
+            records[prefix + "placeOrderQuantity"] = records[prefix + "placeOrderQuantity"].model_copy(
+                update={"source": "inferred", "derived_from": dependencies,
+                        "confidence": min(quantity_candidate.confidence, unit_candidate.confidence)},
+            )
         if row.get("placeOrderPrice") is not None and row.get("placeOrderPriceType") is None:
             row["placeOrderPriceType"] = "LimitOrder"
             records[prefix + "placeOrderPriceType"] = records[prefix + "placeOrderPrice"].model_copy(
@@ -205,17 +236,22 @@ def normalize_candidates(
             if not raw_field or raw_field.get("value") is None:
                 continue
             raw = raw_field["value"]
+            if source_field == "placeOrderQuantity" and index in split_units:
+                raw = split_units[index][0]
             evidence = raw_field.get("evidence") or raw
             source_record = records[prefix + source_field]
             unit = quantity_unit(raw)
             # Quantity@price has an explicit quantity role even without 股/手.
-            at_price = source_field == "placeOrderQuantity" and re.search(
+            at_price = (source_field == "placeOrderQuantity" and currency(raw) is None
+                        and not original.get("placeOrderQuantityUnit") and re.search(
                 re.escape(raw) + r"\s*@\s*(?:[0-9]|mkt|market|市价)",
                 sources.get(source_record.origin, ""), re.IGNORECASE,
-            )
+            ))
             if at_price:
                 unit = "SHARE" if re.search(r"[kKwW千万亿]", raw) else None
                 row["placeOrderQuantity"] = normalize_field("placeOrderQuantity", raw, evidence)
+            if unit and row.get("placeOrderQuantityUnit") not in {None, unit}:
+                raise ValueError("数值中的单位与显式数量单位冲突")
             if unit and row.get("placeOrderQuantityUnit") is None:
                 row["placeOrderQuantityUnit"] = unit
                 records[prefix + "placeOrderQuantityUnit"] = source_record.model_copy(

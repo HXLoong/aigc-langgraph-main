@@ -88,7 +88,8 @@ def unpack_candidates(
             original = value.verify(sources)
             if original is None:
                 return None
-            normalized = converters[alias](original, value) if alias in converters else original
+            converter = converters.get(path) or converters.get(alias)
+            normalized = converter(original, value) if converter is not None else original
             records[path] = FieldRecord(
                 value=normalized, source="user", evidence=value.evidence,
                 origin=value.origin if value.reference is None else f"{value.origin}:{value.reference}",
