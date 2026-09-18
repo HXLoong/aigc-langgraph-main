@@ -279,7 +279,8 @@ def build_instructions_graph(
                     "uncertain": "执行结果待核对，请勿重复提交。", "blocked": "前置结果或指令范围未能确定，本条尚未提交。",
                     "failed": "本条指令处理失败。", "needs_input": "本条指令需要补充信息。",
                 }.get(result["status"], "本条指令尚未提交。")
-            replies.append(f"[{', '.join(batch)}]\n{reply}")
+            numbers = "、".join(identity.removeprefix("instruction-") for identity in batch)
+            replies.append(f"第 {numbers} 条指令：\n{reply}")
         error = state.get("error")
         if any(result["status"] == "uncertain" for result in results):
             error = ErrorInfo(node="submit_instruction_batches", type="BackendUnreachableError", message="one or more instruction results require reconciliation")
