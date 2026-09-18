@@ -117,8 +117,8 @@ def build_swap_graph():
    - 若需要新参数提取节点，仿照 `extract_place_order` 写
    - 更新 `route_by_intent` 映射
    - 更新 `build_<product>_graph()` 加边
-3. 提示词：若 Dify 有对应 LLM 节点，用 `prompt-migrator` 子 agent 迁移；否则，**停下来**跟用户确认是否要新写提示词
-4. 测试：用 `test-generator` 子 agent 补测试
+3. 提示词：按当前 git 业务契约定义 PromptSpec 与候选模型；用户已授权重构时直接实现必要提示词。仅业务语义确实缺失时请求澄清；Dify 快照仅作历史证据。
+4. 测试：先最小 RED 再实现；验证范围遵循用户指令。只有已授权并行且有可用槽位时才委派子代理。
 
 ### 加新节点（非意图）
 在现有意图内部做更多步骤，例如"下单前加参数校验"：
