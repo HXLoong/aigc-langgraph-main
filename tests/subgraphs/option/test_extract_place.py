@@ -25,6 +25,17 @@ _QUOTE_CARD = (
     "期限待补充，请引用本消息回复期限。如需下单，请提供建仓参数。"
 )
 
+#: 批量询价卡（1M/2M 两笔订单 + 对手选项列表，case-026 形态）
+_BATCH_QUOTE_CARD = (
+    "-----场外期权询价详情-----\r\n"
+    "Q-20250616-000011\r\n"
+    "标的代码：600519.SH；欧式看涨；80%\r\n"
+    "期限：1M\r\n"
+    "Q-20250616-000012\r\n"
+    "期限：2M\r\n"
+    "本群可选交易对手列表：A.临沂阿凡提 B.11125测试短名(张天琪专用)\r\n"
+)
+
 
 def _patch(monkeypatch: pytest.MonkeyPatch) -> AsyncMock:
     """patch 后端调用 + 禁止 LLM。"""
@@ -163,6 +174,50 @@ class TestOptionExtractPlaceNode:
         ]
         assert all(o["orderType"] == "市价单" for o in order_list)
 
+    async def test_ordinal_segments_map_each_order_params(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """多单批量补参（case-026）：第 N 个单段 → 引用回执第 N 个订单，含各自对手字母。"""
+        _patch(monkeypatch)
+        result = await option_extract_place(
+            {
+                "raw_text": "第一个单 最大跟量，200万，A，限价10\n第二个单 限价6，100万，B",
+                "quote_content": _BATCH_QUOTE_CARD,
+            }
+        )
+        order_list = result["place_params"]["orderList"]
+        assert [o["orderId"] for o in order_list] == [
+            "Q-20250616-000011",
+            "Q-20250616-000012",
+        ]
+        first, second = order_list
+        assert first["orderType"] == "POV"
+        assert first["notionalAmount"] == "2000000"
+        assert first["limitPrice"] == 10.0
+        assert first["shortName"] == "临沂阿凡提"
+        assert first["hasFastExecutionIntent"] is True
+        assert second["orderType"] == "限价单"
+        assert second["notionalAmount"] == "1000000"
+        assert second["limitPrice"] == 6.0
+        assert second["shortName"] == "11125测试短名(张天琪专用)"
+        assert second["hasFastExecutionIntent"] is False
+
+    async def test_ordinal_segments_require_matching_order_ids(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """段数与引用回执订单数不一致 → 回退整段参数套用（不猜测映射）。"""
+        _patch(monkeypatch)
+        result = await option_extract_place(
+            {
+                "raw_text": "第一个单 限价10，200万\n第二个单 市价 100万",
+                "quote_content": "Q-20250616-000011",
+            }
+        )
+        order_list = result["place_params"]["orderList"]
+        assert len(order_list) == 1
+        assert order_list[0]["orderType"] == "限价单"
+        assert order_list[0]["notionalAmount"] == "2000000"
+
     async def test_b_class_from_card(self, monkeypatch: pytest.MonkeyPatch) -> None:
         _patch(monkeypatch)
         result = await option_extract_place(
@@ -207,6 +262,27 @@ class TestOptionExtractPlaceNode:
             }
         )
         assert _item(result)["shortName"] == "11125测试短名(张天琪专用)"
+
+    @pytest.mark.parametrize(
+        ("raw", "expected_short_name"),
+        [
+            ("200万，市价下单，交易对手选A", "临沂阿凡提"),
+            ("交易对手：A，市价下单", "临沂阿凡提"),
+            ("100万 市价下单 交易对手选择B", "11125测试短名(张天琪专用)"),
+        ],
+    )
+    async def test_short_name_select_letter_resolves_from_quote(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        raw: str,
+        expected_short_name: str,
+    ) -> None:
+        """标签 / 选择动词后的选项字母（case-029「交易对手选A」）必须解析成完整名称，不能原样透传。"""
+        _patch(monkeypatch)
+        result = await option_extract_place(
+            {"raw_text": raw, "quote_content": _BATCH_QUOTE_CARD}
+        )
+        assert _item(result)["shortName"] == expected_short_name
 
     async def test_no_order_keeps_placeholder_item(
         self, monkeypatch: pytest.MonkeyPatch

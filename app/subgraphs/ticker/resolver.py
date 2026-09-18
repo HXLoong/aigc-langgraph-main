@@ -42,7 +42,6 @@ from app.subgraphs.ticker.tools import (
 from app.tools.ticker_client import (
     KeywordItem,
     SecuritiesInstrumentReqVO,
-    SecuritiesInstrumentRespVO,
     TickerClient,
 )
 
@@ -128,7 +127,7 @@ class OrgWinner(TypedDict):
 
     index: int
     org_str: str
-    winner: Any  # SecuritiesInstrumentRespVO | None
+    winner: dict[str, Any] | None  # GOATS 原始候选（原样 dict 透传）
 
 
 class TickerState(TypedDict, total=False):
@@ -156,7 +155,7 @@ class OrgItemInput(TypedDict):
 
 async def _search_goats(
     client: TickerClient, keyword_items: list[dict[str, Any]]
-) -> list[SecuritiesInstrumentRespVO]:
+) -> list[dict[str, Any]]:
     """单次 GOATS 批量查询（一个 orgStr 下全部 keyword 合并成一次请求），封装异常。"""
     try:
         req = SecuritiesInstrumentReqVO(
@@ -176,7 +175,7 @@ async def _resolve_one_org_item(
     org_str: str,
     keywords: list[dict[str, Any]],
     predicted_family: str,
-) -> SecuritiesInstrumentRespVO | None:
+) -> dict[str, Any] | None:
     """单个 orgStr：GOATS 批量查询 + rank LLM 排序过滤 → winner（GOATS 候选对象）或 None。
 
     - 0 命中 → None
@@ -200,7 +199,7 @@ async def _resolve_one_org_item(
     if not ranked_codes:
         return None
 
-    by_code = {(r.wind_code or "").upper(): r for r in results}
+    by_code = {(r.get("windCode") or "").upper(): r for r in results}
     for code in ranked_codes:
         hit = by_code.get((code or "").upper())
         if hit is not None:
@@ -252,15 +251,18 @@ async def merge_candidates(state: TickerState) -> dict[str, Any]:
     client = _make_client()
 
     explicit = list(dict.fromkeys(_EXPLICIT_CODE_RE.findall(raw_text)))
-    exact_results: dict[str, SecuritiesInstrumentRespVO | None] = {}
-    guarded_roots: dict[str, list[SecuritiesInstrumentRespVO]] = {}
+    exact_results: dict[str, dict[str, Any] | None] = {}
+    guarded_roots: dict[str, list[dict[str, Any]]] = {}
     for code in explicit:
         identity = _code_identity(code)
         results = await _search_goats(client, [
             {"keyword": keyword, "isFull": True}
             for keyword in dict.fromkeys([code.upper(), identity])
         ])
-        winner = next((item for item in results if _code_identity(item.wind_code) == identity), None)
+        winner = next((
+            item for item in results
+            if (item.get("windCode") or "") and _code_identity(item["windCode"]) == identity
+        ), None)
         exact_results[identity] = winner
         root = code.split(".")[0]
         if root.isdigit():
@@ -321,7 +323,10 @@ async def assemble(state: TickerState) -> dict[str, Any]:
         if winner is None:
             continue
         org_str = entry["org_str"]
-        code_key = winner.wind_code.strip().upper()
+        wind_code = str(winner.get("windCode") or "")
+        if not wind_code:
+            continue
+        code_key = wind_code.strip().upper()
         source_keywords = [org_str] if org_str in input_candidates else []
         if code_key in by_code:
             existing = by_code[code_key]
@@ -331,11 +336,11 @@ async def assemble(state: TickerState) -> dict[str, Any]:
             continue
         resolved.append(
             TickerCandidate(
-                windCode=winner.wind_code,
-                insShtDesc=winner.ins_sht_desc,
-                insLngDesc=winner.ins_lng_desc,
-                relevanceScore=winner.relevance_score,
-                transactionTypeLists=winner.transaction_type_lists,
+                windCode=wind_code,
+                insShtDesc=winner.get("insShtDesc"),
+                insLngDesc=winner.get("insLngDesc"),
+                relevanceScore=winner.get("relevanceScore"),
+                transactionTypeLists=winner.get("transactionTypeLists") or [],
                 sourceKeywords=source_keywords,
                 from_goats=True,
             )

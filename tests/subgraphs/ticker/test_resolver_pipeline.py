@@ -18,20 +18,21 @@ from app.subgraphs.ticker import resolver as resolver_mod
 from app.subgraphs.ticker.resolver import TickerResolution, resolve_ticker, resolve_ticker_full
 
 
-class _FakeInstrument:
-    def __init__(
-        self,
-        wind_code: str,
-        sht: str = "",
-        lng: str = "",
-        score: int = 0,
-        tx_types: list[str] | None = None,
-    ) -> None:
-        self.wind_code = wind_code
-        self.ins_sht_desc = sht
-        self.ins_lng_desc = lng
-        self.relevance_score = score
-        self.transaction_type_lists = tx_types or []
+def _fake_instrument(
+    wind_code: str,
+    sht: str = "",
+    lng: str = "",
+    score: int = 0,
+    tx_types: list[str] | None = None,
+) -> dict:
+    """GOATS 候选行（后端数据原样 dict 透传契约）。"""
+    return {
+        "windCode": wind_code,
+        "insShtDesc": sht,
+        "insLngDesc": lng,
+        "relevanceScore": score,
+        "transactionTypeLists": tx_types or [],
+    }
 
 
 def _patch_llm_batches(
@@ -71,7 +72,7 @@ async def test_same_instrument_merges_only_input_source_keywords(monkeypatch) ->
         "600519": ["600519.SH"],
         "invented-alias": ["600519.SH"],
     })
-    _patch_goats(monkeypatch, [_FakeInstrument("600519.SH", "贵州茅台")])
+    _patch_goats(monkeypatch, [_fake_instrument("600519.SH", "贵州茅台")])
 
     resolution = await resolve_ticker_full("茅台 600519")
 
@@ -100,7 +101,7 @@ async def test_tenors_never_reach_inference_or_goats(monkeypatch) -> None:
     _patch_llm_batches(monkeypatch, infer={
         "600519.SH": ["600519.SH"], "600519": ["600519.SH"],
     })
-    _patch_goats(monkeypatch, [_FakeInstrument("600519.SH")])
+    _patch_goats(monkeypatch, [_fake_instrument("600519.SH")])
 
     result = await resolve_ticker_full("600519.SH,1M/2M,0.5y,80%")
 
@@ -150,7 +151,7 @@ async def test_single_goats_hit_skips_rank_and_resolves(
         infer={"贵州茅台": ["600519.SH", "贵州茅台"]},
         judge={"贵州茅台": "EQUITY"},
     )
-    _patch_goats(monkeypatch, [_FakeInstrument("600519.SH", "贵州茅台")])
+    _patch_goats(monkeypatch, [_fake_instrument("600519.SH", "贵州茅台")])
     rank_mock = AsyncMock(return_value=[])
     monkeypatch.setattr(resolver_mod, "rank_candidates", rank_mock)
 
@@ -173,8 +174,8 @@ async def test_multi_hit_uses_rank_to_pick_winner(monkeypatch: pytest.MonkeyPatc
     _patch_goats(
         monkeypatch,
         [
-            _FakeInstrument("00700.HK", "TENCENT"),
-            _FakeInstrument("300750.SZ", "宁德时代（无关）"),
+            _fake_instrument("00700.HK", "TENCENT"),
+            _fake_instrument("300750.SZ", "宁德时代（无关）"),
         ],
     )
     monkeypatch.setattr(
@@ -196,7 +197,7 @@ async def test_multi_hit_rank_returns_empty_skips_org_item(
     _patch_llm_batches(monkeypatch, infer={"腾讯": ["腾讯"]}, judge={"腾讯": "EQUITY"})
     _patch_goats(
         monkeypatch,
-        [_FakeInstrument("00700.HK"), _FakeInstrument("300750.SZ")],
+        [_fake_instrument("00700.HK"), _fake_instrument("300750.SZ")],
     )
     monkeypatch.setattr(resolver_mod, "rank_candidates", AsyncMock(return_value=[]))
 
@@ -213,7 +214,7 @@ async def test_rank_result_not_in_goats_candidates_skips_org_item(
     _patch_llm_batches(monkeypatch, infer={"腾讯": ["腾讯"]}, judge={"腾讯": "EQUITY"})
     _patch_goats(
         monkeypatch,
-        [_FakeInstrument("00700.HK"), _FakeInstrument("300750.SZ")],
+        [_fake_instrument("00700.HK"), _fake_instrument("300750.SZ")],
     )
     monkeypatch.setattr(
         resolver_mod, "rank_candidates", AsyncMock(return_value=["999999.SH"])
@@ -256,7 +257,7 @@ async def test_dedup_across_org_items_same_wind_code(
     )
 
     async def _fake_search(req):
-        return [_FakeInstrument("600519.SH", "贵州茅台")]
+        return [_fake_instrument("600519.SH", "贵州茅台")]
 
     from unittest.mock import MagicMock
 
@@ -303,7 +304,7 @@ async def test_resolve_ticker_returns_resolved_list_only(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     _patch_llm_batches(monkeypatch, infer={"贵州茅台": ["600519.SH"]})
-    _patch_goats(monkeypatch, [_FakeInstrument("600519.SH", "贵州茅台")])
+    _patch_goats(monkeypatch, [_fake_instrument("600519.SH", "贵州茅台")])
     monkeypatch.setattr(resolver_mod, "rank_candidates", AsyncMock(return_value=[]))
 
     tickers = await resolve_ticker("贵州茅台")

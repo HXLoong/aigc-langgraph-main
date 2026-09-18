@@ -5,7 +5,8 @@ from __future__ import annotations
 import json
 import os
 import random
-from collections.abc import Sequence
+import re
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -51,6 +52,10 @@ DEFAULT_SWAP_COUNTERPARTIES: list[dict[str, Any]] = [
 
 class RunnerError(RuntimeError):
     """Raised when regression configuration or fixture data is invalid."""
+
+
+#: LLM 断言裁判：(期望片段, 实际回复) → 语义是否满足
+JudgeCallable = Callable[[str, str], bool]
 
 
 @dataclass
@@ -138,20 +143,60 @@ def _expected_lines(value: Any) -> list[str]:
     return [str(value).strip()]
 
 
+# ── 动态值归一（单号 / 合约编号模糊匹配） ──
+
+#: Q- 单号：兼容截断前缀（Q-2026）与完整单号（Q-20260918-2768122880）
+_ORDER_ID_RE = re.compile(r"(?<![A-Za-z0-9])Q-\d{4,}(?:-[A-Za-z0-9]+)?")
+#: 其它业务单号 / 合约编号：OPT-/CO-/H-YYYYMMDD-xxx 等
+_GENERIC_ID_RE = re.compile(r"(?<![A-Za-z0-9])[A-Z]{1,4}-\d{6,}(?:-[A-Za-z0-9]+)?")
+
+
+def normalize_dynamic_tokens(text: str) -> str:
+    """单号 / 合约编号等动态值 → 占位符（值本身差异不算差异）。
+
+    额度 / 期权费率等纯数值差异不做正则猜测，交 LLM judge 兜底（见 `evaluate_response`）。
+    """
+    if not text:
+        return text
+    text = _ORDER_ID_RE.sub("Q-{id}", text)
+    return _GENERIC_ID_RE.sub("{id}", text)
+
+
+def _judge_line(judge: JudgeCallable, line: str, answer: str) -> bool:
+    """LLM judge 单行语义判定；judge 异常不掩盖确定性断言失败。"""
+    try:
+        return bool(judge(line, answer))
+    except Exception:  # noqa: BLE001 - judge 故障按未通过处理
+        return False
+
+
 def evaluate_response(
     answer: str,
     scenario: dict[str, Any],
     *,
     ignore_leading_mentions: bool = True,
     outputs: dict[str, Any] | None = None,
+    judge: JudgeCallable | None = None,
 ) -> AssertionResult:
+    """逐行文本断言 + 结构化断言。
+
+    - 单号 / 合约编号等动态值先经 `normalize_dynamic_tokens` 归一（模糊匹配，值差异不算差异）
+    - 未命中的包含行再交给 `judge`（LLM）做语义兜底；judge 只在确定性断言已失败时调用
+    - `response_not_contains` 保持字面匹配（禁止出现的内容不做模糊化）
+    """
     del ignore_leading_mentions
     failures: list[str] = []
+    normalized_answer = normalize_dynamic_tokens(answer)
     for line in _expected_lines(scenario.get("response_contains")):
-        if line not in answer:
-            failures.append(f"内容包含失败：未找到 {line!r}")
+        if normalize_dynamic_tokens(line) in normalized_answer:
+            continue
+        if judge is not None and _judge_line(judge, line, answer):
+            continue
+        failures.append(f"内容包含失败：未找到 {line!r}")
     alternatives = _expected_lines(scenario.get("response_contains_any"))
-    if alternatives and not any(line in answer for line in alternatives):
+    if alternatives and not any(
+        normalize_dynamic_tokens(line) in normalized_answer for line in alternatives
+    ):
         failures.append(f"任一包含失败：均未找到 {alternatives!r}")
     for line in _expected_lines(scenario.get("response_not_contains")):
         if line in answer:

@@ -25,7 +25,6 @@ import pytest
 from app.subgraphs.close import place_close as pc_module
 from app.subgraphs.close.models import CloseOrderItem, ClosePlaceParams
 from app.subgraphs.close.place_close import close_place_close
-from app.tools.models import CommonResult
 
 
 def _patch_llm(
@@ -45,7 +44,7 @@ def _patch_query_close_orders(
     """patch OptionClientHttpx.query_close_orders 返回固定持仓数据。"""
     async def _fake_query(self, order_ids=None, contract_codes=None, **kwargs):  # type: ignore[no-untyped-def]
         # kwargs 吸收 room_id/message_id(DSL v2「获取订单信息」payload 对齐)
-        return CommonResult(code=0, msg="ok", data=holdings)
+        return {"code": 0, "msg": "ok", "data": holdings}
 
     monkeypatch.setattr(
         "app.subgraphs.close.place_close.OptionClientHttpx.query_close_orders",
@@ -61,7 +60,7 @@ def _patch_operate(
 
     async def _fake_operate(self, req):  # type: ignore[no-untyped-def]
         captured(req)
-        return CommonResult(code=0, msg="ok", data=api_result)
+        return {"code": 0, "msg": "ok", "data": api_result}
 
     monkeypatch.setattr(
         "app.subgraphs.close.place_close.OptionClientHttpx.operate", _fake_operate

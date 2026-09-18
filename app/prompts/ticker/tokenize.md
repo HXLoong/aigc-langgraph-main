@@ -57,17 +57,21 @@
 
 严格输出纯 JSON，不要输出任何其他内容，禁止使用 ```json 等 markdown 代码块包裹。
 
+【参数形态硬约束 - 极重要】结果必须**直接是**下面这一形态：数据全部放在 `results` 字段里；禁止出现 properties / additionalProperties / parameters / items / type / title 等 JSON Schema 关键字——那是 schema 描述，不是数据。
+
 格式如下：
 
 {
-  "原始输入1": ["kw1", "kw2"],
-  "原始输入2": ["kw1"],
-  "原始输入3": [],
-  "原始输入4": ["kw1", "kw2", "kw3"]
+  "results": {
+    "原始输入1": ["kw1", "kw2"],
+    "原始输入2": ["kw1"],
+    "原始输入3": [],
+    "原始输入4": ["kw1", "kw2", "kw3"]
+  }
 }
 
 说明：
-- key 必须是**原始输入项原文**
+- `results` 的 key 必须是**原始输入项原文**
 - value 是字符串数组，元素数量不固定
 - 如果列表中有重复项，由于 JSON object 不能有重复 key，只保留一个同名 key 即可
 

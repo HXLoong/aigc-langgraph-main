@@ -10,6 +10,7 @@
 from __future__ import annotations
 
 import json
+import logging
 from typing import Any
 
 from app.graph.retry import io_node
@@ -19,6 +20,8 @@ from app.tools.goats_agent_client import make_goats_agent_client
 from app.tools.option_client import FinancialOrderOpenApiSaveReqVO
 
 _SERVICE_UNAVAILABLE = "交易指令服务暂不可用"
+
+logger = logging.getLogger(__name__)
 
 
 def _make_agent_client():
@@ -58,11 +61,20 @@ async def quick_inquiry(state: AgentState) -> dict[str, Any]:
 
     rfq = await _make_agent_client().parse_rfq_instrument(query, room_id, user_id)
     if rfq.get("code") != 0 or rfq.get("errMsg"):
+        # 失败根因（http_xxx / invalid_json / err_code_invalid / data_missing /
+        # business_xxx / timeout / network_error）必须落 trace + 日志，禁止只留通用文案
+        reason = rfq.get("reason") or "unknown"
+        logger.warning(
+            "quick_inquiry rfq 解析失败 reason=%s http_status=%s raw=%s",
+            reason,
+            rfq.get("http_status"),
+            (rfq.get("raw_response") or "")[:300],
+        )
         return {
             "api_code": rfq.get("code", 500),
             "api_result": rfq.get("errMsg") or "",
             "reply_text": rfq.get("errMsg") or "",
-            "trace": [TraceEntry(node="quick_inquiry", decision="rfq_parser_error")],
+            "trace": [TraceEntry(node="quick_inquiry", decision=f"rfq_parser_error:{reason}")],
         }
 
     option_rfq = rfq.get("api_data_result_obj") or {}
@@ -84,13 +96,13 @@ async def quick_inquiry(state: AgentState) -> dict[str, Any]:
         }
     )
     result = await _make_option_client().operate(req)
-    code = getattr(result, "code", None)
+    code = result.get("code")
     if code == 0:
-        reply = getattr(result, "data", "") or ""
+        reply = result.get("data") or ""
     elif code == 500:
         reply = _SERVICE_UNAVAILABLE
     else:
-        reply = getattr(result, "msg", None) or "未知错误"
+        reply = result.get("msg") or "未知错误"
     return {
         "api_code": code,
         "api_result": str(reply),

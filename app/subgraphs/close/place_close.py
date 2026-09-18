@@ -120,8 +120,9 @@ async def _fetch_order_data(
             room_id=room_id,
             message_id=message_id,
         )
-        if result.code == 0 and isinstance(result.data, list):
-            return result.data
+        data = result.get("data")
+        if result.get("code") == 0 and isinstance(data, list):
+            return data
     except BackendUnreachableError:
         # D2.3：网络不可达保守降级（不阻塞用户提交），下游用空 orderList 继续
         pass

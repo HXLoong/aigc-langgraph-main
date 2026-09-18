@@ -64,13 +64,13 @@ async def test_swap_request_and_backend_reply_survive_real_http_chain(
         llm_candidates.extend(candidates)
         if model is JudgeTypeOutput:
             return JudgeTypeOutput.model_validate(
-                {candidate: "EQUITY" for candidate in candidates}
+                {"results": {candidate: "EQUITY" for candidate in candidates}}
             )
         # 每个输入候选原样送查询，不在 stub 中替业务代码过滤噪音。
         data = {candidate: [candidate] for candidate in candidates}
         if model is SplitKeywordsOutput:
-            return SplitKeywordsOutput.model_validate(data)
-        return InferCodeOutput.model_validate(data)
+            return SplitKeywordsOutput.model_validate({"results": data})
+        return InferCodeOutput.model_validate({"results": data})
 
     def make_structured(model):
         class _Structured:

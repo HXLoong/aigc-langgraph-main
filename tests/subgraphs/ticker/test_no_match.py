@@ -91,9 +91,9 @@ async def test_resolve_ticker_full_returns_empty_not_raises(
     )
 
     empty_outputs = {
-        InferCodeOutput: InferCodeOutput.model_validate({}),
-        SplitKeywordsOutput: SplitKeywordsOutput.model_validate({}),
-        JudgeTypeOutput: JudgeTypeOutput.model_validate({}),
+        InferCodeOutput: InferCodeOutput.model_validate({"results": {}}),
+        SplitKeywordsOutput: SplitKeywordsOutput.model_validate({"results": {}}),
+        JudgeTypeOutput: JudgeTypeOutput.model_validate({"results": {}}),
         RankOutput: RankOutput(ranked_codes=[]),
     }
 

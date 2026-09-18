@@ -2,16 +2,17 @@
 
 特别注意：标的查询是 GET + RequestBody（Java 实现不规范但合法），
 要用 `client.request("GET", url, json=payload)` 不能用 `client.get()`。
+
+响应一律原样 dict 透传（Java 后端数据不做 Pydantic 建模/校验，2026-09 决定）。
 """
 from __future__ import annotations
 
 from typing import Any, Protocol
 
 import httpx
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import ConfigDict, Field
 
 from app.tools.http_pool import acquire_http_client
-from app.tools.models import CommonResult
 from app.wire_model import WireModel
 
 # ============================================================
@@ -36,27 +37,6 @@ class SecuritiesInstrumentReqVO(WireModel):
     transaction_type_list: list[str] | None = Field(default=None, alias="transactionTypeList")
 
 
-class SecuritiesInstrumentRespVO(WireModel):
-    """对齐 Java `SecuritiesInstrumentOpenApiRespVO`。"""
-
-    model_config = ConfigDict(extra="allow")
-
-    wind_code: str = Field(alias="windCode")
-    ins_sht_desc: str | None = Field(default=None, alias="insShtDesc")
-    ins_lng_desc: str | None = Field(default=None, alias="insLngDesc")
-    relevance_score: int | None = Field(default=None, alias="relevanceScore")
-    transaction_type_lists: list[str] = Field(alias="transactionTypeLists", default_factory=list)
-
-
-class CounterpartyVO(BaseModel):
-    """交易对手信息。"""
-
-    model_config = ConfigDict(extra="allow")
-
-    name: str | None = None
-    code: str | None = None
-
-
 # ============================================================
 # Protocol
 # ============================================================
@@ -67,13 +47,13 @@ class TickerClient(Protocol):
 
     async def search_securities_instrument(
         self, req: SecuritiesInstrumentReqVO
-    ) -> list[SecuritiesInstrumentRespVO]: ...
+    ) -> list[dict[str, Any]]: ...
 
     async def get_inference_prompt(self) -> str: ...
 
     async def list_counterparty(
         self, room_id: str | None = None
-    ) -> list[CounterpartyVO]: ...
+    ) -> list[dict[str, Any]]: ...
 
 
 # ============================================================
@@ -117,7 +97,7 @@ class TickerClientHttpx:
 
     async def search_securities_instrument(
         self, req: SecuritiesInstrumentReqVO
-    ) -> list[SecuritiesInstrumentRespVO]:
+    ) -> list[dict[str, Any]]:
         """⚠️ Java 端是 GET + RequestBody（不规范但合法），要用 client.request("GET", ...) 写法。"""
         from app.tools.exceptions import translate_httpx_errors
 
@@ -129,9 +109,9 @@ class TickerClientHttpx:
         ):
             r = await client.request("GET", url, json=payload, headers=self._headers, timeout=self._timeout)
             r.raise_for_status()
-            result = CommonResult.model_validate(r.json())
-            data: Any = result.data or []
-            return [SecuritiesInstrumentRespVO.model_validate(item) for item in data]
+            envelope: dict[str, Any] = r.json()
+            rows: list[dict[str, Any]] = envelope.get("data") or []
+            return rows
 
     async def get_inference_prompt(self) -> str:
         from app.tools.exceptions import translate_httpx_errors
@@ -143,12 +123,12 @@ class TickerClientHttpx:
         ):
             r = await client.get(url, headers=self._headers, timeout=self._timeout)
             r.raise_for_status()
-            result = CommonResult.model_validate(r.json())
-            return str(result.data or "")
+            envelope: dict[str, Any] = r.json()
+            return str(envelope.get("data") or "")
 
     async def list_counterparty(
         self, room_id: str | None = None
-    ) -> list[CounterpartyVO]:
+    ) -> list[dict[str, Any]]:
         from app.tools.exceptions import translate_httpx_errors
 
         url = f"{self._base_url}/admin-api/counterparty/info/list"
@@ -159,6 +139,6 @@ class TickerClientHttpx:
         ):
             r = await client.get(url, params=params, headers=self._headers, timeout=self._timeout)
             r.raise_for_status()
-            result = CommonResult.model_validate(r.json())
-            data: Any = result.data or []
-            return [CounterpartyVO.model_validate(item) for item in data]
+            envelope: dict[str, Any] = r.json()
+            rows: list[dict[str, Any]] = envelope.get("data") or []
+            return rows

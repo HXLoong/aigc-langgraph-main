@@ -56,7 +56,7 @@ async def turn_api(monkeypatch):
     def handle(request):
         payload = json.loads(request.content)
         requests.append((request.url.path, payload))
-        if request.url.path.startswith("/internal/agent/"):
+        if request.url.path.startswith("/api/internal/agent/"):
             return httpx.Response(200, json={"errCode": {"code": 200}, "data": {}})
         return httpx.Response(200, json={"code": 0, "data": "本轮后端回执"})
 

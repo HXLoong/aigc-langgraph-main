@@ -18,13 +18,15 @@ from app.subgraphs.ticker.graph import build_ticker_graph
 from app.subgraphs.ticker.resolver import resolve_ticker_full
 
 
-class _Inst:
-    def __init__(self, wind_code: str, sht: str = "") -> None:
-        self.wind_code = wind_code
-        self.ins_sht_desc = sht
-        self.ins_lng_desc = ""
-        self.relevance_score = 0
-        self.transaction_type_lists: list[str] = []
+def _inst(wind_code: str, sht: str = "") -> dict:
+    """GOATS 候选行（后端数据原样 dict 透传契约）。"""
+    return {
+        "windCode": wind_code,
+        "insShtDesc": sht,
+        "insLngDesc": "",
+        "relevanceScore": 0,
+        "transactionTypeLists": [],
+    }
 
 
 def test_ticker_graph_topology() -> None:
@@ -74,8 +76,8 @@ async def test_org_items_resolve_concurrently_and_keep_input_order(monkeypatch) 
         async with lock:
             in_flight -= 1
         kw = req.keyword_items[0].keyword
-        return [_Inst("600519.SH", "贵州茅台")] if "茅台" in kw or "600519" in kw else [
-            _Inst("300750.SZ", "宁德时代")
+        return [_inst("600519.SH", "贵州茅台")] if "茅台" in kw or "600519" in kw else [
+            _inst("300750.SZ", "宁德时代")
         ]
 
     client = MagicMock()

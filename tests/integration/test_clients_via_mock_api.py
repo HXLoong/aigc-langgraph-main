@@ -8,7 +8,7 @@
 每个 case 验证：
 1. client 实际发的 URL 拼对（contract §1-§3）
 2. payload 形状 mock_api 能 422 校验通过
-3. mock_api 响应 client 能正确反序列化（CommonResult 不 raise）
+3. mock_api 响应 client 原样 dict 透传（不 raise）
 
 不验证业务正确性（mock_api 返回的是固定 stub，不是真业务逻辑）。
 """
@@ -17,7 +17,6 @@ from __future__ import annotations
 import pytest
 
 from app.tools.models import (
-    CommonResult,
     GoatsOrderDirection,
     GoatsPriceType,
     GoatsTransactionType,
@@ -78,17 +77,17 @@ async def test_option_operate_4_intents(option_client, intent: OptionIntentionTy
         **_bot_ctx(),
     )
     result = await option_client.operate(req)
-    assert isinstance(result, CommonResult)
+    assert isinstance(result, dict)
     # mock_api 默认返回 code=0 表示业务路径通
-    assert result.code == 0, f"intent={intent} 失败: {result}"
+    assert result["code"] == 0, f"intent={intent} 失败: {result}"
 
 
 async def test_option_query_close_orders_ok(option_client) -> None:
     result = await option_client.query_close_orders(
         order_ids=["FO-1001"], contract_codes=["00700.HK"]
     )
-    assert isinstance(result, CommonResult)
-    assert result.code == 0
+    assert isinstance(result, dict)
+    assert result["code"] == 0
 
 
 # ============================================================
@@ -120,20 +119,20 @@ async def test_swap_operate_4_intents(swap_client, intent: SwapIntentionType) ->
         **_bot_ctx(),
     )
     result = await swap_client.operate(req)
-    assert isinstance(result, CommonResult)
-    assert result.code == 0
+    assert isinstance(result, dict)
+    assert result["code"] == 0
 
 
 async def test_swap_get_by_order_id(swap_client) -> None:
     result = await swap_client.get(order_id="SW-1001")
-    assert isinstance(result, CommonResult)
-    assert result.code == 0
+    assert isinstance(result, dict)
+    assert result["code"] == 0
 
 
 async def test_swap_get_conversation_orders(swap_client) -> None:
     result = await swap_client.get_conversation_orders(conversation_id="conv-int-001")
-    assert isinstance(result, CommonResult)
-    assert result.code == 0
+    assert isinstance(result, dict)
+    assert result["code"] == 0
 
 
 # ============================================================
@@ -149,7 +148,7 @@ async def test_ticker_search_by_keyword(ticker_client) -> None:
     assert isinstance(rows, list)
     # mock_api 返回至少一条命中（"腾讯"在白名单内）
     assert len(rows) > 0
-    assert all(hasattr(r, 'wind_code') for r in rows)
+    assert all("windCode" in r for r in rows)
 
 
 async def test_ticker_search_by_full_code(ticker_client) -> None:

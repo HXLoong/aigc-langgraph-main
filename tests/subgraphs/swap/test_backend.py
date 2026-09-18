@@ -15,7 +15,6 @@ from app.tools.exceptions import (
     EmptyBackendResultError,
     MissingBackendContextError,
 )
-from app.tools.models import CommonResult
 
 # ============================================================
 # _message_id
@@ -71,7 +70,7 @@ async def test_call_swap_backend_ok_returns_api_code(
     card = "-----互换下单确认-----\n新单号: H-20260910-0000000001"
     fake_client = MagicMock()
     fake_client.operate = AsyncMock(
-        return_value=CommonResult(code=0, msg="ok", data=card)
+        return_value={"code": 0, "msg": "ok", "data": card}
     )
     monkeypatch.setattr(backend_mod, "SwapClientHttpx", lambda: fake_client)
 
@@ -90,7 +89,7 @@ async def test_call_swap_backend_business_reject_returns_msg(
     """code != 0 → api_result = msg（透传错误信息给 render）。"""
     fake_client = MagicMock()
     fake_client.operate = AsyncMock(
-        return_value=CommonResult(code=400, msg="缺少必填字段", data=None)
+        return_value={"code": 400, "msg": "缺少必填字段", "data": None}
     )
     monkeypatch.setattr(backend_mod, "SwapClientHttpx", lambda: fake_client)
 
@@ -106,7 +105,7 @@ async def test_call_swap_backend_empty_result_raises_explicit_error(
     """成功码携带空 data 时不得回落到本地业务回复。"""
     fake_client = MagicMock()
     fake_client.operate = AsyncMock(
-        return_value=CommonResult(code=0, msg="ok", data="")
+        return_value={"code": 0, "msg": "ok", "data": ""}
     )
     monkeypatch.setattr(backend_mod, "SwapClientHttpx", lambda: fake_client)
 
@@ -151,7 +150,7 @@ async def test_call_swap_backend_supports_all_swap_intents(
     """6 个 SwapIntentionType 都能正常构造请求。"""
     fake_client = MagicMock()
     fake_client.operate = AsyncMock(
-        return_value=CommonResult(code=0, msg="ok", data="backend reply")
+        return_value={"code": 0, "msg": "ok", "data": "backend reply"}
     )
     monkeypatch.setattr(backend_mod, "SwapClientHttpx", lambda: fake_client)
 
@@ -182,7 +181,7 @@ async def test_place_order_submit_node_writes_api_code(
     card = "-----互换下单确认-----\n新单号: H-20260910-0000000001"
     fake_client = MagicMock()
     fake_client.operate = AsyncMock(
-        return_value=CommonResult(code=0, msg="ok", data=card)
+        return_value={"code": 0, "msg": "ok", "data": card}
     )
     monkeypatch.setattr(backend_mod, "SwapClientHttpx", lambda: fake_client)
 

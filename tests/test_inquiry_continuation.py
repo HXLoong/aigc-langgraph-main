@@ -72,11 +72,11 @@ def inquiry_workflow(
         hit = {"300773.SZ": ["300773.SZ"]} if "300773" in content else {}
         if model is JudgeTypeOutput:
             # judge 仅影响期货日期规整；迁移前 stub 值同样不命中 FUTURE 分支
-            return JudgeTypeOutput.model_validate({})
+            return JudgeTypeOutput.model_validate({"results": {}})
         if model is SplitKeywordsOutput:
-            return SplitKeywordsOutput.model_validate(hit)
+            return SplitKeywordsOutput.model_validate({"results": hit})
         if model is InferCodeOutput:
-            return InferCodeOutput.model_validate(hit)
+            return InferCodeOutput.model_validate({"results": hit})
         return RankOutput(ranked_codes=[])
 
     def make_structured(model):

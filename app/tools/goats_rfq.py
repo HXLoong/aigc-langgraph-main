@@ -1,6 +1,7 @@
 """GOATS 快速询价指令解析端点客户端。
 
-调用 `${goatsBaseUrl}/internal/agent/option_rfq_instrument_parser`，把用户的快速询价
+调用 `${goatsBaseUrl}/api/internal/agent/option_rfq_instrument_parser`（base 为主机根，
+/api 前缀由本模块补全，#178 定案），把用户的快速询价
 原文（如 "快速询价：雪球，600989.SH，70/103，6M，30"）解析为结构化字段
 （productType / tenor / strike / knockInPrice / knockOutPrice / estimateMargin 等）。
 
@@ -11,10 +12,15 @@ Dify 工作流原型见 `dify/yaml/主干工作流.yml` 节点 "参与型看涨�
 from __future__ import annotations
 
 import hashlib
+import logging
 import time
 from typing import Any
 
 import httpx
+
+from app.tools.goats_agent_client import normalize_agent_base
+
+logger = logging.getLogger(__name__)
 
 
 def _signature(client_id: str, ts: str, extapp_salt: str) -> str:
@@ -48,10 +54,11 @@ async def parse_rfq_instrument(chat_instrument: str) -> dict[str, Any] | None:
     sub_id = settings.goats_opt_agent_sub_id
 
     if not (base_url and client_id and client_secret and agent_id):
+        logger.warning("goats 快速询价解析跳过：缺少配置（base/client/secret/agentId）")
         return None
 
     ts = str(int(time.time() * 1000))
-    url = f"{base_url.rstrip('/')}/internal/agent/option_rfq_instrument_parser"
+    url = normalize_agent_base(base_url) + "/api/internal/agent/option_rfq_instrument_parser"
     headers = {
         "agenttype": "WECHAT",
         "agentid": agent_id,
@@ -67,21 +74,32 @@ async def parse_rfq_instrument(chat_instrument: str) -> dict[str, Any] | None:
             timeout=settings.goats_rfq_direct_timeout_seconds, trust_env=False
         ) as client:
             resp = await client.post(url, headers=headers, json={"chatInstrument": chat_instrument})
-    except Exception:  # noqa: BLE001  网络异常 → fall back
+    except Exception as exc:  # noqa: BLE001  网络异常 → fall back
+        logger.warning("goats 快速询价解析网络失败：%s", exc)
         return None
 
     if resp.status_code != 200:
+        logger.warning("goats 快速询价解析 HTTP %s：%s", resp.status_code, resp.text[:200])
         return None
     try:
         body = resp.json()
     except Exception:  # noqa: BLE001
+        logger.warning("goats 快速询价解析响应非 JSON：%s", resp.text[:200])
         return None
 
     err_code = body.get("errCode", {})
     if not isinstance(err_code, dict) or err_code.get("code") != 200:
+        logger.warning(
+            "goats 快速询价解析业务失败：errCode=%s msg=%s",
+            err_code,
+            str(body.get("errMsg"))[:120],
+        )
         return None
 
-    return body.get("data") or None
+    data = body.get("data") or None
+    if data is None:
+        logger.warning("goats 快速询价解析无 data：%s", resp.text[:200])
+    return data
 
 
 __all__ = ["parse_rfq_instrument"]

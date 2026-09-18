@@ -54,7 +54,7 @@ async def test_business_client_goes_through_pool_with_its_own_timeout() -> None:
 
     await http_pool.open_shared_http_client(timeout=5.0, transport=httpx.MockTransport(handler))
     result = await SwapClientHttpx(base_url="http://swap.test", token="t", timeout=2.5).get("H-1")
-    assert result.code == 0
+    assert result["code"] == 0
     assert seen and seen[0].url.host == "swap.test"
     assert seen[0].extensions["timeout"]["read"] == 2.5, "每个 Client 的超时按自己的设置，不吃池默认值"
     assert not http_pool.get_shared_http_client().is_closed

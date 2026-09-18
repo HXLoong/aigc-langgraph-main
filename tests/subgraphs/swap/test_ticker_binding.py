@@ -12,7 +12,6 @@ from app.subgraphs.swap import backend as backend_module
 from app.subgraphs.swap import place_order as po_module
 from app.subgraphs.swap.models import SwapOrderItem, SwapPlaceOrderParams
 from app.subgraphs.ticker.resolver import TickerResolution
-from app.tools.models import CommonResult
 from app.tools.swap_client import SwapOrderOpenApiSaveReqVO
 
 
@@ -31,7 +30,7 @@ async def _extract_and_submit(
     )
     backend_reply = "后端原始校验回复"
     client = MagicMock()
-    client.operate = AsyncMock(return_value=CommonResult(code=0, data=backend_reply))
+    client.operate = AsyncMock(return_value={"code": 0, "data": backend_reply})
     monkeypatch.setattr(backend_module, "SwapClientHttpx", lambda: client)
     state: AgentState = {
         "raw_text": raw_text, "conversation_id": "ticker-binding-replay",

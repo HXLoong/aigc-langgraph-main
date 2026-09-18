@@ -21,7 +21,6 @@ from app.subgraphs.swap import intent as swap_intent_module
 from app.subgraphs.swap import place_order as swap_place_order_module
 from app.subgraphs.swap.models import SwapIntentOutput, SwapPlaceOrderParams
 from app.subgraphs.ticker.resolver import TickerResolution
-from app.tools.models import CommonResult
 
 
 class _CapturingGraph:
@@ -93,7 +92,7 @@ def test_workflows_run_returns_dify_compatible_schema(
         AsyncMock(return_value=TickerResolution(resolved=[], hitl_pending=[])),
     )
     fake_client = MagicMock()
-    fake_client.operate = AsyncMock(return_value=MagicMock(code=0, data={}, msg=""))
+    fake_client.operate = AsyncMock(return_value={"code": 0, "data": {}, "msg": ""})
     monkeypatch.setattr(swap_backend_module, "SwapClientHttpx", lambda: fake_client)
     r = client.post(
         "/v1/workflows/run",
@@ -624,7 +623,7 @@ def test_top_level_user_fills_missing_backend_user_id(
         async def operate(self, request):
             nonlocal captured_request
             captured_request = request
-            return CommonResult(code=0, data="BACKEND_CARD")
+            return {"code": 0, "data": "BACKEND_CARD"}
 
     class _BackendCallingGraph:
         async def ainvoke(self, state: dict, config: dict, **kwargs: object) -> dict:

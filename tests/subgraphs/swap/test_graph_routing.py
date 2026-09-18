@@ -77,7 +77,7 @@ def _patch(
 
 def _patch_backend(monkeypatch: pytest.MonkeyPatch) -> MagicMock:
     fake_client = MagicMock()
-    fake_client.operate = AsyncMock(return_value=MagicMock(code=0, data={}, msg=""))
+    fake_client.operate = AsyncMock(return_value={"code": 0, "data": {}, "msg": ""})
     monkeypatch.setattr(swap_backend_module, "SwapClientHttpx", lambda: fake_client)
     return fake_client
 

@@ -5,9 +5,8 @@
 from __future__ import annotations
 
 from enum import StrEnum
-from typing import Any
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import ConfigDict, Field
 
 from app.wire_model import WireModel
 
@@ -97,18 +96,3 @@ class MachineContext(WireModel):
     quote_content: str | None = Field(default=None, alias="quoteContent")
     quote_appinfo: str | None = Field(default=None, alias="quoteAppinfo")
     guid: str | None = None
-
-
-# ============================================================
-# 通用响应包装（Java CommonResult）
-# ============================================================
-
-
-class CommonResult(BaseModel):
-    """Java `CommonResult<T>` 响应包装。"""
-
-    model_config = ConfigDict(extra="allow")
-
-    code: int = 0
-    msg: str = ""
-    data: Any = None

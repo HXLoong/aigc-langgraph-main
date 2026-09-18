@@ -220,6 +220,19 @@ def test_text_assertions_support_all_any_and_not_contains() -> None:
     assert check_text_assertions("order error", spec)
 
 
+def test_text_assertions_match_dynamic_order_ids_fuzzy() -> None:
+    """单号 / 合约编号做模糊匹配（case-029：期望 Q-2026 前缀、实际完整单号）。"""
+    from harness.golden import TurnSpec
+
+    spec = TurnSpec(
+        send_text="确认下单",
+        response_contains=["期权订单Q-2026：已收到您的下单请求，待交易员审核。"],
+    )
+    assert not check_text_assertions(
+        "期权订单Q-20260918-2768122880：已收到您的下单请求，待交易员审核。", spec
+    )
+
+
 def test_structured_assertions_compare_expected_fields() -> None:
     assert not check_structured_assertions(
         {"product_type": "swap", "intent": "place_order_request"},

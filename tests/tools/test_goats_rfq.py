@@ -9,7 +9,12 @@ import app.tools.goats_rfq as rfq
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("base_url", ["http://goats.test/api", "http://goats.test/api/"])
+@pytest.mark.parametrize("base_url", [
+    "http://goats.test",
+    "http://goats.test/",
+    "http://goats.test/api",
+    "http://goats.test/api/",
+])
 async def test_parser_url_has_one_api_prefix(monkeypatch, base_url):
     monkeypatch.setattr(app.config, "get_settings", lambda: SimpleNamespace(
         goats_base_url=base_url, goats_client_id="C", goats_client_secret="S",
@@ -37,3 +42,28 @@ async def test_parser_url_has_one_api_prefix(monkeypatch, base_url):
     assert requests[0].url.path == "/api/internal/agent/option_rfq_instrument_parser"
     assert out == {"tenor": ["1M"]}
     assert client_options[0].get("trust_env") is False
+
+
+@pytest.mark.asyncio
+async def test_failure_is_logged_with_reason(monkeypatch, caplog):
+    """失败不再静默：HTTP 异常/业务异常落 warning 日志（含状态码与响应片段）。"""
+    monkeypatch.setattr(app.config, "get_settings", lambda: SimpleNamespace(
+        goats_base_url="http://goats.test", goats_client_id="C", goats_client_secret="S",
+        goats_extapp_salt="X", goats_opt_agent_id="R@tl", goats_opt_agent_sub_id="U",
+        goats_rfq_direct_timeout_seconds=15.0,
+    ))
+
+    def handler(request):
+        return httpx.Response(502, text="bad gateway")
+
+    client_type = httpx.AsyncClient
+
+    def make_client(**kwargs):
+        return client_type(**kwargs, transport=httpx.MockTransport(handler))
+
+    monkeypatch.setattr(rfq.httpx, "AsyncClient", make_client)
+    with caplog.at_level("WARNING", logger="app.tools.goats_rfq"):
+        out = await rfq.parse_rfq_instrument("快速询价")
+    assert out is None
+    assert "HTTP 502" in caplog.text
+    assert "bad gateway" in caplog.text

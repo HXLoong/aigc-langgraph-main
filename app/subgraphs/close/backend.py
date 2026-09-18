@@ -67,9 +67,10 @@ async def call_close_backend(
         **_context(state),
     )
     result = await OptionClientHttpx().operate(req)
+    code = result.get("code")
     return {
-        "api_code": result.code,
-        "api_result": result.data if result.code == 0 else result.msg,
+        "api_code": code,
+        "api_result": result.get("data") if code == 0 else result.get("msg"),
     }
 
 

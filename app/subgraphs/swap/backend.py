@@ -145,11 +145,12 @@ async def call_swap_backend(
         **_context(state),
     )
     result = await SwapClientHttpx().operate(req)
-    backend_result = result.data if result.code == 0 else result.msg
+    code = result.get("code")
+    backend_result = result.get("data") if code == 0 else result.get("msg")
     if _is_empty_backend_result(backend_result):
-        raise EmptyBackendResultError("swap", result.code)
+        raise EmptyBackendResultError("swap", code)
     return {
-        "api_code": result.code,
+        "api_code": code,
         "api_result": backend_result,
     }
 

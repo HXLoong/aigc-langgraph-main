@@ -9,14 +9,13 @@ import pytest
 from app.subgraphs.close import build_close_graph
 from app.subgraphs.close import intent as intent_module
 from app.subgraphs.close.models import CloseIntentOutput
-from app.tools.models import CommonResult
 
 
 def _patch_close_backend(monkeypatch: pytest.MonkeyPatch) -> None:
     """close/backend.py 调用的 OptionClientHttpx.operate 不打真网络。"""
 
     async def _fake_operate(self, req):  # type: ignore[no-untyped-def]
-        return CommonResult(code=0, msg="ok", data="mock-backend-result")
+        return {"code": 0, "msg": "ok", "data": "mock-backend-result"}
 
     monkeypatch.setattr(
         "app.tools.option_client.OptionClientHttpx.operate", _fake_operate
