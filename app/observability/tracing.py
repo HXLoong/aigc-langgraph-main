@@ -24,6 +24,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from app.config import get_settings
+from app.observability.privacy import mask_sensitive
 
 logger = logging.getLogger(__name__)
 
@@ -94,6 +95,7 @@ def _ensure_client() -> Any | None:
             secret_key=settings.langfuse_secret_key,
             host=settings.langfuse_base_url,
             environment=getattr(settings, "environment", None) or "default",
+            mask=mask_sensitive,
         )
     except ImportError as exc:
         logger.warning("langfuse 未安装或版本不兼容：%s", exc)

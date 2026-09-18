@@ -18,6 +18,7 @@ import logging
 import re
 from typing import Any
 
+from app.extraction.locks import protect_orders
 from app.graph.state import AgentState, TickerCandidate
 from app.subgraphs.swap.prewash import sanitize_order_list
 from app.tools.bot_context import BotContext, normalize_message_id
@@ -124,6 +125,7 @@ async def call_swap_backend(
     Raises:
         MissingBackendContextError: 缺少调用后端必需的机器人上下文字段。
     """
+    order_list, rejected = protect_orders(state, order_list or [], product="swap")
     missing_fields = BotContext.from_state(state).missing_required()
     if missing_fields:
         logger.error(
@@ -150,6 +152,7 @@ async def call_swap_backend(
     if _is_empty_backend_result(backend_result):
         raise EmptyBackendResultError("swap", code)
     return {
+        **({"field_records": rejected} if rejected else {}),
         "api_code": code,
         "api_result": backend_result,
     }

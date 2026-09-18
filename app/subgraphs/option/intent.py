@@ -33,7 +33,10 @@ SPEC = register(PromptSpec(
 #: 兼容旧测试 / 调用点：user 消息拼装已收敛到 app/subgraphs/option/prompting.intent_user
 _build_user_message = intent_user
 
-_NEGATED_CONFIRM = re.compile(r"(?:不要|别|暂不|不再|取消|禁止|无需|先不|不想)[^。！!？?；;\n]{0,8}确认下单")
+_NEGATED_CONFIRM = re.compile(
+    r"(?:不|别|暂不|取消|禁止|无需|先不|没有|尚未|暂未|是否)[^。！!？?；;\n]{0,8}确认下单"
+    r"|确认下单[^。！!；;\n]{0,8}(?:吗|么|？|\?)"
+)
 
 
 @io_node

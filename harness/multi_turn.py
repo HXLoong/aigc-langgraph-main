@@ -78,6 +78,8 @@ def _error_info(value: Any) -> dict[str, Any] | None:
         return {
             "node": value.get("node"),
             "type": value.get("type"),
+            "code": value.get("code"),
+            "causes": value.get("causes") or [],
             "message": str(value.get("message") or "")[:200],
         }
     return {"node": None, "type": type(value).__name__, "message": str(value)[:200]}
@@ -153,7 +155,7 @@ async def run_case_multi(
             payload = response.json()
             data = payload.get("data") or {}
             outputs = dict(data.get("outputs") or {})
-            if data.get("status") != "succeeded":
+            if data.get("status") != "succeeded" and not outputs.get("error"):
                 outputs["error"] = data.get("error") or data.get("status")
             outcome = _extract_turn(index + 1, spec, quote, outputs)
             outcome.elapsed_ms = int((time.perf_counter() - started) * 1000)

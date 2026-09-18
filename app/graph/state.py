@@ -10,7 +10,7 @@ from __future__ import annotations
 import uuid
 from typing import Annotated, Any, Literal, TypedDict
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from app.extraction.fields import FieldRecord, merge_fields
 from app.wire_model import WireModel
@@ -158,9 +158,27 @@ class ErrorInfo(BaseModel):
     model_config = ConfigDict(extra="allow")
     node: str
     type: str
+    code: Literal["E1", "E2", "E3", "E4", "E5"] = "E3"
     message: str
     traceback: str | None = None
     causes: list[ErrorInfo] = Field(default_factory=list)
+
+    @model_validator(mode="before")
+    @classmethod
+    def classify(cls, value: Any) -> Any:
+        if isinstance(value, dict) and "code" not in value:
+            kind = value.get("type")
+            code = "E3"
+            if kind in {"APITimeoutError", "APIConnectionError", "RateLimitError", "InternalServerError", "TimeoutError"}:
+                code = "E1"
+            elif kind in {"EvidenceError", "ValidationError", "OutputParserException"}:
+                code = "E2"
+            elif kind in {"BackendUnreachableError", "EmptyBackendResultError", "SetIntentError", "ConnectError"}:
+                code = "E4"
+            elif kind == "WorkflowTimeout":
+                code = "E5"
+            return {**value, "code": code}
+        return value
 
 
 def merge_errors(left: ErrorInfo | None, right: ErrorInfo | None) -> ErrorInfo | None:

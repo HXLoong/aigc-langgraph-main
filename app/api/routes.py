@@ -29,7 +29,8 @@ from app.api.idempotency import (
 )
 from app.api.turn_state import inputs_to_state
 from app.config import get_settings
-from app.graph.state import AgentState
+from app.graph.state import AgentState, ErrorInfo, TraceEntry
+from app.nodes.persist import persist
 from app.observability.llm_metrics import LLMMetricsCallback
 from app.observability.logs import bound_request_context
 from app.observability.metrics import emit_intent_latency
@@ -254,7 +255,10 @@ async def _execute_workflow(
             graph_error = final_state.get("error")
             error_msg = graph_error.message if graph_error is not None else None
         except TimeoutError:
-            final_state = {}
+            final_state = {**initial_state,
+                "error": ErrorInfo(node="workflow_deadline", type="WorkflowTimeout", message="request deadline exceeded"),
+                "trace": [TraceEntry(node="workflow_deadline", decision="error:E5:timeout")],
+            }
             status = "failed"
             error_msg = "workflow_timeout: execution result requires reconciliation"
             timed_out = True
@@ -280,6 +284,7 @@ async def _execute_workflow(
         if store is not None and idem_key is not None:
             await _idempotency_complete(store, idem_key, final_state, error_msg,
                                         int(elapsed * 1000), body, 504)
+        await persist(final_state)
         return timeout_response
 
     # 必须等图完成：persist 已记录 set-intent 的失败 trace 后才返回 502。
@@ -310,7 +315,7 @@ async def _execute_workflow(
         id=workflow_run_id,
         status=status,
         outputs=outputs,
-        error=error_msg,
+        error="指令处理失败，请核对输入或稍后重试。" if error_msg else None,
         elapsed_time=elapsed,
         total_steps=len(final_state.get("trace", [])),
         created_at=created_at,
@@ -445,6 +450,16 @@ def _state_to_outputs(state: AgentState) -> dict[str, Any]:
         ],
         "trace": _format_trace(state.get("trace", [])),
     }
+    error = state.get("error")
+    if error is not None:
+        outputs["error"] = {"code": error.code, "node": error.node, "type": error.type,
+                            "causes": [{"code": e.code, "node": e.node, "type": e.type}
+                                       for e in error.causes]}
+    outputs["trace_entries"] = [
+        {"id": e.id, "node": e.node, "decision": e.decision, "elapsed_ms": e.elapsed_ms}
+        if isinstance(e, TraceEntry) else {k: e.get(k) for k in ("id", "node", "decision", "elapsed_ms")}
+        for e in state.get("trace", []) if isinstance(e, (TraceEntry, dict))
+    ]
     expected_action = state.get("expected_action")
     if expected_action is not None:
         outputs["expected_action"] = expected_action

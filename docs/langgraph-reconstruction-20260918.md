@@ -97,3 +97,15 @@
 - 启用 Pydantic mypy 插件并补齐 PyMySQL/PyYAML 类型包；图泛型显式声明输入/内部/输出 State，补齐 Protocol 工厂、回调、HTTP 参数和动态 schema 边界类型。
 - mypy app/：120 个源文件零错误；全量 pytest 2302 passed、15 skipped；ruff 通过。
 - 新链路真实小样本：7 case / 13 turn，6 PASS / 1 FAIL。期权询价和平仓通过；互换失败定位到模型把 COMPO 前缀并入授权对手名称，下一批用 Code 优先匹配修复。报告 `.harness-runs/evidence-smoke/local-20260918-130703`。
+
+第八批：业务字段锁定、Code 对手匹配、错误分类与遥测脱敏。
+
+- 第七批恢复点：`f6fad50`。
+- 已接入字段记录的路径在 State 更新和 Swap/Option 后端提交前均检查锁定值，拒绝覆盖并记录次数；尚未迁移证据的节点不能据此计作完成。
+- 全新互换对手先按实际授权名单做原文精确匹配，命中跳过 LLM；可修复包含完整授权名称的过宽抽取，不覆盖不同的显式对手。
+- ErrorInfo 增加 E1–E5 分类；HTTP 输出保留结构化错误与 trace_entries，隐藏内部错误详情。E5 取消后记录超时审计并保存 504 快照；harness 保留分类及并行原因。
+- Langfuse mask 和结构化日志脱敏出口已接入，测试覆盖消息、凭据、电话号码；业务响应仍原样返回，SQL 业务审计不做此投影。
+- 期权确认补充否定及疑问句保护：不确认/不用/不需要/是否/吗/问号均不得触发确认写入。
+- 本地真实复验：同一 7 case / 13 turn 全部 PASS，P50 4.718s / P95、P99 10.795s；仅是小样本，不替代全量性能验收。报告 `.harness-runs/evidence-smoke-fixed/local-20260918-131741`（运行时包含本批未提交变更）。
+- 当前全量 pytest 2321 passed、15 skipped；随后新增 harness 两项 RED → GREEN。mypy、ruff 及生成纪律同步检查通过。
+- 实际字段与活跃节点清单见 `docs/migration-20260918/`，附只读 Java DTO 源码字段；未把缺失的 50 字段文件或 Dify ID 补成假数据。

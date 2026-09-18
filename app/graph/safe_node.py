@@ -16,6 +16,7 @@ from typing import Any, ParamSpec, overload
 
 from langgraph.types import Overwrite
 
+from app.extraction.locks import protect_update
 from app.graph.state import ErrorInfo, TraceEntry
 from app.observability.metrics import emit_node_completed
 
@@ -64,6 +65,9 @@ def safe_node(
 
         try:
             update = await fn(*args, **kwargs)
+            state = args[0] if args else kwargs.get("state")
+            if isinstance(state, dict):
+                update = protect_update(state, update)
             elapsed_ms = int((time.perf_counter() - t0) * 1000)
 
             # 自动追加 trace（节点函数没自带 trace 字段时）。
@@ -91,10 +95,10 @@ def safe_node(
             elapsed_ms = int((time.perf_counter() - t0) * 1000)
             if retryable and isinstance(exc, retryable):
                 # 穿透给 RetryPolicy；耗尽后由 retry_exhausted_handler 落 error
-                logger.warning("node=%s retryable=%s: %s", node_name, type(exc).__name__, exc)
+                logger.warning("node=%s retryable=%s", node_name, type(exc).__name__)
                 emit_node_completed(node=node_name, status="retry", elapsed_ms=elapsed_ms)
                 raise
-            logger.exception("node=%s error=%s", node_name, exc)
+            logger.exception("node=%s error=%s", node_name, type(exc).__name__)
 
             # C1.5 监控埋点：节点抛异常（cascade fail 源头）
             emit_node_completed(node=node_name, status="error", elapsed_ms=elapsed_ms)

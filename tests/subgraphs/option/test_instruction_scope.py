@@ -12,7 +12,7 @@ SECOND = "Q-20260918-0000000002"
 QUOTE = f"订单号：{FIRST}\n订单号：{SECOND}"
 
 
-@pytest.mark.parametrize("raw", ["不要确认下单", "暂不确认下单", "先别确认下单"])
+@pytest.mark.parametrize("raw", ["不要确认下单", "暂不确认下单", "先别确认下单", "不确认下单", "不用确认下单", "不需要确认下单", "是否确认下单", "确认下单吗", "确认下单？"])
 async def test_negated_confirmation_is_not_a_confirmation(monkeypatch, raw):
     model = MagicMock()
     model.with_structured_output.return_value.ainvoke = AsyncMock(
