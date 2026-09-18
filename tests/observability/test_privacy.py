@@ -48,3 +48,15 @@ def test_prompt_role_tuples_hide_prompt_content():
 
     result = mask_sensitive([("system", "含授权名单的系统提示"), ("user", "客户原始交易指令")])
     assert result == [["system", "[redacted]"], ["user", "[redacted]"]]
+
+
+def test_intent_field_record_does_not_leak_raw_evidence_as_value():
+    from app.extraction.fields import FieldRecord
+    from app.observability.privacy import mask_sensitive
+
+    record = FieldRecord(value="客户私有指令", source="user", evidence="客户私有指令",
+                         confidence=.9, locked=True)
+    for data in (record, record.model_dump()):
+        result = mask_sensitive({"field_records": {"intent/swap.evidence.0": data}})
+        assert "客户私有指令" not in str(result)
+        assert result["field_records"]["intent/swap.evidence.0"]["confidence"] == .9

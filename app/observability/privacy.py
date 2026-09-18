@@ -35,8 +35,10 @@ def mask_sensitive(data: Any, **kwargs: Any) -> Any:
     if isinstance(data, BaseModel):
         data = data.model_dump(by_alias=True)
     if isinstance(data, Mapping):
+        field_record = {"value", "source", "evidence", "origin", "locked"}.issubset(data)
         return {
-            key: "[redacted]" if re.sub(r"[_-]", "", re.split(r"[./]", str(key))[-1]).lower() in _PRIVATE_KEYS
+            key: "[redacted]" if (field_record and key == "value")
+            or re.sub(r"[_-]", "", re.split(r"[./]", str(key))[-1]).lower() in _PRIVATE_KEYS
             else mask_sensitive(value)
             for key, value in data.items()
         }

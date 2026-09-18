@@ -32,11 +32,13 @@ def protect_orders(
 
 
 def protect_update(state: Mapping[str, Any], update: dict[str, Any]) -> dict[str, Any]:
-    params = update.get("place_params")
-    if not isinstance(params, dict) or not isinstance(params.get("orderList"), list):
-        return update
-    orders, rejected = protect_orders(state, params["orderList"])
-    if rejected:
-        update = {**update, "place_params": {**params, "orderList": orders},
-                  "field_records": {**(update.get("field_records") or {}), **rejected}}
+    for key, list_key, product in (("place_params", "orderList", None),
+                                   ("close_params", "closeOrderList", "close")):
+        params = update.get(key)
+        if not isinstance(params, dict) or not isinstance(params.get(list_key), list):
+            continue
+        orders, rejected = protect_orders(state, params[list_key], product=product)
+        if rejected:
+            update = {**update, key: {**params, list_key: orders},
+                      "field_records": {**(update.get("field_records") or {}), **rejected}}
     return update

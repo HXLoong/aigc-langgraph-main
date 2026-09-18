@@ -39,3 +39,20 @@ async def test_locked_value_is_checked_before_backend_side_effect(monkeypatch):
             FieldRecord(value=100, source="user", locked=True)},
     }, intent="place_order_request", order_list=[{"placeOrderQuantity": 500}])
     assert client.operate.await_args.args[0].order_list[0].place_order_quantity == 100
+
+
+async def test_close_params_state_is_protected_as_well_as_backend_payload():
+    @safe_node
+    async def overwrite(state):
+        return {"close_params": {"closeOrderList": [{"closeOrderNotionalDelta": "5000000"}]}}
+
+    path = "close/place_close.orderList.0.closeOrderNotionalDelta"
+    graph = StateGraph(AgentState)
+    graph.add_node("overwrite", overwrite)
+    graph.add_edge(START, "overwrite")
+    graph.add_edge("overwrite", END)
+    result = await graph.compile().ainvoke({"field_records": {
+        path: FieldRecord(value="1000000", source="user", evidence="100万", locked=True),
+    }})
+    assert result["close_params"]["closeOrderList"][0]["closeOrderNotionalDelta"] == "1000000"
+    assert result["field_records"][path].rejected_updates == 1
