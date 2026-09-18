@@ -165,6 +165,12 @@ def _choices(state: AgentState, kind: str) -> list[dict[str, Any]] | None:
                     identity = {"orderId": orders[idx].get("orderId")}
                     block = resolve_candidate_block(identity, state.get("quote_ticker_candidates") or [])
                     if block is None:
+                        literal, explicit = _literal(token, "ticker")
+                        ordinal = re.fullmatch(r"第?[一二三四五六七八九十\d]+(?:个(?:标的|候选)?)?", literal)
+                        numeric_choice = ordinal and not _NUMERIC_PENDING.search(state.get("quote_content") or "")
+                        full_code = re.fullmatch(r"[A-Za-z0-9_-]+\.[A-Za-z][A-Za-z0-9]*", literal)
+                        if indices and (explicit or numeric_choice or full_code) and not _CP.search(token):
+                            raise ValueError("指定订单没有可供选择的标的候选，已停止整批选择")
                         continue
                     pick = _ticker_pick(token, block, state.get("quote_content") or "")
                     if pick and not indices:

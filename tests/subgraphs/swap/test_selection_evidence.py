@@ -112,3 +112,12 @@ async def test_explicit_all_orders_is_scoped_and_conflicting_selectors_are_rejec
     assert {pick["idx"] for pick in result["swap_counterparty_picks"]["picks"]} == {0, 1}
     conflict = await select_counterparty.swap_select_counterparty(state("序号1选A；序号1选B"))
     assert conflict.get("error")
+
+
+async def test_explicit_all_ticker_choice_cannot_silently_skip_an_order(monkeypatch):
+    data = state("全部订单选标的1")
+    data["quote_ticker_candidates"] = data["quote_ticker_candidates"][:1]
+    monkeypatch.setattr(select_ticker, "get_qwen_complex", MagicMock(side_effect=AssertionError("must use code")))
+    out = await select_ticker.swap_select_ticker(data)
+    assert out.get("error") is not None
+    assert not out.get("swap_ticker_picks")
