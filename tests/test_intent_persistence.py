@@ -94,7 +94,8 @@ def test_first_turn_persists_generated_conversation_id_and_followup_reuses_it(
         assert saved_requests[1]["conversationId"] == generated_id
 
     persisted_trace = isolated_workflow.call_args.args[0]
-    assert persisted_trace[-1].node == "persist_intent"
+    nodes = [entry.node for entry in persisted_trace]
+    assert nodes.index("persist_intent") < nodes.index("render") < nodes.index("record_history")
 
 
 @pytest.mark.parametrize("status_code,code", [(503, 0), (401, 0), (422, 0), (200, 123)])

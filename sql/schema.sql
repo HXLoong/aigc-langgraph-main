@@ -22,6 +22,8 @@ CREATE TABLE IF NOT EXISTS message_log (
     error           TEXT            COMMENT '错误信息',
     processed_by    VARCHAR(32)     COMMENT 'langgraph / dify 标记',
     reply_text      MEDIUMTEXT      COMMENT '回复文本（请求级幂等回放，ADR 0024 D4；NULL = 处理中）',
+    response_json   JSON            COMMENT '完整 HTTP 响应快照',
+    http_status     SMALLINT        NOT NULL DEFAULT 200 COMMENT '首次响应的 HTTP 状态',
     latency_ms      INT             COMMENT '端到端耗时',
     created_at      TIMESTAMP(3)    NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
     UNIQUE KEY uk_message_id (message_id),

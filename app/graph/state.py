@@ -28,15 +28,15 @@ class _Identified(BaseModel):
 
     原生子图节点会把**完整输出 state** 交回父图；trace / history_messages 若用 operator.add，
     父图已有条目会被再加一遍。与 LangGraph `add_messages` 同款：每条带 id，reducer 按 id 去重。
-    id 不参与 dump（checkpoint / API outputs / 测试相等比较都看不到它）。
+    id 必须进入 checkpoint；相等比较只比较内容，HTTP trace 单独投影。
     """
 
-    id: str = Field(default_factory=_new_id, exclude=True)
+    id: str = Field(default_factory=_new_id)
 
     def __eq__(self, other: object) -> bool:
         if not isinstance(other, BaseModel):
             return NotImplemented
-        return type(self) is type(other) and self.model_dump() == other.model_dump()
+        return type(self) is type(other) and self.model_dump(exclude={"id"}) == other.model_dump(exclude={"id"})
 
     __hash__ = None  # type: ignore[assignment]
 
@@ -159,6 +159,17 @@ class ErrorInfo(BaseModel):
     type: str
     message: str
     traceback: str | None = None
+    causes: list[ErrorInfo] = Field(default_factory=list)
+
+
+def merge_errors(left: ErrorInfo | None, right: ErrorInfo | None) -> ErrorInfo | None:
+    """Merge simultaneous failures; explicit None is reserved for ingest's reset."""
+    if right is None or left is None:
+        return right
+    failures = (left.causes or [left]) + (right.causes or [right])
+    unique = {(e.node, e.type, e.message): e for e in failures}
+    ordered = [unique[key] for key in sorted(unique)]
+    return ordered[0].model_copy(update={"causes": ordered})
 
 
 # ============================================================
@@ -257,7 +268,7 @@ class AgentState(TypedDict, total=False):
 
     # -------- 工程层 --------
     trace: Annotated[list[TraceEntry], merge_by_id]
-    error: ErrorInfo | None
+    error: Annotated[ErrorInfo | None, merge_errors]
 
     # -------- 后端结果 --------
     #: 后端 operate 的 result.data 原样透传：dict / list / 字符串消息三态
@@ -287,4 +298,4 @@ class SubgraphOutput(TypedDict, total=False):
     api_result: str | dict[str, Any] | list[Any] | None
     api_code: int | None
     trace: Annotated[list[TraceEntry], merge_by_id]
-    error: ErrorInfo | None
+    error: Annotated[ErrorInfo | None, merge_errors]

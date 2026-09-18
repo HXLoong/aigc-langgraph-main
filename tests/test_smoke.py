@@ -184,9 +184,10 @@ async def test_main_graph_trace_is_isolated_per_turn(
     )
 
     expected = [
-        "ingest", "pre_route", "intent_route", "fallback", "persist_intent", "persist", "render",
+        "ingest", "pre_route", "intent_route", "fallback", "persist_intent", "render",
         "remember_confirmed_params",  # ADR 0024 D4：ConversationMemory 写入点
         "record_history",  # ADR 0024 阶段 0：record_history 纳入 @safe_node，自动记 trace
+        "persist",
     ]
     assert [entry.node for entry in first["trace"]] == expected
     assert [entry.node for entry in second["trace"]] == expected

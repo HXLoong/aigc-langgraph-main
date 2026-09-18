@@ -13,12 +13,19 @@ from __future__ import annotations
 import logging
 import time
 import uuid
+from copy import deepcopy
 from typing import Any, Literal
 
 from fastapi import APIRouter, HTTPException, Request
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict, Field, computed_field
 
-from app.api.idempotency import PROCESSING_NOTICE, IdempotencyStore
+from app.api.idempotency import (
+    PROCESSING_NOTICE,
+    UNCERTAIN_NOTICE,
+    IdempotencyConflictError,
+    IdempotencyStore,
+)
 from app.api.turn_state import inputs_to_state
 from app.config import get_settings
 from app.graph.state import AgentState
@@ -111,7 +118,7 @@ class DifyWorkflowRunResponse(BaseModel):
 )
 async def run_workflow(
     req: DifyWorkflowRunRequest, request: Request
-) -> DifyWorkflowRunResponse:
+) -> DifyWorkflowRunResponse | JSONResponse:
     """模拟 Dify 的 Workflow Run API，把请求路由到 LangGraph 主图。"""
     if req.response_mode != "blocking":
         raise HTTPException(
@@ -168,14 +175,24 @@ async def run_workflow(
     if store is not None and idem_key is not None:
         existing = await _idempotency_begin(store, idem_key, initial_state)
         if existing is not None:
-            answer = existing.reply_text if existing.status == "done" else PROCESSING_NOTICE
+            if existing.response is not None:
+                replay = deepcopy(existing.response)
+                if "data" in replay:
+                    replay["data"]["outputs"]["replayed"] = True
+                    replay["data"]["outputs"]["idempotency_status"] = existing.status
+                return JSONResponse(status_code=existing.http_status, content=replay)
+            if existing.error:
+                raise HTTPException(status_code=502, detail="上次指令处理失败，请核对执行结果。")
+            answer = existing.reply_text if existing.status == "done" else (
+                UNCERTAIN_NOTICE if existing.status == "uncertain" else PROCESSING_NOTICE
+            )
             return DifyWorkflowRunResponse(
                 workflow_run_id=workflow_run_id,
                 task_id=task_id,
                 conversation_id=conversation_id,
                 answer=answer or "",
                 data=DifyWorkflowRunData(
-                    id=workflow_run_id, status="succeeded",
+                    id=workflow_run_id, status="succeeded" if existing.status == "done" else "stopped",
                     outputs={"replayed": True, "trace_id": request_trace_id,
                              "idempotency_status": existing.status},
                     created_at=created_at, finished_at=int(time.time()),
@@ -227,19 +244,20 @@ async def run_workflow(
     )
     finished_at = int(time.time())
 
-    if store is not None and idem_key is not None:
-        await _idempotency_complete(store, idem_key, final_state, error_msg, int(elapsed * 1000))
-
     # 必须等图完成：persist 已记录 set-intent 的失败 trace 后才返回 502。
     # 使用固定文案，不透传后端响应、URL、鉴权信息或异常堆栈。
     error = final_state.get("error")
-    if error is not None and error.node == "persist_intent":
-        raise HTTPException(
-            status_code=502, detail="消息会话与意图持久化失败，请稍后重试。",
-        )
-
-    if status == "failed" and not final_state.get("reply_text"):
-        raise HTTPException(status_code=502, detail="指令处理失败，请稍后重试。")
+    failure_message = None
+    if error is not None and any(e.node == "persist_intent" for e in (error.causes or [error])):
+        failure_message = "消息会话与意图持久化失败，请稍后重试。"
+    elif status == "failed" and not final_state.get("reply_text"):
+        failure_message = "指令处理失败，请稍后重试。"
+    if failure_message:
+        failed_body = {"code": "internal_server_error", "message": failure_message, "status": 502}
+        if store is not None and idem_key is not None:
+            await _idempotency_complete(store, idem_key, final_state, error_msg,
+                                        int(elapsed * 1000), failed_body, 502)
+        return JSONResponse(status_code=502, content=failed_body)
 
     outputs = _state_to_outputs(final_state)
     # 业务审计 ID：与 node_trace.trace_id / config.metadata.trace_id 同源，恒定暴露
@@ -260,13 +278,17 @@ async def run_workflow(
         created_at=created_at,
         finished_at=finished_at,
     )
-    return DifyWorkflowRunResponse(
+    response = DifyWorkflowRunResponse(
         workflow_run_id=workflow_run_id,
         task_id=task_id,
         conversation_id=conversation_id,
         answer=final_state.get("reply_text") or "",
         data=data,
     )
+    if store is not None and idem_key is not None:
+        await _idempotency_complete(store, idem_key, final_state, error_msg,
+                                    int(elapsed * 1000), response.model_dump(by_alias=True), 200)
+    return response
 
 
 # ============================================================
@@ -275,7 +297,7 @@ async def run_workflow(
 
 
 async def _idempotency_begin(store: IdempotencyStore, key: str, state: AgentState):  # type: ignore[no-untyped-def]
-    """存储故障只 warning：幂等是加固，不阻断业务（此时退化为无幂等）。"""
+    """启用幂等后必须先拿到占位；存储故障不能放行业务写入。"""
     try:
         return await store.begin(
             key,
@@ -284,13 +306,16 @@ async def _idempotency_begin(store: IdempotencyStore, key: str, state: AgentStat
             room_id=str(state.get("room_id") or ""),
             raw_text=str(state.get("raw_text") or ""),
         )
+    except IdempotencyConflictError as exc:
+        raise HTTPException(status_code=409, detail="消息标识与用户或群不匹配。") from exc
     except Exception as exc:  # noqa: BLE001
-        logger.warning("idempotency begin 失败，本次不做幂等：%s", exc)
-        return None
+        logger.warning("idempotency begin failed: %s", type(exc).__name__)
+        raise HTTPException(status_code=503, detail="消息去重服务暂时不可用，请稍后重试。") from exc
 
 
 async def _idempotency_complete(
-    store: IdempotencyStore, key: str, final_state: AgentState, error_msg: str | None, latency_ms: int
+    store: IdempotencyStore, key: str, final_state: AgentState, error_msg: str | None, latency_ms: int,
+    response: dict[str, Any], http_status: int,
 ) -> None:
     try:
         await store.complete(
@@ -302,6 +327,8 @@ async def _idempotency_complete(
             api_result=final_state.get("api_result"),
             error=error_msg,
             latency_ms=latency_ms,
+            response=response,
+            http_status=http_status,
         )
     except Exception as exc:  # noqa: BLE001
         logger.warning("idempotency complete 失败：%s", exc)

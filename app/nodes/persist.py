@@ -135,7 +135,7 @@ def _trace_entry_to_row(
     llm_output = data.get("llm_output")
 
     # status：decision == "error" → error；否则 success
-    status = "error" if decision == "error" else "success"
+    status = "error" if decision == "error" or decision.startswith("error:") else "success"
 
     # preview 截断
     input_preview = _truncate(decision, _INPUT_PREVIEW_MAX)

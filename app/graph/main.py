@@ -85,7 +85,7 @@ def build_main_graph(
             quick_inquiry | existing_command_query          （前置分支,直达 persist）
           | pre_route → intent_route → [route_after_intent] →
                 swap | option | option_close | fallback
-        → persist → render → END
+        → persist_intent → render → remember_confirmed_params → record_history → persist → END
 
     cascade 防御：
     - intent_route 写 state['error'] → 跳 fallback
@@ -134,12 +134,12 @@ def build_main_graph(
     for sub in ("swap", "option", "option_close", "fallback"):
         g.add_edge(sub, "persist_intent")
     for sub in ("quick_inquiry", "existing_command_query"):
-        g.add_edge(sub, "persist")
-    g.add_edge("persist_intent", "persist")
-    g.add_edge("persist", "render")
+        g.add_edge(sub, "render")
+    g.add_edge("persist_intent", "render")
     g.add_edge("render", "remember_confirmed_params")
     g.add_edge("remember_confirmed_params", "record_history")
-    g.add_edge("record_history", END)
+    g.add_edge("record_history", "persist")
+    g.add_edge("persist", END)
 
     # LangFuse 不在图级注入（ADR 0024 D5）：统一由 app/api/routes.py 按请求把 handler 放进
     # config["callbacks"]，生产与开发同一条 trace_id / session 契约
