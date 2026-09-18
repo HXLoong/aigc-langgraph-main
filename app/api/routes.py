@@ -10,6 +10,7 @@
 """
 from __future__ import annotations
 
+import asyncio
 import logging
 import time
 import uuid
@@ -119,6 +120,27 @@ class DifyWorkflowRunResponse(BaseModel):
 async def run_workflow(
     req: DifyWorkflowRunRequest, request: Request
 ) -> DifyWorkflowRunResponse | JSONResponse:
+    """Bound the entire request, including tracing and persistence, before Java's 90s timeout."""
+    settings = get_settings()
+    deadline = time.monotonic() + settings.request_timeout_seconds
+    try:
+        async with asyncio.timeout(settings.request_timeout_seconds):
+            return await _execute_workflow(req, request, deadline=deadline)
+    except TimeoutError:
+        # An unfinished idempotency claim remains reserved; a duplicate must never reexecute it.
+        return _timeout_response()
+
+
+def _timeout_response() -> JSONResponse:
+    return JSONResponse(status_code=504, content={
+        "code": "workflow_timeout", "status": 504,
+        "message": "指令处理超时，执行结果待核对，请勿重复提交。",
+    })
+
+
+async def _execute_workflow(
+    req: DifyWorkflowRunRequest, request: Request, *, deadline: float,
+) -> DifyWorkflowRunResponse | JSONResponse:
     """模拟 Dify 的 Workflow Run API，把请求路由到 LangGraph 主图。"""
     if req.response_mode != "blocking":
         raise HTTPException(
@@ -213,6 +235,7 @@ async def run_workflow(
     config["callbacks"] = [LLMMetricsCallback()] + ([trace.handler] if trace.handler is not None else [])
 
     t0 = time.perf_counter()
+    timed_out = False
     # ADR 0024 D5：整次图调用期间的每条日志都带 trace_id / conversation_id / message_id
     with bound_request_context(
         trace_id=request_trace_id, conversation_id=conversation_id, message_id=message_id
@@ -220,15 +243,22 @@ async def run_workflow(
         try:
             # ADR 0024 D4：图内无 interrupt、单轮无需中途恢复，退出时落一次 checkpoint 即可，
             # 避免默认 "async" 每个 superstep 都写 MySQL（单连接 saver 上是队头阻塞源）
-            final_state: AgentState = await graph.ainvoke(
-                initial_state, config=config, durability="exit"
-            )
+            graph_budget = max(0, deadline - time.monotonic() - get_settings().response_reserve_seconds)
+            async with asyncio.timeout(graph_budget):
+                final_state: AgentState = await graph.ainvoke(
+                    initial_state, config=config, durability="exit"
+                )
             status: Literal["succeeded", "failed", "stopped"] = (
                 "failed" if final_state.get("error") else "succeeded"
             )
             error_msg = (
                 final_state["error"].message if final_state.get("error") else None
             )
+        except TimeoutError:
+            final_state = {}
+            status = "failed"
+            error_msg = "workflow_timeout: execution result requires reconciliation"
+            timed_out = True
         except Exception as exc:  # noqa: BLE001
             final_state = {}
             status = "failed"
@@ -243,6 +273,15 @@ async def run_workflow(
         elapsed_ms=int(elapsed * 1000),
     )
     finished_at = int(time.time())
+
+    if timed_out:
+        response = _timeout_response()
+        body = {"code": "workflow_timeout", "status": 504,
+                "message": "指令处理超时，执行结果待核对，请勿重复提交。"}
+        if store is not None and idem_key is not None:
+            await _idempotency_complete(store, idem_key, final_state, error_msg,
+                                        int(elapsed * 1000), body, 504)
+        return response
 
     # 必须等图完成：persist 已记录 set-intent 的失败 trace 后才返回 502。
     # 使用固定文案，不透传后端响应、URL、鉴权信息或异常堆栈。

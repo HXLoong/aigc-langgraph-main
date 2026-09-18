@@ -56,7 +56,7 @@ async def translate_httpx_errors(target: str) -> AsyncIterator[None]:
     """
     try:
         yield
-    except httpx.TimeoutException as exc:
+    except (httpx.TimeoutException, TimeoutError) as exc:
         raise BackendUnreachableError(target, "timeout") from exc
     except httpx.ConnectError as exc:
         raise BackendUnreachableError(target, "connect_error") from exc

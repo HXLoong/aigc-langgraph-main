@@ -27,13 +27,14 @@ from pydantic import ValidationError
 
 from app.config import get_settings
 from app.extraction.fields import EvidenceError
-from app.graph.safe_node import safe_node
+from app.graph.safe_node import NodeFn, P, safe_node
 from app.graph.state import ErrorInfo, TraceEntry
 from app.observability.metrics import emit_node_completed
 from app.tools.exceptions import BackendUnreachableError
 
 #: 只读 IO 的瞬时故障：后端不可达（timeout / connect / 5xx）与 LLM 网关限流 / 超时 / 5xx
 IO_RETRYABLE: tuple[type[BaseException], ...] = (
+    TimeoutError,
     BackendUnreachableError,
     httpx.TimeoutException,
     httpx.ConnectError,
@@ -53,7 +54,7 @@ def is_retryable(exc: BaseException) -> bool:
     return isinstance(exc, IO_RETRYABLE)
 
 
-def io_node(fn: Callable[..., Awaitable[dict[str, Any]]]) -> Callable[..., Awaitable[dict[str, Any]]]:
+def io_node(fn: NodeFn[P]) -> NodeFn[P]:
     """只读 IO 节点装饰器：safe_node + 可重试异常穿透。必须配合 add_io_node 注册。"""
     wrapped = safe_node(fn, retryable=IO_RETRYABLE)
     setattr(wrapped, _IO_NODE_FLAG, True)

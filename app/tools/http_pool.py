@@ -58,14 +58,15 @@ async def close_shared_http_client() -> None:
 async def acquire_http_client(
     *, timeout: float, transport: httpx.AsyncBaseTransport | None = None
 ) -> AsyncIterator[httpx.AsyncClient]:
-    if transport is None and _shared is not None and not _shared.is_closed:
-        yield _shared
-        return
-    kwargs: dict = {"timeout": timeout, "trust_env": False}
-    if transport is not None:
-        kwargs["transport"] = transport
-    async with httpx.AsyncClient(**kwargs) as client:
-        yield client
+    async with asyncio.timeout(timeout):
+        if transport is None and _shared is not None and not _shared.is_closed:
+            yield _shared
+            return
+        kwargs: dict = {"timeout": timeout, "trust_env": False}
+        if transport is not None:
+            kwargs["transport"] = transport
+        async with httpx.AsyncClient(**kwargs) as client:
+            yield client
 
 
 __all__ = [

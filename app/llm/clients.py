@@ -14,10 +14,14 @@ vendor 由 .env 的 QWEN_API_BASE / QWEN_API_KEY / QWEN_MODEL_* 切换
 """
 from __future__ import annotations
 
+import asyncio
 import re
 from functools import lru_cache
 from typing import Any
 
+from langchain_core.language_models import LanguageModelInput
+from langchain_core.messages import AIMessage
+from langchain_core.runnables import RunnableConfig
 from langchain_openai import ChatOpenAI
 
 from app.config import get_settings
@@ -54,6 +58,15 @@ class _ChatLLM(ChatOpenAI):
             kwargs["method"] = "function_calling"
         return super().with_structured_output(schema, **kwargs)
 
+    async def ainvoke(
+        self, input: LanguageModelInput, config: RunnableConfig | None = None,
+        *, stop: list[str] | None = None, **kwargs: Any,
+    ) -> AIMessage:
+        budget = self.request_timeout
+        seconds = float(budget) if isinstance(budget, (int, float)) else get_settings().llm_timeout_seconds
+        async with asyncio.timeout(seconds):
+            return await super().ainvoke(input, config, stop=stop, **kwargs)
+
 
 @lru_cache(maxsize=1)
 def get_qwen_standard() -> ChatOpenAI:
@@ -65,7 +78,7 @@ def get_qwen_standard() -> ChatOpenAI:
         api_key=settings.qwen_api_key,
         temperature=0.0,
         timeout=settings.llm_timeout_seconds,
-        max_retries=2,
+        max_retries=0,
         extra_body=_thinking_off_extra_body(settings.qwen_model_standard),
     )
 
@@ -84,7 +97,7 @@ def get_qwen_thinking() -> ChatOpenAI:
         api_key=settings.qwen_api_key,
         temperature=0.0,
         timeout=settings.llm_timeout_seconds,
-        max_retries=2,
+        max_retries=0,
         extra_body=_thinking_off_extra_body(settings.qwen_model_thinking),
     )
 
@@ -102,7 +115,7 @@ def make_qwen_thinking() -> ChatOpenAI:
         api_key=settings.qwen_api_key,
         temperature=0.0,
         timeout=settings.llm_timeout_seconds,
-        max_retries=2,
+        max_retries=0,
         extra_body=_thinking_off_extra_body(settings.qwen_model_thinking),
     )
 
@@ -117,7 +130,7 @@ def get_qwen_structured() -> ChatOpenAI:
         api_key=settings.qwen_api_key,
         temperature=0.0,
         timeout=settings.llm_timeout_seconds,
-        max_retries=2,
+        max_retries=0,
         extra_body=_thinking_off_extra_body(settings.qwen_model_standard),
     )
 
@@ -132,7 +145,7 @@ def get_qwen_complex() -> ChatOpenAI:
         api_key=settings.qwen_api_key,
         temperature=0.0,
         timeout=settings.llm_timeout_seconds,
-        max_retries=2,
+        max_retries=0,
         extra_body=_thinking_off_extra_body(settings.qwen_model_complex),
     )
 
@@ -147,5 +160,5 @@ def get_qwen_vl() -> ChatOpenAI:
         api_key=settings.qwen_api_key,
         temperature=0.0,
         timeout=settings.llm_timeout_seconds,
-        max_retries=2,
+        max_retries=0,
     )

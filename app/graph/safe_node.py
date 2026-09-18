@@ -12,24 +12,33 @@ import logging
 import time
 import traceback
 from collections.abc import Awaitable, Callable
-from typing import Any
+from typing import Any, ParamSpec, overload
 
 from langgraph.types import Overwrite
 
-from app.graph.state import AgentState, ErrorInfo, TraceEntry
+from app.graph.state import ErrorInfo, TraceEntry
 from app.observability.metrics import emit_node_completed
 
 logger = logging.getLogger(__name__)
 
 
-NodeFn = Callable[[AgentState], Awaitable[dict[str, Any]]]
+P = ParamSpec("P")
+NodeFn = Callable[P, Awaitable[dict[str, Any]]]
+
+
+@overload
+def safe_node(fn: NodeFn[P], *, retryable: tuple[type[BaseException], ...] = ()) -> NodeFn[P]: ...
+
+
+@overload
+def safe_node(fn: None = None, *, retryable: tuple[type[BaseException], ...] = ()) -> Callable[[NodeFn[P]], NodeFn[P]]: ...
 
 
 def safe_node(
-    fn: NodeFn | None = None,
+    fn: NodeFn[P] | None = None,
     *,
     retryable: tuple[type[BaseException], ...] = (),
-) -> Any:
+) -> NodeFn[P] | Callable[[NodeFn[P]], NodeFn[P]]:
     """LangGraph 节点装饰器。
 
     用法:
@@ -44,15 +53,17 @@ def safe_node(
     写类节点永远不要传——超时后重试可能重复下单）。
     """
     if fn is None:
-        return functools.partial(safe_node, retryable=retryable)
+        def decorate(node: NodeFn[P]) -> NodeFn[P]:
+            return safe_node(node, retryable=retryable)
+        return decorate
 
     @functools.wraps(fn)
-    async def wrapper(state: AgentState) -> dict[str, Any]:
+    async def wrapper(*args: P.args, **kwargs: P.kwargs) -> dict[str, Any]:
         node_name = fn.__name__
         t0 = time.perf_counter()
 
         try:
-            update = await fn(state)
+            update = await fn(*args, **kwargs)
             elapsed_ms = int((time.perf_counter() - t0) * 1000)
 
             # 自动追加 trace（节点函数没自带 trace 字段时）。
