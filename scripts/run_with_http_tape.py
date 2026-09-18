@@ -66,6 +66,8 @@ def create_app(mode: str, tape: Path) -> Any:
         raise ValueError("the Java application URL must be local")
     if mode not in {"record", "replay"}:
         raise ValueError("mode must be record or replay")
+    if mode == "replay" and settings.request_idempotency:
+        raise ValueError("工具回放需 REQUEST_IDEMPOTENCY=false，避免缓存响应绕过录制请求")
     original_lifespan = app.router.lifespan_context
 
     @asynccontextmanager

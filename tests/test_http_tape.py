@@ -128,3 +128,16 @@ async def test_transport_timeout_is_recorded_and_replayed_without_exception_secr
     async with httpx.AsyncClient(transport=ReplayTransport(path)) as client:
         with pytest.raises(httpx.ReadTimeout):
             await client.get("http://localhost/order")
+
+
+def test_replay_requires_disabling_cached_http_response_shortcut(tmp_path, monkeypatch):
+    from app import config
+    from scripts.run_with_http_tape import create_app
+
+    settings = config.get_settings().model_copy(update={
+        "otc_api_base_url": "http://localhost:48080", "dry_run_backend": False,
+        "request_idempotency": True,
+    })
+    monkeypatch.setattr(config, "get_settings", lambda: settings)
+    with pytest.raises(ValueError, match="REQUEST_IDEMPOTENCY"):
+        create_app("replay", tmp_path / "unused.jsonl")
