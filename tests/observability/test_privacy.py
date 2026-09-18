@@ -24,3 +24,27 @@ def test_configured_logging_redacts_sensitive_arguments():
     line = stream.getvalue()
     assert "private-key" not in line and "13800138000" not in line
     assert "privacy-test" in line
+def test_field_ledger_paths_hide_counterparty_values():
+    from app.observability.privacy import mask_sensitive
+
+    result = mask_sensitive({"field_records": {
+        "swap/place_order.orderList.0.placeOrderShortname": {"value": "客户私有名称"},
+        "option/orderList.0.accountId": "private-account",
+    }})
+    assert "客户私有名称" not in str(result)
+    assert "private-account" not in str(result)
+
+
+def test_evidence_source_collection_is_not_exposed():
+    from app.observability.privacy import mask_sensitive
+
+    result = mask_sensitive({"sources": {"raw": "客户原始交易指令", "attachment:r1": "附件交易"}})
+    assert "客户原始交易指令" not in str(result)
+    assert "附件交易" not in str(result)
+
+
+def test_prompt_role_tuples_hide_prompt_content():
+    from app.observability.privacy import mask_sensitive
+
+    result = mask_sensitive([("system", "含授权名单的系统提示"), ("user", "客户原始交易指令")])
+    assert result == [["system", "[redacted]"], ["user", "[redacted]"]]

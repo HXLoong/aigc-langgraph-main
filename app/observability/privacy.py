@@ -13,6 +13,8 @@ _PRIVATE_KEYS = frozenset({
     "authorization", "userid", "roomid", "guid", "operatoruserid", "shortname", "longname",
     "placeordershortname", "ctptyid", "counterpartyname", "llminputexcerpt", "traceback",
     "user", "langfuseuserid", "exception",
+    "sources", "directname", "accountid", "bankaccount", "bankcard", "customername",
+    "requestbody", "responsebody", "requestparams", "ocrtext", "transcription",
 })
 _CREDENTIAL = re.compile(r"(?i)(bearer\s+)[^\s\"',;]+")
 _ASSIGNMENT = re.compile(r"(?i)((?:api[_-]?key|password|secret|token)\s*[=:]\s*)[^\s,;]+")
@@ -34,11 +36,15 @@ def mask_sensitive(data: Any, **kwargs: Any) -> Any:
         data = data.model_dump(by_alias=True)
     if isinstance(data, Mapping):
         return {
-            key: "[redacted]" if re.sub(r"[_-]", "", str(key)).lower() in _PRIVATE_KEYS
+            key: "[redacted]" if re.sub(r"[_-]", "", re.split(r"[./]", str(key))[-1]).lower() in _PRIVATE_KEYS
             else mask_sensitive(value)
             for key, value in data.items()
         }
     if isinstance(data, (list, tuple)):
+        if len(data) == 2 and isinstance(data[0], str) and data[0] in {
+            "system", "user", "assistant", "human", "ai", "tool", "developer",
+        }:
+            return [data[0], "[redacted]"]
         return [mask_sensitive(item) for item in data]
     return redact_text(data) if isinstance(data, str) else data
 
