@@ -52,3 +52,29 @@ def test_order_market_prevents_cross_market_alias_binding():
     order, result = _with_resolved_ticker({"placeOrderWindCode": "京东", "placeOrderTransactionType": "US_STOCK"}, [ticker])
     assert order["placeOrderWindCode"] == "京东"
     assert result == "unmatched"
+
+
+async def test_attachment_explicit_code_reaches_exact_goats_without_model_recall(monkeypatch):
+    client = MagicMock()
+    client.search_securities_instrument = AsyncMock(return_value=[
+        {"windCode": "NVDA.O", "insShtDesc": "英伟达"},
+    ])
+    monkeypatch.setattr(resolver, "_make_client", lambda: client)
+    output = await resolver.merge_candidates({
+        "raw_text": "按附件下单，忽略600519.SH", "candidate_keywords": ["NVDA.O"],
+        "candidates": ["NVDA.O"], "infer_codes": {}, "split_codes": {}, "ins_family": {},
+    })
+    assert [item["org_str"] for item in output["winners"]] == ["NVDA.O"]
+    assert output["winners"][0]["winner"]["windCode"] == "NVDA.O"
+    client.search_securities_instrument.assert_awaited_once()
+
+
+async def test_empty_scoped_candidates_do_not_reintroduce_raw_codes(monkeypatch):
+    client = MagicMock(search_securities_instrument=AsyncMock(return_value=[]))
+    monkeypatch.setattr(resolver, "_make_client", lambda: client)
+    output = await resolver.merge_candidates({
+        "raw_text": "不要600519.SH", "candidate_keywords": [], "candidates": [],
+        "infer_codes": {}, "split_codes": {}, "ins_family": {},
+    })
+    assert output["winners"] == []
+    client.search_securities_instrument.assert_not_awaited()

@@ -245,7 +245,9 @@ async def merge_candidates(state: TickerState) -> dict[str, Any]:
     )
     client = _make_client()
 
-    explicit = list(dict.fromkeys(_EXPLICIT_CODE_RE.findall(raw_text)))
+    candidate_keywords = state.get("candidate_keywords")
+    exact_source = "\n".join(candidate_keywords) if candidate_keywords is not None else raw_text
+    explicit = list(dict.fromkeys(_EXPLICIT_CODE_RE.findall(exact_source)))
     exact_results: dict[str, dict[str, Any] | None] = {}
     guarded_roots: dict[str, list[dict[str, Any]]] = {}
     for code in explicit:
