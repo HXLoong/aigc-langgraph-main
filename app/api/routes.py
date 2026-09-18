@@ -28,6 +28,7 @@ from app.api.idempotency import (
     IdempotencyStore,
     response_is_uncertain,
 )
+from app.api.notifications import project_retry_notification
 from app.api.turn_state import inputs_to_state
 from app.config import get_settings
 from app.graph.state import AgentState, ErrorInfo, TraceEntry
@@ -206,7 +207,8 @@ async def _execute_workflow(
                 if "data" in replay:
                     replay["data"]["outputs"]["replayed"] = True
                     replay["data"]["outputs"]["idempotency_status"] = existing.status
-                return JSONResponse(status_code=existing.http_status, content=replay)
+                return JSONResponse(status_code=existing.http_status,
+                                    content=project_retry_notification(replay, initial_state))
             if existing.error:
                 raise HTTPException(status_code=502, detail="上次指令处理失败，请核对执行结果。")
             answer = existing.reply_text if existing.status == "done" else (
@@ -341,6 +343,10 @@ async def _execute_workflow(
     if store is not None and idem_key is not None:
         await _idempotency_complete(store, idem_key, final_state, error_msg,
                                     int(elapsed * 1000), response.model_dump(by_alias=True), 200)
+    snapshot = response.model_dump(by_alias=True)
+    projected = project_retry_notification(snapshot, initial_state)
+    if projected is not snapshot:
+        return JSONResponse(status_code=200, content=projected)
     return response
 
 

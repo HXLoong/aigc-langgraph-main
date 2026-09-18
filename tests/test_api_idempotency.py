@@ -105,6 +105,37 @@ def test_backend_timeout_is_marked_uncertain_in_first_response_and_replay(client
     assert graph.ainvoke.await_count == 1
 
 
+def test_system_retry_suppresses_only_duplicate_notice_and_preserves_receipt(client: TestClient):
+    graph = client.app.state.main_graph
+    graph.ainvoke = AsyncMock(return_value={
+        "reply_text": "正在处理，请勿重复提交", "api_code": 900,
+        "api_result": "正在处理，请勿重复提交", "trace": [],
+    })
+    normal = client.post("/v1/workflows/run", json=_body(901)).json()
+    retry_body = _body(901)
+    retry_body["inputs"].update(retry_origin="XBOT_GET_DIFY_FAIL", retry_attempt="1")
+    retry = client.post("/v1/workflows/run", json=retry_body).json()
+    later = client.post("/v1/workflows/run", json=_body(901)).json()
+    assert retry["answer"] == "IGNORE_REQUEST_NOT_REPLY_USER"
+    assert retry["data"]["outputs"]["api_result"] == normal["answer"]
+    assert retry["data"]["outputs"]["api_code"] == 900
+    assert later["answer"] == normal["answer"]
+    assert graph.ainvoke.await_count == 1
+
+
+def test_first_system_retry_response_has_same_notification_contract(client: TestClient):
+    graph = client.app.state.main_graph
+    graph.ainvoke = AsyncMock(return_value={
+        "reply_text": "原始重复回执", "api_code": 900, "api_result": "原始重复回执", "trace": [],
+    })
+    body = _body(902)
+    body["inputs"].update(retryOrigin="XBOT_GET_DIFY_FAIL", retryAttempt="2")
+    response = client.post("/v1/workflows/run", json=body).json()
+    assert response["answer"] == "IGNORE_REQUEST_NOT_REPLY_USER"
+    assert response["data"]["outputs"]["api_result"] == "原始重复回执"
+    assert graph.ainvoke.await_args.args[0]["retry_origin"] == "XBOT_GET_DIFY_FAIL"
+
+
 def test_unavailable_idempotency_store_blocks_execution(client: TestClient) -> None:
     client.app.state.idempotency_store.begin = AsyncMock(side_effect=ConnectionError("down"))
     response = client.post("/v1/workflows/run", json=_body(82))

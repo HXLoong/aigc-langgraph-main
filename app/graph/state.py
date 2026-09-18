@@ -234,6 +234,8 @@ class AgentState(TypedDict, total=False):
     existing_command: str | None  # existing_command：存量兼容-交易查询指令
     bot_name: str | None  # bot_name：机器人名称（替代旧 bot_name_list 获取）
     operator_user_id: str | None  # operator_user_id：操作者（替代旧 userId 语义）
+    retry_origin: str | None  # Java RabbitMQ 重投来源；只控制通知投影，不重试交易
+    retry_attempt: str | None
 
     # -------- 对手方与引用候选（路由前置提取，DSL v2「交易对手、候选标的提取」）--------
     # 入口原始 JSON 串（Java 侧 option/trs 预查结果，ingest 透传，pre_route 解析）

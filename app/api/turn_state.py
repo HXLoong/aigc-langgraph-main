@@ -24,6 +24,8 @@ INPUT_FIELD_ALIASES = {
     "existing_command": ("existing_command", "existingCommand"),
     "bot_name": ("bot_name", "botName"),
     "operator_user_id": ("operator_user_id", "operatorUserId"),
+    "retry_origin": ("retry_origin", "retryOrigin"),
+    "retry_attempt": ("retry_attempt", "retryAttempt"),
     "option_counterparties_raw": ("option_counterparties", "optionCounterparties"),
     "swap_counterparties_raw": ("swap_counterparties", "swapCounterparties"),
     "input_files": ("files", "sysFiles"),
@@ -52,7 +54,8 @@ def inputs_to_state(inputs: dict[str, Any]) -> AgentState:
         state["raw_text"] = state["message_content"]
     # checkpoint 会合并输入：缺省的当轮字段也要显式写入，避免继承上轮路由/附件。
     # 业务对象和历史消息仍由 checkpoint 保留，不能在此补空值。
-    for key in ("fast_query", "existing_command", "at_bot", "quote_content", "quote_appinfo"):
+    for key in ("fast_query", "existing_command", "at_bot", "quote_content", "quote_appinfo",
+                "retry_origin", "retry_attempt"):
         state.setdefault(key, None)
     state.setdefault("input_files", [])
     state.setdefault("raw_text", "")
