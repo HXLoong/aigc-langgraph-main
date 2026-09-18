@@ -48,7 +48,7 @@ MAPPINGS = {
     "1755074179773": mapping("变量聚合器", "合并(Code)", "app/graph/main.py:build_main_graph app/nodes/render.py:render", tests="tests/test_smoke.py", note="独立变量聚合节点由 State 写回面和统一 render 取代；非逐节点同构。"),
     "1755075270023": mapping("存储消息意图-最终回复", "合并(Code)", "app/nodes/persist_intent.py:make_persist_intent app/tools/message_client.py:MessageClientHttpx.set_intent", tests="tests/test_smoke.py", note="各出口统一到 persist_intent；调用是否开启由应用环境决定，回复时序需接口验收。"),
     "1755075440773": mapping("直接回复", "合并(Code)", "app/nodes/render.py:render app/api/routes.py:_state_to_outputs", tests="tests/test_api_turn_inputs.py"),
-    "1755075477466": mapping("输入参数收集至AIGC", "待确认", "app/api/turn_state.py:inputs_to_state app/nodes/ingest.py:ingest", tests="tests/test_api_turn_inputs.py", note="当前输入解析可定位；旧节点标题中的 AIGC 收集副作用不能仅凭同名输入处理认定等价。本导出不读取/输出旧节点代码或凭据。"),
+    "1755075477466": mapping("输入参数收集至AIGC", "删除 / 原生审计替代", "app/checkpointer/factory.py:init_checkpointer app/api/routes.py:_execute_workflow app/api/idempotency.py:MySQLIdempotencyStore.begin app/api/idempotency.py:MySQLIdempotencyStore.complete app/nodes/persist.py:_write_to_mysql app/observability/tracing.py:attach_request_trace", tests="tests/test_api_turn_inputs.py tests/test_shared_database.py", note="确认退役 Dify 专属输入监控 HTTP 调用；Java 消费者依赖 Dify app/run ID 拉取详情，不适用于真实 LangGraph ID。由 checkpoint、message_log、node_trace 和 Langfuse 分担审计；不伪造 Dify 标识，不承诺 Java 旧 Dify 监控 UI 等价。权威 Java 引用见退役依据节。"),
     "1755500828121": mapping("直接回复 2", "合并(Code)", "app/nodes/fallback.py:fallback app/nodes/render.py:render", tests="tests/test_smoke.py"),
     "1756519920880": mapping("判断快速询价", "Code", "app/graph/main.py:_route_entry app/nodes/fast_query.py:is_fast_query app/nodes/fast_query.py:is_existing_command", tests="tests/nodes/test_fast_query.py"),
     "1756520149629": mapping("参与型看涨、雪球调询价参数解析", "合并(Code)", "app/nodes/fast_query.py:quick_inquiry app/tools/goats_agent_client.py:GoatsAgentClientHttpx.parse_rfq_instrument", tests="tests/nodes/test_fast_query.py", note="Code 调用 GOATS parser；外部 parser 是否使用模型不在本仓静态计数范围。"),
@@ -145,6 +145,38 @@ TOOLS = {
     "1780652808839": "app/llm/clients.py:get_qwen_complex",
     "1780652892832": "app/llm/clients.py:get_qwen_complex app/tools/ticker_client.py:TickerClientHttpx.search_securities_instrument",
 }
+
+
+# Audited Java contract: the old collector dispatches Dify-specific asynchronous reads.
+# Anchors are source-code identifiers, never configuration values or credentials.
+_JAVA_MONITOR = "yudao-module-monitor/yudao-module-monitor-biz/src/main/java/cn/iocoder/yudao/module/monitor/"
+AUDIT_RETIREMENT_REFERENCES = (
+    ("controller/admin/chatflow/DifyChatFlowLogController.java", "return CommonResult.success(true);", "Controller 调 sendChatFlowInput 后固定 ACK；不证明异步日志成功。"),
+    ("controller/admin/chatflow/vo/DifyChatFlowInputVO.java", "private String sysAppId", "DTO 使用 Dify sysAppId / sysWorkflowId / sysWorkflowRunId 身份。"),
+    ("service/chatflow/DifyChatFlowServiceImpl.java", "difyWorkflowInputParameterService.createDifyWorkflowInputParameter(reqVO);", "先写 Dify 输入表，再发送 RabbitMQ；外围 catch 吞掉处理失败。"),
+    ("service/chatflow/DifyChatFlowServiceImpl.java", "getEnableIntegrationSystem(IntegrationEnum.integrationSystemType.DIFY.getCode())", "消费逻辑固定选择 DIFY 集成类型。"),
+    ("service/chatflow/DifyChatFlowServiceImpl.java", "getWorkflowRunDetail(enableIntegrationSystem, difyChatFlowInput.getSysAppId(), difyChatFlowInput.getSysWorkflowRunId())", "真实 Dify app/run ID 用于拉取运行详情。"),
+    ("service/chatflow/DifyChatFlowServiceImpl.java", "getWorkflowRunNodeExecutionList(enableIntegrationSystem, difyChatFlowInput.getSysAppId(), difyChatFlowInput.getSysWorkflowRunId())", "继续按 Dify app/run ID 拉节点详情。"),
+    ("service/chatflow/DifyChatFlowServiceImpl.java", ".setSavedLog(1)", "Dify 详情处理成功后才设置 Java 消息 savedLog。"),
+    ("mq/consumer/dify/DifyChatFlowInputRabbitConsumer.java", "difyChatFlowService.doSendChatFlowInputRabbit(message)", "RabbitMQ 消费者进入 Dify 拉取逻辑，后续有延迟重试。"),
+)
+
+
+def audit_retirement_evidence(java_root: Path | None) -> list[dict[str, Any]]:
+    evidence = []
+    for relative, anchor, meaning in AUDIT_RETIREMENT_REFERENCES:
+        source = _JAVA_MONITOR + relative
+        item: dict[str, Any] = {"java_relative_path": source, "meaning": meaning, "verified": False}
+        if java_root is not None:
+            path = java_root / source
+            item["path"] = str(path)
+            if path.is_file():
+                text = path.read_text(encoding="utf-8")
+                matches = [line for line, value in enumerate(text.splitlines(), 1) if anchor in value]
+                item.update(verified=len(matches) == 1, lines=matches,
+                            sha256=hashlib.sha256(text.encode()).hexdigest())
+        evidence.append(item)
+    return evidence
 
 
 class SourceIndex:
@@ -311,7 +343,7 @@ def generate(project_root: Path, dsl: Path, output_prefix: Path, java_root: Path
     revision = subprocess.run(["git", "-C", str(project_root), "rev-parse", "HEAD"], capture_output=True, text=True, check=False).stdout.strip()
     mapped_prompts = {prompt["key"] for record in records for prompt in record["prompts"]}
     gaps = [
-        {"kind": "unconfirmed_side_effect", "node_id": "1755075477466", "detail": "输入参数收集至 AIGC 的原始副作用未确认，不能以 inputs_to_state 代替证明。"},
+        {"kind": "legacy_monitor_ui_boundary", "node_id": "1755075477466", "detail": "Dify 专属输入监控调用已明确退役并由原生审计替代；Java 旧 Dify 监控 UI 的 LangGraph 详情展示不是本次已实现承诺，若需要属于后续外部监控集成。"},
         {"kind": "missing_schema_artifact", "detail": "slot_schema.json 的 50 字段附件未提供；以实际 Java/Pydantic 契约为核对来源，不编造字段总数。"},
         {"kind": "acceptance_pending", "detail": "逐节点运行 trace、业务等价、388 条与性能仍需用户统一验收，静态节点表不能替代。"},
     ]
@@ -338,6 +370,9 @@ def generate(project_root: Path, dsl: Path, output_prefix: Path, java_root: Path
                                "extra_registered_prompts": {key: value for key, value in prompts.items() if key not in mapped_prompts},
                                "exclusions": ["old Code-generated prompt fragments", "runtime injected values", "Pydantic/function schemas", "nested Dify tool workflows", "model tokenization"]},
         "schema_sources": schema_sources(index, java_root), "contract_gaps": gaps, "nodes": records, "edges": edges,
+        "audit_retirement": {"node_id": "1755075477466", "decision": "retire_dify_only_side_effect_replace_native_audit",
+                             "java_evidence": audit_retirement_evidence(java_root),
+                             "limits": ["不调用旧 HTTP 端点、不发送 MQ、不伪造 Dify app/workflow/run ID。", "checkpoint 依赖启用 MySQL saver；消息快照依赖幂等存储；节点审计写失败按现有告警处理。", "durability=exit 不是对超时尚未落盘部分的完整保存保证；Langfuse 依赖配置和成功写入。", "业务 API/机器人响应可切换，不代表 Java 旧 Dify 监控页面自动等价。"]},
         "limits": ["源码对应不等于业务等价；本次未调用模型、后端或黄金集。", "目标函数存在不等于所有分支运行可达；具体调用链仍需相应图测试和真实 trace。",
                    "LLM+Code 表示原始候选/意图保留模型；不能说整条业务流无模型。", "合并说明结构变化；0 字符只表示本节点不再有本地提示资产，不表示外部工具不含模型。",
                    "负责人没有业务授权记录，统一标未指定。", "当前文件逐文件带 hash；主代理并行变更时请在最终集成后重新生成。"],
@@ -396,6 +431,15 @@ def render_markdown(report: dict[str, Any]) -> str:
     lines += ["", f"当前显式 categories：{counts['fixture_cases']} case / {counts['fixture_turns']} turn。未并入 unified。",
               "case 关联仅采用该轮明确 expected.product_type / intent，或相关测试源码中已有的完整 case_id 字面量；不依靠猜测补全。",
               "节点迁移还需要逐节点黄金集 trace、边界错误与性能实测。输出预算、会话过期、录制回放、多指令和不确定写入恢复是横切能力，不能靠本主干节点表证明完成。", ""]
+    lines += ["", "## Dify 输入监控调用退役依据", "",
+              "节点 `1755075477466` 的旧 HTTP 副作用明确退役。Java 实现将输入落入 Dify 专属表并触发异步消费者，消费者固定按 Dify 身份读取运行和节点详情；LangGraph 的真实运行标识不能满足这个契约。", "",
+              "LangGraph 使用当前共享 MySQL checkpoint 保存状态，用 langgraph_message_log 保存消息和真实响应快照，用 langgraph_node_trace / Langfuse 记录实际执行。它们是审计职责替代，不是向旧接口提供伪造 ID。", "",
+              "| Java 权威依据 | 核对结论 |", "|---|---|"]
+    for item in report["audit_retirement"]["java_evidence"]:
+        link = f"[{item['java_relative_path']}]({item['path']}:{item['lines'][0]})" if item["verified"] else f"`{item['java_relative_path']}`（本次未核对或定位不唯一）"
+        lines.append(f"| {link} | {_escape(item['meaning'])} |")
+    lines += [""]
+    lines.extend(f"- {limit}" for limit in report["audit_retirement"]["limits"])
     lines += ["", "## 仍需确认的契约差异", ""]
     lines.extend(f"- {gap['detail']}" for gap in report["contract_gaps"])
     lines += ["", f"{counts['nodes_with_static_case_association']} / {counts['nodes']} 个旧节点找到可证明的静态 case 关联；其余不代表没有测试，但尚无逐节点黄金集 trace 证据。", ""]
