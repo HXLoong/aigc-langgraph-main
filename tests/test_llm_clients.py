@@ -77,15 +77,17 @@ class TestFactoryExtraBody:
 
     @pytest.mark.parametrize(
         "factory_name",
-        ["get_qwen_standard", "get_qwen_thinking", "get_qwen_structured", "get_qwen_complex"],
+        ["get_qwen_standard", "get_qwen_thinking", "get_qwen_structured", "get_qwen_complex", "make_qwen_thinking"],
     )
+    @pytest.mark.parametrize("model", ["deepseek-v4-pro", "external-deepseek-v4-pro"])
     def test_deepseek_model_gets_thinking_disabled(
-        self, monkeypatch: pytest.MonkeyPatch, factory_name: str
+        self, monkeypatch: pytest.MonkeyPatch, factory_name: str, model: str
     ) -> None:
         monkeypatch.setattr(
-            clients, "get_settings", lambda: _fake_settings("deepseek-v4-pro")
+            clients, "get_settings", lambda: _fake_settings(model)
         )
         llm = getattr(clients, factory_name)()
+        assert llm.model_name == model
         assert llm.extra_body == {"thinking": {"type": "disabled"}}
 
     def test_qwen_model_keeps_enable_thinking(
@@ -123,8 +125,12 @@ class TestStructuredOutputMethod:
         # with_structured_output 返回 RunnableSequence，first 是 RunnableBinding
         return runnable.first.kwargs
 
+    @pytest.mark.parametrize("model", [
+        "deepseek-v4-pro", "external-deepseek-v4-pro", "External-DeepSeek-V4-Pro",
+        "gateway/deepseek-v4-pro",
+    ])
     def test_deepseek_defaults_to_function_calling(
-        self, monkeypatch: pytest.MonkeyPatch
+        self, monkeypatch: pytest.MonkeyPatch, model: str
     ) -> None:
         from pydantic import BaseModel
 
@@ -132,15 +138,16 @@ class TestStructuredOutputMethod:
             x: int
 
         monkeypatch.setattr(
-            clients, "get_settings", lambda: _fake_settings("deepseek-v4-pro")
+            clients, "get_settings", lambda: _fake_settings(model)
         )
         llm = clients.get_qwen_standard()
         kwargs = self._bound_kwargs(llm.with_structured_output(Out))
         assert "tools" in kwargs
         assert "response_format" not in kwargs
 
+    @pytest.mark.parametrize("model", ["deepseek-v4-pro", "external-deepseek-v4-pro"])
     def test_deepseek_explicit_method_respected(
-        self, monkeypatch: pytest.MonkeyPatch
+        self, monkeypatch: pytest.MonkeyPatch, model: str
     ) -> None:
         from pydantic import BaseModel
 
@@ -148,16 +155,20 @@ class TestStructuredOutputMethod:
             x: int
 
         monkeypatch.setattr(
-            clients, "get_settings", lambda: _fake_settings("deepseek-v4-pro")
+            clients, "get_settings", lambda: _fake_settings(model)
         )
         llm = clients.get_qwen_standard()
         kwargs = self._bound_kwargs(
-            llm.with_structured_output(Out, method="function_calling")
+            llm.with_structured_output(Out, method="json_mode")
         )
-        assert "tools" in kwargs
+        assert kwargs["response_format"] == {"type": "json_object"}
+        assert "tools" not in kwargs
 
+    @pytest.mark.parametrize("model", [
+        "qwen3-30b-a3b", "external-qwen3-30b-a3b", "notdeepseek-v4-pro", "deepseeker-v1",
+    ])
     def test_qwen_keeps_langchain_default(
-        self, monkeypatch: pytest.MonkeyPatch
+        self, monkeypatch: pytest.MonkeyPatch, model: str
     ) -> None:
         from pydantic import BaseModel
 
@@ -165,7 +176,7 @@ class TestStructuredOutputMethod:
             x: int
 
         monkeypatch.setattr(
-            clients, "get_settings", lambda: _fake_settings("qwen3-30b-a3b")
+            clients, "get_settings", lambda: _fake_settings(model)
         )
         llm = clients.get_qwen_standard()
         kwargs = self._bound_kwargs(llm.with_structured_output(Out))
