@@ -23,18 +23,15 @@ docker compose -f infra/langfuse/docker-compose.yml --env-file infra/langfuse/.e
 # 启动应用
 uvicorn app.main:app --reload                # FastAPI（POST /v1/workflows/run，兼容 Dify）
 
-# 测试（1864 passed + 15 skipped，约 3 分钟）
-pytest tests/ -v                             # 全套
-pytest tests/test_smoke.py -v                # 仅 smoke
-pytest -k "not e2e"                          # 跳过 e2e
+# 轻量测试；当前 .env 开启持久化，单测通过命令级配置隔离数据库依赖
+USE_MYSQL_CHECKPOINTER=false REQUEST_IDEMPOTENCY=false ENABLE_LANGFUSE=false pytest tests/test_smoke.py -q
+# 完整 pytest / 388 条业务集 / 性能测试按用户统一验收安排执行，不逐批重复。
 
-# 评估（M3 主用入口：DeepSeek Judge + per-turn 富集 JSON 写到 Langfuse Cloud）
-python scripts/langfuse_eval.py --local tests/fixtures/categories --concurrency 4   # 全量（现役数据源，350+ 条）
-python scripts/langfuse_eval.py --local tests/fixtures/categories --ids case-025,case-026 --concurrency 2
-
-# Harness CLI（备用 / 本地快速 smoke，无 Judge）
-python -m harness doctor                     # 环境体检（/health /ready）
-python -m harness run --backend real|mock|dry-run   # 跑 fixture（默认 categories/ + unified_golden.jsonl；--backend 对照服务端 /health.backend_mode 把关；REJECTED 单独成桶不算 PASS）
+# 本地 HTTP 业务回归（仅在准备好授权测试账号和数据后，由主代理或用户执行）
+python scripts/local_eval.py --base-url http://127.0.0.1:8201 --data tests/fixtures/categories --case case-025 --concurrency 1
+# 全量验收时去掉 --case；显式 categories 当前388条，不并入 unified。
+# 本地真实联调：ENVIRONMENT=staging uvicorn app.main:app --host 127.0.0.1 --port 8201
+# scripts/langfuse_eval.py 保留为 Judge 辅助入口，不替代 HTTP/Java 写回与幂等验收。
 
 # 真后端探针（M3 联调）
 python scripts/probe_real_backend_e2e.py
