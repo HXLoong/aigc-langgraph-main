@@ -14,6 +14,7 @@ vendor 由 .env 的 QWEN_API_BASE / QWEN_API_KEY / QWEN_MODEL_* 切换
 """
 from __future__ import annotations
 
+import re
 from functools import lru_cache
 from typing import Any
 
@@ -23,7 +24,8 @@ from app.config import get_settings
 
 
 def _is_deepseek(model: str) -> bool:
-    return model.lower().startswith("deepseek")
+    """识别原生名和网关别名中的 DeepSeek 段，保留请求里的完整模型名。"""
+    return re.search(r"(?:^|[-_/:])deepseek(?:$|[-_/:])", model, re.IGNORECASE) is not None
 
 
 def _thinking_off_extra_body(model: str) -> dict[str, Any]:
