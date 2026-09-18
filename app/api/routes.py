@@ -491,6 +491,8 @@ def _state_to_outputs(state: AgentState) -> dict[str, Any]:
         "reply_text",
         "api_code",
         "api_result",
+        "session_status",
+        "instruction_results",
     ):
         v = state.get(key)
         if v is None:
