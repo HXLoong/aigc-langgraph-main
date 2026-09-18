@@ -206,26 +206,34 @@ def normalize_candidates(
                 continue
             raw = raw_field["value"]
             evidence = raw_field.get("evidence") or raw
+            source_record = records[prefix + source_field]
             unit = quantity_unit(raw)
             # Quantity@price has an explicit quantity role even without 股/手.
             at_price = source_field == "placeOrderQuantity" and re.search(
-                re.escape(raw) + r"\s*@\s*(?:[0-9]|mkt|market|市价)", sources.get("raw", ""), re.IGNORECASE,
+                re.escape(raw) + r"\s*@\s*(?:[0-9]|mkt|market|市价)",
+                sources.get(source_record.origin, ""), re.IGNORECASE,
             )
             if at_price:
                 unit = "SHARE" if re.search(r"[kKwW千万亿]", raw) else None
                 row["placeOrderQuantity"] = normalize_field("placeOrderQuantity", raw, evidence)
             if unit and row.get("placeOrderQuantityUnit") is None:
                 row["placeOrderQuantityUnit"] = unit
-                records[prefix + "placeOrderQuantityUnit"] = FieldRecord(value=unit, source="user", evidence=evidence)
+                records[prefix + "placeOrderQuantityUnit"] = source_record.model_copy(
+                    update={"value": unit, "source": "inferred"},
+                )
             if unit == "AMOUNT" and not at_price:
                 row["placeOrderNotional"] = normalize_field("placeOrderNotional", raw, evidence)
                 if source_field == "placeOrderQuantity":
                     row["placeOrderQuantity"] = None
-                records[prefix + "placeOrderNotional"] = FieldRecord(value=row["placeOrderNotional"], source="user", evidence=evidence)
+                records[prefix + "placeOrderNotional"] = source_record.model_copy(
+                    update={"value": row["placeOrderNotional"], "source": "inferred"},
+                )
                 denomination = currency(raw)
                 if denomination and row.get("placeOrderNotionalCurrency") is None:
                     row["placeOrderNotionalCurrency"] = denomination
-                    records[prefix + "placeOrderNotionalCurrency"] = FieldRecord(value=denomination, source="user", evidence=evidence)
+                    records[prefix + "placeOrderNotionalCurrency"] = source_record.model_copy(
+                        update={"value": denomination, "source": "inferred"},
+                    )
         for alias, value in row.items():
             path = prefix + alias
             if path in records:
