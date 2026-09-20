@@ -77,9 +77,9 @@ class TestBuildIdToSeq:
 
 
 class TestMatchOrderIndex:
-    def test_single_order_always_zero(self) -> None:
-        """single=True 时无论指针内容都落到 0。"""
-        assert match_order_index({"orderId": "X"}, [{"orderId": "H-1"}], {}, single=True) == 0
+    def test_single_order_rejects_foreign_identity(self) -> None:
+        """单订单也必须匹配显式订单号，不能越过用户指定范围。"""
+        assert match_order_index({"orderId": "X"}, [{"orderId": "H-1"}], {}, single=True) == -1
 
     def test_match_by_order_id(self) -> None:
         orders = [{"orderId": "H-1"}, {"orderId": "H-2"}]
@@ -107,9 +107,9 @@ class TestMatchOrderIndex:
         orders = [{"orderId": "H-1"}]
         assert match_order_index({}, orders, {}, single=False) == -1
 
-    def test_order_id_takes_priority_over_idx(self) -> None:
+    def test_conflicting_order_id_and_idx_rejected(self) -> None:
         orders = [{"orderId": "H-1"}, {"orderId": "H-2"}]
-        assert match_order_index({"orderId": "H-2", "idx": 0}, orders, {}, single=False) == 1
+        assert match_order_index({"orderId": "H-2", "idx": 0}, orders, {}, single=False) == -1
 
 
 # ============================================================
@@ -170,7 +170,7 @@ class TestWindcodeFromPick:
     def test_direct_ref_unmatched_returns_raw_ref(self) -> None:
         """匹配不到候选时原样返回用户输入（Dify 行为）。"""
         pick = {"orderId": "H-1", "directRef": " 999999.SH "}
-        assert windcode_from_pick(pick, _CANDIDATES) == "999999.SH"
+        assert windcode_from_pick(pick, _CANDIDATES) is None
 
     def test_no_seq_no_ref_returns_none(self) -> None:
         assert windcode_from_pick({"orderId": "H-1"}, _CANDIDATES) is None

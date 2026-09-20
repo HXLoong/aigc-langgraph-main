@@ -4,6 +4,7 @@ from __future__ import annotations
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
+from evidence_support import candidate_output
 from pydantic import ValidationError
 
 from app.graph.state import TickerCandidate
@@ -31,7 +32,7 @@ def _patch_llm(
     monkeypatch: pytest.MonkeyPatch, params: OptionInquiryRawParams
 ) -> AsyncMock:
     fake_llm = MagicMock()
-    fake_llm.ainvoke = AsyncMock(return_value=params)
+    fake_llm.ainvoke = AsyncMock(return_value=candidate_output(params))
     fake_base = MagicMock()
     fake_base.with_structured_output = MagicMock(return_value=fake_llm)
     monkeypatch.setattr(ei_module, "get_qwen_thinking", lambda: fake_base)
@@ -155,7 +156,7 @@ async def test_inquiry_binds_by_unique_identity_and_preserves_unresolved_values(
         for i, stock_code in enumerate(originals)
     ])
     _patch_llm(monkeypatch, params)
-    result = await option_extract_inquiry({"raw_text": "茅台 腾讯 1M/2M"})
+    result = await option_extract_inquiry({"raw_text": "、".join(x for x in originals if x) + " 1M/2M"})
     sent = ei_module.call_option_backend.call_args.kwargs["order_list"]
     expected = [
         "600519.SH", "600519.SH", "00700.HK", "00700.HK", "600519.SH", "600519.SH",
@@ -180,7 +181,7 @@ async def test_inquiry_binds_by_unique_identity_and_preserves_unresolved_values(
 async def test_single_candidate_does_not_fill_unrelated_order(monkeypatch, stock_code) -> None:
     _patch_resolver(monkeypatch, [TickerCandidate(windCode="600519.SH", from_goats=True)])
     _patch_llm(monkeypatch, OptionInquiryRawParams(orderList=[OptionInquiryRawItem(stockCode=stock_code)]))
-    await option_extract_inquiry({"raw_text": "询价"})
+    await option_extract_inquiry({"raw_text": f"{stock_code or ''}询价"})
     assert ei_module.call_option_backend.call_args.kwargs["order_list"][0]["stockCode"] == stock_code
 
 
@@ -211,7 +212,7 @@ class TestOptionExtractInquiryNode:
                 OptionInquiryRawItem(
                     stockCode="腾讯",
                     optionType="欧式看涨",
-                    tenor="1M",
+                    tenor="1个月",
                     strikePercentage="100%",
                 )
             ]
@@ -315,7 +316,8 @@ class TestOptionExtractInquiryNode:
         )
         _patch_llm(monkeypatch, params)
         result = await option_extract_inquiry({"raw_text": "腾讯询价"})
-        assert result["place_params"]["orderList"][0]["notionalAmount"] is None
+        assert "evidence" in result["error"].message
+        ei_module.call_option_backend.assert_not_awaited()
 
     async def test_safe_node_catches_llm_error(
         self, monkeypatch: pytest.MonkeyPatch
@@ -346,7 +348,7 @@ class TestOptionExtractInquiryNode:
         )])
         _patch_llm(monkeypatch, params)
         result = await option_extract_inquiry(
-            {"raw_text": "贵州茅台 欧式看涨 1个月 80% 100万"}
+            {"raw_text": "贵州茅台 欧式看涨 1个月 80% 100万 参与率90%"}
         )
         sent = ei_module.call_option_backend.call_args.kwargs["order_list"]
         assert sent[0]["tenor"] == "1M"
@@ -365,10 +367,10 @@ class TestOptionExtractInquiryNode:
         ])
         params = OptionInquiryRawParams(orderList=[OptionInquiryRawItem(
             stockCode="贵州茅台", optionType="欧式看涨", tenor="1年",
-            strikePercentage="平值",
+            strikePercentage="平直",
         )])
         _patch_llm(monkeypatch, params)
-        result = await option_extract_inquiry({"raw_text": "贵州茅台 平直看涨 1年"})
+        result = await option_extract_inquiry({"raw_text": "贵州茅台 欧式看涨 平直 1年"})
         stored = result["place_params"]["orderList"][0]
         assert stored["tenor"] == "12M"
         assert stored["strikePercentage"] == 100.0
@@ -384,7 +386,7 @@ class TestOptionExtractInquiryNode:
             stockCode="茅台", optionType="欧式看涨", tenor="1/3M", strikePercentage="100/103%",
         )])
         _patch_llm(monkeypatch, params)
-        result = await option_extract_inquiry({"raw_text": "茅台 1/3M 100/103%"})
+        result = await option_extract_inquiry({"raw_text": "茅台 欧式看涨 1/3M 100/103%"})
         orders = result["place_params"]["orderList"]
         assert [(o["tenor"], o["strikePercentage"]) for o in orders] == [
             ("1M", 100.0), ("1M", 103.0), ("3M", 100.0), ("3M", 103.0),

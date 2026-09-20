@@ -95,15 +95,15 @@ class MetricsCollector:
     """业务指标采集器。线程安全。
 
     内部维护几个独立的 counter 与 histogram，按 label 维度区分。
-    Counter 用 dict[tuple, int] 存（tuple = labels 排序后的值）。
+    Counter 用 dict[tuple[tuple[str, str], ...], int] 存（tuple = labels 排序后的值）。
     """
 
     def __init__(self) -> None:
         self._lock = threading.Lock()
         # counter[name][labels_tuple] = count
-        self._counters: dict[str, dict[tuple, int]] = defaultdict(lambda: defaultdict(int))
+        self._counters: dict[str, dict[tuple[tuple[str, str], ...], int]] = defaultdict(lambda: defaultdict(int))
         # histogram[name][labels_tuple] = _Histogram
-        self._histograms: dict[str, dict[tuple, _Histogram]] = defaultdict(dict)
+        self._histograms: dict[str, dict[tuple[tuple[str, str], ...], _Histogram]] = defaultdict(dict)
 
     # ---- emit API ----
 
@@ -164,9 +164,9 @@ class MetricsCollector:
                     label_str = self._key_to_labels(key)
                     lines.append(f"{name}{label_str} {count}")
             # Histograms
-            for name, items in self._histograms.items():
+            for name, histogram_items in self._histograms.items():
                 lines.append(f"# TYPE {name} histogram")
-                for key, hist in items.items():
+                for key, hist in histogram_items.items():
                     label_str_prefix = self._key_to_labels(key, trailing_comma=True)
                     snap = hist.snapshot()
                     for bucket, count in snap["buckets"].items():
@@ -182,13 +182,13 @@ class MetricsCollector:
     # ---- 内部工具 ----
 
     @staticmethod
-    def _labels_to_key(labels: dict[str, str] | None) -> tuple:
+    def _labels_to_key(labels: dict[str, str] | None) -> tuple[tuple[str, str], ...]:
         if not labels:
             return ()
         return tuple(sorted(labels.items()))
 
     @staticmethod
-    def _key_to_labels(key: tuple, trailing_comma: bool = False) -> str:
+    def _key_to_labels(key: tuple[tuple[str, str], ...], trailing_comma: bool = False) -> str:
         if not key:
             return "" if not trailing_comma else ""
         body = ",".join(f'{k}="{v}"' for k, v in key)
@@ -396,7 +396,7 @@ class Timer:
         self._start = perf_counter()
         return self
 
-    def __exit__(self, exc_type, exc_val, exc_tb) -> None:
+    def __exit__(self, exc_type: object, exc_val: object, exc_tb: object) -> None:
         self.elapsed_ms = int((perf_counter() - self._start) * 1000)
 
 

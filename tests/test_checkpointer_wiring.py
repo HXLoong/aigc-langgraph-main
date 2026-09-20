@@ -107,7 +107,7 @@ class _FakeSaver:
 
 def _pool_settings() -> SimpleNamespace:
     return SimpleNamespace(
-        checkpoint_mysql_uri="mysql://u:p@h:3307/db",
+        mysql_uri="mysql://u:p@h:3307/db",
         checkpoint_pool_minsize=2,
         checkpoint_pool_maxsize=7,
         checkpoint_pool_recycle_seconds=1234,
@@ -136,6 +136,8 @@ async def test_init_checkpointer_uses_connection_pool_with_recycle(
         kwargs = create_pool.call_args.kwargs
         assert kwargs["host"] == "h" and kwargs["port"] == 3307 and kwargs["db"] == "db"
         assert kwargs["autocommit"] is True
+        assert kwargs["charset"] == "utf8mb4"
+        assert kwargs["init_command"] == "SET NAMES utf8mb4 COLLATE utf8mb4_general_ci"
         assert kwargs["minsize"] == 2 and kwargs["maxsize"] == 7
         assert kwargs["pool_recycle"] == 1234
         assert saver.conn is pool, "saver 必须持有连接池而不是单条连接"
@@ -184,3 +186,24 @@ async def test_probe_checkpointer_without_pool_raises() -> None:
     factory._pool = None  # noqa: SLF001
     with pytest.raises(RuntimeError):
         await factory.probe_checkpointer()
+
+
+def test_factory_uses_namespaced_saver():
+    from app.checkpointer import factory
+    from app.checkpointer.mysql import LangGraphMySQLSaver
+    assert factory.AIOMySQLSaver is LangGraphMySQLSaver
+
+
+async def test_schema_validation_failure_closes_pool(monkeypatch):
+    from unittest.mock import AsyncMock
+
+    from app.checkpointer import factory
+    pool = _FakePool()
+    monkeypatch.setattr(factory, "get_settings", _pool_settings)
+    monkeypatch.setattr(factory.aiomysql, "create_pool", AsyncMock(return_value=pool))
+    monkeypatch.setattr(factory, "AIOMySQLSaver", _FakeSaver)
+    monkeypatch.setattr(_FakeSaver, "setup", AsyncMock(side_effect=RuntimeError("missing schema")))
+    with pytest.raises(RuntimeError, match="missing schema"):
+        await factory.init_checkpointer()
+    assert pool.closed and pool.wait_closed_called
+    assert not factory.has_checkpointer_pool()

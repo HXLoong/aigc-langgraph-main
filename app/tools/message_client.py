@@ -6,7 +6,7 @@
 from __future__ import annotations
 
 import asyncio
-from typing import Any, Literal, Protocol
+from typing import Any, Literal, Protocol, cast
 
 import httpx
 from pydantic import ConfigDict, Field
@@ -95,7 +95,7 @@ class MessageClientHttpx:
                             raise SetIntentError("set-intent: invalid_response")
                         if code != 0:
                             raise SetIntentError("set-intent: business_error")
-                        return payload_json
+                        return cast(dict[str, Any], payload_json)
                     reason = f"http_{response.status_code}"
                     if not response.is_server_error:
                         raise SetIntentError(f"set-intent: {reason}")

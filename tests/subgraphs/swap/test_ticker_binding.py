@@ -21,9 +21,6 @@ async def _extract_and_submit(
     candidates: list[Any],
     raw_text: str = "互换下单",
 ) -> tuple[dict[str, Any], SwapOrderOpenApiSaveReqVO]:
-    llm = MagicMock()
-    llm.with_structured_output.return_value.ainvoke = AsyncMock(return_value=params)
-    monkeypatch.setattr(po_module, "get_qwen_complex", lambda: llm)
     monkeypatch.setattr(
         po_module, "resolve_ticker_full",
         AsyncMock(return_value=TickerResolution(candidates, [])),
@@ -36,7 +33,10 @@ async def _extract_and_submit(
         "raw_text": raw_text, "conversation_id": "ticker-binding-replay",
         "message_id": "12345", "user_id": "test-user", "room_id": "test-room",
     }
-    extracted = await po_module.swap_place_order(state)
+    # Identity binding starts from canonical, already normalized extraction output.
+    state["sp_params"] = params.model_dump()
+    state.update(await po_module.swap_resolve(state))
+    extracted = {**state, **await po_module.swap_place_result(state)}
     assert not extracted.get("error"), extracted.get("error")
     state.update(extracted)
     submitted = await po_module.swap_place_order_submit(state)

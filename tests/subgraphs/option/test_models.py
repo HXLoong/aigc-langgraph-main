@@ -26,7 +26,7 @@ from app.subgraphs.option.models import OptionIntentOutput
     ],
 )
 def test_all_eight_intent_types_accepted(intent_type: str) -> None:
-    obj = OptionIntentOutput(type=intent_type)  # type: ignore[arg-type]
+    obj = OptionIntentOutput(type=intent_type, confidence=0.91, evidence=[{"text": "本轮意图模型测试输入", "origin": "raw"}])  # type: ignore[arg-type]
     assert obj.type == intent_type
 
 
@@ -37,7 +37,7 @@ def test_all_eight_intent_types_accepted(intent_type: str) -> None:
 def test_removed_modify_intents_rejected(removed_intent: str) -> None:
     """Dify DSL v2：期权无独立改单流程，这两个旧枚举值必须被拒绝。"""
     with pytest.raises(ValidationError):
-        OptionIntentOutput(type=removed_intent)  # type: ignore[arg-type]
+        OptionIntentOutput(type=removed_intent, confidence=0.91, evidence=[{"text": "本轮意图模型测试输入", "origin": "raw"}])  # type: ignore[arg-type]
 
 
 @pytest.mark.parametrize(
@@ -54,12 +54,12 @@ def test_removed_modify_intents_rejected(removed_intent: str) -> None:
 def test_close_intents_rejected_by_option_schema(close_intent: str) -> None:
     """ADR 0011 二次修订：close_order_* 归 close 子图，option schema 必须拒绝。"""
     with pytest.raises(ValidationError):
-        OptionIntentOutput(type=close_intent)  # type: ignore[arg-type]
+        OptionIntentOutput(type=close_intent, confidence=0.91, evidence=[{"text": "本轮意图模型测试输入", "origin": "raw"}])  # type: ignore[arg-type]
 
 
 def test_invalid_intent_type_rejected() -> None:
     with pytest.raises(ValidationError):
-        OptionIntentOutput(type="not_a_real_intent")  # type: ignore[arg-type]
+        OptionIntentOutput(type="not_a_real_intent", confidence=0.91, evidence=[{"text": "本轮意图模型测试输入", "origin": "raw"}])  # type: ignore[arg-type]
 
 
 def test_extra_fields_ignored() -> None:

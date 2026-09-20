@@ -18,7 +18,7 @@ python scripts/shadow_compare.py \\
 python scripts/shadow_compare.py \\
     --langgraph ... --dify ... --sample ... \\
     --mysql-host mysql.prod \\
-    --mysql-db otc_agent_business
+    --mysql-db otc_goats_ai_trading_dev
 
 # Dry-run（只打印不存盘）
 python scripts/shadow_compare.py ... --dry-run
@@ -248,26 +248,25 @@ def compare(
 # ============================================================
 async def write_to_mysql(pool: Any, result: CompareResult) -> None:
     """写一条对比记录到 shadow_compare 表。"""
-    async with pool.acquire() as conn:
-        async with conn.cursor() as cur:
-            await cur.execute(
-                """
-                INSERT INTO shadow_compare
+    async with pool.acquire() as conn, conn.cursor() as cur:
+        await cur.execute(
+            """
+                INSERT INTO langgraph_shadow_compare
                 (message_id, primary_path, primary_result, shadow_result,
                  is_equal, diff_detail, created_at)
                 VALUES (%s, %s, %s, %s, %s, %s, %s)
                 """,
-                (
-                    result.case_id,
-                    "langgraph",
-                    json.dumps(result.langgraph_resp, ensure_ascii=False),
-                    json.dumps(result.dify_resp, ensure_ascii=False),
-                    1 if result.is_equal else 0,
-                    json.dumps(result.diffs, ensure_ascii=False),
-                    datetime.now(),
-                ),
-            )
-            await conn.commit()
+            (
+                result.case_id,
+                "langgraph",
+                json.dumps(result.langgraph_resp, ensure_ascii=False),
+                json.dumps(result.dify_resp, ensure_ascii=False),
+                1 if result.is_equal else 0,
+                json.dumps(result.diffs, ensure_ascii=False),
+                datetime.now(),
+            ),
+        )
+        await conn.commit()
 
 
 def write_to_file(path: Path, results: list[CompareResult], summary: Summary) -> None:
@@ -382,7 +381,8 @@ async def main(args: argparse.Namespace) -> int:
             pool = await aiomysql.create_pool(
                 host=args.mysql_host, port=args.mysql_port,
                 user=args.mysql_user, password=args.mysql_password,
-                db=args.mysql_db, autocommit=False,
+                db=args.mysql_db, autocommit=False, charset="utf8mb4",
+                init_command="SET NAMES utf8mb4 COLLATE utf8mb4_general_ci",
             )
 
     summary = Summary(total=len(cases))
@@ -516,6 +516,6 @@ if __name__ == "__main__":
     parser.add_argument("--mysql-port", type=int, default=3306)
     parser.add_argument("--mysql-user", default="otc_agent")
     parser.add_argument("--mysql-password", default="password")
-    parser.add_argument("--mysql-db", default="otc_agent_business")
+    parser.add_argument("--mysql-db", default="otc_goats_ai_trading_dev")
 
     sys.exit(asyncio.run(main(parser.parse_args())))

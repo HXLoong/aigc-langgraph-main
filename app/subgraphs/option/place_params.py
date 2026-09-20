@@ -9,17 +9,20 @@
 - orderType 关键词优先级：TWAP > POV（含"跟量"）> 限价单 > 市价单，与出现顺序无关
 - hasFastExecutionIntent 仅当出现快速执行关键词时 true；普通跟量 / 跟量+比例 → false
 - 名义本金换算复用 `normalize.py`（与询价链路同口径：1kw = 1万）
-- **多单分段**（"第一个单 … 第二个单 …"批量补参，case-026）：段数 == 引用回执订单数时
-  按序号逐单映射各自的 A 类参数与对手字母；否则回退为整段参数套用全部订单（历史行为）
+- **多单分段**（"第一个单 … 第二个单 …"批量补参，case-026）：按显式序号选取引用订单，
+  重复或越界直接拒绝，绝不将错误的指定范围广播到全部订单。
 
 产出为 partial dict（snake_case），由节点经 Pydantic 容器校验后补齐为完整字段集。
+来源随解析分支一同产生；parse_place_params/parse_confirm_place_params 保留旧返回形态。
 """
 from __future__ import annotations
 
 import re
 from collections.abc import Sequence
+from dataclasses import dataclass
 from typing import Any
 
+from app.extraction.fields import FieldRecord
 from app.subgraphs.option.normalize import normalize_notional
 from app.subgraphs.option.order_id import extract_order_ids
 
@@ -80,31 +83,30 @@ _ORDINAL_VALUES = {
 }
 
 
+class OrderScopeError(ValueError):
+    """User-provided order scope cannot be resolved without guessing."""
+
+
 def _ordinal_number(token: str) -> int | None:
     return int(token) if token.isdigit() else _ORDINAL_VALUES.get(token)
 
 
-def _split_ordinal_segments(raw: str) -> list[str]:
-    """按"第N个单 / 第N笔"把 raw 切成逐单片段（按序号升序）。
-
-    批量补参场景（多询价下多单）："第一个单 …\n第二个单 …"，每段参数只作用于
-    对应序号订单。标记不足 2 个、序号不可解析或重复 → 返回 []（调用方回退旧行为）。
-    """
+def _split_ordinal_segments(raw: str) -> list[tuple[int, str]]:
+    """保留用户指定序号及顺序；重复和无效序号必须纠错。"""
     matches = list(_ORDINAL_SEGMENT_RE.finditer(raw))
-    if len(matches) < 2:
+    if not matches:
         return []
     numbered: list[tuple[int, str]] = []
     for index, match in enumerate(matches):
         number = _ordinal_number(match.group(1))
-        if number is None:
-            return []
+        if number is None or number < 1:
+            raise OrderScopeError("订单序号无效，请按引用中的序号补充参数。")
         start = match.end()
         end = matches[index + 1].start() if index + 1 < len(matches) else len(raw)
         numbered.append((number, raw[start:end].strip(" \t\r\n，,、；;。.")))
     if len({number for number, _ in numbered}) != len(numbered):
-        return []
-    numbered.sort(key=lambda item: item[0])
-    return [segment for _, segment in numbered]
+        raise OrderScopeError("订单序号重复，请按引用中的序号补充参数。")
+    return numbered
 
 # ============================================================
 # B 类：raw 优先 → 引用回执兜底
@@ -191,43 +193,81 @@ def _resolve_letter(letter: str, context: str) -> str | None:
     return None
 
 
-def _extract_short_name(raw: str, context: str) -> str | None:
+@dataclass(frozen=True)
+class SourceText:
+    text: str
+    origin: str
+
+
+@dataclass
+class ParsedPlaceParams:
+    orders: list[dict[str, Any]]
+    fields: list[dict[str, FieldRecord]]
+
+
+def _field(value: Any, source: SourceText) -> FieldRecord:
+    return FieldRecord(value=value, source="user", evidence=source.text, origin=source.origin, locked=True)
+
+
+def _short_name_source(raw: str, contexts: Sequence[SourceText]) -> tuple[str | None, SourceText, str | None]:
+    original = SourceText(raw, "raw")
+
+    def letter_value(letter: str) -> tuple[str | None, SourceText, str | None]:
+        for source in contexts:
+            name = _resolve_letter(letter, source.text)
+            if name:
+                return name, source, letter
+        return None, original, None
+
     for match in _OPP_LABEL_RE.finditer(raw):
         cleaned = _clean_short_name(match.group(1))
         if not cleaned:
             continue
         letter = _SELECT_VERB_RE.sub("", cleaned).strip()
         if len(letter) == 1 and letter.isalpha():
-            resolved = _resolve_letter(letter.upper(), context)
-            if resolved:
-                return resolved
-        return cleaned
+            selected = letter_value(letter.upper())
+            if selected[0]:
+                return selected
+        return cleaned, original, None
     own_match = _OPP_BARE_ACCOUNT_RE.search(raw)
     if own_match:
         cleaned = _clean_short_name(own_match.group(1))
         if cleaned:
-            return cleaned
+            return cleaned, original, None
     letters = {m.group(1) for m in _LETTER_RE.finditer(_MENTION_RE.sub(" ", raw))}
     if len(letters) == 1:
-        return _resolve_letter(letters.pop(), context)
-    return None
+        return letter_value(letters.pop())
+    return None, original, None
 
 
-def _a_class_params(text: str, context: str) -> dict[str, Any]:
-    """A 类字段（只读 text）：orderType / notional / limitPrice / POV / TWAP / shortName。"""
+def _extract_short_name(raw: str, context: str) -> str | None:
+    return _short_name_source(raw, [SourceText(context, "context")])[0]
+
+
+def _a_class_params(
+    text: str, context: str, *, lineage: dict[str, FieldRecord] | None = None,
+    contexts: Sequence[SourceText] | None = None,
+) -> dict[str, Any]:
+    """Capture the selected source at extraction time, before any normalized-value matching."""
     order_type = _extract_order_type(text)
-    twap_start, twap_end = (
-        _extract_twap_times(text) if order_type == "TWAP" else (None, None)
+    twap_start, twap_end = _extract_twap_times(text) if order_type == "TWAP" else (None, None)
+    short_name, name_source, letter = _short_name_source(
+        text, contexts if contexts is not None else [SourceText(context, "context")],
     )
-    return {
-        "notional_amount": normalize_notional(text),
-        "order_type": order_type,
+    params = {
+        "notional_amount": normalize_notional(text), "order_type": order_type,
         "limit_price": _extract_limit_price(text),
         "pov_ratio": _extract_pov_ratio(text) if order_type == "POV" else None,
-        "twap_start_time": twap_start,
-        "twap_end_time": twap_end,
-        "short_name": _extract_short_name(text, context),
+        "twap_start_time": twap_start, "twap_end_time": twap_end,
+        "short_name": short_name,
     }
+    if lineage is not None:
+        for key, value in params.items():
+            if value is not None:
+                lineage[key] = _field(value, name_source if key == "short_name" else SourceText(text, "raw"))
+        if letter:
+            lineage["short_name.selection"] = _field(letter, SourceText(text, "raw"))
+    return params
 
 
 def _labeled(text: str, label: str) -> str | None:
@@ -280,112 +320,118 @@ def _card_strike(text: str) -> float | None:
     return None
 
 
-def _reference_fields(raw: str, quote: str) -> dict[str, Any]:
-    """B 类字段：raw 优先，引用回执兜底。"""
-    ids = extract_order_ids(raw) or extract_order_ids(quote) or [None]
+def _reference_fields(
+    raw: str, quote: str, *, lineage: dict[str, FieldRecord] | None = None,
+) -> dict[str, Any]:
+    """B 类字段：记录实际分支选择，raw 优先、引用回执兜底。"""
+    raw_source, quote_source = SourceText(raw, "raw"), SourceText(quote, "quote")
 
-    stock_code = (
-        _raw_stock_code(raw)
-        or _labeled(raw, "标的代码")
-        or _labeled(raw, "标的名称")
-        or _labeled(quote, "标的代码")
-        or _labeled(quote, "标的名称")
-    )
+    def select(key: str, choices: list[tuple[Any, SourceText]]) -> Any:
+        for value, source in choices:
+            if value is not None:
+                if lineage is not None:
+                    lineage[key] = _field(value, source)
+                return value
+        return None
 
-    option_type = _token_option_type(raw)
-    if option_type is None:
-        card_type = _labeled(quote, "期权类型")
-        option_type = _token_option_type(card_type) if card_type else None
-        if option_type is None:
-            option_type = _token_option_type(quote)
+    raw_ids, quote_ids = extract_order_ids(raw), extract_order_ids(quote)
+    ids: list[str | None] = [*(raw_ids or quote_ids)] or [None]
+    if lineage is not None and ids != [None]:
+        lineage["order_id"] = _field(ids, raw_source if raw_ids else quote_source)
+    stock_code = select("stock_code", [
+        (_raw_stock_code(raw), raw_source), (_labeled(raw, "标的代码"), raw_source),
+        (_labeled(raw, "标的名称"), raw_source), (_labeled(quote, "标的代码"), quote_source),
+        (_labeled(quote, "标的名称"), quote_source),
+    ])
+    card_type = _labeled(quote, "期权类型")
+    option_type = select("option_type", [
+        (_token_option_type(raw), raw_source),
+        (_token_option_type(card_type) if card_type else None, quote_source),
+        (_token_option_type(quote), quote_source),
+    ])
+    value = _labeled(quote, "期限")
+    match = re.match(r"(\d+(?:\.\d+)?)\s*([MYWmyw])", value) if value else None
+    tenor = select("tenor", [(_raw_tenor(raw), raw_source),
+        (f"{match.group(1)}{match.group(2).upper()}" if match else None, quote_source)])
+    strike = select("strike_percentage", [(_raw_strike(raw), raw_source), (_card_strike(quote), quote_source)])
+    return {"order_ids": ids, "stock_code": stock_code, "option_type": option_type,
+            "tenor": tenor, "strike_percentage": strike}
 
-    tenor = _raw_tenor(raw)
-    if tenor is None:
-        value = _labeled(quote, "期限")
-        if value:
-            match = re.match(r"(\d+(?:\.\d+)?)\s*([MYWmyw])", value)
-            if match:
-                tenor = f"{match.group(1)}{match.group(2).upper()}"
 
-    strike = _raw_strike(raw)
-
-    return {
-        "order_ids": ids,
-        "stock_code": stock_code,
-        "option_type": option_type,
-        "tenor": tenor,
-        "strike_percentage": strike if strike is not None else _card_strike(quote),
-    }
+def history_sources(messages: Sequence[Any] | None) -> list[SourceText]:
+    sources = []
+    for index, message in enumerate(messages or []):
+        content: Any
+        ident: Any
+        if isinstance(message, str):
+            content, ident = message, None
+        elif isinstance(message, dict):
+            content, ident = message.get("content"), message.get("id")
+        else:
+            content, ident = getattr(message, "content", None), getattr(message, "id", None)
+        if isinstance(content, str) and content:
+            sources.append(SourceText(content, f"history:{ident}" if ident else f"history:index:{index}"))
+    return sources
 
 
 def history_texts(messages: Sequence[Any] | None) -> list[str]:
-    """历史消息 → 文本列表（供交易对手选项字母上下文回退）。"""
-    return [msg.content for msg in messages or [] if getattr(msg, "content", None)]
+    """兼容旧调用；需要来源的节点直接传历史消息对象。"""
+    return [source.text for source in history_sources(messages)]
+
+
+def parse_place_params_with_lineage(
+    raw: str | None, quote: str | None, history: Sequence[Any] = (), *, confirm: bool = False,
+) -> ParsedPlaceParams:
+    raw_text, quote_text = raw or "", quote or ""
+    contexts = [SourceText(quote_text, "quote"), *history_sources(history)]
+    reference_records: dict[str, FieldRecord] = {}
+    reference = _reference_fields(raw_text, quote_text, lineage=reference_records)
+    output = ParsedPlaceParams([], [])
+
+    def append(order_id: str | None, text: str, selector: str | None = None) -> None:
+        records = dict(reference_records)
+        if "order_id" in records:
+            records["order_id"] = records["order_id"].model_copy(update={"value": order_id})
+        if selector:
+            records["order_id.selection"] = _field(selector, SourceText(selector, "raw"))
+        params = _a_class_params(text, "", lineage=records, contexts=contexts)
+        item = {"order_id": order_id, "stock_code": reference["stock_code"],
+                "option_type": reference["option_type"], "tenor": reference["tenor"],
+                "strike_percentage": reference["strike_percentage"], **params}
+        if not confirm:
+            fast = _extract_fast_execution(text)
+            item["has_fast_execution_intent"] = fast
+            records["has_fast_execution_intent"] = _field(True, SourceText(text, "raw")) if fast else FieldRecord(
+                value=False, source="default", origin="rule:option.fast_execution", locked=True,
+            )
+        output.orders.append(item)
+        output.fields.append(records)
+
+    segments = _split_ordinal_segments(raw_text)
+    if segments:
+        ids = reference["order_ids"]
+        if any(number > len(ids) or ids[number - 1] is None for number, _ in segments):
+            raise OrderScopeError("订单序号超出引用范围，请重新引用订单消息。")
+        selectors = list(_ORDINAL_SEGMENT_RE.finditer(raw_text))
+        for (number, segment), selector in zip(segments, selectors, strict=True):
+            append(ids[number - 1], segment, selector[0])
+    else:
+        for order_id in reference["order_ids"]:
+            append(order_id, raw_text)
+    return output
 
 
 def parse_place_params(
-    raw: str | None,
-    quote: str | None,
-    history_texts: Sequence[str] = (),
+    raw: str | None, quote: str | None, history_texts: Sequence[str] = (),
 ) -> list[dict[str, Any]]:
-    """请求下单（place_order_from_quote）的订单条目（partial dict，含 hasFastExecutionIntent）。"""
-    raw_text = raw or ""
-    quote_text = quote or ""
-    context = "\n".join(text for text in (quote_text, *history_texts) if text)
-    reference = _reference_fields(raw_text, quote_text)
-
-    def _item(order_id: str | None, params: dict[str, Any], fast: bool) -> dict[str, Any]:
-        return {
-            "order_id": order_id,
-            "stock_code": reference["stock_code"],
-            "option_type": reference["option_type"],
-            "tenor": reference["tenor"],
-            "strike_percentage": reference["strike_percentage"],
-            "has_fast_execution_intent": fast,
-            **params,
-        }
-
-    # 多单分段：段与引用回执订单按下标一一对应时才生效（数量不符不猜测映射）
-    segments = _split_ordinal_segments(raw_text)
-    if len(segments) >= 2 and len(segments) == len(reference["order_ids"]):
-        return [
-            _item(
-                order_id,
-                _a_class_params(segment, context),
-                _extract_fast_execution(segment),
-            )
-            for segment, order_id in zip(segments, reference["order_ids"], strict=True)
-        ]
-
-    common = _a_class_params(raw_text, context)
-    fast_execution = _extract_fast_execution(raw_text)
-    return [_item(order_id, common, fast_execution) for order_id in reference["order_ids"]]
+    """兼容原公共函数；业务行为由来源感知的同一解析器实现。"""
+    return parse_place_params_with_lineage(raw, quote, history_texts).orders
 
 
 def parse_confirm_place_params(
-    raw: str | None,
-    quote: str | None,
-    history_texts: Sequence[str] = (),
+    raw: str | None, quote: str | None, history_texts: Sequence[str] = (),
 ) -> list[dict[str, Any]]:
-    """确认下单（confirm_order）的订单条目（A 类不含 hasFastExecutionIntent）。"""
-    raw_text = raw or ""
-    quote_text = quote or ""
-    context = "\n".join(text for text in (quote_text, *history_texts) if text)
-
-    common = _a_class_params(raw_text, context)
-    reference = _reference_fields(raw_text, quote_text)
-
-    return [
-        {
-            "order_id": order_id,
-            "stock_code": reference["stock_code"],
-            "option_type": reference["option_type"],
-            "tenor": reference["tenor"],
-            "strike_percentage": reference["strike_percentage"],
-            **common,
-        }
-        for order_id in reference["order_ids"]
-    ]
+    return parse_place_params_with_lineage(raw, quote, history_texts, confirm=True).orders
 
 
-__all__ = ["history_texts", "parse_confirm_place_params", "parse_place_params"]
+__all__ = ["history_texts", "parse_confirm_place_params", "parse_place_params", "parse_place_params_with_lineage"]

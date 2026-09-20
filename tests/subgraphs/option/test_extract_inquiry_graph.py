@@ -11,6 +11,7 @@ from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
+from evidence_support import candidate_output
 
 from app.graph.state import TickerCandidate
 from app.subgraphs.option import extract_inquiry as ei_module
@@ -30,7 +31,7 @@ STAGES = {
 
 def _patch_llm(monkeypatch: pytest.MonkeyPatch, params: Any) -> None:
     fake_llm = MagicMock()
-    fake_llm.ainvoke = AsyncMock(return_value=params)
+    fake_llm.ainvoke = AsyncMock(return_value=candidate_output(params))
     fake_base = MagicMock()
     fake_base.with_structured_output = MagicMock(return_value=fake_llm)
     monkeypatch.setattr(ei_module, "get_qwen_thinking", lambda: fake_base)

@@ -65,7 +65,7 @@ class TestConfirmOrder:
         assert extract_for_confirm_order(raw="确认下单", quote=quote) == [Q1, Q2]
 
     def test_raw_fallback(self):
-        assert extract_for_confirm_order(raw=f"确认下单 {R1}", quote="") == [R1]
+        assert extract_for_confirm_order(raw=f"确认下单 {R1}", quote="") == [None]
 
     def test_none(self):
         assert extract_for_confirm_order(raw="确认下单", quote="") == [None]

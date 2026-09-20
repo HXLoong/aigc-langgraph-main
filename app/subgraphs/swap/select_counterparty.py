@@ -25,6 +25,7 @@ from app.graph.state import AgentState, TraceEntry
 from app.llm.clients import get_qwen_complex
 from app.prompts.spec import PromptSpec, register
 from app.subgraphs.swap.models import SwapSelectCounterpartyOutput
+from app.subgraphs.swap.selection_rules import counterparty_choice, validate_picks
 
 
 def _format_shortname_list(counterparties: list[dict[str, Any]] | None) -> str:
@@ -46,7 +47,8 @@ def _build_user_message(state: AgentState) -> str:
     return (
         f"raw_content：{raw_content}\n"
         f"shortname_list：{shortname_list}\n"
-        f"quote_content：{quote_content}"
+        f"quote_content：{quote_content}\n"
+        f"orders：{state.get('place_params') or {}}"
     )
 
 
@@ -54,7 +56,7 @@ SPEC = register(PromptSpec(
     category="swap",
     name="select_counterparty",
     output_model=SwapSelectCounterpartyOutput,
-    inputs=("raw_text", "swap_counterparties", "quote_content"),
+    inputs=("raw_text", "swap_counterparties", "quote_content", "place_params"),
     user_builder=_build_user_message,
 ))
 
@@ -66,19 +68,27 @@ async def swap_select_counterparty(state: AgentState) -> dict[str, Any]:
     只产出 LLM 指针到 state['swap_counterparty_picks']；覆盖草稿的确定性查表在
     swap_apply_picks 完成。
     """
-    llm = get_qwen_complex().with_structured_output(SwapSelectCounterpartyOutput)
-    messages, _prompt_name = SPEC.build_messages(state)
-    result: Any = await llm.ainvoke(messages)
+    result = counterparty_choice(state)
+    method = "code" if result is not None else "llm"
+    if result is None:
+        llm = get_qwen_complex().with_structured_output(SwapSelectCounterpartyOutput)
+        messages, _prompt_name = SPEC.build_messages(state)
+        result = SwapSelectCounterpartyOutput.model_validate(await llm.ainvoke(messages))
 
+    if result.picks and not result.has_signal:
+        raise ValueError("无对手选择信号却返回选择指针")
+    if result.has_signal and not result.picks:
+        raise ValueError("对手选择不明确，请指定订单和候选")
+    picks = validate_picks(state, [pick.model_dump() for pick in result.picks], "counterparty")
     return {
         "swap_counterparty_picks": {
             "hasSignal": result.has_signal,
-            "picks": [p.model_dump() for p in result.picks],
+            "picks": picks,
         },
         "trace": [
             TraceEntry(
                 node="swap_select_counterparty",
-                decision=f"hasSignal={result.has_signal},picks={len(result.picks)}",
+                decision=f"{method},hasSignal={result.has_signal},picks={len(result.picks)}",
                 llm_output=result.model_dump(),
             )
         ],

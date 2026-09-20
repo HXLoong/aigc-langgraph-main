@@ -64,7 +64,7 @@ curl -sv --max-time 5 "$TRUE_GOATS/api/internal/agent/listinstrument" 2>&1 | hea
 
 **其他保持不变**（不需要改）：
 - `QWEN_API_BASE` / `QWEN_API_KEY` — Qwen 是公网 LLM 服务
-- `CHECKPOINT_MYSQL_URI` / `BUSINESS_MYSQL_URI` — 仍指本地 MySQL（除非客户现场也接真 MySQL）
+- `MYSQL_URI` — 仍指本地 MySQL（除非客户现场也接真 MySQL）
 - `LANGFUSE_*` — 仍指本地 self-hosted（除非客户也有自己 LangFuse）
 
 ---

@@ -10,6 +10,7 @@ from __future__ import annotations
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
+from evidence_support import swap_candidate_output
 
 from app.subgraphs.swap import place_order as place_order_mod
 from app.subgraphs.swap.models import SwapOrderItem, SwapPlaceOrderParams
@@ -22,7 +23,7 @@ def _patch_place_order_llm(monkeypatch: pytest.MonkeyPatch) -> None:
     fake_params = SwapPlaceOrderParams(orderList=[SwapOrderItem(placeOrderWindCode="XYZ123")])
     fake_llm = MagicMock()
     fake_llm.with_structured_output = MagicMock(
-        return_value=MagicMock(ainvoke=AsyncMock(return_value=fake_params))
+        return_value=MagicMock(ainvoke=AsyncMock(return_value=swap_candidate_output(fake_params)))
     )
     monkeypatch.setattr(place_order_mod, "get_qwen_complex", lambda: fake_llm)
 
@@ -40,7 +41,7 @@ async def test_zero_match_resolver_returns_empty_tickers(
     result = await place_order_mod.swap_place_order({"raw_text": "XYZ123这个标的"})
 
     assert result.get("tickers") == []
-    assert "ticker_hitl_candidates" not in result
+    assert result.get("ticker_hitl_candidates") is None
     assert result.get("error") is None
 
 

@@ -15,7 +15,7 @@
 
 `id / message_id / thread_id（= conversation_id）/ node_name / step_index / input_preview / output_preview / status / error / duration_ms / created_at`
 
-⚠️ 当前仓库没有原文引用的 `sql/schema.sql`，也找不到 `CREATE TABLE node_trace` 的迁移资产；上述字段是代码期待的契约，不代表部署库一定已初始化。实测未建表时 `persist` 记录 warning 并按“不阻塞业务”策略继续，因此 SQL 统计和 SQL ↔ LangFuse 关联能力在补齐 schema 前不可用。
+⚠️ 当前仓库没有原文引用的 `sql/init.sql`，也找不到 `CREATE TABLE node_trace` 的迁移资产；上述字段是代码期待的契约，不代表部署库一定已初始化。实测未建表时 `persist` 记录 warning 并按“不阻塞业务”策略继续，因此 SQL 统计和 SQL ↔ LangFuse 关联能力在补齐 schema 前不可用。
 
 与原设计的差异：
 

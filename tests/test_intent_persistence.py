@@ -15,6 +15,7 @@ from app.config import get_settings
 from app.graph.main import build_main_graph
 from app.nodes.intent_route import UnknownIntentOutput
 from app.tools.message_client import MessageClientHttpx
+from tests.intent_fixtures import intent_reply, mock_ainvoke
 
 
 @pytest.fixture()
@@ -28,9 +29,7 @@ def isolated_workflow(monkeypatch: pytest.MonkeyPatch) -> AsyncMock:
     monkeypatch.setattr(app_main, "get_settings", lambda: settings)
     monkeypatch.setenv("ENABLE_LANGFUSE", "false")
     llm = MagicMock()
-    llm.with_structured_output.return_value.ainvoke = AsyncMock(
-        return_value=UnknownIntentOutput(label="unknown")
-    )
+    llm.with_structured_output.return_value.ainvoke = mock_ainvoke(intent_reply(UnknownIntentOutput, label="unknown"))
     monkeypatch.setattr("app.nodes.intent_route.get_qwen_thinking", lambda: llm)
     write_trace = AsyncMock()
     monkeypatch.setattr("app.nodes.persist._write_to_mysql", write_trace)
@@ -94,7 +93,8 @@ def test_first_turn_persists_generated_conversation_id_and_followup_reuses_it(
         assert saved_requests[1]["conversationId"] == generated_id
 
     persisted_trace = isolated_workflow.call_args.args[0]
-    assert persisted_trace[-1].node == "persist_intent"
+    nodes = [entry.node for entry in persisted_trace]
+    assert nodes.index("persist_intent") < nodes.index("render") < nodes.index("record_history")
 
 
 @pytest.mark.parametrize("status_code,code", [(503, 0), (401, 0), (422, 0), (200, 123)])
@@ -115,7 +115,10 @@ def test_set_intent_failure_returns_502_and_persists_failure_trace(
         })
 
     assert response.status_code == 502, response.text
-    assert response.json() == {"detail": "消息会话与意图持久化失败，请稍后重试。"}
+    assert response.json() == {
+        "code": "internal_server_error", "status": 502,
+        "message": "消息会话与意图持久化失败，请稍后重试。",
+    }
     trace = isolated_workflow.call_args.args[0]
     assert any(entry.node == "persist_intent" and entry.decision == "error" for entry in trace)
 
@@ -135,18 +138,18 @@ def test_business_branch_persists_latest_intent_after_operate(
 
     llm_outputs = {
         "option": {
-            "app.subgraphs.option.intent.get_qwen_structured": OptionIntentOutput(type="query_order_status"),
+            "app.subgraphs.option.intent.get_qwen_structured": intent_reply(OptionIntentOutput, type="query_order_status"),
         },
         "option_close": {
-            "app.subgraphs.close.intent.get_qwen_thinking": CloseIntentOutput(type="close_order_order_query"),
+            "app.subgraphs.close.intent.get_qwen_thinking": intent_reply(CloseIntentOutput, type="close_order_order_query"),
         },
         "swap": {
-            "app.subgraphs.swap.intent.get_qwen_thinking": SwapIntentOutput(type="query_order_status"),
+            "app.subgraphs.swap.intent.get_qwen_thinking": intent_reply(SwapIntentOutput, type="query_order_status"),
         },
     }
     for factory, value in llm_outputs[product_type].items():
         llm = MagicMock()
-        llm.with_structured_output.return_value.ainvoke = AsyncMock(return_value=value)
+        llm.with_structured_output.return_value.ainvoke = mock_ainvoke(value)
         monkeypatch.setattr(factory, lambda llm=llm: llm)
 
     events: list[str] = []

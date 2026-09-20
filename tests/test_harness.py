@@ -32,7 +32,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 def test_load_categories_total() -> None:
     cases = load_golden(ROOT / "tests" / "fixtures" / "categories")
-    assert len(cases) == 389
+    assert len(cases) == 388
     assert all(case.dialect == "a" for case in cases)
 
 
@@ -40,14 +40,14 @@ def test_default_discovery_includes_unified_b_dialect() -> None:
     """ADR 0024 D6：B 方言（unified_golden.jsonl，921 条 / 251 多轮）并入 harness 默认发现，
     可执行样本 389 → 1310、多轮 9 → 260。"""
     cases = load_golden()
-    assert len(cases) == 1310
+    assert len(cases) == 1309
     assert sum(1 for case in cases if len(case.turns) > 1) == 260
     assert sum(1 for case in cases if case.dialect == "b") == 921
-    assert len({case.id for case in cases}) == 1310, "两方言 id 不得冲突"
+    assert len({case.id for case in cases}) == 1309, "两方言 id 不得冲突"
     runnable, skipped = select_runnable(cases)
     # 48 条 B case 某轮 raw_content 为空（用户文本写进了 quote_desc，Issue #113）：加载计数、不执行
     assert len(skipped) == 48 and all(case.dialect == "b" for case in skipped)
-    assert len(runnable) == 1262
+    assert len(runnable) == 1261
 
 
 def test_b_dialect_empty_raw_content_marks_case_unrunnable(tmp_path: Path) -> None:

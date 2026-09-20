@@ -4,15 +4,16 @@ from __future__ import annotations
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
-from pydantic import ValidationError
+from pydantic import BaseModel, ValidationError
 
 from app.subgraphs.close import holding_query as hq_module
 from app.subgraphs.close.holding_query import close_holding_query
 from app.subgraphs.close.models import HoldingQueryParams
+from tests.subgraphs.close.candidate_fixtures import holding_candidates
 
 
 def _patch_llm(
-    monkeypatch: pytest.MonkeyPatch, params: HoldingQueryParams
+    monkeypatch: pytest.MonkeyPatch, params: BaseModel
 ) -> AsyncMock:
     fake_llm_with_schema = MagicMock()
     fake_llm_with_schema.ainvoke = AsyncMock(return_value=params)
@@ -87,7 +88,7 @@ class TestCloseHoldingQueryNode:
     async def test_simple_query_no_filters(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        params = HoldingQueryParams(closeable_only=False)
+        params = holding_candidates()
         _patch_llm(monkeypatch, params)
         result = await close_holding_query({"raw_text": "我有哪些期权持仓"})
         assert result["close_params"]["closeable_only"] is False
@@ -96,10 +97,10 @@ class TestCloseHoldingQueryNode:
     async def test_close_intent_with_ticker(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        params = HoldingQueryParams(
-            closeable_only=True,
+        params = holding_candidates(
+            closeable_only="平掉",
             underlyingInsNameList=["贵州茅台"],
-            contractTypeList=["AUTOCALL"],
+            contractTypeList=["雪球"],
         )
         _patch_llm(monkeypatch, params)
         result = await close_holding_query(
@@ -112,13 +113,13 @@ class TestCloseHoldingQueryNode:
     async def test_writes_trace_with_summary(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        params = HoldingQueryParams(
-            closeable_only=True,
+        params = holding_candidates(
+            closeable_only="平掉",
             internalTradeIdList=["OPTG-SZZSCF20250030"],
             underlyingInsNameList=["贵州茅台", "腾讯"],
         )
         _patch_llm(monkeypatch, params)
-        result = await close_holding_query({"raw_text": "..."})
+        result = await close_holding_query({"raw_text": "平掉OPTG-SZZSCF20250030 贵州茅台 腾讯"})
         trace = result.get("trace", [])
         assert len(trace) == 1
         decision = trace[0].decision
@@ -160,7 +161,7 @@ class TestCounterpartyListInjection:
     ) -> None:
         """system 里的 {{counterparty_list}} 曾原样发给 LLM（未注入），
         keyCtptyIdList 的模糊匹配规则整段悬空，任何"对手XX"都会输出哨兵 99999999。"""
-        ainvoke = _patch_llm(monkeypatch, HoldingQueryParams(closeable_only=False))
+        ainvoke = _patch_llm(monkeypatch, holding_candidates())
         await close_holding_query(
             {"raw_text": "查对手阿凡提的持仓", "option_counterparties": self._CPS}
         )
@@ -172,7 +173,7 @@ class TestCounterpartyListInjection:
     async def test_empty_counterparties_renders_empty_list(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        ainvoke = _patch_llm(monkeypatch, HoldingQueryParams(closeable_only=False))
+        ainvoke = _patch_llm(monkeypatch, holding_candidates())
         await close_holding_query({"raw_text": "我有哪些期权持仓"})
         system_content = ainvoke.call_args.args[0][0][1]
         assert "{{#" not in system_content

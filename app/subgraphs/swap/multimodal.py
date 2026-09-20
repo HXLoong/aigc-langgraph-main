@@ -1,194 +1,196 @@
-"""swap 图片/Excel 多模态下单链(DSL v2 互换-图片 / 互换-Excel 分支)。
-
-对照源(dify/yaml/主干工作流.yml):
-- 互换-图片:互换-图片识别[VL llm] → 图片-互换-请求下单参数解析[llm]
-- 互换-Excel:解析Excel[code] → Excel-互换-请求下单参数解析[llm]
-两链输出与文本链共同汇入 模型数据聚合 → 前置清洗 → 互换开仓(submit 节点复用)。
-
-提示词:swap/image_ocr.md(VL 识别)、swap/image_extract.md、swap/excel_extract.md。
-Excel 解析移植自「解析Excel」code 节点:下载 → openpyxl → "产品"列改名"交易对手"。
-"""
+"""图片/Excel 转写证据 → 原文候选 → Code 归一化 → GOATS 绑定；写入仍由 submit 完成。"""
 from __future__ import annotations
 
 import asyncio
 import io
 import json
-from typing import Any
+from typing import Any, cast
 
 import httpx
 import openpyxl
+from pydantic import BaseModel
 
 from app.config import get_settings
+from app.extraction.candidates import evidence_sources, verify_candidates
+from app.graph.business_params import validated_place_params
 from app.graph.retry import io_node
 from app.graph.state import AgentState, TraceEntry
 from app.llm.clients import get_qwen_structured, get_qwen_vl
-from app.prompts import blocks
 from app.prompts.spec import PromptSpec, register
 from app.subgraphs.swap.models import SwapPlaceOrderParams
-from app.subgraphs.swap.place_order import _expected_action
+from app.subgraphs.swap.multimodal_evidence import (
+    ImageTranscription,
+    excel_evidence_rows,
+    lock_attachment_bindings,
+    normalize_attachment_candidates,
+)
+from app.subgraphs.swap.place_order import (
+    CANDIDATE_MODEL,
+    SwapPlaceState,
+    _expected_action,
+    swap_resolve,
+)
 
 
 def parse_excel_rows(content: bytes) -> list[dict[str, Any]]:
-    """openpyxl 解析首个 sheet;"产品"列名改为"交易对手"(对照 DSL code 节点)。"""
+    """保留旧工具接口：解析首个 sheet，产品列改名交易对手。"""
     workbook = openpyxl.load_workbook(io.BytesIO(content), read_only=True)
-    sheet = workbook.active
-    rows_iter = sheet.iter_rows(values_only=True)
     try:
-        headers = [str(h) if h is not None else "" for h in next(rows_iter)]
-    except StopIteration:
-        return []
-    headers = ["交易对手" if h == "产品" else h for h in headers]
-    result: list[dict[str, Any]] = []
-    for row in rows_iter:
-        if all(v is None for v in row):
-            continue
-        result.append(dict(zip(headers, row, strict=False)))
-    return result
+        sheet = workbook.active
+        if sheet is None:
+            return []
+        rows_iter = sheet.iter_rows(values_only=True)
+        headers = [str(h) if h is not None else "" for h in next(rows_iter, ())]
+        headers = ["交易对手" if h == "产品" else h for h in headers]
+        return [dict(zip(headers, row, strict=False))
+                for row in rows_iter if any(value is not None for value in row)]
+    finally:
+        workbook.close()
 
 
 async def _fetch_bytes(url: str) -> bytes:
-    """下载远端文件(测试 patch 此名)。"""
-    async with httpx.AsyncClient(timeout=get_settings().multimodal_fetch_timeout_seconds) as client:
+    seconds = get_settings().multimodal_fetch_timeout_seconds
+    async with asyncio.timeout(seconds), httpx.AsyncClient(timeout=seconds) as client:
         resp = await client.get(url)
         resp.raise_for_status()
         return resp.content
 
 
 def _image_urls(files: list[dict[str, Any]]) -> list[str]:
-    urls = []
-    for f in files:
-        u = f.get("remote_url") or f.get("url") or f.get("base64")
-        if u:
-            urls.append(u)
-    return urls
+    return [str(url) for file in files
+            if (url := file.get("remote_url") or file.get("url") or file.get("base64"))]
 
 
-def _extract_user(title: str, runtime_text: str, raw_text: str) -> str:
-    """图片 / Excel 提取链共用的 user 消息模板（运行时块 + raw_content）。"""
-    return f"{title}:\n{runtime_text}\n\nraw_content: {raw_text}"
-
-
-def _image_extract_user_from_state(state: AgentState) -> str:
-    """注册契约的 state-only 重建（OCR 文本为运行时数据，节点注入；此处为空形态）。"""
-    return _extract_user("图片识别内容", "", state.get("raw_text", "") or "")
-
-
-def _excel_extract_user_from_state(state: AgentState) -> str:
-    """注册契约的 state-only 重建（Excel 行数据为运行时数据，节点注入；此处为空形态）。"""
-    return _extract_user("Excel 数据", "", state.get("raw_text", "") or "")
-
-
-def _ocr_user_from_state(state: AgentState) -> str:
-    """VL 链无文本 user 段（消息为 system 文本 + image_url 列表，由节点组装）。"""
-    return ""
+def _user_from_state(state: AgentState) -> str:
+    return json.dumps({"sources": evidence_sources(state)}, ensure_ascii=False)
 
 
 IMAGE_OCR_SPEC = register(PromptSpec(
-    category="swap",
-    name="image_ocr",
-    output_model=None,
-    inputs=("conversation_id", "swap_counterparties"),
-    user_builder=_ocr_user_from_state,
-    injects={
-        # 后端预查的互换对手列表，JSON 渲染进 system（评估 C-27）
-        "{{counterparty_list}}": lambda s: blocks.json_list(s.get("swap_counterparties")),
-    },
-    gray=True,
+    category="swap", name="image_ocr", output_model=ImageTranscription,
+    inputs=("input_files", "conversation_id"), user_builder=lambda state: "", gray=True,
 ))
-
 IMAGE_EXTRACT_SPEC = register(PromptSpec(
-    category="swap",
-    name="image_extract",
-    output_model=SwapPlaceOrderParams,
-    inputs=("conversation_id", "raw_text"),
-    user_builder=_image_extract_user_from_state,
-    gray=True,
+    category="swap", name="image_extract", output_model=CANDIDATE_MODEL,
+    inputs=("conversation_id", "raw_text", "quote_content", "history_messages"),
+    user_builder=_user_from_state, gray=True,
 ))
-
 EXCEL_EXTRACT_SPEC = register(PromptSpec(
-    category="swap",
-    name="excel_extract",
-    output_model=SwapPlaceOrderParams,
-    inputs=("conversation_id", "raw_text"),
-    user_builder=_excel_extract_user_from_state,
-    gray=True,
+    category="swap", name="excel_extract", output_model=CANDIDATE_MODEL,
+    inputs=("conversation_id", "raw_text", "quote_content", "history_messages"),
+    user_builder=_user_from_state, gray=True,
 ))
 
 
-async def _extract_params(
-    spec: PromptSpec, user_text: str, state: AgentState
-) -> tuple[SwapPlaceOrderParams, str]:
-    """image_extract / excel_extract 共用的参数提取调用（spec 负责灰度解析与 system 渲染）。
-
-    返回 (参数, 实际加载的 prompt name)——后者写进 trace（ADR 0003 灰度硬前置）。
-    """
+async def _extract_candidates(
+    spec: PromptSpec, state: AgentState, attachments: dict[str, str],
+) -> tuple[BaseModel, str]:
     system, prompt_name = spec.render_system(state)
-    llm = get_qwen_structured().with_structured_output(SwapPlaceOrderParams)
-    result: Any = await llm.ainvoke(
-        [
-            ("system", system),
-            ("user", user_text),
-        ]
-    )
+    sources = evidence_sources(state, attachments)
+    llm = get_qwen_structured().with_structured_output(CANDIDATE_MODEL)
+    result = CANDIDATE_MODEL.model_validate(await llm.ainvoke([
+        ("system", system),
+        ("user", json.dumps({"sources": sources}, ensure_ascii=False)),
+    ]))
+    verify_candidates(result, sources)
+    # Every row must be grounded in this attachment, not a duplicated instruction from raw/history.
+    for row in result.model_dump(by_alias=True).get("orderList") or []:
+        if not any(cell and cell.get("origin") == "attachment" for cell in row.values()):
+            raise ValueError("附件订单缺少对应附件证据")
     return result, prompt_name
 
 
-def _params_update(
-    params: SwapPlaceOrderParams, node: str, decision: str, prompt_name: str | None = None
+async def _params_update(
+    orders: list[dict[str, Any]], attachments: dict[str, str], state: AgentState,
+    node: str, decision: str, prompt_names: list[str], *, ocr_prompt_name: str | None = None,
 ) -> dict[str, Any]:
-    action = _expected_action(params)
+    if not orders:
+        raise ValueError("附件中未识别到有效订单，请提供清晰的交易信息")
+    candidates = CANDIDATE_MODEL.model_validate({"orderList": orders})
+    params, records = normalize_attachment_candidates(candidates, evidence_sources(state, attachments))
+    resolved = await swap_resolve(cast(SwapPlaceState, {
+        **state, "sp_params": params.model_dump(), "field_records": records,
+    }))
+    if resolved.get("error"):
+        return {"error": resolved["error"], "trace": resolved.get("trace") or []}
+    records.update(resolved.get("field_records") or {})
+    params, records = lock_attachment_bindings(
+        SwapPlaceOrderParams.model_validate(resolved["sp_params"]),
+        resolved["sp_bindings"], records, state.get("swap_counterparties") or [],
+    )
     return {
-        "expected_action": action,
-        "place_params": {"orderList": [item.model_dump() for item in params.order_list]},
+        "expected_action": _expected_action(params),
+        "place_params": validated_place_params(orderList=[item.model_dump() for item in params.order_list]),
+        "field_records": records,
+        "tickers": resolved["tickers"],
+        "ticker_hitl_candidates": resolved.get("ticker_hitl_candidates"),
         "intent": "place_order_request",
-        "trace": [
-            TraceEntry(node=node, decision=decision, llm_output={"prompt_name": prompt_name})
-        ],
+        "trace": [TraceEntry(node=node, decision=decision, llm_output={
+            "prompt_name": prompt_names[0], "prompt_names": list(dict.fromkeys(prompt_names)),
+            "ocr_prompt_name": ocr_prompt_name,
+            "attachment_references": list(attachments),
+            "ticker_bindings": resolved["sp_bindings"],
+        })],
     }
 
 
 @io_node
 async def swap_image_order(state: AgentState) -> dict[str, Any]:
-    """互换-图片链:VL OCR → 参数提取 → place_params(提交由 submit 节点完成)。"""
-    files = [f for f in (state.get("input_files") or []) if str(f.get("type", "")).lower() == "image"]
-    urls = _image_urls(files)
-    if not urls:
+    """每张图片独立转写，来源引用不可跨图漂移；OCR 不负责代码/账户映射。"""
+    files = [(index, file) for index, file in enumerate(state.get("input_files") or [])
+             if str(file.get("type", "")).lower() == "image"]
+    if not files:
         raise ValueError("互换-图片链:无可用图片文件")
-
-    # system 里的 {{counterparty_list}} 由 SPEC.injects 渲染成对手列表 JSON（ADR 0023，评估 C-27）
-    ocr_system, _ocr_prompt_name = IMAGE_OCR_SPEC.render_system(state)
-    vl = get_qwen_vl()
-    content: list[dict[str, Any]] = [{"type": "text", "text": ocr_system}]
-    for u in urls:
-        content.append({"type": "image_url", "image_url": {"url": u}})
-    ocr_result = await vl.ainvoke([{"role": "user", "content": content}])
-    ocr_text = getattr(ocr_result, "content", "") or ""
-
-    user_text = _extract_user("图片识别内容", ocr_text, state.get("raw_text", "") or "")
-    params, prompt_name = await _extract_params(IMAGE_EXTRACT_SPEC, user_text, state)
-    return _params_update(params, "swap_image_order", f"images={len(urls)}", prompt_name)
+    ocr_system, ocr_prompt_name = IMAGE_OCR_SPEC.render_system(state)
+    vl = get_qwen_vl().with_structured_output(ImageTranscription)
+    attachments, orders, prompt_names = {}, [], []
+    for index, file in files:
+        urls = _image_urls([file])
+        if not urls:
+            raise ValueError("互换-图片链:图片缺少可用地址")
+        transcription = ImageTranscription.model_validate(await vl.ainvoke([{
+            "role": "user", "content": [
+                {"type": "text", "text": ocr_system},
+                {"type": "image_url", "image_url": {"url": urls[0]}},
+            ],
+        }]))
+        reference = f"file:{index}:image"
+        source = {reference: transcription.text}
+        extracted, prompt_name = await _extract_candidates(IMAGE_EXTRACT_SPEC, state, source)
+        attachments.update(source)
+        orders.extend(extracted.model_dump(by_alias=True)["orderList"])
+        prompt_names.append(prompt_name)
+    return await _params_update(
+        orders, attachments, state, "swap_image_order", f"images={len(files)}", prompt_names,
+        ocr_prompt_name=ocr_prompt_name,
+    )
 
 
 @io_node
 async def swap_excel_order(state: AgentState) -> dict[str, Any]:
-    """互换-Excel 链:下载解析(产品→交易对手)→ 参数提取 → place_params。"""
-    files = state.get("input_files") or []
-    url = None
-    for f in files:
-        u = f.get("remote_url") or f.get("url")
-        if u:
-            url = u
-            break
-    if not url:
-        raise ValueError("互换-Excel 链:文件缺少 remote_url/url")
-
-    content = await _fetch_bytes(url)
-    rows = await asyncio.to_thread(parse_excel_rows, content)
-    rows_text = json.dumps(rows, ensure_ascii=False, default=str)
-
-    user_text = _extract_user("Excel 数据", rows_text, state.get("raw_text", "") or "")
-    params, prompt_name = await _extract_params(EXCEL_EXTRACT_SPEC, user_text, state)
-    return _params_update(params, "swap_excel_order", f"rows={len(rows)}", prompt_name)
+    """逐文件、工作表和行抽取，保留单元格引用并限制单次模型输出规模。"""
+    files = [(index, file) for index, file in enumerate(state.get("input_files") or [])
+             if str(file.get("type", "")).lower() != "image"]
+    if not files:
+        raise ValueError("互换-Excel 链:无可用 Excel 文件")
+    attachments, orders, prompt_names = {}, [], []
+    row_count = 0
+    for index, file in files:
+        url = file.get("remote_url") or file.get("url")
+        if not url:
+            raise ValueError("互换-Excel 链:文件缺少 remote_url/url")
+        rows = await asyncio.to_thread(excel_evidence_rows, await _fetch_bytes(url), index)
+        for row in rows:
+            extracted, prompt_name = await _extract_candidates(EXCEL_EXTRACT_SPEC, state, row.sources)
+            extracted_orders = extracted.model_dump(by_alias=True)["orderList"]
+            if not extracted_orders:
+                raise ValueError("Excel 非空行未识别到订单，已停止提交以避免漏单")
+            attachments.update(row.sources)
+            orders.extend(extracted_orders)
+            prompt_names.append(prompt_name)
+            row_count += 1
+    return await _params_update(
+        orders, attachments, state, "swap_excel_order", f"rows={row_count}", prompt_names,
+    )
 
 
 __all__ = ["swap_image_order", "swap_excel_order", "parse_excel_rows"]

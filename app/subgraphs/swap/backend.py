@@ -18,6 +18,8 @@ import logging
 import re
 from typing import Any
 
+from app.execution.operations import capture_operation
+from app.extraction.locks import protect_orders
 from app.graph.state import AgentState, TickerCandidate
 from app.subgraphs.swap.prewash import sanitize_order_list
 from app.tools.bot_context import BotContext, normalize_message_id
@@ -77,6 +79,9 @@ def _with_resolved_ticker(
             or not wind_code.strip()
         ):
             continue
+        requested_market = order.get("placeOrderTransactionType")
+        if requested_market and requested_market not in (data.get("transactionTypeLists") or []):
+            continue
         verified.append(data)
         if wind_code.strip().upper() == original_code:
             order["placeOrderWindCode"] = wind_code
@@ -124,6 +129,7 @@ async def call_swap_backend(
     Raises:
         MissingBackendContextError: 缺少调用后端必需的机器人上下文字段。
     """
+    order_list, rejected = protect_orders(state, order_list or [], product="swap")
     missing_fields = BotContext.from_state(state).missing_required()
     if missing_fields:
         logger.error(
@@ -144,12 +150,15 @@ async def call_swap_backend(
         ],
         **_context(state),
     )
+    if capture_operation("swap", req):
+        return {"field_records": rejected} if rejected else {}
     result = await SwapClientHttpx().operate(req)
     code = result.get("code")
     backend_result = result.get("data") if code == 0 else result.get("msg")
     if _is_empty_backend_result(backend_result):
         raise EmptyBackendResultError("swap", code)
     return {
+        **({"field_records": rejected} if rejected else {}),
         "api_code": code,
         "api_result": backend_result,
     }

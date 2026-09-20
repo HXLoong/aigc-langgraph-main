@@ -176,8 +176,11 @@ def extract_for_query(raw: str | None, quote: str | None) -> list[str | None]:
 
 
 def extract_for_confirm_order(raw: str | None, quote: str | None) -> list[str | None]:
-    """确认下单:quote 中全部订单号(不遗漏),quote 无则 raw。"""
-    return _first_nonempty(extract_order_ids(quote), extract_order_ids(raw))
+    """兼容提取入口；引用及选择范围由统一确认协议校验。"""
+    from app.subgraphs.swap.confirmation import parse_confirmation
+
+    result = parse_confirmation(raw, quote)
+    return list(result.order_ids) if not result.error else [None]
 
 
 def extract_for_confirm_single(raw: str | None, quote: str | None) -> list[str | None]:

@@ -17,6 +17,7 @@ from typing import IO, Any, Literal
 import structlog
 
 from app.config import Settings
+from app.observability.privacy import redact_log
 
 LogFormat = Literal["json", "console"]
 _HANDLER_TAG = "_otc_structlog_handler"
@@ -31,6 +32,7 @@ def _shared_processors() -> list[Any]:
         structlog.processors.TimeStamper(fmt="iso", key="timestamp"),
         structlog.processors.StackInfoRenderer(),
         structlog.processors.format_exc_info,
+        redact_log,
     ]
 
 

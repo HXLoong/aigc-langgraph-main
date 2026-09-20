@@ -205,7 +205,7 @@ class TestOptionExtractPlaceNode:
     async def test_ordinal_segments_require_matching_order_ids(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """段数与引用回执订单数不一致 → 回退整段参数套用（不猜测映射）。"""
+        """越界序号给出确定性纠错，不能把整段参数扩散到已有订单。"""
         _patch(monkeypatch)
         result = await option_extract_place(
             {
@@ -213,10 +213,8 @@ class TestOptionExtractPlaceNode:
                 "quote_content": "Q-20250616-000011",
             }
         )
-        order_list = result["place_params"]["orderList"]
-        assert len(order_list) == 1
-        assert order_list[0]["orderType"] == "限价单"
-        assert order_list[0]["notionalAmount"] == "2000000"
+        assert not result.get("place_params")
+        assert "序号" in result["reply_text"]
 
     async def test_b_class_from_card(self, monkeypatch: pytest.MonkeyPatch) -> None:
         _patch(monkeypatch)

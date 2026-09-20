@@ -53,7 +53,7 @@ final_state: AgentState = <span class="kw">await</span> graph.ainvoke(initial_st
 <p>生产用 MySQL 存储，生命周期绑定 FastAPI lifespan（应用级单例，<strong>不要每个请求新建</strong>）：</p>
 
 <pre><code><span class="kw">async def</span> init_checkpointer() -> AIOMySQLSaver:
-    _saver_ctx = AIOMySQLSaver.from_conn_string(settings.checkpoint_mysql_uri)
+    _saver_ctx = AIOMySQLSaver.from_conn_string(settings.mysql_uri)
     _checkpointer = <span class="kw">await</span> _saver_ctx.__aenter__()
 <span class="hl">    <span class="kw">await</span> _checkpointer.setup()      <span class="cm"># 首次启动自动建 4 张系统表（幂等）</span></span>
     <span class="kw">return</span> _checkpointer</code></pre>

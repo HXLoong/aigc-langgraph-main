@@ -1,12 +1,12 @@
 """MySQL Checkpointer 工厂。
 
-使用社区包 langgraph-checkpoint-mysql 3.0+（由 tjni 维护，刻意保持与官方 Postgres 实现同步）。
+使用固定版本 langgraph-checkpoint-mysql 3.0.0 与本项目的表名前缀适配层。
 
 关键点：
 1. saver 持有 **aiomysql 连接池**（ADR 0024 D4）：社区包 `from_conn_string` 只持有一条连接、
    saver 内部用一把锁串行化全部 IO 且无重连，连接被 wait_timeout 杀掉后全站失忆——生产禁用；
    池的 `pool_recycle` 小于 wait_timeout，探针（`probe_checkpointer`）打的就是这个池
-2. 首次运行必须调用 .setup() 自动建表（checkpoints / checkpoint_blobs / checkpoint_writes）
+2. 首次运行前执行 sql/init.sql；.setup() 只校验 langgraph_ 表，不执行 DDL
 3. MySQL 版本要求：8.0.19 ≤ version < 9.6.0
 4. 要求连接使用 autocommit=True
 """
@@ -18,10 +18,11 @@ from contextlib import asynccontextmanager
 from typing import Any
 
 import aiomysql
-from langgraph.checkpoint.mysql.aio import AIOMySQLSaver
 from langgraph.checkpoint.serde.jsonplus import JsonPlusSerializer
 
+from app.checkpointer.mysql import LangGraphMySQLSaver as AIOMySQLSaver
 from app.config import get_settings
+from app.storage.mysql import connection_args
 
 logger = logging.getLogger(__name__)
 
@@ -32,6 +33,7 @@ CHECKPOINT_ALLOWED_MODELS: tuple[tuple[str, str], ...] = (
     ("app.graph.state", "Message"),
     ("app.graph.state", "TraceEntry"),
     ("app.graph.state", "ErrorInfo"),
+    ("app.extraction.fields", "FieldRecord"),
 )
 
 
@@ -45,13 +47,13 @@ _pool: Any | None = None  # aiomysql.Pool；probe_checkpointer 与 close 共用
 
 
 async def init_checkpointer() -> AIOMySQLSaver:
-    """在应用启动时调用：建连接池 → 构造 saver → 幂等建表。"""
+    """在应用启动时调用：建连接池 → 构造 saver → 只读校验初始化结果。"""
     global _checkpointer, _pool
 
     settings = get_settings()
     logger.info("正在初始化 MySQL Checkpointer（连接池）...")
 
-    conn_kwargs = AIOMySQLSaver.parse_conn_string(settings.checkpoint_mysql_uri)
+    conn_kwargs = connection_args(settings.mysql_uri)
     _pool = await aiomysql.create_pool(
         **conn_kwargs,
         autocommit=True,  # 社区包硬要求
@@ -61,8 +63,11 @@ async def init_checkpointer() -> AIOMySQLSaver:
     )
     _checkpointer = AIOMySQLSaver(conn=_pool, serde=build_checkpoint_serde())
 
-    # 首次启动自动建表（幂等）
-    await _checkpointer.setup()
+    try:
+        await _checkpointer.setup()
+    except BaseException:
+        await close_checkpointer()
+        raise
     logger.info("MySQL Checkpointer 初始化完成")
     return _checkpointer
 

@@ -6,10 +6,11 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from langgraph.graph.state import CompiledStateGraph
+from pydantic import BaseModel
 
 from app.subgraphs.close import place_close as pc_module
-from app.subgraphs.close.models import CloseOrderItem, ClosePlaceParams
 from app.subgraphs.close.place_close import build_place_close_graph, close_place_close
+from tests.subgraphs.close.candidate_fixtures import close_candidates
 
 STAGES = (
     "place_close_parse",
@@ -22,7 +23,7 @@ STAGES = (
 )
 
 
-def _patch_llm(monkeypatch: pytest.MonkeyPatch, params: ClosePlaceParams) -> AsyncMock:
+def _patch_llm(monkeypatch: pytest.MonkeyPatch, params: BaseModel) -> AsyncMock:
     fake_llm = MagicMock()
     fake_llm.ainvoke = AsyncMock(return_value=params)
     fake_base = MagicMock()
@@ -72,10 +73,8 @@ def test_place_close_graph_topology_and_output_schema() -> None:
 async def test_happy_path_traces_every_stage_and_submits(monkeypatch: pytest.MonkeyPatch) -> None:
     _patch_query(monkeypatch, [])
     captured = _patch_operate(monkeypatch)
-    _patch_llm(monkeypatch, ClosePlaceParams(closeOrderList=[
-        CloseOrderItem(orderId="CO-20260304-AAAA0001", closeOrderNotionalDelta="2000000",
-                       closeOrderType="市价单"),
-    ]))
+    _patch_llm(monkeypatch, close_candidates({"orderId": "CO-20260304-AAAA0001", "closeOrderNotionalDelta": "200万",
+                      "closeOrderType": "市价"}))
     result = await close_place_close(_ctx("平 CO-20260304-AAAA0001 200万 市价"))
 
     assert result.get("error") is None
@@ -96,7 +95,7 @@ async def test_happy_path_traces_every_stage_and_submits(monkeypatch: pytest.Mon
 async def test_empty_merge_takes_reject_edge_without_backend(monkeypatch: pytest.MonkeyPatch) -> None:
     _patch_query(monkeypatch, [])
     captured = _patch_operate(monkeypatch)
-    _patch_llm(monkeypatch, ClosePlaceParams())
+    _patch_llm(monkeypatch, close_candidates())
     result = await close_place_close(_ctx("x"))
     nodes = [e.node for e in result["trace"]]
     assert "place_close_reject" in nodes and "place_close_submit" not in nodes
@@ -110,9 +109,7 @@ async def test_empty_merge_takes_reject_edge_without_backend(monkeypatch: pytest
 async def test_validation_failure_takes_reject_edge(monkeypatch: pytest.MonkeyPatch) -> None:
     _patch_query(monkeypatch, [])
     captured = _patch_operate(monkeypatch)
-    _patch_llm(monkeypatch, ClosePlaceParams(closeOrderList=[
-        CloseOrderItem(orderId="CO-20260304-AAAA0001", closeOrderType="限价单"),  # 限价缺价格
-    ]))
+    _patch_llm(monkeypatch, close_candidates({"orderId": "CO-20260304-AAAA0001", "closeOrderType": "限价"}))
     result = await close_place_close(_ctx("平 CO-20260304-AAAA0001 限价"))
     nodes = [e.node for e in result["trace"]]
     assert "place_close_validate" in nodes and "place_close_reject" in nodes

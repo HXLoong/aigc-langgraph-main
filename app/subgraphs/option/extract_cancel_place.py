@@ -14,6 +14,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from app.extraction.identity import prepare_identity_scope
 from app.graph.business_params import validated_cancel_params
 from app.graph.safe_node import safe_node
 from app.graph.state import AgentState, TraceEntry
@@ -24,19 +25,25 @@ from app.subgraphs.option.order_id import extract_for_cancel_place
 @safe_node
 async def option_extract_cancel_place(state: AgentState) -> dict[str, Any]:
     """option.extract_cancel_place 节点（cancel_order_request，确定性提取）。"""
+    identity_origin = "quote"
+    identity_evidence = state.get("quote_content") or ""
     order_ids = extract_for_cancel_place(
         raw=state.get("raw_text"), quote=state.get("quote_content")
+    )
+    prepared_state, order_ids, records = prepare_identity_scope(
+        state, order_ids, scope="option/cancel_place", origin=identity_origin, evidence=identity_evidence,
     )
     order_list = [{"orderId": order_id} for order_id in order_ids]
     order_count = sum(1 for item in order_list if item["orderId"])
 
     backend = await call_option_backend(
-        state,
+        prepared_state,
         intent="cancel_order_request",
         order_list=order_list,
     )
 
     return {
+        "field_records": records,
         "expected_action": "cancel",
         "cancel_params": validated_cancel_params(orderList=order_list),
         **backend,

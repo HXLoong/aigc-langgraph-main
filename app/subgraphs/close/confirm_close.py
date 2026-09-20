@@ -12,6 +12,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from app.extraction.identity import prepare_identity_scope
 from app.graph.business_params import validated_confirm
 from app.graph.memory import memory_order_ids
 from app.graph.safe_node import safe_node
@@ -22,6 +23,7 @@ from app.subgraphs.close.order_id import (
     SCOPE_UNRESOLVED_REPLY,
     CloseScopeError,
     extract_for_close_orders,
+    extract_order_ids,
 )
 
 
@@ -34,6 +36,8 @@ async def close_confirm_close(state: AgentState) -> dict[str, Any]:
       合并版同款 action 字段约定）
     - trace: 单条 TraceEntry，记录提取的订单号数量
     """
+    identity_origin = "quote"
+    identity_evidence = state.get("quote_content") or ""
     try:
         confirm_ids = extract_for_close_orders(
             raw=state.get("raw_text"), quote=state.get("quote_content")
@@ -41,6 +45,7 @@ async def close_confirm_close(state: AgentState) -> dict[str, Any]:
         if not confirm_ids:
             # 无引用、无指定信号的裸确认 → 上一轮平仓请求记下的单号（ADR 0024 D4）
             confirm_ids = memory_order_ids(state, "option_close")
+            identity_origin, identity_evidence = "memory:last_confirmed_params", "last_confirmed_params.order_ids"
     except CloseScopeError:
         return {
             "confirm": None,
@@ -53,14 +58,20 @@ async def close_confirm_close(state: AgentState) -> dict[str, Any]:
         }
 
     # 真后端调用：confirmOrderNoList 进 closeOrderReqVO（不是 option 域的 orderList）
+    prepared_state, protected_ids, records = prepare_identity_scope(
+        state, confirm_ids, scope="close/confirm", field="confirmOrderNoList", origin=identity_origin, evidence=identity_evidence,
+        explicit_raw_ids=extract_order_ids(state.get("raw_text")), selection=True,
+    )
+    confirm_ids = [order_id for order_id in protected_ids if order_id is not None]
     req_vo = build_close_order_req_vo(confirm_order_no_list=confirm_ids)
     backend = await call_close_backend(
-        state,
+        prepared_state,
         intent="close_order_confirm",
         close_order_req_vo=req_vo,
     )
 
     return {
+        "field_records": records,
         "expected_action": "close",
         "confirm": validated_confirm(action="close", confirmOrderNoList=confirm_ids),
         **backend,

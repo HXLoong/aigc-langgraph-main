@@ -11,9 +11,12 @@ from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
+from fastapi.exceptions import RequestValidationError
 from fastapi.responses import PlainTextResponse
+from starlette.exceptions import HTTPException
 from starlette.middleware.base import BaseHTTPMiddleware
 
+from app.api.errors import workflow_http_error, workflow_validation_error
 from app.api.health import router as health_router
 from app.api.idempotency import MySQLIdempotencyStore
 from app.api.routes import router as api_router
@@ -57,10 +60,10 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     # ADR 0024 D4：请求级幂等 store（生产开启；业务库 message_log）
     app.state.idempotency_store = None
     if getattr(settings, "request_idempotency", False):
-        if not settings.business_mysql_uri:
-            raise RuntimeError("REQUEST_IDEMPOTENCY=true 需要 BUSINESS_MYSQL_URI")
+        if not settings.mysql_uri:
+            raise RuntimeError("REQUEST_IDEMPOTENCY=true 需要 MYSQL_URI")
         app.state.idempotency_store = MySQLIdempotencyStore(
-            settings.business_mysql_uri, timeout_seconds=settings.persist_timeout_seconds
+            settings.mysql_uri, timeout_seconds=settings.persist_timeout_seconds
         )
         logger.info("request idempotency store 已接线（message_log）")
     app.state.main_graph = build_main_graph(
@@ -84,6 +87,8 @@ app = FastAPI(
     version="0.2.0-m1",
     lifespan=lifespan,
 )
+app.add_exception_handler(HTTPException, workflow_http_error)
+app.add_exception_handler(RequestValidationError, workflow_validation_error)
 
 
 # 探测路径不计入 HTTP 指标（频次极高会稀释告警分母 + 增 metrics cardinality）
