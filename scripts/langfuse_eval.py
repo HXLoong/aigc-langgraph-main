@@ -127,9 +127,9 @@ def _graph_callbacks() -> list:
     if not _langfuse_enabled():
         return []
     try:
-        from langfuse.langchain import CallbackHandler
+        from app.observability.tracing import create_callback_handler
 
-        return [CallbackHandler()]
+        return [create_callback_handler()]
     except Exception as exc:  # noqa: BLE001
         print(f"LangFuse CallbackHandler 不可用，per-node span 缺失：{exc}")
         return []

@@ -7,7 +7,7 @@ Langfuse 是**可选依赖**：本模块是它唯一的接入点，`app/` 下其
 
 1. 所有 langfuse import 都在同一个 `try` 内 —— 失败只 warning 并降级，绝不阻断业务
 2. 进程级 client 单例 —— 不在请求路径上重复构造
-3. 对外只暴露 `RequestTrace`，不含任何 langfuse 类型
+3. 对外提供 `RequestTrace` 与统一 callback 工厂，不要求调用方导入 langfuse 类型
 
 两个 ID 的归属必须分清：
 
@@ -27,7 +27,7 @@ from uuid import UUID
 from langchain_core.callbacks import BaseCallbackHandler
 
 from app.config import get_settings
-from app.observability.diagnostics import failure_diagnostic
+from app.observability.node_labels import label_observation
 from app.observability.privacy import mask_sensitive
 
 logger = logging.getLogger(__name__)
@@ -45,6 +45,9 @@ def report_handled_error(state: dict[str, Any], observation: Any | None = None) 
     if not _enabled():
         return
     try:
+        # Lazy import keeps the standalone callback factory independent of graph imports.
+        from app.observability.diagnostics import failure_diagnostic
+
         detail = failure_diagnostic(state)
         client = _ensure_client() if detail and observation is None else None
         if (client is not None or observation is not None) and detail is not None:
@@ -150,6 +153,97 @@ def _ensure_client() -> Any | None:
     return _langfuse_client
 
 
+def create_callback_handler(
+    *, public_key: str | None = None, trace_context: dict[str, str] | None = None,
+) -> Any:
+    """Create a named SDK handler lazily; callers keep their existing enable/error gates."""
+    from langfuse.langchain import CallbackHandler
+
+    class LocalizedCallbackHandler(CallbackHandler):
+        run_inline = True
+
+        def __init__(self, **kwargs: Any) -> None:
+            super().__init__(**kwargs)
+            self._name_contexts: dict[UUID, tuple[str | None, UUID | None]] = {}
+
+        def _named_start(
+            self, method: str, kind: str, serialized: Any, value: Any, *,
+            run_id: UUID, parent_run_id: UUID | None = None,
+            metadata: dict[str, Any] | None = None, **kwargs: Any,
+        ) -> Any:
+            original = self.get_langchain_run_name(serialized, **kwargs)
+            parent_node = self._name_contexts.get(parent_run_id, (None, None))[0] if parent_run_id else None
+            try:
+                display = label_observation(original, kind=kind, metadata=metadata, parent_node=parent_node)
+                self._name_contexts[run_id] = (display.node_id, parent_run_id)
+                kwargs = {**kwargs, "name": display.name}
+                metadata = display.metadata
+            except Exception as exc:
+                # Display projection must never remove a trace or block a business call.
+                logger.warning("Langfuse name projection unavailable: %s", type(exc).__name__)
+            try:
+                return getattr(super(), method)(serialized, value, run_id=run_id,
+                    parent_run_id=parent_run_id, metadata=metadata, **kwargs)
+            except BaseException:
+                self._clear_name_context(run_id)
+                raise
+
+        def _clear_name_context(self, run_id: UUID) -> None:
+            pending = {run_id}
+            while pending:
+                children = {key for key, (_, parent) in list(self._name_contexts.items()) if parent in pending}
+                for key in pending:
+                    self._name_contexts.pop(key, None)
+                pending = children
+
+        def _named_finish(self, method: str, value: Any, *, run_id: UUID, **kwargs: Any) -> Any:
+            try:
+                return getattr(super(), method)(value, run_id=run_id, **kwargs)
+            finally:
+                self._clear_name_context(run_id)
+
+        def on_chain_start(self, serialized: Any, inputs: Any, **kwargs: Any) -> Any:
+            return self._named_start("on_chain_start", "chain", serialized, inputs, **kwargs)
+
+        def on_chat_model_start(self, serialized: Any, messages: Any, **kwargs: Any) -> Any:
+            return self._named_start("on_chat_model_start", "llm", serialized, messages, **kwargs)
+
+        def on_llm_start(self, serialized: Any, prompts: Any, **kwargs: Any) -> Any:
+            return self._named_start("on_llm_start", "llm", serialized, prompts, **kwargs)
+
+        def on_tool_start(self, serialized: Any, input_str: str, **kwargs: Any) -> Any:
+            return self._named_start("on_tool_start", "tool", serialized, input_str, **kwargs)
+
+        def on_retriever_start(self, serialized: Any, query: str, **kwargs: Any) -> Any:
+            return self._named_start("on_retriever_start", "retriever", serialized, query, **kwargs)
+
+        def on_chain_end(self, outputs: Any, **kwargs: Any) -> Any:
+            return self._named_finish("on_chain_end", outputs, **kwargs)
+
+        def on_chain_error(self, error: BaseException, **kwargs: Any) -> Any:
+            return self._named_finish("on_chain_error", error, **kwargs)
+
+        def on_llm_end(self, response: Any, **kwargs: Any) -> Any:
+            return self._named_finish("on_llm_end", response, **kwargs)
+
+        def on_llm_error(self, error: BaseException, **kwargs: Any) -> Any:
+            return self._named_finish("on_llm_error", error, **kwargs)
+
+        def on_tool_end(self, output: Any, **kwargs: Any) -> Any:
+            return self._named_finish("on_tool_end", output, **kwargs)
+
+        def on_tool_error(self, error: BaseException, **kwargs: Any) -> Any:
+            return self._named_finish("on_tool_error", error, **kwargs)
+
+        def on_retriever_end(self, documents: Any, **kwargs: Any) -> Any:
+            return self._named_finish("on_retriever_end", documents, **kwargs)
+
+        def on_retriever_error(self, error: BaseException, **kwargs: Any) -> Any:
+            return self._named_finish("on_retriever_error", error, **kwargs)
+
+    return LocalizedCallbackHandler(public_key=public_key, trace_context=trace_context)
+
+
 async def attach_request_trace(
     *, request_trace_id: str, traceparent: str | None
 ) -> RequestTrace:
@@ -182,14 +276,11 @@ async def attach_request_trace(
         return RequestTrace()
 
     try:
-        from langfuse.langchain import CallbackHandler
-        from langfuse.types import TraceContext
-
-        trace_context: TraceContext = {"trace_id": langfuse_trace_id}
+        trace_context = {"trace_id": langfuse_trace_id}
         if parent_context:
             trace_context["parent_span_id"] = parent_context[1]
 
-        handler = CallbackHandler(
+        handler = create_callback_handler(
             public_key=settings.langfuse_public_key,
             trace_context=trace_context,
         )
@@ -223,4 +314,4 @@ def flush() -> None:
         logger.warning("LangFuse flush 失败：%s", exc)
 
 
-__all__ = ["RequestTrace", "attach_request_trace", "flush", "parse_traceparent"]
+__all__ = ["RequestTrace", "attach_request_trace", "create_callback_handler", "flush", "parse_traceparent"]
