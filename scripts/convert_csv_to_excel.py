@@ -6,7 +6,7 @@
     python scripts/convert_csv_to_excel.py --input example.csv
     python scripts/convert_csv_to_excel.py --dry-run
 
-默认读取仓库 tests/fixtures/categories/csv，输出该目录下的“测试集.xlsx”。
+默认读取仓库 tests/fixtures/categories/csv，输出该目录下的“黄金数据集.xlsx”。
 单文件输入默认输出同目录同名 .xlsx。显式路径相对于当前工作目录，重复执行
 覆盖同名输出。目录模式只读取直接子级 CSV，按文件名排序。
 
@@ -284,7 +284,7 @@ def main(argv: list[str] | None = None) -> int:
         output = (
             args.output.resolve()
             if args.output is not None
-            else (source / "测试集.xlsx" if source.is_dir() else source.with_suffix(".xlsx"))
+            else (source / "黄金数据集.xlsx" if source.is_dir() else source.with_suffix(".xlsx"))
         )
         if output.suffix.lower() != ".xlsx":
             raise ValueError(f"输出文件必须为 .xlsx: {output}")
