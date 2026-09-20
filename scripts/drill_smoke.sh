@@ -116,7 +116,7 @@ check_tools_exist() {
     local tools=(
         "scripts/canary_status.py"
         "scripts/metrics_snapshot.py"
-        "scripts/promote_langfuse_prompt.py"
+        "scripts/langfuse/promote_langfuse_prompt.py"
         "scripts/deploy-customer.sh"
         "scripts/rollback_canary.sh"
         "infra/grafana/dashboards/otc-agent-overview.json"
@@ -146,7 +146,7 @@ check_tools_syntax() {
     local pyscripts=(
         "scripts/canary_status.py"
         "scripts/metrics_snapshot.py"
-        "scripts/promote_langfuse_prompt.py"
+        "scripts/langfuse/promote_langfuse_prompt.py"
     )
 
     local errs=()

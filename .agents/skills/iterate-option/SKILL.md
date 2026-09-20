@@ -36,18 +36,18 @@ metadata:
 
 ```bash
 # 评测批次（本地 fixture 模式）
-python scripts/langfuse_eval.py --local tests/fixtures/categories --limit 10 --concurrency 5
-python scripts/langfuse_eval.py --local tests/fixtures/categories --limit 30 --concurrency 10
-python scripts/langfuse_eval.py --local tests/fixtures/categories --concurrency 10   # 全量
+python scripts/langfuse/langfuse_eval.py --local tests/fixtures/categories --limit 10 --concurrency 5
+python scripts/langfuse/langfuse_eval.py --local tests/fixtures/categories --limit 30 --concurrency 10
+python scripts/langfuse/langfuse_eval.py --local tests/fixtures/categories --concurrency 10   # 全量
 
 # 只重跑失败的 case
-python scripts/langfuse_eval.py --local tests/fixtures/categories --ids case-025,case-026 --concurrency 2
+python scripts/langfuse/langfuse_eval.py --local tests/fixtures/categories --ids case-025,case-026 --concurrency 2
 
 # 按意图类型聚焦
-python scripts/langfuse_eval.py --local tests/fixtures/categories --filter option/place_from_quote --concurrency 5
+python scripts/langfuse/langfuse_eval.py --local tests/fixtures/categories --filter option/place_from_quote --concurrency 5
 
 # 跳过 Judge（只检查 reply_text 非空，跑得快）
-python scripts/langfuse_eval.py --local tests/fixtures/categories --ids case-025 --no-judge
+python scripts/langfuse/langfuse_eval.py --local tests/fixtures/categories --ids case-025 --no-judge
 
 # pytest 守卫
 python -m pytest tests/ -q --tb=line 2>&1 | tail -5
@@ -57,7 +57,7 @@ python -m pytest tests/ -q --tb=line 2>&1 | tail -5
 
 ```python
 # 1. 后台启动 eval
-Bash(command="python scripts/langfuse_eval.py --local tests/fixtures/categories --limit 20 --concurrency 10 2>&1",
+Bash(command="python scripts/langfuse/langfuse_eval.py --local tests/fixtures/categories --limit 20 --concurrency 10 2>&1",
      run_in_background=True, timeout=600000, description="Run eval batch N")
 
 # 2. 等待完成（background task 完成时自动通知，不需要 Monitor/Poll）
@@ -135,7 +135,7 @@ eval 失败报告每条 case 输出 per-turn 详情（**stdout 文本格式**）
    - `error` 非空 → 节点抛异常，看 `error.node` + `error.message`
 5. **写 TDD 测试**：直接复用 Langfuse 上看到的 `turns[i].raw` + 期望行为，写最小复现
 
-**这套富 output 怎么生成的**（[scripts/langfuse_eval.py:289-340](scripts/langfuse_eval.py#L289-L340)）：
+**这套富 output 怎么生成的**（[scripts/langfuse/langfuse_eval.py:289-340](scripts/langfuse/langfuse_eval.py#L289-L340)）：
 - `run_langgraph_pipeline` 每轮收集 product_type/intent/tickers/place_params/api_result/error 简化版
 - `_run_one` 在 `lf.start_as_current_observation(as_type="chain")` 上下文里：
   1. 调 graph.ainvoke 跑业务流（CallbackHandler 自动嵌套子 span）
@@ -228,7 +228,7 @@ Round 3+: --concurrency 10（全量）
 
 | 文件 | 用途 | 可改？ |
 |---|---|---|
-| `scripts/langfuse_eval.py` | 评估脚本（含 per-turn trace 输出）| ✅ 只改 trace/report 展示，不改评分逻辑 |
+| `scripts/langfuse/langfuse_eval.py` | 评估脚本（含 per-turn trace 输出）| ✅ 只改 trace/report 展示，不改评分逻辑 |
 | `tests/fixtures/categories/` | fixture case 集（现役）| ❌ 不准改 case，可新增 |
 | `app/state.py` `make_initial_state` | 每轮初始 state | ⚠️ 慎改：字段默认值影响多轮 checkpoint 传递 |
 | `app/nodes/intent_route.py` | 产品路由（4层）| ✅ |

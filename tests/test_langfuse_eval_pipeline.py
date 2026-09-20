@@ -5,7 +5,7 @@ from uuid import UUID
 
 import pytest
 
-from scripts import langfuse_eval
+from scripts.langfuse import langfuse_eval
 
 
 class _FailingFirstTurnGraph:

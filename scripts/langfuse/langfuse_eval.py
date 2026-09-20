@@ -2,7 +2,7 @@
 
 OTC_API_BASE_URL 从 .env 读取，指向真实后端地址。
 前提: 对应的后端服务必须已启动
-用法: uv run python scripts/langfuse_eval.py --ids opt-001 --concurrency 1
+用法: uv run python scripts/langfuse/langfuse_eval.py --ids opt-001 --concurrency 1
 """
 # Imports below intentionally follow dotenv/bootstrap setup.
 # ruff: noqa: E402, I001
@@ -20,7 +20,8 @@ import time
 import uuid
 from pathlib import Path
 
-_DOTENV = Path(__file__).resolve().parent.parent / ".env"
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+_DOTENV = PROJECT_ROOT / ".env"
 if _DOTENV.exists():
     for line in _DOTENV.read_text(encoding="utf-8").splitlines():
         line = line.strip()
@@ -41,7 +42,6 @@ for _k in ("ANTHROPIC_AUTH_TOKEN",):
 # Langfuse API 不走代理
 os.environ["NO_PROXY"] = os.environ.get("NO_PROXY", "") + ",cloud.langfuse.com"
 
-PROJECT_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
 from langgraph.checkpoint.memory import InMemorySaver

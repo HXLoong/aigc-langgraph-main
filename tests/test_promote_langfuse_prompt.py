@@ -1,4 +1,4 @@
-"""scripts/promote_langfuse_prompt.py · F4.6 prompt 晋升测试（ADR 0014 D3）。"""
+"""scripts/langfuse/promote_langfuse_prompt.py · F4.6 prompt 晋升测试（ADR 0014 D3）。"""
 from __future__ import annotations
 
 import sys
@@ -9,7 +9,7 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from scripts import promote_langfuse_prompt as ppm
+from scripts.langfuse import promote_langfuse_prompt as ppm
 
 # ============================================================
 # _parse_target

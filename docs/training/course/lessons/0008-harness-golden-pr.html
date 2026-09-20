@@ -55,9 +55,9 @@ M3.3 当前的核心工作就是"真后端 golden 回归 + 错例修 P0/P1"（is
 
 <h3>入口一（M3 主用）：langfuse_eval.py —— 带 DeepSeek Judge</h3>
 <pre><code><span class="cm"># 全量 350+（约需较长时间，改动大时跑）</span>
-python scripts/langfuse_eval.py --local tests/fixtures/golden.jsonl --concurrency 4
+python scripts/langfuse/langfuse_eval.py --local tests/fixtures/golden.jsonl --concurrency 4
 <span class="cm"># 只跑受影响的 case（日常迭代）</span>
-python scripts/langfuse_eval.py --local tests/fixtures/golden.jsonl --ids opt-001,opt-018 --concurrency 2</code></pre>
+python scripts/langfuse/langfuse_eval.py --local tests/fixtures/golden.jsonl --ids opt-001,opt-018 --concurrency 2</code></pre>
 <p>每条 case 由 DeepSeek Judge 打分（score + judge_comment），并把 <strong>per-turn 富集 JSON</strong> 写入 Langfuse——排查失败的首选数据源（下一节）。</p>
 
 <h3>入口二（本地快速）：harness CLI —— 无 Judge 的 smoke</h3>

@@ -22,7 +22,7 @@
 - `scripts/drill_smoke.sh` · 演练 smoke（PR #100）
 - `scripts/shadow_compare.py` · LangGraph vs Dify 字段级 diff（PR #90 / #112，含 `DRY_RUN_BACKEND` 模式）
 - `scripts/canary_status.py` / `scripts/metrics_snapshot.py` · 灰度状态 + F4 全指标快照（PR #92 / #94）
-- `scripts/promote_langfuse_prompt.py` · LangFuse Prompt 晋升（F4.6 / PR #95）
+- `scripts/langfuse/promote_langfuse_prompt.py` · LangFuse Prompt 晋升（F4.6 / PR #95）
 - `scripts/run_alerts.py` · 阈值告警干跑（5xx / cascade / P95 延迟 / LLM 失败率）
 - Grafana 灰度观测面板 JSON 模板（`infra/`，F4.2-F4.5 / PR #97）
 - `docs/on-call-runbook.md` · on-call 应急回切剧本（F4.0 / PR #99）
@@ -56,7 +56,7 @@ uvicorn app.main:app --reload   # POST /v1/workflows/run（兼容 Dify Workflow 
 pytest tests/ -v
 
 # 5. 跑评估
-python scripts/langfuse_eval.py --local tests/fixtures/unified_golden.jsonl --concurrency 4
+python scripts/langfuse/langfuse_eval.py --local tests/fixtures/unified_golden.jsonl --concurrency 4
 #   ↑ DeepSeek V4 Judge + per-turn 富集 JSON 写到 Langfuse Cloud
 python -m harness run                                    # 备用 harness CLI 入口
 ```

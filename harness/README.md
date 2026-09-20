@@ -16,4 +16,4 @@ python -m harness doctor          # 环境体检（/health /ready）
 python -m harness run --help      # 跑 fixture；--backend real|mock|dry-run、--checkpoint none|mysql
 ```
 
-LLM Judge 评估主入口是 `scripts/langfuse_eval.py`（见根 CLAUDE.md「关键命令」）。
+LLM Judge 评估主入口是 `scripts/langfuse/langfuse_eval.py`（见根 CLAUDE.md「关键命令」）。

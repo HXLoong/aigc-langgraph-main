@@ -8,7 +8,7 @@ import anthropic
 import pytest
 
 from harness.golden import GoldenCase, TurnSpec
-from scripts.langfuse_eval import _LocalItem, _run_graph_once, judge_by_deepseek
+from scripts.langfuse.langfuse_eval import _LocalItem, _run_graph_once, judge_by_deepseek
 
 
 async def test_run_graph_once_uses_15_digit_numeric_message_id() -> None:

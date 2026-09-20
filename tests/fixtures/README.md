@@ -28,7 +28,7 @@
 ## 3. 现役加载器：`harness/golden.py`（ADR 0024 D6）
 
 `harness.golden.load_golden()` 是唯一现役加载器（`python -m harness run` 与
-`scripts/langfuse_eval.py --local` 共用），默认发现 `categories/*.jsonl` + 本目录
+`scripts/langfuse/langfuse_eval.py --local` 共用），默认发现 `categories/*.jsonl` + 本目录
 `unified_golden.jsonl`，共 1310 条（多轮 260 条），三种方言归一化为同一 `GoldenCase`：
 
 | 方言 | 文件 | 形状 | case 级 `expected` 落点 |

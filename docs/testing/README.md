@@ -66,8 +66,8 @@ curl -X POST http://localhost:8000/v1/workflows/run \
        "response_mode": "blocking", "user": "t-1"}'
 
 # 层 4 · fixture 批量评估（DeepSeek Judge 打分）
-.venv/bin/python scripts/langfuse_eval.py --local tests/fixtures/categories --limit 20 --concurrency 5
-.venv/bin/python scripts/langfuse_eval.py --local tests/fixtures/categories --ids case-025 --no-judge  # 单 case 冒烟
+.venv/bin/python scripts/langfuse/langfuse_eval.py --local tests/fixtures/categories --limit 20 --concurrency 5
+.venv/bin/python scripts/langfuse/langfuse_eval.py --local tests/fixtures/categories --ids case-025 --no-judge  # 单 case 冒烟
 
 # 层 5 · 真后端探针（需 VPN）
 .venv/bin/python scripts/probe_real_backend_e2e.py     # 通用连通性
@@ -111,7 +111,7 @@ SECURITIES_INSTRUMENT_URL=http://127.0.0.1:8099/admin-api/integration/securities
   漏前缀，在 tstgoats 被 APISIX 网关以 405 / 静态页拒绝（快速询价恒报"参数解析服务异常"）；
   两个客户端已统一，单测锁定两种基址写法，实调（tstgoats）验证通过
 - 后端 dedup：多轮 case 间隔太短会撞"正在处理，请勿重复提交"；workaround 只允许放在
-  `scripts/langfuse_eval.py`（turn 间 sleep），**严禁进业务代码**（根 CLAUDE.md P0 红线）
+  `scripts/langfuse/langfuse_eval.py`（turn 间 sleep），**严禁进业务代码**（根 CLAUDE.md P0 红线）
 
 ## 五、失败了怎么排查
 

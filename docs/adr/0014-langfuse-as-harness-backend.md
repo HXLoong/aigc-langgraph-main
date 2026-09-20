@@ -35,7 +35,7 @@ LangSmith 是海外 SaaS，所有 prompt + LLM 输出（含客户企微原话、
 
 **落地现状**：
 
-- ✅ 晋升脚本 `scripts/promote_langfuse_prompt.py <category.name>`：按 [ADR 0003](./0003-prompt-versioning-by-file-coexistence.md) 扫描现有版本写 `_v{N+1}.md`，行为与设计一致。
+- ✅ 晋升脚本 `scripts/langfuse/promote_langfuse_prompt.py <category.name>`：按 [ADR 0003](./0003-prompt-versioning-by-file-coexistence.md) 扫描现有版本写 `_v{N+1}.md`，行为与设计一致。
 - **双源开关追认现状**（#155 裁决）：开发/评测环境使用 `enable_langfuse && use_langfuse_prompts` 全局布尔；开关打开时 Langfuse 优先、本地 `.md` 为 fallback。该机制不进入生产，故不改变“生产以 Git 为真理来源”的决策。
 - ✅ **生产硬闸门已补齐**（#155 裁决落地，2026-08-27）：`load_prompt` 在 `environment=production` 且 `use_langfuse_prompts=true` 时直接 raise（`tests/test_langfuse_prompt_gate.py` 覆盖）；拉取失败从 debug 静默升为 warning。
 - D3-4"晋升后 7 天删 LangFuse 实验版"无自动化承载，降级为 checklist 纪律。
@@ -48,13 +48,13 @@ LangSmith 是海外 SaaS，所有 prompt + LLM 输出（含客户企微原话、
 |---------|------|------|
 | Trace | LangGraph CallbackHandler 自动写 | LangFuse UI / API |
 | Dataset | `tests/fixtures/*.jsonl` 同步脚本（`upload_golden_to_langfuse.py` 等）| harness runner |
-| Score | `scripts/langfuse_eval.py`（DeepSeek Judge）| LangFuse UI / 报告 |
+| Score | `scripts/langfuse/langfuse_eval.py`（DeepSeek Judge）| LangFuse UI / 报告 |
 | Annotation | 业务方 LangFuse Annotation Queue（Phase 4 运营待启动）| 回流脚本（待建）|
 
 ### D5 · Harness CLI 接入点（现状订正）
 
 - `harness run` ✅、`harness promote-prompt` ✅（委托脚本）
-- **`eval` / `diff` / `sync-golden` 仍是 stub（退出码 64）**——评估主入口现为 `scripts/langfuse_eval.py`（M3 主用）
+- **`eval` / `diff` / `sync-golden` 仍是 stub（退出码 64）**——评估主入口现为 `scripts/langfuse/langfuse_eval.py`（M3 主用）
 - `harness/langfuse_client.py` 实为 **LangChain CallbackHandler 单例封装**（非 SDK client 封装；未启用返回 None 走 no-op）
 
 ### D6 · 数据保留策略（运维约定，仓库内无可验证载体）

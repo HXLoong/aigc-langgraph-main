@@ -1,6 +1,6 @@
 """把本地 categories fixture 上传到 Langfuse `otc-option-golden` dataset。
 
-input/expected_output 格式与 scripts/langfuse_eval.py 的 _LocalItem 一致，
+input/expected_output 格式与 scripts/langfuse/langfuse_eval.py 的 _LocalItem 一致，
 确保上传后 cloud eval 与 local eval 行为完全一致：
 
   input            = JSON 字符串 {"turns": [{send_text, at_bot, quote_previous}, ...]}
@@ -8,9 +8,9 @@ input/expected_output 格式与 scripts/langfuse_eval.py 的 _LocalItem 一致�
   metadata         = {id, type, category, source, tags, turns, overview}
 
 用法：
-    python scripts/upload_golden_to_langfuse.py --dry-run
-    python scripts/upload_golden_to_langfuse.py                  # overwrite（默认）
-    python scripts/upload_golden_to_langfuse.py --mode append    # 追加
+    python scripts/langfuse/upload_golden_to_langfuse.py --dry-run
+    python scripts/langfuse/upload_golden_to_langfuse.py                  # overwrite（默认）
+    python scripts/langfuse/upload_golden_to_langfuse.py --mode append    # 追加
 """
 # ruff: noqa: E402, I001
 
@@ -22,7 +22,8 @@ import os
 import sys
 from pathlib import Path
 
-_DOTENV = Path(__file__).resolve().parent.parent / ".env"
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+_DOTENV = PROJECT_ROOT / ".env"
 if _DOTENV.exists():
     for line in _DOTENV.read_text(encoding="utf-8").splitlines():
         line = line.strip()
@@ -33,7 +34,6 @@ if _DOTENV.exists():
         if k and not os.environ.get(k):
             os.environ[k] = v
 
-PROJECT_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 GOLDEN_PATH = PROJECT_ROOT / "tests" / "fixtures" / "categories"
 DATASET_NAME = "otc-option-golden"

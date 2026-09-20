@@ -99,7 +99,7 @@ pytest tests/ -v
 ### Step 6：fixture 补充（若改了业务逻辑）
 - 在 `tests/fixtures/categories/` 对应文件末尾加 2-3 条 case（现役数据源）
 - 字段沿用该文件既有方言（结构化方言含 `expected.product_type/intent`；任务队列方言用 `response_contains` 文本断言；格式见 `scripts/ai_test_langgraph/README.md`）
-- 运行 `python scripts/langfuse_eval.py --local tests/fixtures/categories` 验证
+- 运行 `python scripts/langfuse/langfuse_eval.py --local tests/fixtures/categories` 验证
 
 ## 测试命名
 
