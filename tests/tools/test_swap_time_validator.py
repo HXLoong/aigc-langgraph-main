@@ -9,11 +9,17 @@ Round 9 eval 暴露：swap.place_order LLM 输出"14:00"/"15:00"作为算法窗�
 """
 from __future__ import annotations
 
-from datetime import datetime
+import json
+from datetime import datetime, timedelta, timezone
 
+import httpx
 import pytest
 
-from app.tools.swap_client import SwapOrderOpenApiBaseSaveReqVO
+from app.tools.swap_client import (
+    SwapClientHttpx,
+    SwapOrderOpenApiBaseSaveReqVO,
+    SwapOrderOpenApiSaveReqVO,
+)
 
 
 class TestSwapTimeValidator:
@@ -68,3 +74,100 @@ class TestSwapTimeValidator:
         from pydantic import ValidationError
         with pytest.raises(ValidationError):
             SwapOrderOpenApiBaseSaveReqVO(placeOrderStartTime="not-a-time")  # type: ignore[arg-type]
+
+
+@pytest.mark.parametrize("field", ["placeOrderStartTime", "placeOrderEndTime"])
+@pytest.mark.parametrize(
+    "value",
+    [
+        "2026-09-18T09:30:45",
+        "2026-09-18 09:30:45",
+        datetime(2026, 9, 18, 9, 30, 45),
+        datetime(2026, 9, 18, 9, 30, 45, 987654),
+        "2026-09-18T09:30:45.987654Z",
+        datetime(2026, 9, 18, 9, 30, 45, tzinfo=timezone(timedelta(hours=8))),
+    ],
+)
+def test_time_json_uses_backend_format(field: str, value: str | datetime) -> None:
+    item = SwapOrderOpenApiBaseSaveReqVO.model_validate({field: value})
+    expected = {field: "2026-09-18 09:30:45"}
+
+    assert item.model_dump(mode="json", exclude_none=True) == expected
+    assert json.loads(item.model_dump_json(exclude_none=True)) == expected
+
+
+@pytest.mark.parametrize("field", ["placeOrderStartTime", "placeOrderEndTime"])
+@pytest.mark.parametrize("value, expected_time", [("14:00", "14:00:00"), ("14:30:45", "14:30:45")])
+def test_short_time_json_preserves_promoted_date(
+    field: str, value: str, expected_time: str
+) -> None:
+    item = SwapOrderOpenApiBaseSaveReqVO.model_validate({field: value})
+    parsed = item.model_dump()[field]
+    assert isinstance(parsed, datetime)
+
+    assert item.model_dump(mode="json")[field] == f"{parsed.date()} {expected_time}"
+
+
+def test_time_python_dump_preserves_datetime_and_precision() -> None:
+    value = datetime(2026, 9, 18, 9, 30, 45, 987654, timezone(timedelta(hours=8)))
+    item = SwapOrderOpenApiBaseSaveReqVO(
+        placeOrderStartTime=value, placeOrderEndTime=value
+    )
+
+    assert item.model_dump(exclude_none=True) == {
+        "placeOrderStartTime": value,
+        "placeOrderEndTime": value,
+    }
+
+
+def test_none_times_are_null_or_omitted_in_json() -> None:
+    item = SwapOrderOpenApiBaseSaveReqVO(placeOrderStartTime=None, placeOrderEndTime=None)
+
+    assert item.model_dump(mode="json")["placeOrderStartTime"] is None
+    assert item.model_dump(mode="json")["placeOrderEndTime"] is None
+    assert item.model_dump(mode="json", exclude_none=True) == {}
+    assert json.loads(item.model_dump_json(exclude_none=True)) == {}
+
+
+@pytest.mark.asyncio
+async def test_operate_sends_backend_time_format_for_all_orders() -> None:
+    seen: list[httpx.Request] = []
+    response = {"code": 0, "msg": "ok", "data": {"orderId": "H-1"}}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(request)
+        return httpx.Response(200, json=response)
+
+    req = SwapOrderOpenApiSaveReqVO.model_validate({
+        "type": "place_order_request",
+        "orderList": [
+            {
+                "placeOrderStartTime": "2026-09-18T09:30:00.123456+08:00",
+                "placeOrderEndTime": "2026-09-18T15:00:00+08:00",
+            },
+            {"placeOrderStartTime": "2026-09-19 10:00:00", "placeOrderEndTime": None},
+            {"placeOrderEndTime": "2026-09-19 11:00:00"},
+            {},
+        ],
+        "conversationId": "test",
+        "messageId": 1,
+        "messageContent": "test",
+        "rawContent": "test",
+        "userId": "test",
+        "roomId": "test",
+    })
+    client = SwapClientHttpx(
+        base_url="http://swap.test", token="test", timeout=1,
+        transport=httpx.MockTransport(handler), dry_run=False,
+    )
+
+    assert await client.operate(req) == response
+    assert len(seen) == 1
+    assert seen[0].method == "POST"
+    assert seen[0].url.path == "/admin-api/swap-order/operate"
+    assert json.loads(seen[0].content)["orderList"] == [
+        {"placeOrderStartTime": "2026-09-18 09:30:00", "placeOrderEndTime": "2026-09-18 15:00:00"},
+        {"placeOrderStartTime": "2026-09-19 10:00:00"},
+        {"placeOrderEndTime": "2026-09-19 11:00:00"},
+        {},
+    ]

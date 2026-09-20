@@ -11,7 +11,7 @@ from enum import StrEnum
 from typing import Any, Protocol
 
 import httpx
-from pydantic import ConfigDict, Field, field_validator
+from pydantic import ConfigDict, Field, field_serializer, field_validator
 
 from app.tools.http_pool import acquire_http_client
 from app.tools.models import (
@@ -60,6 +60,11 @@ class SwapOrderOpenApiBaseSaveReqVO(WireModel):
     place_order_start_time: datetime | None = Field(default=None, alias="placeOrderStartTime")
     place_order_end_time: datetime | None = Field(default=None, alias="placeOrderEndTime")
     order_id: str | None = Field(default=None, alias="orderId")  # 改单时填
+
+    @field_serializer("place_order_start_time", "place_order_end_time", when_used="json")
+    def _serialize_order_time(self, value: datetime | None) -> str | None:
+        """后端要求秒级本地时间字符串；保留输入时刻的钟面值，不换算时区。"""
+        return value.strftime("%Y-%m-%d %H:%M:%S") if value is not None else None
 
     @field_validator('place_order_start_time', 'place_order_end_time', mode="before")
     @classmethod

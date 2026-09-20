@@ -22,6 +22,10 @@ class Settings(BaseSettings):
     # === LLM ===
     qwen_api_base: str
     qwen_api_key: str
+    llm_trust_env: bool = Field(
+        default=True,
+        description="LLM HTTP 客户端是否读取环境/系统代理和证书配置；内网直连设为 false",
+    )
     # 全部统一 qwen3.5-35b-a3b + enable_thinking=False（见 clients.py），
     # 保留 3 个变量名是为了未来按节点切回不同模型时只改 .env
     qwen_model_standard: str = "qwen3.5-35b-a3b"
