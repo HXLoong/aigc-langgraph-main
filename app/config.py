@@ -87,6 +87,14 @@ class Settings(BaseSettings):
     log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR"] = "INFO"
     # ADR 0024 D5：结构化日志格式；auto = development 彩色控制台、其余 JSON（每条带 trace_id）
     log_format: Literal["auto", "json", "console"] = "auto"
+    telemetry_masking_enabled: bool = Field(
+        default=False,
+        description="是否对 Langfuse 和结构化日志启用字段脱敏；默认关闭，所有环境一致",
+    )
+    telemetry_masking_fields: str = Field(
+        default="password,secret,api_key,token,authorization",
+        description="脱敏字段名，逗号分隔；仅在开关开启时生效，空列表不隐藏任何字段",
+    )
     environment: Literal["development", "staging", "production"] = "development"
     enable_langfuse: bool = False
     langfuse_public_key: str = ""
