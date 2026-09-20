@@ -16,10 +16,13 @@ from starlette.middleware.base import BaseHTTPMiddleware
 
 from app.api.health import router as health_router
 from app.api.idempotency import MySQLIdempotencyStore
+from app.api.nodes import router as nodes_router
 from app.api.routes import router as api_router
 from app.checkpointer.factory import close_checkpointer, init_checkpointer
 from app.config import get_settings
 from app.graph.main import build_main_graph
+from app.node_execution.executor import NodeExecutor
+from app.node_execution.registry import build_registry
 from app.observability import tracing
 from app.observability.logs import configure_logging_from_settings
 from app.observability.metrics import emit_http_response, get_collector
@@ -67,6 +70,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         checkpointer=checkpointer,
         message_client_factory=message_client_factory,
     )
+    app.state.node_executor = NodeExecutor(build_registry(message_client_factory))
     logger.info("main graph compiled")
 
     yield
@@ -124,6 +128,7 @@ class HTTPMetricsMiddleware(BaseHTTPMiddleware):
 app.add_middleware(HTTPMetricsMiddleware)
 
 app.include_router(api_router)
+app.include_router(nodes_router)
 app.include_router(health_router)
 
 
