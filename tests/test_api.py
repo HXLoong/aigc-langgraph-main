@@ -20,7 +20,6 @@ from app.subgraphs.swap import backend as swap_backend_module
 from app.subgraphs.swap import intent as swap_intent_module
 from app.subgraphs.swap import place_order as swap_place_order_module
 from app.subgraphs.swap.models import SwapIntentOutput, SwapPlaceOrderParams
-from app.subgraphs.ticker.resolver import TickerResolution
 from tests.intent_fixtures import intent_reply, mock_ainvoke
 
 
@@ -86,11 +85,6 @@ def test_workflows_run_returns_dify_compatible_schema(
         swap_place_order_module,
         "get_qwen_complex",
         lambda: fake_structured_llm(SwapPlaceOrderParams(orderList=[])),
-    )
-    monkeypatch.setattr(
-        swap_place_order_module,
-        "resolve_ticker_full",
-        AsyncMock(return_value=TickerResolution(resolved=[], hitl_pending=[])),
     )
     fake_client = MagicMock()
     fake_client.operate = AsyncMock(return_value={"code": 0, "data": {}, "msg": ""})

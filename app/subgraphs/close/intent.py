@@ -9,7 +9,7 @@ from app.execution.confirmation import (
     confirmation_attempt,
     has_execution_parameters,
 )
-from app.extraction.intent_evidence import intent_records, source_payload
+from app.extraction.intent_evidence import intent_records
 from app.graph.retry import io_node
 from app.graph.state import AgentState, TraceEntry
 from app.llm.clients import get_qwen_thinking
@@ -19,11 +19,7 @@ from app.subgraphs.close.models import CloseIntentOutput
 
 
 def _build_user_message(state: AgentState) -> str:
-    return (
-        f"raw_content: {state.get('raw_text', '') or ''}\n\n"
-        f"quote_content: {state.get('quote_content') or ''}\n\n"
-        f"history_query_str:\n{blocks.format_history(state.get('history_messages'))}"
-    )
+    return blocks.source_payload(state)
 
 
 SPEC = register(PromptSpec(
@@ -31,7 +27,7 @@ SPEC = register(PromptSpec(
     name="intent",
     output_model=CloseIntentOutput,
     inputs=("raw_text", "quote_content", "history_messages"),
-    user_builder=lambda state: _build_user_message(state) + "\n" + source_payload(state),
+    user_builder=_build_user_message,
 ))
 
 
@@ -56,6 +52,10 @@ def _deterministic_intent(raw: str) -> str | None:
 @io_node
 async def close_intent(state: AgentState) -> dict[str, Any]:
     """close.intent 节点。"""
+    if not (state.get("raw_text") or "").strip():
+        return {"intent": "unknown_intent", "trace": [TraceEntry(
+            node="close_intent", decision="empty_current_input",
+        )]}
     deterministic = _deterministic_intent(state.get("raw_text") or "")
     if deterministic:
         return {"intent": deterministic, "trace": [TraceEntry(

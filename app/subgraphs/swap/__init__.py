@@ -6,7 +6,7 @@ DSL v2 迁移（2026-08）：意图 → {下单(规整引用补参摘要 → 下
 
 已实施节点：
 - swap.intent · 二级意图分类（6 个真实 SwapIntentionType + unknown_intent 兜底）
-- swap.place_order · 下单/改单参数提取（含互换-规整引用补参摘要 + ticker resolver）
+- swap.place_order · 下单/改单参数提取（含互换-规整引用补参摘要；证券识别交后端）
 - swap.select_counterparty / swap.select_ticker · 引用消息候选交易对手/标的选择
 - swap.place_order_submit · 前置清洗 + 互换开仓（真后端提交）
 - swap.confirm · 确认下单（含二次校验）/ 确认撤单 / 确认改单（共用节点函数，按

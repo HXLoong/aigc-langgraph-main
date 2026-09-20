@@ -16,7 +16,6 @@ from harness.case_generator import (
 def test_node_registry_contains_p0_nodes() -> None:
     """P0 横切 + 三链路核心节点必须在注册表里。"""
     must_have = {
-        "ticker.resolver",
         "swap.intent",
         "swap.place_order",
         "option.intent",
@@ -52,11 +51,10 @@ def test_close_intent_has_six_close_order_intents() -> None:
     assert len(close_intents) == 6
 
 
-def test_ticker_has_no_intent() -> None:
-    """ticker 子图输出 list[TickerCandidate]，无 intent 字段。"""
-    spec = NODE_REGISTRY["ticker.resolver"]
-    assert spec.intent_values == []
-    assert spec.product_type == "ticker"
+def test_retired_ticker_cannot_generate_business_seeds() -> None:
+    assert "ticker.resolver" not in NODE_REGISTRY
+    with pytest.raises(KeyError):
+        render_seed_template("ticker.resolver")
 
 
 # ============================================================
@@ -82,8 +80,8 @@ def test_render_template_custom_slot_count() -> None:
 
 
 def test_render_template_includes_sample_inputs() -> None:
-    md = render_seed_template("ticker.resolver")
-    spec = NODE_REGISTRY["ticker.resolver"]
+    md = render_seed_template("swap.place_order")
+    spec = NODE_REGISTRY["swap.place_order"]
     for sample in spec.sample_inputs:
         assert sample in md
 

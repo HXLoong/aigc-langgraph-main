@@ -10,19 +10,13 @@ from typing import Any
 from app.config import get_settings
 from app.graph.safe_node import safe_node
 from app.graph.state import AgentState, TraceEntry
-from app.observability.metrics import emit_fallback, emit_hitl
+from app.observability.metrics import emit_fallback
 from app.tools.receipts import SERVICE_UNAVAILABLE, UNCERTAIN_REPLY, receipt_text
 
 # ============================================================
 # 话术常量
 # ============================================================
 
-_HITL_HEADER = "以下标的均可能匹配，请确认选择哪个："
-_ZERO_HIT_TMPL = (
-    "抱歉，无法识别「{raw_text}」中的标的，"
-    "能换一种更标准的说法吗？"
-    "（例如：证券代码如 600519.SH，或完整名称如 贵州茅台）"
-)
 # DSL v2 env.default_reply 等价物:统一兜底文案从配置读(现场可改不发版)
 _ERROR_REPLY = get_settings().default_reply
 _UNREACHABLE_REPLY = SERVICE_UNAVAILABLE
@@ -34,22 +28,6 @@ _SWAP_MISSING_CONTEXT_REPLY = (
     "请求信息不完整，暂时无法调用互换服务，请重新发送原消息或联系运营。"
 )
 _SWAP_NO_RESULT_REPLY = UNCERTAIN_REPLY
-
-
-def _format_hitl_card(hitl_candidates: list[dict[str, Any]]) -> str:
-    """把 hitl_pending 列表格式化成文本消歧卡片。"""
-    lines: list[str] = []
-    for item in hitl_candidates:
-        keyword = item.get("keyword", "?")
-        candidates = item.get("candidates", [])
-        lines.append(f"关于「{keyword}」：")
-        for idx, c in enumerate(candidates, 1):
-            wind_code = c.get("windCode", "")
-            sht_desc = c.get("insShtDesc") or wind_code
-            lines.append(f"  {idx}. {sht_desc}（{wind_code}）")
-    if not lines:
-        return _ERROR_REPLY
-    return _HITL_HEADER + "\n" + "\n".join(lines)
 
 
 @safe_node
@@ -91,23 +69,6 @@ def _render_branch(state: AgentState) -> tuple[dict[str, Any], str]:
     if product_type == "swap" and err_type == "EmptyBackendResultError":
         emit_fallback(reason="swap_backend_empty_result")
         return {"reply_text": _SWAP_NO_RESULT_REPLY}, "error:swap_backend_empty_result"
-
-    # HITL 消歧
-    hitl = state.get("ticker_hitl_candidates")
-    if hitl:
-        emit_hitl(node="render")
-        emit_fallback(reason="hitl_card")
-        return {"reply_text": _format_hitl_card(hitl)}, "hitl_card"
-
-
-    # 4. 0 命中（标的为空且无有效订单参数）
-    tickers = state.get("tickers")
-    place_params = state.get("place_params")
-    if tickers is not None and len(tickers) == 0 and bool(place_params):
-        emit_fallback(reason="zero_match")
-        raw_text = (state.get("raw_text") or "")[:40]
-        return {"reply_text": _ZERO_HIT_TMPL.format(raw_text=raw_text)}, "zero_match"
-
 
     # error → 区分不可达 vs 一般 cascade fail
     if err is not None:

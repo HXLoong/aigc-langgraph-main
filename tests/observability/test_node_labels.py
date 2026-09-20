@@ -51,13 +51,12 @@ def test_catalogue_covers_registered_graphs_and_model_kinds():
     from app.subgraphs.option.graph import build_option_graph
     from app.subgraphs.swap.graph import build_swap_graph
     from app.subgraphs.swap.place_order import build_place_graph
-    from app.subgraphs.ticker.graph import build_ticker_graph
 
     labels = _labels().NODE_LABELS
     worker = build_main_graph(_instruction_worker=True)
     graphs = [build_main_graph(), worker, build_instructions_graph(worker), build_swap_graph(),
               build_place_graph(), build_option_graph(), build_inquiry_graph(), build_close_graph(),
-              build_place_close_graph(), build_ticker_graph()]
+              build_place_close_graph()]
     for graph in graphs:
         assert set(graph.builder.nodes) - {n for n in graph.builder.nodes
                                           if n.startswith("__error_handler__")} <= labels.keys()

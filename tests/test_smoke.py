@@ -27,7 +27,7 @@ async def test_main_graph_e2e_swap_keyword(
 ) -> None:
     """ADR 0015 第 2 层：'互换' 关键词 → swap 子图 → place_order_request →
     swap_place_order + swap_place_order_submit 真节点链。"""
-    from unittest.mock import AsyncMock, MagicMock
+    from unittest.mock import MagicMock
 
     from app.subgraphs.swap import intent as swap_intent_module
     from app.subgraphs.swap import place_order as swap_po_module
@@ -36,17 +36,16 @@ async def test_main_graph_e2e_swap_keyword(
         SwapOrderItem,
         SwapPlaceOrderParams,
     )
-    from app.subgraphs.ticker.resolver import TickerResolution
 
     def _patch(module: object, value: object, fn: str = "get_qwen_thinking") -> None:
         fake_llm = MagicMock()
-        fake_llm.ainvoke = AsyncMock(return_value=(swap_candidate_output(value) if isinstance(value, SwapPlaceOrderParams) else value))
+        fake_llm.ainvoke = mock_ainvoke(swap_candidate_output(value) if isinstance(value, SwapPlaceOrderParams) else value)
         fake_base = MagicMock()
         fake_base.with_structured_output = MagicMock(return_value=fake_llm)
         monkeypatch.setattr(module, fn, lambda: fake_base)
 
     async def _fake_operate(self, req):  # type: ignore[no-untyped-def]
-        return {"code": 0, "msg": "ok", "data": {"orderId": "H-20260828-0000000001"}}
+        return {"code": 0, "msg": "ok", "data": "互换订单已受理 H-20260828-0000000001"}
 
     monkeypatch.setattr(
         "app.tools.swap_client.SwapClientHttpx.operate", _fake_operate
@@ -64,11 +63,6 @@ async def test_main_graph_e2e_swap_keyword(
             ]
         ),
         fn="get_qwen_complex",
-    )
-    monkeypatch.setattr(
-        swap_po_module,
-        "resolve_ticker_full",
-        AsyncMock(return_value=TickerResolution(resolved=[], hitl_pending=[])),
     )
 
     graph = build_main_graph()
@@ -186,15 +180,15 @@ async def test_main_graph_trace_is_isolated_per_turn(
     )
 
     expected = [
-        "ingest", "pre_route", "intent_route", "fallback", "persist_intent", "render",
+        "ingest", "plan_instructions", "pre_route", "intent_route", "fallback", "persist_intent", "render",
         "remember_confirmed_params",  # ADR 0024 D4：ConversationMemory 写入点
         "record_history",  # ADR 0024 阶段 0：record_history 纳入 @safe_node，自动记 trace
         "persist",
     ]
     assert [entry.node for entry in first["trace"]] == expected
     assert [entry.node for entry in second["trace"]] == expected
-    assert first["trace"][4].decision == "skipped"
-    assert second["trace"][4].decision == "skipped"
+    assert next(e for e in first["trace"] if e.node == "persist_intent").decision == "skipped"
+    assert next(e for e in second["trace"] if e.node == "persist_intent").decision == "skipped"
     assert [(message.role, message.content) for message in second["history_messages"]] == [
         ("user", "第一轮"), ("assistant", first["reply_text"]),
         ("user", "第二轮"), ("assistant", second["reply_text"]),

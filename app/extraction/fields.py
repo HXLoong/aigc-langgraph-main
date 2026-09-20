@@ -4,6 +4,7 @@ from __future__ import annotations
 import logging
 import re
 from collections.abc import Mapping
+from dataclasses import dataclass
 from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -12,6 +13,13 @@ logger = logging.getLogger(__name__)
 
 FieldSource = Literal["user", "inferred", "goats", "default"]
 EvidenceOrigin = Literal["raw", "quote", "history", "attachment"]
+
+
+@dataclass(frozen=True)
+class CandidateDescription:
+    """Extraction semantics alongside the canonical field, omitted from wire metadata."""
+
+    text: str
 
 
 class EvidenceError(ValueError):

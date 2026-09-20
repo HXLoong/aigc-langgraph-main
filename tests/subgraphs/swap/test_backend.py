@@ -214,8 +214,6 @@ async def test_place_order_node_no_backend_call(
     """swap_place_order 提取节点单独调用时不触发后端调用（职责已拆到 submit 节点）。"""
     from app.subgraphs.swap import place_order as po_module
     from app.subgraphs.swap.models import SwapOrderItem, SwapPlaceOrderParams
-    from app.subgraphs.ticker.resolver import TickerResolution
-    monkeypatch.setattr(po_module, "resolve_ticker_full", AsyncMock(return_value=TickerResolution(resolved=[], hitl_pending=[])))
 
     params = SwapPlaceOrderParams(
         orderList=[SwapOrderItem(placeOrderWindCode="腾讯", placeOrderQuantity=1000)]

@@ -150,8 +150,6 @@ def normalize_field(field: str, value: str, evidence: str | None = None) -> Any:
     evidence = evidence or text
     if field == "placeOrderOrderDirection" and text.upper() in {"B", "S", "L"}:
         return _direction_shorthand(text, evidence)
-    if field == "placeOrderWindCode" and re.fullmatch(r"[A-Za-z0-9]+\.[A-Za-z]+", text):
-        return text.upper()
     if field in _ENUMS:
         for normalized, aliases in _ENUMS[field].items():
             if any(text.upper() == alias.upper() for alias in aliases):

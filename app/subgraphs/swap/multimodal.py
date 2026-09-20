@@ -1,10 +1,9 @@
-"""图片/Excel 转写证据 → 原文候选 → Code 归一化 → GOATS 绑定；写入仍由 submit 完成。"""
+"""图片/Excel 转写证据 → 原文候选 → Code 归一化；写入仍由 submit 完成。"""
 from __future__ import annotations
 
 import asyncio
 import io
-import json
-from typing import Any, cast
+from typing import Any
 
 import httpx
 import openpyxl
@@ -16,8 +15,8 @@ from app.graph.business_params import validated_place_params
 from app.graph.retry import io_node
 from app.graph.state import AgentState, TraceEntry
 from app.llm.clients import get_qwen_structured, get_qwen_vl
+from app.prompts import blocks
 from app.prompts.spec import PromptSpec, register
-from app.subgraphs.swap.models import SwapPlaceOrderParams
 from app.subgraphs.swap.multimodal_evidence import (
     ImageTranscription,
     excel_evidence_rows,
@@ -26,9 +25,7 @@ from app.subgraphs.swap.multimodal_evidence import (
 )
 from app.subgraphs.swap.place_order import (
     CANDIDATE_MODEL,
-    SwapPlaceState,
     _expected_action,
-    swap_resolve,
 )
 
 
@@ -62,7 +59,7 @@ def _image_urls(files: list[dict[str, Any]]) -> list[str]:
 
 
 def _user_from_state(state: AgentState) -> str:
-    return json.dumps({"sources": evidence_sources(state)}, ensure_ascii=False)
+    return blocks.source_payload(state)
 
 
 IMAGE_OCR_SPEC = register(PromptSpec(
@@ -89,7 +86,7 @@ async def _extract_candidates(
     llm = get_qwen_structured().with_structured_output(CANDIDATE_MODEL)
     result = CANDIDATE_MODEL.model_validate(await llm.ainvoke([
         ("system", system),
-        ("user", json.dumps({"sources": sources}, ensure_ascii=False)),
+        ("user", blocks.source_payload(state, attachments=attachments)),
     ]))
     verify_candidates(result, sources)
     # Every row must be grounded in this attachment, not a duplicated instruction from raw/history.
@@ -107,28 +104,18 @@ async def _params_update(
         raise ValueError("附件中未识别到有效订单，请提供清晰的交易信息")
     candidates = CANDIDATE_MODEL.model_validate({"orderList": orders})
     params, records = normalize_attachment_candidates(candidates, evidence_sources(state, attachments))
-    resolved = await swap_resolve(cast(SwapPlaceState, {
-        **state, "sp_params": params.model_dump(), "field_records": records,
-    }))
-    if resolved.get("error"):
-        return {"error": resolved["error"], "trace": resolved.get("trace") or []}
-    records.update(resolved.get("field_records") or {})
     params, records = lock_attachment_bindings(
-        SwapPlaceOrderParams.model_validate(resolved["sp_params"]),
-        resolved["sp_bindings"], records, state.get("swap_counterparties") or [],
+        params, records, state.get("swap_counterparties") or [],
     )
     return {
         "expected_action": _expected_action(params),
         "place_params": validated_place_params(orderList=[item.model_dump() for item in params.order_list]),
         "field_records": records,
-        "tickers": resolved["tickers"],
-        "ticker_hitl_candidates": resolved.get("ticker_hitl_candidates"),
         "intent": "place_order_request",
         "trace": [TraceEntry(node=node, decision=decision, llm_output={
             "prompt_name": prompt_names[0], "prompt_names": list(dict.fromkeys(prompt_names)),
             "ocr_prompt_name": ocr_prompt_name,
             "attachment_references": list(attachments),
-            "ticker_bindings": resolved["sp_bindings"],
         })],
     }
 

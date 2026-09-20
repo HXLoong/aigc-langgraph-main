@@ -1,6 +1,7 @@
 """swap.intent 节点测试（mock LLM，不联网）。"""
 from __future__ import annotations
 
+import json
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -45,14 +46,14 @@ class TestBuildUserMessage:
                 "swap_counterparties": [{"shortName": "打火机", "sort": "A"}],
             }
         )
-        assert "raw_content：做一笔招商银行的 TRS" in msg
-        assert "quote_content：" in msg
-        assert "shortname_list：打火机" in msg
+        assert json.loads(msg)["sources"]["raw"] == '做一笔招商银行的 TRS'
+        assert "quote" in json.loads(msg)["sources"]
+        assert json.loads(msg)["context"]["shortname_list"] == ["打火机"]
 
     def test_handles_empty_state(self) -> None:
         msg = _build_user_message({})
-        assert "raw_content：" in msg
-        assert "shortname_list：" in msg
+        assert json.loads(msg)["sources"]["raw"] == ''
+        assert "shortname_list" in json.loads(msg)["context"]
 
 
 # ============================================================

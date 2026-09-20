@@ -81,8 +81,6 @@ async def test_new_inquiry_routes_to_extract_inquiry(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     _patch_intent(monkeypatch, "new_inquiry")
-    from app.subgraphs.ticker.resolver import TickerResolution
-    monkeypatch.setattr(inquiry_module, "resolve_ticker_full", AsyncMock(return_value=TickerResolution(resolved=[], hitl_pending=[])))
     _patch(
         monkeypatch,
         inquiry_module,

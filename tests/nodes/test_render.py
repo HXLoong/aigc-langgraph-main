@@ -26,7 +26,7 @@ async def test_render_does_not_zero_match_with_default_empty_place_params() -> N
 
 
 @pytest.mark.asyncio
-async def test_render_zero_match_triggers_when_place_params_has_content() -> None:
+async def test_render_empty_tickers_does_not_claim_security_rejection() -> None:
     """place_params 有实质内容（真实 inquiry 路径）+ tickers=[] → 才触发零命中提示。"""
     state: dict = {
         "tickers": [],
@@ -36,7 +36,8 @@ async def test_render_zero_match_triggers_when_place_params_has_content() -> Non
     }
     update = await render(state)  # type: ignore[arg-type]
     reply = update.get("reply_text") or ""
-    assert "无法识别" in reply, f"应触发零命中提示，实际: {reply!r}"
+    assert "证券代码如" not in reply
+    assert update["trace"][0].decision == "no_reply"
 
 
 # ============================================================

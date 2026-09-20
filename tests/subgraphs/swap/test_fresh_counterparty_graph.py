@@ -30,15 +30,7 @@ from app.subgraphs.swap.models import (
     SwapSelectCounterpartyOutput,
     SwapSelectTickerOutput,
 )
-from app.subgraphs.ticker import resolver, tools
-from app.subgraphs.ticker.models import (
-    InferCodeOutput,
-    JudgeTypeOutput,
-    RankOutput,
-    SplitKeywordsOutput,
-)
 from app.tools.swap_client import SwapClientHttpx
-from app.tools.ticker_client import TickerClientHttpx
 from tests.intent_fixtures import intent_reply, mock_ainvoke
 from tests.subgraphs.swap.test_fresh_counterparty import fresh_state, patch_recognition
 
@@ -60,22 +52,6 @@ def graph_boundaries(
     patch_structured(monkeypatch, intent, "get_qwen_thinking",
                      intent_reply(SwapIntentOutput, type="place_order_request"))
     patch_structured(monkeypatch, place_order, "get_qwen_complex", params)
-    empty_outputs = {
-        InferCodeOutput: InferCodeOutput.model_validate({"results": {}}),
-        SplitKeywordsOutput: SplitKeywordsOutput.model_validate({"results": {}}),
-        JudgeTypeOutput: JudgeTypeOutput.model_validate({"results": {}}),
-        RankOutput: RankOutput(ranked_codes=[]),
-    }
-
-    def make_structured(model):
-        inner = MagicMock()
-        inner.ainvoke = AsyncMock(return_value=empty_outputs[model])
-        return inner
-
-    ticker_model = MagicMock()
-    ticker_model.with_structured_output = MagicMock(side_effect=make_structured)
-    monkeypatch.setattr(tools, "get_qwen_standard", lambda: ticker_model)
-
     requests: list[dict[str, Any]] = []
 
     def handle(request: httpx.Request) -> httpx.Response:
@@ -87,9 +63,6 @@ def graph_boundaries(
         return httpx.Response(200, json={"code": 0, "data": "后端原始回复"})
 
     transport = httpx.MockTransport(handle)
-    monkeypatch.setattr(resolver, "_make_client", lambda: TickerClientHttpx(
-        base_url="http://swap.test", token="test-only", transport=transport,
-    ))
     monkeypatch.setattr(backend, "SwapClientHttpx", lambda: SwapClientHttpx(
         base_url="http://swap.test", token="test-only", transport=transport, dry_run=False,
     ))
@@ -131,7 +104,7 @@ async def test_fresh_all_holdings_reaches_backend_with_completed_counterparty(
     assert request["rawContent"] == state["raw_text"] == "平仓价值精选全部持仓"
     # 既有后端上下文协议会把非空 quote（包括字面量 null）追加到 messageContent。
     assert request["messageContent"] == "平仓价值精选全部持仓" + (f"\n{quote}" if quote else "")
-    assert [entry.node for entry in final["trace"] if entry.node not in {"swap_extract_candidates", "swap_normalize", "swap_resolve", "swap_place_result"}] == [
+    assert [entry.node for entry in final["trace"] if entry.node not in {"swap_extract_candidates", "swap_normalize", "swap_place_result"}] == [
         "swap_intent", "swap_place_order", "swap_recognize_fresh_counterparty",
         "swap_place_order_submit",
     ]
@@ -176,7 +149,7 @@ async def test_current_dev_case_7_broadcasts_name_to_both_orders(
     assert len(requests) == 1
     orders = requests[0]["orderList"]
     assert [order["placeOrderShortname"] for order in orders] == ["聚鸣价值精选"] * 2
-    assert [order["placeOrderWindCode"] for order in orders] == ["300748.SZ"] * 2
+    assert [order["placeOrderWindCode"] for order in orders] == ["300748.sz"] * 2
     assert [order["placeOrderQuantity"] for order in orders] == [30000, 50000]
     assert [order["placeOrderOrderDirection"] for order in orders] == ["SELL"] * 2
     assert orders[0]["placeOrderPrice"] == "24.6"

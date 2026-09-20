@@ -1,10 +1,11 @@
 """close 子图的 Pydantic Output 模型。"""
 from __future__ import annotations
 
-from typing import Literal
+from typing import Annotated, Literal
 
 from pydantic import ConfigDict, Field
 
+from app.extraction.fields import CandidateDescription
 from app.extraction.intent_evidence import IntentEvidenceOutput
 from app.wire_model import WireModel
 
@@ -58,13 +59,13 @@ class HoldingQueryParams(WireModel):
 
     model_config = ConfigDict(extra="ignore")
 
-    closeable_only: bool = Field(description="true = 用户有平仓意图，只查可平持仓；false = 查全部持仓")
-    internal_trade_id_list: list[str] = Field(alias="internalTradeIdList", default_factory=list, description="用户提到的合约编号列表（OPT-/OPTG- 开头），未提及 → []")
-    key_ctpty_id_list: list[int] = Field(alias="keyCtptyIdList", default_factory=list, description="用户明确指示的交易对手在「交易对手列表」中匹配到的 ctptyId；无指示词 → []；提及但无相似匹配 → 99999999")
-    underlying_ins_name_list: list[str] = Field(alias="underlyingInsNameList", default_factory=list, description="用户提到的标的名称列表（个股 / ETF / 指数 / 期货品种中文名或简称，原样输出）")
-    underlying_ins_id_list: list[str] = Field(alias="underlyingInsIdList", default_factory=list, description="用户提到的标的代码列表（带交易所后缀原样输出）")
-    ins_family_list: list[InsFamily] = Field(alias="insFamilyList", default_factory=list, description="标的类型过滤：EQUITY / INDEX / FUND / FUTURE")
-    contract_type_list: list[ContractType] = Field(alias="contractTypeList", default_factory=list, description="期权合约类型过滤：EUROPEAN_VANILLA / AUTOCALL / PARTICIPATORY / AIRBAG")
+    closeable_only: Annotated[bool, CandidateDescription('查询或平仓意愿原文，包含否定词；不输出布尔值')] = Field(description="true = 用户有平仓意图，只查可平持仓；false = 查全部持仓")
+    internal_trade_id_list: Annotated[list[str], CandidateDescription('用户给出的合约编号原文候选列表')] = Field(alias="internalTradeIdList", default_factory=list, description="用户提到的合约编号列表（OPT-/OPTG- 开头），未提及 → []")
+    key_ctpty_id_list: Annotated[list[int], CandidateDescription('用户明确指定的对手名称原文候选列表；不查表填 ID')] = Field(alias="keyCtptyIdList", default_factory=list, description="用户明确指示的交易对手在「交易对手列表」中匹配到的 ctptyId；无指示词 → []；提及但无相似匹配 → 99999999")
+    underlying_ins_name_list: Annotated[list[str], CandidateDescription('用户给出的标的名称原文候选列表')] = Field(alias="underlyingInsNameList", default_factory=list, description="用户提到的标的名称列表（个股 / ETF / 指数 / 期货品种中文名或简称，原样输出）")
+    underlying_ins_id_list: Annotated[list[str], CandidateDescription('用户给出的标的代码原文候选列表，不补后缀')] = Field(alias="underlyingInsIdList", default_factory=list, description="用户提到的标的代码列表（带交易所后缀原样输出）")
+    ins_family_list: Annotated[list[InsFamily], CandidateDescription('标的类别原文候选列表，不转枚举')] = Field(alias="insFamilyList", default_factory=list, description="标的类型过滤：EQUITY / INDEX / FUND / FUTURE")
+    contract_type_list: Annotated[list[ContractType], CandidateDescription('期权产品结构原文候选列表，不转枚举')] = Field(alias="contractTypeList", default_factory=list, description="期权合约类型过滤：EUROPEAN_VANILLA / AUTOCALL / PARTICIPATORY / AIRBAG")
 
 
 # ============================================================
@@ -85,17 +86,17 @@ class CloseOrderItem(WireModel):
 
     model_config = ConfigDict(extra="ignore")
 
-    order_id: str | None = Field(default=None, alias="orderId", description="平仓订单号 CO-YYYYMMDD-XXXXXXXX，或由序号 / 第X笔在 holdingMap 中解析得到")
-    internal_trade_id: str | None = Field(default=None, alias="internalTradeId", description="合约编号（OPT-/OPTG-），与 orderId 二选一或同时给出")
+    order_id: Annotated[str | None, CandidateDescription('本轮或唯一引用中的订单号、序号或第几笔原文，不查表生成单号')] = Field(default=None, alias="orderId", description="平仓订单号 CO-YYYYMMDD-XXXXXXXX，或由序号 / 第X笔在 holdingMap 中解析得到")
+    internal_trade_id: Annotated[str | None, CandidateDescription('用户给出的合约编号原文')] = Field(default=None, alias="internalTradeId", description="合约编号（OPT-/OPTG-），与 orderId 二选一或同时给出")
     #: 平仓金额（字符串数字，"全部" 时由后端语义而非此字段）
-    close_order_notional_delta: str | None = Field(default=None, alias="closeOrderNotionalDelta", description="平仓金额，字符串数字（元）；比例 / 余额表达按规则换算；全部平仓由 confirmFullClose 表达")
-    close_order_type: ClosePriceType | None = Field(default=None, alias="closeOrderType", description="平仓方式：市价单 / 限价单 / POV / TWAP；未明确 → null")
-    close_order_price: float | int | None = Field(default=None, alias="closeOrderPrice", description="限价价格（数字）")
-    close_order_pov_ratio: int | None = Field(default=None, alias="closeOrderPovRatio", description="POV 跟量比例（整数百分比）；「最大跟量」类语义不在此填值")
+    close_order_notional_delta: Annotated[str | None, CandidateDescription('平仓金额、比例或保留金额原文，保留单位，不计算余额')] = Field(default=None, alias="closeOrderNotionalDelta", description="平仓金额，字符串数字（元）；比例 / 余额表达按规则换算；全部平仓由 confirmFullClose 表达")
+    close_order_type: Annotated[ClosePriceType | None, CandidateDescription('平仓执行方式原文，不转枚举')] = Field(default=None, alias="closeOrderType", description="平仓方式：市价单 / 限价单 / POV / TWAP；未明确 → null")
+    close_order_price: Annotated[float | int | None, CandidateDescription('限价价格原文')] = Field(default=None, alias="closeOrderPrice", description="限价价格（数字）")
+    close_order_pov_ratio: Annotated[int | None, CandidateDescription('跟量比例原文，保留百分号，不填默认比例')] = Field(default=None, alias="closeOrderPovRatio", description="POV 跟量比例（整数百分比）；「最大跟量」类语义不在此填值")
     #: TWAP 起始时间，格式 "HH:MM"
-    close_order_algo_start_time: str | None = Field(default=None, alias="closeOrderAlgoStartTime", description="TWAP 开始时间 HH:MM")
-    close_order_algo_end_time: str | None = Field(default=None, alias="closeOrderAlgoEndTime", description="TWAP 结束时间 HH:MM")
-    confirm_full_close: bool | None = Field(default=None, alias="confirmFullClose", description="是否全部平仓（全部 / 全平 / 确认全部平仓）")
+    close_order_algo_start_time: Annotated[str | None, CandidateDescription('开始时间原文，不补日期或格式化')] = Field(default=None, alias="closeOrderAlgoStartTime", description="TWAP 开始时间 HH:MM")
+    close_order_algo_end_time: Annotated[str | None, CandidateDescription('结束时间原文，不补日期或格式化')] = Field(default=None, alias="closeOrderAlgoEndTime", description="TWAP 结束时间 HH:MM")
+    confirm_full_close: Annotated[bool | None, CandidateDescription('表达全部平仓的原文，保留否定词；不输出布尔值')] = Field(default=None, alias="confirmFullClose", description="是否全部平仓（全部 / 全平 / 确认全部平仓）")
 
 
 class ClosePlaceParams(WireModel):

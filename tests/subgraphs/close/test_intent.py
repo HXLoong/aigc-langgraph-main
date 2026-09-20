@@ -1,6 +1,7 @@
 """close.intent 节点测试（mock LLM）。"""
 from __future__ import annotations
 
+import json
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -59,13 +60,13 @@ class TestBuildUserMessage:
                 "history_messages": [],
             }
         )
-        assert "raw_content: 我有哪些期权持仓" in msg
-        assert "quote_content:" in msg
-        assert "history_query_str:" in msg
+        assert json.loads(msg)["sources"]["raw"] == '我有哪些期权持仓'
+        assert "quote" in json.loads(msg)["sources"]
+        assert "source_roles" in json.loads(msg)
 
     def test_handles_empty_state(self) -> None:
         msg = _build_user_message({})
-        assert "raw_content:" in msg
+        assert json.loads(msg)["sources"]["raw"] == ''
 
 
 # ============================================================

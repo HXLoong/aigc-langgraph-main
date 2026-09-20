@@ -18,7 +18,7 @@ from app.execution.confirmation import (
     confirmation_action,
     confirmation_attempt,
 )
-from app.extraction.intent_evidence import intent_records, source_payload
+from app.extraction.intent_evidence import intent_records
 from app.graph.retry import io_node
 from app.graph.state import AgentState, TraceEntry
 from app.llm.clients import get_qwen_structured
@@ -31,7 +31,7 @@ SPEC = register(PromptSpec(
     name="intent",
     output_model=OptionIntentOutput,
     inputs=INTENT_INPUTS,
-    user_builder=lambda state: intent_user(state) + "\n" + source_payload(state),
+    user_builder=intent_user,
 ))
 
 #: 兼容旧测试 / 调用点：user 消息拼装已收敛到 app/subgraphs/option/prompting.intent_user
@@ -45,6 +45,10 @@ async def option_intent(state: AgentState) -> dict[str, Any]:
     - intent: OptionIntentType 之一
     - trace: 单条 TraceEntry，记录 LLM 输出
     """
+    if not (state.get("raw_text") or "").strip():
+        return {"intent": "unknown_intent", "trace": [TraceEntry(
+            node="option_intent", decision="empty_current_input",
+        )]}
     raw = state.get("raw_text", "") or ""
     quote = state.get("quote_content") or ""
 
