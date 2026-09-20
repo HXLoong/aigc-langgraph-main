@@ -13,7 +13,7 @@ from app.extraction.candidates import (
     evidence_user,
     unpack_candidates,
 )
-from app.extraction.fields import FieldRecord, merge_fields
+from app.extraction.fields import EvidenceError, FieldRecord, merge_fields
 from app.graph.business_params import validated_place_params
 from app.graph.cascade import has_error
 from app.graph.retry import add_io_node, io_node
@@ -29,7 +29,7 @@ from app.llm.clients import get_qwen_thinking
 from app.prompts.spec import PromptSpec, register
 from app.subgraphs.option.backend import call_option_backend
 from app.subgraphs.option.models import OptionInquiryParams, OptionInquiryRawParams, OptionOrderItem
-from app.subgraphs.option.normalize import expand_inquiry_items
+from app.subgraphs.option.normalize import compound_call_strike, expand_inquiry_items
 from app.subgraphs.option.prompting import EXTRACT_INPUTS
 from app.subgraphs.option.sanitize import sanitize_order_list
 
@@ -148,17 +148,34 @@ async def inquiry_normalize(state: InquiryState) -> dict[str, Any]:
     expanded: list[dict[str, Any]] = []
     records: dict[str, FieldRecord] = {}
     for index, raw_item in enumerate(raw_params.order_list):
-        items = expand_inquiry_items([raw_item])
         prefix = f"option/inquiry.orderList.{index}."
+        source_records = state.get("iq_field_records") or {}
+        derived_strike = (
+            compound_call_strike(raw_item.option_type) is not None
+            and not (raw_item.strike_percentage or "").strip()
+        )
+        type_record = source_records.get(prefix + "optionType")
+        if derived_strike and (
+            type_record is None or type_record.value != raw_item.option_type
+            or not raw_item.option_type or raw_item.option_type not in type_record.evidence
+        ):
+            raise EvidenceError("复合期权表达缺少已验证的原文证据，不能派生执行价。")
+        items = expand_inquiry_items([raw_item])
         for item in items:
             canonical_item = OptionOrderItem.model_validate(item).model_dump()
             target = f"option/inquiry.orderList.{len(expanded)}."
-            for path, record in (state.get("iq_field_records") or {}).items():
+            for path, record in source_records.items():
                 if path.startswith(prefix):
                     alias = path[len(prefix):]
                     records[target + alias] = record.model_copy(update={
                         "value": canonical_item.get(alias), "locked": alias not in {"stockCode", "shortName"},
                     })
+            if derived_strike and type_record is not None:
+                # 关联到本笔订单的类型证据；多期限展开后仍保留各自原文来源。
+                records[target + "strikePercentage"] = type_record.model_copy(update={
+                    "value": canonical_item["strikePercentage"], "locked": True,
+                    "derived_from": [target + "optionType"],
+                })
             expanded.append(item)
     params = OptionInquiryParams.model_validate({"orderList": expanded})
     order_list = sanitize_order_list([item.model_dump() for item in params.order_list])

@@ -19,6 +19,7 @@ import re
 from collections.abc import Sequence
 from typing import Any
 
+from app.extraction.fields import EvidenceError
 from app.subgraphs.option.models import OptionInquiryRawItem
 
 # ============================================================
@@ -206,11 +207,22 @@ def split_strikes(text: str | None) -> list[float | None]:
     return [normalize_strike(part) for part in parts]
 
 
+_COMPOUND_CALL = re.compile(r"([0-9]+(?:\.[0-9]+)?)\s*%?\s*(?:call|看涨)", re.I)
+
+
+def compound_call_strike(value: str | None) -> float | None:
+    """完整匹配执行价与看涨类型的复合原文，不从任意文本搜索数字。"""
+    match = _COMPOUND_CALL.fullmatch((value or "").strip())
+    return float(match[1]) if match else None
+
+
 def normalize_option_type(value: str | None) -> str | None:
     if value is None:
         return None
     text = value.strip()
-    return "欧式看涨" if text.lower() == "call" or text == "看涨" else text
+    if text.lower() == "call" or text == "看涨" or compound_call_strike(text) is not None:
+        return "欧式看涨"
+    return text
 
 
 def expand_inquiry_items(items: Sequence[OptionInquiryRawItem]) -> list[dict[str, Any]]:
@@ -223,6 +235,12 @@ def expand_inquiry_items(items: Sequence[OptionInquiryRawItem]) -> list[dict[str
     for item in items:
         tenors = split_tenors(item.tenor)
         strikes = split_strikes(item.strike_percentage)
+        compound_strike = compound_call_strike(item.option_type)
+        if compound_strike is not None:
+            if not (item.strike_percentage or "").strip():
+                strikes = [compound_strike]
+            elif any(strike != compound_strike for strike in strikes):
+                raise EvidenceError("复合期权表达与显式执行价冲突，请明确执行价。")
         notional = normalize_notional(item.notional_amount, allow_plain_digits=True)
         participation = normalize_participation(item.participation_rate)
         for tenor in tenors:
@@ -241,6 +259,7 @@ def expand_inquiry_items(items: Sequence[OptionInquiryRawItem]) -> list[dict[str
 
 
 __all__ = [
+    "compound_call_strike",
     "expand_inquiry_items",
     "normalize_notional",
     "normalize_participation",
