@@ -1,4 +1,4 @@
-# LangFuse Self-Hosted 客户内网部署手册
+# Langfuse Self-Hosted 客户内网部署手册
 
 > **版本**：v1.0（2026-05-12）
 > **适用范围**：客户内网私有化部署（无 SaaS 依赖），承载 LangGraph 应用的 trace / dataset / eval / annotation

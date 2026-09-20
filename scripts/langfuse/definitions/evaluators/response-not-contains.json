@@ -1,0 +1,9 @@
+{
+  "name": "response-not-contains",
+  "description": "检查 Dataset 用例回复是否包含 response_not_contains 禁止文本。",
+  "source": "harness/evaluators/response_not_contains.py",
+  "score_name": "det_forbidden_text_pass",
+  "rule": {
+    "target": "experiment_item_root"
+  }
+}

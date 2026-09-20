@@ -101,7 +101,7 @@ SELECT @@system_time_zone, @@global.time_zone;
 
 ## 3. 部署 LangFuse Self-Hosted
 
-详见 [`docs/deploy/langfuse-self-hosted.md`](./langfuse-self-hosted.md)。
+详见 [`docs/langfuse/self-hosted-deployment.md`](../langfuse/self-hosted-deployment.md)。
 
 简版步骤：
 
@@ -335,11 +335,11 @@ curl ... -d '{"inputs":{"raw_text":"完全不存在的标的xyz 询价"...}'
 
 | 任务 | 频率 | 文档 |
 |---|---|---|
-| 备份 LangFuse 数据 | 周备份 | `docs/deploy/langfuse-self-hosted.md` §5 |
+| 备份 LangFuse 数据 | 周备份 | `docs/langfuse/self-hosted-deployment.md` §5 |
 | 监控告警检查 | 每日（自动化）| C1.6（#55）落地后 |
 | 应用日志归档 | 按客户合规要求 | C1.18 安全审计后再细化 |
 | API Key 轮转 | 按客户合规要求 | C1.18 安全审计后再细化 |
-| 版本升级 | minor 月度 / major 视客户需求 | `docs/deploy/langfuse-self-hosted.md` §7 |
+| 版本升级 | minor 月度 / major 视客户需求 | `docs/langfuse/self-hosted-deployment.md` §7 |
 
 ---
 
@@ -347,7 +347,7 @@ curl ... -d '{"inputs":{"raw_text":"完全不存在的标的xyz 询价"...}'
 
 - `.env.customer.template`（本目录的 env 模板）
 - [`docs/customer/customer-env-assessment.md`](../customer/customer-env-assessment.md) · 部署前调研清单
-- [`docs/deploy/langfuse-self-hosted.md`](./langfuse-self-hosted.md) · LangFuse 部署详解
+- [`docs/langfuse/self-hosted-deployment.md`](../langfuse/self-hosted-deployment.md) · LangFuse 部署详解
 - [`docs/on-call-runbook.md`](../on-call-runbook.md) · 故障 playbook
 - [`docs/api-contracts/java-backend.md`](../api-contracts/java-backend.md) · Java 后端契约
 - ADR 0009 · MySQL 版本兼容性

@@ -137,7 +137,17 @@ def _graph_callbacks() -> list:
 
 async def run_langgraph_pipeline(*, item, **kwargs):
     inp = item.input if isinstance(item.input, dict) else json.loads(item.input)
-    turns_data = inp.get("turns", [])
+    turns_data = inp.get("turns")
+    if not isinstance(turns_data, list):
+        first_turn = {
+            key: value
+            for key, value in inp.items()
+            if key in {"send_text", "at_bot", "quote_previous", "quote_desc"}
+        }
+        sub_scenes = inp.get("sub_scenes", [])
+        turns_data = [first_turn]
+        if isinstance(sub_scenes, list):
+            turns_data.extend(scene for scene in sub_scenes if isinstance(scene, dict))
     cp = InMemorySaver()
     graph = build_main_graph(cp)
     conversation_id = str(uuid.uuid4())
