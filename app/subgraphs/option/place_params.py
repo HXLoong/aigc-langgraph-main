@@ -22,9 +22,10 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Any
 
+from app.execution.confirmation import only_execution_parameters
 from app.extraction.fields import FieldRecord
 from app.subgraphs.option.normalize import normalize_notional
-from app.subgraphs.option.order_id import extract_order_ids
+from app.subgraphs.option.order_id import ORDER_ID_RE, extract_order_ids
 
 # ============================================================
 # A 类：raw 只读
@@ -67,7 +68,7 @@ _LETTER_ITEM_RE = re.compile(
 # ============================================================
 
 #: 分段标记：第一个单 / 第2笔 / 第一单 …
-_ORDINAL_SEGMENT_RE = re.compile(r"第\s*([一二两三四五六七八九十\d]+)\s*(?:个)?\s*(?:单|笔)")
+_ORDINAL_SEGMENT_RE = re.compile(r"(?:第\s*([一二两三四五六七八九十\d]+)\s*(?:个)?\s*(?:单|笔)|序号\s*[:：]?\s*(\d+))")
 _ORDINAL_VALUES = {
     "一": 1,
     "二": 2,
@@ -96,9 +97,11 @@ def _split_ordinal_segments(raw: str) -> list[tuple[int, str]]:
     matches = list(_ORDINAL_SEGMENT_RE.finditer(raw))
     if not matches:
         return []
+    if raw[:matches[0].start()].strip(" \t\r\n，,、；;。."):
+        raise OrderScopeError("序号前存在无法归属的指令，请分别发送。")
     numbered: list[tuple[int, str]] = []
     for index, match in enumerate(matches):
-        number = _ordinal_number(match.group(1))
+        number = _ordinal_number(match.group(1) or match.group(2))
         if number is None or number < 1:
             raise OrderScopeError("订单序号无效，请按引用中的序号补充参数。")
         start = match.end()
@@ -299,7 +302,7 @@ def _raw_tenor(raw: str) -> str | None:
 
 
 def _raw_strike(raw: str) -> float | None:
-    cleaned = _PARTICIPATION_RE.sub(" ", raw or "")
+    cleaned = _POV_RATIO_RE.sub(" ", _PARTICIPATION_RE.sub(" ", raw or ""))
     match = _RAW_STRIKE_RE.search(cleaned)
     return float(match.group(1)) if match else None
 
@@ -379,25 +382,64 @@ def history_texts(messages: Sequence[Any] | None) -> list[str]:
     return [source.text for source in history_sources(messages)]
 
 
+def quote_blocks_for_order(quote: str, order_id: str | None) -> list[str]:
+    """Only read card fields and selection options belonging to this order."""
+    matches = list(ORDER_ID_RE.finditer(quote))
+    if not order_id or len(extract_order_ids(quote)) <= 1:
+        return [quote]
+    return [
+        quote[match.start():matches[index + 1].start() if index + 1 < len(matches) else len(quote)]
+        for index, match in enumerate(matches) if match[0] == order_id
+    ]
+
+
+def is_quoted_batch_supplement(raw: str, quote: str) -> bool:
+    """Only an explicit same-product, same-action numbered supplement bypasses planning."""
+    if (not extract_order_ids(quote) or re.search(r"(?:H-|CO-)\d{8}-|OPTG?-", quote)
+            or re.search(r"确认|确定|询价|撤单|撤销|取消|互换|买入|卖出|然后|如果|成交后", raw)):
+        return False
+    segments = _split_ordinal_segments(raw)
+    if len(segments) < 2:
+        return False
+    for _, segment in segments:
+        params = _a_class_params(segment, quote)
+        if not any(value is not None for value in params.values()) or not only_execution_parameters(segment, allow_choice=True):
+            return False
+    parse_place_params_with_lineage(raw, quote)  # reject duplicate/out-of-range before any submission
+    return True
+
+
 def parse_place_params_with_lineage(
     raw: str | None, quote: str | None, history: Sequence[Any] = (), *, confirm: bool = False,
+    selected_order_ids: Sequence[str] | None = None,
 ) -> ParsedPlaceParams:
     raw_text, quote_text = raw or "", quote or ""
     contexts = [SourceText(quote_text, "quote"), *history_sources(history)]
-    reference_records: dict[str, FieldRecord] = {}
-    reference = _reference_fields(raw_text, quote_text, lineage=reference_records)
+    reference = _reference_fields(raw_text, quote_text)
     output = ParsedPlaceParams([], [])
 
     def append(order_id: str | None, text: str, selector: str | None = None) -> None:
-        records = dict(reference_records)
+        order_blocks = quote_blocks_for_order(quote_text, order_id)
+        records: dict[str, FieldRecord] = {}
+        order_reference = _reference_fields(text, "", lineage=records)
+        for block in order_blocks:
+            block_records: dict[str, FieldRecord] = {}
+            fields = _reference_fields(text, block, lineage=block_records)
+            for key, value in fields.items():
+                if key == "order_ids":
+                    if "order_id" not in records and "order_id" in block_records:
+                        records["order_id"] = block_records["order_id"]
+                elif order_reference[key] is None and value is not None:
+                    order_reference[key] = value
+                    records[key] = block_records[key]
         if "order_id" in records:
             records["order_id"] = records["order_id"].model_copy(update={"value": order_id})
         if selector:
             records["order_id.selection"] = _field(selector, SourceText(selector, "raw"))
-        params = _a_class_params(text, "", lineage=records, contexts=contexts)
-        item = {"order_id": order_id, "stock_code": reference["stock_code"],
-                "option_type": reference["option_type"], "tenor": reference["tenor"],
-                "strike_percentage": reference["strike_percentage"], **params}
+        params = _a_class_params(text, "", lineage=records, contexts=[*[SourceText(block, "quote") for block in order_blocks], *[SourceText(line, "quote") for line in quote_text.splitlines() if "本群可选交易对手列表" in line], *contexts[1:]])
+        item = {"order_id": order_id, "stock_code": order_reference["stock_code"],
+                "option_type": order_reference["option_type"], "tenor": order_reference["tenor"],
+                "strike_percentage": order_reference["strike_percentage"], **params}
         if not confirm:
             fast = _extract_fast_execution(text)
             item["has_fast_execution_intent"] = fast
@@ -407,7 +449,7 @@ def parse_place_params_with_lineage(
         output.orders.append(item)
         output.fields.append(records)
 
-    segments = _split_ordinal_segments(raw_text)
+    segments = [] if selected_order_ids is not None else _split_ordinal_segments(raw_text)
     if segments:
         ids = reference["order_ids"]
         if any(number > len(ids) or ids[number - 1] is None for number, _ in segments):
@@ -416,7 +458,7 @@ def parse_place_params_with_lineage(
         for (number, segment), selector in zip(segments, selectors, strict=True):
             append(ids[number - 1], segment, selector[0])
     else:
-        for order_id in reference["order_ids"]:
+        for order_id in selected_order_ids if selected_order_ids is not None else reference["order_ids"]:
             append(order_id, raw_text)
     return output
 

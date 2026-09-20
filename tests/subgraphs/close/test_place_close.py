@@ -19,6 +19,7 @@ def _patch_llm(
     monkeypatch: pytest.MonkeyPatch, params: BaseModel
 ) -> AsyncMock:
     monkeypatch.setattr(pc_module, "_fetch_order_data", AsyncMock(return_value=[]))
+    monkeypatch.setattr(pc_module, "call_close_backend", AsyncMock(return_value={"api_code": 0, "api_result": "真实回执"}))
     fake_llm = MagicMock()
     fake_llm.ainvoke = AsyncMock(return_value=params)
     fake_base = MagicMock()

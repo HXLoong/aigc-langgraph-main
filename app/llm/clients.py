@@ -23,8 +23,8 @@ from langchain_core.language_models import LanguageModelInput
 from langchain_core.messages import AIMessage
 from langchain_core.runnables import Runnable, RunnableConfig
 from langchain_openai import ChatOpenAI
-from pydantic import BaseModel, SecretStr
 from openai import DefaultAsyncHttpxClient, DefaultHttpxClient
+from pydantic import BaseModel, SecretStr
 
 from app.config import get_settings
 

@@ -15,6 +15,10 @@ from __future__ import annotations
 
 from typing import Any
 
+from app.execution.confirmation import (
+    confirmation_action,
+    confirmation_attempt,
+)
 from app.extraction.intent_evidence import intent_records, source_payload
 from app.graph.retry import io_node
 from app.graph.state import AgentState, TraceEntry
@@ -57,17 +61,11 @@ async def swap_intent(state: AgentState) -> dict[str, Any]:
     - intent: SwapIntentType 之一（小写下划线）
     - trace: 单条 TraceEntry，记录 LLM 输出 + 实际加载的 prompt name（含灰度版本号）
     """
-    if has_confirm_order_keyword(state.get("raw_text")):
-        return {
-            "intent": "confirm_order",
-            "trace": [
-                TraceEntry(
-                    node="swap_intent",
-                    decision="intent=confirm_order rule=has_confirmation_keyword",
-                    llm_output={"type": "confirm_order", "prompt_name": None},
-                )
-            ],
-        }
+    raw = state.get("raw_text")
+    action = confirmation_action(raw)
+    if confirmation_attempt(raw):
+        intent = {"place": "confirm_order", "cancel": "confirm_cancel_order", "modify": "confirm_modify_order"}.get(action or "", "unknown_intent")
+        return {"intent": intent, "trace": [TraceEntry(node="swap_intent", decision=f"confirmation:{intent}")]}
 
     messages, prompt_name = SPEC.build_messages(state)
     llm = get_qwen_thinking().with_structured_output(SwapIntentOutput)

@@ -84,14 +84,13 @@ class TestOptionExtractConfirmPlaceNode:
             "Q-20250616-000012",
         ]
 
-    async def test_no_order_keeps_placeholder_item(
+    async def test_no_quoted_order_blocks_submission(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        _patch(monkeypatch)
+        backend = _patch(monkeypatch)
         result = await option_extract_confirm_place({"raw_text": "确认下单"})
-        order_list = result["confirm"]["orderList"]
-        assert len(order_list) == 1
-        assert order_list[0]["orderId"] is None
+        assert result["confirm"] is None and result["reply_text"]
+        backend.assert_not_awaited()
 
     async def test_writes_trace_and_passes_backend_order_list(
         self, monkeypatch: pytest.MonkeyPatch
@@ -109,15 +108,15 @@ class TestOptionExtractConfirmPlaceNode:
 
 
 @pytest.mark.asyncio
-async def test_bare_confirm_fills_order_ids_from_memory(monkeypatch: pytest.MonkeyPatch) -> None:
-    """ADR 0024 D4：无引用、无单号的"确认下单"用上一轮询价卡记下的 Q- 单号。"""
+async def test_bare_confirm_does_not_use_memory(monkeypatch: pytest.MonkeyPatch) -> None:
+    """最终确认不能从历史记忆补充订单范围。"""
     backend = _patch(monkeypatch)
     result = await option_extract_confirm_place({
         "raw_text": "确认下单", "quote_content": "",
         "last_confirmed_params": {"product_type": "option", "order_ids": ["Q-20250616-000011", "Q-20250616-000012"]},
     })
-    assert [o["orderId"] for o in result["confirm"]["orderList"]] == ["Q-20250616-000011", "Q-20250616-000012"]
-    assert [o["orderId"] for o in backend.await_args.kwargs["order_list"]] == ["Q-20250616-000011", "Q-20250616-000012"]
+    assert result["confirm"] is None and result["reply_text"]
+    backend.assert_not_awaited()
 
 
 @pytest.mark.asyncio

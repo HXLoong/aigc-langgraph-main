@@ -22,7 +22,7 @@ async def test_render_does_not_zero_match_with_default_empty_place_params() -> N
     }
     update = await render(state)  # type: ignore[arg-type]
     reply = update.get("reply_text") or ""
-    assert "无法识别" not in reply, f"不应返回零命中提示，实际: {reply!r}"
+    assert "中的标的" not in reply, f"不应返回零命中提示，实际: {reply!r}"
 
 
 @pytest.mark.asyncio
@@ -85,7 +85,7 @@ async def test_option_inquiry_without_backend_result_never_fabricates_quote() ->
     update = await render(state)  # type: ignore[arg-type]
     reply = update["reply_text"]
 
-    assert reply == "期权服务未返回有效结果，本次未生成报价，请稍后重试或联系交易员。"
+    assert reply == "交易指令执行结果待核对，请勿重复提交，请联系交易员或运营核查。"
     assert "6.9%" not in reply
     assert "场外期权询价详情" not in reply
 
@@ -132,9 +132,7 @@ async def test_render_close_confirm_returns_reply() -> None:
     update = await render(state)  # type: ignore[arg-type]
     reply = update.get("reply_text") or ""
     assert reply, "close confirm render 不得返回空 reply"
-    assert "平仓" in reply or "确认" in reply, (
-        f"回复应含'平仓'或'确认'，实际: {reply!r}"
-    )
+    assert "待核对" in reply and "已提交" not in reply
 
 
 @pytest.mark.asyncio
@@ -168,7 +166,7 @@ async def test_render_swap_backend_result_has_priority_and_is_passed_through_exa
         ),
         (
             "EmptyBackendResultError",
-            "互换服务未返回有效结果，本次未生成业务回执，请稍后重试或联系交易员。",
+            "交易指令执行结果待核对，请勿重复提交，请联系交易员或运营核查。",
         ),
     ],
 )
@@ -232,5 +230,5 @@ async def test_render_swap_operate_intent_without_backend_result_never_fabricate
     update = await render(state)  # type: ignore[arg-type]
 
     assert update["reply_text"] == (
-        "互换服务未返回有效结果，本次未生成业务回执，请稍后重试或联系交易员。"
+        "交易指令执行结果待核对，请勿重复提交，请联系交易员或运营核查。"
     )

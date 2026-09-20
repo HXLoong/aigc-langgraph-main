@@ -106,7 +106,7 @@ class TestSwapIntentNode:
         ainvoke = _patch_llm(monkeypatch, "confirm_order")
         await swap_intent(
             {
-                "raw_text": "确认",
+                "raw_text": "查订单",
                 "quote_content": "互换订单 H-20260304-0001 已生成",
                 "swap_counterparties": [{"shortName": "打火机", "sort": "A"}],
             }

@@ -11,6 +11,7 @@ from typing import Any
 import pytest
 
 from app.subgraphs.close.backend import call_close_backend
+from app.tools.exceptions import MissingBackendContextError
 
 
 def _patch_operate(monkeypatch: pytest.MonkeyPatch, result: dict[str, Any]) -> list[Any]:
@@ -37,14 +38,14 @@ FULL_STATE = {
 
 @pytest.mark.asyncio
 class TestCallCloseBackend:
-    async def test_missing_context_returns_empty_dict_without_network(
+    async def test_missing_context_raises_without_network(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         captured = _patch_operate(monkeypatch, {"code": 0, "data": "x"})
-        result = await call_close_backend(
-            {"raw_text": "x"}, intent="close_order_query", close_order_req_vo={}
-        )
-        assert result == {}
+        with pytest.raises(MissingBackendContextError):
+            await call_close_backend(
+                {"raw_text": "x"}, intent="close_order_query", close_order_req_vo={}
+            )
         assert captured == []
 
     async def test_sends_close_order_req_vo_not_order_list(

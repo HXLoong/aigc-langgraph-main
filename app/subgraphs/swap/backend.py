@@ -23,7 +23,8 @@ from app.extraction.locks import protect_orders
 from app.graph.state import AgentState, TickerCandidate
 from app.subgraphs.swap.prewash import sanitize_order_list
 from app.tools.bot_context import BotContext, normalize_message_id
-from app.tools.exceptions import EmptyBackendResultError, MissingBackendContextError
+from app.tools.exceptions import MissingBackendContextError
+from app.tools.receipts import receipt_guard, receipt_update
 from app.tools.swap_client import (
     SwapClientHttpx,
     SwapIntentionType,
@@ -152,22 +153,9 @@ async def call_swap_backend(
     )
     if capture_operation("swap", req):
         return {"field_records": rejected} if rejected else {}
-    result = await SwapClientHttpx().operate(req)
-    code = result.get("code")
-    backend_result = result.get("data") if code == 0 else result.get("msg")
-    if _is_empty_backend_result(backend_result):
-        raise EmptyBackendResultError("swap", code)
+    async with receipt_guard("swap"):
+        result = await SwapClientHttpx().operate(req)
     return {
         **({"field_records": rejected} if rejected else {}),
-        "api_code": code,
-        "api_result": backend_result,
+        **receipt_update(result, "swap"),
     }
-
-
-__all__ = [
-    "call_swap_backend",
-    "_with_resolved_ticker",
-    "_is_empty_backend_result",
-    "_context",
-    "_message_id",
-]

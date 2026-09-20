@@ -72,12 +72,12 @@ class TestOptionIntentNode:
 
     @pytest.mark.parametrize("raw,intent", [
         ("200万 市价", "place_order_from_quote"),
-        ("确认", "confirm_order"),
+        ("确认", "unknown_intent"),
         ("取消", "cancel_order_request"),
         ("撤销 OPT-20260907-000001", "request_cancel_order"),
         ("确认撤销", "confirm_cancel_order"),
         ("限价改为10", "place_order_from_quote"),
-        ("确认修改", "place_order_from_quote"),
+        ("确认修改", "unknown_intent"),
     ])
     async def test_quoted_inquiry_card_preserves_semantic_intent(
         self, monkeypatch: pytest.MonkeyPatch, raw: str, intent: str,
@@ -132,13 +132,9 @@ class TestOptionIntentNode:
             f"intent={result['intent']!r} 不在路由表"
         )
 
-    async def test_deterministic_dash_intent_is_routable(self) -> None:
-        """`-` → intent 必须在 _INTENT_TO_NODE。"""
-        from app.subgraphs.option.graph import _INTENT_TO_NODE
+    async def test_dash_is_not_a_confirmation(self) -> None:
         result = await option_intent({"raw_text": "-", "quote_content": ""})
-        assert result["intent"] in _INTENT_TO_NODE, (
-            f"intent={result['intent']!r} 不在路由表"
-        )
+        assert result["intent"] == "unknown_intent"
 
     async def test_safe_node_catches_llm_error(
         self, monkeypatch: pytest.MonkeyPatch

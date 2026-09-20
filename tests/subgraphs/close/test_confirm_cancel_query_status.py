@@ -117,7 +117,7 @@ class TestCloseConfirmCancelNode:
         )
         assert result.get("reply_text")
         assert result.get("confirm") is None
-        assert result["trace"][0].decision == "close_scope_unresolved"
+        assert result["trace"][0].decision == "confirmation:unknown_sequence"
         backend.assert_not_awaited()
 
     async def test_writes_trace_with_count(

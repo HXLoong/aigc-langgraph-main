@@ -74,7 +74,7 @@ class TestCloseConfirmCloseNode:
         _patch(monkeypatch, confirm_module)
         result = await close_confirm_close(
             {
-                "raw_text": "确认OPTG-SZZSCF20250029和OPTG-SZZSCF20250030",
+                "raw_text": "确认平仓OPTG-SZZSCF20250029和OPTG-SZZSCF20250030",
                 "quote_content": _QUOTE_THREE,
             }
         )
@@ -92,28 +92,25 @@ class TestCloseConfirmCloseNode:
         )
         assert len(result["confirm"]["confirmOrderNoList"]) == 3
 
-    async def test_mixed_ordinal_and_id_union(
+    async def test_conflicting_ordinal_and_id_are_rejected(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """原提示词示例8：确认第一笔和CO-… → 并集。"""
+        """不同选择条件冲突时禁止扩大到并集。"""
         _patch(monkeypatch, confirm_module)
         result = await close_confirm_close(
             {
-                "raw_text": "确认第一笔和CO-20260304-3393211B",
+                "raw_text": "确认平仓第一笔和CO-20260304-3393211B",
                 "quote_content": _QUOTE_THREE,
             }
         )
-        assert result["confirm"]["confirmOrderNoList"] == [
-            "CO-20260304-4FE9C941",
-            "CO-20260304-3393211B",
-        ]
+        assert result["confirm"] is None and result["reply_text"]
 
     async def test_no_signals_no_quote_returns_empty(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         _patch(monkeypatch, confirm_module)
         result = await close_confirm_close({"raw_text": "确认", "quote_content": ""})
-        assert result["confirm"]["confirmOrderNoList"] == []
+        assert result["confirm"] is None and result["reply_text"]
 
     async def test_unresolved_ordinal_does_not_expand_scope(
         self, monkeypatch: pytest.MonkeyPatch
@@ -125,7 +122,7 @@ class TestCloseConfirmCloseNode:
         )
         assert result.get("reply_text")
         assert result.get("confirm") is None
-        assert result["trace"][0].decision == "close_scope_unresolved"
+        assert result["trace"][0].decision == "confirmation:unknown_sequence"
         backend.assert_not_awaited()
 
     async def test_writes_trace_with_order_count(
@@ -265,16 +262,16 @@ class TestCloseCancelCloseNode:
 
 
 @pytest.mark.asyncio
-async def test_bare_confirm_close_falls_back_to_memory(monkeypatch: pytest.MonkeyPatch) -> None:
-    """无引用、无指定信号的"确认平仓"读上一轮平仓请求记下的 CO- 单号。"""
+async def test_bare_confirm_close_does_not_use_memory(monkeypatch: pytest.MonkeyPatch) -> None:
+    """最终平仓确认必须使用当前引用。"""
     backend = _patch(monkeypatch, confirm_module)
     result = await close_confirm_close({
         "raw_text": "确认平仓", "quote_content": "",
         "conversation_id": "c", "room_id": "r", "user_id": "u", "message_id": 1,
         "last_confirmed_params": {"product_type": "option_close", "order_ids": ["CO-20260304-4FE9C941"]},
     })
-    assert result["confirm"]["confirmOrderNoList"] == ["CO-20260304-4FE9C941"]
-    backend.assert_awaited_once()
+    assert result["confirm"] is None and result["reply_text"]
+    backend.assert_not_awaited()
 
 
 @pytest.mark.asyncio
@@ -285,5 +282,5 @@ async def test_specified_but_unresolvable_scope_does_not_use_memory(monkeypatch:
         "raw_text": "确认平仓 第3笔", "quote_content": "",
         "last_confirmed_params": {"product_type": "option_close", "order_ids": ["CO-20260304-4FE9C941"]},
     })
-    assert result["reply_text"] == confirm_module.SCOPE_UNRESOLVED_REPLY
+    assert "请引用" in result["reply_text"]
     backend.assert_not_awaited()

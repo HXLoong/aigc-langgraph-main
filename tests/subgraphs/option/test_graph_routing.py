@@ -20,7 +20,7 @@ from app.subgraphs.option.models import (
     OptionInquiryRawParams,
     OptionIntentOutput,
 )
-from tests.intent_fixtures import intent_reply
+from tests.intent_fixtures import intent_reply, mock_ainvoke
 
 #: 不含 conversation_id/user_id/room_id——保持 call_option_backend() 的早退门禁
 #: 生效（三者缺一即返回 {}），路由测试只关心 intent → 节点分发 + state 业务字段
@@ -39,7 +39,7 @@ def _patch(
     fn: str = "get_qwen_thinking",
 ) -> None:
     fake_llm = MagicMock()
-    fake_llm.ainvoke = AsyncMock(return_value=(candidate_output(value) if isinstance(value, OptionInquiryRawParams) else value))
+    fake_llm.ainvoke = mock_ainvoke(candidate_output(value) if isinstance(value, OptionInquiryRawParams) else value)
     fake_base = MagicMock()
     fake_base.with_structured_output = MagicMock(return_value=fake_llm)
     monkeypatch.setattr(module, fn, lambda: fake_base)
@@ -81,6 +81,8 @@ async def test_new_inquiry_routes_to_extract_inquiry(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     _patch_intent(monkeypatch, "new_inquiry")
+    from app.subgraphs.ticker.resolver import TickerResolution
+    monkeypatch.setattr(inquiry_module, "resolve_ticker_full", AsyncMock(return_value=TickerResolution(resolved=[], hitl_pending=[])))
     _patch(
         monkeypatch,
         inquiry_module,
@@ -118,7 +120,7 @@ async def test_confirm_order_routes_to_extract_confirm_place(
     _patch_intent(monkeypatch, "confirm_order")
     _patch_backend(monkeypatch, confirm_place_module)
     graph = build_option_graph()
-    final = await graph.ainvoke({**_BASE_STATE, "raw_text": "确认下单"})
+    final = await graph.ainvoke({**_BASE_STATE, "raw_text": "确认下单", "quote_content": "Q-20260920-1234567890"})
     trace_nodes = [e.node for e in final.get("trace", [])]
     assert "option_extract_confirm_place" in trace_nodes
     assert final.get("confirm", {}).get("action") == "place"
@@ -158,7 +160,7 @@ async def test_confirm_cancel_order_routes_to_extract_confirm_cancel(
     _patch_intent(monkeypatch, "confirm_cancel_order")
     _patch_backend(monkeypatch, confirm_cancel_module)
     graph = build_option_graph()
-    final = await graph.ainvoke({**_BASE_STATE, "raw_text": "确认撤单"})
+    final = await graph.ainvoke({**_BASE_STATE, "raw_text": "确认撤单", "quote_content": "Q-20260920-1234567890"})
     trace_nodes = [e.node for e in final.get("trace", [])]
     assert "option_extract_confirm_cancel" in trace_nodes
     assert final.get("confirm", {}).get("action") == "cancel"

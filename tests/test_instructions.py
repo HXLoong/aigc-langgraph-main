@@ -26,7 +26,7 @@ async def test_planner_checks_original_spans_dependencies_and_coverage(monkeypat
     plan = [_instruction(raw, "买甲"), _instruction(raw, "卖乙")]
     model = MagicMock()
     model.with_structured_output.return_value.ainvoke = AsyncMock(
-        return_value=module.InstructionPlan(instructions=plan),
+        return_value=module.InstructionCandidatePlan(instructions=[{k: v for k, v in item.items() if k not in {"start", "end"}} for item in plan]),
     )
     monkeypatch.setattr(module, "get_qwen_standard", lambda: model)
     result = await module.plan_instructions(_state(raw, []))
@@ -186,7 +186,7 @@ async def test_dependent_confirmation_never_synthesizes_quote(monkeypatch):
 
     async def operate(req):
         writes.append(req)
-        return {"code": 0, "data": {"orderId": "H-20260918-1234567890"}}
+        return {"code": 0, "data": "单号：H-20260918-1234567890"}
 
     monkeypatch.setattr(operations, "SwapClientHttpx", lambda: MagicMock(operate=operate))
     raw = "买甲；确认下单"

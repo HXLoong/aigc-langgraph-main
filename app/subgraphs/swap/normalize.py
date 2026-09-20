@@ -49,6 +49,29 @@ _NUMBERS = {"placeOrderPrice", "placeOrderNotional", "placeOrderMaxVol"}
 _PERCENTAGES = {"placeOrderPovPercent", "placeOrderTotalPovPercent"}
 _TIMES = {"placeOrderStartTime", "placeOrderEndTime"}
 _BOOLEAN_FIELDS = {"placeOrderCloseIntent", "placeOrderPremarket", "hasFastExecutionIntent"}
+_DIRECTION_TOKEN = re.compile(
+    r"(?<![A-Za-z0-9_.-])(?:BUY|SELL|SHORT_OPEN|SHORT_CLOSE|[BSL])(?![A-Za-z0-9_.-])"
+    r"|买入|卖出|買入|賣出|平空|平多|做多|做空|卖空|买|卖", re.I,
+)
+
+
+def _direction_shorthand(value: str, context: str) -> str:
+    markers = [marker for marker in _DIRECTION_TOKEN.finditer(context) if not re.search(
+        r"(?:交易对手|对手|账号|账户|簿记|选择|选)\s*[:：]?\s*$", context[:marker.start()],
+    )]
+    if not markers or markers[0][0].upper() != value.upper():
+        raise ValueError("方向缩写必须是该笔订单第一个独立方向标记")
+    return "SELL" if value.upper() == "S" else "BUY"
+
+
+def _direction_context(candidate: FieldCandidate, sources: Mapping[str, str]) -> str:
+    key = candidate.origin if candidate.reference is None else f"{candidate.origin}:{candidate.reference}"
+    source = sources.get(key, "")
+    # A one-letter evidence must not conceal its actual account/ticker context.
+    contexts = [part for part in re.split(r"[\n；;]", source) if candidate.evidence in part]
+    if len(contexts) != 1:
+        raise ValueError("方向缩写无法唯一归属当前订单，请提供完整方向")
+    return contexts[0]
 
 
 def _number(text: str) -> Decimal:
@@ -125,6 +148,8 @@ def normalize_field(field: str, value: str, evidence: str | None = None) -> Any:
     """Values are verified raw fragments; this function performs no security-data lookup."""
     text = value.strip()
     evidence = evidence or text
+    if field == "placeOrderOrderDirection" and text.upper() in {"B", "S", "L"}:
+        return _direction_shorthand(text, evidence)
     if field == "placeOrderWindCode" and re.fullmatch(r"[A-Za-z0-9]+\.[A-Za-z]+", text):
         return text.upper()
     if field in _ENUMS:
@@ -183,7 +208,10 @@ def normalize_candidates(
         def convert(value: str, candidate: FieldCandidate) -> Any:
             if alias == "placeOrderQuantity" and quantity_unit(value) == "AMOUNT":
                 return None  # the linked notional field is derived below from the same evidence
-            return normalize_field(alias, value, candidate.evidence)
+            context = candidate.evidence
+            if alias == "placeOrderOrderDirection" and value.upper() in {"B", "S", "L"}:
+                context = _direction_context(candidate, sources)
+            return normalize_field(alias, value, context)
         return convert
 
     converters = {info.alias or name: converter(info.alias or name) for name, info in SwapOrderItem.model_fields.items()}

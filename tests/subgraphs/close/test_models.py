@@ -40,7 +40,7 @@ def test_non_close_intents_rejected(non_close_intent: str) -> None:
 
 def test_extra_fields_ignored() -> None:
     params = CloseIntentOutput.model_validate(
-        {"type": "close_order_query", "extra": "x"}
+        {"type": "close_order_query", "confidence": .91, "evidence": [{"text": "查询", "origin": "raw"}], "extra": "x"}
     )
     assert params.type == "close_order_query"
 

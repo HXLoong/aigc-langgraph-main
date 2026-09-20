@@ -22,6 +22,7 @@ from app.tools.option_client import (
     OptionClientHttpx,
     OptionIntentionType,
 )
+from app.tools.receipts import receipt_guard, receipt_update
 
 logger = logging.getLogger(__name__)
 #: intent → operate 固定映射（Dify DSL v2：每个 extract 节点的 operate 是单值 enum，
@@ -86,16 +87,6 @@ def _with_resolved_ticker(
     return order, "unmatched"
 
 
-def _is_empty_backend_result(value: Any) -> bool:
-    if value is None:
-        return True
-    if isinstance(value, str):
-        return not value.strip()
-    if isinstance(value, (dict, list, tuple, set)):
-        return not value
-    return False
-
-
 async def call_option_backend(
     state: AgentState,
     *,
@@ -130,14 +121,11 @@ async def call_option_backend(
     )
     if capture_operation("option", req):
         return {"field_records": rejected} if rejected else {}
-    result = await OptionClientHttpx().operate(req)
-    code = result.get("code")
-    backend_result = result.get("data") if code == 0 else result.get("msg")
-    if _is_empty_backend_result(backend_result):
+    async with receipt_guard("option"):
+        result = await OptionClientHttpx().operate(req)
+    try:
+        update = receipt_update(result, "option")
+    except EmptyBackendResultError:
         emit_option_backend_empty_result()
-        raise EmptyBackendResultError("option", code)
-    return {
-        **({"field_records": rejected} if rejected else {}),
-        "api_code": code,
-        "api_result": backend_result,
-    }
+        raise
+    return {**({"field_records": rejected} if rejected else {}), **update}

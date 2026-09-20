@@ -4,6 +4,11 @@ from __future__ import annotations
 import re
 from typing import Any
 
+from app.execution.confirmation import (
+    confirmation_action,
+    confirmation_attempt,
+    has_execution_parameters,
+)
 from app.extraction.intent_evidence import intent_records, source_payload
 from app.graph.retry import io_node
 from app.graph.state import AgentState, TraceEntry
@@ -32,11 +37,11 @@ SPEC = register(PromptSpec(
 
 def _deterministic_intent(raw: str) -> str | None:
     """Move unconditional corrections ahead of the model, preserving their precedence."""
-    if re.search(
-        r"(?:不|别|暂不|取消|禁止|无需|先不|没有|尚未|暂未|是否)[^。！!？?；;\n]{0,8}确认(?:撤单|平仓)"
-        r"|确认(?:撤单|平仓)[^。！!；;\n]{0,8}(?:吗|么|？|\?)", raw,
-    ):
-        return "unknown_intent"
+    action = confirmation_action(raw)
+    if confirmation_attempt(raw):
+        if action == "close" and has_execution_parameters(raw):
+            return "close_order_request"
+        return {"close": "close_order_confirm", "cancel": "close_order_cancel_confirm"}.get(action or "", "unknown_intent")
     if any(kw in raw for kw in ("拉满跟量", "全部最大", "全跟量")) and re.search(r"\d+\s*万", raw):
         return "close_order_request"
     if re.search(r"序号\s*\d", raw) and any(kw in raw.lower() for kw in ("平", "留", "全平", "拉满", "跟量", "pov")):

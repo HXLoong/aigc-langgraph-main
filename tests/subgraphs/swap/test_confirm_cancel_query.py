@@ -140,7 +140,7 @@ class TestSwapConfirmNode:
             "intent": "confirm_cancel_order", "raw_text": "确认撤单", "quote_content": "",
             "last_confirmed_params": {"product_type": "option", "order_ids": ["Q-20260917-AB12CD"]},
         })
-        assert out["confirm"]["orderList"][0]["orderId"] is None
+        assert out["confirm"] is None and out["reply_text"]
 
     @pytest.mark.asyncio
     async def test_orderid_can_be_null(self, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -148,7 +148,7 @@ class TestSwapConfirmNode:
         out = await swap_confirm(
             {"intent": "confirm_cancel_order", "raw_text": "确认撤单", "quote_content": ""}
         )
-        assert out["confirm"]["orderList"][0]["orderId"] is None
+        assert out["confirm"] is None and out["reply_text"]
 
 
 class TestSwapConfirmSecondaryCheckNode:
@@ -161,23 +161,23 @@ class TestSwapConfirmSecondaryCheckNode:
             {"intent": "confirm_order", "raw_text": "好的", "quote_content": f"单号:{ORDER}"}
         )
         assert out.get("error") is None
-        assert "确认指令格式不正确" in out["reply_text"]
+        assert "我暂时无法识别您的指令" in out["reply_text"]
         assert calls == []  # 未过校验绝不调后端
 
     @pytest.mark.asyncio
-    async def test_confirm_cancel_order_bypasses_secondary_check(
+    async def test_confirm_cancel_order_also_requires_explicit_command(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         _patch_backend(monkeypatch, confirm_module)
         out = await swap_confirm(
             {
                 "intent": "confirm_cancel_order",
-                "raw_text": "随便说说",  # 无确认下单关键词也放行(DSL 二次校验仅限 confirm_order)
+                "raw_text": "随便说说",  # 撤单最终确认同样需要明确口令
                 "quote_content": f"单号:{ORDER}",
             }
         )
         assert out.get("error") is None
-        assert out["confirm"]["action"] == "cancel"
+        assert out["confirm"] is None and out["reply_text"]
 
 
 class TestSwapCancelNode:

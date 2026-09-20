@@ -43,10 +43,16 @@ def _patch_llm(
     monkeypatch: pytest.MonkeyPatch, factory: str,
     schema: type[BaseModel], outputs: list[dict[str, Any]],
 ) -> AsyncMock:
-    values = [schema.model_validate(item) for item in outputs]
+    from tests.intent_fixtures import intent_reply
+    is_intent = {"confidence", "evidence"}.issubset(schema.model_fields)
+    values = [intent_reply(schema, **item) if is_intent else schema.model_validate(item) for item in outputs]
     if schema is OptionInquiryRawParams:
         values = [candidate_output(value, origins={"orderId": "quote"}) for value in values]
-    invoke = AsyncMock(side_effect=values)
+    iterator = iter(values)
+    def response(messages):
+        value = next(iterator)
+        return value(messages) if is_intent else value
+    invoke = AsyncMock(side_effect=response)
     llm = MagicMock()
     llm.with_structured_output.return_value.ainvoke = invoke
     monkeypatch.setattr(factory, lambda: llm)

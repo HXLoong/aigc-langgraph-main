@@ -1,9 +1,7 @@
-"""ConversationMemory 读取（ADR 0024 D2 / D4）。
+"""ConversationMemory 的只读订单身份访问（ADR 0024 D2 / D4）。
 
-`last_confirmed_params` 是跨轮持久化的"上一轮已确认业务对象"（写入点：主图
-`remember_confirmed_params` 节点；ingest 不重置）。确认链路（确认下单 / 确认撤单 /
-确认平仓）在用户**没有**引用消息、也**没有**点名单号时读它，而不是从空文本"重抽"出
-orderId=null。显式引用 / 显式单号永远优先于记忆——记忆只补裸确认，不扩大操作范围。
+last_confirmed_params 仍供跨轮上下文保留；2026-09-20 协议改造后，七条最终确认
+路径只使用用户当前引用，不再调用此兼容读取函数补充订单号。
 """
 from __future__ import annotations
 

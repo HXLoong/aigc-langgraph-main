@@ -113,7 +113,7 @@ class OptionInquiryRawItem(WireModel):
 
     order_id: str | None = Field(default=None, alias="orderId", description="订单号原文片段（Q- 开头）；输入未出现 → null")
     stock_code: str | None = Field(default=None, alias="stockCode", description="标的原文片段（逐字保留，不做代码补全；标准化由 ticker resolver 负责）")
-    option_type: OptionContractType | None = Field(default=None, alias="optionType", description="期权类型：欧式看涨 / 参与型看涨 / 雪球；未明确 → null")
+    option_type: str | None = Field(default=None, alias="optionType", description="期权类型原文片段，逐字保留 call/CALL/Call/看涨等写法；枚举归一化由代码执行；未明确 → null")
     tenor: str | None = Field(default=None, description="期限原文片段，逐字保留不换算（如 \"1M\" / \"1个月\" / \"半年\" / \"1Y\" / \"1M/3M\"）")
     strike_percentage: str | None = Field(default=None, alias="strikePercentage", description="执行价原文片段，逐字保留不换算（如 \"100%\" / \"100/103%\" / \"平值\"）")
     notional_amount: str | None = Field(default=None, alias="notionalAmount", description="名义本金原文片段，含单位不换算（如 \"100万\" / \"1W\" / \"两千万\"）")
