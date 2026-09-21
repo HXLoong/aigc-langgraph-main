@@ -319,6 +319,37 @@ def test_upload_evaluators_syncs_every_explicit_definition(tmp_path) -> None:
     ]
 
 
+def test_upload_evaluator_without_dataset_creates_global_rule(tmp_path) -> None:
+    source = tmp_path / "response_contains.py"
+    source.write_text("def evaluate(ctx):\n    return ctx\n", encoding="utf-8")
+    definition = EvaluatorDefinition(
+        name="response-contains",
+        description="required text",
+        source_path=source,
+        score_name="det_required_text_pass",
+        target="experiment_item_root",
+    )
+    api = FakeEvaluatorApi()
+
+    result = sync_evaluators(
+        api,
+        dataset_name=None,
+        definitions=(definition,),
+        apply=True,
+    )[0]
+
+    assert result.rule_name == "golden-response-contains:all-datasets"
+    assert api.created_rule is not None
+    assert api.created_rule["filter"] == [
+        {
+            "type": "boolean",
+            "column": "isExperimentItemRootSpan",
+            "operator": "=",
+            "value": True,
+        }
+    ]
+
+
 def test_upload_evaluator_cli_prints_readable_summary(monkeypatch, capsys) -> None:
     api = FakeEvaluatorApi()
     monkeypatch.setattr(
@@ -339,21 +370,20 @@ def test_upload_evaluator_cli_prints_readable_summary(monkeypatch, capsys) -> No
 
     assert upload_evaluators.main() == 0
 
-    assert capsys.readouterr().out.splitlines() == [
+    lines = capsys.readouterr().out.splitlines()
+    assert lines[:2] == [
         "Target Dataset (Evaluation Rule filter): golden_option_inquiry_case",
-        "Configured Evaluators: 1",
-        "",
-        "[1/1] Project-level Evaluator (not bound to a Dataset):",
-        "  Name: response-not-contains",
-        "  Source: harness/evaluators/response_not_contains.py",
-        "  Score: det_forbidden_text_pass",
-        "  Action: would_create",
-        "",
-        "  Evaluation Rule (trigger conditions):",
-        "    Name: golden-response-not-contains:golden_option_inquiry_case",
-        "    Evaluates: Experiment Item root output in golden_option_inquiry_case",
-        "    Action: would_create",
+        "Configured Evaluators: 3",
     ]
+    for name in (
+        "response-contains",
+        "response-contains-any",
+        "response-not-contains",
+    ):
+        assert f"  Name: {name}" in lines
+        assert (
+            f"    Name: golden-{name}:golden_option_inquiry_case" in lines
+        )
 
 
 def test_upload_score_config_cli_prints_readable_summary(monkeypatch, capsys) -> None:

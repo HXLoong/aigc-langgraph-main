@@ -25,3 +25,16 @@ def load_definition_files(directory: Path) -> list[tuple[Path, dict[str, Any]]]:
             raise RuntimeError(f"Langfuse 定义必须是 JSON 对象：{path}")
         definitions.append((path, payload))
     return definitions
+
+
+def load_definition_list(path: Path, key: str) -> list[tuple[Path, dict[str, Any]]]:
+    if not path.is_file():
+        raise RuntimeError(f"Langfuse 定义文件不存在：{path}")
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as exc:
+        raise RuntimeError(f"Langfuse 定义不是有效 JSON：{path}: {exc}") from exc
+    items = payload.get(key) if isinstance(payload, dict) else None
+    if not isinstance(items, list) or not all(isinstance(item, dict) for item in items):
+        raise RuntimeError(f"Langfuse 定义字段 {key} 必须是对象数组：{path}")
+    return [(path, item) for item in items]

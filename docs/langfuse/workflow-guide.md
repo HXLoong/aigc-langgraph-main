@@ -88,34 +88,49 @@ python scripts/langfuse/upload_golden_to_langfuse.py --source tests/fixtures/cat
 
 `overwrite` 会先删除该 Dataset 的现有 Items，适合首次替换旧格式；仅新增或更新用例时使用 `--mode append`。
 
+`--source` 指向单个 JSONL 时，只上传该文件中的用例；指向目录时，会读取目录下全部 `*.jsonl`，并将所有用例
+上传到 `--dataset-name` 指定的同一个 Dataset。脚本不会按文件名自动创建多个 Dataset。
+
+如果希望一个 JSONL 文件对应一个 Dataset，需要分别执行。例如在 Windows CMD 中：
+
+```cmd
+python scripts\langfuse\upload_golden_to_langfuse.py --source tests\fixtures\categories\golden_option_inquiry_case.jsonl --dataset-name golden_option_inquiry_case --mode append
+
+python scripts\langfuse\upload_golden_to_langfuse.py --source tests\fixtures\categories\golden_option_open_case.jsonl --dataset-name golden_option_open_case --mode append
+
+python scripts\langfuse\upload_golden_to_langfuse.py --source tests\fixtures\categories\golden_option_close_case.jsonl --dataset-name golden_option_close_case --mode append
+```
+
+`append` 通过稳定的 Item ID 执行新增或更新，不会删除远端已有但本次文件中不存在的 Item；需要让远端 Item 集合
+与本地文件完全一致时，显式使用 `--mode overwrite`。
+
 ### 4.2 配置 Online 自动评分
+
+对所有 Dataset 生效：
 
 ```powershell
 # 预览
-python scripts/langfuse/upload_evaluators.py --dataset-name golden_option_inquiry_case --dry-run
+python scripts/langfuse/upload_evaluators.py --dry-run
 
 # 上传 Evaluator 和 Rule
+python scripts/langfuse/upload_evaluators.py --apply
+```
+
+只对指定 Dataset 生效时增加过滤参数：
+
+```powershell
 python scripts/langfuse/upload_evaluators.py --dataset-name golden_option_inquiry_case --apply
 ```
 
-脚本扫描 `scripts/langfuse/definitions/evaluators/*.json`，并为每项定义同步两类项目级配置：
+脚本从 `definitions/evaluators.json` 同步三个项目级 Evaluator，并创建对应的 Evaluation Rules：
 
-1. `response-not-contains` Code Evaluator：定义如何检查禁止文本。
-2. Evaluation Rule：定义何时自动运行该 Evaluator。
+- 不传 `--dataset-name`：Rule 只过滤 `isExperimentItemRootSpan=true`，匹配所有 Dataset 的 Experiment Item 根输出。
+- 传入 `--dataset-name`：Rule 再增加 `datasetId` 条件，只匹配该 Dataset。
+- 普通请求、`--local` 评测和子 Observations 不会触发。
 
-当前 Rule 的过滤条件是：
-
-```text
-datasetId = golden_option_inquiry_case
-isExperimentItemRootSpan = true
-```
-
-因此，指定 Dataset 产生新的 Experiment Item 根 Observation 时，会异步执行 Evaluator，并写入
-`det_forbidden_text_pass` Boolean Score。普通请求、`--local` 评测、子 Observations 和其他 Dataset 不满足该 Rule，不会触发。
-
-Evaluator 从 Experiment 上下文读取 `expectedOutput.response_not_contains`，再检查根输出中的全部轮次；任一轮命中禁止文本即失败。
-
-新增 Evaluator 时，增加一个 JSON 定义和对应的 Python 评分源码，无需修改上传脚本。重复上传时，本地定义是事实来源：内容相同则跳过，不同则更新。
+三个 Evaluator 分别检查 `response_contains`、`response_contains_any` 和 `response_not_contains`，产生三个 Boolean
+Score。重复同步时，同名且相同则跳过，不同则更新；改名会新建，旧记录不会自动删除。全局 Rule 与 Dataset 专属
+Rule 同时启用会重复评分，应在 `Evaluators → Evaluation Rules` 中只保留一种作用范围。
 
 ### 4.3 配置人工评分口径
 
@@ -127,7 +142,7 @@ python scripts/langfuse/upload_score_configs.py --dry-run
 python scripts/langfuse/upload_score_configs.py --apply
 ```
 
-脚本扫描 `scripts/langfuse/definitions/score-configs/*.json`。当前包含用例级人工指标
+脚本读取 `scripts/langfuse/definitions/score-configs.json`。当前包含用例级人工指标
 `human_business_verdict`，取值为 `正确`、`错误`、`待确认`。
 
 当前人工标注采用“分类结论 + Score Comment”：分类值用于统计，Comment 用于补充判断依据。Comment 在 Langfuse UI 中是可选字段，Score Config 的描述只能提示、不能强制填写。若需要独立、可查询的文本评分维度，可再增加 `TEXT` Score Config；文本值限制为 1–500 个字符。参见 Langfuse 官方的 [UI 人工评分](https://langfuse.com/docs/evaluation/evaluation-methods/scores-via-ui) 和 [Score 数据模型](https://langfuse.com/docs/evaluation/scores/data-model)。
@@ -146,10 +161,30 @@ python scripts/langfuse/langfuse_eval.py --dataset golden_option_inquiry_case --
 python scripts/langfuse/langfuse_eval.py --dataset golden_option_inquiry_case --ids case-022 --concurrency 1
 ```
 
+不传 `--ids` 时执行 Dataset 中的全部 Item：
+
+```powershell
+python scripts/langfuse/langfuse_eval.py --dataset golden_option_inquiry_case --concurrency 1
+```
+
+常用参数：
+
+| 参数 | 含义 |
+|---|---|
+| `--ids case-022` | 只执行一个 Item |
+| `--ids case-021,case-022` | 执行多个指定 Item，使用逗号分隔 |
+| 不传 `--ids` | 执行过滤后的全部 Item |
+| `--concurrency 1` | 最多同时执行一个 Item，即串行执行 |
+| `--concurrency 3` | 最多同时执行三个 Item；单个多轮用例内部仍顺序执行 |
+| `--limit 10` | 只执行过滤后的前十个 Item |
+| `--dry-run` | 只预览选中的 Item，不执行 LangGraph 和评分 |
+
+调试、写操作、后端容易限流或模型配额较小时使用 `--concurrency 1`；只读评测可根据后端与模型容量逐步提高。
+
 执行后：
 
 - `judge_by_deepseek` 产生 `otc-option-judge` Score。
-- Online Evaluation Rule 异步产生 `det_forbidden_text_pass` Score。
+- Online Evaluation Rules 异步产生三个文本断言 Score。
 - 业务人员可补充 `human_business_verdict`，不会覆盖自动 Score。
 
 在 Dataset 的 `Experiments` 页签打开名称类似 `option-eval-YYYYMMDD-HHMMSS` 的记录。
@@ -169,7 +204,7 @@ Environment 用于区分数据来源。部分名称由 Langfuse SDK 固定使用
 | `langfuse-llm-as-a-judge` | Langfuse-managed LLM Judge 自身的执行 Trace | 否 |
 
 本项目通过 `--dataset` 执行后，用例 Trace、`otc-option-judge` 和
-`det_forbidden_text_pass` 都属于本次 Experiment，主要在 Dataset 的 `Experiments` 对比页查看。它们关联的用例
+三个文本断言 Score 都属于本次 Experiment，主要在 Dataset 的 `Experiments` 对比页查看。它们关联的用例
 Observations 使用 `sdk-experiment` 环境；Scores 主列表默认隐藏该内部环境，因此列表中看不到并不代表 Score 未生成。
 
 需要在 Scores 主列表查看时，展开左侧过滤面板，显式选择 `Environment = sdk-experiment`，再按 Score 名称过滤。
@@ -178,6 +213,20 @@ Evaluator 自身的执行日志、耗时和错误。
 
 使用 `--local` 时不会创建 Dataset Experiment。此模式产生普通 Trace，通常落在 `default` 或
 `LANGFUSE_TRACING_ENVIRONMENT` 指定的环境中，Score 直接从 Tracing 或 Scores 页面查看。
+
+### 5.2 Score Source
+
+Scores 页面的 `Source` 表示 Score 的产生方式，与 Dataset 和 Environment 无关：
+
+| Source | 含义 | 本项目中的例子 |
+|---|---|---|
+| `EVAL` | 由 Langfuse 的评测流程产生，包括 Experiment Evaluator、Code Evaluator 和 LLM Judge | Dataset Experiment 中的 `otc-option-judge`，以及三个 Online Code Evaluator Score |
+| `ANNOTATION` | 由人员在 Langfuse UI 或 Annotation Queue 中人工评分 | `human_business_verdict` |
+| `API` | 应用、脚本或 CI 通过 Langfuse API/SDK 主动写入 | `--local` 模式调用 `create_score()` 写入的 Judge Score，或业务侧用户反馈 |
+
+`Source` 由 Score 的创建路径自动设置，不能通过 Score Config 指定。同一个 Score 名称如果通过不同路径写入，可能
+同时出现不同 Source。例如 `otc-option-judge` 在 Dataset Experiment 中属于 `EVAL`，在当前 `--local` 模式中属于
+`API`。筛选 `EVAL` 只查看自动评测结果，筛选 `ANNOTATION` 只查看人工结论。
 
 ## 6. 查看链路与排查问题
 
@@ -205,7 +254,7 @@ Evaluator 自身的执行日志、耗时和错误。
 | 路由或 intent 错误 | intent 相关 Observation |
 | ticker 错误 | ticker 子图、候选结果和后端校验调用 |
 | 回复错误 | 业务节点、后端响应和 render Observation |
-| `det_forbidden_text_pass` 缺失 | Evaluator/Rule 是否启用，`datasetId` 和根 Observation 条件是否匹配 |
+| 文本断言 Score 缺失 | Evaluator/Rule 是否启用，`datasetId` 和根 Observation 条件是否匹配 |
 | Score 与结果不一致 | `expectedOutput`、实际 output 和 Evaluator comment |
 | 多轮上下文错误 | Session ID、thread ID 和各轮 Trace |
 | 用例 Trace 与 LangGraph Trace 分离 | `traceparent`、`trust_inbound_traceparent` 和 `langfuse_trace_id` |
@@ -217,8 +266,8 @@ Online Evaluator 异步执行，Experiment 完成后 Score 可能稍后显示。
 | 文件 | 用途 |
 |---|---|
 | `upload_golden_to_langfuse.py` | 上传 categories golden case 到 Dataset |
-| `upload_evaluators.py` | 扫描定义文件，全量同步 Code Evaluators 和指定 Dataset 的 Online Rules |
-| `upload_score_configs.py` | 扫描定义文件，全量同步人工 Score Configs |
+| `upload_evaluators.py` | 读取集中定义，同步 Code Evaluators 和全局或指定 Dataset 的 Online Rules |
+| `upload_score_configs.py` | 读取集中定义，全量同步人工 Score Configs |
 | `langfuse_eval.py` | 执行 Dataset Experiment 或本地评测 |
 | `promote_langfuse_prompt.py` | 将 Langfuse Prompt 拉取到本地 Git |
 | `_definitions.py` | 读取并校验本地 JSON 定义，不单独执行 |

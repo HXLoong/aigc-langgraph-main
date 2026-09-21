@@ -13,10 +13,10 @@ from typing import Any, Protocol
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(PROJECT_ROOT))
 
-from scripts.langfuse._definitions import load_definition_files
+from scripts.langfuse._definitions import load_definition_files, load_definition_list
 from scripts.langfuse._public_api import LangfusePublicApi
 
-DEFINITIONS_DIR = Path(__file__).with_name("definitions") / "score-configs"
+DEFINITIONS_FILE = Path(__file__).with_name("definitions") / "score-configs.json"
 SCORE_DATA_TYPES = {"NUMERIC", "CATEGORICAL", "BOOLEAN", "TEXT"}
 
 
@@ -53,10 +53,15 @@ def _optional_number(payload: dict[str, Any], key: str, path: Path) -> float | N
 
 
 def load_score_config_definitions(
-    directory: Path = DEFINITIONS_DIR,
+    definitions_path: Path = DEFINITIONS_FILE,
 ) -> tuple[ScoreConfigDefinition, ...]:
     definitions: list[ScoreConfigDefinition] = []
-    for path, payload in load_definition_files(directory):
+    raw_definitions = (
+        load_definition_files(definitions_path)
+        if definitions_path.is_dir()
+        else load_definition_list(definitions_path, "score_configs")
+    )
+    for path, payload in raw_definitions:
         data_type = _required_string(payload, "data_type", path).upper()
         if data_type not in SCORE_DATA_TYPES:
             raise RuntimeError(f"不支持的 Score Config data_type：{data_type} ({path})")
