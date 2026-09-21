@@ -412,6 +412,10 @@ class _RequiredSchema(TypedDict):
 
 
 def test_registration_rejects_invalid_field_contracts() -> None:
+    class RequiredState(TypedDict):
+        index: int
+        name: str
+
     async def target(state: dict[str, Any]) -> dict[str, Any]:
         return state
 
