@@ -92,19 +92,20 @@ async def test_happy_path_traces_every_stage_and_submits(monkeypatch: pytest.Mon
 
 
 @pytest.mark.asyncio
-async def test_relative_twap_duration_requires_explicit_time_range(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_twap_without_times_reaches_backend(monkeypatch: pytest.MonkeyPatch) -> None:
     _patch_query(monkeypatch, [])
     captured = _patch_operate(monkeypatch)
     _patch_llm(monkeypatch, close_candidates({
         "orderId": "CO-20260304-AAAA0001", "closeOrderNotionalDelta": "200万",
         "closeOrderType": "TWAP", "closeOrderPrice": "10",
     }))
-    result = await close_place_close(_ctx("CO-20260304-AAAA0001，200万，TWAP30分钟，限价10"))
+    result = await close_place_close(_ctx("CO-20260304-AAAA0001，200万，TWAP，限价10"))
 
-    assert "TWAP" in result["reply_text"] and "起止时间" in result["reply_text"]
-    assert "CO-20260304-AAAA0001" in result["reply_text"]
-    assert "place_close_reject" in [entry.node for entry in result["trace"]]
-    captured.assert_not_called()
+    assert not result.get("error") and not result.get("reply_text")
+    captured.assert_called_once()
+    item = captured.call_args.args[0].close_order_req_vo.model_extra["closeOrderList"][0]
+    assert item["closeOrderAlgoStartTime"] is None
+    assert item["closeOrderAlgoEndTime"] is None
 
 
 @pytest.mark.asyncio
@@ -148,16 +149,19 @@ async def test_compound_pov_candidate_keeps_ratio_and_evidence(monkeypatch: pyte
 
 
 @pytest.mark.asyncio
-async def test_compound_twap_duration_still_requires_time_range(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_partial_twap_time_range_is_left_to_backend(monkeypatch: pytest.MonkeyPatch) -> None:
     _patch_query(monkeypatch, [])
     captured = _patch_operate(monkeypatch)
     _patch_llm(monkeypatch, close_candidates({
-        "orderId": "CO-20260304-AAAA0001", "closeOrderType": "TWAP30分钟",
+        "orderId": "CO-20260304-AAAA0001", "closeOrderType": "TWAP",
+        "closeOrderAlgoStartTime": "14:30",
     }))
-    result = await close_place_close(_ctx("CO-20260304-AAAA0001 TWAP30分钟"))
+    result = await close_place_close(_ctx("CO-20260304-AAAA0001 TWAP开始时间14:30"))
     assert not result.get("error")
-    assert "起止时间" in result["reply_text"]
-    captured.assert_not_called()
+    captured.assert_called_once()
+    item = captured.call_args.args[0].close_order_req_vo.model_extra["closeOrderList"][0]
+    assert item["closeOrderAlgoStartTime"] == "14:30"
+    assert item["closeOrderAlgoEndTime"] is None
 
 
 @pytest.mark.asyncio
@@ -187,16 +191,16 @@ async def test_empty_merge_takes_reject_edge_without_backend(monkeypatch: pytest
 
 
 @pytest.mark.asyncio
-async def test_validation_failure_takes_reject_edge(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_missing_limit_reaches_backend_for_supplement(monkeypatch: pytest.MonkeyPatch) -> None:
     _patch_query(monkeypatch, [])
     captured = _patch_operate(monkeypatch)
     _patch_llm(monkeypatch, close_candidates({"orderId": "CO-20260304-AAAA0001", "closeOrderType": "限价"}))
     result = await close_place_close(_ctx("平 CO-20260304-AAAA0001 限价"))
     nodes = [e.node for e in result["trace"]]
-    assert "place_close_validate" in nodes and "place_close_reject" in nodes
-    assert "place_close_submit" not in nodes
-    assert result["reply_text"].startswith("参数校验不通过")
-    captured.assert_not_called()
+    assert "place_close_validate" in nodes and "place_close_reject" not in nodes
+    assert "place_close_submit" in nodes
+    assert result["api_result"] == "backend-card" and not result.get("reply_text")
+    captured.assert_called_once()
 
 
 @pytest.mark.asyncio

@@ -7,7 +7,6 @@ from typing import Any
 from pydantic import BaseModel
 
 _POV = re.compile(r"(?P<mode>POV)\s*(?P<ratio>[0-9]+(?:\.[0-9]+)?)\s*[%％]?", re.I)
-_TWAP_DURATION = re.compile(r"(?P<mode>TWAP)\s*[0-9]+(?:\.[0-9]+)?\s*(?:分钟|分|小时|min(?:utes)?)", re.I)
 _TWAP_RANGE = re.compile(
     r"(?P<mode>TWAP)\s*(?P<start>[0-9]{1,2}[:：][0-9]{1,2})"
     r"\s*[-－–~～至到]\s*(?P<end>[0-9]{1,2}[:：][0-9]{1,2})", re.I,
@@ -21,7 +20,7 @@ def split_execution_fragments(candidates: BaseModel) -> BaseModel:
         mode = row.get("closeOrderType")
         if mode and isinstance(mode.get("value"), str):
             text = mode["value"].strip()
-            match = _POV.fullmatch(text) or _TWAP_RANGE.fullmatch(text) or _TWAP_DURATION.fullmatch(text)
+            match = _POV.fullmatch(text) or _TWAP_RANGE.fullmatch(text)
             if match:
                 row["closeOrderType"] = {**mode, "value": match["mode"]}
                 for group, name in (

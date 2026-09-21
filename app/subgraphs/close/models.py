@@ -78,7 +78,7 @@ ClosePriceType = Literal["市价单", "限价单", "POV", "TWAP"]
 
 
 class CloseOrderItem(WireModel):
-    """closeOrderList 中的单个平仓订单条目（9 字段）。
+    """closeOrderList 中的单个平仓订单条目。
 
     与 Dify place_close.md JSON schema 完全对齐。allow null 在所有字段
     （Dify prompt 明确允许 null 表示"用户未提供"）。
@@ -92,7 +92,8 @@ class CloseOrderItem(WireModel):
     close_order_notional_delta: Annotated[str | None, CandidateDescription('平仓金额、比例或保留金额原文，保留单位，不计算余额')] = Field(default=None, alias="closeOrderNotionalDelta", description="平仓金额，字符串数字（元）；比例 / 余额表达按规则换算；全部平仓由 confirmFullClose 表达")
     close_order_type: Annotated[ClosePriceType | None, CandidateDescription('平仓执行方式原文，不转枚举')] = Field(default=None, alias="closeOrderType", description="平仓方式：市价单 / 限价单 / POV / TWAP；未明确 → null")
     close_order_price: Annotated[float | int | None, CandidateDescription('限价价格原文')] = Field(default=None, alias="closeOrderPrice", description="限价价格（数字）")
-    close_order_pov_ratio: Annotated[int | None, CandidateDescription('跟量比例原文，保留百分号，不填默认比例')] = Field(default=None, alias="closeOrderPovRatio", description="POV 跟量比例（整数百分比）；「最大跟量」类语义不在此填值")
+    close_order_pov_ratio: Annotated[float | int | None, CandidateDescription('跟量比例原文，保留小数和百分号，不填默认比例')] = Field(default=None, alias="closeOrderPovRatio", description="POV 跟量比例（百分比数字，保留小数）；默认值、截断和范围校验由 Java 负责")
+    has_fast_execution_intent: Annotated[bool | None, CandidateDescription('表达最大跟量或快速执行的原文片段，保留否定词，不输出布尔值')] = Field(default=None, alias="hasFastExecutionIntent", description="是否明确要求最大跟量或快速执行；只传意图，不由此补执行方式或比例")
     #: TWAP 起始时间，格式 "HH:MM"
     close_order_algo_start_time: Annotated[str | None, CandidateDescription('开始时间原文，不补日期或格式化')] = Field(default=None, alias="closeOrderAlgoStartTime", description="TWAP 开始时间 HH:MM")
     close_order_algo_end_time: Annotated[str | None, CandidateDescription('结束时间原文，不补日期或格式化')] = Field(default=None, alias="closeOrderAlgoEndTime", description="TWAP 结束时间 HH:MM")

@@ -47,9 +47,9 @@ def test_sequence_selection_and_small_position_have_required_context() -> None:
     assert "平仓名义本金：1,000,000" in small[-1]["response_contains"]
 
 
-def test_twap_duration_is_clarified_before_final_confirmation() -> None:
+def test_twap_uses_explicit_times_then_confirmation_and_cancel() -> None:
     turns = _cases()["case-034"]["sub_scenes"]
-    assert "TWAP20分钟" in turns[0]["send_text"]
-    assert "起止时间" in turns[0]["response_contains"]
-    assert turns[1]["send_text"] == "200万，TWAP14:30-14:50，限价10"
-    assert {"起始时间：14:30", "结束时间：14:50"} <= set(turns[1]["response_contains"])
+    assert [turn["send_text"] for turn in turns] == [
+        "200万，TWAP14:30-14:50，限价10", "确认平仓", "撤单", "确认撤单",
+    ]
+    assert {"起始时间：14:30", "结束时间：14:50"} <= set(turns[0]["response_contains"])

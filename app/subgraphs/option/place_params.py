@@ -23,6 +23,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from app.execution.confirmation import only_execution_parameters
+from app.extraction.fast_execution import resolve_fast_execution
 from app.extraction.fields import FieldRecord
 from app.subgraphs.option.normalize import normalize_notional
 from app.subgraphs.option.order_id import ORDER_ID_RE, extract_order_ids
@@ -30,16 +31,6 @@ from app.subgraphs.option.order_id import ORDER_ID_RE, extract_order_ids
 # ============================================================
 # A 类：raw 只读
 # ============================================================
-
-_FAST_EXEC_KEYWORDS = (
-    "最大跟量",
-    "积极跟量",
-    "尽快成交",
-    "快点成交",
-    "要快",
-    "积极成交",
-    "全力成交",
-)
 
 _LIMIT_PROBE_RE = re.compile(r"限价")
 _LEAD_NUMBER_RE = re.compile(r"(\d+(?:\.\d+)?)")
@@ -176,11 +167,6 @@ def _extract_twap_times(raw: str) -> tuple[str | None, str | None]:
     if len(times) == 1:
         return None, times[0]
     return times[0], times[1]
-
-
-def _extract_fast_execution(raw: str) -> bool:
-    """仅快速执行关键词为 true；普通跟量 / 跟量+比例 → false。"""
-    return any(keyword in raw for keyword in _FAST_EXEC_KEYWORDS)
 
 
 def _clean_short_name(value: str) -> str | None:
@@ -441,7 +427,9 @@ def parse_place_params_with_lineage(
                 "option_type": order_reference["option_type"], "tenor": order_reference["tenor"],
                 "strike_percentage": order_reference["strike_percentage"], **params}
         if not confirm:
-            fast = _extract_fast_execution(text)
+            fast = resolve_fast_execution(
+                text, has_explicit_pov_ratio=params["pov_ratio"] is not None,
+            )
             item["has_fast_execution_intent"] = fast
             records["has_fast_execution_intent"] = _field(True, SourceText(text, "raw")) if fast else FieldRecord(
                 value=False, source="default", origin="rule:option.fast_execution", locked=True,
