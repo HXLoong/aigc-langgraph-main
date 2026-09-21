@@ -63,9 +63,9 @@ class RunnerCliTests(unittest.TestCase):
 
         output = "\n".join(logs.output)
         self.assertIn("期权持仓 mock", output)
-        self.assertIn(".venv/bin/python scripts/goats_api_mock/server.py --port 19027", output)
+        self.assertIn(".venv/bin/python scripts/goats_api_mock/server.py --port 20000", output)
         self.assertIn("GOATS_OPTION_CLOSING_OUT_CONTRACT_QUERY", output)
-        self.assertIn("http://127.0.0.1:19027/api/internal/agent/option/position", output)
+        self.assertIn("http://127.0.0.1:20000/api/internal/agent/option/position", output)
 
     def test_host_argument_controls_server_bind_address(self) -> None:
         with (

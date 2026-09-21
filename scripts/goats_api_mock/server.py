@@ -122,7 +122,7 @@ def create_app(data_file: Path = DEFAULT_DATA_FILE) -> FastAPI:
 def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="启动 GOATS 期权持仓 mock")
     parser.add_argument("--host", default="127.0.0.1", help="监听地址")
-    parser.add_argument("--port", type=int, default=19027, help="监听端口（默认 19027）")
+    parser.add_argument("--port", type=int, default=20000, help="监听端口（默认 20000）")
     args = parser.parse_args(argv)
     if not 1 <= args.port <= 65535:
         parser.error("--port 必须在 1 到 65535 之间")
