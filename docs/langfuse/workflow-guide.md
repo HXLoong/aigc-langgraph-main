@@ -159,6 +159,9 @@ python scripts/langfuse/langfuse_eval.py --dataset golden_option_inquiry_case --
 
 # 正式执行
 python scripts/langfuse/langfuse_eval.py --dataset golden_option_inquiry_case --ids case-022 --concurrency 1
+
+# 不运行 LLM Judge，仅执行 Experiment；Online Evaluation Rules 仍会异步评分
+python scripts/langfuse/langfuse_eval.py --dataset golden_option_inquiry_case --ids case-022 --concurrency 1 --no-judge
 ```
 
 不传 `--ids` 时执行 Dataset 中的全部 Item：
@@ -178,12 +181,13 @@ python scripts/langfuse/langfuse_eval.py --dataset golden_option_inquiry_case --
 | `--concurrency 3` | 最多同时执行三个 Item；单个多轮用例内部仍顺序执行 |
 | `--limit 10` | 只执行过滤后的前十个 Item |
 | `--dry-run` | 只预览选中的 Item，不执行 LangGraph 和评分 |
+| `--no-judge` | 不注册 `judge_by_deepseek`；仍执行 Experiment 和 Online Evaluation Rules |
 
 调试、写操作、后端容易限流或模型配额较小时使用 `--concurrency 1`；只读评测可根据后端与模型容量逐步提高。
 
 执行后：
 
-- `judge_by_deepseek` 产生 `otc-option-judge` Score。
+- 默认由 `judge_by_deepseek` 产生 `otc-option-judge` Score；指定 `--no-judge` 时不注册该 Evaluator。
 - Online Evaluation Rules 异步产生三个文本断言 Score。
 - 业务人员可补充 `human_business_verdict`，不会覆盖自动 Score。
 

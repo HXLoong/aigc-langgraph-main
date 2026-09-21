@@ -410,6 +410,33 @@ def judge_by_deepseek(*, output, expected_output, metadata=None, **kwargs):
 
 
 # ── 报告 ──
+def _report_text(value) -> str:
+    if isinstance(value, str):
+        return value
+    return json.dumps(value, ensure_ascii=False, default=str)
+
+
+def _report_input(input_data) -> str:
+    if not isinstance(input_data, dict):
+        return _report_text(input_data) if input_data else ""
+
+    turns = input_data.get("turns")
+    if not isinstance(turns, list):
+        turns = [input_data]
+        sub_scenes = input_data.get("sub_scenes", [])
+        if isinstance(sub_scenes, list):
+            turns.extend(sub_scenes)
+
+    texts = []
+    for turn in turns[:3]:
+        if not isinstance(turn, dict):
+            continue
+        text = turn.get("send_text") or turn.get("raw_content") or ""
+        if text:
+            texts.append(str(text))
+    return "; ".join(texts)
+
+
 def _print_report(name, result):
     items = result.item_results
     if not items:
@@ -417,23 +444,25 @@ def _print_report(name, result):
         return
     scores = []
     for r in items:
-        score = float(r.evaluations[0].value) if r.evaluations else 0.0
-        comment = r.evaluations[0].comment if r.evaluations else ""
+        score = float(r.evaluations[0].value) if r.evaluations else None
+        comment = r.evaluations[0].comment if r.evaluations else "未评分"
         reply = (
             (r.output or {}).get("reply_text", "") if isinstance(r.output, dict) else str(r.output)
         )
         inp, exp = "", ""
         if isinstance(r.item, dict):
             inp_data = r.item.get("input", {})
-            exp = r.item.get("expected_output", "") or ""
+            exp = (
+                r.item.get("expected_output")
+                or r.item.get("expectedOutput")
+                or ""
+            )
         elif hasattr(r.item, "input"):
             inp_data = getattr(r.item, "input", {})
             exp = getattr(r.item, "expected_output", "") or ""
         else:
             inp_data = {}
-        if isinstance(inp_data, dict):
-            turns_data = inp_data.get("turns", [])
-            inp = "; ".join(t.get("send_text", "") for t in turns_data[:3])
+        inp = _report_input(inp_data)
         out_turns = (r.output or {}).get("turns", []) if isinstance(r.output, dict) else []
         trace_log = (r.output or {}).get("trace_log", "") if isinstance(r.output, dict) else ""
         scores.append(
@@ -442,20 +471,34 @@ def _print_report(name, result):
                 "comment": comment,
                 "reply": reply,
                 "input": inp,
-                "expected": exp,
+                "expected": _report_text(exp),
                 "turns": out_turns,
                 "trace_log": trace_log,
             }
         )
     t = len(scores)
-    p = sum(1 for s in scores if s["score"] >= _PASS_THRESHOLD)
-    a = sum(s["score"] for s in scores) / t
+    scored = [s for s in scores if s["score"] is not None]
+    unscored = [s for s in scores if s["score"] is None]
     print(f"\n{'=' * 60}\n评估报告：{name}（PASS 阈值={_PASS_THRESHOLD}）\n{'=' * 60}")
-    print(f"用例数: {t}  通过率: {p}/{t} ({p / t * 100:.1f}%)  平均分: {a:.2f}")
-    print(
-        f"满分: {sum(1 for s in scores if s['score'] >= 0.99)}  零分: {sum(1 for s in scores if s['score'] == 0.0)}"
-    )
-    failed = [s for s in scores if s["score"] < _PASS_THRESHOLD]
+    if scored:
+        p = sum(1 for s in scored if s["score"] >= _PASS_THRESHOLD)
+        a = sum(s["score"] for s in scored) / len(scored)
+        print(
+            f"用例数: {t}  已评分: {len(scored)}  未评分: {len(unscored)}  "
+            f"通过率: {p}/{len(scored)} ({p / len(scored) * 100:.1f}%)  平均分: {a:.2f}"
+        )
+        print(
+            f"满分: {sum(1 for s in scored if s['score'] >= 0.99)}  "
+            f"零分: {sum(1 for s in scored if s['score'] == 0.0)}"
+        )
+    else:
+        print(f"用例数: {t}  已评分: 0  未评分: {len(unscored)}")
+
+    failed = [
+        s
+        for s in scored
+        if s["score"] is not None and s["score"] < _PASS_THRESHOLD
+    ]
     if failed:
         print(f"\n失败 case ({len(failed)}):")
         for s in failed:
@@ -475,7 +518,12 @@ def _print_report(name, result):
                 print(f"    第{n}轮 [{pt}/{intent}]{quote_info}{err_info}")
                 print(f"      trace : {trace}")
                 print(f"      reply : {reply_s or '(无回复)'}")
-    else:
+    if unscored:
+        print(f"\n未评分 case ({len(unscored)}):")
+        for s in unscored:
+            print(f"  [未评分] 输入: {s['input']}")
+            print(f"    期望: {s['expected'][:100]}  Judge: 未评分")
+    if not failed and not unscored:
         print("\n全部通过")
 
 
@@ -703,7 +751,15 @@ async def run_local(
 
 
 # ── 主流程（LangFuse 云端） ──
-async def run_eval(dataset_name, filter_func, ids, max_concurrency, limit, dry_run):
+async def run_eval(
+    dataset_name,
+    filter_func,
+    ids,
+    max_concurrency,
+    limit,
+    dry_run,
+    no_judge=False,
+):
     from langfuse import Langfuse
 
     lf = Langfuse()
@@ -724,14 +780,17 @@ async def run_eval(dataset_name, filter_func, ids, max_concurrency, limit, dry_r
             raw = "; ".join(t.get("send_text", "")[:60] for t in inp.get("turns", [])[:2])
             print(f"  {item.id}: {raw}")
         return
-    print(f"开始实验 ({len(items)} 条, 并行 {max_concurrency})...\n")
-    result = lf.run_experiment(
-        name=f"option-eval-{time.strftime('%Y%m%d-%H%M%S')}",
-        data=items,
-        task=run_langgraph_pipeline,
-        evaluators=[judge_by_deepseek],
-        max_concurrency=max_concurrency,
-    )
+    mode = "no-judge" if no_judge else "with judge"
+    print(f"开始实验 ({len(items)} 条, 并行 {max_concurrency}, {mode})...\n")
+    experiment_options = {
+        "name": f"option-eval-{time.strftime('%Y%m%d-%H%M%S')}",
+        "data": items,
+        "task": run_langgraph_pipeline,
+        "max_concurrency": max_concurrency,
+    }
+    if not no_judge:
+        experiment_options["evaluators"] = [judge_by_deepseek]
+    result = lf.run_experiment(**experiment_options)
     print(f"\n实验完成: {result.name}")
     _print_report(result.name, result)
     print(
@@ -773,7 +832,15 @@ def main():
         )
     else:
         asyncio.run(
-            run_eval(args.dataset, args.filter, id_list, args.concurrency, args.limit, args.dry_run)
+            run_eval(
+                args.dataset,
+                args.filter,
+                id_list,
+                args.concurrency,
+                args.limit,
+                args.dry_run,
+                args.no_judge,
+            )
         )
 
 
