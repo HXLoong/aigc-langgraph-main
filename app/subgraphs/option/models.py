@@ -19,8 +19,9 @@ from __future__ import annotations
 
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import ConfigDict, Field
 
+from app.extraction.intent_evidence import IntentEvidenceOutput
 from app.wire_model import WireModel
 
 #: option 子图处理的 8 个意图（7 个基础意图 + unknown_intent；不含 close_order_*）
@@ -36,7 +37,7 @@ OptionIntentType = Literal[
 ]
 
 
-class OptionIntentOutput(BaseModel):
+class OptionIntentOutput(IntentEvidenceOutput):
     """option.intent 节点的 LLM 输出 schema。
 
     与 `app/prompts/option/intent.md`（Dify DSL v2 `期权-意图识别`，

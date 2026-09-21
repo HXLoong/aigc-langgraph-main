@@ -25,6 +25,13 @@ from typing import Annotated, Any, TypedDict
 from langgraph.graph import END, START, StateGraph
 from langgraph.graph.state import CompiledStateGraph
 
+from app.extraction.candidates import (
+    candidate_model,
+    evidence_sources,
+    evidence_user,
+    unpack_candidates,
+)
+from app.extraction.fields import FieldRecord, merge_fields
 from app.graph.business_params import validated_place_params
 from app.graph.cascade import has_error
 from app.graph.retry import add_io_node, io_node
@@ -40,9 +47,9 @@ from app.graph.state import (
 from app.llm.clients import get_qwen_thinking
 from app.prompts.spec import PromptSpec, register
 from app.subgraphs.option.backend import _with_resolved_ticker, call_option_backend
-from app.subgraphs.option.models import OptionInquiryParams, OptionInquiryRawParams
+from app.subgraphs.option.models import OptionInquiryParams, OptionInquiryRawParams, OptionOrderItem
 from app.subgraphs.option.normalize import expand_inquiry_items
-from app.subgraphs.option.prompting import EXTRACT_INPUTS, extract_user
+from app.subgraphs.option.prompting import EXTRACT_INPUTS
 from app.subgraphs.option.sanitize import sanitize_order_list
 from app.subgraphs.ticker.resolver import resolve_ticker, resolve_ticker_full
 
@@ -58,12 +65,13 @@ def _is_fast_inquiry(text: str) -> bool:
     return bool(text) and any(m in text for m in _FAST_INQUIRY_MARKERS)
 
 
+CANDIDATE_MODEL = candidate_model(OptionInquiryRawParams)
 SPEC = register(PromptSpec(
     category="option",
     name="extract_inquiry",
-    output_model=OptionInquiryRawParams,
+    output_model=CANDIDATE_MODEL,
     inputs=EXTRACT_INPUTS,
-    user_builder=extract_user,
+    user_builder=evidence_user,
 ))
 
 
@@ -73,6 +81,7 @@ class InquiryState(AgentState, total=False):
     iq_rfq_data: dict[str, Any] | None
     iq_reject_reply: str | None
     iq_raw_params: dict[str, Any]
+    iq_field_records: dict[str, FieldRecord]
     iq_order_list: list[dict[str, Any]]
     iq_types: list[str]
     iq_backend_order_list: list[dict[str, Any]]
@@ -92,6 +101,7 @@ class InquiryOutput(TypedDict, total=False):
     api_code: int | None
     trace: Annotated[list[TraceEntry], merge_by_id]
     error: ErrorInfo | None
+    field_records: Annotated[dict[str, FieldRecord], merge_fields]
 
 
 # ============================================================
@@ -145,7 +155,7 @@ async def inquiry_fast_submit(state: InquiryState) -> dict[str, Any]:
     }
 
 
-@io_node
+@safe_node
 async def inquiry_precheck(state: InquiryState) -> dict[str, Any]:
     """无效标的预检：代码格式但不在池 → 标记拒绝，不调 LLM。"""
     raw_text = state.get("raw_text", "") or ""
@@ -177,23 +187,49 @@ async def inquiry_reject(state: InquiryState) -> dict[str, Any]:
 
 @io_node
 async def inquiry_extract(state: InquiryState) -> dict[str, Any]:
-    """LLM 只抽取原文片段（thinking 模型 + structured output），再确定性归一化 + 笛卡尔积展开。"""
+    """LLM 只产出候选与证据；未验证的输出不能进入归一化或后端。"""
     messages, _prompt_name = SPEC.build_messages(state)
-    llm = get_qwen_thinking().with_structured_output(OptionInquiryRawParams)
-    raw_params: Any = await llm.ainvoke(messages)
-    params = OptionInquiryParams.model_validate(
-        {"orderList": expand_inquiry_items(raw_params.order_list)}
+    llm = get_qwen_thinking().with_structured_output(CANDIDATE_MODEL)
+    candidates = CANDIDATE_MODEL.model_validate(await llm.ainvoke(messages))
+    raw_params, records = unpack_candidates(
+        OptionInquiryRawParams, candidates, evidence_sources(state), scope="option/inquiry",
     )
-    order_list = sanitize_order_list([item.model_dump() for item in params.order_list])
     return {
-        "iq_raw_params": raw_params.model_dump(),
-        "iq_order_list": order_list,
-        "iq_types": [item.option_type for item in params.order_list if item.option_type],
-        "trace": [TraceEntry(node="inquiry_extract", decision=f"orders={len(order_list)}")],
+        "iq_raw_params": raw_params.model_dump(), "iq_field_records": records,
+        "trace": [TraceEntry(node="inquiry_extract", decision=f"verified_fields={len(records)}")],
     }
 
 
-@io_node
+@safe_node
+async def inquiry_normalize(state: InquiryState) -> dict[str, Any]:
+    """代码归一化与多值展开，并把证据绑定到展开后的每笔订单。"""
+    raw_params = OptionInquiryRawParams.model_validate(state.get("iq_raw_params") or {})
+    expanded: list[dict[str, Any]] = []
+    records: dict[str, FieldRecord] = {}
+    for index, raw_item in enumerate(raw_params.order_list):
+        items = expand_inquiry_items([raw_item])
+        prefix = f"option/inquiry.orderList.{index}."
+        for item in items:
+            canonical_item = OptionOrderItem.model_validate(item).model_dump()
+            target = f"option/inquiry.orderList.{len(expanded)}."
+            for path, record in (state.get("iq_field_records") or {}).items():
+                if path.startswith(prefix):
+                    alias = path[len(prefix):]
+                    records[target + alias] = record.model_copy(update={
+                        "value": canonical_item.get(alias), "locked": alias not in {"stockCode", "shortName"},
+                    })
+            expanded.append(item)
+    params = OptionInquiryParams.model_validate({"orderList": expanded})
+    order_list = sanitize_order_list([item.model_dump() for item in params.order_list])
+    return {
+        "iq_order_list": order_list,
+        "iq_types": [item.option_type for item in params.order_list if item.option_type],
+        "field_records": records,
+        "trace": [TraceEntry(node="inquiry_normalize", decision=f"orders={len(order_list)}")],
+    }
+
+
+@safe_node
 async def inquiry_resolve(state: InquiryState) -> dict[str, Any]:
     """ticker resolver 识别标的（含 HITL 信号）并按身份绑定到订单。"""
     raw_text = state.get("raw_text", "") or ""
@@ -292,14 +328,15 @@ def _route_or_end(next_node: str):  # type: ignore[no-untyped-def]
     return _router
 
 
-def build_inquiry_graph() -> CompiledStateGraph:
-    g: StateGraph = StateGraph(InquiryState, output_schema=InquiryOutput)
+def build_inquiry_graph() -> CompiledStateGraph[InquiryState, None, AgentState, InquiryOutput]:
+    g: StateGraph[InquiryState, None, AgentState, InquiryOutput] = StateGraph(InquiryState, input_schema=AgentState, output_schema=InquiryOutput)
     add_io_node(g, "inquiry_fast_parse", inquiry_fast_parse)
     g.add_node("inquiry_fast_submit", inquiry_fast_submit)
-    add_io_node(g, "inquiry_precheck", inquiry_precheck)
+    g.add_node("inquiry_precheck", inquiry_precheck)
     g.add_node("inquiry_reject", inquiry_reject)
     add_io_node(g, "inquiry_extract", inquiry_extract)
-    add_io_node(g, "inquiry_resolve", inquiry_resolve)
+    g.add_node("inquiry_normalize", inquiry_normalize)
+    g.add_node("inquiry_resolve", inquiry_resolve)
     g.add_node("inquiry_submit", inquiry_submit)
 
     g.add_conditional_edges(START, _route_start, ["inquiry_fast_parse", "inquiry_precheck"])
@@ -307,7 +344,8 @@ def build_inquiry_graph() -> CompiledStateGraph:
                             ["inquiry_fast_submit", "inquiry_precheck", END])
     g.add_conditional_edges("inquiry_precheck", _route_after_precheck,
                             ["inquiry_reject", "inquiry_extract", END])
-    g.add_conditional_edges("inquiry_extract", _route_or_end("inquiry_resolve"), ["inquiry_resolve", END])
+    g.add_conditional_edges("inquiry_extract", _route_or_end("inquiry_normalize"), ["inquiry_normalize", END])
+    g.add_conditional_edges("inquiry_normalize", _route_or_end("inquiry_resolve"), ["inquiry_resolve", END])
     g.add_conditional_edges("inquiry_resolve", _route_or_end("inquiry_submit"), ["inquiry_submit", END])
     g.add_edge("inquiry_fast_submit", END)
     g.add_edge("inquiry_reject", END)
@@ -316,7 +354,7 @@ def build_inquiry_graph() -> CompiledStateGraph:
 
 
 @lru_cache(maxsize=1)
-def get_inquiry_graph() -> CompiledStateGraph:
+def get_inquiry_graph() -> CompiledStateGraph[InquiryState, None, AgentState, InquiryOutput]:
     return build_inquiry_graph()
 
 

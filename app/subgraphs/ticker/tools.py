@@ -525,13 +525,7 @@ RANK_SPEC = register(PromptSpec(
 
 
 async def _call_ticker_llm(spec: PromptSpec, user_message: str) -> Any | None:
-    """按 SPEC 渲染 system（含日期注入）+ structured output 调用非 thinking 模型。
-
-    失败重试一次后返回 None，交由调用方按空结果降级处理，不抛出阻塞管线
-    （CLAUDE.md 既有约定：解析失败自带 1 次重试）。schema-echo 的根修在
-    models.py：命名字段 `results` 给 function calling 提供参数锚点，从源头
-    消除"把 schema 骨架当参数补全"的触发条件。
-    """
+    """单次结构化调用；网络和 Schema 故障交给图层的统一重试与降级。"""
     system, _prompt_name = spec.render_system({})
     model = spec.output_model
     assert model is not None  # 4 个 ticker SPEC 均为 structured output
@@ -540,16 +534,7 @@ async def _call_ticker_llm(spec: PromptSpec, user_message: str) -> Any | None:
         SystemMessage(content=system),
         HumanMessage(content=user_message),
     ]
-    last_error: Exception | None = None
-    for attempt in (1, 2):
-        try:
-            return await llm.ainvoke(messages)
-        except Exception as exc:  # noqa: BLE001
-            last_error = exc
-            if attempt == 1:
-                logger.warning("ticker LLM 首次调用失败将重试 prompt=%s: %s", spec.key, exc)
-    logger.warning("ticker LLM 调用失败 prompt=%s（重试后仍失败）: %s", spec.key, last_error)
-    return None
+    return model.model_validate(await llm.ainvoke(messages))
 
 
 async def infer_code_batch(candidates: list[str]) -> dict[str, Any]:

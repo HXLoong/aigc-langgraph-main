@@ -14,11 +14,16 @@ vendor 由 .env 的 QWEN_API_BASE / QWEN_API_KEY / QWEN_MODEL_* 切换
 """
 from __future__ import annotations
 
+import asyncio
 import re
 from functools import lru_cache
 from typing import Any
 
+from langchain_core.language_models import LanguageModelInput
+from langchain_core.messages import AIMessage
+from langchain_core.runnables import Runnable, RunnableConfig
 from langchain_openai import ChatOpenAI
+from pydantic import BaseModel, SecretStr
 from openai import DefaultAsyncHttpxClient, DefaultHttpxClient
 
 from app.config import get_settings
@@ -61,10 +66,19 @@ class _ChatLLM(ChatOpenAI):
     显式传入的 method 不覆盖；Qwen 走 langchain 默认行为。
     """
 
-    def with_structured_output(self, schema=None, **kwargs):  # type: ignore[override]
+    def with_structured_output(self, schema: dict[str, Any] | type | None = None, **kwargs: Any) -> Runnable[LanguageModelInput, dict[str, Any] | BaseModel]:
         if _is_deepseek(self.model_name) and "method" not in kwargs:
             kwargs["method"] = "function_calling"
         return super().with_structured_output(schema, **kwargs)
+
+    async def ainvoke(
+        self, input: LanguageModelInput, config: RunnableConfig | None = None,
+        *, stop: list[str] | None = None, **kwargs: Any,
+    ) -> AIMessage:
+        budget = self.request_timeout
+        seconds = float(budget) if isinstance(budget, (int, float)) else get_settings().llm_timeout_seconds
+        async with asyncio.timeout(seconds):
+            return await super().ainvoke(input, config, stop=stop, **kwargs)
 
 
 @lru_cache(maxsize=1)
@@ -74,10 +88,11 @@ def get_qwen_standard() -> ChatOpenAI:
     return _ChatLLM(
         model=settings.qwen_model_standard,
         base_url=settings.qwen_api_base,
-        api_key=settings.qwen_api_key,
+        api_key=SecretStr(settings.qwen_api_key),
         temperature=0.0,
         timeout=settings.llm_timeout_seconds,
-        max_retries=2,
+        max_tokens=settings.llm_output_max_tokens,
+        max_retries=0,
         extra_body=_thinking_off_extra_body(settings.qwen_model_standard),
         **_http_client_kwargs(settings.llm_trust_env),
     )
@@ -94,10 +109,11 @@ def get_qwen_thinking() -> ChatOpenAI:
     return _ChatLLM(
         model=settings.qwen_model_thinking,
         base_url=settings.qwen_api_base,
-        api_key=settings.qwen_api_key,
+        api_key=SecretStr(settings.qwen_api_key),
         temperature=0.0,
         timeout=settings.llm_timeout_seconds,
-        max_retries=2,
+        max_tokens=settings.llm_output_max_tokens,
+        max_retries=0,
         extra_body=_thinking_off_extra_body(settings.qwen_model_thinking),
         **_http_client_kwargs(settings.llm_trust_env),
     )
@@ -113,10 +129,11 @@ def make_qwen_thinking() -> ChatOpenAI:
     return _ChatLLM(
         model=settings.qwen_model_thinking,
         base_url=settings.qwen_api_base,
-        api_key=settings.qwen_api_key,
+        api_key=SecretStr(settings.qwen_api_key),
         temperature=0.0,
         timeout=settings.llm_timeout_seconds,
-        max_retries=2,
+        max_tokens=settings.llm_output_max_tokens,
+        max_retries=0,
         extra_body=_thinking_off_extra_body(settings.qwen_model_thinking),
         **_http_client_kwargs(settings.llm_trust_env),
     )
@@ -129,10 +146,11 @@ def get_qwen_structured() -> ChatOpenAI:
     return _ChatLLM(
         model=settings.qwen_model_standard,
         base_url=settings.qwen_api_base,
-        api_key=settings.qwen_api_key,
+        api_key=SecretStr(settings.qwen_api_key),
         temperature=0.0,
         timeout=settings.llm_timeout_seconds,
-        max_retries=2,
+        max_tokens=settings.llm_output_max_tokens,
+        max_retries=0,
         extra_body=_thinking_off_extra_body(settings.qwen_model_standard),
         **_http_client_kwargs(settings.llm_trust_env),
     )
@@ -145,10 +163,11 @@ def get_qwen_complex() -> ChatOpenAI:
     return _ChatLLM(
         model=settings.qwen_model_complex,
         base_url=settings.qwen_api_base,
-        api_key=settings.qwen_api_key,
+        api_key=SecretStr(settings.qwen_api_key),
         temperature=0.0,
         timeout=settings.llm_timeout_seconds,
-        max_retries=2,
+        max_tokens=settings.llm_output_max_tokens,
+        max_retries=0,
         extra_body=_thinking_off_extra_body(settings.qwen_model_complex),
         **_http_client_kwargs(settings.llm_trust_env),
     )
@@ -161,9 +180,10 @@ def get_qwen_vl() -> ChatOpenAI:
     return _ChatLLM(
         model=settings.qwen_model_vl,
         base_url=settings.qwen_api_base,
-        api_key=settings.qwen_api_key,
+        api_key=SecretStr(settings.qwen_api_key),
         temperature=0.0,
         timeout=settings.llm_timeout_seconds,
-        max_retries=2,
+        max_tokens=settings.llm_vision_max_tokens,
+        max_retries=0,
         **_http_client_kwargs(settings.llm_trust_env),
     )

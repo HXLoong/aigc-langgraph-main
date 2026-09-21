@@ -9,6 +9,7 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from app.extraction.intent_evidence import IntentEvidenceOutput
 from app.wire_model import WireModel
 
 # ============================================================
@@ -28,7 +29,7 @@ SwapIntentType = Literal[
 ]
 
 
-class SwapIntentOutput(BaseModel):
+class SwapIntentOutput(IntentEvidenceOutput):
     """swap.intent 节点的 LLM 输出 schema。"""
 
     model_config = ConfigDict(extra="ignore")
@@ -202,7 +203,9 @@ class SwapTickerPick(WireModel):
     order_seq: int | None = Field(default=None, alias="orderSeq", description="目标订单在 candidate_list 中的序号（orderId 缺失时用）")
     idx: int | None = Field(default=None, description="目标订单下标（0 起；orderId / orderSeq 都缺失时的兜底）")
     seq: int | None = Field(default=None, description="候选标的在本单 candidates 中的序号（seq → code）")
-    direct_ref: str | None = Field(default=None, alias="directRef", description="直接引用（候选 code / 名称；命中候选则规范为 code，否则按原文使用）")
+    direct_ref: str | None = Field(default=None, alias="directRef", description="用户原文中的候选代码或名称指针；必须唯一命中本订单候选，不得直接成为最终代码")
+    evidence: str = Field(default="", description="本轮原文的连续选择片段，多订单必须含明确订单范围")
+    confidence: float | None = Field(default=None, ge=0, le=1, description="选择识别置信度；模型指针必须提供，不能替代原文与范围校验")
 
 
 class SwapSelectTickerOutput(BaseModel):
@@ -224,6 +227,8 @@ class SwapCounterpartyPick(WireModel):
     letter: str | None = Field(default=None, description="对手列表中的字母标识（如 A / B，对应 sort）")
     ordinal: int | None = Field(default=None, description="对手列表中的第 N 个（1 起，映射为 sort 字母）")
     direct_name: str | None = Field(default=None, alias="directName", description="对手名称原文（精确匹配优先，唯一子串次之；多命中不算）")
+    evidence: str = Field(default="", description="本轮原文的连续选择片段，多订单必须含明确订单范围")
+    confidence: float | None = Field(default=None, ge=0, le=1, description="选择识别置信度；模型指针必须提供，不能替代原文与范围校验")
 
 
 class SwapSelectCounterpartyOutput(WireModel):

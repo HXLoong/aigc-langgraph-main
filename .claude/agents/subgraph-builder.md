@@ -44,25 +44,8 @@ model: sonnet
 ## 标准节点模式
 
 ### 意图识别节点
-```python
-@safe_node
-async def classify_swap_intent(state: AgentState) -> dict[str, Any]:
-    from app.llm.clients import get_qwen_standard
-    from app.prompts import load_prompt
 
-    prompt = load_prompt("swap", "intent")
-    llm = get_qwen_standard().with_structured_output(SwapIntentOutput)
-
-    user_msg = _build_user_message(state)
-    result = await llm.ainvoke([
-        ("system", prompt.system),
-        ("user", user_msg),
-    ])
-    return {
-        "intent": result.type,
-        "trace": [{"node": "classify_swap_intent", "decision": result.type}],
-    }
-```
+使用 PromptSpec 构造消息，with_structured_output 接收带证据的 Pydantic 输出；Code 规则命中时不调用模型。只读模型节点用 @io_node + add_io_node，写接口节点用 @safe_node。
 
 ### 路由函数（必须纯函数）
 ```python
@@ -106,7 +89,7 @@ def build_swap_graph():
     g.add_edge(START, "classify_intent")
     g.add_conditional_edges("classify_intent", route_by_intent, {...})
     g.add_edge("call_api", END)
-    return g  # 返回未 compile 的 builder，主图里 .compile() 注入
+    return g.compile()  # 当前项目各业务子图返回编译图，主图直接嵌入
 ```
 
 ## 扩展现有子图的流程
@@ -117,8 +100,8 @@ def build_swap_graph():
    - 若需要新参数提取节点，仿照 `extract_place_order` 写
    - 更新 `route_by_intent` 映射
    - 更新 `build_<product>_graph()` 加边
-3. 提示词：若 Dify 有对应 LLM 节点，用 `prompt-migrator` 子 agent 迁移；否则，**停下来**跟用户确认是否要新写提示词
-4. 测试：用 `test-generator` 子 agent 补测试
+3. 提示词：按当前 git 业务契约定义 PromptSpec 与候选模型；用户已授权重构时直接实现必要提示词。仅业务语义确实缺失时请求澄清；Dify 快照仅作历史证据。
+4. 测试：先最小 RED 再实现；验证范围遵循用户指令。只有已授权并行且有可用槽位时才委派子代理。
 
 ### 加新节点（非意图）
 在现有意图内部做更多步骤，例如"下单前加参数校验"：
@@ -145,7 +128,7 @@ def build_swap_graph():
 - **不要在子图里写业务 HTTP 调用**（统一放子图 `backend.py`，走 `OptionClientHttpx` / `SwapClientHttpx` / `TickerClientHttpx`）
 - **不要把提示词写死**（走 `PromptSpec` / `load_prompt`）
 - **不要忘记 `@safe_node`**
-- **不要直接 `g.compile()`**（返回 builder，主图负责 compile）
+- **不要对已编译子图再次 compile**（遵循现有 build_*_graph 返回契约）
 
 ## 输出
 

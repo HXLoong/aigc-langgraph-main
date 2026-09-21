@@ -50,6 +50,10 @@ for target in (
 - case 格式沿用对应文件既有方言（详见 `scripts/ai_test_langgraph/README.md`）
 - 跑评估：`python scripts/langfuse/langfuse_eval.py --local <fixture>`
 
+## 验证范围
+
+用户指定轻量验证时，只执行最小复现、受影响的关键测试和相关静态检查。全量 pytest、真实黄金集及性能测试留到统一验收，不循环重复；交付中明确未运行的检查。该范围调整不取消业务改动的 RED → GREEN。
+
 ## 提交前自检
 
 ```bash

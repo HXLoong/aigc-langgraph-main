@@ -121,25 +121,23 @@ async def test_infer_code_batch_returns_contract_model_results(
 
 
 @pytest.mark.asyncio
-async def test_infer_code_batch_validation_error_returns_empty_dict(
+async def test_infer_code_batch_validation_error_propagates(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     fake = _install(monkeypatch, error=ValueError("OutputParserException"))
-    result = await infer_code_batch(["贵州茅台"])
-    assert result == {}
-    # 解析失败重试一次后仍失败 → 降级空 dict
-    assert fake.ainvoke.await_count == 2
+    with pytest.raises(ValueError):
+        await infer_code_batch(["贵州茅台"])
+    assert fake.ainvoke.await_count == 1
 
 
 @pytest.mark.asyncio
-async def test_infer_code_batch_llm_exception_returns_empty_dict(
+async def test_infer_code_batch_llm_exception_propagates(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     fake = _install(monkeypatch, error=ConnectionError("backend down"))
-    result = await infer_code_batch(["贵州茅台"])
-    assert result == {}
-    # 调用异常同样只重试一次
-    assert fake.ainvoke.await_count == 2
+    with pytest.raises(ConnectionError):
+        await infer_code_batch(["贵州茅台"])
+    assert fake.ainvoke.await_count == 1
 
 
 # ============================================================
@@ -177,29 +175,29 @@ async def test_judge_ticker_type_returns_contract_model_results(
 
 
 @pytest.mark.asyncio
-async def test_llm_retry_once_then_succeeds(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_helper_propagates_failure_and_next_graph_attempt_can_succeed(monkeypatch: pytest.MonkeyPatch) -> None:
     """首次解析失败（schema-echo 类）→ 重试一次成功，不降级。"""
     fake = _install(monkeypatch, outcomes=[
         ValueError("schema-echo"),
         JudgeTypeOutput.model_validate({"results": {"600519.SH": "EQUITY"}}),
     ])
+    with pytest.raises(ValueError):
+        await judge_ticker_type(["600519.SH"])
+    assert fake.ainvoke.await_count == 1
     result = await judge_ticker_type(["600519.SH"])
     assert result == {"600519.SH": "EQUITY"}
     assert fake.ainvoke.await_count == 2
 
 
 @pytest.mark.asyncio
-async def test_llm_retry_exhausted_warns_and_degrades(
-    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+async def test_helper_does_not_swallow_repeated_schema_failures(
+    monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """两次解析失败 → 降级空 dict，warning 带 prompt 名供线上定位。"""
+    """单次 helper 不重试或吞异常，图级 RetryPolicy 负责预算。"""
     fake = _install(monkeypatch, outcomes=[ValueError("schema-echo"), ValueError("schema-echo")])
-    with caplog.at_level("WARNING", logger="app.subgraphs.ticker.tools"):
-        result = await split_ticker_keywords(["600519.SH"])
-    assert result == {}
-    assert fake.ainvoke.await_count == 2
-    assert "prompt=ticker/tokenize" in caplog.text
-    assert "重试后仍失败" in caplog.text
+    with pytest.raises(ValueError):
+        await split_ticker_keywords(["600519.SH"])
+    assert fake.ainvoke.await_count == 1
 
 
 # ============================================================
@@ -230,15 +228,14 @@ async def test_rank_candidates_returns_contract_model_codes(
 
 
 @pytest.mark.asyncio
-async def test_rank_candidates_llm_error_returns_empty_list(
+async def test_rank_candidates_llm_error_propagates(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     fake = _install(monkeypatch, error=RuntimeError("parse failed"))
     results = [_fake_candidate("600519.SH")]
-    ranked = await rank_candidates("贵州茅台", results)
-    assert ranked == []
-    # 解析失败重试一次后仍失败 → 降级空列表
-    assert fake.ainvoke.await_count == 2
+    with pytest.raises(RuntimeError):
+        await rank_candidates("贵州茅台", results)
+    assert fake.ainvoke.await_count == 1
 
 
 @pytest.mark.asyncio

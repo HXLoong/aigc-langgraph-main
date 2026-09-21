@@ -4,6 +4,7 @@ from __future__ import annotations
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
+from evidence_support import candidate_output
 
 from app.subgraphs.option import build_option_graph
 from app.subgraphs.option import extract_cancel as cancel_module
@@ -19,6 +20,7 @@ from app.subgraphs.option.models import (
     OptionInquiryRawParams,
     OptionIntentOutput,
 )
+from tests.intent_fixtures import intent_reply
 
 #: 不含 conversation_id/user_id/room_id——保持 call_option_backend() 的早退门禁
 #: 生效（三者缺一即返回 {}），路由测试只关心 intent → 节点分发 + state 业务字段
@@ -37,7 +39,7 @@ def _patch(
     fn: str = "get_qwen_thinking",
 ) -> None:
     fake_llm = MagicMock()
-    fake_llm.ainvoke = AsyncMock(return_value=value)
+    fake_llm.ainvoke = AsyncMock(return_value=(candidate_output(value) if isinstance(value, OptionInquiryRawParams) else value))
     fake_base = MagicMock()
     fake_base.with_structured_output = MagicMock(return_value=fake_llm)
     monkeypatch.setattr(module, fn, lambda: fake_base)
@@ -69,7 +71,7 @@ def _patch_intent(monkeypatch: pytest.MonkeyPatch, intent_type: str) -> None:
     _patch(
         monkeypatch,
         intent_module,
-        OptionIntentOutput(type=intent_type),  # type: ignore[arg-type]
+        intent_reply(OptionIntentOutput, type=intent_type),  # type: ignore[arg-type]
         fn="get_qwen_structured",
     )
 

@@ -19,6 +19,9 @@ import openpyxl
 import pytest
 
 import app.subgraphs.swap.multimodal as mm
+import app.subgraphs.swap.place_order as place
+from app.extraction.candidates import candidate_model
+from app.graph.state import TickerCandidate
 from app.subgraphs.swap.models import SwapOrderItem, SwapPlaceOrderParams
 from app.subgraphs.swap.multimodal import (
     _image_urls,
@@ -26,6 +29,7 @@ from app.subgraphs.swap.multimodal import (
     swap_excel_order,
     swap_image_order,
 )
+from app.subgraphs.ticker.resolver import TickerResolution
 
 
 def _make_excel_bytes(headers: list[str], rows: list[list]) -> bytes:
@@ -46,7 +50,7 @@ def _make_excel_bytes(headers: list[str], rows: list[list]) -> bytes:
 
 def _patch_vl(
     monkeypatch: pytest.MonkeyPatch,
-    ocr_text: str = "OCR 文本:买入 600519 100股",
+    ocr_text: str = "OCR 文本:买入 600519.SH 100股 H-20260101-0000000001 限价350",
     *,
     error: Exception | None = None,
 ) -> MagicMock:
@@ -54,9 +58,11 @@ def _patch_vl(
     ocr_llm.ainvoke = (
         AsyncMock(side_effect=error)
         if error is not None
-        else AsyncMock(return_value=MagicMock(content=ocr_text))
+        else AsyncMock(return_value={"text": ocr_text})
     )
-    monkeypatch.setattr(mm, "get_qwen_vl", lambda: ocr_llm)
+    factory = MagicMock()
+    factory.with_structured_output.return_value = ocr_llm
+    monkeypatch.setattr(mm, "get_qwen_vl", lambda: factory)
     return ocr_llm
 
 
@@ -66,15 +72,35 @@ def _patch_extract(
     *,
     error: Exception | None = None,
 ) -> MagicMock:
+    async def extract(messages):
+        if error is not None:
+            raise error
+        sources = json.loads(messages[-1][1])["sources"]
+        params = result if result is not None else _PARAMS
+        orders = []
+        for item in params.order_list:
+            row = {}
+            for key, value in item.model_dump().items():
+                if value is None:
+                    continue
+                literal = str(value)
+                if isinstance(value, float) and value.is_integer():
+                    literal = str(int(value))
+                reference = next((key.removeprefix("attachment:") for key, text in sources.items()
+                                  if key.startswith("attachment:") and literal in text), "missing")
+                row[key] = {"value": literal, "evidence": literal, "origin": "attachment",
+                            "reference": reference, "confidence": 1.0}
+            orders.append(row)
+        return candidate_model(SwapPlaceOrderParams).model_validate({"orderList": orders})
+
     extract_llm = MagicMock()
-    extract_llm.ainvoke = (
-        AsyncMock(side_effect=error)
-        if error is not None
-        else AsyncMock(return_value=result if result is not None else _PARAMS)
-    )
+    extract_llm.ainvoke = AsyncMock(side_effect=extract)
     factory = MagicMock()
     factory.with_structured_output.return_value = extract_llm
     monkeypatch.setattr(mm, "get_qwen_structured", lambda: factory)
+    monkeypatch.setattr(place, "resolve_ticker_full", AsyncMock(return_value=TickerResolution(
+        resolved=[TickerCandidate(windCode="600519.SH", from_goats=True)], hitl_pending=[],
+    )))
     return extract_llm
 
 
@@ -215,9 +241,8 @@ class TestImageOrder:
                 ],
             }
         )
-        (msgs,), _ = ocr_llm.ainvoke.call_args
-        content = msgs[0]["content"]
-        image_urls = [c["image_url"]["url"] for c in content if c["type"] == "image_url"]
+        image_urls = [call.args[0][0]["content"][1]["image_url"]["url"]
+                      for call in ocr_llm.ainvoke.call_args_list]
         assert image_urls == ["http://img/1.png", "http://img/2.png"]
         assert out["trace"][0].decision == "images=2"
 
@@ -279,7 +304,7 @@ class TestImageOrder:
     async def test_ocr_text_and_raw_text_passed_to_extract(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        _patch_vl(monkeypatch, ocr_text="OCR内容XYZ")
+        _patch_vl(monkeypatch, ocr_text="OCR内容XYZ 买入600519.SH 100股")
         extract_llm = _patch_extract(monkeypatch, _PARAMS)
         await swap_image_order(
             {
@@ -337,7 +362,7 @@ class TestExcelOrder:
     @pytest.mark.asyncio
     async def test_download_parse_extract(self, monkeypatch: pytest.MonkeyPatch) -> None:
         _, extract_llm = _mock_llm(monkeypatch, _PARAMS)
-        _patch_fetch(monkeypatch, _make_excel_bytes(["产品", "数量"], [["中信", 100]]))
+        _patch_fetch(monkeypatch, _make_excel_bytes(["产品", "数量", "标的"], [["中信", 100, "600519.SH"]]))
 
         out = await swap_excel_order(
             {
@@ -359,7 +384,7 @@ class TestExcelOrder:
     async def test_url_key_fallback(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """input_files 用 url 而非 remote_url 也能下载。"""
         _, extract_llm = _mock_llm(monkeypatch, _PARAMS)
-        _patch_fetch(monkeypatch, _make_excel_bytes(["产品"], [["中信"]]))
+        _patch_fetch(monkeypatch, _make_excel_bytes(["产品", "数量", "标的", "订单号", "限价"], [["中信", 100, "600519.SH", "H-20260101-0000000001", 350]]))
         out = await swap_excel_order(
             {"raw_text": "", "input_files": [{"url": "http://f/x.xlsx"}]}
         )
@@ -396,7 +421,7 @@ class TestExcelOrder:
     ) -> None:
         _patch_vl(monkeypatch)
         _patch_extract(monkeypatch, error=RuntimeError("extract down"))
-        _patch_fetch(monkeypatch, _make_excel_bytes(["产品"], [["中信"]]))
+        _patch_fetch(monkeypatch, _make_excel_bytes(["产品", "数量", "标的", "订单号", "限价"], [["中信", 100, "600519.SH", "H-20260101-0000000001", 350]]))
         out = await swap_excel_order(
             {"raw_text": "", "input_files": [{"remote_url": "http://f/x.xlsx"}]}
         )
@@ -412,23 +437,23 @@ class TestExcelOrder:
         out = await swap_excel_order(
             {"raw_text": "", "input_files": [{"remote_url": "http://f/x.xlsx"}]}
         )
-        assert out["trace"][0].decision == "rows=0"
-        (msgs,), _ = extract_llm.ainvoke.call_args
-        assert "[]" in msgs[-1][1]
+        assert out.get("error") is not None
+        assert not out.get("place_params")
+        extract_llm.ainvoke.assert_not_awaited()
 
     @pytest.mark.asyncio
     async def test_rows_serialized_as_json(self, monkeypatch: pytest.MonkeyPatch) -> None:
         _, extract_llm = _mock_llm(monkeypatch, _PARAMS)
-        _patch_fetch(monkeypatch, _make_excel_bytes(["产品", "数量"], [["中信", 100]]))
+        _patch_fetch(monkeypatch, _make_excel_bytes(["产品", "数量", "标的"], [["中信", 100, "600519.SH"]]))
         await swap_excel_order(
             {"raw_text": "", "input_files": [{"remote_url": "http://f/x.xlsx"}]}
         )
         (msgs,), _ = extract_llm.ainvoke.call_args
         user_text = msgs[-1][1]
-        expected_json = json.dumps(
-            [{"交易对手": "中信", "数量": 100}], ensure_ascii=False, default=str
-        )
-        assert expected_json in user_text
+        sources = json.loads(user_text)["sources"]
+        assert json.loads(sources["attachment:file:0:sheet:0:row:2"]) == {
+            "交易对手": "中信", "数量": 100, "标的": "600519.SH",
+        }
 
     @pytest.mark.asyncio
     async def test_modify_when_order_id_present(
@@ -436,7 +461,7 @@ class TestExcelOrder:
     ) -> None:
         _patch_vl(monkeypatch)
         _patch_extract(monkeypatch, _MODIFY_PARAMS)
-        _patch_fetch(monkeypatch, _make_excel_bytes(["产品"], [["中信"]]))
+        _patch_fetch(monkeypatch, _make_excel_bytes(["产品", "数量", "标的", "订单号", "限价"], [["中信", 100, "600519.SH", "H-20260101-0000000001", 350]]))
         out = await swap_excel_order(
             {"raw_text": "", "input_files": [{"remote_url": "http://f/x.xlsx"}]}
         )
@@ -445,7 +470,7 @@ class TestExcelOrder:
     @pytest.mark.asyncio
     async def test_trace_node_and_row_count(self, monkeypatch: pytest.MonkeyPatch) -> None:
         _mock_llm(monkeypatch, _PARAMS)
-        _patch_fetch(monkeypatch, _make_excel_bytes(["产品"], [["中信"], ["华泰"]]))
+        _patch_fetch(monkeypatch, _make_excel_bytes(["产品", "数量", "标的"], [["中信", 100, "600519.SH"], ["华泰", 100, "600519.SH"]]))
         out = await swap_excel_order(
             {"raw_text": "", "input_files": [{"remote_url": "http://f/x.xlsx"}]}
         )
@@ -475,11 +500,10 @@ class TestParamsUpdateShape:
 
 
 @pytest.mark.asyncio
-class TestOcrCounterpartyInjection:
-    """评估 C-27 / --strict：image_ocr.md 的 {{counterparty_list}} 此前原样发给 VL
-    模型；现渲染为 state["swap_counterparties"] 的 JSON（ADR 0022 D5）。"""
+class TestOcrTranscriptionBoundary:
+    """转写只看图片；授权账户上下文留在 Code 绑定层，避免 OCR 凭提示补字。"""
 
-    async def test_placeholder_rendered(self, monkeypatch: pytest.MonkeyPatch) -> None:
+    async def test_ocr_has_no_counterparty_inference_context(self, monkeypatch: pytest.MonkeyPatch) -> None:
         ocr_llm, _ = _mock_llm(monkeypatch, _PARAMS)
         await swap_image_order(
             {
@@ -490,4 +514,4 @@ class TestOcrCounterpartyInjection:
         )
         text = ocr_llm.ainvoke.call_args.args[0][0]["content"][0]["text"]
         assert "{{#" not in text
-        assert "对手甲" in text
+        assert "对手甲" not in text  # OCR cannot turn an account hint into invented pixel text.

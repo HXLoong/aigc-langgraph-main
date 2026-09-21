@@ -8,6 +8,7 @@ from __future__ import annotations
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
+from evidence_support import swap_candidate_output
 
 from app.subgraphs.swap import place_order as place_order_mod
 from app.subgraphs.swap.models import SwapOrderItem, SwapPlaceOrderParams
@@ -41,7 +42,7 @@ def _patch_place_order_llm(monkeypatch: pytest.MonkeyPatch) -> None:
     fake_params = SwapPlaceOrderParams(orderList=[SwapOrderItem(placeOrderWindCode="长江")])
     fake_llm = MagicMock()
     fake_llm.with_structured_output = MagicMock(
-        return_value=MagicMock(ainvoke=AsyncMock(return_value=fake_params))
+        return_value=MagicMock(ainvoke=AsyncMock(return_value=swap_candidate_output(fake_params)))
     )
     monkeypatch.setattr(place_order_mod, "get_qwen_complex", lambda: fake_llm)
 
@@ -78,7 +79,7 @@ async def test_no_hitl_does_not_write_ticker_hitl_candidates(
 
     result = await place_order_mod.swap_place_order({"raw_text": "买长江电力"})
 
-    assert "ticker_hitl_candidates" not in result
+    assert result.get("ticker_hitl_candidates") is None
     assert len(result.get("tickers", [])) == 1
     assert result["tickers"][0].wind_code == "600900.SH"
 

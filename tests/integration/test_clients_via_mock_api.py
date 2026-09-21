@@ -184,7 +184,8 @@ def test_client_without_transport_uses_real_httpx(option_client, swap_client, ti
     kw = prod_client._client_kwargs()
     assert "transport" not in kw
     assert kw["trust_env"] is False  # 生产不读环境代理
-    assert kw["timeout"] == 30.0
+    from app.config import get_settings
+    assert kw["timeout"] == get_settings().backend_timeout_seconds
 
 
 def test_client_with_transport_passes_through(option_client) -> None:

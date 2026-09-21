@@ -22,8 +22,8 @@ from app.graph.retry import add_io_node
 from app.subgraphs.ticker import resolver as r
 
 
-def build_ticker_graph() -> CompiledStateGraph:
-    g: StateGraph = StateGraph(r.TickerState)
+def build_ticker_graph() -> CompiledStateGraph[r.TickerState, None, r.TickerState, r.TickerState]:
+    g: StateGraph[r.TickerState, None, r.TickerState, r.TickerState] = StateGraph(r.TickerState)
     g.add_node("extract_candidates", r.extract_candidates)
     # 只读 IO（LLM / GOATS）：挂 RetryPolicy；异常穿透给父节点的 safe_node，不需要 handler
     for io_name, io_fn in (
@@ -53,7 +53,7 @@ def build_ticker_graph() -> CompiledStateGraph:
 
 
 @lru_cache(maxsize=1)
-def get_ticker_graph() -> CompiledStateGraph:
+def get_ticker_graph() -> CompiledStateGraph[r.TickerState, None, r.TickerState, r.TickerState]:
     """进程级单例：拓扑固定，编译一次即可。"""
     return build_ticker_graph()
 

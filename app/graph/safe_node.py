@@ -12,24 +12,35 @@ import logging
 import time
 import traceback
 from collections.abc import Awaitable, Callable
-from typing import Any
+from typing import Any, ParamSpec, overload
 
 from langgraph.types import Overwrite
 
-from app.graph.state import AgentState, ErrorInfo, TraceEntry
+from app.extraction.locks import protect_update
+from app.graph.state import ErrorInfo, TraceEntry
 from app.observability.metrics import emit_node_completed
+from app.observability.tracing import report_handled_error
 
 logger = logging.getLogger(__name__)
 
 
-NodeFn = Callable[[AgentState], Awaitable[dict[str, Any]]]
+P = ParamSpec("P")
+NodeFn = Callable[P, Awaitable[dict[str, Any]]]
+
+
+@overload
+def safe_node(fn: NodeFn[P], *, retryable: tuple[type[BaseException], ...] = ()) -> NodeFn[P]: ...
+
+
+@overload
+def safe_node(fn: None = None, *, retryable: tuple[type[BaseException], ...] = ()) -> Callable[[NodeFn[P]], NodeFn[P]]: ...
 
 
 def safe_node(
-    fn: NodeFn | None = None,
+    fn: NodeFn[P] | None = None,
     *,
     retryable: tuple[type[BaseException], ...] = (),
-) -> Any:
+) -> NodeFn[P] | Callable[[NodeFn[P]], NodeFn[P]]:
     """LangGraph 节点装饰器。
 
     用法:
@@ -44,15 +55,20 @@ def safe_node(
     写类节点永远不要传——超时后重试可能重复下单）。
     """
     if fn is None:
-        return functools.partial(safe_node, retryable=retryable)
+        def decorate(node: NodeFn[P]) -> NodeFn[P]:
+            return safe_node(node, retryable=retryable)
+        return decorate
 
     @functools.wraps(fn)
-    async def wrapper(state: AgentState) -> dict[str, Any]:
+    async def wrapper(*args: P.args, **kwargs: P.kwargs) -> dict[str, Any]:
         node_name = fn.__name__
         t0 = time.perf_counter()
 
         try:
-            update = await fn(state)
+            update = await fn(*args, **kwargs)
+            state = args[0] if args else kwargs.get("state")
+            if isinstance(state, dict):
+                update = protect_update(state, update)
             elapsed_ms = int((time.perf_counter() - t0) * 1000)
 
             # 自动追加 trace（节点函数没自带 trace 字段时）。
@@ -80,15 +96,15 @@ def safe_node(
             elapsed_ms = int((time.perf_counter() - t0) * 1000)
             if retryable and isinstance(exc, retryable):
                 # 穿透给 RetryPolicy；耗尽后由 retry_exhausted_handler 落 error
-                logger.warning("node=%s retryable=%s: %s", node_name, type(exc).__name__, exc)
+                logger.warning("node=%s retryable=%s", node_name, type(exc).__name__)
                 emit_node_completed(node=node_name, status="retry", elapsed_ms=elapsed_ms)
                 raise
-            logger.exception("node=%s error=%s", node_name, exc)
+            logger.exception("node=%s error=%s", node_name, type(exc).__name__)
 
             # C1.5 监控埋点：节点抛异常（cascade fail 源头）
             emit_node_completed(node=node_name, status="error", elapsed_ms=elapsed_ms)
 
-            return {
+            failed = {
                 "error": ErrorInfo(
                     node=node_name,
                     type=type(exc).__name__,
@@ -103,6 +119,8 @@ def safe_node(
                     )
                 ],
             }
+            report_handled_error(failed)
+            return failed
 
     return wrapper
 

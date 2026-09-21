@@ -1,0 +1,1636 @@
+{
+  "models": {
+    "SwapOrderItem": {
+      "description": "swap orderList 中的单个订单条目（与 DSL v2 互换-节点-下单.md 字段对齐）。\n\n全部字段 Optional —— prompt 允许 null 表示\"用户未提供\"。\n`extra=\"ignore\"` 让 LLM 输出的顶层 type 字段或其他多余字段被丢弃，\n不触发 ValidationError。\n\nDSL v2 新增 7 字段（互换-节点-下单.md structured_output，2026-08 版）：\nhasFastExecutionIntent / placeOrderCloseIntent / placeOrderEntrustRatio /\nplaceOrderNotional / placeOrderNotionalCurrency / placeOrderQuantityUnit /\nplaceOrderRelativeTimeMinutes。\n\n`placeOrderQuantityHand` 是旧 DSL 字段，新提示词已不再要求 LLM 填写（改用\nplaceOrderQuantityUnit=\"HAND\" + placeOrderQuantity 表达），但保留在模型里\n——`app/nodes/render.py`（主图渲染节点，swap 域外）仍读取该字段区分\"手/股\"\n单位显示，删除会导致其静默失效；后续应由 render 域的 PR 迁移到读\nplaceOrderQuantityUnit。",
+      "properties": {
+        "orderId": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "互换订单号 H-YYYYMMDD-XXXXXXXXXX；改单 / 补参时来自引用消息，全新下单 → null",
+          "title": "Orderid"
+        },
+        "placeOrderUltraContractCode": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "合约代码（用户明确给出时）",
+          "title": "Placeorderultracontractcode"
+        },
+        "placeOrderWindCode": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "标的原文（代码或名称片段，逐字保留；标准化由 ticker resolver 负责）",
+          "title": "Placeorderwindcode"
+        },
+        "placeOrderTransactionType": {
+          "anyOf": [
+            {
+              "enum": [
+                "A_SHARE",
+                "HK_STOCK",
+                "US_STOCK",
+                "SZ_HK_CONNECT",
+                "SH_HK_CONNECT",
+                "CHN_FUTURE",
+                "CROSS_FUTURE",
+                "FUTURES",
+                "FUND",
+                "INDEX",
+                "BOND",
+                "OTHERS"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "交易品种：A_SHARE / HK_STOCK / US_STOCK / SZ_HK_CONNECT / SH_HK_CONNECT / CHN_FUTURE / CROSS_FUTURE",
+          "title": "Placeordertransactiontype"
+        },
+        "placeOrderQuantity": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "委托数量（股 / 手系单位展开后的整数）",
+          "title": "Placeorderquantity"
+        },
+        "placeOrderQuantityHand": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "旧字段：按手表达的数量（新提示词不再要求填写）",
+          "title": "Placeorderquantityhand"
+        },
+        "placeOrderQuantityUnit": {
+          "anyOf": [
+            {
+              "enum": [
+                "HAND",
+                "SHARE",
+                "AMOUNT"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "数量单位：HAND 手系 / SHARE 股系 / AMOUNT 金额（落 placeOrderNotional）",
+          "title": "Placeorderquantityunit"
+        },
+        "placeOrderOrderDirection": {
+          "anyOf": [
+            {
+              "enum": [
+                "BUY",
+                "SELL",
+                "SHORT_OPEN",
+                "SHORT_CLOSE"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "方向：BUY 买入 / SELL 卖出 / SHORT_OPEN 卖空 / SHORT_CLOSE 平空",
+          "title": "Placeorderorderdirection"
+        },
+        "placeOrderPriceType": {
+          "anyOf": [
+            {
+              "enum": [
+                "LimitOrder",
+                "MarketOrder"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "价格类型：LimitOrder 限价 / MarketOrder 市价",
+          "title": "Placeorderpricetype"
+        },
+        "placeOrderAlgorithmType": {
+          "anyOf": [
+            {
+              "enum": [
+                "POV",
+                "TWAP",
+                "VWAP",
+                "ICEBERG",
+                "SNIPER"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "算法：POV / TWAP / VWAP / ICEBERG / SNIPER",
+          "title": "Placeorderalgorithmtype"
+        },
+        "placeOrderPrice": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "限价价格（数字）",
+          "title": "Placeorderprice"
+        },
+        "placeOrderPovPercent": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "POV 跟量比例（数字，不带 %）",
+          "title": "Placeorderpovpercent"
+        },
+        "placeOrderTotalPovPercent": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "总单 POV 比例（总单场景）",
+          "title": "Placeordertotalpovpercent"
+        },
+        "placeOrderDisplayQty": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "可见委托量（冰山单）",
+          "title": "Placeorderdisplayqty"
+        },
+        "placeOrderMaxVol": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "最大成交量限制",
+          "title": "Placeordermaxvol"
+        },
+        "placeOrderStartTime": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "算法开始时间 HH:MM",
+          "title": "Placeorderstarttime"
+        },
+        "placeOrderEndTime": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "算法结束时间 HH:MM",
+          "title": "Placeorderendtime"
+        },
+        "placeOrderRelativeTimeMinutes": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "相对时间窗（分钟，如「30 分钟内」）",
+          "title": "Placeorderrelativetimeminutes"
+        },
+        "placeOrderShortname": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "交易对手 shortName（完整匹配优先，唯一简写次之）",
+          "title": "Placeordershortname"
+        },
+        "placeOrderQuantityTotal": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "总量（总单场景）",
+          "title": "Placeorderquantitytotal"
+        },
+        "placeOrderPremarket": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "是否盘前",
+          "title": "Placeorderpremarket"
+        },
+        "placeOrderNotional": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "名义本金 / 金额（数量单位为 AMOUNT 时）",
+          "title": "Placeordernotional"
+        },
+        "placeOrderNotionalCurrency": {
+          "anyOf": [
+            {
+              "enum": [
+                "CNY",
+                "USD",
+                "HKD",
+                "EUR",
+                "GBP",
+                "JPY",
+                "AUD",
+                "NZD",
+                "CNH"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "名义本金币种：CNY / USD / HKD / EUR / GBP / JPY / AUD / NZD / CNH",
+          "title": "Placeordernotionalcurrency"
+        },
+        "placeOrderEntrustRatio": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "委托比例（可与 placeOrderQuantity 同时非 null）",
+          "title": "Placeorderentrustratio"
+        },
+        "placeOrderCloseIntent": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "是否平仓意图（减仓 / 平掉类表达）",
+          "title": "Placeordercloseintent"
+        },
+        "hasFastExecutionIntent": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "是否最大跟量 / 快速执行语义（按 system 规则判定）",
+          "title": "Hasfastexecutionintent"
+        }
+      },
+      "title": "SwapOrderItem",
+      "type": "object"
+    },
+    "OptionOrderItemWithFastExec": {
+      "description": "`place_order_from_quote`（下单）节点专用：多一个 hasFastExecutionIntent 字段。",
+      "properties": {
+        "orderId": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "订单号（Q-YYYYMMDD-XXXXXXXXXX），仅在用户或引用消息明确给出时填写，否则 null",
+          "title": "Orderid"
+        },
+        "stockCode": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "标的原文片段（用户原话，逐字保留，不做代码补全；标准化由 ticker resolver 负责）",
+          "title": "Stockcode"
+        },
+        "optionType": {
+          "anyOf": [
+            {
+              "enum": [
+                "欧式看涨",
+                "参与型看涨",
+                "雪球"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "期权类型：欧式看涨 / 参与型看涨 / 雪球；未明确 → null",
+          "title": "Optiontype"
+        },
+        "tenor": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "期限，XM 格式（如 1M / 12M）；年 × 12 折算为月",
+          "title": "Tenor"
+        },
+        "strikePercentage": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "行权价百分比，纯数字不带 %（如 100 / 95 / 103.5）",
+          "title": "Strikepercentage"
+        },
+        "notionalAmount": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "名义本金，字符串数字（如 \"1000000\"）",
+          "title": "Notionalamount"
+        },
+        "participationRate": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "参与率，百分比数字 0-100",
+          "title": "Participationrate"
+        },
+        "orderType": {
+          "anyOf": [
+            {
+              "enum": [
+                "市价单",
+                "限价单",
+                "POV",
+                "TWAP"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "下单方式：市价单 / 限价单 / POV / TWAP",
+          "title": "Ordertype"
+        },
+        "limitPrice": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "限价（限价单时的价格数字）",
+          "title": "Limitprice"
+        },
+        "povRatio": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "POV 跟量比例（数字，不带 %）",
+          "title": "Povratio"
+        },
+        "twapStartTime": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "TWAP 开始时间，HH:MM",
+          "title": "Twapstarttime"
+        },
+        "twapEndTime": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "TWAP 结束时间，HH:MM",
+          "title": "Twapendtime"
+        },
+        "shortName": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "交易对手名称（完整保留括号与特殊字符；用户回复选项字母时取对应完整名称）",
+          "title": "Shortname"
+        },
+        "hasFastExecutionIntent": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "是否最大跟量 / 快速执行语义（按 system 中 hasFastExecutionIntent 规则判定）",
+          "title": "Hasfastexecutionintent"
+        }
+      },
+      "title": "OptionOrderItemWithFastExec",
+      "type": "object"
+    },
+    "OptionInquiryRawItem": {
+      "description": "option.extract_inquiry LLM 输出条目：字段值为用户原文片段，归一化交代码。\n\n与 `OptionOrderItem` 的差异：strikePercentage / participationRate 以文本片段\n返回（如 \"80%\"、\"平值\"、\"90%\"），tenor / notionalAmount 同样是未换算原文\n（如 \"1个月\"、\"100万\"）；下游 `normalize.py` 负责归一化与 \"/\" 多值展开。",
+      "properties": {
+        "orderId": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "订单号原文片段（Q- 开头）；输入未出现 → null",
+          "title": "Orderid"
+        },
+        "stockCode": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "标的原文片段（逐字保留，不做代码补全；标准化由 ticker resolver 负责）",
+          "title": "Stockcode"
+        },
+        "optionType": {
+          "anyOf": [
+            {
+              "enum": [
+                "欧式看涨",
+                "参与型看涨",
+                "雪球"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "期权类型：欧式看涨 / 参与型看涨 / 雪球；未明确 → null",
+          "title": "Optiontype"
+        },
+        "tenor": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "期限原文片段，逐字保留不换算（如 \"1M\" / \"1个月\" / \"半年\" / \"1Y\" / \"1M/3M\"）",
+          "title": "Tenor"
+        },
+        "strikePercentage": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "执行价原文片段，逐字保留不换算（如 \"100%\" / \"100/103%\" / \"平值\"）",
+          "title": "Strikepercentage"
+        },
+        "notionalAmount": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "名义本金原文片段，含单位不换算（如 \"100万\" / \"1W\" / \"两千万\"）",
+          "title": "Notionalamount"
+        },
+        "participationRate": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "参与率原文片段（如 \"90%\"）；无参与率关键词 → null",
+          "title": "Participationrate"
+        },
+        "shortName": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "交易对手名称（完整保留括号与特殊字符；用户回复选项字母时取对应完整名称）",
+          "title": "Shortname"
+        }
+      },
+      "title": "OptionInquiryRawItem",
+      "type": "object"
+    },
+    "CloseOrderItem": {
+      "description": "closeOrderList 中的单个平仓订单条目（9 字段）。\n\n与 Dify place_close.md JSON schema 完全对齐。allow null 在所有字段\n（Dify prompt 明确允许 null 表示\"用户未提供\"）。",
+      "properties": {
+        "orderId": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "平仓订单号 CO-YYYYMMDD-XXXXXXXX，或由序号 / 第X笔在 holdingMap 中解析得到",
+          "title": "Orderid"
+        },
+        "internalTradeId": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "合约编号（OPT-/OPTG-），与 orderId 二选一或同时给出",
+          "title": "Internaltradeid"
+        },
+        "closeOrderNotionalDelta": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "平仓金额，字符串数字（元）；比例 / 余额表达按规则换算；全部平仓由 confirmFullClose 表达",
+          "title": "Closeordernotionaldelta"
+        },
+        "closeOrderType": {
+          "anyOf": [
+            {
+              "enum": [
+                "市价单",
+                "限价单",
+                "POV",
+                "TWAP"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "平仓方式：市价单 / 限价单 / POV / TWAP；未明确 → null",
+          "title": "Closeordertype"
+        },
+        "closeOrderPrice": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "限价价格（数字）",
+          "title": "Closeorderprice"
+        },
+        "closeOrderPovRatio": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "POV 跟量比例（整数百分比）；「最大跟量」类语义不在此填值",
+          "title": "Closeorderpovratio"
+        },
+        "closeOrderAlgoStartTime": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "TWAP 开始时间 HH:MM",
+          "title": "Closeorderalgostarttime"
+        },
+        "closeOrderAlgoEndTime": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "TWAP 结束时间 HH:MM",
+          "title": "Closeorderalgoendtime"
+        },
+        "confirmFullClose": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "是否全部平仓（全部 / 全平 / 确认全部平仓）",
+          "title": "Confirmfullclose"
+        }
+      },
+      "title": "CloseOrderItem",
+      "type": "object"
+    },
+    "HoldingQueryParams": {
+      "description": "close.holding_query 节点的 LLM 输出 schema（与 Dify holding_query.md 字段对齐）。\n\n驼峰命名匹配 Java DTO；`closeable_only` 是 snake_case 例外（与 prompt 一致）。",
+      "properties": {
+        "closeable_only": {
+          "description": "true = 用户有平仓意图，只查可平持仓；false = 查全部持仓",
+          "title": "Closeable Only",
+          "type": "boolean"
+        },
+        "internalTradeIdList": {
+          "description": "用户提到的合约编号列表（OPT-/OPTG- 开头），未提及 → []",
+          "items": {
+            "type": "string"
+          },
+          "title": "Internaltradeidlist",
+          "type": "array"
+        },
+        "keyCtptyIdList": {
+          "description": "用户明确指示的交易对手在「交易对手列表」中匹配到的 ctptyId；无指示词 → []；提及但无相似匹配 → 99999999",
+          "items": {
+            "type": "integer"
+          },
+          "title": "Keyctptyidlist",
+          "type": "array"
+        },
+        "underlyingInsNameList": {
+          "description": "用户提到的标的名称列表（个股 / ETF / 指数 / 期货品种中文名或简称，原样输出）",
+          "items": {
+            "type": "string"
+          },
+          "title": "Underlyinginsnamelist",
+          "type": "array"
+        },
+        "underlyingInsIdList": {
+          "description": "用户提到的标的代码列表（带交易所后缀原样输出）",
+          "items": {
+            "type": "string"
+          },
+          "title": "Underlyinginsidlist",
+          "type": "array"
+        },
+        "insFamilyList": {
+          "description": "标的类型过滤：EQUITY / INDEX / FUND / FUTURE",
+          "items": {
+            "enum": [
+              "EQUITY",
+              "INDEX",
+              "FUND",
+              "FUTURE"
+            ],
+            "type": "string"
+          },
+          "title": "Insfamilylist",
+          "type": "array"
+        },
+        "contractTypeList": {
+          "description": "期权合约类型过滤：EUROPEAN_VANILLA / AUTOCALL / PARTICIPATORY / AIRBAG",
+          "items": {
+            "enum": [
+              "EUROPEAN_VANILLA",
+              "AUTOCALL",
+              "PARTICIPATORY",
+              "AIRBAG"
+            ],
+            "type": "string"
+          },
+          "title": "Contracttypelist",
+          "type": "array"
+        }
+      },
+      "required": [
+        "closeable_only"
+      ],
+      "title": "HoldingQueryParams",
+      "type": "object"
+    },
+    "SwapOrderOpenApiBaseSaveReqVO": {
+      "$defs": {
+        "GoatsAlgoType": {
+          "description": "算法类型（SwapEnum.java:213）。",
+          "enum": [
+            "POV",
+            "TWAP",
+            "VWAP",
+            "ICEBERG",
+            "SNIPER"
+          ],
+          "title": "GoatsAlgoType",
+          "type": "string"
+        },
+        "GoatsOrderDirection": {
+          "description": "交易方向（SwapEnum.java:148）。",
+          "enum": [
+            "BUY",
+            "SELL",
+            "SHORT_OPEN",
+            "SHORT_CLOSE"
+          ],
+          "title": "GoatsOrderDirection",
+          "type": "string"
+        },
+        "GoatsPriceType": {
+          "description": "价格类型（SwapEnum.java:182）。",
+          "enum": [
+            "LimitOrder",
+            "MarketOrder"
+          ],
+          "title": "GoatsPriceType",
+          "type": "string"
+        },
+        "GoatsTransactionType": {
+          "description": "交易品种类型（SwapEnum.java:59）。",
+          "enum": [
+            "A_SHARE",
+            "HK_STOCK",
+            "US_STOCK",
+            "SZ_HK_CONNECT",
+            "SH_HK_CONNECT",
+            "CHN_FUTURE",
+            "CROSS_FUTURE"
+          ],
+          "title": "GoatsTransactionType",
+          "type": "string"
+        }
+      },
+      "additionalProperties": true,
+      "description": "互换下单/操作的单个订单参数（Java DTO 1:1）。",
+      "properties": {
+        "placeOrderWindCode": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Placeorderwindcode"
+        },
+        "placeOrderTransactionType": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/GoatsTransactionType"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "placeOrderQuantity": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Placeorderquantity"
+        },
+        "placeOrderQuantityHand": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Placeorderquantityhand"
+        },
+        "placeOrderOrderDirection": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/GoatsOrderDirection"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "placeOrderPriceType": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/GoatsPriceType"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "placeOrderPrice": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Placeorderprice"
+        },
+        "placeOrderAlgorithmType": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/GoatsAlgoType"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "placeOrderStartTime": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Placeorderstarttime"
+        },
+        "placeOrderEndTime": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Placeorderendtime"
+        },
+        "orderId": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Orderid"
+        }
+      },
+      "title": "SwapOrderOpenApiBaseSaveReqVO",
+      "type": "object"
+    },
+    "FinancialOrderOpenApiBaseSaveReqVO": {
+      "$defs": {
+        "GoatsOrderDirection": {
+          "description": "交易方向（SwapEnum.java:148）。",
+          "enum": [
+            "BUY",
+            "SELL",
+            "SHORT_OPEN",
+            "SHORT_CLOSE"
+          ],
+          "title": "GoatsOrderDirection",
+          "type": "string"
+        },
+        "GoatsPriceType": {
+          "description": "价格类型（SwapEnum.java:182）。",
+          "enum": [
+            "LimitOrder",
+            "MarketOrder"
+          ],
+          "title": "GoatsPriceType",
+          "type": "string"
+        }
+      },
+      "additionalProperties": true,
+      "description": "期权下单/操作的单个订单参数（Java DTO 1:1）。",
+      "properties": {
+        "placeOrderWindCode": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Placeorderwindcode"
+        },
+        "placeOrderPrice": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Placeorderprice"
+        },
+        "placeOrderQuantity": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Placeorderquantity"
+        },
+        "placeOrderOrderType": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Placeorderordertype"
+        },
+        "placeOrderOrderDirection": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/GoatsOrderDirection"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "placeOrderPriceType": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/GoatsPriceType"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "notionalAmount": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Notionalamount"
+        },
+        "orderId": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Orderid"
+        }
+      },
+      "title": "FinancialOrderOpenApiBaseSaveReqVO",
+      "type": "object"
+    }
+  },
+  "java": {
+    "SwapOrderOpenApiBaseSaveReqVO": {
+      "source": "yudao-module-integration/yudao-module-integration-biz/src/main/java/cn/iocoder/yudao/module/integration/controller/admin/stock/vo/SwapOrderOpenApiBaseSaveReqVO.java",
+      "fields": [
+        {
+          "name": "orderId",
+          "java_type": "String"
+        },
+        {
+          "name": "placeOrderUltraContractCode",
+          "java_type": "String"
+        },
+        {
+          "name": "placeOrderWindCode",
+          "java_type": "String"
+        },
+        {
+          "name": "placeOrderWindCodeList",
+          "java_type": "List<KeywordItem>"
+        },
+        {
+          "name": "placeOrderTransactionType",
+          "java_type": "String"
+        },
+        {
+          "name": "placeOrderQuantity",
+          "java_type": "Long"
+        },
+        {
+          "name": "placeOrderNotional",
+          "java_type": "BigDecimal"
+        },
+        {
+          "name": "placeOrderNotionalCurrency",
+          "java_type": "String"
+        },
+        {
+          "name": "placeOrderEntrustRatio",
+          "java_type": "BigDecimal"
+        },
+        {
+          "name": "placeOrderCloseIntent",
+          "java_type": "Boolean"
+        },
+        {
+          "name": "placeOrderQuantityUnit",
+          "java_type": "String"
+        },
+        {
+          "name": "placeOrderOrderDirection",
+          "java_type": "String"
+        },
+        {
+          "name": "placeOrderPriceType",
+          "java_type": "String"
+        },
+        {
+          "name": "placeOrderOrderType",
+          "java_type": "String"
+        },
+        {
+          "name": "placeOrderAlgorithmType",
+          "java_type": "String"
+        },
+        {
+          "name": "placeOrderPrice",
+          "java_type": "BigDecimal"
+        },
+        {
+          "name": "placeOrderPovPercent",
+          "java_type": "BigDecimal"
+        },
+        {
+          "name": "hasFastExecutionIntent",
+          "java_type": "Boolean"
+        },
+        {
+          "name": "placeOrderDisplayQty",
+          "java_type": "Long"
+        },
+        {
+          "name": "placeOrderMaxVol",
+          "java_type": "BigDecimal"
+        },
+        {
+          "name": "placeOrderPremarket",
+          "java_type": "Boolean"
+        },
+        {
+          "name": "placeOrderStartTime",
+          "java_type": "LocalDateTime"
+        },
+        {
+          "name": "placeOrderEndTime",
+          "java_type": "LocalDateTime"
+        },
+        {
+          "name": "placeOrderShortname",
+          "java_type": "String"
+        },
+        {
+          "name": "placeOrderCurrency",
+          "java_type": "String"
+        },
+        {
+          "name": "transactionTypeList",
+          "java_type": "List<String>"
+        },
+        {
+          "name": "placeOrderRelativeTimeMinutes",
+          "java_type": "String"
+        },
+        {
+          "name": "placeOrderQuantityTotal",
+          "java_type": "Long"
+        },
+        {
+          "name": "placeOrderTotalPovPercent",
+          "java_type": "BigDecimal"
+        },
+        {
+          "name": "candidateInstruments",
+          "java_type": "List<CandidateInstrument>"
+        },
+        {
+          "name": "originalWindCode",
+          "java_type": "String"
+        },
+        {
+          "name": "transactionTypeExplicitlyProvided",
+          "java_type": "Boolean"
+        },
+        {
+          "name": "validationResult",
+          "java_type": "SwapValidationResult.OrderValidationResult"
+        },
+        {
+          "name": "existingOrder",
+          "java_type": "GoatsSwapOrderDO"
+        },
+        {
+          "name": "modifyIgnoredHints",
+          "java_type": "List<String>"
+        },
+        {
+          "name": "modifyRequest",
+          "java_type": "boolean"
+        },
+        {
+          "name": "replacePriceType",
+          "java_type": "String"
+        },
+        {
+          "name": "replaceQuantity",
+          "java_type": "Long"
+        },
+        {
+          "name": "replaceNotional",
+          "java_type": "BigDecimal"
+        },
+        {
+          "name": "replaceQuantityUnit",
+          "java_type": "String"
+        },
+        {
+          "name": "replaceEntrustRatio",
+          "java_type": "BigDecimal"
+        },
+        {
+          "name": "replacePrice",
+          "java_type": "BigDecimal"
+        },
+        {
+          "name": "replaceAlgorithmType",
+          "java_type": "String"
+        },
+        {
+          "name": "replaceStartTime",
+          "java_type": "LocalDateTime"
+        },
+        {
+          "name": "replaceEndTime",
+          "java_type": "LocalDateTime"
+        },
+        {
+          "name": "replacePovPercent",
+          "java_type": "BigDecimal"
+        },
+        {
+          "name": "replaceDisplayQty",
+          "java_type": "Long"
+        },
+        {
+          "name": "replaceMaxVol",
+          "java_type": "BigDecimal"
+        },
+        {
+          "name": "windCode",
+          "java_type": "String"
+        },
+        {
+          "name": "name",
+          "java_type": "String"
+        }
+      ]
+    },
+    "FinancialOrderOpenApiBaseSaveReqVO": {
+      "source": "yudao-module-integration/yudao-module-integration-biz/src/main/java/cn/iocoder/yudao/module/integration/controller/admin/stock/vo/FinancialOrderOpenApiBaseSaveReqVO.java",
+      "fields": [
+        {
+          "name": "id",
+          "java_type": "Long"
+        },
+        {
+          "name": "isValid",
+          "java_type": "Integer"
+        },
+        {
+          "name": "invalidReason",
+          "java_type": "String"
+        },
+        {
+          "name": "orderId",
+          "java_type": "String"
+        },
+        {
+          "name": "stockCode",
+          "java_type": "String"
+        },
+        {
+          "name": "stockName",
+          "java_type": "String"
+        },
+        {
+          "name": "stockCodeList",
+          "java_type": "List<KeywordItem>"
+        },
+        {
+          "name": "optionType",
+          "java_type": "String"
+        },
+        {
+          "name": "productType",
+          "java_type": "String"
+        },
+        {
+          "name": "tenor",
+          "java_type": "String"
+        },
+        {
+          "name": "premiumRatePct",
+          "java_type": "BigDecimal"
+        },
+        {
+          "name": "strikePercentage",
+          "java_type": "BigDecimal"
+        },
+        {
+          "name": "participationRate",
+          "java_type": "BigDecimal"
+        },
+        {
+          "name": "snowballKnockOutUpperBarrierPct",
+          "java_type": "BigDecimal"
+        },
+        {
+          "name": "snowballKnockInLowerBarrierPct",
+          "java_type": "BigDecimal"
+        },
+        {
+          "name": "snowballTenorMonths",
+          "java_type": "Integer"
+        },
+        {
+          "name": "snowballMarginPercentagePct",
+          "java_type": "BigDecimal"
+        },
+        {
+          "name": "snowballLockInPeriodMonths",
+          "java_type": "Integer"
+        },
+        {
+          "name": "snowballAnnualizedCouponRatePct",
+          "java_type": "BigDecimal"
+        },
+        {
+          "name": "snowballAbsoluteCouponRatePct",
+          "java_type": "BigDecimal"
+        },
+        {
+          "name": "snowballFeaturesText",
+          "java_type": "String"
+        },
+        {
+          "name": "initialOrderInstruction",
+          "java_type": "String"
+        },
+        {
+          "name": "orderType",
+          "java_type": "String"
+        },
+        {
+          "name": "limitPrice",
+          "java_type": "BigDecimal"
+        },
+        {
+          "name": "notionalAmount",
+          "java_type": "BigDecimal"
+        },
+        {
+          "name": "povRatio",
+          "java_type": "BigDecimal"
+        },
+        {
+          "name": "hasFastExecutionIntent",
+          "java_type": "Boolean"
+        },
+        {
+          "name": "twapStartTime",
+          "java_type": "String"
+        },
+        {
+          "name": "twapEndTime",
+          "java_type": "String"
+        },
+        {
+          "name": "shortName",
+          "java_type": "String"
+        },
+        {
+          "name": "quickInquiryOrderId",
+          "java_type": "Long"
+        },
+        {
+          "name": "counterpartyList",
+          "java_type": "List<String>"
+        },
+        {
+          "name": "originalStockKeyword",
+          "java_type": "String"
+        },
+        {
+          "name": "validationResult",
+          "java_type": "cn.iocoder.yudao.module.integration.service.financialorders.validator.vo.OptionValidationResult.OrderValidationResult"
+        },
+        {
+          "name": "candidateInstruments",
+          "java_type": "List<CandidateInstrument>"
+        },
+        {
+          "name": "windCode",
+          "java_type": "String"
+        },
+        {
+          "name": "name",
+          "java_type": "String"
+        }
+      ]
+    }
+  },
+  "note": "实际契约清单；字段数按业务模型分别统计，不宣称缺失的 slot_schema.json 已复原。"
+}

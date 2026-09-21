@@ -18,17 +18,17 @@ import argparse
 import asyncio
 import logging
 from datetime import UTC, datetime, timedelta
-from urllib.parse import urlparse
+
+from app.storage.mysql import CHECKPOINT_TABLES, connection_args
 
 logger = logging.getLogger(__name__)
 
 #: 按删除依赖排序:writes/blobs 先删,checkpoints 最后
-CHECKPOINT_TABLES = ("checkpoint_writes", "checkpoint_blobs", "checkpoints")
 
 #: 线程过期判定:该 thread 最新 checkpoint 的 $.ts 早于 cutoff
 STALE_THREADS_SQL = (
     "SELECT thread_id, MAX(JSON_UNQUOTE(JSON_EXTRACT(checkpoint, '$.ts'))) AS last_ts "
-    "FROM checkpoints GROUP BY thread_id "
+    "FROM langgraph_checkpoints GROUP BY thread_id "
     "HAVING last_ts < %s OR last_ts IS NULL"
 )
 
@@ -51,14 +51,7 @@ def delete_sql(table: str, batch_size: int) -> str:
 
 
 def _parse_mysql_uri(uri: str) -> dict:
-    u = urlparse(uri)
-    return {
-        "host": u.hostname or "127.0.0.1",
-        "port": u.port or 3306,
-        "user": u.username or "root",
-        "password": u.password or "",
-        "db": (u.path or "/").lstrip("/"),
-    }
+    return connection_args(uri)
 
 
 async def run(days: int, execute: bool) -> dict[str, int]:
@@ -67,7 +60,7 @@ async def run(days: int, execute: bool) -> dict[str, int]:
     from app.config import get_settings
 
     cutoff = cutoff_iso(days)
-    conn_kw = _parse_mysql_uri(get_settings().checkpoint_mysql_uri)
+    conn_kw = _parse_mysql_uri(get_settings().mysql_uri)
     conn = await aiomysql.connect(autocommit=False, **conn_kw)
     stats: dict[str, int] = {"stale_threads": 0}
     try:

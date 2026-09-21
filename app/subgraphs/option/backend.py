@@ -5,6 +5,8 @@ import logging
 import re
 from typing import Any
 
+from app.execution.operations import capture_operation
+from app.extraction.locks import protect_orders
 from app.graph.state import AgentState
 from app.observability.metrics import (
     emit_option_backend_empty_result,
@@ -101,6 +103,7 @@ async def call_option_backend(
     order_list: list[dict[str, Any]] | None = None,
     option_rfq: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
+    order_list, rejected = protect_orders(state, order_list or [], product="option")
     missing_fields = BotContext.from_state(state).missing_required()
     if missing_fields:
         logger.error(
@@ -125,6 +128,8 @@ async def call_option_backend(
         ),
         **_context(state),
     )
+    if capture_operation("option", req):
+        return {"field_records": rejected} if rejected else {}
     result = await OptionClientHttpx().operate(req)
     code = result.get("code")
     backend_result = result.get("data") if code == 0 else result.get("msg")
@@ -132,6 +137,7 @@ async def call_option_backend(
         emit_option_backend_empty_result()
         raise EmptyBackendResultError("option", code)
     return {
+        **({"field_records": rejected} if rejected else {}),
         "api_code": code,
         "api_result": backend_result,
     }

@@ -8,16 +8,16 @@ from __future__ import annotations
 from app.graph.state import Message, TraceEntry, merge_by_id
 
 
-def test_trace_entry_has_id_but_id_is_excluded_from_dump_and_equality() -> None:
+def test_trace_entry_preserves_checkpoint_id_but_equality_ignores_identity() -> None:
     a, b = TraceEntry(node="x"), TraceEntry(node="x")
     assert a.id != b.id
-    assert "id" not in a.model_dump()
+    assert a.model_dump()["id"] == a.id
     assert a == b, "id 不参与相等比较（测试与 differ 只关心内容）"
 
 
-def test_message_has_id_excluded_from_dump() -> None:
+def test_message_checkpoint_preserves_id() -> None:
     m = Message(role="user", content="hi")
-    assert m.id and "id" not in m.model_dump()
+    assert m.id and m.model_dump()["id"] == m.id
     assert m == Message(role="user", content="hi")
 
 

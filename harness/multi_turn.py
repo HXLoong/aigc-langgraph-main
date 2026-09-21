@@ -3,7 +3,9 @@ from __future__ import annotations
 
 import asyncio
 import secrets
+import time
 import uuid
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -31,6 +33,7 @@ class TurnOutcome:
     error: dict[str, Any] | None
     trace: str
     outputs: dict[str, Any] = field(default_factory=dict)
+    elapsed_ms: int = 0
 
 
 @dataclass
@@ -75,6 +78,8 @@ def _error_info(value: Any) -> dict[str, Any] | None:
         return {
             "node": value.get("node"),
             "type": value.get("type"),
+            "code": value.get("code"),
+            "causes": value.get("causes") or [],
             "message": str(value.get("message") or "")[:200],
         }
     return {"node": None, "type": type(value).__name__, "message": str(value)[:200]}
@@ -110,6 +115,7 @@ async def run_case_multi(
     turn_interval: float = 0.0,
     timeout: float = 180.0,
     client: httpx.AsyncClient | None = None,
+    before_turn: Callable[[dict[str, Any]], Awaitable[None]] | None = None,
 ) -> MultiTurnResult:
     conversation_id = f"ai-test-{uuid.uuid4().hex}"
     owned_client = client is None
@@ -133,6 +139,9 @@ async def run_case_multi(
                 "conversation_id": conversation_id,
             }
             endpoint = f"{base_url.rstrip('/')}/v1/workflows/run"
+            if before_turn is not None:
+                await before_turn(inputs)
+            started = time.perf_counter()
             response = await http_client.post(
                 endpoint,
                 json={
@@ -146,9 +155,10 @@ async def run_case_multi(
             payload = response.json()
             data = payload.get("data") or {}
             outputs = dict(data.get("outputs") or {})
-            if data.get("status") != "succeeded":
+            if data.get("status") != "succeeded" and not outputs.get("error"):
                 outputs["error"] = data.get("error") or data.get("status")
             outcome = _extract_turn(index + 1, spec, quote, outputs)
+            outcome.elapsed_ms = int((time.perf_counter() - started) * 1000)
             result.turns.append(outcome)
             result.final_outputs = outputs
             kind = early_stop_kind(outcome.error is not None, outcome.api_code)

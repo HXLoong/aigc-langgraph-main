@@ -96,6 +96,18 @@ def parse_workflow_response(payload: dict[str, Any]) -> tuple[str, str]:
         raise RunnerError("LangGraph 返回缺少 data 对象")
     status = str(data.get("status") or "")
     if status != "succeeded":
+        outputs = data.get("outputs") or {}
+        diagnostic = outputs.get("diagnostic") if isinstance(outputs, dict) else None
+        if isinstance(diagnostic, dict):
+            details = [str(diagnostic.get("code") or ""), str(diagnostic.get("summary") or "处理失败"),
+                       f"节点={diagnostic.get('node') or 'unknown'}"]
+            if diagnostic.get("elapsed_ms") is not None:
+                details.append(f"耗时={diagnostic['elapsed_ms']}ms")
+            if outputs.get("trace_id"):
+                details.append(f"trace_id={outputs['trace_id']}")
+            if outputs.get("trace_url"):
+                details.append(str(outputs["trace_url"]))
+            raise RunnerError("；".join(details))
         error = str(data.get("error") or f"workflow status={status or 'unknown'}")
         raise RunnerError(error)
     outputs = data.get("outputs")

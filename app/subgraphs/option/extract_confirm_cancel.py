@@ -14,6 +14,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from app.extraction.identity import prepare_identity_scope
 from app.graph.business_params import validated_confirm
 from app.graph.memory import memory_order_ids
 from app.graph.safe_node import safe_node
@@ -25,21 +26,30 @@ from app.subgraphs.option.order_id import extract_for_confirm_cancel
 @safe_node
 async def option_extract_confirm_cancel(state: AgentState) -> dict[str, Any]:
     """option.extract_confirm_cancel 节点（confirm_cancel_order，确定性提取）。"""
+    identity_origin = "quote"
+    identity_evidence = state.get("quote_content") or ""
     order_ids = extract_for_confirm_cancel(
         raw=state.get("raw_text"), quote=state.get("quote_content")
     )
     if order_ids == [None]:
-        order_ids = list(memory_order_ids(state, "option")) or order_ids  # 裸确认撤单 → 记忆（ADR 0024 D4）
+        remembered = memory_order_ids(state, "option")
+        if remembered:
+            order_ids = list(remembered)
+            identity_origin, identity_evidence = "memory:last_confirmed_params", "last_confirmed_params.order_ids"
+    prepared_state, order_ids, records = prepare_identity_scope(
+        state, order_ids, scope="option/confirm_cancel", origin=identity_origin, evidence=identity_evidence,
+    )
     order_list = [{"orderId": order_id} for order_id in order_ids]
     order_count = sum(1 for item in order_list if item["orderId"])
 
     backend = await call_option_backend(
-        state,
+        prepared_state,
         intent="confirm_cancel_order",
         order_list=order_list,
     )
 
     return {
+        "field_records": records,
         "expected_action": "cancel",
         "confirm": validated_confirm(action="cancel", orderList=order_list),
         **backend,

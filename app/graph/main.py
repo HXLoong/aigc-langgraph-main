@@ -6,12 +6,15 @@ M2 阶段：intent_route 已实现真三层路由（ADR 0015）；子图逐一�
 from __future__ import annotations
 
 from collections.abc import Callable
+from typing import Any
 
 from langchain_core.runnables import RunnableLambda
 from langgraph.checkpoint.base import BaseCheckpointSaver
 from langgraph.graph import END, START, StateGraph
 from langgraph.graph.state import CompiledStateGraph
 
+from app.config import get_settings
+from app.graph.instructions import build_instructions_graph, plan_instructions
 from app.graph.retry import add_io_node
 from app.graph.state import AgentState
 from app.nodes.fallback import fallback
@@ -46,6 +49,8 @@ def _route_entry(state: AgentState) -> str:
     2. existing_command == "1" 且 at_bot == "0" → 存量兼容交易查询
     3. 其他 → pre_route（对手/候选提取）→ intent_route 一级路由
     """
+    if state.get("session_status") == "expired":
+        return "render"
     if is_fast_query(state):
         return "quick_inquiry"
     if is_existing_command(state):
@@ -69,15 +74,22 @@ def _route_after_intent(state: AgentState) -> str:
     return pt
 
 
+def _route_after_plan(state: AgentState) -> str:
+    if state.get("error") is not None:
+        return "fallback"
+    return "instructions" if len(state.get("sub_instructions") or []) > 1 else "pre_route"
+
+
 # ============================================================
 # 主图组装
 # ============================================================
 
 
 def build_main_graph(
-    checkpointer: BaseCheckpointSaver | None = None,
+    checkpointer: BaseCheckpointSaver[Any] | None = None,
     message_client_factory: Callable[[], MessageClient] | None = None,
-) -> CompiledStateGraph:
+    *, _instruction_worker: bool = False,
+) -> CompiledStateGraph[AgentState, None, AgentState, AgentState]:
     """组装并编译主图（DSL v2 拓扑）。
 
     流程：
@@ -85,13 +97,13 @@ def build_main_graph(
             quick_inquiry | existing_command_query          （前置分支,直达 persist）
           | pre_route → intent_route → [route_after_intent] →
                 swap | option | option_close | fallback
-        → persist → render → END
+        → persist_intent → render → remember_confirmed_params → record_history → persist → END
 
     cascade 防御：
     - intent_route 写 state['error'] → 跳 fallback
     - product_type == 'unknown' → 跳 fallback
     """
-    g: StateGraph = StateGraph(AgentState)
+    g: StateGraph[AgentState, None, AgentState, AgentState] = StateGraph(AgentState)
 
     g.add_node("ingest", ingest)
     g.add_node("quick_inquiry", quick_inquiry)
@@ -104,11 +116,17 @@ def build_main_graph(
     g.add_node("option", build_option_graph())
     g.add_node("option_close", build_close_graph())
     g.add_node("fallback", fallback)
-    g.add_node("persist_intent", RunnableLambda(make_persist_intent(message_client_factory)))
-    g.add_node("persist", persist)
     g.add_node("render", render)
-    g.add_node("remember_confirmed_params", remember_confirmed_params)
-    g.add_node("record_history", record_history)
+    if not _instruction_worker:
+        add_io_node(g, "plan_instructions", plan_instructions)
+        g.add_node("instructions", build_instructions_graph(
+            build_main_graph(_instruction_worker=True),
+            dedup_window_seconds=get_settings().backend_dedup_window_seconds,
+        ))
+        g.add_node("persist_intent", RunnableLambda(make_persist_intent(message_client_factory)))
+        g.add_node("persist", persist)
+        g.add_node("remember_confirmed_params", remember_confirmed_params)
+        g.add_node("record_history", record_history)
 
     g.add_edge(START, "ingest")
     g.add_conditional_edges(
@@ -117,9 +135,15 @@ def build_main_graph(
         {
             "quick_inquiry": "quick_inquiry",
             "existing_command_query": "existing_command_query",
-            "pre_route": "pre_route",
+            "pre_route": "pre_route" if _instruction_worker else "plan_instructions",
+            "render": "render",
         },
     )
+    if not _instruction_worker:
+        g.add_conditional_edges("plan_instructions", _route_after_plan,
+                                ["pre_route", "instructions", "fallback"])
+        # 混合指令不能写成一个 Java productType/intent；每条真实结果保留在 instruction_results。
+        g.add_edge("instructions", "render")
     g.add_edge("pre_route", "intent_route")
     g.add_conditional_edges(
         "intent_route",
@@ -132,14 +156,17 @@ def build_main_graph(
         },
     )
     for sub in ("swap", "option", "option_close", "fallback"):
-        g.add_edge(sub, "persist_intent")
+        g.add_edge(sub, END if _instruction_worker else "persist_intent")
     for sub in ("quick_inquiry", "existing_command_query"):
-        g.add_edge(sub, "persist")
-    g.add_edge("persist_intent", "persist")
-    g.add_edge("persist", "render")
+        g.add_edge(sub, END if _instruction_worker else "render")
+    if _instruction_worker:
+        g.add_edge("render", END)
+        return g.compile(checkpointer=False)
+    g.add_edge("persist_intent", "render")
     g.add_edge("render", "remember_confirmed_params")
     g.add_edge("remember_confirmed_params", "record_history")
-    g.add_edge("record_history", END)
+    g.add_edge("record_history", "persist")
+    g.add_edge("persist", END)
 
     # LangFuse 不在图级注入（ADR 0024 D5）：统一由 app/api/routes.py 按请求把 handler 放进
     # config["callbacks"]，生产与开发同一条 trace_id / session 契约

@@ -16,24 +16,28 @@
 pip install -e ".[dev]"
 
 # 启动业务依赖
-docker compose up -d mysql                                                          # MySQL（业务库 + checkpoint）
+# 先在 Java 现有数据库执行初始化；MYSQL_URI 为唯一数据库连接配置
+mysql -h <HOST> -P <PORT> -u <USER> -p --database=<JAVA_DATABASE> < sql/init.sql
 docker compose -f infra/langfuse/docker-compose.yml --env-file infra/langfuse/.env up -d  # LangFuse self-hosted
 
 # 启动应用
 uvicorn app.main:app --reload                # FastAPI（POST /v1/workflows/run，兼容 Dify）
 
-# 测试（1864 passed + 15 skipped，约 3 分钟）
-pytest tests/ -v                             # 全套
-pytest tests/test_smoke.py -v                # 仅 smoke
-pytest -k "not e2e"                          # 跳过 e2e
+# 轻量测试；当前 .env 开启持久化，单测通过命令级配置隔离数据库依赖
+USE_MYSQL_CHECKPOINTER=false REQUEST_IDEMPOTENCY=false ENABLE_LANGFUSE=false pytest tests/test_smoke.py -q
+# 完整 pytest / 388 条业务集 / 性能测试按用户统一验收安排执行，不逐批重复。
 
-# 评估（M3 主用入口：DeepSeek Judge + per-turn 富集 JSON 写到 Langfuse Cloud）
-python scripts/langfuse/langfuse_eval.py --local tests/fixtures/categories --concurrency 4   # 全量（现役数据源，350+ 条）
-python scripts/langfuse/langfuse_eval.py --local tests/fixtures/categories --ids case-025,case-026 --concurrency 2
+# 本地 HTTP 业务回归（仅在准备好授权测试账号和数据后，由主代理或用户执行）
+python scripts/local_eval.py --base-url http://127.0.0.1:8201 --data tests/fixtures/categories --case case-025 --concurrency 1
+# 全量验收时去掉 --case；显式 categories 当前388条，不并入 unified。
+# 本地真实联调：ENVIRONMENT=staging uvicorn app.main:app --host 127.0.0.1 --port 8201
+
+# Langfuse Dataset Experiment（Judge + 自动 Evaluator；不替代 HTTP/Java 写回与幂等验收）
+python scripts/langfuse/langfuse_eval.py --dataset golden_option_inquiry_case --ids case-022 --concurrency 1
 
 # Harness CLI（备用 / 本地快速 smoke，无 Judge）
-python -m harness doctor                     # 环境体检（/health /ready）
-python -m harness run --backend real|mock|dry-run   # 跑 fixture（默认 categories/ + unified_golden.jsonl；--backend 对照服务端 /health.backend_mode 把关；REJECTED 单独成桶不算 PASS）
+python -m harness doctor
+python -m harness run --backend real|mock|dry-run
 
 # 真后端探针（M3 联调）
 python scripts/probe_real_backend_e2e.py
@@ -108,9 +112,19 @@ tests/fixtures/              # categories/（A 方言，6 文件 / 389 条）+ u
 - 根 `AGENTS.md` = 本文件 + 并入 `.claude/rules/{prompt-management,testing}.md`，其余 rules 只列路径（控制上下文体积）
 - `app/prompts` / `tests` / `scripts` 下的 `AGENTS.md` = 各自的 `CLAUDE.md`
 - `.agents/skills/<name>/` = `.claude/skills/<name>/`（frontmatter 收敛为 Agent Skills 标准的 `name` / `description` / `metadata`）
-  + `.claude/agents/*.md`（Codex 无 subagent，转为同名技能，调用时以该角色执行）；Codex 里用 `$name` 显式调用
+  + `.claude/agents/*.md`（生成可复用角色技能）；Codex 支持显式授权的子代理，技能通过 `$name` 调用
 
 改纪律或流程只改 `CLAUDE.md` / `.claude/**`，再跑生成脚本一起提交；提交前跑 `python scripts/sync_agents_md.py --check` 守同步。
+
+## 并行实施与验证范围
+
+- 用户明确授权后可使用主代理与最多三个子代理。实现任务使用独立 worktree 和分支；子代理提交后由主代理审阅、集成。
+- 每个任务指定文件所有者与验收用例；公共 State、配置、数据库结构及服务生命周期由主代理统一处理。子代理提出公共契约需求，不互相覆盖共享文件。
+- Java 源码不修改；本地 Java 48080 → 48081，LangGraph 使用本地端口，禁止使用 10.49.91.229:8201；应用持久化统一 MYSQL_URI。
+- 当前重构采用轻量验证：业务改动先最小 RED，再 GREEN 与相关关键测试；用户要求最终统一测试时，不逐批跑全套 pytest、388 条真实回归或压测。
+- 真实写入测试仅由主代理调度；先确认授权测试账号、群、对手及持仓。业务回归使用 scripts/local_eval.py 和显式 tests/fixtures/categories，不并入 unified。
+- 任务和证据记录在 tmp；区分实现完成、专项通过、待用户验收、外部阻塞。外部阻塞不可写成已完成；全量结果未经运行不得宣称通过。
+- 不 push、不创建 PR；保留用户原有未提交改动。新 worktree 显式准备依赖与所需本地配置，禁止输出或提交密钥。
 
 ## 子目录陷阱页（按需加载）
 
@@ -193,7 +207,7 @@ tests/fixtures/              # categories/（A 方言，6 文件 / 389 条）+ u
 | 第2轮路由走了 LLM 而非 quote_marker | `_QUOTE_MARKERS` 未覆盖实际标记 | `app/nodes/intent_route.py` |
 | reply 含"无法识别"但未问标的 | 入口把 `tickers` 写成 `[]`（零命中分支误触发）；入口唯一路径是 `inputs_to_state`，不得写业务对象默认值 | `app/api/turn_state.py` |
 | option place_order 显示"互换订单参数" | render 第3分支缺 `product_type=="swap"` 条件 | `app/nodes/render.py` |
-| 多轮 tickers/params 丢失 | 业务对象是 per-turn（ingest 清空，ADR 0024 D2）；跨轮上下文只靠 `history_messages` + `last_confirmed_params`（上一轮已确认订单号，裸确认链路回退读它） | `app/nodes/ingest.py` / `app/nodes/remember_confirmed.py` |
+| 多轮 tickers/params 丢失 | 业务对象是 per-turn（ingest 清空，ADR 0024 D2）；跨轮上下文只靠 `history_messages` + `last_confirmed_params`（上一轮已确认订单号；按产品协议允许时供裸确认读取，互换确认下单必须引用，禁止记忆补号） | `app/nodes/ingest.py` / `app/nodes/remember_confirmed.py` |
 | 后端返回"订单不存在" | 参数中 orderId/Q- 单号提取错误 | 子图 extract 节点 + 提示词 |
 
 ### 2. TDD 修复（强制）
@@ -443,6 +457,10 @@ for target in (
 - case 格式沿用对应文件既有方言（详见 `scripts/ai_test_langgraph/README.md`）
 - 跑评估：`python scripts/langfuse/langfuse_eval.py --local <fixture>`
 
+## 验证范围
+
+用户指定轻量验证时，只执行最小复现、受影响的关键测试和相关静态检查。全量 pytest、真实黄金集及性能测试留到统一验收，不循环重复；交付中明确未运行的检查。该范围调整不取消业务改动的 RED → GREEN。
+
 ## 提交前自检
 
 ```bash
@@ -473,5 +491,5 @@ pytest --cov=app.nodes.route    # 覆盖率
 # 附二：其余仓库规则（按需读取，同样具有约束力）
 
 - `.claude/rules/git-workflow.md` — Git 工作流
-- `.claude/rules/langgraph-patterns.md` — LangGraph 特定模式
+- `.claude/rules/langgraph-patterns.md` — LangGraph 模式
 - `.claude/rules/python-style.md` — Python 编码规范

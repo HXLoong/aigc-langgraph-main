@@ -1,17 +1,7 @@
-"""swap.aggregate_ticker_counterparty · 互换-标的对手覆盖聚合（Dify code 节点 1:1 移植）。
+"""Candidate lookup helpers; explicit identities must agree and values stay in authority sets.
 
-纯数据聚合，无业务规则：把 LLM-C（互换-节点-下单）抽好的 orderList，用
-LLM-A（互换-选择标的）、LLM-B（互换-选择交易对手）的指针结果确定性查表覆盖
-placeOrderWindCode / placeOrderShortname 两个字段，其余字段原样保留。
-
-- 标的覆盖：候选语境(candidate_list 非空)时用 LLM-A 指针覆盖；解析到非空才覆盖，
-  否则保留原值（非破坏性，绝不置 None）。
-- 对手覆盖：LLM-B 有信号(hasSignal)时用指针覆盖；解析到非空才覆盖，否则保留原值。
-
-1:1 对照 `/private/tmp/.../spec/code_nodes/互换-标的对手覆盖聚合.py`
-（本模块把该 code 节点拆成 `apply_underlying` / `apply_counterparty` 两个独立
-纯函数，分别供 swap.select_ticker / swap.select_counterparty 两个节点调用——
-两个 apply_* 互不依赖，拆开调用与 Dify 原节点一次性调用两者语义等价）。
+Selections never create a new security code. The apply_picks node verifies source evidence,
+checks current GOATS results, and locks the final per-order fields before submission.
 """
 from __future__ import annotations
 
@@ -39,94 +29,83 @@ def match_order_index(
     id_to_seq: dict[str, Any],
     single: bool,
 ) -> int:
-    """pick 落到 order_list 哪个下标：orderId > orderSeq(反查) > idx；单订单=0；对不上=-1。"""
-    if single:
-        return 0
-    order_id = pick.get("orderId")
-    if order_id is not None:
-        for i, o in enumerate(order_list):
-            if o.get("orderId") == order_id:
-                return i
-    order_seq = _as_int(pick.get("orderSeq"))
-    if order_seq is not None:
-        for i, o in enumerate(order_list):
-            if o.get("orderId") is not None and id_to_seq.get(o.get("orderId")) == order_seq:
-                return i
-    idx = pick.get("idx")
-    if isinstance(idx, int) and 0 <= idx < len(order_list):
-        return idx
-    return -1
+    """All explicit identities must agree; a single order never overrides a foreign ID."""
+    choices: list[set[int]] = []
+    if pick.get("orderId") is not None:
+        choices.append({i for i, order in enumerate(order_list) if order.get("orderId") == pick["orderId"]})
+    if pick.get("orderSeq") is not None:
+        seq = _as_int(pick["orderSeq"])
+        choices.append({i for i, order in enumerate(order_list)
+                        if seq is not None and id_to_seq.get(str(order.get("orderId") or "")) == seq})
+    if pick.get("idx") is not None:
+        idx = pick["idx"]
+        choices.append({idx} if type(idx) is int and 0 <= idx < len(order_list) else set())
+    if not choices:
+        return 0 if single and len(order_list) == 1 else -1
+    if any(len(choice) != 1 for choice in choices):
+        return -1
+    agreed = set.intersection(*choices)
+    return next(iter(agreed)) if len(agreed) == 1 else -1
 
 
 def resolve_candidate_block(
-    pick: dict[str, Any], candidate_list: list[dict[str, Any]]
+    pick: dict[str, Any], candidate_list: list[dict[str, Any]],
 ) -> dict[str, Any] | None:
-    order_id = pick.get("orderId")
-    order_seq = _as_int(pick.get("orderSeq"))
-    idx = pick.get("idx")
-    for blk in candidate_list:
-        if order_id is not None and blk.get("orderId") == order_id:
-            return blk
-    for blk in candidate_list:
-        if order_seq is not None and blk.get("orderSeq") == order_seq:
-            return blk
-    if isinstance(idx, int) and 0 <= idx < len(candidate_list):
-        return candidate_list[idx]
-    if len(candidate_list) == 1:
-        return candidate_list[0]
-    return None
+    blocks = candidate_list
+    explicit = False
+    for key in ("orderId", "orderSeq"):
+        if pick.get(key) is not None:
+            explicit = True
+            blocks = [block for block in blocks if block.get(key) == pick[key]]
+    if not explicit and pick.get("idx") is not None:
+        idx = pick["idx"]
+        blocks = [blocks[idx]] if type(idx) is int and 0 <= idx < len(blocks) else []
+    return blocks[0] if len(blocks) == 1 else None
 
 
 def windcode_from_pick(
-    pick: dict[str, Any], candidate_list: list[dict[str, Any]]
+    pick: dict[str, Any], candidate_list: list[dict[str, Any]],
 ) -> str | None:
-    """LLM-A 指针→真实 windCode：seq→candidates.code；directRef→匹配候选 canonical，匹配不到原样。"""
-    blk = resolve_candidate_block(pick, candidate_list)
-    seq = _as_int(pick.get("seq"))
-    if seq is not None and blk:
-        for ca in blk.get("candidates", []):
-            if ca.get("seq") == seq:
-                return ca.get("code")
+    """Return only an unambiguous candidate code; an unknown directRef is never a code."""
+    block = resolve_candidate_block(pick, candidate_list)
+    if block is None:
         return None
-    ref = pick.get("directRef")
-    if ref:
-        ref = str(ref).strip()
-        if blk:
-            for ca in blk.get("candidates", []):
-                name = ca.get("name") or ""
-                if ca.get("code") == ref or name == ref or (name and (ref in name or name in ref)):
-                    return ca.get("code")
-        return ref
-    return None
+    candidates = block.get("candidates") or []
+    if pick.get("seq") is not None:
+        candidates = [candidate for candidate in candidates if candidate.get("seq") == _as_int(pick["seq"])]
+    if pick.get("directRef"):
+        ref = str(pick["directRef"]).strip()
+        exact = [candidate for candidate in candidates if str(candidate.get("code") or "").upper() == ref.upper()
+                 or candidate.get("name") == ref]
+        candidates = exact or [candidate for candidate in candidates
+                               if ref and ref in (candidate.get("name") or "")]
+    elif pick.get("seq") is None:
+        return None
+    codes = {candidate["code"] for candidate in candidates if candidate.get("code")}
+    return next(iter(codes)) if len(codes) == 1 else None
 
 
 def shortname_from_pick(pick: dict[str, Any], trs_list: list[dict[str, Any]]) -> str | None:
-    """LLM-B 指针→真实 shortName：directName 精确→唯一子串；letter/ordinal→sort→shortName；查不到 None。"""
-    name = pick.get("directName")
-    if name:
-        name = str(name).strip()
-        for t in trs_list:
-            if t.get("shortName") == name:
-                return t.get("shortName")
-        # 唯一连续子串才算简写命中；多命中不得按列表顺序取首项（select_counterparty.md
-        # 「|M|=1 才是唯一简写」，Dify code 节点 1780652971845 同款，评估 SW-INC-06）
-        matches = [t.get("shortName") for t in trs_list if name in (t.get("shortName") or "")]
-        return matches[0] if len(matches) == 1 else None
-    sort = None
+    """Every supplied pointer must resolve to the same unique authorized shortName."""
+    choices: list[set[str]] = []
+    if pick.get("directName"):
+        name = str(pick["directName"]).strip()
+        exact = {str(item["shortName"]) for item in trs_list if item.get("shortName") == name}
+        choices.append(exact or {str(item["shortName"]) for item in trs_list
+                                 if name and name in (item.get("shortName") or "")})
     if pick.get("letter") is not None:
-        sort = str(pick["letter"]).upper()
-    elif pick.get("ordinal") is not None:
-        x = _as_int(pick.get("ordinal"))
-        if x is not None and 1 <= x <= len(trs_list):
-            sort = chr(64 + x)
-        else:
-            return None
-    if sort is None:
+        letter = str(pick["letter"]).upper()
+        choices.append({str(item["shortName"]) for item in trs_list
+                        if item.get("shortName") and str(item.get("sort") or "").upper() == letter})
+    if pick.get("ordinal") is not None:
+        ordinal = _as_int(pick["ordinal"])
+        letter = chr(64 + ordinal) if ordinal is not None and 1 <= ordinal <= min(26, len(trs_list)) else ""
+        choices.append({str(item["shortName"]) for item in trs_list
+                        if letter and item.get("shortName") and str(item.get("sort") or "").upper() == letter})
+    if not choices or any(len(choice) != 1 for choice in choices):
         return None
-    for t in trs_list:
-        if str(t.get("sort")).upper() == sort:
-            return t.get("shortName")
-    return None
+    agreed = set.intersection(*choices)
+    return next(iter(agreed)) if len(agreed) == 1 else None
 
 
 def apply_underlying(
@@ -174,7 +153,7 @@ def apply_counterparty(
     id_to_seq = build_id_to_seq([])  # 对手覆盖不依赖候选标的块，仅靠 orderId/idx
     grouped: dict[int, list[dict[str, Any]]] = {}
     for p in b_picks:
-        i = 0 if single else match_order_index(p, order_list, id_to_seq, single)
+        i = match_order_index(p, order_list, id_to_seq, single)
         if i >= 0:
             grouped.setdefault(i, []).append(p)
     for i, picks in grouped.items():

@@ -53,3 +53,28 @@ def test_early_stop_kind_prefers_node_error_and_narrows_int() -> None:
 def test_turn_outcome_passes_at_bot_through() -> None:
     assert _extract_turn(1, TurnSpec(send_text="x", at_bot=False), "", {}).at_bot is False
     assert _extract_turn(1, TurnSpec(send_text="x", at_bot=True), "", {}).at_bot is True
+
+
+def test_error_projection_keeps_category_and_parallel_causes():
+    from harness.multi_turn import _error_info
+    error = {"node": "extract", "type": "EvidenceError", "code": "E2",
+             "causes": [{"node": "resolve", "type": "BackendUnreachableError", "code": "E4"}]}
+    projected = _error_info(error)
+    assert projected["code"] == "E2"
+    assert projected["causes"] == error["causes"]
+
+
+async def test_failed_http_workflow_preserves_structured_node_error():
+    import httpx
+
+    from harness.golden import GoldenCase
+    from harness.multi_turn import run_case_multi
+
+    def handle(request):
+        return httpx.Response(200, json={"data": {"status": "failed", "error": "friendly",
+            "outputs": {"error": {"node": "extract", "type": "EvidenceError", "code": "E2"}}}})
+    async with httpx.AsyncClient(base_url="http://test.invalid", transport=httpx.MockTransport(handle)) as client:
+        result = await run_case_multi(GoldenCase(id="error", category="swap", turns=[TurnSpec(send_text="test")]),
+                                     base_url="http://test.invalid", user_id="u", room_id="r", client=client)
+    assert result.turns[0].error["code"] == "E2"
+    assert result.turns[0].error["node"] == "extract"

@@ -123,7 +123,7 @@ class GoatsAgentClientHttpx:
                     timeout=timeout,
                 )
                 return resp.status_code, resp, None
-        except httpx.TimeoutException:
+        except (httpx.TimeoutException, TimeoutError):
             return None, None, "timeout"
         except httpx.HTTPError:
             return None, None, "network_error"

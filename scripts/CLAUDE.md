@@ -55,7 +55,9 @@
 |---|---|
 | `convert_csv_to_excel.py` | CSV 测试集 → 单个 Excel 工作簿（每 CSV 一个 sheet）|
 | `convert_jsonl_to_csv.py` | JSONL 测试集 → 逐步中文 CSV（仅标准库）|
-| `langfuse/upload_golden_to_langfuse.py` | 本地 categories fixture → Langfuse dataset |
+| `convert_excel_to_jsonl.py` | 黄金 Excel → 期权/互换 JSONL；严格匹配 10/13 列表头顺序，同用例多步合并为一行，支持 `--dry-run` |
+| `convert_jsonl_to_excel.py` | categories JSONL → 黄金 Excel，便于人工查看和维护 |
+| `langfuse/upload_golden_to_langfuse.py` | 本地 categories fixture → Langfuse Dataset |
 | `cleanup_checkpoints.py` | checkpoint 三表按线程清理（客户现场运维）|
 | `sync_agents_md.py` | CLAUDE.md + .claude/{rules,skills,agents} → AGENTS.md + .agents/skills/（Codex 读取；`--check` 供提交前自检，产物禁止手改）|
 

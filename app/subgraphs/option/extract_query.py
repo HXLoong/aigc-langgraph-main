@@ -12,11 +12,12 @@ from __future__ import annotations
 
 from typing import Any
 
+from app.extraction.identity import prepare_identity_scope
 from app.graph.business_params import validated_query_filter
 from app.graph.retry import io_node
 from app.graph.state import AgentState, TraceEntry
 from app.subgraphs.option.backend import call_option_backend
-from app.subgraphs.option.order_id import extract_for_query
+from app.subgraphs.option.order_id import extract_for_query, extract_order_ids
 
 
 @io_node
@@ -25,16 +26,21 @@ async def option_extract_query(state: AgentState) -> dict[str, Any]:
     order_ids = extract_for_query(
         raw=state.get("raw_text"), quote=state.get("quote_content")
     )
+    prepared_state, order_ids, records = prepare_identity_scope(
+        state, order_ids, scope="option/query", origin="raw" if extract_order_ids(state.get("raw_text")) else "quote",
+        evidence=(state.get("raw_text") if extract_order_ids(state.get("raw_text")) else state.get("quote_content")) or "",
+    )
     order_list = [{"orderId": order_id} for order_id in order_ids]
     order_count = sum(1 for item in order_list if item["orderId"])
 
     backend = await call_option_backend(
-        state,
+        prepared_state,
         intent="query_order_status",
         order_list=order_list,
     )
 
     return {
+        "field_records": records,
         "query_filter": validated_query_filter(orderList=order_list),
         **backend,
         "trace": [

@@ -143,11 +143,12 @@ def test_add_io_node_rejects_function_without_io_node_decorator() -> None:
 READ_NODES: dict[str, set[str]] = {
     "main": {"intent_route", "existing_command_query"},
     "swap": {
-        "swap_intent", "swap_place_order", "swap_select_counterparty", "swap_select_ticker",
+        "swap_intent", "swap_select_counterparty", "swap_select_ticker",
         "swap_query_order", "swap_image_order", "swap_excel_order",
     },
+    "swap_place": {"swap_extract_candidates"},
     "option": {"option_intent", "option_extract_query"},
-    "inquiry": {"inquiry_fast_parse", "inquiry_precheck", "inquiry_extract", "inquiry_resolve"},
+    "inquiry": {"inquiry_fast_parse", "inquiry_extract"},
     "close": {"close_intent", "close_holding_query", "close_query_status"},
     "place_close": {"place_close_fetch_orders", "place_close_extract"},
     "ticker": {"infer_codes", "split_keywords", "judge_type", "resolve_org_item"},
@@ -173,11 +174,13 @@ def _builders() -> dict[str, Any]:
     from app.subgraphs.option.extract_inquiry import build_inquiry_graph
     from app.subgraphs.option.graph import build_option_graph
     from app.subgraphs.swap.graph import build_swap_graph
+    from app.subgraphs.swap.place_order import build_place_graph
     from app.subgraphs.ticker.graph import build_ticker_graph
 
     return {
         "main": build_main_graph().builder,
         "swap": build_swap_graph().builder,
+        "swap_place": build_place_graph().builder,
         "option": build_option_graph().builder,
         "inquiry": build_inquiry_graph().builder,
         "close": build_close_graph().builder,
@@ -198,3 +201,10 @@ def test_real_graphs_retry_reads_and_never_writes() -> None:
         for name in names:
             spec = builders[graph_name].nodes[name]
             assert spec.retry_policy is None, f"{graph_name}.{name} 是写类节点，不得自动重试"
+
+
+def test_ticker_facades_do_not_repeat_the_whole_child_graph():
+    from app.subgraphs.option.extract_inquiry import build_inquiry_graph
+    graph = build_inquiry_graph().builder
+    for name in ("inquiry_precheck", "inquiry_resolve"):
+        assert graph.nodes[name].retry_policy is None

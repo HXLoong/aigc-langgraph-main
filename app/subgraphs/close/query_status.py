@@ -12,6 +12,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from app.extraction.identity import prepare_identity_scope
 from app.graph.business_params import validated_query_filter
 from app.graph.retry import io_node
 from app.graph.state import AgentState, TraceEntry
@@ -25,14 +26,19 @@ async def close_query_status(state: AgentState) -> dict[str, Any]:
     """close.query_status 节点（确定性提取）。"""
     order_nos = extract_for_query(state.get("raw_text"))
 
+    prepared_state, protected_ids, records = prepare_identity_scope(
+        state, order_nos, scope="close/query", field="queryOrderNoList", origin="raw", evidence=state.get("raw_text") or "",
+    )
+    order_nos = [order_id for order_id in protected_ids if order_id is not None]
     req_vo = build_close_order_req_vo(query_order_no_list=order_nos)
     backend = await call_close_backend(
-        state,
+        prepared_state,
         intent="close_order_order_query",
         close_order_req_vo=req_vo,
     )
 
     return {
+        "field_records": records,
         "query_filter": validated_query_filter(queryOrderNoList=order_nos),
         **backend,
         "trace": [

@@ -87,6 +87,7 @@ async def resolve_ticker_full(
     *,
     filter_order_context: bool = False,
     counterparty_shortnames: list[str] | None = None,
+    candidate_keywords: list[str] | None = None,
 ) -> TickerResolution:
     """标的识别（新管线入口，含 HITL 信号占位，Issue #20）。
 
@@ -96,16 +97,14 @@ async def resolve_ticker_full(
     Returns:
         TickerResolution(resolved, hitl_pending)
     """
-    if not raw_text:
+    if not raw_text and not candidate_keywords:
         return TickerResolution(resolved=[], hitl_pending=[])
 
-    try:
-        if filter_order_context:
-            raw_text = mask_order_context(raw_text, counterparty_shortnames or [])
-        return await _resolve_pipeline(raw_text)
-    except Exception as exc:  # noqa: BLE001
-        logger.warning("ticker resolver 异常: %s (raw=%r)", exc, raw_text[:60])
-        return TickerResolution(resolved=[], hitl_pending=[])
+    if candidate_keywords is not None:
+        return await _resolve_pipeline(raw_text, candidate_keywords)
+    if filter_order_context:
+        raw_text = mask_order_context(raw_text, counterparty_shortnames or [])
+    return await _resolve_pipeline(raw_text)
 
 
 async def resolve_ticker(raw_text: str) -> list[TickerCandidate]:
@@ -135,6 +134,7 @@ class TickerState(TypedDict, total=False):
 
     raw_text: str
     candidates: list[str]
+    candidate_keywords: list[str]
     infer_codes: dict[str, Any]
     split_codes: dict[str, Any]
     ins_family: dict[str, Any]
@@ -156,18 +156,11 @@ class OrgItemInput(TypedDict):
 async def _search_goats(
     client: TickerClient, keyword_items: list[dict[str, Any]]
 ) -> list[dict[str, Any]]:
-    """单次 GOATS 批量查询（一个 orgStr 下全部 keyword 合并成一次请求），封装异常。"""
-    try:
-        req = SecuritiesInstrumentReqVO(
-            keywordItems=[
-                KeywordItem(keyword=k["keyword"], isFull=k["isFull"])
-                for k in keyword_items
-            ]
-        )
-        return await client.search_securities_instrument(req)
-    except Exception as exc:  # noqa: BLE001
-        logger.debug("securities-instrument/select 失败: %s", exc)
-        return []
+    """批量查询；故障交图层重试，空列表只表示真实零命中。"""
+    req = SecuritiesInstrumentReqVO(
+        keywordItems=[KeywordItem(keyword=k["keyword"], isFull=k["isFull"]) for k in keyword_items]
+    )
+    return await client.search_securities_instrument(req)
 
 
 async def _resolve_one_org_item(
@@ -212,6 +205,8 @@ async def _resolve_one_org_item(
 
 async def extract_candidates(state: TickerState) -> dict[str, Any]:
     """tokenize 提取候选 → 过滤噪音（单字符 / 非 4-6 位纯数字 / 订单号前缀）→ 格式化去重。"""
+    if "candidate_keywords" in state:
+        return {"candidates": format_candidate_list(state["candidate_keywords"])}
     raw_candidates = tokenize.invoke({"raw_text": state["raw_text"]})
     filtered = _filter_noise_candidates(raw_candidates)
     return {"candidates": format_candidate_list(filtered)}
@@ -250,7 +245,9 @@ async def merge_candidates(state: TickerState) -> dict[str, Any]:
     )
     client = _make_client()
 
-    explicit = list(dict.fromkeys(_EXPLICIT_CODE_RE.findall(raw_text)))
+    candidate_keywords = state.get("candidate_keywords")
+    exact_source = "\n".join(candidate_keywords) if candidate_keywords is not None else raw_text
+    explicit = list(dict.fromkeys(_EXPLICIT_CODE_RE.findall(exact_source)))
     exact_results: dict[str, dict[str, Any] | None] = {}
     guarded_roots: dict[str, list[dict[str, Any]]] = {}
     for code in explicit:
@@ -336,7 +333,7 @@ async def assemble(state: TickerState) -> dict[str, Any]:
             continue
         resolved.append(
             TickerCandidate(
-                windCode=wind_code,
+                wind_code=wind_code,
                 insShtDesc=winner.get("insShtDesc"),
                 insLngDesc=winner.get("insLngDesc"),
                 relevanceScore=winner.get("relevanceScore"),
@@ -349,11 +346,14 @@ async def assemble(state: TickerState) -> dict[str, Any]:
     return {"resolved": resolved}
 
 
-async def _resolve_pipeline(raw_text: str) -> TickerResolution:
+async def _resolve_pipeline(raw_text: str, candidate_keywords: list[str] | None = None) -> TickerResolution:
     """跑 ticker 子图（拓扑见 graph.py）。"""
     from app.subgraphs.ticker.graph import get_ticker_graph
 
-    final = await get_ticker_graph().ainvoke({"raw_text": raw_text})
+    initial: TickerState = {"raw_text": raw_text}
+    if candidate_keywords is not None:
+        initial["candidate_keywords"] = candidate_keywords
+    final = await get_ticker_graph().ainvoke(initial)
     return TickerResolution(resolved=list(final.get("resolved") or []), hitl_pending=[])
 
 
