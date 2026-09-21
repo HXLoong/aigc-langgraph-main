@@ -46,6 +46,49 @@ def _patch(monkeypatch: pytest.MonkeyPatch, module: object) -> AsyncMock:
 
 @pytest.mark.asyncio
 class TestCloseConfirmCloseNode:
+    @pytest.mark.parametrize(
+        ("raw", "expected"),
+        [
+            ("确认平仓", ["CO-20260921-AAAAAAAA", "CO-20260921-BBBBBBBB"]),
+            ("序号2，确认平仓", ["CO-20260921-BBBBBBBB"]),
+            ("确认平仓OPT-AAAA1", ["CO-20260921-AAAAAAAA"]),
+            ("确认平仓OPT-BBBB2", ["CO-20260921-BBBBBBBB"]),
+        ],
+    )
+    async def test_java_card_with_contract_before_order_id(
+        self, monkeypatch: pytest.MonkeyPatch, raw: str, expected: list[str]
+    ) -> None:
+        backend = _patch(monkeypatch, confirm_module)
+        quote = (
+            "以下平仓申请，请核对详情后确认：\n-----场外期权平仓详情-----\n"
+            "序号：1\n合约编号：OPT-AAAA1\n单号：CO-20260921-AAAAAAAA\n"
+            "平仓名义本金：1,000,000\n平仓价格方式：市价单\n"
+            "-----场外期权平仓详情-----\n"
+            "序号：2\n合约编号：OPT-BBBB2\n单号：CO-20260921-BBBBBBBB\n"
+            "平仓名义本金：2,000,000\n平仓价格方式：限价单\n限定价格：10.00\n"
+            "若要对以上订单执行平仓操作，请引用本消息回复【确认平仓】"
+        )
+        result = await close_confirm_close({"raw_text": raw, "quote_content": quote})
+        assert result.get("confirm") is not None
+        assert result["confirm"]["confirmOrderNoList"] == expected
+        assert backend.await_args.kwargs["close_order_req_vo"]["confirmOrderNoList"] == expected
+
+    @pytest.mark.parametrize(
+        "quote",
+        [
+            "序号：1\n合约编号：OPT-AAAA1\n序号：2\n合约编号：OPT-BBBB2\n单号：CO-20260921-BBBBBBBB",
+            "序号：1\n合约编号：OPT-AAAA1\n单号：CO-20260921-AAAAAAAA\n"
+            "序号：1\n合约编号：OPT-BBBB2\n单号：CO-20260921-BBBBBBBB",
+        ],
+    )
+    async def test_invalid_java_card_does_not_expand_confirmation(
+        self, monkeypatch: pytest.MonkeyPatch, quote: str
+    ) -> None:
+        backend = _patch(monkeypatch, confirm_module)
+        result = await close_confirm_close({"raw_text": "确认平仓", "quote_content": quote})
+        assert result.get("confirm") is None
+        backend.assert_not_awaited()
+
     async def test_raw_order_id_selects_only_that_order(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
