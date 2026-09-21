@@ -27,6 +27,7 @@ prompt：app/prompts/option_close/place_close.md。
 """
 from __future__ import annotations
 
+import re
 from functools import lru_cache
 from typing import Annotated, Any, TypedDict, cast
 
@@ -239,6 +240,30 @@ async def place_close_validate(state: PlaceCloseState) -> dict[str, Any]:
             "pc_reject_reply": "未能识别平仓目标，请提供合约编号或持仓序号。",
             "pc_reject_decision": "missing_close_order_identity",
             "trace": [TraceEntry(node="place_close_validate", decision="missing_close_order_identity")],
+        }
+
+    relative_twap = re.search(
+        r"TWAP[\s，,]*\d+(?:\.\d+)?\s*(?:分钟|分|小时|min(?:utes)?)",
+        state.get("raw_text") or "", re.IGNORECASE,
+    )
+    missing_twap_range = [
+        item for item in close_list
+        if item.close_order_type == "TWAP"
+        and not (item.close_order_algo_start_time and item.close_order_algo_end_time)
+    ]
+    if relative_twap and missing_twap_range:
+        labels = [
+            f"期权平仓订单[{item.order_id}]参数需要完善：" if item.order_id
+            else f"合约编号：{item.internal_trade_id}"
+            for item in missing_twap_range
+        ]
+        return {
+            "pc_reject_reply": "\n".join(labels + [
+                "TWAP 仅提供时长，无法确定起止时间。",
+                "请引用本消息重新提供平仓金额、限价和明确的 TWAP 起止时间（HH:MM-HH:MM）。",
+            ]),
+            "pc_reject_decision": "twap_duration_requires_time_range",
+            "trace": [TraceEntry(node="place_close_validate", decision="twap_duration_requires_time_range")],
         }
 
     errors: list[str] = []

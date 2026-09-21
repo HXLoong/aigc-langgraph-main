@@ -92,6 +92,40 @@ async def test_happy_path_traces_every_stage_and_submits(monkeypatch: pytest.Mon
 
 
 @pytest.mark.asyncio
+async def test_relative_twap_duration_requires_explicit_time_range(monkeypatch: pytest.MonkeyPatch) -> None:
+    _patch_query(monkeypatch, [])
+    captured = _patch_operate(monkeypatch)
+    _patch_llm(monkeypatch, close_candidates({
+        "orderId": "CO-20260304-AAAA0001", "closeOrderNotionalDelta": "200万",
+        "closeOrderType": "TWAP", "closeOrderPrice": "10",
+    }))
+    result = await close_place_close(_ctx("CO-20260304-AAAA0001，200万，TWAP30分钟，限价10"))
+
+    assert "TWAP" in result["reply_text"] and "起止时间" in result["reply_text"]
+    assert "CO-20260304-AAAA0001" in result["reply_text"]
+    assert "place_close_reject" in [entry.node for entry in result["trace"]]
+    captured.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_explicit_twap_time_range_reaches_backend(monkeypatch: pytest.MonkeyPatch) -> None:
+    _patch_query(monkeypatch, [])
+    captured = _patch_operate(monkeypatch)
+    _patch_llm(monkeypatch, close_candidates({
+        "orderId": "CO-20260304-AAAA0001", "closeOrderNotionalDelta": "200万",
+        "closeOrderType": "TWAP", "closeOrderPrice": "10",
+        "closeOrderAlgoStartTime": "13:00", "closeOrderAlgoEndTime": "13:30",
+    }))
+    result = await close_place_close(_ctx("CO-20260304-AAAA0001，200万，TWAP13:00-13:30，限价10"))
+
+    assert not result.get("error")
+    captured.assert_called_once()
+    item = captured.call_args.args[0].close_order_req_vo.model_extra["closeOrderList"][0]
+    assert item["closeOrderAlgoStartTime"] == "13:00"
+    assert item["closeOrderAlgoEndTime"] == "13:30"
+
+
+@pytest.mark.asyncio
 async def test_empty_merge_takes_reject_edge_without_backend(monkeypatch: pytest.MonkeyPatch) -> None:
     _patch_query(monkeypatch, [])
     captured = _patch_operate(monkeypatch)
