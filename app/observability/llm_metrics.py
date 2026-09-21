@@ -16,7 +16,7 @@ from uuid import UUID
 from langchain_core.callbacks import BaseCallbackHandler
 from langchain_core.outputs import LLMResult
 
-from app.observability.metrics import emit_llm_call, emit_llm_tokens
+from app.observability.metrics import emit_llm_cache, emit_llm_call, emit_llm_tokens
 
 logger = logging.getLogger(__name__)
 
@@ -54,6 +54,40 @@ def extract_usage(response: LLMResult) -> tuple[int, int, str]:
 def _classify_error(error: BaseException) -> str:
     name = type(error).__name__.lower()
     return "timeout" if "timeout" in name else "error"
+
+
+def extract_cache_usage(response: LLMResult, prompt_tokens: int) -> tuple[str, int, int]:
+    """Use one provider representation; absent cache usage is not a cache miss."""
+    output = response.llm_output or {}
+    sources = [output.get("token_usage", {})] if isinstance(output, dict) else []
+    for generations in response.generations:
+        for generation in generations:
+            message = getattr(generation, "message", None)
+            metadata = getattr(message, "response_metadata", None) or {}
+            if isinstance(metadata, dict):
+                sources.append(metadata.get("token_usage", {}))
+            sources.append(getattr(message, "usage_metadata", None) or {})
+    for usage in sources:
+        if not isinstance(usage, dict):
+            continue
+        if "prompt_cache_hit_tokens" in usage:
+            hit = usage["prompt_cache_hit_tokens"]
+        else:
+            details = usage.get("prompt_tokens_details") or {}
+            unified = usage.get("input_token_details") or {}
+            if isinstance(details, dict) and "cached_tokens" in details:
+                hit = details["cached_tokens"]
+            elif isinstance(unified, dict) and "cache_read" in unified:
+                hit = unified["cache_read"]
+            else:
+                continue
+        if type(hit) is not int or not 0 <= hit <= prompt_tokens:
+            return "invalid", 0, 0
+        miss = usage.get("prompt_cache_miss_tokens", prompt_tokens - hit)
+        if type(miss) is not int or miss < 0 or hit + miss != prompt_tokens:
+            return "invalid", 0, 0
+        return "reported", hit, miss
+    return "unreported", 0, 0
 
 
 class LLMMetricsCallback(BaseCallbackHandler):
@@ -95,6 +129,8 @@ class LLMMetricsCallback(BaseCallbackHandler):
                 return
             emit_llm_call(model=model, status="ok")
             emit_llm_tokens(model=model, prompt_tokens=pt, completion_tokens=ct, node=node)
+            status, hit, miss = extract_cache_usage(response, pt)
+            emit_llm_cache(model, node, status, hit, miss)
         except Exception:  # noqa: BLE001 - 观测不阻断业务
             logger.debug("llm_metrics: on_llm_end ignored", exc_info=True)
 

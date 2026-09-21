@@ -1,6 +1,7 @@
 """close.place_close 节点测试（P0 核心，mock LLM）。"""
 from __future__ import annotations
 
+import json
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -19,6 +20,7 @@ def _patch_llm(
     monkeypatch: pytest.MonkeyPatch, params: BaseModel
 ) -> AsyncMock:
     monkeypatch.setattr(pc_module, "_fetch_order_data", AsyncMock(return_value=[]))
+    monkeypatch.setattr(pc_module, "call_close_backend", AsyncMock(return_value={"api_code": 0, "api_result": "真实回执"}))
     fake_llm = MagicMock()
     fake_llm.ainvoke = AsyncMock(return_value=params)
     fake_base = MagicMock()
@@ -157,8 +159,8 @@ class TestClosePlaceCloseNode:
         ainvoke = _patch_llm(monkeypatch, close_candidates())
         await close_place_close({"raw_text": "第一笔限价 10", "quote_content": "1. CO-20260304-AAAA"})
         user_content = ainvoke.call_args[0][0][-1][1]
-        assert "User input: 第一笔限价 10" in user_content
-        assert "quote_content：1. CO-20260304-AAAA" in user_content
+        assert json.loads(user_content)["sources"]["raw"] == "第一笔限价 10"
+        assert json.loads(user_content)["sources"]["quote"] == "1. CO-20260304-AAAA"
 
     async def test_safe_node_catches_llm_error(self, monkeypatch: pytest.MonkeyPatch) -> None:
         ainvoke = _patch_llm(monkeypatch, close_candidates())

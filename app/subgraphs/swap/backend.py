@@ -15,15 +15,15 @@
 from __future__ import annotations
 
 import logging
-import re
 from typing import Any
 
 from app.execution.operations import capture_operation
 from app.extraction.locks import protect_orders
-from app.graph.state import AgentState, TickerCandidate
+from app.graph.state import AgentState
 from app.subgraphs.swap.prewash import sanitize_order_list
 from app.tools.bot_context import BotContext, normalize_message_id
-from app.tools.exceptions import EmptyBackendResultError, MissingBackendContextError
+from app.tools.exceptions import MissingBackendContextError
+from app.tools.receipts import receipt_guard, receipt_update
 from app.tools.swap_client import (
     SwapClientHttpx,
     SwapIntentionType,
@@ -54,60 +54,6 @@ def _is_empty_backend_result(value: Any) -> bool:
     if isinstance(value, (dict, list, tuple, set)):
         return not value
     return False
-
-
-def _with_resolved_ticker(
-    order: dict[str, Any], tickers: list[Any]
-) -> tuple[dict[str, Any], str]:
-    """按订单标的身份绑定唯一的已验证证券，无法确定时保留原值。"""
-    original_code = (order.get("placeOrderWindCode") or "").strip().upper()
-    if not original_code:
-        return order, "missing"
-
-    verified: list[dict[str, Any]] = []
-    for ticker in tickers:
-        if isinstance(ticker, TickerCandidate):
-            data = ticker.model_dump(by_alias=True)
-        elif isinstance(ticker, dict):
-            data = ticker
-        else:
-            continue
-        wind_code = data.get("windCode")
-        if (
-            data.get("from_goats") is not True
-            or not isinstance(wind_code, str)
-            or not wind_code.strip()
-        ):
-            continue
-        requested_market = order.get("placeOrderTransactionType")
-        if requested_market and requested_market not in (data.get("transactionTypeLists") or []):
-            continue
-        verified.append(data)
-        if wind_code.strip().upper() == original_code:
-            order["placeOrderWindCode"] = wind_code
-            return order, "matched_code"
-
-    # 已带后缀的代码不得再按其他证券的别名解释，交后端校验。
-    if re.fullmatch(r"[A-Z0-9][A-Z0-9._-]*\.[A-Z][A-Z0-9]*", original_code):
-        return order, "unmatched"
-
-    matches: dict[str, str] = {}
-    for data in verified:
-        wind_code = data["windCode"]
-        aliases = [
-            data.get("insShtDesc"), data.get("insLngDesc"),
-            wind_code.strip().rsplit(".", 1)[0],
-        ]
-        aliases.extend(data.get("sourceKeywords") or [])
-        if any(
-            isinstance(alias, str) and alias.strip().upper() == original_code
-            for alias in aliases
-        ):
-            matches[wind_code.strip().upper()] = wind_code
-    if len(matches) == 1:
-        order["placeOrderWindCode"] = next(iter(matches.values()))
-        return order, "matched_alias"
-    return order, "ambiguous" if matches else "unmatched"
 
 
 async def call_swap_backend(
@@ -152,22 +98,9 @@ async def call_swap_backend(
     )
     if capture_operation("swap", req):
         return {"field_records": rejected} if rejected else {}
-    result = await SwapClientHttpx().operate(req)
-    code = result.get("code")
-    backend_result = result.get("data") if code == 0 else result.get("msg")
-    if _is_empty_backend_result(backend_result):
-        raise EmptyBackendResultError("swap", code)
+    async with receipt_guard("swap"):
+        result = await SwapClientHttpx().operate(req)
     return {
         **({"field_records": rejected} if rejected else {}),
-        "api_code": code,
-        "api_result": backend_result,
+        **receipt_update(result, "swap"),
     }
-
-
-__all__ = [
-    "call_swap_backend",
-    "_with_resolved_ticker",
-    "_is_empty_backend_result",
-    "_context",
-    "_message_id",
-]

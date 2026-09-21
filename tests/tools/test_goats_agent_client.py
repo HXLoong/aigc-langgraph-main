@@ -125,7 +125,7 @@ class TestParseRfqInstrument:
         )
         assert out["code"] == 500
         assert out["api_data_result_obj"] is None
-        assert out["errMsg"] == "快速询价参数解析服务异常，请稍后重试或联系交易员。"
+        assert out["errMsg"] == "快速询价暂不可用,请检查网络"
         assert out["reason"] == expected_reason
 
     @pytest.mark.asyncio
@@ -134,7 +134,7 @@ class TestParseRfqInstrument:
             "q", "R", "U"
         )
         assert out["code"] == 500
-        assert out["errMsg"] == "快速询价参数解析服务异常，请稍后重试或联系交易员。"
+        assert out["errMsg"] == "快速询价暂不可用,请检查网络"
         assert out["reason"] == "invalid_json"
 
     @pytest.mark.asyncio
@@ -144,7 +144,7 @@ class TestParseRfqInstrument:
             lambda _: httpx.Response(200, text="null")
         ).parse_rfq_instrument("q", "R", "U")
         assert out["code"] == 500
-        assert out["errMsg"] == "快速询价参数解析服务异常，请稍后重试或联系交易员。"
+        assert out["errMsg"] == "快速询价暂不可用,请检查网络"
         assert out["reason"] == "body_not_dict"
 
     @pytest.mark.asyncio
@@ -175,7 +175,7 @@ class TestParseRfqInstrument:
 
         out = await _make_client(handler).parse_rfq_instrument("q", "R", "U")
         assert out["code"] == 500
-        assert out["errMsg"] == "快速询价参数解析服务异常，请稍后重试或联系交易员。"
+        assert out["errMsg"] == "快速询价暂不可用,请检查网络"
         assert out["reason"] == "http_502"
 
 

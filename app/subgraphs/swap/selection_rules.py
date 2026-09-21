@@ -132,13 +132,21 @@ def _ticker_pick(token: str, block: dict[str, Any], quote: str) -> dict[str, Any
             return None
         pick = {"seq": _number(ordinal[1])}
     elif literal:
+        if (not explicit and re.fullmatch(r"[A-Za-z]", literal)) or re.fullmatch(
+            r"(?:市价|限价|价格|数量|金额|跟量|POV|TWAP|VWAP|ICEBERG|SNIPER).*"
+            r"|[0-9.,]+\s*(?:股|手|万|亿|元|%|分钟|小时)", literal, re.I,
+        ):
+            return None
+        named = any(literal.casefold() in str(c.get("name") or "").casefold()
+                    or literal.casefold() == str(c.get("code") or "").casefold()
+                    for c in block.get("candidates") or [])
+        if not (explicit or _VERBS.match(token) or named or re.fullmatch(r"[A-Za-z0-9_-]+\.[A-Za-z]+", literal)):
+            return None
         pick = {"directRef": literal}
     else:
         return None
     code = windcode_from_pick(pick, [block])
     if code is None:
-        if explicit:
-            raise ValueError("标的选择不存在或不唯一")
         return None
     matching = [candidate for candidate in block.get("candidates") or [] if candidate.get("code") == code]
     return {**pick, "directRef": code, "seq": pick.get("seq") or (matching[0].get("seq") if len(matching) == 1 else None)}

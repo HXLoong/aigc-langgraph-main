@@ -77,23 +77,15 @@ def excel_evidence_rows(content: bytes, file_index: int) -> list[ExcelEvidenceRo
 
 def lock_attachment_bindings(
     params: SwapPlaceOrderParams,
-    bindings: list[dict[str, Any]],
     records: dict[str, FieldRecord],
     counterparties: list[dict[str, Any]],
 ) -> tuple[SwapPlaceOrderParams, dict[str, FieldRecord]]:
-    """Never submit an asserted security or account identity as an authoritative value."""
+    """Keep attachment provenance; Java resolves the extracted security expression."""
     result = dict(records)
     rows = []
     for index, item in enumerate(params.order_list):
         row = item.model_dump()
         prefix = f"swap/place_order.orderList.{index}."
-        if item.place_order_wind_code:
-            if index >= len(bindings) or not bindings[index]["result"].startswith("matched"):
-                raise ValueError("附件标的未通过 GOATS 唯一校验，请明确证券代码和市场")
-            key = prefix + "placeOrderWindCode"
-            result[key] = result[key].model_copy(update={"locked": True})
-        elif not item.order_id and not item.place_order_ultra_contract_code:
-            raise ValueError("附件订单缺少标的，请明确证券代码或名称")
         if item.place_order_shortname:
             matches = {
                 counterparty["shortName"]

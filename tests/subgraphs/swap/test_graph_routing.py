@@ -29,7 +29,6 @@ from evidence_support import swap_candidate_output
 import app.subgraphs.swap.multimodal as mm_module
 import app.subgraphs.swap.select_counterparty as sc_module
 import app.subgraphs.swap.select_ticker as st_module
-from app.graph.state import TickerCandidate
 from app.subgraphs.swap import backend as swap_backend_module
 from app.subgraphs.swap import build_swap_graph
 from app.subgraphs.swap import intent as intent_module
@@ -51,16 +50,7 @@ from app.subgraphs.swap.models import (
     SwapSelectTickerOutput,
     SwapTickerPick,
 )
-from app.subgraphs.ticker.resolver import TickerResolution
 from tests.intent_fixtures import intent_reply, mock_ainvoke
-
-
-def _patch_resolver(
-    monkeypatch: pytest.MonkeyPatch,
-    candidates: list[TickerCandidate],
-) -> None:
-    resolution = TickerResolution(resolved=candidates, hitl_pending=[])
-    monkeypatch.setattr(po_module, "resolve_ticker_full", mock_ainvoke(resolution))
 
 
 def _patch(
@@ -103,8 +93,6 @@ def _patch_vl_and_extract(
     factory = MagicMock()
     factory.with_structured_output = MagicMock(return_value=extract_llm)
     monkeypatch.setattr(mm_module, "get_qwen_structured", lambda: factory)
-    _patch_resolver(monkeypatch, [TickerCandidate(windCode=item.place_order_wind_code, from_goats=True)
-                                 for item in params.order_list if item.place_order_wind_code])
 
 
 _BASE_STATE: dict = {
@@ -254,10 +242,6 @@ class TestSwapGraphEndToEnd:
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         """无引用消息 → swap_place_order → 全新对手识别 → submit。"""
-        _patch_resolver(
-            monkeypatch,
-            [TickerCandidate(windCode="00700.HK", insShtDesc="腾讯控股", from_goats=True)],
-        )
         _patch(monkeypatch, intent_module, intent_reply(SwapIntentOutput, type="place_order_request"))
         _patch(
             monkeypatch,
@@ -272,7 +256,7 @@ class TestSwapGraphEndToEnd:
         graph = build_swap_graph()
         final = await graph.ainvoke(dict(_BASE_STATE))
 
-        trace_nodes = [e.node for e in final.get("trace", []) if e.node not in {"swap_extract_candidates", "swap_normalize", "swap_resolve", "swap_place_result"}]
+        trace_nodes = [e.node for e in final.get("trace", []) if e.node not in {"swap_extract_candidates", "swap_normalize", "swap_place_result"}]
         assert trace_nodes == [
             "swap_intent", "swap_place_order", "swap_recognize_fresh_counterparty",
             "swap_place_order_submit",
@@ -281,16 +265,13 @@ class TestSwapGraphEndToEnd:
         assert final.get("expected_action") == "place"
         assert "swap_todo" not in trace_nodes
         # ticker 集成验证
-        tickers = final.get("tickers", [])
-        assert any("700" in t.wind_code and t.wind_code.endswith(".HK") for t in tickers)
-        assert all(t.from_goats for t in tickers)
+        assert final["place_params"]["orderList"][0]["placeOrderWindCode"] == "腾讯"
 
     @pytest.mark.asyncio
     async def test_place_order_request_with_quote_runs_full_select_chain(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         """有引用消息 → place_order → select_counterparty → select_ticker → submit。"""
-        _patch_resolver(monkeypatch, [TickerCandidate(windCode="00700.HK", insShtDesc="腾讯控股", from_goats=True)])
         _patch(monkeypatch, intent_module, intent_reply(SwapIntentOutput, type="place_order_request"))
         _patch(
             monkeypatch,
@@ -339,7 +320,7 @@ class TestSwapGraphEndToEnd:
             }
         )
 
-        trace_nodes = [e.node for e in final.get("trace", []) if e.node not in {"swap_extract_candidates", "swap_normalize", "swap_resolve", "swap_place_result"}]
+        trace_nodes = [e.node for e in final.get("trace", []) if e.node not in {"swap_extract_candidates", "swap_normalize", "swap_place_result"}]
         # 选对手 ‖ 选标的 并行，两者顺序不定；其余节点顺序固定
         assert trace_nodes[:2] == ["swap_intent", "swap_place_order"]
         assert set(trace_nodes[2:4]) == {"swap_select_counterparty", "swap_select_ticker"}
@@ -370,7 +351,7 @@ class TestSwapGraphEndToEnd:
             }
         )
 
-        trace_nodes = [e.node for e in final.get("trace", []) if e.node not in {"swap_extract_candidates", "swap_normalize", "swap_resolve", "swap_place_result"}]
+        trace_nodes = [e.node for e in final.get("trace", []) if e.node not in {"swap_extract_candidates", "swap_normalize", "swap_place_result"}]
         assert trace_nodes == ["swap_image_order", "swap_place_order_submit"]
         assert final["place_params"]["orderList"][0]["placeOrderWindCode"] == "600519.SH"
 
@@ -383,7 +364,7 @@ class TestSwapGraphEndToEnd:
         graph = build_swap_graph()
         final = await graph.ainvoke({**_BASE_STATE, "raw_text": "你好啊"})
 
-        trace_nodes = [e.node for e in final.get("trace", []) if e.node not in {"swap_extract_candidates", "swap_normalize", "swap_resolve", "swap_place_result"}]
+        trace_nodes = [e.node for e in final.get("trace", []) if e.node not in {"swap_extract_candidates", "swap_normalize", "swap_place_result"}]
         assert "swap_intent" in trace_nodes
         assert "swap_unknown" in trace_nodes
         assert "swap_place_order" not in trace_nodes
@@ -405,7 +386,7 @@ class TestSwapGraphEndToEnd:
         final = await graph.ainvoke(dict(_BASE_STATE))
 
         assert final.get("error") is not None
-        trace_nodes = [e.node for e in final.get("trace", []) if e.node not in {"swap_extract_candidates", "swap_normalize", "swap_resolve", "swap_place_result"}]
+        trace_nodes = [e.node for e in final.get("trace", []) if e.node not in {"swap_extract_candidates", "swap_normalize", "swap_place_result"}]
         assert "swap_unknown" in trace_nodes
         for unexpected in (
             "swap_place_order",

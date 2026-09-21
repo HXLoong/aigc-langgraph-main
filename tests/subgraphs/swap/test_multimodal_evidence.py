@@ -5,11 +5,9 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from app.extraction.candidates import candidate_model
-from app.graph.state import TickerCandidate
 from app.subgraphs.swap import multimodal as mm
-from app.subgraphs.swap import place_order as place
 from app.subgraphs.swap.models import SwapPlaceOrderParams
-from app.subgraphs.ticker.resolver import TickerResolution
+from app.tools.ticker_client import TickerClientHttpx
 
 IMAGE_TEXT = "甲证券 买入 1.5万股 限价20"
 IMAGE_REF = "file:0:image"
@@ -30,10 +28,8 @@ def patch_models(monkeypatch, orders, text=IMAGE_TEXT, tickers=None):
         return_value=candidate_model(SwapPlaceOrderParams).model_validate({"orderList": orders})
     )
     monkeypatch.setattr(mm, "get_qwen_structured", lambda: model)
-    resolver = AsyncMock(return_value=TickerResolution(resolved=tickers if tickers is not None else [
-        TickerCandidate(windCode="600000.SH", insShtDesc="甲证券", from_goats=True)
-    ], hitl_pending=[]))
-    monkeypatch.setattr(place, "resolve_ticker_full", resolver)
+    resolver = AsyncMock(side_effect=AssertionError("backend owns security resolution"))
+    monkeypatch.setattr(TickerClientHttpx, "search_securities_instrument", resolver)
     return vl, model, resolver
 
 
@@ -49,24 +45,24 @@ async def test_image_candidates_normalized_bound_and_locked(monkeypatch):
     row = out["place_params"]["orderList"][0]
     assert row["placeOrderQuantity"] == 15000
     assert row["placeOrderOrderDirection"] == "BUY"
-    assert row["placeOrderWindCode"] == "600000.SH"
+    assert row["placeOrderWindCode"] == "甲证券"
     records = out["field_records"]
     quantity = records["swap/place_order.orderList.0.placeOrderQuantity"]
     assert quantity.value == 15000 and quantity.locked
     assert quantity.origin == "attachment:" + IMAGE_REF
     assert quantity.evidence == "1.5万股"
     ticker = records["swap/place_order.orderList.0.placeOrderWindCode"]
-    assert ticker.source == "goats" and ticker.locked
-    assert records["swap/place_order.orderList.0.placeOrderWindCode.candidate"].origin == quantity.origin
+    assert ticker.source == "user"
+    assert ticker.origin == quantity.origin
     assert "attachment:" + IMAGE_REF in model.with_structured_output.return_value.ainvoke.call_args.args[0][-1][1]
-    assert resolver.await_count == 1
+    resolver.assert_not_awaited()
 
 
-async def test_unverified_ticker_cannot_leave_attachment_path(monkeypatch):
+async def test_unknown_ticker_is_delegated_to_backend(monkeypatch):
     patch_models(monkeypatch, [order()], tickers=[])
     out = await mm.swap_image_order({"input_files": [{"type": "image", "url": "https://file/img"}]})
-    assert out.get("error") is not None
-    assert not out.get("place_params")
+    assert not out.get("error")
+    assert out["place_params"]["orderList"][0]["placeOrderWindCode"] == "甲证券"
 
 
 async def test_empty_attachment_orders_do_not_reach_submit(monkeypatch):
@@ -136,7 +132,7 @@ async def test_excel_two_rows_keep_separate_evidence_and_orders(monkeypatch):
     records = out["field_records"]
     assert records["swap/place_order.orderList.0.placeOrderQuantity"].origin.endswith("row:2:column:B")
     assert records["swap/place_order.orderList.1.placeOrderQuantity"].origin.endswith("row:3:column:B")
-    assert resolver.await_count == 1
+    resolver.assert_not_awaited()
 
 
 async def test_authorized_counterparty_is_bound_and_locked(monkeypatch):

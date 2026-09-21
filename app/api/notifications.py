@@ -9,6 +9,7 @@ def project_retry_notification(response: dict[str, Any], inputs: Mapping[str, An
     data = response.get("data")
     outputs = data.get("outputs") if isinstance(data, dict) else None
     if (str(inputs.get("retry_origin") or "").strip() != "XBOT_GET_DIFY_FAIL"
+            or str(inputs.get("fast_query") or "") == "1"
             or not isinstance(outputs, dict) or outputs.get("api_code") != 900):
         return response
     projected = deepcopy(response)

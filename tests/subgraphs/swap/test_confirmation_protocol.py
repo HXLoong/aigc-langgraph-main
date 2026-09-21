@@ -67,7 +67,7 @@ async def test_confirmation_never_expands_from_memory(monkeypatch, quote) -> Non
     assert result.get("reply_text")
 
 
-@pytest.mark.parametrize("raw", ["不要确认下单", "确定下单", "确认下单 H-20260918-0000000001"])
+@pytest.mark.parametrize("raw", ["不要确认下单", "确定下单吗", "确认下单 H-20260918-9999999999"])
 async def test_direct_confirmation_node_enforces_format(monkeypatch, raw) -> None:
     calls = capture_backend(monkeypatch)
     await swap_confirm({

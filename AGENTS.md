@@ -38,7 +38,6 @@ python scripts/probe_real_backend_e2e.py
 python scripts/probe_swap_write_e2e.py
 python scripts/probe_option_write_e2e.py
 python scripts/probe_close_write_e2e.py
-python scripts/probe_ticker_e2e.py
 ```
 
 ## 项目结构（M2 完成、M3 进行中）
@@ -63,7 +62,7 @@ app/
 │   │                        # confirm_cancel / cancel / query）+ sanitize + backend
 │   ├── close/               # intent / place_close(5 步引用解析链) / cancel_close / confirm_close /
 │   │                        # confirm_cancel / holding_query / query_status + reference_parser/merge/aggregate/backend
-│   └── ticker/              # resolver 确定性管线（候选格式化 → 3 路 LLM → merge_and_validate → GOATS+rank;ReAct 已退役）
+│                            # 标的识别、分词与排序由 Java 调对应工具处理（2026-09-20）
 ├── tools/
 │   ├── models.py            # Java DTO 对应 Pydantic
 │   ├── option_client.py     # OptionClient Protocol（POST /financial-orders/operate）
@@ -74,7 +73,7 @@ app/
 ├── llm/clients.py           # LLM 统一工厂：全量 DeepSeek-V4-pro（ADR 0020，thinking 关闭 + structured output 走 function_calling 适配）
 ├── checkpointer/factory.py  # AIOMySQLSaver
 ├── observability/           # tracing.py + metrics.py（Prometheus 兼容 /metrics）
-└── prompts/                 # 提示词资产（git 唯一真源，ADR 0024 D1；router / swap / option / option_close / ticker）
+└── prompts/                 # 提示词资产（git 唯一真源，ADR 0024 D1；router / swap / option / option_close）
 
 harness/                     # 评测台（经 HTTP 调本地 /v1/workflows/run，与 app/ 解耦）
 ├── golden.py                # categories fixture 加载（两方言归一化）
@@ -139,7 +138,7 @@ tests/fixtures/              # categories/（A 方言，6 文件 / 389 条）+ u
    - 禁止先改代码再补测试，也禁止跳过 RED 验证
    - `.claude/skills/test-driven-development/SKILL.md` 流程 包含完整 workflow，修改代码前调用
 6. **git 里的提示词是唯一真源** —— 改提示词直接改 `app/prompts/**/*.md` + 普通 PR review，`prompt(<scope>)` commit；Dify 已退出上游地位（ADR 0024 D1），YAML 快照冻结在 tag `dify-assets-frozen-20260917（指向 commit fddd94e；tag 仅存本地，远端拒绝 tag 推送，维护者可从该 sha 重建）`，不再有同步 / 导出链路
-7. **标的代码必须 from_goats=True** —— Ticker Agent 的绝对约束（ADR 0008）
+7. **标的原文交后端识别** —— LangGraph 只提取代码/名称原文和用户候选选择，不补代码、不计算近月、不查证券池；Java 业务接口负责调用标的工具及权威校验。原文及引用候选不标记为 `from_goats=True`；HTTP `tickers` 保留为空的兼容字段。详见 `docs/backend-instrument-boundary.md`。
 8. **节点失败必须 cascade 防御** —— 任一节点写入 `state['error']` 后，下游 conditional 路由必须检查并跳到 fallback render，禁止 cascade 失败。具体：主图 `_route_by_product` 与每子图首节点后的 conditional 都加 `if state.get('error'): return 'fallback'`。fallback 节点输出友好回复（"我没完全理解你的意思，能换种说法重新告诉我吗"）+ trace 记录原 fail 节点名。LLM 解析失败由 `with_structured_output` 自带 1 次重试 + `@safe_node` 兜底捕获 ValidationError 写入 error；不走 HITL（HITL 仅用于 ADR 0006 的业务参数二次确认场景）
 
 ## 排查与修复流程（Bug Debug Workflow）
@@ -174,7 +173,7 @@ tests/fixtures/              # categories/（A 方言，6 文件 / 389 条）+ u
 4. `turns[i]` 数组按字段定位错误层：
    - `product_type` 错 → [app/nodes/intent_route.py](app/nodes/intent_route.py)
    - `intent` 错 → 子图 `intent.py` 提示词
-   - `tickers` 缺失或错 → [app/subgraphs/ticker/](app/subgraphs/ticker/)
+   - 标的结果错误 → 核对传给 Java 的原文及后端工具日志；本地 `tickers` 不再承载解析结果
    - `place_params` 字段漏 → 子图 `extract_*.py` 提示词
    - `api_result` 含"正在处理"/"请勿重复" → 后端 dedup
    - `error` 非空 → 看 `error.node` + `error.message`
@@ -199,9 +198,9 @@ tests/fixtures/              # categories/（A 方言，6 文件 / 389 条）+ u
 | 现象 | 根因 | 文件 |
 |---|---|---|
 | 第2轮路由走了 LLM 而非 quote_marker | `_QUOTE_MARKERS` 未覆盖实际标记 | `app/nodes/intent_route.py` |
-| reply 含"无法识别"但未问标的 | 入口把 `tickers` 写成 `[]`（零命中分支误触发）；入口唯一路径是 `inputs_to_state`，不得写业务对象默认值 | `app/api/turn_state.py` |
+| 标的未匹配 | 核对 Java 真实回复与提交的原始证券表达；不根据空 `tickers` 生成本地拒绝 | 子图 `backend.py` |
 | option place_order 显示"互换订单参数" | render 第3分支缺 `product_type=="swap"` 条件 | `app/nodes/render.py` |
-| 多轮 tickers/params 丢失 | 业务对象是 per-turn（ingest 清空，ADR 0024 D2）；跨轮上下文只靠 `history_messages` + `last_confirmed_params`（上一轮已确认订单号；按产品协议允许时供裸确认读取，互换确认下单必须引用，禁止记忆补号） | `app/nodes/ingest.py` / `app/nodes/remember_confirmed.py` |
+| 多轮 tickers/params 丢失 | 业务对象是 per-turn（ingest 清空，ADR 0024 D2）；跨轮上下文只靠 `history_messages` + `last_confirmed_params`（上一轮已确认订单号，仅作上下文；七条最终确认路径均必须引用当前订单并明确确认具体动作，范围校验统一由 `app/execution/confirmation.py` 执行） | `app/nodes/ingest.py` / `app/nodes/remember_confirmed.py` |
 | 后端返回"订单不存在" | 参数中 orderId/Q- 单号提取错误 | 子图 extract 节点 + 提示词 |
 
 ### 2. TDD 修复（强制）
@@ -233,9 +232,9 @@ tests/fixtures/              # categories/（A 方言，6 文件 / 389 条）+ u
 - **直接 `httpx.AsyncClient` 调后端** —— 走 `OptionClient` / `SwapClient` / `TickerClient` 三个 Protocol（ADR 0001 D2 修订版）
 - **在 main 分支直接改业务子图** —— 走 feature branch + PR
 - **面向测试编程** —— 禁止为提高通过率硬编码白名单标的，禁止在 `app/` 业务代码里内置"备用实现"开关（如 `DEFAULT_MODE` 环境变量切换查询路径），禁止在 `conftest.py` 用 `autouse` fixture 全局绕过真实业务路径。测试慢应 mock HTTP 层（`_make_client`），不改业务代码路径
-- **P0 · 业务代码不能掩盖后端真实响应** —— 严禁在 `app/nodes/render.py` 或子图里加"如果后端返回 X 就改成 Y"的回退逻辑（典型反例：后端返回"正在处理，请勿重复提交"时改用本地 LLM 抽取结果伪造订单卡）。即使 eval 通过率因此下跌，也必须如实透传后端响应。Why: 生产环境下用户会被错误引导，看到伪造的订单卡以为已下单，实际请求被后端 dedup 丢弃；调试时也会误以为业务流程通了。如果是 eval 节奏导致的偶发问题（如多轮间隔太短撞 dedup），workaround 必须放在 `scripts/langfuse_eval.py`（如 turn 间 sleep），**绝不进业务代码**
+- **P0 · 业务代码不能掩盖后端真实响应** —— 严禁在 `app/nodes/render.py` 或子图里加"如果后端返回 X 就改成 Y"的回退逻辑（典型反例：后端返回"正在处理，请勿重复提交"时改用本地 LLM 抽取结果伪造订单卡）。即使 eval 通过率因此下跌，也必须如实透传后端响应。Why: 生产环境下用户会被错误引导，看到伪造的订单卡以为已下单，实际请求被后端 dedup 丢弃；调试时也会误以为业务流程通了。如果是 eval 节奏导致的偶发问题（如多轮间隔太短撞 dedup），workaround 必须放在 `scripts/langfuse_eval.py`（如 turn 间 sleep），**绝不进业务代码** 2026-09-20 用户确认的 Dify 展示规则：Java 业务 `code=500` 的用户文案统一为“交易指令服务暂不可用”，原始 `api_code/api_result` 保留审计；有效成功卡片仍完全由 Java 生成。
 - **P0 · 迭代过程中禁止 `git push` / `gh pr create`** —— `/goal` `/iterate-option` 这类自驱动循环里**严禁**调用 `git push` 或 `gh pr create`（即使 commit 已落地）。Why: 这两个命令默认会触发 permission 弹窗 → 循环阻塞等用户点 Yes，被强制 pause。`/goal` 的语义是"持续推进不打断"，远程操作必须等用户**显式**说"push" / "pr" 才能做。本地 `git commit` 可以正常做（不触发权限弹窗），但远程推送和 PR 创建必须留到用户主动指示
-- **P0 · 硬编码业务数据字典** —— 严禁在代码或本仓 YAML/JSON 配置里维护**业务数据映射清单**（如"命名指数 → ETF 代码"、"中文名 → windCode"、"产品名 → 行业代码"等）。理由：业务数据规模会快速膨胀到 100+ 条且持续变化（新 ETF/新指数/新产品每月发行），代码侧维护必然过期、漂移、出错。正确做法是 **LLM 通用知识推断 + 后端权威源校验**：用 `infer_code` / 类似 LLM 工具把模糊关键词翻译成候选 windCode，再用 GOATS / 后端接口反向校验存在性。把"业务清单"留给后端或业务方维护的数据库，代码侧只负责调用与校验
+- **P0 · 硬编码业务数据字典** —— 严禁在代码或本仓 YAML/JSON 配置里维护**业务数据映射清单**（如"命名指数 → ETF 代码"、"中文名 → windCode"、"产品名 → 行业代码"等）。理由：业务数据规模会快速膨胀到 100+ 条且持续变化（新 ETF/新指数/新产品每月发行），代码侧维护必然过期、漂移、出错。正确做法是 **原文提取 + 后端权威识别**：LangGraph 保留用户证券表达，由 Java 调用对应标的工具识别并校验。把"业务清单"留给后端或业务方维护的数据库，代码侧只负责调用与校验
 
 ## 代码风格
 
@@ -336,8 +335,8 @@ Single-context 布局：根目录 `CONTEXT.md` + `docs/adr/`。详见 `docs/agen
 
 `.md` 里的 `{{var}}` 没有独立渲染层，只有两种合法形态（Dify 时代的 `{{#node_id.var#}}` 已全部改为原生名，ADR 0024 D1）：
 
-- system 段占位符 → 在 `PromptSpec.injects` 登记渲染器（现役：`{{counterparty_list}}` 见 `close/holding_query.py` / `swap/multimodal.py`，`{{current_date}}` 见 `ticker/tools.py`），`build_messages` 构造期校验存在性
-- `[user]` 段占位符 → 只在 user 含规则文本的节点存在（`swap/place_order.md`、`swap/fresh_counterparty.md`），经 `render_user()` 渲染；其它节点没有 `[user]` 段，user 消息由 `user_builder` 拼变量
+- system 段占位符 → 在 `PromptSpec.injects` 登记渲染器（当前业务 system 无动态占位符），`build_messages` 构造期校验存在性
+- `[user]` 段占位符 → 只在 user 含规则文本的节点存在（`swap/fresh_counterparty.md`），经 `render_user()` 渲染；其它节点没有 `[user]` 段，user 消息由 `user_builder` 拼变量
 - 代码不注入的占位符是悬空规则，LLM 看到的是变量名；属零风险删除档，围绕它的整段规则一起删
 
 ## 加载方式（ADR 0023：一个 LLM 节点 = 一个 PromptSpec）
@@ -354,7 +353,6 @@ SPEC = register(PromptSpec(
     output_model=SwapIntentOutput,                    # 输出契约唯一真源：每个字段写 Field(description=)
     inputs=("raw_text", "history_messages", "conversation_id"),   # 必须是 AgentState 字段，构造期校验
     user_builder=_build_user_message,
-    injects={"{{#node.var#}}": lambda s: blocks.json_list(s.get("option_counterparties"))},  # system 占位符渲染
     gray=True,                                        # 走 _versions.yaml 灰度（resolve_prompt_version）
 ))
 
@@ -362,12 +360,12 @@ messages, prompt_name = SPEC.build_messages(state)    # [("system", ...), ("user
 result = await model.with_structured_output(SwapIntentOutput).ainvoke(messages)
 ```
 
-- 节点默认只用 system 段 + 代码拼变量的 user；user 里若有**规则文本**，写进 `.md` 的 `[user]` 段用 `{{var}}` 占位，`user_builder` 里用 `load_prompt(...).render_user(**vars)` 渲染（先例 `swap/place_order.md`）
+- 节点默认只用 system 段 + 代码拼变量的 user；user 里若有**规则文本**，写进 `.md` 的 `[user]` 段用 `{{var}}` 占位，`user_builder` 里用 `load_prompt(...).render_user(**vars)` 渲染（先例 `swap/fresh_counterparty.md`）
 - **禁止**把提示词正文硬编码进 Python（含"后置追加一段格式指令"这种写法）；**禁止**在 `.md` 里维护 JSON 骨架 / 字段表——字段语义只写在 Pydantic `Field(description=)`
 - 共享拼装（历史、对手列表、JSON 列表）只在 `app/prompts/blocks.py` 定义一次，不在子图里复制
 - `injects` 登记的占位符必须在 `.md` system 段里真实存在，`build_messages` 构造期校验（`tests/test_prompt_spec.py`）
 - 灰度节点必须把 `build_messages` 返回的 `prompt_name` 写进 `TraceEntry.llm_output["prompt_name"]`（ADR 0003 硬前置：进 `_versions.yaml` 前必须先写 trace，否则版本对比失真）
-- 全部 18 个 LLM 节点已迁至 PromptSpec（2026-09-17：第二 / 三批迁移 28 个，D 批去 LLM 化再移除 option 4 + close 4 个；2026-09-17 option 收尾批再移除 2 个——extract_place / extract_confirm_place 改确定性 `place_params.py`）；节点内剩余 `load_prompt` 直调仅限 `[user]` 模板渲染（`user_builder` 中 `load_prompt(...).render_user(...)`，先例 `swap/place_order.py`、`swap/fresh_counterparty.py`），system 一律经 `SPEC.render_system`
+- 当前 15 个业务 PromptSpec；标的工具在后端执行。system 使用固定资产，历史和参考数据经 `blocks.source_payload` 放入 user。`fresh_counterparty` 的 `[user]` 模板继续经 `render_user` 渲染。
 
 ## 来源优先级（ADR 0014 D3-2）
 
@@ -382,7 +380,7 @@ result = await model.with_structured_output(SwapIntentOutput).ainvoke(messages)
 
 ## 字符数 / 延迟
 
-单请求开销按调用链上各 `.md` system 字符 ÷1.6 估算 tokens 累加（基线盘点见 `docs/prompt-maintainability-assessment.md` 第二节）。当前最重路径：互换图片下单 ≈54K tokens、平仓下单 ≈37K、互换文本下单 ≈36K。
+输入预算统计 system、user 与 function-calling schema；实际 token 和缓存收益以模型 usage 为准。历史瘦身前基线仅作存档。
 
 ## Loader 缓存
 

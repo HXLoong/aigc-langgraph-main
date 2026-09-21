@@ -46,7 +46,7 @@ async def test_other_error_uses_generic_reply() -> None:
         ),
         (
             "EmptyBackendResultError",
-            "期权服务未返回有效结果，本次未生成报价，请稍后重试或联系交易员。",
+            "交易指令执行结果待核对，请勿重复提交，请联系交易员或运营核查。",
         ),
     ],
 )

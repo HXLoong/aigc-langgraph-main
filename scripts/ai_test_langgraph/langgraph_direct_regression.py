@@ -26,6 +26,7 @@ from regression_support import (  # noqa: E402 - sibling script module
     DEFAULT_GUID,
     DEFAULT_OPTION_COUNTERPARTIES,
     DEFAULT_SWAP_COUNTERPARTIES,
+    AssertionResult,
     JudgeCallable,
     RunnerError,
     env_value,
@@ -56,6 +57,10 @@ class TurnResult:
     workflow_run_id: str
     assertion: Any
     outputs: dict[str, Any] = field(default_factory=dict)
+    quote_content: str = ""
+    response: dict[str, Any] = field(default_factory=dict)
+    response_text: str = ""
+    execution_error: str = ""
 
 
 @dataclass
@@ -69,6 +74,7 @@ class CaseResult:
     trace_url: str = ""
     error: str = ""
     turns: list[TurnResult] = field(default_factory=list)
+    unexecuted_turns: list[dict[str, Any]] = field(default_factory=list)
 
 
 def default_report_dir() -> Path:
@@ -149,6 +155,21 @@ class LangGraphClient:
         self.throttle_ms = throttle_ms
         self.verify_tls = verify_tls
         self.last_outputs: dict[str, Any] = {}
+        self.last_response: dict[str, Any] = {}
+        self.last_response_text = ""
+
+    def _record_response(self, body_text: str) -> None:
+        self.last_response_text = body_text
+        try:
+            payload = json.loads(body_text)
+        except json.JSONDecodeError:
+            return
+        if not isinstance(payload, dict):
+            return
+        self.last_response = payload
+        data = payload.get("data")
+        outputs = data.get("outputs") if isinstance(data, dict) else None
+        self.last_outputs = dict(outputs) if isinstance(outputs, dict) else {}
 
     def build_payload(
         self,
@@ -186,6 +207,9 @@ class LangGraphClient:
         at_bot: bool = True,
         traceparent: str = "",
     ) -> tuple[str, str, str, float]:
+        self.last_outputs = {}
+        self.last_response = {}
+        self.last_response_text = ""
         payload = self.build_payload(
             query,
             conversation_id=conversation_id,
@@ -215,6 +239,7 @@ class LangGraphClient:
                     request, timeout=self.timeout, context=context
                 ) as response:
                     body_text = response.read().decode("utf-8", errors="replace")
+                self._record_response(body_text)
                 try:
                     response_payload = json.loads(body_text)
                 except json.JSONDecodeError as exc:
@@ -223,10 +248,6 @@ class LangGraphClient:
                     ) from exc
                 if not isinstance(response_payload, dict):
                     raise RunnerError("LangGraph 返回的 JSON 不是对象")
-                data = response_payload.get("data")
-                self.last_outputs = (
-                    dict(data.get("outputs") or {}) if isinstance(data, dict) else {}
-                )
                 answer, workflow_run_id = parse_workflow_response(response_payload)
                 return (
                     answer,
@@ -236,6 +257,7 @@ class LangGraphClient:
                 )
             except urllib.error.HTTPError as exc:
                 body = exc.read().decode("utf-8", errors="replace")
+                self._record_response(body)
                 if exc.code in RETRYABLE_HTTP_STATUSES and attempt < self.retries:
                     time.sleep(min(2**attempt, 30))
                     continue
@@ -288,16 +310,13 @@ def run_case(
     try:
         for turn_index, (scene_name, turn_spec, at_bot) in enumerate(turn_specs):
             query = str(turn_spec.get("send_text") or "")
+            turn_started = time.monotonic()
+            quote_content = (
+                previous_reply if turn_index and turn_spec.get("quote_previous") is True
+                else main_reply if turn_index and "quote_previous" not in turn_spec else ""
+            )
             answer, run_id, _, elapsed = client.send(
-                query,
-                conversation_id=conversation_id,
-                quote_content=(
-                    previous_reply
-                    if turn_index and turn_spec.get("quote_previous") is True
-                    else main_reply
-                    if turn_index and "quote_previous" not in turn_spec
-                    else ""
-                ),
+                query, conversation_id=conversation_id, quote_content=quote_content,
                 at_bot=at_bot,
                 traceparent=traceparent,
             )
@@ -317,6 +336,8 @@ def run_case(
                     workflow_run_id=run_id,
                     assertion=assertion,
                     outputs=dict(client.last_outputs),
+                    quote_content=quote_content,
+                    response=dict(getattr(client, "last_response", {})),
                 )
             )
             if turn_index == 0:
@@ -324,8 +345,20 @@ def run_case(
             previous_reply = answer
             if not assertion.passed:
                 break
-    except RunnerError as exc:
+    except (RunnerError, TimeoutError, OSError) as exc:
         error = str(exc)
+        response = dict(getattr(client, "last_response", {}))
+        data = response.get("data") if isinstance(response.get("data"), dict) else {}
+        outputs = dict(client.last_outputs)
+        turns.append(TurnResult(
+            scene=scene_name, query=query,
+            answer=str(outputs.get("reply_text") or response.get("answer") or ""),
+            elapsed=time.monotonic() - turn_started,
+            workflow_run_id=str(response.get("workflow_run_id") or data.get("id") or ""),
+            assertion=AssertionResult(passed=False, failures=[error]), outputs=outputs,
+            quote_content=quote_content, response=response,
+            response_text=getattr(client, "last_response_text", ""), execution_error=error,
+        ))
     passed = (
         bool(turns)
         and not error
@@ -340,6 +373,8 @@ def run_case(
         conversation_id=conversation_id,
         error=error,
         turns=turns,
+        unexecuted_turns=[{"turn": i + 1, "scene": scene, "query": str(spec.get("send_text") or "")}
+                          for i, (scene, spec, _) in enumerate(turn_specs) if i >= len(turns)],
     )
 
 
@@ -459,7 +494,8 @@ def build_case_trace_output(
     )
     failure = None
     if result.error:
-        failed_turn = min(len(result.turns) + 1, len(planned_turns))
+        failed_turn = next((i for i, turn in enumerate(result.turns, 1) if turn.execution_error),
+                           min(len(result.turns) + 1, len(planned_turns)))
         failed_spec = planned_turns[failed_turn - 1] if planned_turns else {}
         failure = {
             "turn": failed_turn,
@@ -491,6 +527,10 @@ def build_case_trace_output(
                 "turn": index,
                 "scene": turn.scene,
                 "workflow_run_id": turn.workflow_run_id,
+                "query": turn.query, "quote_content": turn.quote_content,
+                "execution_error": turn.execution_error,
+                "diagnostic": outputs.get("diagnostic"), "error": outputs.get("error"),
+                "trace": outputs.get("trace"),
                 "product_type": outputs.get("product_type"),
                 "intent": outputs.get("intent"),
                 "ticker_codes": _ticker_codes(outputs),
@@ -518,6 +558,7 @@ def build_case_trace_output(
         },
         "failure": failure,
         "turns": turn_outputs,
+        "unexecuted_turns": result.unexecuted_turns,
     }
 
 
@@ -671,6 +712,7 @@ def write_reports(
                     turn.query,
                     "```",
                     "",
+                    "#### 本轮引用", "", "```text", turn.quote_content, "```", "",
                     "#### 实际回复",
                     "",
                     "```text",
@@ -685,6 +727,12 @@ def write_reports(
                     "",
                 ]
             )
+            if turn.execution_error:
+                lines.extend(["#### 失败响应", "", "```text", turn.response_text, "```", ""])
+        if result.unexecuted_turns:
+            lines.extend(["### 未执行轮次", ""])
+            lines.extend(f"- 第 {item['turn']} 轮：{item['query']}" for item in result.unexecuted_turns)
+            lines.append("")
     md_path.write_text("\n".join(lines), encoding="utf-8")
     return md_path, json_path
 

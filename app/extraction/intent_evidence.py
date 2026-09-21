@@ -1,7 +1,6 @@
 """Structured intent attribution checked against the exact sources sent to the model."""
 from __future__ import annotations
 
-import json
 from collections.abc import Mapping
 from typing import Any, Literal
 
@@ -26,7 +25,9 @@ class IntentEvidenceOutput(BaseModel):
 
 def source_payload(state: Mapping[str, Any]) -> str:
     """Only input data; prompt assets own the extraction instructions."""
-    return json.dumps({"sources": evidence_sources(state)}, ensure_ascii=False)
+    from app.prompts import blocks
+
+    return blocks.source_payload(state)
 
 
 def intent_records(

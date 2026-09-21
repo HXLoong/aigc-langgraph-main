@@ -91,11 +91,12 @@ def test_successful_replay_keeps_all_business_outputs(client: TestClient) -> Non
     assert second["message_id"] == first["message_id"]
 
 
-def test_backend_timeout_is_marked_uncertain_in_first_response_and_replay(client: TestClient) -> None:
+@pytest.mark.parametrize("error_type", ["BackendUnreachableError", "EmptyBackendResultError"])
+def test_unverifiable_receipt_is_uncertain_in_first_response_and_replay(client: TestClient, error_type: str) -> None:
     graph = client.app.state.main_graph
     graph.ainvoke = AsyncMock(return_value={
         "reply_text": "执行结果待核对",
-        "error": ErrorInfo(node="swap_confirm", type="BackendUnreachableError", message="timeout"),
+        "error": ErrorInfo(node="swap_confirm", type=error_type, message="unverifiable receipt"),
         "trace": [],
     })
     first = client.post("/v1/workflows/run", json=_body(86))

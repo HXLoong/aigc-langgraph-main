@@ -28,7 +28,7 @@
 - 首次通过 sql/init.sql 初始化；启动只读校验，不在节点调用 saver.setup 建表，不使用生产单连接 from_conn_string。
 - 测试使用 InMemorySaver；没有跨轮要求的纯计算子图可显式 checkpointer=False。
 - thread_id 固定为 conversation_id；消息、群、用户身份必须沿用真实入口，禁止截断数字ID。
-- 确认采用文本两阶段，CWAIJY-957 互换确认下单必须引用，不能从记忆或程序伪造引用绕过协议。其他允许的记忆补号由 app/graph/memory.py 处理。
+- 确认采用文本两阶段：七条最终确认路径均须明确动作并引用当前订单，范围由 app/execution/confirmation.py 校验；历史记忆及程序生成的引用不能替代用户引用。
 - 不引入 interrupt 确认；递归上限通过 API 的统一 config 设置。
 - Langfuse callbacks 由请求入口统一注入，子图自然继承；本地审计写 langgraph_node_trace。
 

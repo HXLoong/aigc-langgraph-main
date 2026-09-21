@@ -57,4 +57,4 @@ class TestRealFileRegression:
         """P1 迁移期确认:长 system(大量内嵌围栏标记)不得被提前截断。"""
         clear_cache()
         p = load_prompt("option_close", "place_close")
-        assert len(p.system) > 3000, f"place_close system 疑似截断: {len(p.system)}"
+        assert p.system.endswith("空输入或无可提取业务语义时返回空列表。")

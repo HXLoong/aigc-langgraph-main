@@ -18,6 +18,7 @@ from pydantic import BaseModel
 
 from app.tools.exceptions import BackendUnreachableError
 from app.tools.option_client import FinancialOrderOpenApiSaveReqVO, OptionClientHttpx
+from app.tools.receipts import receipt_update
 from app.tools.swap_client import SwapClientHttpx, SwapOrderOpenApiSaveReqVO
 
 Product = Literal["swap", "option", "close"]
@@ -80,7 +81,7 @@ def capture_operation(product: Product, request: BaseModel) -> bool:
             raise ValueError("dependency order belongs to a different product")
         selected = _order_ids(payload)
         bindable = {"query_order_status", "cancel_order_request", "request_cancel_order",
-                    "confirm_cancel_order", "confirm_modify_order", "place_order_from_quote"}
+                    "place_order_from_quote"}
         orders = payload.get("orderList") or []
         if (not selected and len(preparation.allowed_order_ids) == 1
             and payload.get("type") in bindable and len(orders) == 1
@@ -115,7 +116,7 @@ def _joinable(left: dict[str, Any], right: dict[str, Any]) -> bool:
         return False
     # CWAIJY-957 validates each original confirmation phrase; concatenating two
     # phrases would create a different confirmation protocol request.
-    if left["product"] == "swap" and left["payload"]["type"] == "confirm_order":
+    if "confirm" in left["payload"]["type"]:
         return False
     a, b = left["payload"], right["payload"]
     if a.get("orderList") and b.get("orderList"):
@@ -198,11 +199,10 @@ async def execute_batches(
                         response = await SwapClientHttpx().operate(SwapOrderOpenApiSaveReqVO.model_validate(payload))
                     else:
                         response = await OptionClientHttpx().operate(FinancialOrderOpenApiSaveReqVO.model_validate(payload))
-                    code = response.get("code")
-                    body = response.get("data") if code == 0 else response.get("msg")
-                    valid = isinstance(code, int) and not isinstance(code, bool) and body not in (None, "", [], {})
-                    result = {**common, "status": "response_received" if valid and code == 0 else "failed",
-                              "api_code": code, "api_result": body, "reason": "backend_response"}
+                    update = receipt_update(response, operation["product"])
+                    result = {**common, **update,
+                              "status": "response_received" if update["api_code"] == 0 else "failed",
+                              "reason": "backend_response"}
                     if result["status"] != "response_received":
                         blocked.add(key)
                 except (BackendUnreachableError, httpx.TransportError, TimeoutError):

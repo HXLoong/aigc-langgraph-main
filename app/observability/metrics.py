@@ -233,6 +233,8 @@ METRIC_FALLBACK_TOTAL = "otc_agent_fallback_total"
 METRIC_HITL_TOTAL = "otc_agent_hitl_total"
 METRIC_LLM_TOTAL = "otc_agent_llm_total"
 METRIC_LLM_TOKENS = "otc_agent_llm_tokens_total"  # C1.7 成本监控（按模型 + 方向 prompt/completion）
+METRIC_LLM_CACHE_TOKENS = "otc_agent_llm_cache_tokens_total"
+METRIC_LLM_CACHE_USAGE = "otc_agent_llm_cache_usage_total"
 METRIC_DYNAMIC_PROMPT_TOTAL = "otc_agent_dynamic_prompt_total"  # D2.5 / ADR 0013：cache_hit / cache_miss_ok / fallback
 METRIC_CANARY_TRAFFIC_TOTAL = "otc_agent_canary_traffic_total"  # G5.1 / F4.2：按 is_canary 区分进入的请求
 METRIC_HTTP_RESPONSE_TOTAL = "otc_agent_http_total"  # ADR 0019 P0：HTTP 5xx 暴增告警依赖
@@ -285,6 +287,15 @@ def emit_hitl(node: str) -> None:
 def emit_llm_call(model: str, status: str) -> None:
     """LLM 调用结束。status: ok / error / timeout"""
     get_collector().inc_counter(METRIC_LLM_TOTAL, {"model": model, "status": status})
+
+
+def emit_llm_cache(model: str, node: str | None, status: str, hit: int, miss: int) -> None:
+    labels = {"model": model, "node": node or "unknown"}
+    collector = get_collector()
+    collector.inc_counter(METRIC_LLM_CACHE_USAGE, {**labels, "status": status})
+    if status == "reported":
+        for result, value in (("hit", hit), ("miss", miss)):
+            collector.inc_counter(METRIC_LLM_CACHE_TOKENS, {**labels, "result": result}, value)
 
 
 def emit_canary_traffic(is_canary: bool) -> None:

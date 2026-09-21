@@ -17,10 +17,7 @@ class IntentReply:
 
     def __call__(self, messages: list[tuple[str, str]], **kwargs: Any) -> BaseModel:
         user = messages[-1][1]
-        marker = user.rfind('{"sources":')
-        if marker < 0:
-            raise AssertionError("intent mock did not receive source IDs")
-        raw = json.loads(user[marker:])["sources"]["raw"]
+        raw = json.loads(user)["sources"]["raw"]
         if not raw:
             raise AssertionError("empty user input should be handled without a model")
         return self.schema.model_validate({**self.fields, "confidence": self.confidence,

@@ -37,7 +37,10 @@ def _spec(**kw) -> PromptSpec:
 
 
 class TestPromptSpec:
-    def test_build_messages_renders_injects_and_user(self):
+    def test_build_messages_renders_injects_and_user(self, monkeypatch):
+        from app.prompts import Prompt
+        monkeypatch.setattr(spec_mod, "load_prompt", lambda *args: Prompt(
+            name="test", system="固定规则 {{counterparty_list}}", user_template=""))
         s = _spec()
         state: AgentState = {"raw_text": "查对手阿凡提的持仓", "option_counterparties": [{"ctptyId": 1, "shortName": "阿凡提"}]}
         messages, prompt_name = s.build_messages(state)
@@ -105,7 +108,6 @@ def _load_all_nodes() -> None:
         "app.subgraphs.swap.fresh_counterparty",
         "app.subgraphs.swap.multimodal",
         "app.nodes.intent_route",
-        "app.subgraphs.ticker.tools",
     ):
         importlib.import_module(mod)
 
@@ -121,7 +123,6 @@ class TestRegistry:
             "swap/select_counterparty", "swap/select_ticker", "swap/fresh_counterparty",
             "swap/image_ocr", "swap/image_extract", "swap/excel_extract",
             "router/unknown_intent",
-            "ticker/infer_code", "ticker/tokenize", "ticker/judge_type", "ticker/rank",
         } <= keys
 
     def test_inputs_are_agent_state_fields(self):

@@ -170,7 +170,7 @@ class TestWindcodeFromPick:
     def test_direct_ref_unmatched_returns_raw_ref(self) -> None:
         """匹配不到候选时原样返回用户输入（Dify 行为）。"""
         pick = {"orderId": "H-1", "directRef": " 999999.SH "}
-        assert windcode_from_pick(pick, _CANDIDATES) is None
+        assert windcode_from_pick(pick, _CANDIDATES) == "999999.SH"
 
     def test_no_seq_no_ref_returns_none(self) -> None:
         assert windcode_from_pick({"orderId": "H-1"}, _CANDIDATES) is None

@@ -51,10 +51,7 @@ class UnknownIntentOutput(IntentEvidenceOutput):
 
 
 def _user_from_state(state: AgentState) -> str:
-    """user 消息（与历史实现逐字一致：query + quote_content 两段）。"""
-    text = state.get("raw_text", "") or ""
-    quote = state.get("quote_content")
-    return f"query: {text}\n\nquote_content: {quote or ''}"
+    return source_payload(state)
 
 
 SPEC = register(PromptSpec(
@@ -62,7 +59,7 @@ SPEC = register(PromptSpec(
     name="unknown_intent",
     output_model=UnknownIntentOutput,
     inputs=("raw_text", "quote_content", "history_messages"),
-    user_builder=lambda state: _user_from_state(state) + "\n" + source_payload(state),
+    user_builder=_user_from_state,
 ))
 
 

@@ -87,7 +87,7 @@ def test_average_price_is_normalized_by_code():
     assert normalize_field("placeOrderAlgorithmType", "均价") == "TWAP"
 
 
-def test_instrument_code_case_is_formatting_only():
+def test_instrument_code_case_is_preserved_for_backend():
     from app.subgraphs.swap.normalize import normalize_field
-    assert normalize_field("placeOrderWindCode", "300748.sz") == "300748.SZ"
+    assert normalize_field("placeOrderWindCode", "300748.sz") == "300748.sz"
     assert normalize_field("placeOrderWindCode", "unknown") == "unknown"

@@ -44,14 +44,14 @@ def get_callback_handler() -> Any | None:
     try:
         import os
 
-        from langfuse.langchain import CallbackHandler  # type: ignore[import-not-found]
+        from app.observability.tracing import create_callback_handler
 
         # langfuse v4 CallbackHandler 只读 os.environ；把 Settings 值回填进去
         os.environ.setdefault("LANGFUSE_PUBLIC_KEY", settings.langfuse_public_key)
         os.environ.setdefault("LANGFUSE_SECRET_KEY", settings.langfuse_secret_key)
         os.environ.setdefault("LANGFUSE_BASE_URL", settings.langfuse_base_url)
 
-        _callback_handler = CallbackHandler()
+        _callback_handler = create_callback_handler()
         logger.info("LangFuse callback handler initialized base_url=%s", settings.langfuse_base_url)
         return _callback_handler
 

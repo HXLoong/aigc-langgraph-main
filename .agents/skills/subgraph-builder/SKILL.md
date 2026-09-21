@@ -34,13 +34,11 @@ metadata:
    ↓
 [可选] 多模态解析（parse_image / parse_excel）
    ↓
-[可选] 标的识别（ticker_agent）
-   ↓
 意图识别（classify_*_intent）+ Pydantic schema
    ↓
 [按意图分支] 参数提取（extract_*）
    ↓
-调用后端 API（call_*_api）
+调用后端 API（call_*_api；证券识别由后端调用工具）
    ↓
 出口（END）
 ```

@@ -27,7 +27,6 @@ prompt：app/prompts/option_close/place_close.md。
 """
 from __future__ import annotations
 
-import json
 from functools import lru_cache
 from typing import Annotated, Any, TypedDict, cast
 
@@ -49,6 +48,7 @@ from app.graph.state import (
     merge_by_id,
 )
 from app.llm.clients import get_qwen_thinking
+from app.prompts import blocks
 from app.prompts.spec import PromptSpec, register
 from app.subgraphs.close.aggregate import build_close_order_req_vo
 from app.subgraphs.close.backend import call_close_backend
@@ -66,24 +66,9 @@ def _build_user_message(
 ) -> str:
     """组装可验证原文来源、引用事实及只读查询结果，不注入规则。"""
 
-    def _j(value: Any) -> str:
-        return json.dumps(value, ensure_ascii=False)
-
-    single_candidate = parsed["singleHoldingCandidateOrderId"]
-    return (
-        f"sources: {_j({'raw': raw_content, 'quote': quote_content})}\n"
-        f"User input: {raw_content}\n"
-        f"Holding map (code parsing result): {_j(parsed['holdingMap'])}\n"
-        f"Error order ID list: {_j(parsed['errorOrderIds'])}\n"
-        f"Full-close confirmation order ID list: {_j(parsed['fullCloseIds'])}\n"
-        f"Pure error order ID list: {_j(parsed['pureErrorOrderIds'])}\n"
-        f"Pure error order count: {parsed['pureErrorOrderCount']}\n"
-        f"Holding map candidate count: {parsed['holdingMapCandidateCount']}\n"
-        f"Has single holding candidate: "
-        f"{'true' if parsed['hasSingleHoldingCandidate'] else 'false'}\n"
-        f"Single holding candidate order ID: {single_candidate if single_candidate else 'null'}\n"
-        f"quote_content：{quote_content}\n"
-        f"orderList：{_j(order_list)}"
+    return blocks.source_payload(
+        {"raw_text": raw_content, "quote_content": quote_content},
+        context={"reference": parsed, "orderList": order_list}, include_history=False,
     )
 
 

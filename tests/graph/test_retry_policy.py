@@ -151,7 +151,6 @@ READ_NODES: dict[str, set[str]] = {
     "inquiry": {"inquiry_fast_parse", "inquiry_extract"},
     "close": {"close_intent", "close_holding_query", "close_query_status"},
     "place_close": {"place_close_fetch_orders", "place_close_extract"},
-    "ticker": {"infer_codes", "split_keywords", "judge_type", "resolve_org_item"},
 }
 #: 写类节点：绝不自动重试
 WRITE_NODES: dict[str, set[str]] = {
@@ -175,7 +174,6 @@ def _builders() -> dict[str, Any]:
     from app.subgraphs.option.graph import build_option_graph
     from app.subgraphs.swap.graph import build_swap_graph
     from app.subgraphs.swap.place_order import build_place_graph
-    from app.subgraphs.ticker.graph import build_ticker_graph
 
     return {
         "main": build_main_graph().builder,
@@ -185,7 +183,6 @@ def _builders() -> dict[str, Any]:
         "inquiry": build_inquiry_graph().builder,
         "close": build_close_graph().builder,
         "place_close": build_place_close_graph().builder,
-        "ticker": build_ticker_graph().builder,
     }
 
 
@@ -195,16 +192,15 @@ def test_real_graphs_retry_reads_and_never_writes() -> None:
         for name in names:
             spec = builders[graph_name].nodes[name]
             assert spec.retry_policy is not None, f"{graph_name}.{name} 缺 RetryPolicy"
-            if graph_name != "ticker":  # ticker 子图异常穿透到父节点的 safe_node，不需要 handler
-                assert spec.error_handler_node, f"{graph_name}.{name} 缺 error_handler"
+            assert spec.error_handler_node, f"{graph_name}.{name} 缺 error_handler"
     for graph_name, names in WRITE_NODES.items():
         for name in names:
             spec = builders[graph_name].nodes[name]
             assert spec.retry_policy is None, f"{graph_name}.{name} 是写类节点，不得自动重试"
 
 
-def test_ticker_facades_do_not_repeat_the_whole_child_graph():
+def test_inquiry_has_no_local_ticker_stages():
     from app.subgraphs.option.extract_inquiry import build_inquiry_graph
     graph = build_inquiry_graph().builder
     for name in ("inquiry_precheck", "inquiry_resolve"):
-        assert graph.nodes[name].retry_policy is None
+        assert name not in graph.nodes

@@ -53,6 +53,10 @@ async def test_confirm_cancel_extracts_from_quote_only(
             "intent": "confirm_cancel_order",
         }
     )
+    if expected_ids == [None]:
+        assert result["confirm"] is None and result["reply_text"]
+        backend.assert_not_awaited()
+        return
     assert result["confirm"]["action"] == "cancel"
     order_list = result["confirm"]["orderList"]
     assert [item["orderId"] for item in order_list] == expected_ids
@@ -77,12 +81,12 @@ async def test_writes_trace(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 @pytest.mark.asyncio
-async def test_bare_confirm_cancel_falls_back_to_memory(monkeypatch: pytest.MonkeyPatch) -> None:
-    """ADR 0024 D4：无引用的"确认撤单"读上一轮记下的订单号，而非 orderId=null。"""
+async def test_bare_confirm_cancel_does_not_use_memory(monkeypatch: pytest.MonkeyPatch) -> None:
+    """所有最终确认必须引用订单，禁止记忆补号。"""
     backend = _patch(monkeypatch)
     result = await option_extract_confirm_cancel({
         "raw_text": "确认撤单", "quote_content": "",
         "last_confirmed_params": {"product_type": "option", "order_ids": ["Q-20250616-000011"]},
     })
-    assert [o["orderId"] for o in result["confirm"]["orderList"]] == ["Q-20250616-000011"]
-    assert backend.await_args.kwargs["order_list"] == [{"orderId": "Q-20250616-000011"}]
+    assert result["confirm"] is None and result["reply_text"]
+    backend.assert_not_awaited()

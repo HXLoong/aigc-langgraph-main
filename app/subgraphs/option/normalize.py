@@ -206,6 +206,13 @@ def split_strikes(text: str | None) -> list[float | None]:
     return [normalize_strike(part) for part in parts]
 
 
+def normalize_option_type(value: str | None) -> str | None:
+    if value is None:
+        return None
+    text = value.strip()
+    return "欧式看涨" if text.lower() == "call" or text == "看涨" else text
+
+
 def expand_inquiry_items(items: Sequence[OptionInquiryRawItem]) -> list[dict[str, Any]]:
     """LLM 原文片段条目 → canonical partial dict 列表。
 
@@ -223,7 +230,7 @@ def expand_inquiry_items(items: Sequence[OptionInquiryRawItem]) -> list[dict[str
                 expanded.append({
                     "order_id": item.order_id,
                     "stock_code": item.stock_code,
-                    "option_type": item.option_type,
+                    "option_type": normalize_option_type(item.option_type),
                     "tenor": tenor,
                     "strike_percentage": strike,
                     "notional_amount": notional,

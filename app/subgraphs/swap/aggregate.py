@@ -1,7 +1,7 @@
 """Candidate lookup helpers; explicit identities must agree and values stay in authority sets.
 
-Selections never create a new security code. The apply_picks node verifies source evidence,
-checks current GOATS results, and locks the final per-order fields before submission.
+Selections map quote pointers or preserve explicit new expressions. The apply_picks node
+checks evidence and order scope; Java performs security identification and validation.
 """
 from __future__ import annotations
 
@@ -66,11 +66,12 @@ def resolve_candidate_block(
 def windcode_from_pick(
     pick: dict[str, Any], candidate_list: list[dict[str, Any]],
 ) -> str | None:
-    """Return only an unambiguous candidate code; an unknown directRef is never a code."""
+    """Resolve a quote pointer or preserve a new explicit expression for Java."""
     block = resolve_candidate_block(pick, candidate_list)
     if block is None:
         return None
     candidates = block.get("candidates") or []
+    original_ref = str(pick.get("directRef") or "").strip()
     if pick.get("seq") is not None:
         candidates = [candidate for candidate in candidates if candidate.get("seq") == _as_int(pick["seq"])]
     if pick.get("directRef"):
@@ -82,6 +83,8 @@ def windcode_from_pick(
     elif pick.get("seq") is None:
         return None
     codes = {candidate["code"] for candidate in candidates if candidate.get("code")}
+    if not codes and original_ref and pick.get("seq") is None:
+        return original_ref
     return next(iter(codes)) if len(codes) == 1 else None
 
 

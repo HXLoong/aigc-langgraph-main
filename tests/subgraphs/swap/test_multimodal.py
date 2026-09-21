@@ -19,9 +19,7 @@ import openpyxl
 import pytest
 
 import app.subgraphs.swap.multimodal as mm
-import app.subgraphs.swap.place_order as place
 from app.extraction.candidates import candidate_model
-from app.graph.state import TickerCandidate
 from app.subgraphs.swap.models import SwapOrderItem, SwapPlaceOrderParams
 from app.subgraphs.swap.multimodal import (
     _image_urls,
@@ -29,7 +27,6 @@ from app.subgraphs.swap.multimodal import (
     swap_excel_order,
     swap_image_order,
 )
-from app.subgraphs.ticker.resolver import TickerResolution
 
 
 def _make_excel_bytes(headers: list[str], rows: list[list]) -> bytes:
@@ -98,9 +95,6 @@ def _patch_extract(
     factory = MagicMock()
     factory.with_structured_output.return_value = extract_llm
     monkeypatch.setattr(mm, "get_qwen_structured", lambda: factory)
-    monkeypatch.setattr(place, "resolve_ticker_full", AsyncMock(return_value=TickerResolution(
-        resolved=[TickerCandidate(windCode="600519.SH", from_goats=True)], hitl_pending=[],
-    )))
     return extract_llm
 
 
