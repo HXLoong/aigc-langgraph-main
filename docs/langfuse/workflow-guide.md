@@ -156,6 +156,29 @@ python scripts/langfuse/langfuse_eval.py --dataset golden_option_inquiry_case --
 
 > **截图位置 3（待补）**：Experiment 列表和 `case-022` 的 Experiment Item。
 
+### 5.1 Environment 与评分查看位置
+
+Environment 用于区分数据来源。部分名称由 Langfuse SDK 固定使用，不是本项目自定义：
+
+| Environment | 含义 | 默认是否出现在 Scores 主列表 |
+|---|---|---|
+| `default` | 未显式配置环境的普通 Trace；当前 `--local` 评测通常也在这里 | 是 |
+| `production` / `staging` / `development` | 应用通过 `LANGFUSE_TRACING_ENVIRONMENT` 配置的业务环境 | 是 |
+| `sdk-experiment` | Langfuse SDK 执行 Dataset Experiment 时使用的官方内部环境 | 否 |
+| `langfuse-code-eval` | Langfuse-managed Code Evaluator 自身的执行 Trace | 否 |
+| `langfuse-llm-as-a-judge` | Langfuse-managed LLM Judge 自身的执行 Trace | 否 |
+
+本项目通过 `--dataset` 执行后，用例 Trace、`otc-option-judge` 和
+`det_forbidden_text_pass` 都属于本次 Experiment，主要在 Dataset 的 `Experiments` 对比页查看。它们关联的用例
+Observations 使用 `sdk-experiment` 环境；Scores 主列表默认隐藏该内部环境，因此列表中看不到并不代表 Score 未生成。
+
+需要在 Scores 主列表查看时，展开左侧过滤面板，显式选择 `Environment = sdk-experiment`，再按 Score 名称过滤。
+Code Evaluator 返回的业务 Score 仍关联被评测的 `sdk-experiment` Observation；`langfuse-code-eval` 只用于查看
+Evaluator 自身的执行日志、耗时和错误。
+
+使用 `--local` 时不会创建 Dataset Experiment。此模式产生普通 Trace，通常落在 `default` 或
+`LANGFUSE_TRACING_ENVIRONMENT` 指定的环境中，Score 直接从 Tracing 或 Scores 页面查看。
+
 ## 6. 查看链路与排查问题
 
 ```text
@@ -178,6 +201,7 @@ python scripts/langfuse/langfuse_eval.py --dataset golden_option_inquiry_case --
 | 现象 | 检查位置 |
 |---|---|
 | Dataset 中没有 Experiment Item | 是否使用 Dataset 模式；`--local` 不创建 Dataset Experiment |
+| Experiment 有 Score，但 Scores 主列表没有 | 显式选择 `Environment = sdk-experiment`；该内部环境默认被隐藏 |
 | 路由或 intent 错误 | intent 相关 Observation |
 | ticker 错误 | ticker 子图、候选结果和后端校验调用 |
 | 回复错误 | 业务节点、后端响应和 render Observation |
