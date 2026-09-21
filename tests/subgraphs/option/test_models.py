@@ -64,7 +64,7 @@ def test_invalid_intent_type_rejected() -> None:
 
 def test_extra_fields_ignored() -> None:
     params = OptionIntentOutput.model_validate(
-        {"type": "new_inquiry", "extra_garbage": "x"}
+        {"type": "new_inquiry", "confidence": .91, "evidence": [{"text": "查询", "origin": "raw"}], "extra_garbage": "x"}
     )
     assert params.type == "new_inquiry"
 

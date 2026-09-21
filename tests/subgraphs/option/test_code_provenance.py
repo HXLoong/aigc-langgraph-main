@@ -54,18 +54,19 @@ async def test_multi_order_scope_records_selected_segment_and_preserves_ambiguit
     backend.assert_not_called()
 
 
-async def test_confirm_memory_and_existing_lock_protect_actual_wire_payload(monkeypatch):
+async def test_confirm_quote_and_existing_lock_protect_actual_wire_payload(monkeypatch):
     client = MagicMock()
     client.operate = AsyncMock(return_value={"code": 0, "data": "真实后端结果"})
     monkeypatch.setattr("app.subgraphs.option.backend.OptionClientHttpx", lambda: client)
     record = FieldRecord(value=10, source="user", evidence="限价10", origin="raw", locked=True)
     result = await confirm.option_extract_confirm_place({
         "raw_text": "确认下单 限价20", "conversation_id": "c", "room_id": "r", "user_id": "u", "message_id": 1,
+        "quote_content": FIRST,
         "last_confirmed_params": {"product_type": "option", "order_ids": [FIRST]},
         "field_records": {"option/confirm_place.orderList.0.limitPrice": record},
     })
     sent = client.operate.call_args.args[0].model_dump()["orderList"][0]
     assert sent["orderId"] == FIRST and sent["limitPrice"] == 10
     assert result["confirm"]["orderList"][0]["limitPrice"] == 10
-    assert result["field_records"]["option/confirm_place.orderList.0.orderId"].origin == "memory:last_confirmed_params"
+    assert result["field_records"]["option/confirm_place.orderList.0.orderId"].origin == "quote"
     assert result["api_result"] == "真实后端结果"

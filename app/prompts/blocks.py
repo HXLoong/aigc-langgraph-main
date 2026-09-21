@@ -6,7 +6,7 @@
 from __future__ import annotations
 
 import json
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from typing import Any
 
 from app.graph.state import Message
@@ -32,6 +32,28 @@ def shortnames(counterparties: list[dict[str, Any]] | None) -> list[str]:
 def json_list(items: list[Any] | None) -> str:
     """列表 → JSON 文本（与 Dify code 节点 `json.dumps(..., ensure_ascii=False)` 同口径）。"""
     return json.dumps(items or [], ensure_ascii=False)
+
+
+def source_payload(
+    state: Mapping[str, Any], *, context: dict[str, Any] | None = None,
+    attachments: dict[str, str] | None = None, include_history: bool = True,
+) -> str:
+    """One copy per evidence source, retaining IDs and roles without generated metadata."""
+    from app.extraction.candidates import evidence_sources
+
+    selected = state if include_history else {**state, "history_messages": []}
+    sources = evidence_sources(selected, attachments)
+    ordered = {key: value for key, value in sources.items() if key not in {"raw", "quote"}}
+    ordered.update(quote=sources["quote"], raw=sources["raw"])
+    roles = {}
+    for message in selected.get("history_messages") or []:
+        ident = message.get("id") if isinstance(message, dict) else message.id
+        role = message.get("role", "unknown") if isinstance(message, dict) else message.role
+        key = f"history:{ident}"
+        if key in ordered:
+            roles[key] = role if role in {"user", "assistant", "system"} else "unknown"
+    return json.dumps({"context": context or {}, "sources": ordered, "source_roles": roles},
+                      ensure_ascii=False)
 
 
 def kv_block(*pairs: tuple[str, Any], sep: str = "\n\n") -> str:

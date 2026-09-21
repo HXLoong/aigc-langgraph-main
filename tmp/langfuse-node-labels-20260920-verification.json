@@ -1,0 +1,96 @@
+{
+  "trace_id": "2546a26595239db64558b4982b42bb90",
+  "url": "https://us.cloud.langfuse.com/project/cmo73j96z0049ad06k68jpadz/traces/2546a26595239db64558b4982b42bb90",
+  "synthetic": true,
+  "real_model_calls": 0,
+  "business_writes": 0,
+  "verification_client_header": "x-langfuse-ingestion-version: 4",
+  "api_status": 200,
+  "observations": [
+    {
+      "id": "f771caf3d1a3a459",
+      "parentObservationId": "e1b1a664a1c51f2a",
+      "name": "期权询价要素抽取 · 输出校验 [inquiry_extract/parser]",
+      "type": "CHAIN",
+      "model": "",
+      "usageDetails": {}
+    },
+    {
+      "id": "e1b1a664a1c51f2a",
+      "parentObservationId": "1c6a7c90f48e2d1c",
+      "name": "期权询价要素抽取 · 结构化处理链 [inquiry_extract/chain]",
+      "type": "CHAIN",
+      "model": "",
+      "usageDetails": {}
+    },
+    {
+      "id": "87da4653dcc0f2e3",
+      "parentObservationId": "e1b1a664a1c51f2a",
+      "name": "[LLM] 期权询价要素抽取 · 模型调用 [inquiry_extract/llm]",
+      "type": "GENERATION",
+      "model": "synthetic-label-model",
+      "usageDetails": {
+        "input": 3,
+        "output": 1,
+        "total": 4
+      }
+    },
+    {
+      "id": "fb14aa17194ac9ea",
+      "parentObservationId": "bdd441b2d8ddcf81",
+      "name": "期权开仓与订单操作子图 [option/graph]",
+      "type": "CHAIN",
+      "model": "",
+      "usageDetails": {}
+    },
+    {
+      "id": "e50c1a57a5d691f6",
+      "parentObservationId": "fb14aa17194ac9ea",
+      "name": "期权询价参数归一化 [inquiry_normalize]",
+      "type": "CHAIN",
+      "model": "",
+      "usageDetails": {}
+    },
+    {
+      "id": "1c6a7c90f48e2d1c",
+      "parentObservationId": "fb14aa17194ac9ea",
+      "name": "[LLM] 期权询价要素抽取 [inquiry_extract]",
+      "type": "CHAIN",
+      "model": "",
+      "usageDetails": {}
+    },
+    {
+      "id": "bdd441b2d8ddcf81",
+      "parentObservationId": "435f29fdef6d234f",
+      "name": "期权开仓与订单操作 [option]",
+      "type": "CHAIN",
+      "model": "",
+      "usageDetails": {}
+    },
+    {
+      "id": "b034c015c597ca92",
+      "parentObservationId": "435f29fdef6d234f",
+      "name": "[Code/LLM] 多指令识别与拆分 [plan_instructions]",
+      "type": "CHAIN",
+      "model": "",
+      "usageDetails": {}
+    },
+    {
+      "id": "435f29fdef6d234f",
+      "parentObservationId": "c36b89a707ad9d60",
+      "name": "交易指令处理 [main_graph]",
+      "type": "CHAIN",
+      "model": "",
+      "usageDetails": {}
+    },
+    {
+      "id": "c36b89a707ad9d60",
+      "parentObservationId": null,
+      "name": "中文命名验证 · 合成图 [naming-smoke]",
+      "type": "CHAIN",
+      "model": "",
+      "usageDetails": {}
+    }
+  ],
+  "api_readback_verified": true
+}

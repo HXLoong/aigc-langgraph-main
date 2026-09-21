@@ -1,7 +1,6 @@
-"""互换下单候选、确定性归一化、GOATS 绑定的原生子图；提交由外层节点完成。"""
+"""互换下单候选与确定性归一化的原生子图；提交由外层节点完成。"""
 from __future__ import annotations
 
-import json
 import re
 from collections.abc import Callable, Mapping
 from functools import lru_cache
@@ -11,20 +10,19 @@ from langgraph.graph import END, START, StateGraph
 from langgraph.graph.state import CompiledStateGraph
 
 from app.extraction.candidates import candidate_model, evidence_sources, verify_candidates
-from app.extraction.fields import FieldRecord
 from app.graph.business_params import validated_place_params
 from app.graph.cascade import has_error
 from app.graph.retry import add_io_node, io_node
 from app.graph.safe_node import safe_node
 from app.graph.state import AgentState, ExpectedAction, SubgraphOutput, TraceEntry
 from app.llm.clients import get_qwen_complex
+from app.prompts import blocks
 from app.prompts.spec import PromptSpec, register
-from app.subgraphs.swap.backend import _with_resolved_ticker, call_swap_backend
+from app.subgraphs.swap.backend import call_swap_backend
 from app.subgraphs.swap.candidate_scope import constrain_candidates
 from app.subgraphs.swap.models import SwapPlaceOrderParams
 from app.subgraphs.swap.normalize import normalize_candidates
 from app.subgraphs.swap.quote_hints import refine_quote_hints
-from app.subgraphs.ticker.resolver import resolve_ticker_full
 
 
 def _format_counterparty_list(counterparties: list[dict[str, Any]] | None) -> str:
@@ -34,11 +32,10 @@ def _format_counterparty_list(counterparties: list[dict[str, Any]] | None) -> st
 def _build_user_message(
     state: AgentState, hints: Mapping[str, Any], prompt_name: str | None = None,
 ) -> str:
-    return json.dumps({
-        "sources": evidence_sources(state),
+    return blocks.source_payload(state, context={
         "counterparties": state.get("swap_counterparties") or [],
         "quote_hints": hints.get("quote_param_hints", ""),
-    }, ensure_ascii=False)
+    })
 
 
 def _user_from_state(state: AgentState) -> str:
@@ -58,7 +55,6 @@ class SwapPlaceState(AgentState, total=False):
     sp_candidates: dict[str, Any]
     sp_params: dict[str, Any]
     sp_prompt_name: str
-    sp_bindings: list[dict[str, Any]]
 
 
 def _expected_action(params: SwapPlaceOrderParams) -> ExpectedAction:
@@ -82,7 +78,7 @@ async def swap_normalize(state: SwapPlaceState) -> dict[str, Any]:
     params, records = normalize_candidates(candidates, evidence_sources(state))
     if not params.order_list:
         return {
-            "place_params": validated_place_params(orderList=[]), "tickers": [],
+            "place_params": validated_place_params(orderList=[]),
             "reply_text": "未识别到有效订单，请提供标的、数量和操作。",
         }
     return {
@@ -92,70 +88,16 @@ async def swap_normalize(state: SwapPlaceState) -> dict[str, Any]:
 
 
 @safe_node
-async def swap_resolve(state: SwapPlaceState) -> dict[str, Any]:
-    # The ticker subgraph owns its leaf retries; do not retry the complete resolver again.
-    params = SwapPlaceOrderParams.model_validate(state.get("sp_params") or {})
-    # These are syntax labels for market enums, not a security/name data dictionary.
-    markets = {"HK_STOCK": "港股", "US_STOCK": "美股", "A_SHARE": "A股"}
-    query_names: dict[str, str] = {}
-    for item in params.order_list:
-        name = (item.place_order_wind_code or "").strip()
-        if name:
-            hint = markets.get(item.place_order_transaction_type or "", "")
-            query_names[f"{hint} {name}".strip()] = name
-    resolution = await resolve_ticker_full(
-        state.get("raw_text") or "", filter_order_context=True,
-        counterparty_shortnames=[
-            c["shortName"] for c in state.get("swap_counterparties") or []
-            if isinstance(c.get("shortName"), str)
-        ],
-        candidate_keywords=list(query_names),
-    )
-    # Preserve the original extraction identity after querying with an explicit market hint.
-    tickers = []
-    for ticker in resolution.resolved:
-        if hasattr(ticker, "source_keywords"):
-            names = list(ticker.source_keywords)
-            names.extend(query_names[k] for k in ticker.source_keywords if k in query_names)
-            ticker = ticker.model_copy(update={"source_keywords": list(dict.fromkeys(names))})
-        tickers.append(ticker)
-    orders, bindings = [], []
-    records: dict[str, FieldRecord] = {}
-    for index, item in enumerate(params.order_list):
-        order, match = _with_resolved_ticker(item.model_dump(), tickers)
-        orders.append(order)
-        bindings.append({"order_index": index, "original_wind_code": item.place_order_wind_code,
-                         "resolved_wind_code": order.get("placeOrderWindCode"), "result": match})
-        if match.startswith("matched"):
-            path = f"swap/place_order.orderList.{index}.placeOrderWindCode"
-            previous = (state.get("field_records") or {}).get(path)
-            if previous is not None:
-                records[path + ".candidate"] = previous
-            records[path] = FieldRecord(
-                value=order["placeOrderWindCode"], source="goats",
-                evidence=order["placeOrderWindCode"], origin="securities-instrument",
-            )
-    return {
-        "sp_params": {"orderList": orders}, "sp_bindings": bindings,
-        "tickers": tickers, "field_records": records,
-        "ticker_hitl_candidates": list(resolution.hitl_pending) or None,
-    }
-
-
-@safe_node
 async def swap_place_result(state: SwapPlaceState) -> dict[str, Any]:
     params = SwapPlaceOrderParams.model_validate(state.get("sp_params") or {})
     action = _expected_action(params)
-    tickers, hitl = state.get("tickers") or [], state.get("ticker_hitl_candidates") or []
     return {
         "expected_action": action,
         "place_params": validated_place_params(orderList=[item.model_dump() for item in params.order_list]),
         "trace": [TraceEntry(
             node="swap_place_order",
-            decision=f"action={action}, orders={len(params.order_list)}, tickers={len(tickers)}, hitl={len(hitl)}",
-            llm_output={"prompt_name": state.get("sp_prompt_name"), "params": params.model_dump(),
-                        "ticker_bindings": state.get("sp_bindings") or [], "tickers_count": len(tickers),
-                        "hitl_count": len(hitl)},
+            decision=f"action={action}, orders={len(params.order_list)},instrument_resolution=backend",
+            llm_output={"prompt_name": state.get("sp_prompt_name"), "params": params.model_dump()},
         )],
     }
 
@@ -170,13 +112,11 @@ def build_place_graph() -> CompiledStateGraph[SwapPlaceState, None, AgentState, 
     graph: StateGraph[SwapPlaceState, None, AgentState, SubgraphOutput] = StateGraph(SwapPlaceState, input_schema=AgentState, output_schema=SubgraphOutput)
     add_io_node(graph, "swap_extract_candidates", swap_extract_candidates)
     graph.add_node("swap_normalize", swap_normalize)
-    graph.add_node("swap_resolve", swap_resolve)
     graph.add_node("swap_place_result", swap_place_result)
     graph.add_edge(START, "swap_extract_candidates")
     for current, next_node in (
         ("swap_extract_candidates", "swap_normalize"),
-        ("swap_normalize", "swap_resolve"),
-        ("swap_resolve", "swap_place_result"),
+        ("swap_normalize", "swap_place_result"),
     ):
         graph.add_conditional_edges(current, _next_stage(next_node), [next_node, END])
     graph.add_edge("swap_place_result", END)

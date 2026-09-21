@@ -10,7 +10,7 @@
 
   【背景】
   前置脚本节点已基于关键词和正则做了第一轮分类。当前请求是脚本规则未命中的"模糊样本"，所以输入大概率不含明显的产品关键词（如"期权""互换""看涨"
-  "A股""POV""手""股"等）。你的任务是：基于 query 和 quote_content 推断用户意图，从下列 4 个值中选出 1 个。
+  "A股""POV""手""股"等）。你的任务是：基于 sources.raw 和 sources.quote 推断用户意图，从下列 4 个值中选出 1 个。
 
 
   【推理范式（核心）】
@@ -18,10 +18,10 @@
 
 
   - 看到没在表里的新词、行话、方言、缩写、错别字时，**先按语义判断它属于哪个业务要素**（标的代码？交易方向？数量？价格？平仓比例？期权期限？），再决定归类。
-  - **先剥离 @机器人 前缀**：如果 query 以 `@<机器人名>` 开头（如 `@A场外交易助手`、`@otc-bot`），先在心里把它去掉，然后分析剩余文本。
+  - **先剥离 @机器人 前缀**：如果 sources.raw 以 `@<机器人名>` 开头（如 `@A场外交易助手`、`@otc-bot`），先在心里把它去掉，然后分析剩余文本。
   - 例子：用户说"BABA 减一半"，即使"减一半"不在词表，也应推理 BABA = 美股代码 + 减一半 = 平多 50% → 互换平仓。
   - 例子：用户说"那个茅台的报价改成 90%"，即使没出现"期权"二字，"茅台" + "报价" + "X%" 是期权要素组合 → 期权-文本。
-  - 例子：用户说"序号 3 斩掉"，即使"斩掉"不在词表，结合 quote_content 引用的持仓上下文也应推理为平仓动作。
+  - 例子：用户说"序号 3 斩掉"，即使"斩掉"不在词表，结合 sources.quote 引用的持仓上下文也应推理为平仓动作。
   - 例子：用户说 `@bot B AAPL 100@180`，剥离 @bot 后看到"单字母 B + 美股代码 + 数量 + @价格"，应识别为互换买入指令。
 
 
@@ -45,9 +45,9 @@
 
 
   **底线规则**：
-  - 不要因为 query 用了你不认识的词就判 unknown；先尝试理解词义。
+  - 不要因为 sources.raw 用了你不认识的词就判 unknown；先尝试理解词义。
   - 只有当用户的指令**完全没有可识别的业务要素**（纯闲聊、问候、问知识、问账户、纯标的代码没有方向数量、`#标签` 调试），才判 unknown。
-  - 当 query 模糊但 quote_content 提供了业务上下文，按 quote_content 锚定，不要因为 query 单看模糊就判 unknown。
+  - 当 sources.raw 模糊但 sources.quote 提供了业务上下文，按 sources.quote 锚定，不要因为 sources.raw 单看模糊就判 unknown。
   
   【4 类业务定义与信号】
   
@@ -59,13 +59,13 @@
      - 期权方向简写：`c` 表示 call（如 `100c` = 100% 看涨）、`p` 表示 put（如 `80p` = 80% 看跌）
      - 仅出现“欧式”“平值”“平直”等期权结构词
      - Q- 开头的期权报价单号（如 `Q-20260518-XX`）
-     - quote_content 引用的是期权报价单（含 Q- 编号或行权价/期限字段）
+     - sources.quote 引用的是期权报价单（含 Q- 编号或行权价/期限字段）
   
   2. 期权平仓-文本：期权持仓查询 / 平仓 / 改单 / 撤单 / 确认。
      隐式信号：
      - 平仓订单号 `CO-YYYYMMDD-XXXXXXXX`
      - 期权合约编号 `OPT-XXXX` 或 `OPTG-XXXX`（即使后缀格式不完整，如 `OPT-NOTEXIST`、`OPT-AB`）
-     - quote_content 引用的是期权持仓列表 / 期权报价单（含 OPT / OPTG / Q- 标识，或含“行权价/期限/期权”字段）
+     - sources.quote 引用的是期权持仓列表 / 期权报价单（含 OPT / OPTG / Q- 标识，或含“行权价/期限/期权”字段）
      - 极简追问场景：
        - `序号 N，限价` / `序号 N，市价` / `序号 N 市价全平` / `序号 N 平 N%`
        - `撤单` / `撤掉` / `改一下`（引用对象是期权时）
@@ -80,7 +80,7 @@
      - 期货合约代码（如 IF2606、IH2606、CU2606、AP01M.CZC）
      - H- 开头的互换报价号（如 `H-20260518-XX`）
      - **价格语法糖**：`@<价格>` 表示限价委托，如 `17300@521.2138` = 数量 17300 限价 521.2138；该写法是互换强信号
-     - quote_content 引用的是互换持仓列表 / 互换订单详情
+     - sources.quote 引用的是互换持仓列表 / 互换订单详情
      - 互换平仓口语：`<标的> 全平` / `<标的> 全卖出` / `<标的> 平一半` / `<标的> 平四分之一` / `<标的> 平 N 成` / `<标的> 平 N%`
      - 4 个标准交易方向（重要）：互换严格区分 `买入 / 卖出 / 卖空 / 平空` 四个方向，用户口语常用同义词 + **英文缩写 + 港股粤语**：
        | 标准方向 | 同义 / 口语 / 缩写 |
@@ -104,13 +104,13 @@
      - 与场外衍生品业务无关
   
   【判定原则】
-  - **要素优先，不是关键词优先**：先把 query / quote_content 拆成"标的 / 方向 / 数量 / 价格 / 期权要素 / 订单凭证"等业务要素，再判类别。词表只是举例，没见过的词请按语义归到对应要素。
+  - **要素优先，不是关键词优先**：先把 sources.raw / sources.quote 拆成"标的 / 方向 / 数量 / 价格 / 期权要素 / 订单凭证"等业务要素，再判类别。词表只是举例，没见过的词请按语义归到对应要素。
   - **不要把"prompt 没列出的表达"等同于"unknown"**：未列举的同义词、方言、缩写、错别字，只要语义上属于某个业务要素，就照常推理归类。
   - **unknown 的真正含义**：完全无业务要素（闲聊、问候、问知识、纯标的代码没有方向数量、`#标签` 调试）。不要把"信号不在 few-shot 里"误解为"信号不充分"。
-  - 优先看 quote_content 锚定上下文：用户的简短指令（"全平""撤了""序号 1 限价"）需要结合引用消息判断，引用什么类型就归什么类型：
-    - quote_content 含 `Q-` / 行权价 / 期限 / 期权 / 看涨 / 看跌 → 期权-文本 或 期权平仓-文本
-    - quote_content 含 `OPT- / OPTG- / CO-` / 期权持仓 → 期权平仓-文本
-    - quote_content 含 `H-` / 股票代码 + 多头/空头 / 持仓 → 互换-文本
+  - 优先看 sources.quote 锚定上下文：用户的简短指令（"全平""撤了""序号 1 限价"）需要结合引用消息判断，引用什么类型就归什么类型：
+    - sources.quote 含 `Q-` / 行权价 / 期限 / 期权 / 看涨 / 看跌 → 期权-文本 或 期权平仓-文本
+    - sources.quote 含 `OPT- / OPTG- / CO-` / 期权持仓 → 期权平仓-文本
+    - sources.quote 含 `H-` / 股票代码 + 多头/空头 / 持仓 → 互换-文本
   - 代码格式锚定标的市场：
     - `.SH / .SZ / .HK / .O / .N` 后缀 + 数字/数量 → 倾向互换；若同时含行权价% + 期限 M → 倾向期权
     - **纯 3-5 位数字（不带后缀）+ 港股粤语动词（沽/沽出/沽空/揸）或 `@价格` 语法** → 倾向互换（港股口语下单格式）
@@ -121,9 +121,9 @@
     - `Q-` 前缀 → 期权
     - `H-` 前缀 → 互换
   - 期权 vs 互换核心区分：是否含“行权价% + 期限 M / 个月”组合或简写 `数字+c / 数字+p`。含 → 期权；只有标的 + 方向 / 数量 → 互换
-  - 同时含期权与互换信号：以 quote_content 为准；都缺失或都含 → unknown
+  - 同时含期权与互换信号：以 sources.quote 为准；都缺失或都含 → unknown
   - `#标签` 调试指令 → 一律 unknown
-  - 孤立的方向词 / 行情词（“抄底”“做多”“止盈”“撤单”“第一个”）单独存在且无 quote_content → unknown
+  - 孤立的方向词 / 行情词（“抄底”“做多”“止盈”“撤单”“第一个”）单独存在且无 sources.quote → unknown
 
 
   【输出要求】
@@ -137,64 +137,64 @@
   # === 期权-文本（新询价 / 开仓） ===
   
   输入：
-  query: 茅台,80%,1M
-  quote_content:
+  sources.raw: 茅台,80%,1M
+  sources.quote:
   输出：期权-文本
 
 
   输入：
-  query: 000001.SZ，100%,1M
-  quote_content:
+  sources.raw: 000001.SZ，100%,1M
+  sources.quote:
   输出：期权-文本
 
 
   输入：
-  query: 600036，100c，1M
-  quote_content:
+  sources.raw: 600036，100c，1M
+  sources.quote:
   输出：期权-文本
 
 
   输入：
-  query: 欧式，600036，100，1M
-  quote_content:
+  sources.raw: 欧式，600036，100，1M
+  sources.quote:
   输出：期权-文本
 
 
   输入：
-  query: 600000.SH，1M
-  quote_content: 您的报价单：Q-20260518-XX 600000.SH 100% 行权 ...
+  sources.raw: 600000.SH，1M
+  sources.quote: 您的报价单：Q-20260518-XX 600000.SH 100% 行权 ...
   输出：期权-文本
 
 
   # === 期权平仓-文本（持仓查询 / 平仓 / 撤单 / 改单） ===
   
   输入：
-  query: 序号1，限价
-  quote_content: 您的期权持仓：1. OPT-SZZSCF20260004 ...
+  sources.raw: 序号1，限价
+  sources.quote: 您的期权持仓：1. OPT-SZZSCF20260004 ...
   输出：期权平仓-文本
 
 
   输入：
-  query: 序号1市价全平
-  quote_content: 您的期权持仓：1. OPT-XXX ...
+  sources.raw: 序号1市价全平
+  sources.quote: 您的期权持仓：1. OPT-XXX ...
   输出：期权平仓-文本
 
 
   输入：
-  query: 我想平掉 OPT-NOTEXIST
-  quote_content:
+  sources.raw: 我想平掉 OPT-NOTEXIST
+  sources.quote:
   输出：期权平仓-文本
 
 
   输入：
-  query: OPT-NOTEXIST,200w，限价
-  quote_content:
+  sources.raw: OPT-NOTEXIST,200w，限价
+  sources.quote:
   输出：期权平仓-文本
 
 
   输入：
-  query: 撤单
-  quote_content: 您的期权报价：Q-20260518-XX ...
+  sources.raw: 撤单
+  sources.quote: 您的期权报价：Q-20260518-XX ...
   输出：期权平仓-文本
 
 
@@ -202,104 +202,104 @@
 
 
   输入：
-  query: 1209.HK 全平
-  quote_content:
+  sources.raw: 1209.HK 全平
+  sources.quote:
   输出：互换-文本
 
 
   输入：
-  query: 样例标的甲 全卖出 市价 占10%
-  quote_content:
+  sources.raw: 样例标的甲 全卖出 市价 占10%
+  sources.quote:
   输出：互换-文本
 
 
   输入：
-  query: 1209.HK 平一半
-  quote_content:
+  sources.raw: 1209.HK 平一半
+  sources.quote:
   输出：互换-文本
 
 
   输入：
-  query: 1209.HK 平四分之一
-  quote_content:
+  sources.raw: 1209.HK 平四分之一
+  sources.quote:
   输出：互换-文本
 
 
   输入：
-  query: 做多 600519.SH 100 份
-  quote_content:
+  sources.raw: 做多 600519.SH 100 份
+  sources.quote:
   输出：互换-文本
 
 
   输入：
-  query: 上车 1209.HK 一千
-  quote_content:
+  sources.raw: 上车 1209.HK 一千
+  sources.quote:
   输出：互换-文本
 
 
   输入：
-  query: AAPL 入场 1000 份
-  quote_content:
+  sources.raw: AAPL 入场 1000 份
+  sources.quote:
   输出：互换-文本
 
 
   输入：
-  query: 止盈一下昨天那笔
-  quote_content: 您的持仓列表：1. 9988.HK 多头 2000 份 成本价 88.5 ...
+  sources.raw: 止盈一下昨天那笔
+  sources.quote: 您的持仓列表：1. 9988.HK 多头 2000 份 成本价 88.5 ...
   输出：互换-文本
 
 
   输入：
-  query: 把空的了了
-  quote_content: 您的持仓列表：1. TSLA.O 空头 100 份 成本价 320 ...
+  sources.raw: 把空的了了
+  sources.quote: 您的持仓列表：1. TSLA.O 空头 100 份 成本价 320 ...
   输出：互换-文本
 
 
   输入：
-  query: 1209 沽 5000@88.5
-  quote_content:
+  sources.raw: 1209 沽 5000@88.5
+  sources.quote:
   输出：互换-文本
 
 
   输入：
-  query: 9988 沽空 2000@95
-  quote_content:
+  sources.raw: 9988 沽空 2000@95
+  sources.quote:
   输出：互换-文本
 
 
   输入：
-  query: 3690 揸入 10000@130
-  quote_content:
+  sources.raw: 3690 揸入 10000@130
+  sources.quote:
   输出：互换-文本
 
 
   输入：
-  query: B AAPL 100@180
-  quote_content:
+  sources.raw: B AAPL 100@180
+  sources.quote:
   输出：互换-文本
 
 
   输入：
-  query: @A场外交易助手 S MSFT 50@420
-  quote_content:
+  sources.raw: @A场外交易助手 S MSFT 50@420
+  sources.quote:
   输出：互换-文本
 
 
   输入：
-  query: BTO TSLA 200@250
-  quote_content:
+  sources.raw: BTO TSLA 200@250
+  sources.quote:
   输出：互换-文本
 
 
   输入：
-  query: SS NFLX 30@600
-  quote_content:
+  sources.raw: SS NFLX 30@600
+  sources.quote:
   输出：互换-文本
 
 
   输入：
-  query: @otc-bot STC F 1000@12.5
-  quote_content:
+  sources.raw: @otc-bot STC F 1000@12.5
+  sources.quote:
   输出：互换-文本
 
 
@@ -307,64 +307,64 @@
 
 
   输入：
-  query: 抄底
-  quote_content:
+  sources.raw: 抄底
+  sources.quote:
   输出：unknown
 
 
   输入：
-  query: 帮我下个单
-  quote_content:
+  sources.raw: 帮我下个单
+  sources.quote:
   输出：unknown
 
 
   输入：
-  query: 你好，可以帮我看下账户吗
-  quote_content:
+  sources.raw: 你好，可以帮我看下账户吗
+  sources.quote:
   输出：unknown
 
 
   输入：
-  query: 600519
-  quote_content:
+  sources.raw: 600519
+  sources.quote:
   输出：unknown
 
 
   输入：
-  query: 123
-  quote_content:
+  sources.raw: 123
+  sources.quote:
   输出：unknown
 
 
   输入：
-  query: 今天市场怎么样
-  quote_content:
+  sources.raw: 今天市场怎么样
+  sources.quote:
   输出：unknown
 
 
   输入：
-  query: #TRS #当日委托 11125 测试短名
-  quote_content:
+  sources.raw: #TRS #当日委托 11125 测试短名
+  sources.quote:
   输出：unknown
 
 
   # === 模糊场景：撤单 / 改单 / 序号 + 引用上下文 ===
   
   输入：
-  query: 撤了
-  quote_content: 您的报价：H-20260518-XX 港股 9988.HK 1000 ...
+  sources.raw: 撤了
+  sources.quote: 您的报价：H-20260518-XX 港股 9988.HK 1000 ...
   输出：互换-文本
 
 
   输入：
-  query: 撤了
-  quote_content: 您的报价：Q-20260518-XX 600519.SH 100% 1M ...
+  sources.raw: 撤了
+  sources.quote: 您的报价：Q-20260518-XX 600519.SH 100% 1M ...
   输出：期权-文本
 
 
   输入：
-  query: 序号1限价
-  quote_content: 您的持仓：1. 600519.SH 多头 1000 份 ...
+  sources.raw: 序号1限价
+  sources.quote: 您的持仓：1. 600519.SH 多头 1000 份 ...
   输出：互换-文本
 
 

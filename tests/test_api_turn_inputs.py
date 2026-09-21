@@ -16,10 +16,9 @@ from app.graph.main import build_main_graph
 from app.graph.state import Message, TickerCandidate
 from app.nodes import fast_query, intent_route
 from app.nodes.intent_route import UnknownIntentOutput
-from app.subgraphs.swap import backend, intent, multimodal, place_order
+from app.subgraphs.swap import backend, intent, multimodal
 from app.subgraphs.swap.models import SwapIntentOutput
 from app.subgraphs.swap.multimodal_evidence import ImageTranscription
-from app.subgraphs.ticker.resolver import TickerResolution
 from app.tools.goats_agent_client import GoatsAgentClientHttpx
 from app.tools.option_client import OptionClientHttpx
 from app.tools.swap_client import SwapClientHttpx
@@ -56,9 +55,6 @@ async def turn_api(monkeypatch):
             "origin": "attachment", "reference": "file:0:image",
         }}]}),
     ))
-    monkeypatch.setattr(place_order, "resolve_ticker_full", AsyncMock(return_value=TickerResolution(
-        resolved=[TickerCandidate(windCode="600519.SH", from_goats=True)], hitl_pending=[],
-    )))
     requests = []
 
     def handle(request):

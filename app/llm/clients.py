@@ -23,8 +23,8 @@ from langchain_core.language_models import LanguageModelInput
 from langchain_core.messages import AIMessage
 from langchain_core.runnables import Runnable, RunnableConfig
 from langchain_openai import ChatOpenAI
-from pydantic import BaseModel, SecretStr
 from openai import DefaultAsyncHttpxClient, DefaultHttpxClient
+from pydantic import BaseModel, SecretStr
 
 from app.config import get_settings
 
@@ -120,7 +120,7 @@ def get_qwen_thinking() -> ChatOpenAI:
 
 
 def make_qwen_thinking() -> ChatOpenAI:
-    """非缓存工厂：每次返回新实例，供跨 event loop 场景使用（如 infer_code 线程）。
+    """非缓存工厂：每次返回新实例，供跨 event loop 场景使用（如独立线程中的模型调用）。
 
     不加 @lru_cache：lru_cache 单例在主 loop 创建后，若在子线程 asyncio.run()
     里复用，httpx 连接池绑定旧 loop，污染主 loop 客户端导致 Connection error。

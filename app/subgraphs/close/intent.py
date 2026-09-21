@@ -4,7 +4,12 @@ from __future__ import annotations
 import re
 from typing import Any
 
-from app.extraction.intent_evidence import intent_records, source_payload
+from app.execution.confirmation import (
+    confirmation_action,
+    confirmation_attempt,
+    has_execution_parameters,
+)
+from app.extraction.intent_evidence import intent_records
 from app.graph.retry import io_node
 from app.graph.state import AgentState, TraceEntry
 from app.llm.clients import get_qwen_thinking
@@ -14,11 +19,7 @@ from app.subgraphs.close.models import CloseIntentOutput
 
 
 def _build_user_message(state: AgentState) -> str:
-    return (
-        f"raw_content: {state.get('raw_text', '') or ''}\n\n"
-        f"quote_content: {state.get('quote_content') or ''}\n\n"
-        f"history_query_str:\n{blocks.format_history(state.get('history_messages'))}"
-    )
+    return blocks.source_payload(state)
 
 
 SPEC = register(PromptSpec(
@@ -26,17 +27,17 @@ SPEC = register(PromptSpec(
     name="intent",
     output_model=CloseIntentOutput,
     inputs=("raw_text", "quote_content", "history_messages"),
-    user_builder=lambda state: _build_user_message(state) + "\n" + source_payload(state),
+    user_builder=_build_user_message,
 ))
 
 
 def _deterministic_intent(raw: str) -> str | None:
     """Move unconditional corrections ahead of the model, preserving their precedence."""
-    if re.search(
-        r"(?:不|别|暂不|取消|禁止|无需|先不|没有|尚未|暂未|是否)[^。！!？?；;\n]{0,8}确认(?:撤单|平仓)"
-        r"|确认(?:撤单|平仓)[^。！!；;\n]{0,8}(?:吗|么|？|\?)", raw,
-    ):
-        return "unknown_intent"
+    action = confirmation_action(raw)
+    if confirmation_attempt(raw):
+        if action == "close" and has_execution_parameters(raw):
+            return "close_order_request"
+        return {"close": "close_order_confirm", "cancel": "close_order_cancel_confirm"}.get(action or "", "unknown_intent")
     if any(kw in raw for kw in ("拉满跟量", "全部最大", "全跟量")) and re.search(r"\d+\s*万", raw):
         return "close_order_request"
     if re.search(r"序号\s*\d", raw) and any(kw in raw.lower() for kw in ("平", "留", "全平", "拉满", "跟量", "pov")):
@@ -51,6 +52,10 @@ def _deterministic_intent(raw: str) -> str | None:
 @io_node
 async def close_intent(state: AgentState) -> dict[str, Any]:
     """close.intent 节点。"""
+    if not (state.get("raw_text") or "").strip():
+        return {"intent": "unknown_intent", "trace": [TraceEntry(
+            node="close_intent", decision="empty_current_input",
+        )]}
     deterministic = _deterministic_intent(state.get("raw_text") or "")
     if deterministic:
         return {"intent": deterministic, "trace": [TraceEntry(

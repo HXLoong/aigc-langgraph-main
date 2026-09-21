@@ -87,6 +87,14 @@ class Settings(BaseSettings):
     log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR"] = "INFO"
     # ADR 0024 D5：结构化日志格式；auto = development 彩色控制台、其余 JSON（每条带 trace_id）
     log_format: Literal["auto", "json", "console"] = "auto"
+    telemetry_masking_enabled: bool = Field(
+        default=False,
+        description="是否对 Langfuse 和结构化日志启用字段脱敏；默认关闭，所有环境一致",
+    )
+    telemetry_masking_fields: str = Field(
+        default="password,secret,api_key,token,authorization",
+        description="脱敏字段名，逗号分隔；仅在开关开启时生效，空列表不隐藏任何字段",
+    )
     environment: Literal["development", "staging", "production"] = "development"
     enable_langfuse: bool = False
     langfuse_public_key: str = ""
@@ -118,7 +126,16 @@ class Settings(BaseSettings):
     dry_run_backend: bool = False
 
     # === 兜底回复（DSL v2 env.default_reply,fallback/answer 节点统一文案）===
-    default_reply: str = "我没完全理解你的意思，能换种说法重新告诉我吗？"
+    default_reply: str = (
+        "抱歉，我们目前无法识别您的意图。您可以按照下方格式发送指令：\n"
+        "1.期权询价：@机器人欧式看涨，标的代码（或标的名称），执行价，期限\n"
+        "示例：@机器人欧式看涨，000155.SZ，80，1M/2M\n"
+        "2.期权平仓：@机器人合约编号，平仓名义本金，平仓价格方式\n"
+        "示例：@机器人OPTG-SZZSCF20260009，200w，市价下单\n"
+        "3.查可平持仓：@机器人查可平持仓\n"
+        "4.互换下单：@机器人标的代码（或标的名称），方向，数量，价格类型，交易对手（簿记产品）\n"
+        "示例：@机器人600007.SH，买入，1657股，限价6，广发1号或总单"
+    )
 
     # 从 Langfuse 拉提示词（需同时 enable_langfuse=true）
     use_langfuse_prompts: bool = False

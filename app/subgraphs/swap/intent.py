@@ -15,7 +15,11 @@ from __future__ import annotations
 
 from typing import Any
 
-from app.extraction.intent_evidence import intent_records, source_payload
+from app.execution.confirmation import (
+    confirmation_action,
+    confirmation_attempt,
+)
+from app.extraction.intent_evidence import intent_records
 from app.graph.retry import io_node
 from app.graph.state import AgentState, TraceEntry
 from app.llm.clients import get_qwen_thinking
@@ -31,12 +35,9 @@ def has_confirm_order_keyword(raw: str | None) -> bool:
 
 
 def _build_user_message(state: AgentState) -> str:
-    """DSL v2 互换-节点-意图识别.md 的 3 个输入变量；shortname_list 近似 Dify trsShortListStr。"""
-    return (
-        f"raw_content：{state.get('raw_text', '') or ''}\n"
-        f"quote_content：{state.get('quote_content') or ''}\n"
-        f"shortname_list：{', '.join(blocks.shortnames(state.get('swap_counterparties')))}"
-    )
+    return blocks.source_payload(state, context={
+        "shortname_list": blocks.shortnames(state.get("swap_counterparties")),
+    })
 
 
 SPEC = register(PromptSpec(
@@ -44,7 +45,7 @@ SPEC = register(PromptSpec(
     name="intent",
     output_model=SwapIntentOutput,
     inputs=("raw_text", "quote_content", "history_messages", "swap_counterparties", "conversation_id"),
-    user_builder=lambda state: _build_user_message(state) + "\n" + source_payload(state),
+    user_builder=_build_user_message,
     gray=True,
 ))
 
@@ -57,17 +58,15 @@ async def swap_intent(state: AgentState) -> dict[str, Any]:
     - intent: SwapIntentType 之一（小写下划线）
     - trace: 单条 TraceEntry，记录 LLM 输出 + 实际加载的 prompt name（含灰度版本号）
     """
-    if has_confirm_order_keyword(state.get("raw_text")):
-        return {
-            "intent": "confirm_order",
-            "trace": [
-                TraceEntry(
-                    node="swap_intent",
-                    decision="intent=confirm_order rule=has_confirmation_keyword",
-                    llm_output={"type": "confirm_order", "prompt_name": None},
-                )
-            ],
-        }
+    if not (state.get("raw_text") or "").strip():
+        return {"intent": "unknown_intent", "trace": [TraceEntry(
+            node="swap_intent", decision="empty_current_input",
+        )]}
+    raw = state.get("raw_text")
+    action = confirmation_action(raw)
+    if confirmation_attempt(raw):
+        intent = {"place": "confirm_order", "cancel": "confirm_cancel_order", "modify": "confirm_modify_order"}.get(action or "", "unknown_intent")
+        return {"intent": intent, "trace": [TraceEntry(node="swap_intent", decision=f"confirmation:{intent}")]}
 
     messages, prompt_name = SPEC.build_messages(state)
     llm = get_qwen_thinking().with_structured_output(SwapIntentOutput)

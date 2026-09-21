@@ -7,8 +7,8 @@
 
 `.md` 里的 `{{var}}` 没有独立渲染层，只有两种合法形态（Dify 时代的 `{{#node_id.var#}}` 已全部改为原生名，ADR 0024 D1）：
 
-- system 段占位符 → 在 `PromptSpec.injects` 登记渲染器（现役：`{{counterparty_list}}` 见 `close/holding_query.py` / `swap/multimodal.py`，`{{current_date}}` 见 `ticker/tools.py`），`build_messages` 构造期校验存在性
-- `[user]` 段占位符 → 只在 user 含规则文本的节点存在（`swap/place_order.md`、`swap/fresh_counterparty.md`），经 `render_user()` 渲染；其它节点没有 `[user]` 段，user 消息由 `user_builder` 拼变量
+- system 段占位符 → 在 `PromptSpec.injects` 登记渲染器（当前业务 system 无动态占位符），`build_messages` 构造期校验存在性
+- `[user]` 段占位符 → 只在 user 含规则文本的节点存在（`swap/fresh_counterparty.md`），经 `render_user()` 渲染；其它节点没有 `[user]` 段，user 消息由 `user_builder` 拼变量
 - 代码不注入的占位符是悬空规则，LLM 看到的是变量名；属零风险删除档，围绕它的整段规则一起删
 
 ## 加载方式（ADR 0023：一个 LLM 节点 = 一个 PromptSpec）
@@ -25,7 +25,6 @@ SPEC = register(PromptSpec(
     output_model=SwapIntentOutput,                    # 输出契约唯一真源：每个字段写 Field(description=)
     inputs=("raw_text", "history_messages", "conversation_id"),   # 必须是 AgentState 字段，构造期校验
     user_builder=_build_user_message,
-    injects={"{{#node.var#}}": lambda s: blocks.json_list(s.get("option_counterparties"))},  # system 占位符渲染
     gray=True,                                        # 走 _versions.yaml 灰度（resolve_prompt_version）
 ))
 
@@ -33,12 +32,12 @@ messages, prompt_name = SPEC.build_messages(state)    # [("system", ...), ("user
 result = await model.with_structured_output(SwapIntentOutput).ainvoke(messages)
 ```
 
-- 节点默认只用 system 段 + 代码拼变量的 user；user 里若有**规则文本**，写进 `.md` 的 `[user]` 段用 `{{var}}` 占位，`user_builder` 里用 `load_prompt(...).render_user(**vars)` 渲染（先例 `swap/place_order.md`）
+- 节点默认只用 system 段 + 代码拼变量的 user；user 里若有**规则文本**，写进 `.md` 的 `[user]` 段用 `{{var}}` 占位，`user_builder` 里用 `load_prompt(...).render_user(**vars)` 渲染（先例 `swap/fresh_counterparty.md`）
 - **禁止**把提示词正文硬编码进 Python（含"后置追加一段格式指令"这种写法）；**禁止**在 `.md` 里维护 JSON 骨架 / 字段表——字段语义只写在 Pydantic `Field(description=)`
 - 共享拼装（历史、对手列表、JSON 列表）只在 `app/prompts/blocks.py` 定义一次，不在子图里复制
 - `injects` 登记的占位符必须在 `.md` system 段里真实存在，`build_messages` 构造期校验（`tests/test_prompt_spec.py`）
 - 灰度节点必须把 `build_messages` 返回的 `prompt_name` 写进 `TraceEntry.llm_output["prompt_name"]`（ADR 0003 硬前置：进 `_versions.yaml` 前必须先写 trace，否则版本对比失真）
-- 全部 18 个 LLM 节点已迁至 PromptSpec（2026-09-17：第二 / 三批迁移 28 个，D 批去 LLM 化再移除 option 4 + close 4 个；2026-09-17 option 收尾批再移除 2 个——extract_place / extract_confirm_place 改确定性 `place_params.py`）；节点内剩余 `load_prompt` 直调仅限 `[user]` 模板渲染（`user_builder` 中 `load_prompt(...).render_user(...)`，先例 `swap/place_order.py`、`swap/fresh_counterparty.py`），system 一律经 `SPEC.render_system`
+- 当前 15 个业务 PromptSpec；标的工具在后端执行。system 使用固定资产，历史和参考数据经 `blocks.source_payload` 放入 user。`fresh_counterparty` 的 `[user]` 模板继续经 `render_user` 渲染。
 
 ## 来源优先级（ADR 0014 D3-2）
 
@@ -53,7 +52,7 @@ result = await model.with_structured_output(SwapIntentOutput).ainvoke(messages)
 
 ## 字符数 / 延迟
 
-单请求开销按调用链上各 `.md` system 字符 ÷1.6 估算 tokens 累加（基线盘点见 `docs/prompt-maintainability-assessment.md` 第二节）。当前最重路径：互换图片下单 ≈54K tokens、平仓下单 ≈37K、互换文本下单 ≈36K。
+输入预算统计 system、user 与 function-calling schema；实际 token 和缓存收益以模型 usage 为准。历史瘦身前基线仅作存档。
 
 ## Loader 缓存
 

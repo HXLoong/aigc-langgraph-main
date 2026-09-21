@@ -13,25 +13,15 @@ EXTRACT_INPUTS: tuple[str, ...] = ("raw_text", "quote_content", "history_message
 
 
 def extract_user(state: AgentState) -> str:
-    return (
-        f"用户消息：{state.get('raw_text', '') or ''}\n\n"
-        f"引用消息：{state.get('quote_content') or ''}\n\n"
-        f"历史对话：\n{blocks.format_history(state.get('history_messages'))}"
-    )
+    return blocks.source_payload(state)
 
 
 INTENT_INPUTS: tuple[str, ...] = (
-    "raw_text", "quote_content", "history_messages", "bot_name", "option_counterparties",
+    "raw_text", "quote_content", "history_messages", "option_counterparties",
 )
 
 
 def intent_user(state: AgentState) -> str:
-    """intent 节点的 5 个输入变量（Dify DSL v2 `期权-意图识别` user 模板）。"""
-    bot_name = state.get("bot_name")
-    return (
-        f"raw_content: {state.get('raw_text', '') or ''}\n\n"
-        f"quote_content: {state.get('quote_content') or ''}\n\n"
-        f"history_query_str:\n{blocks.format_history(state.get('history_messages'))}\n\n"
-        f"bot_name_list: {[bot_name] if bot_name else []}\n\n"
-        f"shortname_list: {blocks.shortnames(state.get('option_counterparties'))}"
-    )
+    return blocks.source_payload(state, context={
+        "shortname_list": blocks.shortnames(state.get("option_counterparties")),
+    })

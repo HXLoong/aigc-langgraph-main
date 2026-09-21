@@ -1,4 +1,4 @@
-"""Telemetry-only projection; business responses and the local audit remain unchanged."""
+"""Opt-in field masking for Langfuse and logs; never mutate business state."""
 from __future__ import annotations
 
 import re
@@ -7,48 +7,42 @@ from typing import Any
 
 from pydantic import BaseModel
 
-_PRIVATE_KEYS = frozenset({
-    "rawtext", "rawcontent", "messagecontent", "quotecontent", "content", "evidence",
-    "historymessages", "replytext", "apiresult", "password", "secret", "apikey", "token",
-    "authorization", "userid", "roomid", "guid", "operatoruserid", "shortname", "longname",
-    "placeordershortname", "ctptyid", "counterpartyname", "llminputexcerpt", "traceback",
-    "user", "langfuseuserid", "exception",
-    "sources", "directname", "accountid", "bankaccount", "bankcard", "customername",
-    "requestbody", "responsebody", "requestparams", "ocrtext", "transcription",
-})
-_CREDENTIAL = re.compile(r"(?i)(bearer\s+)[^\s\"',;]+")
-_ASSIGNMENT = re.compile(r"(?i)((?:api[_-]?key|password|secret|token)\s*[=:]\s*)[^\s,;]+")
-_PHONE = re.compile(r"(?<!\d)(?:\+?86[- ]?)?1[3-9]\d{9}(?!\d)")
-_EMAIL = re.compile(r"[\w.+-]+@[\w.-]+\.[A-Za-z]{2,}")
-_URL_PASSWORD = re.compile(r"(\w+(?:\+\w+)?://[^\s/:]+:)[^@\s]+(@)")
+from app.config import get_settings
 
 
-def redact_text(text: str) -> str:
-    text = _CREDENTIAL.sub(r"\1[redacted]", text)
-    text = _ASSIGNMENT.sub(r"\1[redacted]", text)
-    text = _URL_PASSWORD.sub(r"\1[redacted]\2", text)
-    return _EMAIL.sub("[email]", _PHONE.sub("[phone]", text))
+def _field_name(key: str) -> str:
+    """Match aliases and the final field of flattened audit paths."""
+    return re.sub(r"[_-]", "", re.split(r"[./]", key)[-1].strip()).lower()
 
 
-def mask_sensitive(data: Any, **kwargs: Any) -> Any:
-    """Langfuse mask callback, including nested Pydantic state and message objects."""
+def _mask_fields(data: Any, fields: set[str]) -> Any:
     if isinstance(data, BaseModel):
         data = data.model_dump(by_alias=True)
     if isinstance(data, Mapping):
-        field_record = {"value", "source", "evidence", "origin", "locked"}.issubset(data)
         return {
-            key: "[redacted]" if (field_record and key == "value")
-            or re.sub(r"[_-]", "", re.split(r"[./]", str(key))[-1]).lower() in _PRIVATE_KEYS
-            else mask_sensitive(value)
+            key: "[redacted]" if _field_name(str(key)) in fields else _mask_fields(value, fields)
             for key, value in data.items()
         }
     if isinstance(data, (list, tuple)):
-        if len(data) == 2 and isinstance(data[0], str) and data[0] in {
+        # LangChain role tuples represent the same content field as message dictionaries.
+        if "content" in fields and len(data) == 2 and isinstance(data[0], str) and data[0] in {
             "system", "user", "assistant", "human", "ai", "tool", "developer",
         }:
             return [data[0], "[redacted]"]
-        return [mask_sensitive(item) for item in data]
-    return redact_text(data) if isinstance(data, str) else data
+        return [_mask_fields(item, fields) for item in data]
+    return data
+
+
+def mask_sensitive(data: Any, **kwargs: Any) -> Any:
+    """Only mask selected structured fields; do not scan or rewrite free-form text."""
+    settings = get_settings()
+    if not settings.telemetry_masking_enabled:
+        return data
+    fields = {
+        _field_name(field) for field in settings.telemetry_masking_fields.split(",")
+        if field.strip()
+    }
+    return _mask_fields(data, fields) if fields else data
 
 
 def redact_log(logger: Any, method_name: str, event_dict: dict[str, Any]) -> dict[str, Any]:

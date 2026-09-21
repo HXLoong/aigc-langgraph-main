@@ -21,6 +21,7 @@ from app.execution.operations import (
     execute_batches,
     response_text,
 )
+from app.extraction.fields import EvidenceError
 from app.graph.retry import io_node
 from app.graph.safe_node import safe_node
 from app.graph.state import AgentState, ErrorInfo, Message, TraceEntry
@@ -28,17 +29,26 @@ from app.llm.clients import get_qwen_standard
 from app.observability.diagnostics import failure_diagnostic
 from app.prompts.spec import PromptSpec, register
 from app.tools.bot_context import BotContext
+from app.tools.receipts import receipt_text
 
 
-class Instruction(BaseModel):
+class InstructionCandidate(BaseModel):
     model_config = ConfigDict(extra="forbid")
     text: str = Field(description="原始输入中本条指令的连续原文，不改写、不补全参数")
-    start: int = Field(ge=0, description="原文字符起点，Python 字符索引，含该位置")
-    end: int = Field(gt=0, description="原文字符终点，Python 字符索引，不含该位置")
     evidence: str = Field(description="支持本条指令的原文证据，必须与 text 相同")
     confidence: float = Field(ge=0, le=1, description="拆分边界和依赖关系的可信度，无法确定时降低")
     depends_on: list[int] = Field(default_factory=list, description="依赖的前序指令零起始下标，只能引用本条之前的条目")
     requires_result: bool = Field(default=False, description="是否必须使用前序生成的订单身份；只有顺序关系时为 false")
+
+
+class Instruction(InstructionCandidate):
+    start: int = Field(ge=0, description="Code 校验的原文字符起点")
+    end: int = Field(gt=0, description="Code 校验的原文字符终点，不含该位置")
+
+
+class InstructionCandidatePlan(BaseModel):
+    instructions: list[InstructionCandidate] = Field(min_length=1, max_length=8,
+        description="按原文顺序的连续指令片段；只复制文本，不计算索引")
 
 
 class InstructionPlan(BaseModel):
@@ -51,7 +61,7 @@ def _planner_input(state: AgentState) -> str:
 
 
 SPEC = register(PromptSpec(
-    category="router", name="split_instructions", output_model=InstructionPlan,
+    category="router", name="split_instructions", output_model=InstructionCandidatePlan,
     inputs=("raw_text", "quote_content"), user_builder=_planner_input,
 ))
 
@@ -66,7 +76,7 @@ def validate_instruction_plan(raw: str, plan: InstructionPlan) -> list[dict[str,
     if len(plan.instructions) > 1 and _BUSINESS_CONDITION.search(raw):
         # An HTTP response (even code=0) does not prove fill/order success. Until
         # there is an authoritative condition/event contract, no partial write is safe.
-        raise ValueError("business-success conditional instructions require explicit later confirmation")
+        raise EvidenceError("business-success conditional instructions require explicit later confirmation")
     previous_end = 0
     result: list[dict[str, Any]] = []
     for index, instruction in enumerate(plan.instructions):
@@ -80,27 +90,51 @@ def validate_instruction_plan(raw: str, plan: InstructionPlan) -> list[dict[str,
             or any(dependency < 0 or dependency >= index for dependency in instruction.depends_on)
             or (instruction.requires_result and not instruction.depends_on)
         ):
-            raise ValueError("instruction boundaries, evidence or dependencies cannot be verified")
+            raise EvidenceError("instruction boundaries, evidence or dependencies cannot be verified")
         result.append({"instruction_id": f"instruction-{index + 1}", **instruction.model_dump()})
         previous_end = instruction.end
     if not _GAP.fullmatch(raw[previous_end:]):
-        raise ValueError("instruction plan omitted part of the original request")
+        raise EvidenceError("instruction plan omitted part of the original request")
     return result
+
+
+def materialize_instruction_plan(raw: str, candidates: InstructionCandidatePlan) -> InstructionPlan:
+    cursor = 0
+    items = []
+    for candidate in candidates.instructions:
+        start = raw.find(candidate.text, cursor) if candidate.text else -1
+        if start < 0 or not _GAP.fullmatch(raw[cursor:start]):
+            raise EvidenceError("instruction text cannot be located without omitting input")
+        end = start + len(candidate.text)
+        items.append(Instruction(**candidate.model_dump(), start=start, end=end))
+        cursor = end
+    plan = InstructionPlan(instructions=items)
+    validate_instruction_plan(raw, plan)
+    return plan
 
 
 @io_node
 async def plan_instructions(state: AgentState) -> dict[str, Any]:
     raw = state.get("raw_text") or ""
+    from app.subgraphs.option.place_params import OrderScopeError, is_quoted_batch_supplement
+
+    try:
+        batch = is_quoted_batch_supplement(raw, state.get("quote_content") or "")
+    except OrderScopeError as exc:
+        raise EvidenceError(str(exc)) from exc
+    if batch:
+        return {"sub_instructions": [], "trace": [TraceEntry(node="plan_instructions", decision="quoted_batch_supplement")]}
     if not raw.strip() or (
         not re.search(r"[;；\n]|然后|另外|并且|同时|接着|再[买卖撤建下平查询确]|期权.*互换|互换.*期权", raw)
         and len(_ACTION.findall(raw)) <= 1
     ):
         return {"sub_instructions": [], "trace": [TraceEntry(node="plan_instructions", decision="single_instruction")]}
     messages, prompt_name = SPEC.build_messages(state)
-    output = await get_qwen_standard().with_structured_output(InstructionPlan).ainvoke(messages)
-    plan = validate_instruction_plan(raw, InstructionPlan.model_validate(output))
+    output = await get_qwen_standard().with_structured_output(InstructionCandidatePlan).ainvoke(messages)
+    candidates = InstructionCandidatePlan.model_validate(output)
+    plan = validate_instruction_plan(raw, materialize_instruction_plan(raw, candidates))
     if len(plan) > 1 and state.get("input_files"):
-        raise ValueError("multi-instruction attachment ownership requires explicit separation")
+        raise EvidenceError("multi-instruction attachment ownership requires explicit separation")
     return {"sub_instructions": plan, "trace": [TraceEntry(
         node="plan_instructions", decision=f"validated:{len(plan)}",
         llm_output={"prompt_name": prompt_name, "instruction_count": len(plan)},
@@ -270,8 +304,8 @@ def build_instructions_graph(
             if batch in seen_batches:
                 continue
             seen_batches.add(batch)
-            if result.get("api_result") is not None:
-                reply = response_text(result["api_result"])
+            if result.get("api_result") is not None or result.get("api_code") is not None:
+                reply = receipt_text(result.get("api_code"), result.get("api_result"))
             elif result.get("reply_text"):
                 reply = result["reply_text"]
             else:

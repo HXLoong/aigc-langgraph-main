@@ -1,7 +1,6 @@
 """Generate evidence schemas from canonical models and verify every supplied leaf."""
 from __future__ import annotations
 
-import json
 import logging
 from collections.abc import Callable, Mapping
 from functools import cache
@@ -10,7 +9,7 @@ from typing import Any, TypeVar, get_args, get_origin
 
 from pydantic import BaseModel, ConfigDict, Field, create_model, model_validator
 
-from app.extraction.fields import FieldCandidate, FieldRecord
+from app.extraction.fields import CandidateDescription, FieldCandidate, FieldRecord
 from app.wire_model import WireModel
 
 logger = logging.getLogger(__name__)
@@ -45,7 +44,8 @@ def candidate_model(canonical: type[BaseModel]) -> type[BaseModel]:
     fields: dict[str, Any] = {}
     for name, info in canonical.model_fields.items():
         annotation = _candidate_annotation(info.annotation)
-        description = "只抽取归一化前的原文证据；" + (info.description or name)
+        hint = next((m for m in info.metadata if isinstance(m, CandidateDescription)), None)
+        description = hint.text if hint else "只抽取归一化前的原文证据；" + (info.description or name)
         default: Any
         if get_origin(annotation) is list:
             default = Field(default_factory=list, alias=info.alias, description=description)
@@ -71,7 +71,9 @@ def evidence_sources(state: Mapping[str, Any], attachments: Mapping[str, str] | 
 
 def evidence_user(state: Mapping[str, Any]) -> str:
     """Runtime data only; extraction rules live in the prompt asset."""
-    return json.dumps({"sources": evidence_sources(state)}, ensure_ascii=False)
+    from app.prompts.blocks import source_payload
+
+    return source_payload(state)
 
 
 def unpack_candidates(

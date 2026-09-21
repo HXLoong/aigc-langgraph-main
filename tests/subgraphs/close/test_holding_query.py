@@ -167,8 +167,9 @@ class TestCounterpartyListInjection:
         )
         system_content = ainvoke.call_args.args[0][0][1]
         assert "{{counterparty_list}}" not in system_content
-        assert "临沂阿凡提" in system_content
-        assert "10049" in system_content
+        assert "临沂阿凡提" not in system_content
+        assert "临沂阿凡提" in ainvoke.call_args.args[0][1][1]
+        assert "10049" in ainvoke.call_args.args[0][1][1]
 
     async def test_empty_counterparties_renders_empty_list(
         self, monkeypatch: pytest.MonkeyPatch
@@ -177,4 +178,4 @@ class TestCounterpartyListInjection:
         await close_holding_query({"raw_text": "我有哪些期权持仓"})
         system_content = ainvoke.call_args.args[0][0][1]
         assert "{{#" not in system_content
-        assert "[]" in system_content
+        assert "[]" in ainvoke.call_args.args[0][1][1]

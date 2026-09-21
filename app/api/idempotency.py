@@ -77,7 +77,7 @@ def response_is_uncertain(response: dict[str, Any] | None, http_status: int = 20
     error = outputs.get("error")
     errors = [error, *(error.get("causes") or [])] if isinstance(error, dict) else []
     return any(isinstance(item, dict) and item.get("type") in {
-        "BackendUnreachableError", "WorkflowTimeout",
+        "BackendUnreachableError", "WorkflowTimeout", "EmptyBackendResultError",
     } for item in errors)
 
 

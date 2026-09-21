@@ -12,10 +12,13 @@ prompt：`app/prompts/option/intent.md`（Dify DSL v2 同步版，node_id=175507
 """
 from __future__ import annotations
 
-import re
 from typing import Any
 
-from app.extraction.intent_evidence import intent_records, source_payload
+from app.execution.confirmation import (
+    confirmation_action,
+    confirmation_attempt,
+)
+from app.extraction.intent_evidence import intent_records
 from app.graph.retry import io_node
 from app.graph.state import AgentState, TraceEntry
 from app.llm.clients import get_qwen_structured
@@ -28,17 +31,11 @@ SPEC = register(PromptSpec(
     name="intent",
     output_model=OptionIntentOutput,
     inputs=INTENT_INPUTS,
-    user_builder=lambda state: intent_user(state) + "\n" + source_payload(state),
+    user_builder=intent_user,
 ))
 
 #: 兼容旧测试 / 调用点：user 消息拼装已收敛到 app/subgraphs/option/prompting.intent_user
 _build_user_message = intent_user
-
-_NEGATED_CONFIRM = re.compile(
-    r"(?:不|别|暂不|取消|禁止|无需|先不|没有|尚未|暂未|是否)[^。！!？?；;\n]{0,8}确认下单"
-    r"|确认下单[^。！!；;\n]{0,8}(?:吗|么|？|\?)"
-)
-
 
 @io_node
 async def option_intent(state: AgentState) -> dict[str, Any]:
@@ -48,25 +45,18 @@ async def option_intent(state: AgentState) -> dict[str, Any]:
     - intent: OptionIntentType 之一
     - trace: 单条 TraceEntry，记录 LLM 输出
     """
+    if not (state.get("raw_text") or "").strip():
+        return {"intent": "unknown_intent", "trace": [TraceEntry(
+            node="option_intent", decision="empty_current_input",
+        )]}
     raw = state.get("raw_text", "") or ""
     quote = state.get("quote_content") or ""
 
     # === 确定性快速路径（调 LLM 前） ===
-    if _NEGATED_CONFIRM.search(raw):
-        return {
-            "intent": "unknown_intent",
-            "trace": [TraceEntry(node="option_intent", decision="negated_confirmation")],
-        }
-    if raw.strip() == "-":
-        return {
-            "intent": "confirm_order",
-            "trace": [TraceEntry(node="option_intent", decision="deterministic_dash")],
-        }
-    if "确认下单" in raw:
-        return {
-            "intent": "confirm_order",
-            "trace": [TraceEntry(node="option_intent", decision="deterministic_confirm")],
-        }
+    action = confirmation_action(raw)
+    if confirmation_attempt(raw):
+        intent = {"place": "confirm_order", "cancel": "confirm_cancel_order"}.get(action or "", "unknown_intent")
+        return {"intent": intent, "trace": [TraceEntry(node="option_intent", decision=f"confirmation:{intent}")]}
     if "撤单" in raw and ("撤单" in quote or "撤单请求" in quote):
         return {
             "intent": "cancel_order_request",

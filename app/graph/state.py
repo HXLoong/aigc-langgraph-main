@@ -232,7 +232,7 @@ class AgentState(TypedDict, total=False):
     fast_query: str | None  # fast_query：快速询价标记（参与型看涨/雪球前置分支）
     at_bot: bool | None  # at_bot：是否 @ 机器人
     existing_command: str | None  # existing_command：存量兼容-交易查询指令
-    bot_name: str | None  # bot_name：机器人名称（替代旧 bot_name_list 获取）
+    bot_name: str | None  # 入口兼容字段；不注入 LLM 提示词
     operator_user_id: str | None  # operator_user_id：操作者（替代旧 userId 语义）
     retry_origin: str | None  # Java RabbitMQ 重投来源；只控制通知投影，不重试交易
     retry_attempt: str | None
@@ -274,7 +274,7 @@ class AgentState(TypedDict, total=False):
     #: 查询类意图为 None。与 Java operate 的 type 无关——那条由 intent 驱动
     expected_action: ExpectedAction | None
     field_records: Annotated[dict[str, FieldRecord], merge_fields]
-    tickers: list[TickerCandidate]
+    tickers: list[TickerCandidate]  # 旧 checkpoint/HTTP 兼容；当前业务不在本地解析证券
     place_params: dict[str, Any] | None
     cancel_params: dict[str, Any] | None
     confirm: dict[str, Any] | None
@@ -288,7 +288,7 @@ class AgentState(TypedDict, total=False):
 
     # -------- ticker 消歧 --------
     # 多命中分差不足时收集到此处，render 节点生成消歧卡片（Issue #20）
-    ticker_hitl_candidates: list[dict[str, Any]] | None
+    ticker_hitl_candidates: list[dict[str, Any]] | None  # 旧状态兼容，不参与本地回复
 
     # -------- 回复渲染 --------
     reply_text: str | None  # render 节点写入；API 层透传给企微
@@ -315,13 +315,13 @@ class SubgraphOutput(TypedDict, total=False):
     intent: str
     expected_action: ExpectedAction | None
     field_records: Annotated[dict[str, FieldRecord], merge_fields]
-    tickers: list[TickerCandidate]
+    tickers: list[TickerCandidate]  # 旧 checkpoint/HTTP 兼容；当前业务不在本地解析证券
     place_params: dict[str, Any] | None
     cancel_params: dict[str, Any] | None
     confirm: dict[str, Any] | None
     query_filter: dict[str, Any] | None
     close_params: dict[str, Any] | None
-    ticker_hitl_candidates: list[dict[str, Any]] | None
+    ticker_hitl_candidates: list[dict[str, Any]] | None  # 旧状态兼容，不参与本地回复
     reply_text: str | None
     api_result: str | dict[str, Any] | list[Any] | None
     api_code: int | None

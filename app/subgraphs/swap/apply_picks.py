@@ -1,4 +1,4 @@
-"""Validate scoped selection evidence and lock only authoritative candidate identities."""
+"""Validate scoped selection evidence and retain source provenance for Java."""
 from __future__ import annotations
 
 from typing import Any
@@ -6,9 +6,8 @@ from typing import Any
 from app.extraction.fields import FieldRecord
 from app.graph.business_params import validated_place_params
 from app.graph.safe_node import safe_node
-from app.graph.state import AgentState, TickerCandidate, TraceEntry
+from app.graph.state import AgentState, TraceEntry
 from app.subgraphs.swap.selection_rules import validate_picks
-from app.subgraphs.ticker.resolver import _code_identity
 
 
 @safe_node
@@ -20,20 +19,11 @@ async def swap_apply_picks(state: AgentState) -> dict[str, Any]:
         raise ValueError("对手选择信号与指针不一致")
     cp_picks = validate_picks(state, list(cp.get("picks") or []), "counterparty")
     ticker_picks = validate_picks(state, list(state.get("swap_ticker_picks") or []), "ticker")
-    tickers = [TickerCandidate.model_validate(ticker) for ticker in state.get("tickers") or []]
     records: dict[str, FieldRecord] = {}
     for field, picks in (("placeOrderShortname", cp_picks), ("placeOrderWindCode", ticker_picks)):
         for pick in picks:
             index = pick["idx"]
             value = pick["directName"] if field == "placeOrderShortname" else pick["directRef"]
-            if field == "placeOrderWindCode":
-                market = orders[index].get("placeOrderTransactionType")
-                codes = {ticker.wind_code for ticker in tickers
-                         if ticker.from_goats and _code_identity(ticker.wind_code) == _code_identity(value)
-                         and (not market or market in ticker.transaction_type_lists)}
-                if len(codes) != 1:
-                    raise ValueError("所选标的缺少唯一 GOATS 校验结果")
-                value = next(iter(codes))
             path = f"swap/place_order.orderList.{index}.{field}"
             previous = (state.get("field_records") or {}).get(path)
             if previous is not None and previous.locked and previous.value != value:
@@ -46,8 +36,10 @@ async def swap_apply_picks(state: AgentState) -> dict[str, Any]:
                 confidence=pick["confidence"], locked=True,
             )
             records[path] = FieldRecord(
-                value=value, source="goats", evidence=value, locked=True,
-                origin="authorized-counterparties" if field == "placeOrderShortname" else "securities-instrument",
+                value=value, source="goats" if field == "placeOrderShortname" else "user",
+                evidence=value, locked=True,
+                origin=("authorized-counterparties" if field == "placeOrderShortname"
+                        else "quote" if pick.get("seq") is not None else "raw"),
                 derived_from=[selection_path],
             )
             orders[index][field] = value

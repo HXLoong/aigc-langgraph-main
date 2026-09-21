@@ -18,6 +18,7 @@ from app.graph.safe_node import safe_node
 from app.graph.state import AgentState, TraceEntry
 from app.tools.goats_agent_client import GoatsAgentClient, make_goats_agent_client
 from app.tools.option_client import FinancialOrderOpenApiSaveReqVO, OptionClient
+from app.tools.receipts import receipt_guard, receipt_text, receipt_update
 
 _SERVICE_UNAVAILABLE = "交易指令服务暂不可用"
 
@@ -95,12 +96,13 @@ async def quick_inquiry(state: AgentState) -> dict[str, Any]:
             "quoteContent": state.get("quote_content"),
         }
     )
-    result = await _make_option_client().operate(req)
-    code = result.get("code")
-    reply = (result.get("data") or "") if code == 0 else (result.get("msg") or "未知错误")
+    async with receipt_guard("quick_inquiry"):
+        result = await _make_option_client().operate(req)
+    update = receipt_update(result, "quick_inquiry")
+    code = update["api_code"]
+    reply = receipt_text(code, update["api_result"])
     return {
-        "api_code": code,
-        "api_result": str(reply),
+        **update,
         "reply_text": str(reply),
         "trace": [TraceEntry(node="quick_inquiry", decision=f"code={code}")],
     }

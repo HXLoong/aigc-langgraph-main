@@ -45,7 +45,7 @@ async def test_multi_order_ticker_scopes_do_not_use_candidate_block_position(mon
     out = await apply_picks.swap_apply_picks({**data, **selected})
     assert not out.get("error")
     assert [item["placeOrderWindCode"] for item in out["place_params"]["orderList"]] == ["AAPL.O", "MSFT.O"]
-    assert out["field_records"]["swap/place_order.orderList.1.placeOrderWindCode"].source == "goats"
+    assert out["field_records"]["swap/place_order.orderList.1.placeOrderWindCode"].source == "user"
 
 
 async def test_multi_order_unscoped_choice_is_rejected(monkeypatch):
@@ -69,25 +69,17 @@ async def test_llm_pointer_requires_real_selection_evidence(monkeypatch):
 
 def test_unknown_ticker_and_conflicting_scope_never_fall_through():
     data = state("")
-    assert aggregate.windcode_from_pick({"orderId": FIRST, "directRef": "FAKE.O"}, data["quote_ticker_candidates"]) is None
+    assert aggregate.windcode_from_pick({"orderId": FIRST, "directRef": "FAKE.O"}, data["quote_ticker_candidates"]) == "FAKE.O"
     assert aggregate.match_order_index({"orderId": SECOND}, [{"orderId": FIRST}], {}, True) == -1
     assert aggregate.match_order_index({"orderId": SECOND, "idx": 0}, data["place_params"]["orderList"], {}, False) == -1
 
 
-async def test_forged_quote_code_needs_current_authority(monkeypatch):
+async def test_quote_choice_is_submitted_for_backend_validation(monkeypatch):
     data = state("序号1选标的1")
-    data["tickers"] = []
-    client = MagicMock()
-    client.search_securities_instrument = AsyncMock(return_value=[])
-    monkeypatch.setattr(select_ticker, "_make_client", lambda: client, raising=False)
-    model = MagicMock()
-    model.with_structured_output.return_value.ainvoke = AsyncMock(return_value={"picks": [{
-        "idx": 0, "orderId": FIRST, "seq": 1, "evidence": "序号1选标的1", "confidence": .9,
-    }]})
-    monkeypatch.setattr(select_ticker, "get_qwen_complex", lambda: model)
     result = await select_ticker.swap_select_ticker(data)
-    assert result.get("error")
-    assert not result.get("swap_ticker_picks")
+    assert not result.get("error")
+    assert result["swap_ticker_picks"][0]["directRef"] == "AAPL.O"
+
 
 
 async def test_fallback_can_locate_a_real_scoped_span_without_inventing_names(monkeypatch):

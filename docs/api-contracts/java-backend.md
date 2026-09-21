@@ -62,6 +62,10 @@ private Api adminApi = new Api("/admin-api", "**.controller.admin.**");
 
 ## 1. 标的（Ticker / Instrument）
 
+2026-09-20：LangGraph 业务链只在既有订单字段传递原始证券表达。以下查询接口仍为 Java 工具契约，
+不作为 LangGraph 提交前识别或拒绝依据；Java `operate` 内部负责证券解析。
+HTTP `outputs.tickers` 保留为空列表的兼容字段，验收检查实际后端回复。
+
 ### 1.1 标的查询（核心）
 
 - **HTTP**: `GET /admin-api/integration/securities-instrument/select` ⚠️ **GET + RequestBody，不规范但合法**

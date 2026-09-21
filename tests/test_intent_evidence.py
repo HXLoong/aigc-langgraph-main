@@ -50,8 +50,10 @@ async def test_model_cannot_use_only_old_confirmation_as_current_instruction(mon
     model_reply(monkeypatch, swap, "get_qwen_thinking", {
         "type": "confirm_order", "confidence": 0.99,
         "evidence": [{"text": "确认下单", "origin": "quote"}]})
+    result = await swap.swap_intent({"raw_text": "好的", "quote_content": "确认下单"})
+    assert result["intent"] == "unknown_intent"
     with pytest.raises(EvidenceError):
-        await swap.swap_intent({"raw_text": "好的", "quote_content": "确认下单"})
+        await swap.swap_intent({"raw_text": "请处理一下", "quote_content": "确认下单"})
 
 
 async def test_deterministic_confirmation_does_not_request_confidence_from_model(monkeypatch):

@@ -67,10 +67,13 @@ python scripts/langfuse/langfuse_eval.py --dataset golden_option_inquiry_case --
 
 ## 架构
 
+标的名称/代码由 LangGraph 按原文提取，Java 业务接口调用标的识别、分词和排序工具。
+本地不再运行 ticker 子图；职责和兼容约定见 [后端标的边界](docs/backend-instrument-boundary.md)。
+
 ```text
 企微回调 → Java Worker → POST /v1/workflows/run（Dify-兼容）→ FastAPI → LangGraph
                                                                         ↓
-                              ingest → intent_route → swap / option / option_close / ticker 子图
+                              ingest → intent_route → swap / option / option_close 子图
                                                                         ↓
                                           persist (node_trace) → render → outputs
                                                                         ↓

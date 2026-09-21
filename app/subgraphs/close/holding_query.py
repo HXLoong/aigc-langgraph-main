@@ -17,7 +17,10 @@ from app.subgraphs.close.normalization import normalize_holding_candidates
 
 
 def _build_user_message(state: AgentState) -> str:
-    return f"用户输入：{state.get('raw_text', '') or ''}"
+    return blocks.source_payload(
+        {"raw_text": state.get("raw_text")},
+        context={"counterparties": state.get("option_counterparties") or []},
+    )
 
 
 CANDIDATE_MODEL = candidate_model(HoldingQueryParams)
@@ -27,10 +30,7 @@ SPEC = register(PromptSpec(
     output_model=CANDIDATE_MODEL,
     inputs=("raw_text", "option_counterparties"),
     user_builder=_build_user_message,
-    injects={
-        # 后端预查的期权对手列表，JSON 渲染进 system（keyCtptyIdList 模糊匹配规则依赖它）
-        "{{counterparty_list}}": lambda s: blocks.json_list(s.get("option_counterparties")),
-    },
+
 ))
 
 

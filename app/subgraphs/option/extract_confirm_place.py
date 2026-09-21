@@ -18,8 +18,8 @@ from __future__ import annotations
 
 from typing import Any
 
+from app.execution.confirmation import parse_confirmation
 from app.graph.business_params import validated_confirm
-from app.graph.memory import memory_order_ids
 from app.graph.safe_node import safe_node
 from app.graph.state import AgentState, TraceEntry
 from app.subgraphs.option.backend import call_option_backend
@@ -28,34 +28,42 @@ from app.subgraphs.option.place_params import (
     OrderScopeError,
     parse_place_params_with_lineage,
 )
-from app.subgraphs.option.provenance import prepare_order_provenance, use_memory_orders
+from app.subgraphs.option.provenance import prepare_order_provenance
 
 
 @safe_node
 async def option_extract_confirm_place(state: AgentState) -> dict[str, Any]:
     """option.extract_confirm_place 节点（confirm_order）。"""
+    confirmation = parse_confirmation(
+        state.get("raw_text"), state.get("quote_content"), product="option", allow_parameters=True,
+    )
+    if confirmation.error:
+        return {"confirm": None, "reply_text": confirmation.correction(),
+                "trace": [TraceEntry(node="option_extract_confirm_place", decision=f"confirmation:{confirmation.error}")]}
     try:
         parsed = parse_place_params_with_lineage(
             state.get("raw_text"),
             state.get("quote_content"),
             state.get("history_messages") or [],
-            confirm=True,
+            confirm=True, selected_order_ids=confirmation.order_ids,
         )
     except OrderScopeError as exc:
         return {"reply_text": str(exc), "trace": [TraceEntry(
             node="option_extract_confirm_place", decision="order_scope_unresolved",
         )]}
-    if parsed.orders and all(item.get("order_id") is None for item in parsed.orders):
-        # 裸确认下单 → 上一轮询价卡记下的单号（ADR 0024 D4）；引用卡里的单号已在 parsed 里优先
-        remembered = memory_order_ids(state, "option")
-        if remembered:
-            use_memory_orders(parsed, remembered)
+    selected = [(order, fields) for order, fields in zip(parsed.orders, parsed.fields, strict=True)
+                if order.get("order_id") in confirmation.order_ids]
+    parsed.orders = [order for order, _ in selected]
+    parsed.fields = [fields for _, fields in selected]
+    if {order["order_id"] for order in parsed.orders} != set(confirmation.order_ids):
+        return {"reply_text": "无法确定确认订单范围，请重新引用订单消息。"}
     validated = OptionConfirmPlaceParams.model_validate({"orderList": parsed.orders})
     order_list = [item.model_dump() for item in validated.order_list]
 
     prepared_state, order_list, records = prepare_order_provenance(
         state, parsed, order_list, scope="option/confirm_place",
     )
+    confirmation.verify_scope([order.get("orderId") for order in order_list])
     backend = await call_option_backend(
         prepared_state,
         intent="confirm_order",
