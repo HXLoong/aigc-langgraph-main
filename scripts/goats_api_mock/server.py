@@ -8,7 +8,7 @@ import json
 import logging
 from collections.abc import AsyncIterator, Sequence
 from contextlib import asynccontextmanager
-from copy import deepcopy
+from copy import copy, deepcopy
 from pathlib import Path
 from typing import Annotated, Any
 
@@ -18,6 +18,60 @@ from pydantic import BaseModel, Field, field_validator
 
 DEFAULT_DATA_FILE = Path(__file__).with_name("option_positions.json")
 logger = logging.getLogger(__name__)
+
+
+class ChineseLogFormatter(logging.Formatter):
+    """本地化服务生命周期提示，保留原始参数、异常堆栈和未知日志。"""
+
+    MESSAGES = {
+        "Started server process [%d]": "进程已启动，进程号：%d",
+        "Waiting for application startup.": "正在初始化服务……",
+        "Application startup complete.": "服务初始化完成",
+        "Uvicorn running on %s://%s:%d (Press CTRL+C to quit)": (
+            "监听地址：%s://%s:%d（按 Ctrl+C 停止服务）"
+        ),
+        "Uvicorn running on %s://[%s]:%d (Press CTRL+C to quit)": (
+            "监听地址：%s://[%s]:%d（按 Ctrl+C 停止服务）"
+        ),
+        "Shutting down": "正在停止服务……",
+        "Waiting for application shutdown.": "正在清理服务资源……",
+        "Application shutdown complete.": "服务资源清理完成",
+        "Finished server process [%d]": "进程已退出，进程号：%d",
+        "Application startup failed. Exiting.": "服务启动失败，正在退出",
+        "Application shutdown failed. Exiting.": "服务停止失败，正在退出",
+    }
+    LEVELS = {"DEBUG": "调试", "INFO": "信息", "WARNING": "警告", "ERROR": "错误", "CRITICAL": "严重"}
+
+    def format(self, record: logging.LogRecord) -> str:
+        localized = copy(record)
+        localized.levelname = self.LEVELS.get(record.levelname, record.levelname)
+        if record.name.startswith("uvicorn") and isinstance(record.msg, str):
+            localized.msg = self.MESSAGES.get(record.msg, record.msg)
+        return super().format(localized)
+
+
+def logging_config() -> dict[str, Any]:
+    return {
+        "version": 1,
+        "disable_existing_loggers": False,
+        "formatters": {
+            "chinese": {
+                "()": ChineseLogFormatter,
+                "fmt": "[%(levelname)s] 期权持仓 Mock 服务 | %(message)s",
+            }
+        },
+        "handlers": {
+            "console": {
+                "class": "logging.StreamHandler",
+                "formatter": "chinese",
+                "stream": "ext://sys.stderr",
+            }
+        },
+        "loggers": {
+            name: {"handlers": ["console"], "level": "INFO", "propagate": False}
+            for name in (__name__, "uvicorn", "uvicorn.error", "uvicorn.access")
+        },
+    }
 
 
 class PositionFilter(BaseModel):
@@ -89,7 +143,7 @@ def create_app(data_file: Path = DEFAULT_DATA_FILE) -> FastAPI:
     async def lifespan(application: FastAPI) -> AsyncIterator[None]:
         application.state.snapshot = load_snapshot(data_file)
         logger.info(
-            "event=positions_loaded file=%s count=%s",
+            "持仓数据加载完成：文件=%s，数量=%s 条",
             data_file,
             len(application.state.snapshot["data"]["queryResults"]),
         )
@@ -126,8 +180,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     args = parser.parse_args(argv)
     if not 1 <= args.port <= 65535:
         parser.error("--port 必须在 1 到 65535 之间")
-    logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
-    uvicorn.run(create_app(), host=args.host, port=args.port)
+    uvicorn.run(create_app(), host=args.host, port=args.port, log_config=logging_config())
     return 0
 
 

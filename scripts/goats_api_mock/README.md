@@ -6,6 +6,9 @@
 .venv/bin/python scripts/goats_api_mock/server.py --port 20000
 ```
 
+启动和停止提示使用中文，并统一标注“期权持仓 Mock 服务”；启动日志会显示数据文件、
+持仓条数、实际监听地址及 Ctrl+C 停止提示。加载失败时保留错误原因和异常堆栈。
+
 Java 管理页面中，仅将 `GOATS_OPTION_CLOSING_OUT_CONTRACT_QUERY` 的地址配置为：
 
 ```text

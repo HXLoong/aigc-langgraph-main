@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
@@ -181,16 +182,18 @@ def test_null_filter_is_unrestricted(client: TestClient, snapshot: dict[str, Any
 
 
 def test_loads_data_at_startup_and_changes_require_restart(
-    data_file: Path, snapshot: dict[str, Any]
+    data_file: Path, snapshot: dict[str, Any], caplog: pytest.LogCaptureFixture
 ) -> None:
     from scripts.goats_api_mock.server import create_app
 
+    caplog.set_level(logging.INFO, logger="scripts.goats_api_mock.server")
     app = create_app(data_file)
     snapshot["data"]["queryResults"] = snapshot["data"]["queryResults"][:1]
     snapshot["data"]["total"] = 1
     snapshot["data"]["pageSize"] = 1
     data_file.write_text(json.dumps(snapshot), encoding="utf-8")
     with TestClient(app) as running:
+        assert f"持仓数据加载完成：文件={data_file}，数量=1 条" in caplog.text
         assert running.post(ENDPOINT, headers=HEADERS, json={}).json() == snapshot
         data_file.write_text("invalid JSON after startup", encoding="utf-8")
         assert running.post(ENDPOINT, headers=HEADERS, json={}).json() == snapshot
