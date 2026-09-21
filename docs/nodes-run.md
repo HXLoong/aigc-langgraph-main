@@ -2,7 +2,7 @@
 
 `POST /v1/nodes/run` 用于隔离执行一个已注册的 LangGraph 节点或复合子图，返回该目标的实际 State 更新。它适合定位意图识别、参数提取、后端调用和内部阶段问题；完整会话仍应使用 `POST /v1/workflows/run`。
 
-当前工作区共注册 65 项：`main` 14、`option` 16、`swap` 13、`option_close` 15、`ticker` 7。唯一真源是 [registry.py](../app/node_execution/registry.py)，不要在文档中维护第二份完整节点表。
+当前工作区共注册 65 项：`main` 14、`option` 16、`swap` 13、`option_close` 15、`ticker` 7。注册名称以 [registry.py](../app/node_execution/registry.py) 为准，文末有[节点中英文对照表](#9-节点中英文对照表)。
 
 > `/v1/nodes/run` 不执行上游节点、不恢复 checkpoint，也不继承前一次调用的 State。复合子图会按原路由执行内部链路；下单、确认、撤单、持久化等节点会保留原有副作用。连接真实后端时应先测试只读节点。
 
@@ -274,3 +274,75 @@ Remove-Item Env:RUN_NODE_MYSQL_TEST
 本指南的启动命令直接读取 `.env`。修改 `OTC_API_BASE_URL`、`GOATS_BASE_URL` 或对应凭据后必须重启应用；State 中也要提供真实测试环境的群、用户、消息和订单标识。
 
 保持 `DRY_RUN_BACKEND=false` 会让写请求真正发往配置目标。真实下单、确认或撤单前，应先核对 URL、账号、环境和业务授权，并优先用查询类节点确认网络、认证和接口契约。
+
+## 9. 节点中英文对照表
+
+以下是当前 `/v1/nodes/run` 的全部 65 个注册项。所属对应请求中的 `product`，英文名对应 `node`；业务子图入口会执行内部链路。注册名称以 [registry.py](../app/node_execution/registry.py) 为准。
+
+| 所属（product） | 节点英文名（node） | 中文名 |
+| --- | --- | --- |
+| `main` | `ingest` | 入口消息整理与当轮状态初始化 |
+| `main` | `quick_inquiry` | 快速询价 |
+| `main` | `existing_command_query` | 存量指令查询 |
+| `main` | `pre_route` | 路由前置处理 |
+| `main` | `intent_route` | 一级意图路由 |
+| `main` | `swap` | 互换业务子图 |
+| `main` | `option` | 期权业务子图 |
+| `main` | `option_close` | 期权平仓业务子图 |
+| `main` | `fallback` | 异常兜底 |
+| `main` | `persist_intent` | 消息意图写回 |
+| `main` | `persist` | 节点轨迹持久化 |
+| `main` | `render` | 回复渲染 |
+| `main` | `remember_confirmed_params` | 记忆已确认参数 |
+| `main` | `record_history` | 记录会话历史 |
+| `option` | `option_intent` | 期权意图识别 |
+| `option` | `option_extract_inquiry` | 期权询价流程（复合子图） |
+| `option` | `option_extract_place` | 期权请求下单参数提取 |
+| `option` | `option_extract_confirm_place` | 期权确认下单参数提取 |
+| `option` | `option_extract_cancel_place` | 期权取消下单订单号提取 |
+| `option` | `option_extract_cancel` | 期权请求撤单订单号提取 |
+| `option` | `option_extract_confirm_cancel` | 期权确认撤单订单号提取 |
+| `option` | `option_extract_query` | 期权订单查询参数提取 |
+| `option` | `option_unknown` | 期权未知意图兜底 |
+| `option` | `inquiry_fast_parse` | 快速询价指令解析 |
+| `option` | `inquiry_fast_submit` | 快速询价提交 |
+| `option` | `inquiry_precheck` | 询价标的预检 |
+| `option` | `inquiry_reject` | 无效标的询价拒绝 |
+| `option` | `inquiry_extract` | 询价参数提取 |
+| `option` | `inquiry_resolve` | 询价标的解析与绑定 |
+| `option` | `inquiry_submit` | 询价请求提交 |
+| `swap` | `swap_intent` | 互换意图识别 |
+| `swap` | `swap_place_order` | 互换下单参数提取 |
+| `swap` | `swap_recognize_fresh_counterparty` | 新交易对手识别 |
+| `swap` | `swap_select_counterparty` | 交易对手选项识别 |
+| `swap` | `swap_select_ticker` | 标的选项识别 |
+| `swap` | `swap_apply_picks` | 交易对手与标的选择应用 |
+| `swap` | `swap_place_order_submit` | 互换下单请求提交 |
+| `swap` | `swap_confirm` | 互换订单确认 |
+| `swap` | `swap_cancel` | 互换订单撤单 |
+| `swap` | `swap_query_order` | 互换订单查询 |
+| `swap` | `swap_unknown` | 互换未知意图兜底 |
+| `swap` | `swap_image_order` | 图片下单参数提取 |
+| `swap` | `swap_excel_order` | Excel 下单参数提取 |
+| `option_close` | `close_intent` | 期权平仓意图识别 |
+| `option_close` | `close_holding_query` | 期权持仓查询 |
+| `option_close` | `close_place_close` | 期权平仓下单流程（复合子图） |
+| `option_close` | `close_confirm_close` | 确认期权平仓 |
+| `option_close` | `close_cancel_close` | 期权平仓撤单 |
+| `option_close` | `close_confirm_cancel` | 确认期权平仓撤单 |
+| `option_close` | `close_query_status` | 期权平仓订单状态查询 |
+| `option_close` | `close_unknown` | 期权平仓未知意图兜底 |
+| `option_close` | `place_close_parse` | 平仓引用与参数解析 |
+| `option_close` | `place_close_fetch_orders` | 获取并整理被引用订单 |
+| `option_close` | `place_close_extract` | 平仓参数提取 |
+| `option_close` | `place_close_normalize` | 平仓参数归一与合并 |
+| `option_close` | `place_close_validate` | 平仓参数预校验 |
+| `option_close` | `place_close_submit` | 平仓请求提交 |
+| `option_close` | `place_close_reject` | 平仓请求拒绝 |
+| `ticker` | `extract_candidates` | 候选标的提取与去噪 |
+| `ticker` | `infer_codes` | 标的代码推断 |
+| `ticker` | `split_keywords` | 标的关键词拆分 |
+| `ticker` | `judge_type` | 标的类型判断 |
+| `ticker` | `merge_candidates` | 候选标的合并与校验 |
+| `ticker` | `resolve_org_item` | 单条机构标的查询与排序 |
+| `ticker` | `assemble` | 标的结果汇总与去重 |
