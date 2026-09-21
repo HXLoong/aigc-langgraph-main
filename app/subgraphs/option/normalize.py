@@ -156,6 +156,7 @@ def normalize_tenor(text: str | None) -> str | None:
 # ============================================================
 
 _NUMBER_PERCENT_RE = re.compile(r"^(\d+(?:\.\d+)?)\s*%?$")
+_CALL_STRIKE_RE = re.compile(r"(\d+(?:\.\d+)?)\s*%?\s*call", re.IGNORECASE)
 _PING_KEYWORDS = ("平值", "平直")
 _PARTICIPATION_LABEL_RE = re.compile(r"^(?:参与率|参与比例)\s*[:：]?\s*")
 
@@ -167,7 +168,7 @@ def normalize_strike(text: str | None) -> float | None:
         return None
     if value in _PING_KEYWORDS:
         return 100.0
-    match = _NUMBER_PERCENT_RE.fullmatch(value)
+    match = _NUMBER_PERCENT_RE.fullmatch(value) or _CALL_STRIKE_RE.fullmatch(value)
     return float(match.group(1)) if match else None
 
 
@@ -210,7 +211,9 @@ def normalize_option_type(value: str | None) -> str | None:
     if value is None:
         return None
     text = value.strip()
-    return "欧式看涨" if text.lower() == "call" or text == "看涨" else text
+    if text.lower() == "call" or text == "看涨" or _CALL_STRIKE_RE.fullmatch(text):
+        return "欧式看涨"
+    return text
 
 
 def expand_inquiry_items(items: Sequence[OptionInquiryRawItem]) -> list[dict[str, Any]]:
@@ -222,7 +225,10 @@ def expand_inquiry_items(items: Sequence[OptionInquiryRawItem]) -> list[dict[str
     expanded: list[dict[str, Any]] = []
     for item in items:
         tenors = split_tenors(item.tenor)
-        strikes = split_strikes(item.strike_percentage)
+        strike_fragment = item.strike_percentage
+        if strike_fragment is None and _CALL_STRIKE_RE.fullmatch((item.option_type or "").strip()):
+            strike_fragment = item.option_type
+        strikes = split_strikes(strike_fragment)
         notional = normalize_notional(item.notional_amount, allow_plain_digits=True)
         participation = normalize_participation(item.participation_rate)
         for tenor in tenors:
