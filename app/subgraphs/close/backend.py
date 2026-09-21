@@ -15,15 +15,20 @@ from __future__ import annotations
 
 from typing import Any
 
+from app.execution.operations import capture_operation
+from app.extraction.identity import protect_identity_lists
+from app.extraction.locks import protect_orders
 from app.graph.state import AgentState
 from app.subgraphs.close.aggregate import sanitize_close_order_req_vo
 from app.tools.bot_context import BotContext, normalize_message_id
+from app.tools.exceptions import MissingBackendContextError
 from app.tools.option_client import (
     CloseOrderReqVO,
     FinancialOrderOpenApiSaveReqVO,
     OptionClientHttpx,
     OptionIntentionType,
 )
+from app.tools.receipts import receipt_guard, receipt_update
 
 
 def _message_id(value: Any) -> int:
@@ -50,15 +55,18 @@ async def call_close_backend(
             （未清洗）；本函数内部完成"前置清洗"再发送。
 
     Returns:
-        `{}`（缺必要上下文时静默跳过，与 option 域 `call_option_backend`
-        同款降级约定）或 `{"api_code": ..., "api_result": ...}`（`api_result`
-        直接取后端返回的 `data`/`msg`，**不做本地二次加工**——CLAUDE.md P0：
-        严禁掩盖后端真实响应）。
+        Java 原始业务码与回执；缺上下文或不可验证回执显式报错。
     """
-    if [f for f in BotContext.from_state(state).missing_required() if f != "message_id"]:
-        return {}
+    missing = BotContext.from_state(state).missing_required()
+    if missing:
+        raise MissingBackendContextError("close", missing)
 
-    sanitized = sanitize_close_order_req_vo(close_order_req_vo)
+    close_order_req_vo, identity_rejected = protect_identity_lists(state, close_order_req_vo)
+    protected, rejected = protect_orders(
+        state, close_order_req_vo.get("closeOrderList") or [], product="close",
+    )
+    rejected = {**rejected, **identity_rejected}
+    sanitized = sanitize_close_order_req_vo({**close_order_req_vo, "closeOrderList": protected})
     req = FinancialOrderOpenApiSaveReqVO(
         type=OptionIntentionType(intent),
         orderList=[],
@@ -66,11 +74,13 @@ async def call_close_backend(
         optionRfq=None,
         **_context(state),
     )
-    result = await OptionClientHttpx().operate(req)
-    code = result.get("code")
+    if capture_operation("close", req):
+        return {"field_records": rejected} if rejected else {}
+    async with receipt_guard("close"):
+        result = await OptionClientHttpx().operate(req)
     return {
-        "api_code": code,
-        "api_result": result.get("data") if code == 0 else result.get("msg"),
+        **({"field_records": rejected} if rejected else {}),
+        **receipt_update(result, "close"),
     }
 
 

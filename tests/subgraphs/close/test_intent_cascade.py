@@ -63,7 +63,7 @@ async def test_close_intent_pydantic_validation_error_writes_error_to_state(
     """LLM 返回无效 type 字段 → ValidationError → @safe_node 捕获 → state['error']。"""
 
     def _raise(*_args, **_kwargs) -> None:
-        CloseIntentOutput(type="invalid_close_intent_type")  # type: ignore[arg-type]
+        CloseIntentOutput(type="invalid_close_intent_type", confidence=0.91, evidence=[{"text": "本轮意图模型测试输入", "origin": "raw"}])  # type: ignore[arg-type]
 
     fake_llm = MagicMock()
     fake_llm.with_structured_output = MagicMock(
@@ -71,13 +71,20 @@ async def test_close_intent_pydantic_validation_error_writes_error_to_state(
     )
     monkeypatch.setattr(intent_module, "get_qwen_thinking", lambda: fake_llm)
 
-    result = await close_intent({"raw_text": "帮我平仓"})
+    from app.config import get_settings
+    settings = get_settings().model_copy(update={
+        "node_retry_max_attempts": 2, "node_retry_initial_interval_seconds": .001,
+    })
+    monkeypatch.setattr("app.graph.retry.get_settings", lambda: settings)
+    result = await build_close_graph().ainvoke(_BASE_STATE)
+    assert fake_llm.with_structured_output.return_value.ainvoke.await_count == 2
 
     assert result.get("error") is not None
     err = result["error"]
     assert err.node == "close_intent"
     assert "ValidationError" in err.type
     assert result.get("trace")
+
 
 
 @pytest.mark.asyncio

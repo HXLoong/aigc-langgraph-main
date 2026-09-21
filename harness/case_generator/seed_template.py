@@ -22,7 +22,7 @@ class NodeSeedSpec:
     """单节点的种子收集规约。"""
 
     node_name: str
-    product_type: str  # "swap" / "option" / "option_close" / "ticker"
+    product_type: str  # "swap" / "option" / "option_close"
     intent_values: list[str]  # 该节点对应的合法 intent 枚举
     description: str  # 中文描述
     sample_inputs: list[str] = field(default_factory=list)  # 示例输入（启发业务方）
@@ -34,20 +34,6 @@ class NodeSeedSpec:
 
 #: 节点 → 种子规约（按 ADR 0001 D9 P0/P1/P2 优先级排序）
 NODE_REGISTRY: dict[str, NodeSeedSpec] = {
-    # ---- ticker 子图（横切，被业务子图调用）----
-    "ticker.resolver": NodeSeedSpec(
-        node_name="ticker.resolver",
-        product_type="ticker",
-        intent_values=[],  # ticker 没意图，输出是 list[TickerCandidate]
-        description="标的识别 resolver 管线（DSL v2：确定性候选 + 3 路 LLM + GOATS 校验）。输出 from_goats=True 的标的代码列表。",
-        sample_inputs=[
-            "做一笔 00700.HK 的 TRS",
-            "腾讯",
-            "伦铜下月合约",
-            "买 50ETF 一些",
-            "纳指",
-        ],
-    ),
     # ---- swap 子图（10 节点，P0/P1/P2）----
     "swap.intent": NodeSeedSpec(
         node_name="swap.intent",

@@ -4,6 +4,7 @@ from __future__ import annotations
 import json
 from typing import Any
 
+from app.extraction.fields import FieldRecord
 from app.graph.business_params import validated_place_params
 from app.graph.safe_node import safe_node
 from app.graph.state import AgentState, TraceEntry
@@ -48,10 +49,25 @@ async def swap_recognize_fresh_counterparty(state: AgentState) -> dict[str, Any]
 
     recall = None
     shortname = None
+    exact_names = {
+        c["shortName"].strip() for c in candidates
+        if isinstance(c.get("shortName"), str) and c["shortName"].strip()
+        and not c["shortName"].strip().isdigit() and c["shortName"].strip() in raw_text
+    }
+    records: dict[str, FieldRecord] = {}
     if not orders:
         reason = "no_orders"
     elif not candidates:
         reason = "no_candidates"
+    elif len(exact_names) == 1:
+        shortname = next(iter(exact_names))
+        # An overwide extraction can contain the complete authorized name plus incidental text.
+        # Only literal containment is repairable; a different explicit account remains a conflict.
+        for order in orders:
+            existing = order.get("placeOrderShortname")
+            if isinstance(existing, str) and shortname in existing and existing in raw_text:
+                order["placeOrderShortname"] = shortname
+        reason = apply_fresh_counterparty(orders, shortname)
     else:
         messages, _prompt_name = SPEC.build_messages(state)
         llm = get_qwen_complex().with_structured_output(SwapFreshCounterpartyOutput)
@@ -61,12 +77,20 @@ async def swap_recognize_fresh_counterparty(state: AgentState) -> dict[str, Any]
         if shortname is not None:
             reason = apply_fresh_counterparty(orders, shortname)
 
+    if reason == "applied" and shortname is not None:
+        for index in range(len(orders)):
+            records[f"swap/place_order.orderList.{index}.placeOrderShortname"] = FieldRecord(
+                value=shortname, source="goats", evidence=shortname,
+                origin="authorized-counterparties", locked=True,
+            )
+
     affected_orders = [
         i for i, (before, after) in enumerate(zip(original_orders, orders, strict=True))
         if before.get("placeOrderShortname") != after.get("placeOrderShortname")
     ]
     return {
         "place_params": validated_place_params(**{**place_params, "orderList": orders}),
+        "field_records": records,
         "trace": [TraceEntry(
             node="swap_recognize_fresh_counterparty",
             decision=f"reason={reason},affected_orders={affected_orders}",

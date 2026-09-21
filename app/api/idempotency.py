@@ -1,141 +1,298 @@
-"""请求级幂等（ADR 0024 D4，评估 R2）。
-
-Java 超时重试 / 企微重投 / 运维重放同一条消息时，不得重跑整图——确认节点直调后端写接口，
-重跑即重复下单 / 重复平仓；此前幂等责任 100% 外包给后端 dedup 且无本地兜底。
-
-以企微 `message_id`（`message_log.uk_message_id`）去重：
-- 首次 → 占位（in_progress），跑图，完成后回填回复
-- 已完成 → 回放上次 `reply_text`，不重跑图
-- 处理中 → 固定文案"正在处理"，不重跑图
-- 请求没有 message_id → 不做幂等（评估 / harness 直调路径）
-
-Store 由 lifespan 注入 `app.state.idempotency_store`；存储失败只 warning（幂等是加固，不阻断业务）。
-"""
+"""Message claims and complete HTTP replay; uncertain writes are never restarted."""
 from __future__ import annotations
 
 import asyncio
-import logging
-from dataclasses import dataclass
+import json
+import time
+from collections.abc import Callable
+from copy import deepcopy
+from dataclasses import dataclass, replace
 from typing import Any, Literal, Protocol
 
 import aiomysql
 import pymysql
 
 from app.nodes.persist import _parse_mysql_uri
-
-logger = logging.getLogger(__name__)
+from app.storage.mysql import MESSAGE_LOG, SESSION_INIT
 
 PROCESSING_NOTICE = "该消息正在处理中，请勿重复提交。"
+UNCERTAIN_NOTICE = "该消息的执行结果待核对，请勿重复提交。"
+
+
+class IdempotencyConflictError(ValueError):
+    """The message identity belongs to another user or room."""
 
 
 @dataclass(frozen=True, slots=True)
 class IdempotencyRecord:
     message_id: str
-    status: Literal["in_progress", "done"]
+    status: Literal["in_progress", "done", "uncertain"]
     reply_text: str | None = None
     api_code: int | None = None
+    response: dict[str, Any] | None = None
+    http_status: int = 200
+    error: str | None = None
+    user_id: str = ""
+    room_id: str = ""
+    started_at: float = 0.0
+    conversation_id: str = ""
+    raw_text: str = ""
 
 
 class IdempotencyStore(Protocol):
     async def begin(
-        self, message_id: str, *, conversation_id: str, user_id: str, room_id: str, raw_text: str
-    ) -> IdempotencyRecord | None:
-        """占位；返回 None 表示首次，否则返回已有记录（回放 / 处理中）。"""
+        self, message_id: str, *, conversation_id: str, user_id: str, room_id: str, raw_text: str,
+    ) -> IdempotencyRecord | None: ...
 
     async def complete(
-        self,
-        message_id: str,
-        *,
-        reply_text: str | None,
-        product_type: str | None,
-        intent: str | None,
-        api_code: int | None,
-        api_result: Any,
-        error: str | None,
-        latency_ms: int,
+        self, message_id: str, *, reply_text: str | None, product_type: str | None,
+        intent: str | None, api_code: int | None, api_result: Any, error: str | None,
+        latency_ms: int, response: dict[str, Any] | None = None, http_status: int = 200,
     ) -> None: ...
+
+    async def get(
+        self, message_id: str, *, user_id: str, room_id: str,
+    ) -> IdempotencyRecord | None: ...
+
+    async def reconcile(
+        self, expected: IdempotencyRecord, *, response: dict[str, Any],
+        reply_text: str, api_code: int, api_result: str,
+    ) -> bool: ...
+
+
+def response_is_uncertain(response: dict[str, Any] | None, http_status: int = 200) -> bool:
+    """Transport failures retain their claim even when an error HTTP snapshot exists."""
+    if http_status == 504:
+        return True
+    if not response:
+        return False
+    if response.get("idempotency_status") == "uncertain":
+        return True
+    data = response.get("data")
+    outputs = data.get("outputs") if isinstance(data, dict) else None
+    if not isinstance(outputs, dict):
+        return False
+    if outputs.get("idempotency_status") == "uncertain":
+        return True
+    error = outputs.get("error")
+    errors = [error, *(error.get("causes") or [])] if isinstance(error, dict) else []
+    return any(isinstance(item, dict) and item.get("type") in {
+        "BackendUnreachableError", "WorkflowTimeout", "EmptyBackendResultError",
+    } for item in errors)
+
+
+def _existing(
+    record: IdempotencyRecord, user_id: str, room_id: str, now: float, timeout: float,
+) -> IdempotencyRecord:
+    if (record.user_id, record.room_id) != (user_id, room_id):
+        raise IdempotencyConflictError("消息标识与用户或群不匹配")
+    if record.status == "in_progress" and now - record.started_at >= timeout:
+        return replace(record, status="uncertain")
+    return record
 
 
 class InMemoryIdempotencyStore:
-    """测试 / 单进程开发用。"""
+    """Single-process test/development store with the MySQL replay semantics."""
 
-    def __init__(self) -> None:
+    def __init__(
+        self, *, processing_timeout_seconds: float = 120.0, clock: Callable[[], float] = time.time,
+    ) -> None:
         self._rows: dict[str, IdempotencyRecord] = {}
+        self._clock = clock
+        self._timeout = processing_timeout_seconds
 
-    async def begin(self, message_id, *, conversation_id, user_id, room_id, raw_text):  # type: ignore[no-untyped-def]
-        existing = self._rows.get(message_id)
-        if existing is not None:
-            return existing
-        self._rows[message_id] = IdempotencyRecord(message_id=message_id, status="in_progress")
+    async def begin(
+        self, message_id: str, *, conversation_id: str, user_id: str, room_id: str, raw_text: str,
+    ) -> IdempotencyRecord | None:
+        record = self._rows.get(message_id)
+        if record is not None:
+            return _existing(record, user_id, room_id, self._clock(), self._timeout)
+        self._rows[message_id] = IdempotencyRecord(
+            message_id=message_id, status="in_progress", user_id=user_id, room_id=room_id,
+            started_at=self._clock(), conversation_id=conversation_id, raw_text=raw_text,
+        )
         return None
 
-    async def complete(self, message_id, *, reply_text, product_type, intent, api_code, api_result, error, latency_ms):  # type: ignore[no-untyped-def]
-        self._rows[message_id] = IdempotencyRecord(
-            message_id=message_id, status="done", reply_text=reply_text, api_code=api_code
+    async def complete(
+        self, message_id: str, *, reply_text: str | None, product_type: str | None,
+        intent: str | None, api_code: int | None, api_result: Any, error: str | None,
+        latency_ms: int, response: dict[str, Any] | None = None, http_status: int = 200,
+    ) -> None:
+        self._rows[message_id] = replace(
+            self._rows[message_id],
+            status="uncertain" if response_is_uncertain(response, http_status) else "done",
+            reply_text=reply_text, api_code=api_code,
+            response=deepcopy(response), http_status=http_status, error=error,
         )
+
+    async def get(
+        self, message_id: str, *, user_id: str, room_id: str,
+    ) -> IdempotencyRecord | None:
+        record = self._rows.get(message_id)
+        return None if record is None else deepcopy(
+            _existing(record, user_id, room_id, self._clock(), self._timeout),
+        )
+
+    async def reconcile(
+        self, expected: IdempotencyRecord, *, response: dict[str, Any],
+        reply_text: str, api_code: int, api_result: str,
+    ) -> bool:
+        current = self._rows.get(expected.message_id)
+        if current is None or expected.status != "uncertain":
+            return False
+        current = _existing(current, expected.user_id, expected.room_id, self._clock(), self._timeout)
+        if current != expected:
+            return False
+        self._rows[expected.message_id] = replace(
+            current, status="done", response=deepcopy(response), reply_text=reply_text,
+            api_code=api_code, http_status=200, error=None,
+        )
+        return True
 
 
 class MySQLIdempotencyStore:
-    """业务库 message_log 表（sql/schema.sql）；每次调用短连接，与 persist.py 同风格。"""
+    """Persist a claim before execution and a complete HTTP snapshot afterwards."""
 
-    def __init__(self, business_mysql_uri: str, *, timeout_seconds: float = 5.0) -> None:
-        self._conn_args = _parse_mysql_uri(business_mysql_uri)
+    def __init__(
+        self, mysql_uri: str, *, timeout_seconds: float = 5.0,
+        processing_timeout_seconds: float = 120.0,
+    ) -> None:
+        self._conn_args = _parse_mysql_uri(mysql_uri)
         self._timeout = timeout_seconds
+        self._processing_timeout = processing_timeout_seconds
 
-    async def _connect(self):  # type: ignore[no-untyped-def]
+    async def _connect(self) -> aiomysql.Connection:
         host, port, user, password, db = self._conn_args
         return await asyncio.wait_for(
             aiomysql.connect(host=host, port=port, user=user, password=password, db=db,
-                             charset="utf8mb4", autocommit=True),
+                             charset="utf8mb4", init_command=SESSION_INIT, autocommit=True),
             timeout=self._timeout,
         )
 
-    async def begin(self, message_id, *, conversation_id, user_id, room_id, raw_text):  # type: ignore[no-untyped-def]
+    async def begin(
+        self, message_id: str, *, conversation_id: str, user_id: str, room_id: str, raw_text: str,
+    ) -> IdempotencyRecord | None:
         conn = await self._connect()
         try:
             async with conn.cursor() as cur:
                 try:
                     await cur.execute(
-                        "INSERT INTO message_log (message_id, conversation_id, room_id, user_id, "
+                        f"INSERT INTO {MESSAGE_LOG} (message_id, conversation_id, room_id, user_id, "
                         "raw_content, processed_by) VALUES (%s, %s, %s, %s, %s, %s)",
                         (message_id, conversation_id, room_id, user_id, raw_text, "langgraph"),
                     )
                     return None
-                except pymysql.err.IntegrityError:
-                    await cur.execute(
-                        "SELECT reply_text, api_code FROM message_log WHERE message_id = %s",
-                        (message_id,),
-                    )
-                    row = await cur.fetchone()
-                    if row is None:
-                        return None
-                    reply_text, api_code = row[0], row[1]
-                    status: Literal["in_progress", "done"] = "done" if reply_text is not None else "in_progress"
-                    return IdempotencyRecord(message_id=message_id, status=status,
-                                             reply_text=reply_text, api_code=api_code)
+                except pymysql.err.IntegrityError as exc:
+                    if exc.args[0] != 1062:
+                        raise
+                await cur.execute(
+                    "SELECT reply_text, api_code, response_json, http_status, error, user_id, "
+                    f"room_id, UNIX_TIMESTAMP(created_at) FROM {MESSAGE_LOG} WHERE message_id = %s",
+                    (message_id,),
+                )
+                row = await cur.fetchone()
+                if row is None:
+                    raise RuntimeError("idempotency record missing after duplicate claim")
+                response = json.loads(row[2]) if row[2] is not None else None
+                if response is not None and not isinstance(response, dict):
+                    raise ValueError("invalid stored HTTP response")
+                record = IdempotencyRecord(
+                    message_id=message_id,
+                    status="uncertain" if response_is_uncertain(response, row[3] or 200) else (
+                        "done" if row[0] is not None else "in_progress"
+                    ),
+                    reply_text=row[0], api_code=row[1], response=response,
+                    http_status=row[3] or 200, error=row[4], user_id=row[5], room_id=row[6],
+                    started_at=float(row[7]),
+                )
+                return _existing(record, user_id, room_id, time.time(), self._processing_timeout)
         finally:
             conn.close()
 
-    async def complete(self, message_id, *, reply_text, product_type, intent, api_code, api_result, error, latency_ms):  # type: ignore[no-untyped-def]
+    async def _read_record(self, cur: Any, message_id: str, *, lock: bool = False) -> IdempotencyRecord | None:
+        await cur.execute(
+            "SELECT reply_text, api_code, response_json, http_status, error, user_id, "
+            f"room_id, UNIX_TIMESTAMP(created_at), conversation_id, raw_content FROM {MESSAGE_LOG} "
+            "WHERE message_id = %s" + (" FOR UPDATE" if lock else ""), (message_id,),
+        )
+        row = await cur.fetchone()
+        if row is None:
+            return None
+        response = json.loads(row[2]) if isinstance(row[2], str) else row[2]
+        if response is not None and not isinstance(response, dict):
+            raise ValueError("invalid stored HTTP response")
+        return IdempotencyRecord(
+            message_id=message_id,
+            status="uncertain" if response_is_uncertain(response, row[3]) else (
+                "done" if row[0] is not None else "in_progress"
+            ), reply_text=row[0], api_code=row[1], response=response, http_status=row[3],
+            error=row[4], user_id=row[5], room_id=row[6], started_at=float(row[7]),
+            conversation_id=row[8], raw_text=row[9],
+        )
+
+    async def get(
+        self, message_id: str, *, user_id: str, room_id: str,
+    ) -> IdempotencyRecord | None:
         conn = await self._connect()
         try:
             async with conn.cursor() as cur:
-                await cur.execute(
-                    "UPDATE message_log SET reply_text = %s, product_type = %s, intent = %s, "
-                    "api_code = %s, api_result = %s, error = %s, latency_ms = %s "
-                    "WHERE message_id = %s",
-                    (reply_text if reply_text is not None else "", product_type, intent, api_code,
-                     None if api_result is None else str(api_result)[:4096], error, latency_ms,
-                     message_id),
+                record = await self._read_record(cur, message_id)
+                return None if record is None else _existing(
+                    record, user_id, room_id, time.time(), self._processing_timeout,
                 )
         finally:
             conn.close()
 
+    async def reconcile(
+        self, expected: IdempotencyRecord, *, response: dict[str, Any],
+        reply_text: str, api_code: int, api_result: str,
+    ) -> bool:
+        if expected.status != "uncertain":
+            return False
+        conn = await self._connect()
+        try:
+            await conn.begin()
+            async with conn.cursor() as cur:
+                current = await self._read_record(cur, expected.message_id, lock=True)
+                if current is not None:
+                    current = _existing(
+                        current, expected.user_id, expected.room_id, time.time(), self._processing_timeout,
+                    )
+                if current != expected:
+                    await conn.rollback()
+                    return False
+                await cur.execute(
+                    f"UPDATE {MESSAGE_LOG} SET reply_text=%s, api_code=%s, api_result=%s, "
+                    "error=NULL, response_json=%s, http_status=200 WHERE message_id=%s "
+                    "AND user_id=%s AND room_id=%s",
+                    (reply_text, api_code, json.dumps(api_result, ensure_ascii=False),
+                     json.dumps(response, ensure_ascii=False), expected.message_id,
+                     expected.user_id, expected.room_id),
+                )
+            await conn.commit()
+            return True
+        except BaseException:
+            await conn.rollback()
+            raise
+        finally:
+            conn.close()
 
-__all__ = [
-    "PROCESSING_NOTICE",
-    "IdempotencyRecord",
-    "IdempotencyStore",
-    "InMemoryIdempotencyStore",
-    "MySQLIdempotencyStore",
-]
+    async def complete(
+        self, message_id: str, *, reply_text: str | None, product_type: str | None,
+        intent: str | None, api_code: int | None, api_result: Any, error: str | None,
+        latency_ms: int, response: dict[str, Any] | None = None, http_status: int = 200,
+    ) -> None:
+        conn = await self._connect()
+        try:
+            async with conn.cursor() as cur:
+                await cur.execute(
+                    f"UPDATE {MESSAGE_LOG} SET reply_text = %s, product_type = %s, intent = %s, "
+                    "api_code = %s, api_result = %s, error = %s, latency_ms = %s, "
+                    "response_json = %s, http_status = %s WHERE message_id = %s",
+                    (reply_text if reply_text is not None else "", product_type, intent, api_code,
+                     None if api_result is None else json.dumps(api_result, ensure_ascii=False),
+                     error, latency_ms, None if response is None else json.dumps(response, ensure_ascii=False),
+                     http_status, message_id),
+                )
+        finally:
+            conn.close()

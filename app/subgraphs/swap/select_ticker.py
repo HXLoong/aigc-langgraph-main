@@ -1,8 +1,7 @@
 """swap.select_ticker 节点 · 互换-选择标的（DSL v2 新节点）。
 
 只判断用户本次 raw_content 是否在切换某订单的候选标的；不抽取标的以外任何
-字段，只吐指向 candidate_list 的指针（下游用 seq/directRef 确定性查表拿到真实
-windCode）。
+字段，只吐指向 candidate_list 的指针（下游按 seq 取引用候选，或保留 directRef 原文交后端解析）。
 
 只在 place_order_request 分支、且 quote_content 非空且非 "null" 时调用
 （图 3-4 段边）；与 swap.select_counterparty 并行（ADR 0024 重构 3）。
@@ -26,6 +25,7 @@ from app.graph.state import AgentState, TraceEntry
 from app.llm.clients import get_qwen_complex
 from app.prompts.spec import PromptSpec, register
 from app.subgraphs.swap.models import SwapSelectTickerOutput
+from app.subgraphs.swap.selection_rules import ticker_choice, validate_picks
 
 
 def _build_user_message(state: AgentState) -> str:
@@ -36,7 +36,8 @@ def _build_user_message(state: AgentState) -> str:
     return (
         f"raw_content：{raw_content}\n"
         f"quote_content：{quote_content}\n"
-        f"candidate_list：{candidate_list_str}"
+        f"candidate_list：{candidate_list_str}\n"
+        f"orders：{state.get('place_params') or {}}"
     )
 
 
@@ -44,7 +45,7 @@ SPEC = register(PromptSpec(
     category="swap",
     name="select_ticker",
     output_model=SwapSelectTickerOutput,
-    inputs=("raw_text", "quote_content", "quote_ticker_candidates"),
+    inputs=("raw_text", "quote_content", "quote_ticker_candidates", "place_params"),
     user_builder=_build_user_message,
 ))
 
@@ -70,16 +71,20 @@ async def swap_select_ticker(state: AgentState) -> dict[str, Any]:
             ],
         }
 
-    llm = get_qwen_complex().with_structured_output(SwapSelectTickerOutput)
-    messages, _prompt_name = SPEC.build_messages(state)
-    result: Any = await llm.ainvoke(messages)
+    result = ticker_choice(state)
+    method = "code" if result is not None else "llm"
+    if result is None:
+        llm = get_qwen_complex().with_structured_output(SwapSelectTickerOutput)
+        messages, _prompt_name = SPEC.build_messages(state)
+        result = SwapSelectTickerOutput.model_validate(await llm.ainvoke(messages))
 
+    picks = validate_picks(state, [pick.model_dump() for pick in result.picks], "ticker")
     return {
-        "swap_ticker_picks": [p.model_dump() for p in result.picks],
+        "swap_ticker_picks": picks,
         "trace": [
             TraceEntry(
                 node="swap_select_ticker",
-                decision=f"picks={len(result.picks)}",
+                decision=f"{method},picks={len(result.picks)}",
                 llm_output=result.model_dump(),
             )
         ],

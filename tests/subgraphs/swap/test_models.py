@@ -50,7 +50,7 @@ class TestSwapIntentOutput:
         ],
     )
     def test_all_seven_intent_types_accepted(self, intent_type: str) -> None:
-        obj = SwapIntentOutput(type=intent_type)  # type: ignore[arg-type]
+        obj = SwapIntentOutput(type=intent_type, confidence=0.91, evidence=[{"text": "本轮意图模型测试输入", "origin": "raw"}])  # type: ignore[arg-type]
         assert obj.type == intent_type
 
     def test_literal_has_exactly_seven_values(self) -> None:
@@ -59,18 +59,19 @@ class TestSwapIntentOutput:
 
     def test_invalid_intent_type_rejected(self) -> None:
         with pytest.raises(ValidationError):
-            SwapIntentOutput(type="not_a_real_intent")  # type: ignore[arg-type]
+            SwapIntentOutput(type="not_a_real_intent", confidence=0.91, evidence=[{"text": "本轮意图模型测试输入", "origin": "raw"}])  # type: ignore[arg-type]
 
     def test_option_intent_names_rejected(self) -> None:
         """期权枚举（new_inquiry / request_cancel_order）不能混入 swap。"""
         for name in ("new_inquiry", "request_cancel_order", "request_modify_order"):
             with pytest.raises(ValidationError):
-                SwapIntentOutput(type=name)  # type: ignore[arg-type]
+                SwapIntentOutput(type=name, confidence=0.91, evidence=[{"text": "本轮意图模型测试输入", "origin": "raw"}])  # type: ignore[arg-type]
 
     def test_extra_fields_ignored(self) -> None:
         """LLM 输出多字段时静默忽略（qwen-max 经常输出额外字段）。"""
         params = SwapIntentOutput.model_validate(
-            {"type": "place_order_request", "extra_garbage": "x"}
+            {"type": "place_order_request", "extra_garbage": "x", "confidence": 0.91,
+             "evidence": [{"text": "本轮意图模型测试输入", "origin": "raw"}]}
         )
         assert params.type == "place_order_request"
 

@@ -20,7 +20,7 @@ from app.subgraphs.swap import backend as swap_backend_module
 from app.subgraphs.swap import intent as swap_intent_module
 from app.subgraphs.swap import place_order as swap_place_order_module
 from app.subgraphs.swap.models import SwapIntentOutput, SwapPlaceOrderParams
-from app.subgraphs.ticker.resolver import TickerResolution
+from tests.intent_fixtures import intent_reply, mock_ainvoke
 
 
 class _CapturingGraph:
@@ -71,7 +71,7 @@ def test_workflows_run_returns_dify_compatible_schema(
 
     def fake_structured_llm(value: object) -> MagicMock:
         llm = MagicMock()
-        llm.ainvoke = AsyncMock(return_value=value)
+        llm.ainvoke = mock_ainvoke(value)
         base = MagicMock()
         base.with_structured_output.return_value = llm
         return base
@@ -79,17 +79,12 @@ def test_workflows_run_returns_dify_compatible_schema(
     monkeypatch.setattr(
         swap_intent_module,
         "get_qwen_thinking",
-        lambda: fake_structured_llm(SwapIntentOutput(type="place_order_request")),
+        lambda: fake_structured_llm(intent_reply(SwapIntentOutput, type="place_order_request")),
     )
     monkeypatch.setattr(
         swap_place_order_module,
         "get_qwen_complex",
         lambda: fake_structured_llm(SwapPlaceOrderParams(orderList=[])),
-    )
-    monkeypatch.setattr(
-        swap_place_order_module,
-        "resolve_ticker_full",
-        AsyncMock(return_value=TickerResolution(resolved=[], hitl_pending=[])),
     )
     fake_client = MagicMock()
     fake_client.operate = AsyncMock(return_value={"code": 0, "data": {}, "msg": ""})
@@ -765,3 +760,16 @@ async def test_langfuse_client_registered_before_handler_on_parent_trace(
         request_trace_id="3" * 32, traceparent=f"00-{'1' * 32}-{'2' * 16}-01"
     )
     assert order[:2] == ["client", "handler"], order
+
+
+@pytest.mark.asyncio
+async def test_langfuse_callback_runs_inline_for_current_span_updates(monkeypatch):
+    captured = {}
+    _patch_langfuse(monkeypatch, captured)
+    monkeypatch.setattr(observability_tracing, "get_settings", lambda: SimpleNamespace(
+        environment="development", enable_langfuse=True, langfuse_public_key="public",
+        langfuse_secret_key="secret", langfuse_base_url="https://langfuse.test",
+        trust_inbound_traceparent=False,
+    ))
+    trace = await observability_tracing.attach_request_trace(request_trace_id="4"*32, traceparent=None)
+    assert trace.handler.run_inline is True

@@ -10,7 +10,7 @@ list 中被清成 None 的元素丢弃；dict 递归清洗。只清洗 orderList
 """
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, cast
 
 #: Dify `NULL_LITERALS` 环境变量默认值（逗号分隔，缺省即 {"null"}）。
 _DEFAULT_NULL_LITERALS = frozenset({"null"})
@@ -39,7 +39,7 @@ def sanitize_order_list(
     Returns:
         清洗后的新 order_list（不修改入参）
     """
-    return _sanitize(order_list or [], null_literals)
+    return cast(list[dict[str, Any]], _sanitize(order_list or [], null_literals))
 
 
 __all__ = ["sanitize_order_list"]

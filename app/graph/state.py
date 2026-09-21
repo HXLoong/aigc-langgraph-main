@@ -10,8 +10,9 @@ from __future__ import annotations
 import uuid
 from typing import Annotated, Any, Literal, TypedDict
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
+from app.extraction.fields import FieldRecord, merge_fields
 from app.wire_model import WireModel
 
 # ============================================================
@@ -28,15 +29,15 @@ class _Identified(BaseModel):
 
     原生子图节点会把**完整输出 state** 交回父图；trace / history_messages 若用 operator.add，
     父图已有条目会被再加一遍。与 LangGraph `add_messages` 同款：每条带 id，reducer 按 id 去重。
-    id 不参与 dump（checkpoint / API outputs / 测试相等比较都看不到它）。
+    id 必须进入 checkpoint；相等比较只比较内容，HTTP trace 单独投影。
     """
 
-    id: str = Field(default_factory=_new_id, exclude=True)
+    id: str = Field(default_factory=_new_id)
 
     def __eq__(self, other: object) -> bool:
         if not isinstance(other, BaseModel):
             return NotImplemented
-        return type(self) is type(other) and self.model_dump() == other.model_dump()
+        return type(self) is type(other) and self.model_dump(exclude={"id"}) == other.model_dump(exclude={"id"})
 
     __hash__ = None  # type: ignore[assignment]
 
@@ -157,8 +158,37 @@ class ErrorInfo(BaseModel):
     model_config = ConfigDict(extra="allow")
     node: str
     type: str
+    code: Literal["E1", "E2", "E3", "E4", "E5"] = "E3"
     message: str
     traceback: str | None = None
+    causes: list[ErrorInfo] = Field(default_factory=list)
+
+    @model_validator(mode="before")
+    @classmethod
+    def classify(cls, value: Any) -> Any:
+        if isinstance(value, dict) and "code" not in value:
+            kind = value.get("type")
+            code = "E3"
+            if kind in {"APITimeoutError", "APIConnectionError", "RateLimitError", "InternalServerError", "TimeoutError"}:
+                code = "E1"
+            elif kind in {"EvidenceError", "ValidationError", "OutputParserException"}:
+                code = "E2"
+            elif kind in {"BackendUnreachableError", "EmptyBackendResultError", "SetIntentError", "ConnectError"}:
+                code = "E4"
+            elif kind == "WorkflowTimeout":
+                code = "E5"
+            return {**value, "code": code}
+        return value
+
+
+def merge_errors(left: ErrorInfo | None, right: ErrorInfo | None) -> ErrorInfo | None:
+    """Merge simultaneous failures; explicit None is reserved for ingest's reset."""
+    if right is None or left is None:
+        return right
+    failures = (left.causes or [left]) + (right.causes or [right])
+    unique = {(e.node, e.type, e.message): e for e in failures}
+    ordered = [unique[key] for key in sorted(unique)]
+    return ordered[0].model_copy(update={"causes": ordered})
 
 
 # ============================================================
@@ -202,8 +232,10 @@ class AgentState(TypedDict, total=False):
     fast_query: str | None  # fast_query：快速询价标记（参与型看涨/雪球前置分支）
     at_bot: bool | None  # at_bot：是否 @ 机器人
     existing_command: str | None  # existing_command：存量兼容-交易查询指令
-    bot_name: str | None  # bot_name：机器人名称（替代旧 bot_name_list 获取）
+    bot_name: str | None  # 入口兼容字段；不注入 LLM 提示词
     operator_user_id: str | None  # operator_user_id：操作者（替代旧 userId 语义）
+    retry_origin: str | None  # Java RabbitMQ 重投来源；只控制通知投影，不重试交易
+    retry_attempt: str | None
 
     # -------- 对手方与引用候选（路由前置提取，DSL v2「交易对手、候选标的提取」）--------
     # 入口原始 JSON 串（Java 侧 option/trs 预查结果，ingest 透传，pre_route 解析）
@@ -223,22 +255,28 @@ class AgentState(TypedDict, total=False):
     history_messages: Annotated[list[Message], merge_history]
     #: 上一轮已确认业务对象（ADR 0024 D4）：{product_type, intent, expected_action, order_ids, message_id}
     #: 由主图 remember_confirmed_params 写入；确认链路裸确认时优先读它，显式引用 / 单号仍优先
+    conversation_orders: list[dict[str, Any]]
     last_confirmed_params: dict[str, Any] | None
     #: 兼容平仓撤单链的最近会话订单；内容由上游提供，节点只读取最后一笔订单号
     conversation_orders: list[dict[str, Any]]
+    last_activity_at: float  # 最近一轮开始时间；仅图内部写入，不能由请求覆盖
+    session_status: Literal["active", "expired"]
 
     # -------- 业务路由 --------
     #: 单次 graph 调用的关联 ID（ADR 0004/#156：node_trace ↔ LangFuse 关联键）
     trace_id: str
     product_type: ProductType
     intent: str  # 小写下划线 type 字符串，对齐 Java SwapIntentionType / stockOptionIntentionType
+    sub_instructions: list[dict[str, Any]]  # 当前消息的原文指令片段与依赖；只由规划节点写入
+    instruction_results: list[dict[str, Any]]  # 按原文顺序的独立执行结果/真实批次回执
 
     # -------- 业务对象（#160/ADR 0001 D6：运行时为 dict，写入必须经
     # app/graph/business_params.py 的 validated_* 校验——形状的唯一权威）--------
     #: 本轮要对后端执行的动作类别（ADR 0024 D2 顶层化）：写类节点写入，render / 输出层读取；
     #: 查询类意图为 None。与 Java operate 的 type 无关——那条由 intent 驱动
     expected_action: ExpectedAction | None
-    tickers: list[TickerCandidate]
+    field_records: Annotated[dict[str, FieldRecord], merge_fields]
+    tickers: list[TickerCandidate]  # 旧 checkpoint/HTTP 兼容；当前业务不在本地解析证券
     place_params: dict[str, Any] | None
     cancel_params: dict[str, Any] | None
     confirm: dict[str, Any] | None
@@ -252,14 +290,14 @@ class AgentState(TypedDict, total=False):
 
     # -------- ticker 消歧 --------
     # 多命中分差不足时收集到此处，render 节点生成消歧卡片（Issue #20）
-    ticker_hitl_candidates: list[dict[str, Any]] | None
+    ticker_hitl_candidates: list[dict[str, Any]] | None  # 旧状态兼容，不参与本地回复
 
     # -------- 回复渲染 --------
     reply_text: str | None  # render 节点写入；API 层透传给企微
 
     # -------- 工程层 --------
     trace: Annotated[list[TraceEntry], merge_by_id]
-    error: ErrorInfo | None
+    error: Annotated[ErrorInfo | None, merge_errors]
 
     # -------- 后端结果 --------
     #: 后端 operate 的 result.data 原样透传：dict / list / 字符串消息三态
@@ -278,15 +316,16 @@ class SubgraphOutput(TypedDict, total=False):
 
     intent: str
     expected_action: ExpectedAction | None
-    tickers: list[TickerCandidate]
+    field_records: Annotated[dict[str, FieldRecord], merge_fields]
+    tickers: list[TickerCandidate]  # 旧 checkpoint/HTTP 兼容；当前业务不在本地解析证券
     place_params: dict[str, Any] | None
     cancel_params: dict[str, Any] | None
     confirm: dict[str, Any] | None
     query_filter: dict[str, Any] | None
     close_params: dict[str, Any] | None
-    ticker_hitl_candidates: list[dict[str, Any]] | None
+    ticker_hitl_candidates: list[dict[str, Any]] | None  # 旧状态兼容，不参与本地回复
     reply_text: str | None
     api_result: str | dict[str, Any] | list[Any] | None
     api_code: int | None
     trace: Annotated[list[TraceEntry], merge_by_id]
-    error: ErrorInfo | None
+    error: Annotated[ErrorInfo | None, merge_errors]

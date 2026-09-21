@@ -5,10 +5,12 @@ LLM 输出统一用 `type` 字段（与 Dify 原 prompt 约定一致）。
 """
 from __future__ import annotations
 
-from typing import Literal
+from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from app.extraction.fields import CandidateDescription
+from app.extraction.intent_evidence import IntentEvidenceOutput
 from app.wire_model import WireModel
 
 # ============================================================
@@ -28,7 +30,7 @@ SwapIntentType = Literal[
 ]
 
 
-class SwapIntentOutput(BaseModel):
+class SwapIntentOutput(IntentEvidenceOutput):
     """swap.intent 节点的 LLM 输出 schema。"""
 
     model_config = ConfigDict(extra="ignore")
@@ -102,32 +104,32 @@ class SwapOrderItem(WireModel):
 
     model_config = ConfigDict(extra="ignore")
 
-    order_id: str | None = Field(default=None, alias="orderId", description="互换订单号 H-YYYYMMDD-XXXXXXXXXX；改单 / 补参时来自引用消息，全新下单 → null")
-    place_order_ultra_contract_code: str | None = Field(default=None, alias="placeOrderUltraContractCode", description="合约代码（用户明确给出时）")
-    place_order_wind_code: str | None = Field(default=None, alias="placeOrderWindCode", description="标的原文（代码或名称片段，逐字保留；标准化由 ticker resolver 负责）")
-    place_order_transaction_type: SwapTransactionType | None = Field(default=None, alias="placeOrderTransactionType", description="交易品种：A_SHARE / HK_STOCK / US_STOCK / SZ_HK_CONNECT / SH_HK_CONNECT / CHN_FUTURE / CROSS_FUTURE")
-    place_order_quantity: int | None = Field(default=None, alias="placeOrderQuantity", description="委托数量（股 / 手系单位展开后的整数）")
-    place_order_quantity_hand: int | None = Field(default=None, alias="placeOrderQuantityHand", description="旧字段：按手表达的数量（新提示词不再要求填写）")  # 旧字段，见 docstring
-    place_order_quantity_unit: SwapQuantityUnit | None = Field(default=None, alias="placeOrderQuantityUnit", description="数量单位：HAND 手系 / SHARE 股系 / AMOUNT 金额（落 placeOrderNotional）")
-    place_order_order_direction: SwapOrderDirection | None = Field(default=None, alias="placeOrderOrderDirection", description="方向：BUY 买入 / SELL 卖出 / SHORT_OPEN 卖空 / SHORT_CLOSE 平空")
-    place_order_price_type: SwapPriceType | None = Field(default=None, alias="placeOrderPriceType", description="价格类型：LimitOrder 限价 / MarketOrder 市价")
-    place_order_algorithm_type: SwapAlgorithmType | None = Field(default=None, alias="placeOrderAlgorithmType", description="算法：POV / TWAP / VWAP / ICEBERG / SNIPER")
-    place_order_price: float | int | None = Field(default=None, alias="placeOrderPrice", description="限价价格（数字）")
-    place_order_pov_percent: float | int | None = Field(default=None, alias="placeOrderPovPercent", description="POV 跟量比例（数字，不带 %）")
-    place_order_total_pov_percent: float | int | None = Field(default=None, alias="placeOrderTotalPovPercent", description="总单 POV 比例（总单场景）")
-    place_order_display_qty: int | None = Field(default=None, alias="placeOrderDisplayQty", description="可见委托量（冰山单）")
-    place_order_max_vol: float | int | None = Field(default=None, alias="placeOrderMaxVol", description="最大成交量限制")
-    place_order_start_time: str | None = Field(default=None, alias="placeOrderStartTime", description="算法开始时间 HH:MM")
-    place_order_end_time: str | None = Field(default=None, alias="placeOrderEndTime", description="算法结束时间 HH:MM")
-    place_order_relative_time_minutes: float | int | None = Field(default=None, alias="placeOrderRelativeTimeMinutes", description="相对时间窗（分钟，如「30 分钟内」）")
-    place_order_shortname: str | None = Field(default=None, alias="placeOrderShortname", description="交易对手 shortName（完整匹配优先，唯一简写次之）")
-    place_order_quantity_total: int | None = Field(default=None, alias="placeOrderQuantityTotal", description="总量（总单场景）")
-    place_order_premarket: bool | None = Field(default=None, alias="placeOrderPremarket", description="是否盘前")
-    place_order_notional: float | int | None = Field(default=None, alias="placeOrderNotional", description="名义本金 / 金额（数量单位为 AMOUNT 时）")
-    place_order_notional_currency: SwapNotionalCurrency | None = Field(default=None, alias="placeOrderNotionalCurrency", description="名义本金币种：CNY / USD / HKD / EUR / GBP / JPY / AUD / NZD / CNH")
-    place_order_entrust_ratio: float | int | None = Field(default=None, alias="placeOrderEntrustRatio", description="委托比例（可与 placeOrderQuantity 同时非 null）")
-    place_order_close_intent: bool | None = Field(default=None, alias="placeOrderCloseIntent", description="是否平仓意图（减仓 / 平掉类表达）")
-    has_fast_execution_intent: bool | None = Field(default=None, alias="hasFastExecutionIntent", description="是否最大跟量 / 快速执行语义（按 system 规则判定）")
+    order_id: Annotated[str | None, CandidateDescription('用户或引用中明确出现的订单号或订单定位片段原文；不生成单号')] = Field(default=None, alias="orderId", description="互换订单号 H-YYYYMMDD-XXXXXXXXXX；改单 / 补参时来自引用消息，全新下单 → null")
+    place_order_ultra_contract_code: Annotated[str | None, CandidateDescription('用户明确给出的合约代码原文')] = Field(default=None, alias="placeOrderUltraContractCode", description="合约代码（用户明确给出时）")
+    place_order_wind_code: Annotated[str | None, CandidateDescription('证券代码或名称原文，逐字保留；最终证券识别由后端完成')] = Field(default=None, alias="placeOrderWindCode", description="标的原文（代码或名称片段，逐字保留；最终证券识别由后端负责）")
+    place_order_transaction_type: Annotated[SwapTransactionType | None, CandidateDescription('交易品种原文，如港股、美股；保留原词，不转枚举')] = Field(default=None, alias="placeOrderTransactionType", description="交易品种：A_SHARE / HK_STOCK / US_STOCK / SZ_HK_CONNECT / SH_HK_CONNECT / CHN_FUTURE / CROSS_FUTURE")
+    place_order_quantity: Annotated[int | None, CandidateDescription('委托数量原文，保留股、手、万等单位，不展开数量')] = Field(default=None, alias="placeOrderQuantity", description="委托数量（股 / 手系单位展开后的整数）")
+    place_order_quantity_hand: Annotated[int | None, CandidateDescription('旧兼容字段，本次抽取留空；手数原文使用 placeOrderQuantity')] = Field(default=None, alias="placeOrderQuantityHand", description="旧字段：按手表达的数量（新提示词不再要求填写）")  # 旧字段，见 docstring
+    place_order_quantity_unit: Annotated[SwapQuantityUnit | None, CandidateDescription('用户或表头明确提供的数量单位原文，不转枚举')] = Field(default=None, alias="placeOrderQuantityUnit", description="数量单位：HAND 手系 / SHARE 股系 / AMOUNT 金额（落 placeOrderNotional）")
+    place_order_order_direction: Annotated[SwapOrderDirection | None, CandidateDescription('买卖与开平仓方向原文，不转枚举')] = Field(default=None, alias="placeOrderOrderDirection", description="方向：BUY 买入 / SELL 卖出 / SHORT_OPEN 卖空 / SHORT_CLOSE 平空")
+    place_order_price_type: Annotated[SwapPriceType | None, CandidateDescription('价格类型原文，如限价、市价；不转枚举')] = Field(default=None, alias="placeOrderPriceType", description="价格类型：LimitOrder 限价 / MarketOrder 市价")
+    place_order_algorithm_type: Annotated[SwapAlgorithmType | None, CandidateDescription('算法名称原文')] = Field(default=None, alias="placeOrderAlgorithmType", description="算法：POV / TWAP / VWAP / ICEBERG / SNIPER")
+    place_order_price: Annotated[float | int | None, CandidateDescription('限价价格原文，不改写数字')] = Field(default=None, alias="placeOrderPrice", description="限价价格（数字）")
+    place_order_pov_percent: Annotated[float | int | None, CandidateDescription('跟量比例原文，保留百分号')] = Field(default=None, alias="placeOrderPovPercent", description="POV 跟量比例（数字，不带 %）")
+    place_order_total_pov_percent: Annotated[float | int | None, CandidateDescription('总单跟量比例原文，保留百分号')] = Field(default=None, alias="placeOrderTotalPovPercent", description="总单 POV 比例（总单场景）")
+    place_order_display_qty: Annotated[int | None, CandidateDescription('冰山单可见委托数量原文，保留单位')] = Field(default=None, alias="placeOrderDisplayQty", description="可见委托量（冰山单）")
+    place_order_max_vol: Annotated[float | int | None, CandidateDescription('最大成交量限制原文，保留单位')] = Field(default=None, alias="placeOrderMaxVol", description="最大成交量限制")
+    place_order_start_time: Annotated[str | None, CandidateDescription('算法开始时间原文，不补日期或时间字符')] = Field(default=None, alias="placeOrderStartTime", description="算法开始时间 HH:MM")
+    place_order_end_time: Annotated[str | None, CandidateDescription('算法结束时间原文，不补日期或时间字符')] = Field(default=None, alias="placeOrderEndTime", description="算法结束时间 HH:MM")
+    place_order_relative_time_minutes: Annotated[float | int | None, CandidateDescription('相对时间窗原文，保留分钟或小时单位，不换算')] = Field(default=None, alias="placeOrderRelativeTimeMinutes", description="相对时间窗（分钟，如「30 分钟内」）")
+    place_order_shortname: Annotated[str | None, CandidateDescription('交易对手名称原文，不替换为候选列表中的完整名称')] = Field(default=None, alias="placeOrderShortname", description="交易对手 shortName（完整匹配优先，唯一简写次之）")
+    place_order_quantity_total: Annotated[int | None, CandidateDescription('总单数量原文，保留单位，不展开')] = Field(default=None, alias="placeOrderQuantityTotal", description="总量（总单场景）")
+    place_order_premarket: Annotated[bool | None, CandidateDescription('表示盘前要求的原文；不输出布尔值')] = Field(default=None, alias="placeOrderPremarket", description="是否盘前")
+    place_order_notional: Annotated[float | int | None, CandidateDescription('金额原文，保留币种和单位，不换算')] = Field(default=None, alias="placeOrderNotional", description="名义本金 / 金额（数量单位为 AMOUNT 时）")
+    place_order_notional_currency: Annotated[SwapNotionalCurrency | None, CandidateDescription('币种原文，不转枚举')] = Field(default=None, alias="placeOrderNotionalCurrency", description="名义本金币种：CNY / USD / HKD / EUR / GBP / JPY / AUD / NZD / CNH")
+    place_order_entrust_ratio: Annotated[float | int | None, CandidateDescription('委托或平仓比例原文，不计算比例')] = Field(default=None, alias="placeOrderEntrustRatio", description="委托比例（可与 placeOrderQuantity 同时非 null）")
+    place_order_close_intent: Annotated[bool | None, CandidateDescription('表达平仓或减仓的原文片段，不输出布尔值')] = Field(default=None, alias="placeOrderCloseIntent", description="是否平仓意图（减仓 / 平掉类表达）")
+    has_fast_execution_intent: Annotated[bool | None, CandidateDescription('表达最大跟量或快速执行的原文片段，不输出布尔值')] = Field(default=None, alias="hasFastExecutionIntent", description="是否最大跟量 / 快速执行语义（按 system 规则判定）")
 
 
 class SwapPlaceOrderParams(WireModel):
@@ -202,7 +204,9 @@ class SwapTickerPick(WireModel):
     order_seq: int | None = Field(default=None, alias="orderSeq", description="目标订单在 candidate_list 中的序号（orderId 缺失时用）")
     idx: int | None = Field(default=None, description="目标订单下标（0 起；orderId / orderSeq 都缺失时的兜底）")
     seq: int | None = Field(default=None, description="候选标的在本单 candidates 中的序号（seq → code）")
-    direct_ref: str | None = Field(default=None, alias="directRef", description="直接引用（候选 code / 名称；命中候选则规范为 code，否则按原文使用）")
+    direct_ref: str | None = Field(default=None, alias="directRef", description="用户原文中的候选代码或名称指针；必须唯一命中本订单候选，不得直接成为最终代码")
+    evidence: str = Field(default="", description="本轮原文的连续选择片段，多订单必须含明确订单范围")
+    confidence: float | None = Field(default=None, ge=0, le=1, description="选择识别置信度；模型指针必须提供，不能替代原文与范围校验")
 
 
 class SwapSelectTickerOutput(BaseModel):
@@ -224,6 +228,8 @@ class SwapCounterpartyPick(WireModel):
     letter: str | None = Field(default=None, description="对手列表中的字母标识（如 A / B，对应 sort）")
     ordinal: int | None = Field(default=None, description="对手列表中的第 N 个（1 起，映射为 sort 字母）")
     direct_name: str | None = Field(default=None, alias="directName", description="对手名称原文（精确匹配优先，唯一子串次之；多命中不算）")
+    evidence: str = Field(default="", description="本轮原文的连续选择片段，多订单必须含明确订单范围")
+    confidence: float | None = Field(default=None, ge=0, le=1, description="选择识别置信度；模型指针必须提供，不能替代原文与范围校验")
 
 
 class SwapSelectCounterpartyOutput(WireModel):

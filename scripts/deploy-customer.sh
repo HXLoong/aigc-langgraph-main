@@ -169,8 +169,7 @@ step2_env_check() {
 
     # 必填字段
     local required=(
-        CHECKPOINT_MYSQL_URI
-        BUSINESS_MYSQL_URI
+        MYSQL_URI
         QWEN_API_BASE
         QWEN_API_KEY
         QWEN_MODEL_STANDARD
@@ -239,21 +238,21 @@ step3_mysql_check() {
         return
     fi
 
-    local cp_uri
-    cp_uri=$(env_get "CHECKPOINT_MYSQL_URI")
+    local mysql_uri
+    mysql_uri=$(env_get "MYSQL_URI")
 
     # 用 Python urllib 正确解析（sed 处理含 @ 的密码会贪婪匹配出错；
     # 同时支持 URL-encoded 特殊字符如 %40 = @）
     local parsed
     parsed=$(python3 -c "
 from urllib.parse import urlparse, unquote
-u = urlparse('$cp_uri')
+u = urlparse('$mysql_uri')
 print(u.hostname or '')
 print(u.port or 3306)
 print(unquote(u.username or ''))
 print(unquote(u.password or ''))
 print((u.path or '').lstrip('/').split('?', 1)[0])
-" 2>/dev/null) || abort "URI 解析失败（CHECKPOINT_MYSQL_URI 格式错？）" "docs/deploy/customer-private.md#4"
+" 2>/dev/null) || abort "URI 解析失败（MYSQL_URI 格式错？）" "docs/deploy/customer-private.md#4"
 
     local host port user pass db
     host=$(echo "$parsed" | sed -n '1p')
@@ -276,7 +275,7 @@ EOF
 
     if ! mysql --defaults-extra-file="$creds_file" -h "$host" -P "$port" -u "$user" -e "SELECT 1" >/dev/null 2>&1; then
         rm -f "$creds_file"
-        abort "MySQL 连不通，检查 .env 中 CHECKPOINT_MYSQL_URI" "docs/troubleshooting-sop.md#4"
+        abort "MySQL 连不通，检查 .env 中 MYSQL_URI" "docs/troubleshooting-sop.md#4"
     fi
 
     local ver

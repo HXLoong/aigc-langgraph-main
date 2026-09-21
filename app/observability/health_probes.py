@@ -7,8 +7,9 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from collections.abc import Awaitable
 from dataclasses import dataclass
-from typing import Literal
+from typing import Any, Literal
 
 logger = logging.getLogger(__name__)
 
@@ -28,7 +29,7 @@ class ProbeResult:
     latency_ms: int | None = None
 
 
-async def _timed(target: str, coro) -> tuple[ProbeStatus, str | None, int]:
+async def _timed(target: str, coro: Awaitable[Any]) -> tuple[ProbeStatus, str | None, int]:
     import time
 
     t0 = time.monotonic()
@@ -42,7 +43,7 @@ async def _timed(target: str, coro) -> tuple[ProbeStatus, str | None, int]:
 
 
 async def probe_mysql() -> ProbeResult:
-    """SELECT 1：saver 已接线时打 saver 自己的连接池（ADR 0024 D4），否则直连 checkpoint_mysql_uri。"""
+    """SELECT 1：saver 已接线时打 saver 自己的连接池（ADR 0024 D4），否则直连 mysql_uri。"""
     from app.checkpointer import factory as checkpointer_factory
     from app.config import get_settings
 
@@ -55,7 +56,7 @@ async def probe_mysql() -> ProbeResult:
 
         import aiomysql
 
-        uri = get_settings().checkpoint_mysql_uri
+        uri = get_settings().mysql_uri
         if not uri:
             raise RuntimeError("no_uri")
         parsed = urlparse(uri)

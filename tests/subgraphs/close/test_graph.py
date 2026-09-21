@@ -1,19 +1,20 @@
 """close 子图编译 + 端到端测试（mock LLM）。"""
 from __future__ import annotations
 
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import MagicMock
 
 import pytest
 
 from app.subgraphs.close import build_close_graph
 from app.subgraphs.close import intent as intent_module
 from app.subgraphs.close.models import CloseIntentOutput
+from tests.intent_fixtures import intent_reply, mock_ainvoke
 
 
 def _patch_llm(monkeypatch: pytest.MonkeyPatch, return_type: str) -> None:
-    fake_output = CloseIntentOutput(type=return_type)  # type: ignore[arg-type]
+    fake_output = intent_reply(CloseIntentOutput, type=return_type)  # type: ignore[arg-type]
     fake_llm_with_schema = MagicMock()
-    fake_llm_with_schema.ainvoke = AsyncMock(return_value=fake_output)
+    fake_llm_with_schema.ainvoke = mock_ainvoke(fake_output)
     fake_base_llm = MagicMock()
     fake_base_llm.with_structured_output = MagicMock(
         return_value=fake_llm_with_schema

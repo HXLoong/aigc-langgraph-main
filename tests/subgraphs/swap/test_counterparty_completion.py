@@ -25,10 +25,11 @@ async def test_extraction_leaves_all_counterparty_decisions_to_downstream_node(
     accounts: list[str | None], names: list[str | None],
 ) -> None:
     params = SwapPlaceOrderParams(orderList=[
-        SwapOrderItem(placeOrderWindCode="NVDA.O", placeOrderShortname=name) for name in names
+        SwapOrderItem(placeOrderWindCode="NVDA", placeOrderShortname=name) for name in names
     ])
     original = deepcopy(params.model_dump())
     state, _requests = graph_boundaries(monkeypatch, params)
+    raw += " " + " ".join(name for name in names if name)
     state["raw_text"] = raw
     state["swap_counterparties"] = [
         {"ctptyId": account, "shortName": shortname} for account in accounts
@@ -40,7 +41,7 @@ async def test_extraction_leaves_all_counterparty_decisions_to_downstream_node(
     assert [o["placeOrderShortname"] for o in output["place_params"]["orderList"]] == names
     assert params.model_dump() == original
     assert state["raw_text"] == raw
-    assert "counterparty_completion" not in output["trace"][0].llm_output
+    assert "counterparty_completion" not in next(e for e in output["trace"] if e.node == "swap_place_order").llm_output
 
 
 @pytest.mark.parametrize("original_name", [None, "1453"])

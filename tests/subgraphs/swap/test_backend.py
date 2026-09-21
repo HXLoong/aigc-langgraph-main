@@ -4,6 +4,7 @@ from __future__ import annotations
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
+from evidence_support import swap_candidate_output
 
 from app.subgraphs.swap import backend as backend_mod
 from app.subgraphs.swap.backend import (
@@ -218,7 +219,7 @@ async def test_place_order_node_no_backend_call(
         orderList=[SwapOrderItem(placeOrderWindCode="腾讯", placeOrderQuantity=1000)]
     )
     fake_llm = MagicMock()
-    fake_llm.ainvoke = AsyncMock(return_value=params)
+    fake_llm.ainvoke = AsyncMock(return_value=swap_candidate_output(params))
     fake_base = MagicMock()
     fake_base.with_structured_output = MagicMock(return_value=fake_llm)
     monkeypatch.setattr(po_module, "get_qwen_complex", lambda: fake_base)

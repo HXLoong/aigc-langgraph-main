@@ -16,20 +16,21 @@ from typing import Any
 from app.graph.retry import io_node
 from app.graph.safe_node import safe_node
 from app.graph.state import AgentState, TraceEntry
-from app.tools.goats_agent_client import make_goats_agent_client
-from app.tools.option_client import FinancialOrderOpenApiSaveReqVO
+from app.tools.goats_agent_client import GoatsAgentClient, make_goats_agent_client
+from app.tools.option_client import FinancialOrderOpenApiSaveReqVO, OptionClient
+from app.tools.receipts import receipt_guard, receipt_text, receipt_update
 
 _SERVICE_UNAVAILABLE = "交易指令服务暂不可用"
 
 logger = logging.getLogger(__name__)
 
 
-def _make_agent_client():
+def _make_agent_client() -> GoatsAgentClient:
     """工厂间接层(测试 patch 此名)。"""
     return make_goats_agent_client()
 
 
-def _make_option_client():
+def _make_option_client() -> OptionClient:
     """工厂间接层(测试 patch 此名)。"""
     from app.tools.option_client import OptionClientHttpx
 
@@ -65,10 +66,10 @@ async def quick_inquiry(state: AgentState) -> dict[str, Any]:
         # business_xxx / timeout / network_error）必须落 trace + 日志，禁止只留通用文案
         reason = rfq.get("reason") or "unknown"
         logger.warning(
-            "quick_inquiry rfq 解析失败 reason=%s http_status=%s raw=%s",
+            "quick_inquiry rfq 解析失败 reason=%s http_status=%s response_length=%s",
             reason,
             rfq.get("http_status"),
-            (rfq.get("raw_response") or "")[:300],
+            len(rfq.get("raw_response") or ""),
         )
         return {
             "api_code": rfq.get("code", 500),
@@ -95,17 +96,13 @@ async def quick_inquiry(state: AgentState) -> dict[str, Any]:
             "quoteContent": state.get("quote_content"),
         }
     )
-    result = await _make_option_client().operate(req)
-    code = result.get("code")
-    if code == 0:
-        reply = result.get("data") or ""
-    elif code == 500:
-        reply = _SERVICE_UNAVAILABLE
-    else:
-        reply = result.get("msg") or "未知错误"
+    async with receipt_guard("quick_inquiry"):
+        result = await _make_option_client().operate(req)
+    update = receipt_update(result, "quick_inquiry")
+    code = update["api_code"]
+    reply = receipt_text(code, update["api_result"])
     return {
-        "api_code": code,
-        "api_result": str(reply),
+        **update,
         "reply_text": str(reply),
         "trace": [TraceEntry(node="quick_inquiry", decision=f"code={code}")],
     }

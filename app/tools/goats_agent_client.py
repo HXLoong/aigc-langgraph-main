@@ -31,10 +31,10 @@ INSTRUCTION_QUERY_PATH = "/api/internal/agent/instruction/query"
 #: 存量兼容分支及 GOATS 50001 的静默哨兵(Java 机器人层看到即不回复用户)
 IGNORE_REPLY_SENTINEL = "IGNORE_REQUEST_NOT_REPLY_USER"
 
-#: 仅网络/超时使用(归因准确,DSL 原文案);其余失败分支见下方新增文案
+#: Dify 对网络/超时/无效响应使用同一用户文案；根因保留在 reason。
 _RFQ_UNAVAILABLE_MSG = "快速询价暂不可用,请检查网络"
-#: 新增:GOATS 有响应但不可用(HTTP 非 200 / 结构异常 / 字段缺失)时的用户文案
-_RFQ_RESPONSE_INVALID_MSG = "快速询价参数解析服务异常，请稍后重试或联系交易员。"
+#: HTTP 非 200 / 结构异常 / 字段缺失同样遵循 Dify 文案。
+_RFQ_RESPONSE_INVALID_MSG = _RFQ_UNAVAILABLE_MSG  # Dify 文案一致；具体根因由 reason 区分
 
 
 def build_agent_headers(
@@ -123,7 +123,7 @@ class GoatsAgentClientHttpx:
                     timeout=timeout,
                 )
                 return resp.status_code, resp, None
-        except httpx.TimeoutException:
+        except (httpx.TimeoutException, TimeoutError):
             return None, None, "timeout"
         except httpx.HTTPError:
             return None, None, "network_error"

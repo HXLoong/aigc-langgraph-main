@@ -81,10 +81,10 @@ async def test_unique_name_completes_orders_without_changing_input_or_other_fiel
         order["placeOrderShortname"] = golden_order["placeOrderShortname"]
     assert output["place_params"] == expected
     assert state == original
-    assert set(output) == {"place_params", "trace"}
+    assert set(output) == {"place_params", "trace", "field_records"}
     trace = output["trace"][0]
     assert trace.node == "swap_recognize_fresh_counterparty"
-    assert trace.llm_output["recall"] == recall
+    assert trace.llm_output["recall"] == (None if "聚鸣价值精选" in state["raw_text"] else recall)
     assert trace.llm_output["adopted"] is True
     assert trace.llm_output["affected_orders"] == [i for i, name in enumerate(names) if name is None]
 
@@ -199,7 +199,7 @@ async def test_model_receives_md_system_and_raw_text_plus_candidate_json_only(
     from app.subgraphs.swap.models import SwapFreshCounterpartyOutput
 
     state = fresh_state()
-    state["raw_text"] = "NVDA 1453股 883.9758限价 聚鸣价值精选"
+    state["raw_text"] = "NVDA 1453股 883.9758限价 价值精选"
     invoke = patch_recognition(monkeypatch, {"hasSignal": False, "matches": []})
     output = await swap_recognize_fresh_counterparty(state)
     assert not output.get("error")
@@ -207,7 +207,7 @@ async def test_model_receives_md_system_and_raw_text_plus_candidate_json_only(
     prompt = load_prompt("swap", "fresh_counterparty")
     assert "{{raw_content}}" in prompt.user_template and "{{shortname_list}}" in prompt.user_template
     expected_user = (
-        "raw_content：NVDA 1453股 883.9758限价 聚鸣价值精选\nshortname_list："
+        "raw_content：NVDA 1453股 883.9758限价 价值精选\nshortname_list："
         + json.dumps([{"sort": "A", "shortName": "聚鸣价值精选"}], ensure_ascii=False)
     )
     assert invoke.await_args.args[0] == [("system", prompt.system), ("user", expected_user)]

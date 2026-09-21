@@ -38,15 +38,15 @@ class TestChunked:
 
 class TestSql:
     def test_delete_sql_whitelist(self):
-        sql = delete_sql("checkpoints", 3)
-        assert sql == "DELETE FROM checkpoints WHERE thread_id IN (%s, %s, %s)"
+        sql = delete_sql("langgraph_checkpoints", 3)
+        assert sql == "DELETE FROM langgraph_checkpoints WHERE thread_id IN (%s, %s, %s)"
 
     def test_delete_sql_rejects_unknown_table(self):
         with pytest.raises(AssertionError):
             delete_sql("users; DROP TABLE x", 1)
 
     def test_order_writes_blobs_then_checkpoints(self):
-        assert CHECKPOINT_TABLES == ("checkpoint_writes", "checkpoint_blobs", "checkpoints")
+        assert CHECKPOINT_TABLES == ("langgraph_checkpoint_writes", "langgraph_checkpoint_blobs", "langgraph_checkpoints")
 
     def test_stale_sql_uses_ts_json(self):
         assert "$.ts" in STALE_THREADS_SQL and "GROUP BY thread_id" in STALE_THREADS_SQL

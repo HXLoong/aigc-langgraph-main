@@ -144,8 +144,8 @@ class TestQuickInquiry:
             50001, IGNORE_REPLY_SENTINEL, "sentinel_50001",
         ),
         (200, {"errCode": {"code": 40001}, "errMsg": ""}, 40001, "", "business_40001"),
-        (502, {}, 500, "快速询价参数解析服务异常，请稍后重试或联系交易员。", "http_502"),
-        (200, {}, 500, "快速询价参数解析服务异常，请稍后重试或联系交易员。", "err_code_invalid"),
+        (502, {}, 500, "快速询价暂不可用,请检查网络", "http_502"),
+        (200, {}, 500, "快速询价暂不可用,请检查网络", "err_code_invalid"),
     ])
     async def test_parser_failure_never_calls_backend(
         self, monkeypatch, status, body, code, reply, reason
@@ -192,7 +192,7 @@ class TestQuickInquiry:
         assert dumped["optionRfq"]["windCode"] == "600519.SH"
 
     @pytest.mark.asyncio
-    async def test_backend_500_mapped(self, monkeypatch):
+    async def test_backend_500_projects_reply_but_preserves_original_result(self, monkeypatch):
         agent = FakeAgentClient(rfq={"code": 0, "errMsg": "", "api_data_result_obj": {}})
         backend = FakeOptionClient({"code": 500, "data": None, "msg": "ignored"})
         monkeypatch.setattr(fq, "_make_agent_client", lambda: agent)
@@ -200,10 +200,21 @@ class TestQuickInquiry:
         out = await quick_inquiry({"raw_text": "q", "room_id": "R"})
         assert out["api_code"] == 500
         assert out["reply_text"] == "交易指令服务暂不可用"
+        assert out["api_result"] == "ignored"
+
+    async def test_parser_failure_log_omits_raw_customer_response(self, monkeypatch):
+        agent = FakeAgentClient(rfq={"code": 500, "errMsg": "解析失败",
+                                    "reason": "invalid_json", "raw_response": "客户私有交易数据"})
+        monkeypatch.setattr(fq, "_make_agent_client", lambda: agent)
+        warning = Mock()
+        monkeypatch.setattr(fq.logger, "warning", warning)
+        await quick_inquiry({"raw_text": "询价"})
+        assert "客户私有交易数据" not in str(warning.call_args)
+        assert "invalid_json" in str(warning.call_args)
 
 
 class TestErrorCopyDisambiguation:
-    def test_three_failure_texts_are_distinct_and_stage_labeled(self):
+    def test_parser_and_java_failures_follow_dify_copy(self):
         import app.tools.goats_agent_client as goats
 
         texts = {
@@ -211,9 +222,9 @@ class TestErrorCopyDisambiguation:
             goats._RFQ_RESPONSE_INVALID_MSG,
             fq._SERVICE_UNAVAILABLE,
         }
-        assert len(texts) == 3
+        assert len(texts) == 2
         assert "请检查网络" in goats._RFQ_UNAVAILABLE_MSG
-        assert "参数解析" in goats._RFQ_RESPONSE_INVALID_MSG
+        assert goats._RFQ_RESPONSE_INVALID_MSG == goats._RFQ_UNAVAILABLE_MSG
         assert "交易指令服务" in fq._SERVICE_UNAVAILABLE
 
 

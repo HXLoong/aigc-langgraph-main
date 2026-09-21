@@ -2,7 +2,7 @@
 from functools import lru_cache
 from typing import Literal
 
-from pydantic import Field
+from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -13,11 +13,9 @@ class Settings(BaseSettings):
         extra="ignore",
     )
 
-    # === MySQL ===
-    # checkpoint：给 AIOMySQLSaver 用，需要 mysql://user:pass@host:port/db 格式
-    checkpoint_mysql_uri: str = Field(..., description="LangGraph checkpoint 库")
-    # 业务：给 SQLAlchemy 用，需要 mysql+aiomysql://user:pass@host:port/db 格式
-    business_mysql_uri: str = Field(..., description="业务数据库")
+    # === MySQL：与 Java 共库，checkpoint、审计与幂等共用一个连接配置 ===
+    # 格式 mysql+aiomysql://user:password@host:port/database，表名以 langgraph_ 隔离。
+    mysql_uri: str = Field(..., description="Java 共库连接，保存 langgraph_ checkpoint、审计与幂等表")
 
     # === LLM ===
     qwen_api_base: str
@@ -39,17 +37,22 @@ class Settings(BaseSettings):
     otc_api_base_url: str
     otc_api_secret: str
 
-    # === 超时预算（plan0916 §6.1 / A 批：集中配置；默认值与历史散点一致）===
-    llm_timeout_seconds: float = 60.0        # LLM 客户端（app/llm/clients.py 六个工厂）
+    # 初始 20/5/60 秒预算；最终配置根据本地真实回归与压测校准。
+    llm_timeout_seconds: float = Field(default=20.0, gt=0)
+    llm_output_max_tokens: int = Field(default=800, ge=64, le=800)
+    llm_vision_max_tokens: int = Field(default=4096, ge=256, le=16384)
+    request_timeout_seconds: float = Field(default=60.0, gt=0, le=80)
+    response_reserve_seconds: float = Field(default=5.0, gt=0)
     # ADR 0024 D3：只读 IO 节点（LLM / 后端查询）的 LangGraph RetryPolicy；写类节点不重试
-    node_retry_max_attempts: int = 3
-    node_retry_initial_interval_seconds: float = 0.5
-    backend_timeout_seconds: float = 30.0    # Option / Swap / Ticker / Message 四个后端 Client 默认
+    node_retry_max_attempts: int = Field(default=2, ge=1, le=3)
+    node_retry_initial_interval_seconds: float = Field(default=0.5, ge=0)
+    backend_timeout_seconds: float = Field(default=5.0, gt=0)
+    backend_dedup_window_seconds: float = Field(default=10.0, ge=10, le=60)
     persist_timeout_seconds: float = 5.0     # node_trace 写库连接（app/nodes/persist.py）
-    multimodal_fetch_timeout_seconds: float = 30.0  # 图片 / Excel 远端文件下载（swap/multimodal.py）
-    goats_agent_rfq_timeout_seconds: float = 60.0        # GOATS agent：快速询价参数解析
-    goats_agent_instruction_timeout_seconds: float = 10.0  # GOATS agent：存量兼容指令查询
-    goats_rfq_direct_timeout_seconds: float = 15.0       # GOATS 快速询价直连（app/tools/goats_rfq.py）
+    multimodal_fetch_timeout_seconds: float = Field(default=5.0, gt=0)  # 图片 / Excel 远端文件下载（swap/multimodal.py）
+    goats_agent_rfq_timeout_seconds: float = Field(default=5.0, gt=0)        # GOATS agent：快速询价参数解析
+    goats_agent_instruction_timeout_seconds: float = Field(default=5.0, gt=0)  # GOATS agent：存量兼容指令查询
+    goats_rfq_direct_timeout_seconds: float = Field(default=5.0, gt=0)       # GOATS 快速询价直连（app/tools/goats_rfq.py）
 
     # === goats ===
     goats_base_url: str = ""
@@ -67,6 +70,7 @@ class Settings(BaseSettings):
     # === 真实环境测试账号（D2.* probe / 阶段 2 联调用，不进生产路径）===
     eval_room_id: str = ""
     eval_user_id: str = ""
+    eval_guid: str = ""
 
     # 标的池 MySQL（直连查询）—— 凭据走 .env，源码里只留空默认值
     ticker_mysql_host: str = ""
@@ -83,6 +87,14 @@ class Settings(BaseSettings):
     log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR"] = "INFO"
     # ADR 0024 D5：结构化日志格式；auto = development 彩色控制台、其余 JSON（每条带 trace_id）
     log_format: Literal["auto", "json", "console"] = "auto"
+    telemetry_masking_enabled: bool = Field(
+        default=False,
+        description="是否对 Langfuse 和结构化日志启用字段脱敏；默认关闭，所有环境一致",
+    )
+    telemetry_masking_fields: str = Field(
+        default="password,secret,api_key,token,authorization",
+        description="脱敏字段名，逗号分隔；仅在开关开启时生效，空列表不隐藏任何字段",
+    )
     environment: Literal["development", "staging", "production"] = "development"
     enable_langfuse: bool = False
     langfuse_public_key: str = ""
@@ -114,7 +126,16 @@ class Settings(BaseSettings):
     dry_run_backend: bool = False
 
     # === 兜底回复（DSL v2 env.default_reply,fallback/answer 节点统一文案）===
-    default_reply: str = "我没完全理解你的意思，能换种说法重新告诉我吗？"
+    default_reply: str = (
+        "抱歉，我们目前无法识别您的意图。您可以按照下方格式发送指令：\n"
+        "1.期权询价：@机器人欧式看涨，标的代码（或标的名称），执行价，期限\n"
+        "示例：@机器人欧式看涨，000155.SZ，80，1M/2M\n"
+        "2.期权平仓：@机器人合约编号，平仓名义本金，平仓价格方式\n"
+        "示例：@机器人OPTG-SZZSCF20260009，200w，市价下单\n"
+        "3.查可平持仓：@机器人查可平持仓\n"
+        "4.互换下单：@机器人标的代码（或标的名称），方向，数量，价格类型，交易对手（簿记产品）\n"
+        "示例：@机器人600007.SH，买入，1657股，限价6，广发1号或总单"
+    )
 
     # 从 Langfuse 拉提示词（需同时 enable_langfuse=true）
     use_langfuse_prompts: bool = False
@@ -126,6 +147,13 @@ class Settings(BaseSettings):
     # history_messages 只保留最近 N 条（user + assistant 各算 1 条；40 ≈ 20 轮）。
     # 企微群 thread 长期存在，无界累加会撑大 prompt / checkpoint；N 由现场 eval 校准
     history_window_messages: int = Field(default=40, ge=2)
+    conversation_idle_timeout_seconds: int = Field(default=1800, ge=60)
+
+    @model_validator(mode="after")
+    def validate_deadline_reserve(self) -> "Settings":
+        if self.response_reserve_seconds >= self.request_timeout_seconds:
+            raise ValueError("response reserve must be shorter than request deadline")
+        return self
 
 
 @lru_cache(maxsize=1)

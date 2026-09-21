@@ -112,7 +112,7 @@ class RunnerConfigTests(unittest.TestCase):
                 "golden_option_close_case.jsonl": 4,
                 "golden_option_inquiry_case.jsonl": 4,
                 "golden_option_open_case.jsonl": 5,
-                "swap_prod_acceptance_data.jsonl": 163,
+                "swap_prod_acceptance_data.jsonl": 162,
                 "swap_prod_data.jsonl": 123,
                 "swap_test_fuzzy_target_recog_data.jsonl": 90,
             }.items()

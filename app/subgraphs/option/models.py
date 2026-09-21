@@ -17,10 +17,12 @@ orderList item 结构由 3 个 extract 节点共用同一份 13 字段 schema
 """
 from __future__ import annotations
 
-from typing import Literal
+from typing import Annotated, Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import ConfigDict, Field
 
+from app.extraction.fields import CandidateDescription
+from app.extraction.intent_evidence import IntentEvidenceOutput
 from app.wire_model import WireModel
 
 #: option 子图处理的 8 个意图（7 个基础意图 + unknown_intent；不含 close_order_*）
@@ -36,7 +38,7 @@ OptionIntentType = Literal[
 ]
 
 
-class OptionIntentOutput(BaseModel):
+class OptionIntentOutput(IntentEvidenceOutput):
     """option.intent 节点的 LLM 输出 schema。
 
     与 `app/prompts/option/intent.md`（Dify DSL v2 `期权-意图识别`，
@@ -73,8 +75,8 @@ class OptionOrderItem(WireModel):
     model_config = ConfigDict(extra="ignore")
 
     order_id: str | None = Field(default=None, alias="orderId", description="订单号（Q-YYYYMMDD-XXXXXXXXXX），仅在用户或引用消息明确给出时填写，否则 null")
-    #: 标的原文（用户原话片段，标准化由 ticker resolver 负责）
-    stock_code: str | None = Field(default=None, alias="stockCode", description="标的原文片段（用户原话，逐字保留，不做代码补全；标准化由 ticker resolver 负责）")
+    #: 标的原文（用户原话片段，最终证券识别由后端负责）
+    stock_code: str | None = Field(default=None, alias="stockCode", description="标的原文片段（用户原话，逐字保留，不做代码补全；最终证券识别由后端负责）")
     option_type: OptionContractType | None = Field(default=None, alias="optionType", description="期权类型：欧式看涨 / 参与型看涨 / 雪球；未明确 → null")
     #: 期限，"XM" 格式（如 "1M"/"12M"）
     tenor: str | None = Field(default=None, description="期限，XM 格式（如 1M / 12M）；年 × 12 折算为月")
@@ -111,13 +113,13 @@ class OptionInquiryRawItem(WireModel):
     model_config = ConfigDict(extra="ignore")
 
     order_id: str | None = Field(default=None, alias="orderId", description="订单号原文片段（Q- 开头）；输入未出现 → null")
-    stock_code: str | None = Field(default=None, alias="stockCode", description="标的原文片段（逐字保留，不做代码补全；标准化由 ticker resolver 负责）")
-    option_type: OptionContractType | None = Field(default=None, alias="optionType", description="期权类型：欧式看涨 / 参与型看涨 / 雪球；未明确 → null")
+    stock_code: str | None = Field(default=None, alias="stockCode", description="标的原文片段（逐字保留，不做代码补全；最终证券识别由后端负责）")
+    option_type: str | None = Field(default=None, alias="optionType", description="期权类型原文片段，逐字保留 call/CALL/Call/看涨等写法；枚举归一化由代码执行；未明确 → null")
     tenor: str | None = Field(default=None, description="期限原文片段，逐字保留不换算（如 \"1M\" / \"1个月\" / \"半年\" / \"1Y\" / \"1M/3M\"）")
     strike_percentage: str | None = Field(default=None, alias="strikePercentage", description="执行价原文片段，逐字保留不换算（如 \"100%\" / \"100/103%\" / \"平值\"）")
     notional_amount: str | None = Field(default=None, alias="notionalAmount", description="名义本金原文片段，含单位不换算（如 \"100万\" / \"1W\" / \"两千万\"）")
     participation_rate: str | None = Field(default=None, alias="participationRate", description="参与率原文片段（如 \"90%\"）；无参与率关键词 → null")
-    short_name: str | None = Field(default=None, alias="shortName", description="交易对手名称（完整保留括号与特殊字符；用户回复选项字母时取对应完整名称）")
+    short_name: Annotated[str | None, CandidateDescription('用户给出的交易对手名称或选项原文，保留括号和特殊字符，不查表填完整名称')] = Field(default=None, alias="shortName", description="交易对手名称（完整保留括号与特殊字符；用户回复选项字母时取对应完整名称）")
 
 
 class OptionInquiryRawParams(WireModel):

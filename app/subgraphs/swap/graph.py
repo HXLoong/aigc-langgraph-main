@@ -50,7 +50,7 @@ from app.subgraphs.swap.confirm import swap_confirm
 from app.subgraphs.swap.fresh_counterparty import swap_recognize_fresh_counterparty
 from app.subgraphs.swap.intent import swap_intent
 from app.subgraphs.swap.multimodal import swap_excel_order, swap_image_order
-from app.subgraphs.swap.place_order import swap_place_order, swap_place_order_submit
+from app.subgraphs.swap.place_order import build_place_graph, swap_place_order_submit
 from app.subgraphs.swap.query_order import swap_query_order
 from app.subgraphs.swap.select_counterparty import swap_select_counterparty
 from app.subgraphs.swap.select_ticker import swap_select_ticker
@@ -123,7 +123,7 @@ def _route_after_place_order(state: AgentState) -> str | list[str]:
     superstep，ADR 0024 重构 3），汇合到 swap_apply_picks；否则先识别并校验全新下单
     交易对手，再提交。
     """
-    if has_error(state):
+    if has_error(state) or state.get("reply_text"):
         return "swap_unknown"
     if _has_usable_quote(state):
         return ["swap_select_counterparty", "swap_select_ticker"]
@@ -140,11 +140,11 @@ def _route_after_apply_picks(state: AgentState) -> str:
     return "swap_unknown" if has_error(state) else "swap_place_order_submit"
 
 
-def build_swap_graph() -> CompiledStateGraph:
+def build_swap_graph() -> CompiledStateGraph[AgentState, None, AgentState, SubgraphOutput]:
     """构建 swap 子图（主路由 6/6 意图全覆盖 + place_order 选择链）。"""
-    g: StateGraph = StateGraph(AgentState, output_schema=SubgraphOutput)
+    g: StateGraph[AgentState, None, AgentState, SubgraphOutput] = StateGraph(AgentState, output_schema=SubgraphOutput)
     add_io_node(g, "swap_intent", swap_intent)
-    add_io_node(g, "swap_place_order", swap_place_order)
+    g.add_node("swap_place_order", build_place_graph())
     g.add_node("swap_recognize_fresh_counterparty", RunnableLambda(swap_recognize_fresh_counterparty))
     add_io_node(g, "swap_select_counterparty", swap_select_counterparty)
     add_io_node(g, "swap_select_ticker", swap_select_ticker)

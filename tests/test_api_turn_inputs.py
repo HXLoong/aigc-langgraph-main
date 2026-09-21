@@ -8,7 +8,6 @@ import aiomysql
 import httpx
 import pytest
 from fastapi import FastAPI
-from langchain_core.messages import AIMessage
 from langgraph.checkpoint.memory import InMemorySaver
 from langgraph.checkpoint.serde.jsonplus import JsonPlusSerializer
 
@@ -18,10 +17,12 @@ from app.graph.state import Message, TickerCandidate
 from app.nodes import fast_query, intent_route
 from app.nodes.intent_route import UnknownIntentOutput
 from app.subgraphs.swap import backend, intent, multimodal
-from app.subgraphs.swap.models import SwapIntentOutput, SwapOrderItem, SwapPlaceOrderParams
+from app.subgraphs.swap.models import SwapIntentOutput
+from app.subgraphs.swap.multimodal_evidence import ImageTranscription
 from app.tools.goats_agent_client import GoatsAgentClientHttpx
 from app.tools.option_client import OptionClientHttpx
 from app.tools.swap_client import SwapClientHttpx
+from tests.intent_fixtures import intent_reply, mock_ainvoke
 
 CONFIG = {"configurable": {"thread_id": "turn-inputs"}}
 ORDER_ID = "H-20260915-0000000001"
@@ -30,7 +31,7 @@ IMAGE = {"type": "image", "remote_url": "http://files.test/order.png"}
 
 def structured_llm(value):
     llm = MagicMock()
-    llm.with_structured_output.return_value.ainvoke = AsyncMock(return_value=value)
+    llm.with_structured_output.return_value.ainvoke = mock_ainvoke(value)
     return llm
 
 
@@ -40,16 +41,19 @@ async def turn_api(monkeypatch):
     connection.cursor.return_value.__aenter__.return_value.executemany = AsyncMock()
     monkeypatch.setattr(aiomysql, "connect", AsyncMock(return_value=connection))
     monkeypatch.setattr(intent, "get_qwen_thinking", lambda: structured_llm(
-        SwapIntentOutput(type="query_order_status"),
+        intent_reply(SwapIntentOutput, type="query_order_status"),
     ))
     monkeypatch.setattr(intent_route, "get_qwen_thinking", lambda: structured_llm(
-        UnknownIntentOutput(label="互换-文本"),
+        intent_reply(UnknownIntentOutput, label="互换-文本"),
     ))
-    vl = MagicMock()
-    vl.ainvoke = AsyncMock(return_value=AIMessage(content="图片中的互换订单"))
-    monkeypatch.setattr(multimodal, "get_qwen_vl", lambda: vl)
+    monkeypatch.setattr(multimodal, "get_qwen_vl", lambda: structured_llm(
+        ImageTranscription(text="600519.SH"),
+    ))
     monkeypatch.setattr(multimodal, "get_qwen_structured", lambda: structured_llm(
-        SwapPlaceOrderParams(orderList=[SwapOrderItem(placeOrderWindCode="600519.SH")]),
+        multimodal.CANDIDATE_MODEL.model_validate({"orderList": [{"placeOrderWindCode": {
+            "value": "600519.SH", "evidence": "600519.SH", "confidence": 1,
+            "origin": "attachment", "reference": "file:0:image",
+        }}]}),
     ))
     requests = []
 
@@ -72,7 +76,7 @@ async def turn_api(monkeypatch):
     ))
     saver = InMemorySaver(serde=JsonPlusSerializer(allowed_msgpack_modules=[
         ("app.graph.state", name) for name in ("TickerCandidate", "Message", "TraceEntry")
-    ]))
+    ] + [("app.extraction.fields", "FieldRecord")]))
     graph = build_main_graph(checkpointer=saver)
     await graph.aupdate_state(CONFIG, {
         "tickers": [TickerCandidate(windCode="600519.SH", from_goats=True)],

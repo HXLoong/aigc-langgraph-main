@@ -15,39 +15,36 @@ from __future__ import annotations
 
 from typing import Any
 
+from app.execution.confirmation import (
+    confirmation_action,
+    confirmation_attempt,
+)
+from app.extraction.intent_evidence import intent_records
 from app.graph.retry import io_node
 from app.graph.state import AgentState, TraceEntry
 from app.llm.clients import get_qwen_thinking
 from app.prompts import blocks
 from app.prompts.spec import PromptSpec, register
+from app.subgraphs.swap.confirmation import is_confirmation
 from app.subgraphs.swap.models import SwapIntentOutput
-
-#: Dify code 节点 1755072896717 `has_confirmation_keyword` 同款词表；命中直接走 confirm_order。
-#: 2026-09-11 回归 Dify 原文后 intent.md 枚举已不含 confirm_order（Dify 靠前置分流），
-#: app 侧必须移植该分流，否则确认下单链路失效（提示词治理评估 SW-INC-01）。
-CONFIRM_ORDER_KEYWORDS: tuple[str, ...] = ("确认下单", "确定下单", "确认订单", "下单确认")
 
 
 def has_confirm_order_keyword(raw: str | None) -> bool:
-    """raw_content 是否含「确认下单」类关键词（Dify has_confirmation_keyword 同款）。"""
-    text = (raw or "").strip()
-    return any(word in text for word in CONFIRM_ORDER_KEYWORDS)
+    """兼容旧函数名；完整匹配 CWAIJY-957 确认口令。"""
+    return is_confirmation(raw)
 
 
 def _build_user_message(state: AgentState) -> str:
-    """DSL v2 互换-节点-意图识别.md 的 3 个输入变量；shortname_list 近似 Dify trsShortListStr。"""
-    return (
-        f"raw_content：{state.get('raw_text', '') or ''}\n"
-        f"quote_content：{state.get('quote_content') or ''}\n"
-        f"shortname_list：{', '.join(blocks.shortnames(state.get('swap_counterparties')))}"
-    )
+    return blocks.source_payload(state, context={
+        "shortname_list": blocks.shortnames(state.get("swap_counterparties")),
+    })
 
 
 SPEC = register(PromptSpec(
     category="swap",
     name="intent",
     output_model=SwapIntentOutput,
-    inputs=("raw_text", "quote_content", "swap_counterparties", "conversation_id"),
+    inputs=("raw_text", "quote_content", "history_messages", "swap_counterparties", "conversation_id"),
     user_builder=_build_user_message,
     gray=True,
 ))
@@ -61,32 +58,32 @@ async def swap_intent(state: AgentState) -> dict[str, Any]:
     - intent: SwapIntentType 之一（小写下划线）
     - trace: 单条 TraceEntry，记录 LLM 输出 + 实际加载的 prompt name（含灰度版本号）
     """
-    if has_confirm_order_keyword(state.get("raw_text")):
-        return {
-            "intent": "confirm_order",
-            "trace": [
-                TraceEntry(
-                    node="swap_intent",
-                    decision="intent=confirm_order rule=has_confirmation_keyword",
-                    llm_output={"type": "confirm_order", "prompt_name": None},
-                )
-            ],
-        }
+    if not (state.get("raw_text") or "").strip():
+        return {"intent": "unknown_intent", "trace": [TraceEntry(
+            node="swap_intent", decision="empty_current_input",
+        )]}
+    raw = state.get("raw_text")
+    action = confirmation_action(raw)
+    if confirmation_attempt(raw):
+        intent = {"place": "confirm_order", "cancel": "confirm_cancel_order", "modify": "confirm_modify_order"}.get(action or "", "unknown_intent")
+        return {"intent": intent, "trace": [TraceEntry(node="swap_intent", decision=f"confirmation:{intent}")]}
 
     messages, prompt_name = SPEC.build_messages(state)
     llm = get_qwen_thinking().with_structured_output(SwapIntentOutput)
-    result: Any = await llm.ainvoke(messages)
+    result = SwapIntentOutput.model_validate(await llm.ainvoke(messages))
+    records = intent_records(result, state, scope="swap/intent", value=result.type)
 
     return {
         "intent": result.type,
+        "field_records": records,
         "trace": [
             TraceEntry(
                 node="swap_intent",
                 decision=f"intent={result.type} prompt={prompt_name}",
-                llm_output={"type": result.type, "prompt_name": prompt_name},
+                llm_output={"type": result.type, "prompt_name": prompt_name, "confidence": result.confidence, "evidence_count": len(result.evidence)},
             )
         ],
     }
 
 
-__all__ = ["CONFIRM_ORDER_KEYWORDS", "has_confirm_order_keyword", "swap_intent"]
+__all__ = ["has_confirm_order_keyword", "swap_intent"]

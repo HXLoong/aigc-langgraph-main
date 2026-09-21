@@ -38,10 +38,10 @@ def test_load_categories_total() -> None:
 
 def test_default_discovery_includes_unified_b_dialect() -> None:
     """ADR 0024 D6：B 方言（unified_golden.jsonl，921 条 / 251 多轮）并入 harness 默认发现，
-    可执行样本 389 → 1310、多轮 9 → 260。"""
+    可执行样本 389 → 1310、多轮 10 → 261。"""
     cases = load_golden()
     assert len(cases) == 1310
-    assert sum(1 for case in cases if len(case.turns) > 1) == 260
+    assert sum(1 for case in cases if len(case.turns) > 1) == 261
     assert sum(1 for case in cases if case.dialect == "b") == 921
     assert len({case.id for case in cases}) == 1310, "两方言 id 不得冲突"
     runnable, skipped = select_runnable(cases)
@@ -62,8 +62,8 @@ def test_b_dialect_empty_raw_content_marks_case_unrunnable(tmp_path: Path) -> No
 
 def test_option_case_is_multiturn() -> None:
     case = next(case for case in load_golden() if case.id == "case-025")
-    assert len(case.turns) == 4
-    assert case.turns[0].quote_previous is None
+    assert len(case.turns) == 3
+    assert case.turns[0].quote_previous is False
     assert case.turns[1].quote_previous is True
 
 
@@ -77,8 +77,8 @@ def test_swap_case_normalizes_multiline_assertions() -> None:
 
 def test_index_and_filter() -> None:
     cases = load_golden(ROOT / "tests" / "fixtures" / "categories")
-    assert len(filter_by_category(cases, "option")) == 13
-    assert set(index_by_category(cases)) >= {"swap_prod_data", "option/inquiry"}
+    assert len(filter_by_category(cases, "option")) == 14
+    assert set(index_by_category(cases)) >= {"swap_prod_data", "option_inquiry_case"}
 
 
 def _write(tmp_path: Path, *rows: dict) -> Path:

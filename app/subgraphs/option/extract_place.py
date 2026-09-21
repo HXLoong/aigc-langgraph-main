@@ -21,7 +21,8 @@ from app.graph.safe_node import safe_node
 from app.graph.state import AgentState, TraceEntry
 from app.subgraphs.option.backend import call_option_backend
 from app.subgraphs.option.models import OptionPlaceParams
-from app.subgraphs.option.place_params import history_texts, parse_place_params
+from app.subgraphs.option.place_params import OrderScopeError, parse_place_params_with_lineage
+from app.subgraphs.option.provenance import prepare_order_provenance
 
 
 @safe_node
@@ -32,23 +33,32 @@ async def option_extract_place(state: AgentState) -> dict[str, Any]:
     - expected_action="place" + place_params: {orderList}
     - trace: 单条 TraceEntry，记录订单数 + orderType 分布
     """
-    parsed = parse_place_params(
-        state.get("raw_text"),
-        state.get("quote_content"),
-        history_texts(state.get("history_messages")),
-    )
-    validated = OptionPlaceParams.model_validate({"orderList": parsed})
+    try:
+        parsed = parse_place_params_with_lineage(
+            state.get("raw_text"),
+            state.get("quote_content"),
+            state.get("history_messages") or [],
+        )
+    except OrderScopeError as exc:
+        return {"reply_text": str(exc), "trace": [TraceEntry(
+            node="option_extract_place", decision="order_scope_unresolved",
+        )]}
+    validated = OptionPlaceParams.model_validate({"orderList": parsed.orders})
     order_list = [item.model_dump() for item in validated.order_list]
 
+    prepared_state, order_list, records = prepare_order_provenance(
+        state, parsed, order_list, scope="option/place",
+    )
     types = [item.order_type for item in validated.order_list if item.order_type]
     decision = f"deterministic,action=place,orders={len(order_list)},types={types}"
     backend = await call_option_backend(
-        state,
+        prepared_state,
         intent="place_order_from_quote",
         order_list=order_list,
     )
 
     return {
+        "field_records": records,
         "expected_action": "place",
         "place_params": validated_place_params(orderList=order_list),
         **backend,

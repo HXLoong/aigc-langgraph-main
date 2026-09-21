@@ -46,27 +46,31 @@
 pip install -e ".[dev]"
 
 # 2. 启动依赖
-docker compose up -d mysql
+# 先在 Java 现有数据库执行初始化；MYSQL_URI 为唯一数据库连接配置
+mysql -h <HOST> -P <PORT> -u <USER> -p --database=<JAVA_DATABASE> < sql/init.sql
 docker compose -f infra/langfuse/docker-compose.yml --env-file infra/langfuse/.env up -d
 
 # 3. 启动应用
 uvicorn app.main:app --reload   # POST /v1/workflows/run（兼容 Dify Workflow Run API）
 
-# 4. 跑测试（1864 passed + 15 skipped，约 3 分钟）
-pytest tests/ -v
+# 4. 轻量测试（全套由统一验收时运行）
+USE_MYSQL_CHECKPOINTER=false REQUEST_IDEMPOTENCY=false ENABLE_LANGFUSE=false pytest tests/test_smoke.py -q
 
-# 5. 跑评估
-python scripts/langfuse_eval.py --local tests/fixtures/unified_golden.jsonl --concurrency 4
-#   ↑ DeepSeek V4 Judge + per-turn 富集 JSON 写到 Langfuse Cloud
-python -m harness run                                    # 备用 harness CLI 入口
+# 5. 本地 HTTP 业务回归：先准备真实授权测试账号、群及业务数据
+# 联调服务可使用 ENVIRONMENT=staging uvicorn app.main:app --host 127.0.0.1 --port 8201
+python scripts/local_eval.py --base-url http://127.0.0.1:8201 --data tests/fixtures/categories --case case-025 --concurrency 1
+# 统一验收去掉 --case，明确只跑388条 categories；不默认并入 unified。
 ```
 
 ## 架构
 
+标的名称/代码由 LangGraph 按原文提取，Java 业务接口调用标的识别、分词和排序工具。
+本地不再运行 ticker 子图；职责和兼容约定见 [后端标的边界](docs/backend-instrument-boundary.md)。
+
 ```text
 企微回调 → Java Worker → POST /v1/workflows/run（Dify-兼容）→ FastAPI → LangGraph
                                                                         ↓
-                              ingest → intent_route → swap / option / option_close / ticker 子图
+                              ingest → intent_route → swap / option / option_close 子图
                                                                         ↓
                                           persist (node_trace) → render → outputs
                                                                         ↓

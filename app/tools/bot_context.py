@@ -16,11 +16,15 @@ REQUIRED_FIELDS: tuple[str, ...] = ("conversation_id", "room_id", "user_id", "me
 
 
 def normalize_message_id(value: Any) -> int:
-    """企微 message_id 可能是 int 或带前缀的字符串：只取数字位，最多 18 位；无数字 → 0。"""
+    """保留 Java Long 范围内的完整 ID；旧带前缀形式仍提取数字，但不截断。"""
     if isinstance(value, int):
-        return value
-    digits = "".join(ch for ch in str(value) if ch.isdigit()) if value is not None else ""
-    return int(digits[-18:]) if digits else 0
+        number = value
+    else:
+        digits = "".join(ch for ch in str(value) if ch.isdigit()) if value is not None else ""
+        number = int(digits) if digits else 0
+    if number > 9223372036854775807:
+        raise ValueError("message_id exceeds Java Long range; refusing to truncate")
+    return number
 
 
 class BotContext(BaseModel):

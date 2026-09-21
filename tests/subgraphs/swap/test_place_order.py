@@ -4,9 +4,9 @@ from __future__ import annotations
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
+from evidence_support import swap_candidate_output
 from pydantic import ValidationError
 
-from app.graph.state import TickerCandidate
 from app.subgraphs.swap import place_order as po_module
 from app.subgraphs.swap.models import (
     SwapOrderItem,
@@ -16,22 +16,13 @@ from app.subgraphs.swap.place_order import (
     _expected_action,
     swap_place_order,
 )
-from app.subgraphs.ticker.resolver import TickerResolution
-
-
-def _patch_resolver(
-    monkeypatch: pytest.MonkeyPatch,
-    candidates: list[TickerCandidate],
-) -> None:
-    resolution = TickerResolution(resolved=candidates, hitl_pending=[])
-    monkeypatch.setattr(po_module, "resolve_ticker_full", AsyncMock(return_value=resolution))
 
 
 def _patch_llm(
     monkeypatch: pytest.MonkeyPatch, params: SwapPlaceOrderParams
 ) -> AsyncMock:
     fake_llm = MagicMock()
-    fake_llm.ainvoke = AsyncMock(return_value=params)
+    fake_llm.ainvoke = AsyncMock(return_value=swap_candidate_output(params))
     fake_base = MagicMock()
     fake_base.with_structured_output = MagicMock(return_value=fake_llm)
     monkeypatch.setattr(po_module, "get_qwen_complex", lambda: fake_base)
@@ -157,9 +148,6 @@ class TestSwapPlaceOrderNode:
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         """resolver 命中标的 → resolver 写 state['tickers']。"""
-        _patch_resolver(monkeypatch, [
-            TickerCandidate(windCode="00700.HK", insShtDesc="腾讯控股", from_goats=True),
-        ])
         params = SwapPlaceOrderParams(
             orderList=[
                 SwapOrderItem(
@@ -172,15 +160,14 @@ class TestSwapPlaceOrderNode:
         )
         _patch_llm(monkeypatch, params)
         result = await swap_place_order(
-            {"raw_text": "互换下单 腾讯 1000 股 限价"}
+            {"raw_text": "互换下单 买入 腾讯 1000 股 限价"}
         )
 
         assert result["expected_action"] == "place"
         assert "expected_action" not in result["place_params"]
         assert result["place_params"]["orderList"][0]["placeOrderQuantity"] == 1000
-        tickers = result.get("tickers", [])
-        assert any("700" in t.wind_code and t.wind_code.endswith(".HK") for t in tickers)
-        assert all(t.from_goats for t in tickers)
+        assert result["place_params"]["orderList"][0]["placeOrderWindCode"] == "腾讯"
+
 
     async def test_modify_when_order_id_present(
         self, monkeypatch: pytest.MonkeyPatch
@@ -202,10 +189,6 @@ class TestSwapPlaceOrderNode:
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         """多标的下单 → resolver 返回多条。"""
-        _patch_resolver(monkeypatch, [
-            TickerCandidate(windCode="600519.SH", insShtDesc="贵州茅台", from_goats=True),
-            TickerCandidate(windCode="00700.HK", insShtDesc="腾讯控股", from_goats=True),
-        ])
         params = SwapPlaceOrderParams(
             orderList=[
                 SwapOrderItem(placeOrderWindCode="贵州茅台"),
@@ -216,16 +199,12 @@ class TestSwapPlaceOrderNode:
         result = await swap_place_order(
             {"raw_text": "互换下单 贵州茅台 腾讯 各 100 股"}
         )
-        wind_codes = {t.wind_code for t in result["tickers"]}
-        assert "600519.SH" in wind_codes
-        assert any("700" in wc and wc.endswith(".HK") for wc in wind_codes)
+        assert [o["placeOrderWindCode"] for o in result["place_params"]["orderList"]] == ["贵州茅台", "腾讯"]
+
 
     async def test_writes_trace_with_summary(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        _patch_resolver(monkeypatch, [
-            TickerCandidate(windCode="00700.HK", insShtDesc="腾讯控股", from_goats=True),
-        ])
         params = SwapPlaceOrderParams(
             orderList=[SwapOrderItem(placeOrderWindCode="腾讯")]
         )
@@ -233,12 +212,12 @@ class TestSwapPlaceOrderNode:
         result = await swap_place_order(
             {"raw_text": "互换下单 腾讯 100 股"}
         )
-        trace = result.get("trace", [])
+        trace = [entry for entry in result.get("trace", []) if entry.node == "swap_place_order"]
         assert len(trace) == 1
         decision = trace[0].decision
         assert "action=place" in decision
         assert "orders=1" in decision
-        assert "tickers=1" in decision
+        assert "instrument_resolution=backend" in decision
         # ADR 0003 硬前置：进 _versions.yaml 灰度的节点必须在 trace 写实际加载的 prompt_name
         assert trace[0].llm_output["prompt_name"] == "place_order"
 
@@ -251,7 +230,7 @@ class TestSwapPlaceOrderNode:
             {"raw_text": "莫名其妙的输入"}
         )
         assert result["place_params"]["orderList"] == []
-        assert result["tickers"] == []
+        assert not result.get("tickers")
         # safe_node 没被触发
         assert "error" not in result or result.get("error") is None
 
@@ -269,7 +248,7 @@ class TestSwapPlaceOrderNode:
         )
         result = await swap_place_order({"raw_text": "x"})
         assert result.get("error") is not None
-        assert result["error"].node == "swap_place_order"
+        assert result["error"].node == "swap_extract_candidates"
 
 
 class TestUserTemplateLivesInMarkdown:
@@ -280,10 +259,10 @@ class TestUserTemplateLivesInMarkdown:
         from app.subgraphs.swap.place_order import _build_user_message
 
         msg = _build_user_message(
-            {"swap_counterparties": [{"sort": "A", "shortName": "对手甲"}]},
+            {"raw_text": "买 600519 100股", "swap_counterparties": [{"sort": "A", "shortName": "对手甲"}]},
             {"raw_content_for_llm": "买 600519 100股", "quote_param_hints": "无"},
         )
-        assert "解析前先执行核心护栏6" in msg
+        assert '"sources"' in msg and '"counterparties"' in msg
         assert "买 600519 100股" in msg and "对手甲" in msg
         assert "{{" not in msg
 

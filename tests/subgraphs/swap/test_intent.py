@@ -1,6 +1,7 @@
 """swap.intent 节点测试（mock LLM，不联网）。"""
 from __future__ import annotations
 
+import json
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -9,6 +10,7 @@ from app.prompts import blocks
 from app.subgraphs.swap import intent as intent_module
 from app.subgraphs.swap.intent import _build_user_message, swap_intent
 from app.subgraphs.swap.models import SwapIntentOutput
+from tests.intent_fixtures import intent_reply, mock_ainvoke
 
 # ============================================================
 # 共享积木 blocks.shortnames（ADR 0023：替代各节点私有的 _format_shortname_list）
@@ -44,14 +46,14 @@ class TestBuildUserMessage:
                 "swap_counterparties": [{"shortName": "打火机", "sort": "A"}],
             }
         )
-        assert "raw_content：做一笔招商银行的 TRS" in msg
-        assert "quote_content：" in msg
-        assert "shortname_list：打火机" in msg
+        assert json.loads(msg)["sources"]["raw"] == '做一笔招商银行的 TRS'
+        assert "quote" in json.loads(msg)["sources"]
+        assert json.loads(msg)["context"]["shortname_list"] == ["打火机"]
 
     def test_handles_empty_state(self) -> None:
         msg = _build_user_message({})
-        assert "raw_content：" in msg
-        assert "shortname_list：" in msg
+        assert json.loads(msg)["sources"]["raw"] == ''
+        assert "shortname_list" in json.loads(msg)["context"]
 
 
 # ============================================================
@@ -63,10 +65,10 @@ def _patch_llm(
     monkeypatch: pytest.MonkeyPatch, return_type: str
 ) -> AsyncMock:
     """让 swap.intent 调 LLM 时返回固定 SwapIntentOutput。"""
-    fake_output = SwapIntentOutput(type=return_type)  # type: ignore[arg-type]
+    fake_output = intent_reply(SwapIntentOutput, type=return_type)  # type: ignore[arg-type]
 
     fake_llm_with_schema = MagicMock()
-    fake_llm_with_schema.ainvoke = AsyncMock(return_value=fake_output)
+    fake_llm_with_schema.ainvoke = mock_ainvoke(fake_output)
 
     fake_base_llm = MagicMock()
     fake_base_llm.with_structured_output = MagicMock(
@@ -105,7 +107,7 @@ class TestSwapIntentNode:
         ainvoke = _patch_llm(monkeypatch, "confirm_order")
         await swap_intent(
             {
-                "raw_text": "确认",
+                "raw_text": "查订单",
                 "quote_content": "互换订单 H-20260304-0001 已生成",
                 "swap_counterparties": [{"shortName": "打火机", "sort": "A"}],
             }
@@ -143,7 +145,7 @@ class TestConfirmKeywordPreRoute:
     前置分流），而 app 仍靠 LLM 输出 confirm_order 路由到 swap_confirm。这里移植同款
     确定性前置：raw 含「确认下单/确定下单/确认订单/下单确认」→ confirm_order，不调 LLM。"""
 
-    @pytest.mark.parametrize("raw", ["确认下单", "确定下单 H-20260901-0000000001", "确认订单", "下单确认"])
+    @pytest.mark.parametrize("raw", ["确认下单", " 确认下单 ", "序号2，确认下单", "序号2、序号4，确认下单"])
     async def test_confirm_keyword_routes_without_llm(
         self, monkeypatch: pytest.MonkeyPatch, raw: str
     ) -> None:

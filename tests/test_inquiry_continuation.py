@@ -9,6 +9,7 @@ from uuid import UUID
 
 import httpx
 import pytest
+from evidence_support import candidate_output
 from fastapi.testclient import TestClient
 from pydantic import BaseModel
 
@@ -18,16 +19,9 @@ from app.subgraphs.option.models import (
     OptionInquiryRawParams,
     OptionIntentOutput,
 )
-from app.subgraphs.ticker.models import (
-    InferCodeOutput,
-    JudgeTypeOutput,
-    RankOutput,
-    SplitKeywordsOutput,
-)
 from app.tools.message_client import MessageClientHttpx
 from app.tools.option_client import OptionClientHttpx
 from app.tools.swap_client import SwapClientHttpx
-from app.tools.ticker_client import TickerClientHttpx
 
 FIRST_MESSAGE = "300773.SZ，欧式看涨，80%"
 INQUIRY_CARD = (
@@ -42,7 +36,16 @@ def _patch_llm(
     monkeypatch: pytest.MonkeyPatch, factory: str,
     schema: type[BaseModel], outputs: list[dict[str, Any]],
 ) -> AsyncMock:
-    invoke = AsyncMock(side_effect=[schema.model_validate(item) for item in outputs])
+    from tests.intent_fixtures import intent_reply
+    is_intent = {"confidence", "evidence"}.issubset(schema.model_fields)
+    values = [intent_reply(schema, **item) if is_intent else schema.model_validate(item) for item in outputs]
+    if schema is OptionInquiryRawParams:
+        values = [candidate_output(value, origins={"orderId": "quote"}) for value in values]
+    iterator = iter(values)
+    def response(messages):
+        value = next(iterator)
+        return value(messages) if is_intent else value
+    invoke = AsyncMock(side_effect=response)
     llm = MagicMock()
     llm.with_structured_output.return_value.ainvoke = invoke
     monkeypatch.setattr(factory, lambda: llm)
@@ -67,28 +70,6 @@ def inquiry_workflow(
     monkeypatch.setattr("app.nodes.persist._write_to_mysql", AsyncMock())
 
     # 保留真实 tokenizer / resolver / ticker HTTP，仅替换外部 LLM。
-    async def ticker_llm_response(model, messages):
-        content = messages[-1].content
-        hit = {"300773.SZ": ["300773.SZ"]} if "300773" in content else {}
-        if model is JudgeTypeOutput:
-            # judge 仅影响期货日期规整；迁移前 stub 值同样不命中 FUTURE 分支
-            return JudgeTypeOutput.model_validate({"results": {}})
-        if model is SplitKeywordsOutput:
-            return SplitKeywordsOutput.model_validate({"results": hit})
-        if model is InferCodeOutput:
-            return InferCodeOutput.model_validate({"results": hit})
-        return RankOutput(ranked_codes=[])
-
-    def make_structured(model):
-        class _Structured:
-            async def ainvoke(self, messages):
-                return await ticker_llm_response(model, messages)
-
-        return _Structured()
-
-    infer_llm = MagicMock()
-    infer_llm.with_structured_output = MagicMock(side_effect=make_structured)
-    monkeypatch.setattr("app.subgraphs.ticker.tools.get_qwen_standard", lambda: infer_llm)
     from app.nodes.intent_route import UnknownIntentOutput
     _patch_llm(monkeypatch, "app.nodes.intent_route.get_qwen_thinking",
                UnknownIntentOutput, [{"label": "\u671f\u6743-\u6587\u672c"}] * 3)
@@ -126,9 +107,6 @@ def inquiry_workflow(
     ))
     monkeypatch.setattr("app.subgraphs.swap.backend.SwapClientHttpx", lambda: SwapClientHttpx(
         base_url="https://java.invalid", token="", transport=transport, dry_run=False,
-    ))
-    monkeypatch.setattr("app.subgraphs.ticker.tools.TickerClientHttpx", lambda **kw: TickerClientHttpx(
-        base_url="https://java.invalid", token="", transport=transport,
     ))
     with TestClient(app_main.app) as client:
         yield client, calls
@@ -206,11 +184,15 @@ def test_two_turn_inquiry_continues_history_and_sends_order_id_with_tenor(
         assert payload["intent"] == "new_inquiry"
         assert payload["productType"] == 0
 
-    for invoke in (intent_llm, extract_llm):
-        second_user_message = invoke.call_args_list[1].args[0][1][1]
-        # 首轮原话不在引用卡片中；此断言证明历史由 checkpoint 续接到 LLM。
-        assert FIRST_MESSAGE in second_user_message
-        assert f"assistant: {INQUIRY_CARD}" in second_user_message
+    second_user_message = intent_llm.call_args_list[1].args[0][1][1]
+    assert FIRST_MESSAGE in second_user_message
+    assert INQUIRY_CARD in json.loads(second_user_message)["sources"].values()
+    assert "assistant" in json.loads(second_user_message)["source_roles"].values()
+    sources = json.loads(extract_llm.call_args_list[1].args[0][1][1])["sources"]
+    # 证据引用使用 checkpoint 中稳定的消息 ID，不能把历史伪装成本轮原文。
+    assert sources["raw"] == "1M" and sources["quote"] == INQUIRY_CARD
+    assert sources[f"history:{first_state['history_messages'][0].id}"] == FIRST_MESSAGE
+    assert sources[f"history:{first_state['history_messages'][1].id}"] == INQUIRY_CARD
     second_state = graph.get_state(config).values
     assert second_state["conversation_id"] == conversation_id
     assert [(msg.role, msg.content) for msg in second_state["history_messages"]] == [

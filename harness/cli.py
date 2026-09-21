@@ -100,6 +100,7 @@ def _report_case(
                 "api_result": outcome.api_result,
                 "error": outcome.error,
                 "trace": outcome.trace,
+                "elapsed_ms": outcome.elapsed_ms,
                 "diff": [item.model_dump() for item in diffs.get(outcome.index, [])],
             }
             for outcome in result.turns

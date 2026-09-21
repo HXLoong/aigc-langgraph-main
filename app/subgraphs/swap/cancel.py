@@ -12,11 +12,12 @@ from __future__ import annotations
 
 from typing import Any
 
+from app.extraction.identity import prepare_identity_scope
 from app.graph.business_params import validated_cancel_params
 from app.graph.safe_node import safe_node
 from app.graph.state import AgentState, TraceEntry
 from app.subgraphs.swap.backend import call_swap_backend
-from app.subgraphs.swap.order_id import CancelScopeError, extract_for_cancel
+from app.subgraphs.swap.order_id import CancelScopeError, extract_for_cancel, extract_order_ids
 
 
 @safe_node
@@ -34,15 +35,20 @@ async def swap_cancel(state: AgentState) -> dict[str, Any]:
             "reply_text": "无法确定本次撤单范围，请补充完整订单号，或重新引用订单消息并指定要撤的订单。",
             "trace": [TraceEntry(node="swap_cancel", decision="cancel_scope_unresolved")],
         }
+    prepared_state, order_ids, records = prepare_identity_scope(
+        state, order_ids, scope="swap/cancel", origin="quote", evidence=state.get("quote_content") or "",
+        explicit_raw_ids=extract_order_ids((state.get("raw_text") or "").upper()), selection=True,
+    )
     order_list = [{"orderId": oid} for oid in order_ids]
 
     backend = await call_swap_backend(
-        state,
+        prepared_state,
         intent="cancel_order_request",
         order_list=order_list,
     )
 
     return {
+        "field_records": records,
         "expected_action": "cancel",
         "cancel_params": validated_cancel_params(orderList=order_list),
         **backend,

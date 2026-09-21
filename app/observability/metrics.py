@@ -95,15 +95,15 @@ class MetricsCollector:
     """业务指标采集器。线程安全。
 
     内部维护几个独立的 counter 与 histogram，按 label 维度区分。
-    Counter 用 dict[tuple, int] 存（tuple = labels 排序后的值）。
+    Counter 用 dict[tuple[tuple[str, str], ...], int] 存（tuple = labels 排序后的值）。
     """
 
     def __init__(self) -> None:
         self._lock = threading.Lock()
         # counter[name][labels_tuple] = count
-        self._counters: dict[str, dict[tuple, int]] = defaultdict(lambda: defaultdict(int))
+        self._counters: dict[str, dict[tuple[tuple[str, str], ...], int]] = defaultdict(lambda: defaultdict(int))
         # histogram[name][labels_tuple] = _Histogram
-        self._histograms: dict[str, dict[tuple, _Histogram]] = defaultdict(dict)
+        self._histograms: dict[str, dict[tuple[tuple[str, str], ...], _Histogram]] = defaultdict(dict)
 
     # ---- emit API ----
 
@@ -164,9 +164,9 @@ class MetricsCollector:
                     label_str = self._key_to_labels(key)
                     lines.append(f"{name}{label_str} {count}")
             # Histograms
-            for name, items in self._histograms.items():
+            for name, histogram_items in self._histograms.items():
                 lines.append(f"# TYPE {name} histogram")
-                for key, hist in items.items():
+                for key, hist in histogram_items.items():
                     label_str_prefix = self._key_to_labels(key, trailing_comma=True)
                     snap = hist.snapshot()
                     for bucket, count in snap["buckets"].items():
@@ -182,13 +182,13 @@ class MetricsCollector:
     # ---- 内部工具 ----
 
     @staticmethod
-    def _labels_to_key(labels: dict[str, str] | None) -> tuple:
+    def _labels_to_key(labels: dict[str, str] | None) -> tuple[tuple[str, str], ...]:
         if not labels:
             return ()
         return tuple(sorted(labels.items()))
 
     @staticmethod
-    def _key_to_labels(key: tuple, trailing_comma: bool = False) -> str:
+    def _key_to_labels(key: tuple[tuple[str, str], ...], trailing_comma: bool = False) -> str:
         if not key:
             return "" if not trailing_comma else ""
         body = ",".join(f'{k}="{v}"' for k, v in key)
@@ -233,6 +233,8 @@ METRIC_FALLBACK_TOTAL = "otc_agent_fallback_total"
 METRIC_HITL_TOTAL = "otc_agent_hitl_total"
 METRIC_LLM_TOTAL = "otc_agent_llm_total"
 METRIC_LLM_TOKENS = "otc_agent_llm_tokens_total"  # C1.7 成本监控（按模型 + 方向 prompt/completion）
+METRIC_LLM_CACHE_TOKENS = "otc_agent_llm_cache_tokens_total"
+METRIC_LLM_CACHE_USAGE = "otc_agent_llm_cache_usage_total"
 METRIC_DYNAMIC_PROMPT_TOTAL = "otc_agent_dynamic_prompt_total"  # D2.5 / ADR 0013：cache_hit / cache_miss_ok / fallback
 METRIC_CANARY_TRAFFIC_TOTAL = "otc_agent_canary_traffic_total"  # G5.1 / F4.2：按 is_canary 区分进入的请求
 METRIC_HTTP_RESPONSE_TOTAL = "otc_agent_http_total"  # ADR 0019 P0：HTTP 5xx 暴增告警依赖
@@ -285,6 +287,15 @@ def emit_hitl(node: str) -> None:
 def emit_llm_call(model: str, status: str) -> None:
     """LLM 调用结束。status: ok / error / timeout"""
     get_collector().inc_counter(METRIC_LLM_TOTAL, {"model": model, "status": status})
+
+
+def emit_llm_cache(model: str, node: str | None, status: str, hit: int, miss: int) -> None:
+    labels = {"model": model, "node": node or "unknown"}
+    collector = get_collector()
+    collector.inc_counter(METRIC_LLM_CACHE_USAGE, {**labels, "status": status})
+    if status == "reported":
+        for result, value in (("hit", hit), ("miss", miss)):
+            collector.inc_counter(METRIC_LLM_CACHE_TOKENS, {**labels, "result": result}, value)
 
 
 def emit_canary_traffic(is_canary: bool) -> None:
@@ -396,7 +407,7 @@ class Timer:
         self._start = perf_counter()
         return self
 
-    def __exit__(self, exc_type, exc_val, exc_tb) -> None:
+    def __exit__(self, exc_type: object, exc_val: object, exc_tb: object) -> None:
         self.elapsed_ms = int((perf_counter() - self._start) * 1000)
 
 

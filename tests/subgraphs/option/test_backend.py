@@ -94,7 +94,6 @@ async def test_missing_context_logs_field_names_to_terminal(caplog) -> None:
         {"code": 0, "msg": "ok", "data": "   "},
         {"code": 0, "msg": "ok", "data": {}},
         {"code": 0, "msg": "ok", "data": []},
-        {"code": 500, "msg": "", "data": None},
     ],
 )
 async def test_empty_backend_result_raises_explicit_error(

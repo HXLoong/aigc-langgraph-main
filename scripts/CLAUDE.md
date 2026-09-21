@@ -18,7 +18,6 @@
 | `probe_swap_write_e2e.py` | 互换下单写后端 |
 | `probe_option_write_e2e.py` | 期权下单写后端 |
 | `probe_close_write_e2e.py` | 平仓下单写后端 |
-| `probe_ticker_e2e.py` | 标的识别真后端 |
 | `probe_fast_query.py` | 快速询价 GOATS 解析交互式探针（不调后端询价接口）|
 
 > 探针**不参与**自动 CI（依赖真后端 + VPN）。本地或客户现场手动跑。

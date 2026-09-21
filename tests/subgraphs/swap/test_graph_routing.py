@@ -24,11 +24,11 @@ from __future__ import annotations
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
+from evidence_support import swap_candidate_output
 
 import app.subgraphs.swap.multimodal as mm_module
 import app.subgraphs.swap.select_counterparty as sc_module
 import app.subgraphs.swap.select_ticker as st_module
-from app.graph.state import TickerCandidate
 from app.subgraphs.swap import backend as swap_backend_module
 from app.subgraphs.swap import build_swap_graph
 from app.subgraphs.swap import intent as intent_module
@@ -50,15 +50,7 @@ from app.subgraphs.swap.models import (
     SwapSelectTickerOutput,
     SwapTickerPick,
 )
-from app.subgraphs.ticker.resolver import TickerResolution
-
-
-def _patch_resolver(
-    monkeypatch: pytest.MonkeyPatch,
-    candidates: list[TickerCandidate],
-) -> None:
-    resolution = TickerResolution(resolved=candidates, hitl_pending=[])
-    monkeypatch.setattr(po_module, "resolve_ticker_full", AsyncMock(return_value=resolution))
+from tests.intent_fixtures import intent_reply, mock_ainvoke
 
 
 def _patch(
@@ -68,7 +60,7 @@ def _patch(
     fn: str = "get_qwen_thinking",
 ) -> AsyncMock:
     fake_llm = MagicMock()
-    fake_llm.ainvoke = AsyncMock(return_value=value)
+    fake_llm.ainvoke = mock_ainvoke(swap_candidate_output(value) if module is po_module and isinstance(value, SwapPlaceOrderParams) else value)
     fake_base = MagicMock()
     fake_base.with_structured_output = MagicMock(return_value=fake_llm)
     monkeypatch.setattr(module, fn, lambda: fake_base)
@@ -77,7 +69,7 @@ def _patch(
 
 def _patch_backend(monkeypatch: pytest.MonkeyPatch) -> MagicMock:
     fake_client = MagicMock()
-    fake_client.operate = AsyncMock(return_value={"code": 0, "data": {}, "msg": ""})
+    fake_client.operate = AsyncMock(return_value={"code": 0, "data": "后端原始回复", "msg": ""})
     monkeypatch.setattr(swap_backend_module, "SwapClientHttpx", lambda: fake_client)
     return fake_client
 
@@ -85,12 +77,19 @@ def _patch_backend(monkeypatch: pytest.MonkeyPatch) -> MagicMock:
 def _patch_vl_and_extract(
     monkeypatch: pytest.MonkeyPatch, params: SwapPlaceOrderParams
 ) -> None:
+    payload = swap_candidate_output(params).model_dump(by_alias=True)
+    words = []
+    for order in payload["orderList"]:
+        for candidate in order.values():
+            if candidate is not None:
+                candidate.update(origin="attachment", reference="file:0:image")
+                words.append(candidate["value"])
     ocr_llm = MagicMock()
-    ocr_llm.ainvoke = AsyncMock(return_value=MagicMock(content="OCR 文本"))
+    ocr_llm.with_structured_output.return_value.ainvoke = AsyncMock(return_value={"text": " ".join(words)})
     monkeypatch.setattr(mm_module, "get_qwen_vl", lambda: ocr_llm)
 
     extract_llm = MagicMock()
-    extract_llm.ainvoke = AsyncMock(return_value=params)
+    extract_llm.ainvoke = AsyncMock(return_value=mm_module.CANDIDATE_MODEL.model_validate(payload))
     factory = MagicMock()
     factory.with_structured_output = MagicMock(return_value=extract_llm)
     monkeypatch.setattr(mm_module, "get_qwen_structured", lambda: factory)
@@ -243,11 +242,7 @@ class TestSwapGraphEndToEnd:
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         """无引用消息 → swap_place_order → 全新对手识别 → submit。"""
-        _patch_resolver(
-            monkeypatch,
-            [TickerCandidate(windCode="00700.HK", insShtDesc="腾讯控股", from_goats=True)],
-        )
-        _patch(monkeypatch, intent_module, SwapIntentOutput(type="place_order_request"))
+        _patch(monkeypatch, intent_module, intent_reply(SwapIntentOutput, type="place_order_request"))
         _patch(
             monkeypatch,
             po_module,
@@ -261,7 +256,7 @@ class TestSwapGraphEndToEnd:
         graph = build_swap_graph()
         final = await graph.ainvoke(dict(_BASE_STATE))
 
-        trace_nodes = [e.node for e in final.get("trace", [])]
+        trace_nodes = [e.node for e in final.get("trace", []) if e.node not in {"swap_extract_candidates", "swap_normalize", "swap_place_result"}]
         assert trace_nodes == [
             "swap_intent", "swap_place_order", "swap_recognize_fresh_counterparty",
             "swap_place_order_submit",
@@ -270,17 +265,14 @@ class TestSwapGraphEndToEnd:
         assert final.get("expected_action") == "place"
         assert "swap_todo" not in trace_nodes
         # ticker 集成验证
-        tickers = final.get("tickers", [])
-        assert any("700" in t.wind_code and t.wind_code.endswith(".HK") for t in tickers)
-        assert all(t.from_goats for t in tickers)
+        assert final["place_params"]["orderList"][0]["placeOrderWindCode"] == "腾讯"
 
     @pytest.mark.asyncio
     async def test_place_order_request_with_quote_runs_full_select_chain(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         """有引用消息 → place_order → select_counterparty → select_ticker → submit。"""
-        _patch_resolver(monkeypatch, [])
-        _patch(monkeypatch, intent_module, SwapIntentOutput(type="place_order_request"))
+        _patch(monkeypatch, intent_module, intent_reply(SwapIntentOutput, type="place_order_request"))
         _patch(
             monkeypatch,
             po_module,
@@ -313,6 +305,7 @@ class TestSwapGraphEndToEnd:
         final = await graph.ainvoke(
             {
                 **_BASE_STATE,
+                "raw_text": _BASE_STATE["raw_text"] + " H-1，A，标的2",
                 "quote_content": "订单H-1（序号1）：",
                 "swap_counterparties": [{"shortName": "临沂阿凡提", "sort": "A"}],
                 "quote_ticker_candidates": [
@@ -327,7 +320,7 @@ class TestSwapGraphEndToEnd:
             }
         )
 
-        trace_nodes = [e.node for e in final.get("trace", [])]
+        trace_nodes = [e.node for e in final.get("trace", []) if e.node not in {"swap_extract_candidates", "swap_normalize", "swap_place_result"}]
         # 选对手 ‖ 选标的 并行，两者顺序不定；其余节点顺序固定
         assert trace_nodes[:2] == ["swap_intent", "swap_place_order"]
         assert set(trace_nodes[2:4]) == {"swap_select_counterparty", "swap_select_ticker"}
@@ -358,7 +351,7 @@ class TestSwapGraphEndToEnd:
             }
         )
 
-        trace_nodes = [e.node for e in final.get("trace", [])]
+        trace_nodes = [e.node for e in final.get("trace", []) if e.node not in {"swap_extract_candidates", "swap_normalize", "swap_place_result"}]
         assert trace_nodes == ["swap_image_order", "swap_place_order_submit"]
         assert final["place_params"]["orderList"][0]["placeOrderWindCode"] == "600519.SH"
 
@@ -366,12 +359,12 @@ class TestSwapGraphEndToEnd:
     async def test_unknown_intent_routes_to_swap_unknown(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        _patch(monkeypatch, intent_module, SwapIntentOutput(type="unknown_intent"))
+        _patch(monkeypatch, intent_module, intent_reply(SwapIntentOutput, type="unknown_intent"))
 
         graph = build_swap_graph()
         final = await graph.ainvoke({**_BASE_STATE, "raw_text": "你好啊"})
 
-        trace_nodes = [e.node for e in final.get("trace", [])]
+        trace_nodes = [e.node for e in final.get("trace", []) if e.node not in {"swap_extract_candidates", "swap_normalize", "swap_place_result"}]
         assert "swap_intent" in trace_nodes
         assert "swap_unknown" in trace_nodes
         assert "swap_place_order" not in trace_nodes
@@ -393,7 +386,7 @@ class TestSwapGraphEndToEnd:
         final = await graph.ainvoke(dict(_BASE_STATE))
 
         assert final.get("error") is not None
-        trace_nodes = [e.node for e in final.get("trace", [])]
+        trace_nodes = [e.node for e in final.get("trace", []) if e.node not in {"swap_extract_candidates", "swap_normalize", "swap_place_result"}]
         assert "swap_unknown" in trace_nodes
         for unexpected in (
             "swap_place_order",

@@ -20,7 +20,7 @@ from app.subgraphs.close.models import CloseIntentOutput
     ],
 )
 def test_all_seven_intent_types_accepted(intent_type: str) -> None:
-    obj = CloseIntentOutput(type=intent_type)  # type: ignore[arg-type]
+    obj = CloseIntentOutput(type=intent_type, confidence=0.91, evidence=[{"text": "本轮意图模型测试输入", "origin": "raw"}])  # type: ignore[arg-type]
     assert obj.type == intent_type
 
 
@@ -35,12 +35,12 @@ def test_all_seven_intent_types_accepted(intent_type: str) -> None:
 def test_non_close_intents_rejected(non_close_intent: str) -> None:
     """ADR 0011 二次修订：close 子图只处理 close_order_* + unknown_intent。"""
     with pytest.raises(ValidationError):
-        CloseIntentOutput(type=non_close_intent)  # type: ignore[arg-type]
+        CloseIntentOutput(type=non_close_intent, confidence=0.91, evidence=[{"text": "本轮意图模型测试输入", "origin": "raw"}])  # type: ignore[arg-type]
 
 
 def test_extra_fields_ignored() -> None:
     params = CloseIntentOutput.model_validate(
-        {"type": "close_order_query", "extra": "x"}
+        {"type": "close_order_query", "confidence": .91, "evidence": [{"text": "查询", "origin": "raw"}], "extra": "x"}
     )
     assert params.type == "close_order_query"
 

@@ -14,6 +14,11 @@ from __future__ import annotations
 
 from typing import Any
 
+from app.execution.confirmation import (
+    confirmation_action,
+    confirmation_attempt,
+)
+from app.extraction.intent_evidence import intent_records
 from app.graph.retry import io_node
 from app.graph.state import AgentState, TraceEntry
 from app.llm.clients import get_qwen_structured
@@ -32,7 +37,6 @@ SPEC = register(PromptSpec(
 #: 兼容旧测试 / 调用点：user 消息拼装已收敛到 app/subgraphs/option/prompting.intent_user
 _build_user_message = intent_user
 
-
 @io_node
 async def option_intent(state: AgentState) -> dict[str, Any]:
     """option.intent 节点。
@@ -41,20 +45,18 @@ async def option_intent(state: AgentState) -> dict[str, Any]:
     - intent: OptionIntentType 之一
     - trace: 单条 TraceEntry，记录 LLM 输出
     """
+    if not (state.get("raw_text") or "").strip():
+        return {"intent": "unknown_intent", "trace": [TraceEntry(
+            node="option_intent", decision="empty_current_input",
+        )]}
     raw = state.get("raw_text", "") or ""
     quote = state.get("quote_content") or ""
 
     # === 确定性快速路径（调 LLM 前） ===
-    if raw.strip() == "-":
-        return {
-            "intent": "confirm_order",
-            "trace": [TraceEntry(node="option_intent", decision="deterministic_dash")],
-        }
-    if "确认下单" in raw:
-        return {
-            "intent": "confirm_order",
-            "trace": [TraceEntry(node="option_intent", decision="deterministic_confirm")],
-        }
+    action = confirmation_action(raw)
+    if confirmation_attempt(raw):
+        intent = {"place": "confirm_order", "cancel": "confirm_cancel_order"}.get(action or "", "unknown_intent")
+        return {"intent": intent, "trace": [TraceEntry(node="option_intent", decision=f"confirmation:{intent}")]}
     if "撤单" in raw and ("撤单" in quote or "撤单请求" in quote):
         return {
             "intent": "cancel_order_request",
@@ -63,16 +65,18 @@ async def option_intent(state: AgentState) -> dict[str, Any]:
 
     messages, _prompt_name = SPEC.build_messages(state)
     llm = get_qwen_structured().with_structured_output(OptionIntentOutput)
-    result: Any = await llm.ainvoke(messages)
+    result = OptionIntentOutput.model_validate(await llm.ainvoke(messages))
+    records = intent_records(result, state, scope="option/intent", value=result.type)
 
     intent = result.type
     return {
         "intent": intent,
+        "field_records": records,
         "trace": [
             TraceEntry(
                 node="option_intent",
                 decision=f"intent={intent}",
-                llm_output={"type": intent},
+                llm_output={"type": intent, "confidence": result.confidence, "evidence_count": len(result.evidence)},
             )
         ],
     }

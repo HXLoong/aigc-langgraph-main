@@ -33,6 +33,10 @@ import re
 from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
+from typing import TYPE_CHECKING, Any, cast
+
+if TYPE_CHECKING:
+    from langfuse import Langfuse
 
 logger = logging.getLogger(__name__)
 
@@ -47,7 +51,7 @@ class Prompt:
     name: str
     system: str
     user_template: str   # {{var}} 模板；无 [user] 段时为空串
-    config: dict | None = None  # Langfuse 附带的 model / temperature 等
+    config: dict[str, Any] | None = None  # Langfuse 附带的 model / temperature 等
 
     def render_user(self, **kwargs: str) -> str:
         """把 user_template 中的 {{variable_name}} 占位符替换成实际值；未提供的占位符原样保留。"""
@@ -84,7 +88,7 @@ def _langfuse_name(category: str, name: str) -> str:
     return "_".join(category.split("/") + [name])
 
 
-def _get_langfuse_client():
+def _get_langfuse_client() -> Langfuse:
     """惰性构造 Langfuse 客户端（独立函数便于测试替换）。"""
     from langfuse import Langfuse
 
@@ -181,7 +185,7 @@ def load_prompt(category: str, name: str) -> Prompt:
 
 
 @lru_cache(maxsize=1)
-def _load_versions_config() -> dict[str, dict]:
+def _load_versions_config() -> dict[str, dict[str, Any]]:
     """读取并缓存 _versions.yaml 的 overrides 段。
 
     yaml 缺失或解析失败时返回空 dict（默认全部走 v1）。
@@ -300,7 +304,7 @@ def resolve_prompt_version(
             continue
         cumulative += float(v.get("weight", 1.0)) / total_weight
         if bucket_pos < cumulative:
-            return v.get("name", base_name)
+            return cast(str, v.get("name", base_name))
 
     last = versions[-1]
     return last.get("name", base_name) if isinstance(last, dict) else base_name

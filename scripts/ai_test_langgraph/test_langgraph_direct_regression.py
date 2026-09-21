@@ -21,6 +21,54 @@ from langgraph_direct_regression import (
 from regression_support import AssertionResult
 
 
+def test_failed_http_turn_remains_in_report_and_clears_previous_outputs():
+    from contextlib import nullcontext
+    from unittest.mock import Mock
+
+    from langgraph_direct_regression import LangGraphClient, build_case_trace_output, run_case
+
+    client = LangGraphClient(base_url="http://127.0.0.1:8000", user_id="u", room_id="r",
+                             bot_name="bot", guid="g", option_counterparties="[]",
+                             swap_counterparties="[]", timeout=1, retries=0,
+                             throttle_ms=0, verify_tls=True)
+    payloads = [
+        {"workflow_run_id": "first", "data": {"status": "succeeded", "outputs": {"reply_text": "首轮卡片", "intent": "old"}}},
+        {"workflow_run_id": "failed", "data": {"status": "failed", "outputs": {
+            "reply_text": "处理失败", "diagnostic": {"trace_id": "trace-failed"}, "error": {"type": "EvidenceError"}}}},
+    ]
+    responses = [nullcontext(Mock(read=lambda p=p: json.dumps(p).encode())) for p in payloads]
+    scenario = {"name": "多轮失败", "send_text": "询价", "sub_scenes": [
+        {"send_text": "补参数", "quote_previous": True}, {"send_text": "第三轮"},
+    ]}
+    with patch("urllib.request.urlopen", side_effect=responses):
+        result = run_case(client, scenario, ignore_leading_mentions=False)
+    assert not result.passed and len(result.turns) == 2
+    failed = result.turns[1]
+    assert failed.query == "补参数" and failed.quote_content == "首轮卡片"
+    assert failed.answer == "处理失败" and failed.workflow_run_id == "failed"
+    assert failed.outputs["diagnostic"]["trace_id"] == "trace-failed"
+    assert "intent" not in failed.outputs
+    assert failed.response == payloads[1]
+    assert result.unexecuted_turns[0]["query"] == "第三轮"
+    assert build_case_trace_output(scenario, result)["failure"]["turn"] == 2
+
+
+def test_transport_failure_clears_previous_turn_output():
+    import urllib.error
+
+    import pytest
+    from langgraph_direct_regression import LangGraphClient, RunnerError
+
+    client = LangGraphClient(base_url="http://127.0.0.1:8000", user_id="u", room_id="r",
+                             bot_name="bot", guid="g", option_counterparties="[]",
+                             swap_counterparties="[]", timeout=1, retries=0,
+                             throttle_ms=0, verify_tls=True)
+    client.last_outputs = {"intent": "previous-turn"}
+    with patch("urllib.request.urlopen", side_effect=urllib.error.URLError("timeout")), pytest.raises(RunnerError):
+        client.send("补参数", conversation_id="c")
+    assert client.last_outputs == {}
+
+
 class LangGraphClientContractTest(unittest.TestCase):
     def setUp(self) -> None:
         self.client = LangGraphClient(
@@ -355,3 +403,15 @@ class LangGraphClientContractTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class WorkflowFailureDetailsTest(unittest.TestCase):
+    def test_failure_displays_node_category_and_elapsed_time(self):
+        payload = {"data": {"status": "failed", "error": "指令处理失败，请核对输入或稍后重试。",
+            "outputs": {"diagnostic": {"code": "E4", "node": "swap_place_order_submit", "elapsed_ms": 5002,
+                                      "summary": "后端调用超时"}, "trace_id": "trace-123"}}}
+        with self.assertRaises(Exception) as captured:
+            parse_workflow_response(payload)
+        message = str(captured.exception)
+        for detail in ("E4", "swap_place_order_submit", "5002", "trace-123", "后端调用超时"):
+            self.assertIn(detail, message)
