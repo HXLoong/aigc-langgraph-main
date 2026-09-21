@@ -54,6 +54,19 @@ class TerminateProcessTests(unittest.TestCase):
 
 
 class RunnerCliTests(unittest.TestCase):
+    def test_startup_explains_option_position_mock(self) -> None:
+        with (
+            patch.object(runner, "ThreadingHTTPServer"),
+            self.assertLogs(runner.__name__, level="INFO") as logs,
+        ):
+            self.assertEqual(runner.main(["--no-open"]), 0)
+
+        output = "\n".join(logs.output)
+        self.assertIn("期权持仓 mock", output)
+        self.assertIn(".venv/bin/python scripts/goats_api_mock/server.py --port 9002", output)
+        self.assertIn("GOATS_OPTION_CLOSING_OUT_CONTRACT_QUERY", output)
+        self.assertIn("http://127.0.0.1:9002/api/internal/agent/option/position", output)
+
     def test_host_argument_controls_server_bind_address(self) -> None:
         with (
             patch.object(runner, "ThreadingHTTPServer") as server_class,

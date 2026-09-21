@@ -11,6 +11,7 @@ from __future__ import annotations
 import argparse
 import html as html_lib
 import json
+import logging
 import mimetypes
 import os
 import re
@@ -74,6 +75,7 @@ REPORT_LINE_RE = re.compile(r"^(?:Markdown|JSON) report:\s*(.+)$")
 TERMINAL_STATUSES = {"success", "failed", "cancelled"}
 MOVABLE_STATUSES = {"ready", "queued"}
 CommandSpec = tuple[str, list[str], dict[str, str]]
+logger = logging.getLogger(__name__)
 
 
 class RunnerServerError(ValueError):
@@ -1727,6 +1729,13 @@ def main(argv: Sequence[str] | None = None) -> int:
     )
     url = f"http://{args.host}:{args.port}"
     print(f"自动化测试任务队列：{url}")
+    logging.basicConfig(level=logging.INFO, format="%(message)s")
+    logger.info(
+        "期权持仓 mock：需要固定持仓数据时，在仓库根目录另开终端启动：\n"
+        ".venv/bin/python scripts/goats_api_mock/server.py --port 9002\n"
+        "Java 管理页面中，仅将 GOATS_OPTION_CLOSING_OUT_CONTRACT_QUERY 地址配置为：\n"
+        "http://127.0.0.1:9002/api/internal/agent/option/position"
+    )
     print("按 Ctrl+C 停止服务。")
     if not args.no_open:
         webbrowser.open(url)
