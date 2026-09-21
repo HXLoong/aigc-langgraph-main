@@ -67,7 +67,9 @@ async def test_exact_update_even_when_empty_or_unchanged(update: dict) -> None:
         assert "product_type" not in state
         return update
 
-    executor = NodeExecutor([NodeRegistration("main", "target", target)])
+    executor = NodeExecutor(
+        [NodeRegistration("main", "target", target, input_fields=("raw_text",))]
+    )
     response = await request(executor, "main", "target", {"raw_text": "same"})
     assert response.status_code == 200
     assert response.json()["output"] == update
@@ -79,7 +81,16 @@ async def test_json_models_are_converted_before_node_and_serialized_after() -> N
         assert isinstance(state["tickers"][0], TickerCandidate)
         return {"tickers": state["tickers"]}
 
-    executor = NodeExecutor([NodeRegistration("main", "target", target)])
+    executor = NodeExecutor(
+        [
+            NodeRegistration(
+                "main",
+                "target",
+                target,
+                input_fields=("history_messages", "tickers"),
+            )
+        ]
+    )
     response = await request(
         executor,
         "main",
@@ -101,7 +112,16 @@ async def test_concurrent_same_conversation_does_not_restore_or_share_state() ->
             "intent": str(len(state.get("history_messages", []))),
         }
 
-    executor = NodeExecutor([NodeRegistration("main", "target", target)])
+    executor = NodeExecutor(
+        [
+            NodeRegistration(
+                "main",
+                "target",
+                target,
+                input_fields=("conversation_id", "raw_text", "history_messages"),
+            )
+        ]
+    )
     results = await asyncio.gather(
         *[
             request(executor, "main", "target", {"conversation_id": "same", "raw_text": str(i)})
@@ -139,6 +159,7 @@ async def test_io_retries_exactly_configured_attempts_and_exhaustion(
                 "main",
                 "target",
                 target if private else io_node(target),
+                input_fields=(),
                 io=True,
                 with_error_handler=not private,
             )

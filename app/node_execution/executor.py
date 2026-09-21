@@ -13,8 +13,7 @@ from pydantic import BaseModel
 
 from app.graph.retry import add_io_node
 from app.node_execution.registry import NodeRegistration
-from app.node_execution.validation import state_adapter
-from app.tools.bot_context import BotContext
+from app.node_execution.validation import missing_node_context, state_adapter
 
 
 class MissingNodeContextError(ValueError):
@@ -57,9 +56,11 @@ class NodeExecutor:
     def validate(self, product: str, node: str, state: dict[str, Any]) -> dict[str, Any]:
         spec = self.registrations[(product, node)]
         validated: dict[str, Any] = state_adapter(spec.input_schema).validate_python(state)
-        missing = [field for field in spec.required if field not in validated]
-        if spec.backend_context:
-            missing.extend(BotContext.from_state(validated).missing_required())
+        missing = missing_node_context(
+            validated,
+            required=spec.required,
+            backend_context=spec.backend_context,
+        )
         if missing:
             raise MissingNodeContextError(missing)
         return validated

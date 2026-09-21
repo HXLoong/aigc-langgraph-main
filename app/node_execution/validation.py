@@ -20,6 +20,8 @@ from typing import (
 from pydantic import BaseModel, ConfigDict, TypeAdapter, create_model
 from typing_extensions import TypedDict, is_typeddict
 
+from app.tools.bot_context import BotContext
+
 
 @functools.cache
 def wire_type(schema: Any) -> Any:
@@ -53,3 +55,16 @@ def wire_type(schema: Any) -> Any:
 @functools.cache
 def state_adapter(schema: Any) -> TypeAdapter[Any]:
     return TypeAdapter(wire_type(schema))
+
+
+def missing_node_context(
+    state: dict[str, Any],
+    *,
+    required: tuple[str, ...],
+    backend_context: bool,
+) -> list[str]:
+    """返回注册项及后端上下文缺失字段；`/run` 与 `/prepare` 共用。"""
+    missing = [field for field in required if field not in state]
+    if backend_context:
+        missing.extend(BotContext.missing_required_from_state(state))
+    return list(dict.fromkeys(missing))
