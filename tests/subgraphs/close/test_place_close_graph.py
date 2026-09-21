@@ -108,13 +108,15 @@ async def test_relative_twap_duration_requires_explicit_time_range(monkeypatch: 
 
 
 @pytest.mark.asyncio
-async def test_explicit_twap_time_range_reaches_backend(monkeypatch: pytest.MonkeyPatch) -> None:
+@pytest.mark.parametrize("combined", [False, True])
+async def test_explicit_twap_time_range_reaches_backend(monkeypatch: pytest.MonkeyPatch, combined: bool) -> None:
     _patch_query(monkeypatch, [])
     captured = _patch_operate(monkeypatch)
     _patch_llm(monkeypatch, close_candidates({
         "orderId": "CO-20260304-AAAA0001", "closeOrderNotionalDelta": "200万",
-        "closeOrderType": "TWAP", "closeOrderPrice": "10",
-        "closeOrderAlgoStartTime": "13:00", "closeOrderAlgoEndTime": "13:30",
+        "closeOrderType": "TWAP13:00-13:30" if combined else "TWAP", "closeOrderPrice": "10",
+        "closeOrderAlgoStartTime": None if combined else "13:00",
+        "closeOrderAlgoEndTime": None if combined else "13:30",
     }))
     result = await close_place_close(_ctx("CO-20260304-AAAA0001，200万，TWAP13:00-13:30，限价10"))
 
@@ -123,6 +125,51 @@ async def test_explicit_twap_time_range_reaches_backend(monkeypatch: pytest.Monk
     item = captured.call_args.args[0].close_order_req_vo.model_extra["closeOrderList"][0]
     assert item["closeOrderAlgoStartTime"] == "13:00"
     assert item["closeOrderAlgoEndTime"] == "13:30"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("ratio", [None, "9", "POV9"])
+async def test_compound_pov_candidate_keeps_ratio_and_evidence(monkeypatch: pytest.MonkeyPatch, ratio: str | None) -> None:
+    order = "CO-20260304-AAAA0001"
+    quote = f"序号：1\n合约编号：OPT-TEST1\n单号：{order}\n平仓价格方式：【待补充】"
+    _patch_query(monkeypatch, [{"orderId": order, "contractCode": "OPT-TEST1"}])
+    captured = _patch_operate(monkeypatch)
+    _patch_llm(monkeypatch, close_candidates({
+        "orderId": {"value": order, "evidence": order, "origin": "quote", "confidence": 1.0},
+        "closeOrderType": "POV9", "closeOrderPovRatio": ratio,
+    }))
+    result = await close_place_close({**_ctx("POV9"), "quote_content": quote})
+    assert not result.get("error"), result.get("error")
+    captured.assert_called_once()
+    row = captured.call_args.args[0].close_order_req_vo.model_extra["closeOrderList"][0]
+    assert row["closeOrderType"] == "POV" and row["closeOrderPovRatio"] == 9
+    record = result["field_records"]["close/place_close.orderList.0.closeOrderPovRatio"]
+    assert record.evidence == (ratio or "POV9") and record.value == 9
+
+
+@pytest.mark.asyncio
+async def test_compound_twap_duration_still_requires_time_range(monkeypatch: pytest.MonkeyPatch) -> None:
+    _patch_query(monkeypatch, [])
+    captured = _patch_operate(monkeypatch)
+    _patch_llm(monkeypatch, close_candidates({
+        "orderId": "CO-20260304-AAAA0001", "closeOrderType": "TWAP30分钟",
+    }))
+    result = await close_place_close(_ctx("CO-20260304-AAAA0001 TWAP30分钟"))
+    assert not result.get("error")
+    assert "起止时间" in result["reply_text"]
+    captured.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_compound_negated_pov_is_rejected(monkeypatch: pytest.MonkeyPatch) -> None:
+    _patch_query(monkeypatch, [])
+    captured = _patch_operate(monkeypatch)
+    _patch_llm(monkeypatch, close_candidates({
+        "orderId": "CO-20260304-AAAA0001", "closeOrderType": "POV9",
+    }))
+    result = await close_place_close(_ctx("CO-20260304-AAAA0001 不要POV9"))
+    assert result.get("error")
+    captured.assert_not_called()
 
 
 @pytest.mark.asyncio
