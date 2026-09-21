@@ -122,7 +122,7 @@ class RunnerConfigTests(unittest.TestCase):
         self.assertEqual(datasets, {
             str(Path("tests/fixtures/categories") / name): count
             for name, count in {
-                "golden_option_close_case.jsonl": 4,
+                "golden_option_close_case.jsonl": 5,
                 "golden_option_inquiry_case.jsonl": 4,
                 "golden_option_open_case.jsonl": 5,
                 "swap_prod_acceptance_data.jsonl": 162,
