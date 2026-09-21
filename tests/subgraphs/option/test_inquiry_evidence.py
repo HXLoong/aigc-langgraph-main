@@ -69,3 +69,25 @@ async def test_call_shorthand_reaches_backend_with_verified_strike(monkeypatch, 
     assert record.evidence == (explicit_strike or "100call")
     if explicit_strike is None:
         assert record.derived_from == ["option/inquiry.orderList.0.optionType"]
+
+
+async def test_derived_strike_links_to_same_expanded_order(monkeypatch):
+    def field(value):
+        return {"value": value, "evidence": value, "confidence": .9, "origin": "raw"}
+
+    candidates = candidate_model(OptionInquiryRawParams).model_validate({"orderList": [
+        {"stockCode": field("甲证券"), "optionType": field("call"),
+         "tenor": field("1M/2M"), "strikePercentage": field("80%")},
+        {"stockCode": field("乙证券"), "optionType": field("100call"), "tenor": field("3M")},
+    ]})
+    llm = MagicMock()
+    llm.with_structured_output.return_value.ainvoke = AsyncMock(return_value=candidates)
+    monkeypatch.setattr(inquiry, "get_qwen_thinking", lambda: llm)
+    monkeypatch.setattr(inquiry, "call_option_backend", AsyncMock(return_value={"api_code": 0}))
+
+    result = await inquiry.option_extract_inquiry({"raw_text": "甲证券 call 1M/2M 80%；乙证券 100call 3M"})
+    assert not result.get("error")
+    records = result["field_records"]
+    strike = records["option/inquiry.orderList.2.strikePercentage"]
+    assert strike.derived_from == ["option/inquiry.orderList.2.optionType"]
+    assert records[strike.derived_from[0]].evidence == strike.evidence == "100call"

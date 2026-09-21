@@ -166,7 +166,7 @@ async def inquiry_normalize(state: InquiryState) -> dict[str, Any]:
                     and canonical_item.get("strikePercentage") is not None):
                 records[target + "strikePercentage"] = type_record.model_copy(update={
                     "value": canonical_item["strikePercentage"], "locked": True,
-                    "derived_from": [type_path],
+                    "derived_from": [target + "optionType"],
                 })
             expanded.append(item)
     params = OptionInquiryParams.model_validate({"orderList": expanded})
