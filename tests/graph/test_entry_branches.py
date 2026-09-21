@@ -6,6 +6,7 @@ from langgraph.checkpoint.memory import InMemorySaver
 
 import app.nodes.fast_query as fq
 from app.graph.main import _route_entry, build_main_graph
+from app.graph.retry import io_node
 from app.tools.goats_agent_client import IGNORE_REPLY_SENTINEL
 
 
@@ -73,7 +74,13 @@ async def test_e2e_existing_command_silent_sentinel(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_e2e_pre_route_populates_counterparties():
+async def test_e2e_pre_route_populates_counterparties(monkeypatch):
+    # 本用例验证入口数据解析，后续意图分类隔离，避免离线测试访问模型和 Java。
+    @io_node
+    async def classified(state):
+        return {"product_type": "unknown"}
+
+    monkeypatch.setattr("app.graph.main.intent_route", classified)
     graph = build_main_graph(InMemorySaver())
     final = await graph.ainvoke(
         {
