@@ -1731,10 +1731,19 @@ def main(argv: Sequence[str] | None = None) -> int:
     print(f"自动化测试任务队列：{url}")
     logging.basicConfig(level=logging.INFO, format="%(message)s")
     logger.info(
-        "期权持仓 mock：需要固定持仓数据时，在仓库根目录另开终端启动：\n"
+        "GOATS 期权 Mock 服务（持仓、模拟平仓、模拟撤单），在仓库根目录另开终端启动：\n"
         ".venv/bin/python scripts/goats_api_mock/server.py --port 20000\n"
-        "Java 管理页面中，仅将 GOATS_OPTION_CLOSING_OUT_CONTRACT_QUERY 地址配置为：\n"
-        "http://127.0.0.1:20000/api/internal/agent/option/position"
+        "Java 管理页面配置以下接口：\n"
+        "GOATS_OPTION_CLOSING_OUT_CONTRACT_QUERY：\n"
+        "http://127.0.0.1:20000/api/internal/agent/option/position\n"
+        "GOATS_OPTION_CLOSING_OUT_PLACE_AN_ORDER：\n"
+        "http://127.0.0.1:20000/api/internal/agent/option/order/close\n"
+        "GOATS_OPTION_CLOSING_OUT_ORDER_QUERY：\n"
+        "http://127.0.0.1:20000/api/internal/agent/option/order/close/query\n"
+        "GOATS_OPTION_CLOSING_OUT_ORDER_CANCEL：\n"
+        "http://127.0.0.1:20000/api/internal/agent/option/order/close/withdraw\n"
+        "GOATS_OPTION_CLOSING_OUT_ORDER_CANCEL_QUERY：\n"
+        "http://127.0.0.1:20000/api/internal/agent/option/order/close/withdrawResult"
     )
     print("按 Ctrl+C 停止服务。")
     if not args.no_open:

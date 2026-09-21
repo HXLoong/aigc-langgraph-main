@@ -30,7 +30,7 @@ def test_close_cases_retain_confirmation_and_cancel_coverage() -> None:
         turns = cases[case_id]["sub_scenes"]
         confirmation = next(turn for turn in turns if turn["send_text"] == "确认平仓")
         assert confirmation["expected"]["intent"] == "close_order_confirm"
-        assert "已收到您的平仓请求" in confirmation["response_contains"]
+        assert {"期权平仓订单", "已收到您的下单请求"} <= set(confirmation["response_contains"])
     cancel = cases["case-034"]["sub_scenes"][-2:]
     assert [turn["send_text"] for turn in cancel] == ["撤单", "确认撤单"]
     assert cancel[-1]["expected"]["intent"] == "close_order_cancel_confirm"

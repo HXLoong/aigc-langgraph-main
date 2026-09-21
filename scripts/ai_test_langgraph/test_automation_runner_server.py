@@ -62,10 +62,13 @@ class RunnerCliTests(unittest.TestCase):
             self.assertEqual(runner.main(["--no-open"]), 0)
 
         output = "\n".join(logs.output)
-        self.assertIn("期权持仓 mock", output)
+        self.assertIn("GOATS 期权 Mock 服务", output)
         self.assertIn(".venv/bin/python scripts/goats_api_mock/server.py --port 20000", output)
         self.assertIn("GOATS_OPTION_CLOSING_OUT_CONTRACT_QUERY", output)
         self.assertIn("http://127.0.0.1:20000/api/internal/agent/option/position", output)
+        for name in ("PLACE_AN_ORDER", "ORDER_QUERY", "ORDER_CANCEL", "ORDER_CANCEL_QUERY"):
+            self.assertIn("GOATS_OPTION_CLOSING_OUT_" + name, output)
+        self.assertIn("http://127.0.0.1:20000/api/internal/agent/option/order/close/withdrawResult", output)
 
     def test_host_argument_controls_server_bind_address(self) -> None:
         with (
