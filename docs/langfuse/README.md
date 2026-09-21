@@ -4,6 +4,7 @@
 
 | 文档 | 用途 |
 |---|---|
+| [WebUI 操作手册（面向非开发人员）](./web-ui-operation-manual.md) | 通过 Langfuse v4 界面完成可观测性、提示词管理和评测工作，含三个分组的侧栏导航截图 |
 | [功能与评测链路使用指南](./workflow-guide.md) | 了解 Langfuse 对象关系，上传 Dataset 和评测配置，执行 Experiment，并追踪失败用例 |
 | [私有化部署](./self-hosted-deployment.md) | 在客户内网部署、备份、升级和排查自托管 Langfuse |
 
