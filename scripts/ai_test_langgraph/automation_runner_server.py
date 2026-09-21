@@ -1732,9 +1732,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     logging.basicConfig(level=logging.INFO, format="%(message)s")
     logger.info(
         "期权持仓 mock：需要固定持仓数据时，在仓库根目录另开终端启动：\n"
-        ".venv/bin/python scripts/goats_api_mock/server.py --port 9002\n"
+        ".venv/bin/python scripts/goats_api_mock/server.py --port 19027\n"
         "Java 管理页面中，仅将 GOATS_OPTION_CLOSING_OUT_CONTRACT_QUERY 地址配置为：\n"
-        "http://127.0.0.1:9002/api/internal/agent/option/position"
+        "http://127.0.0.1:19027/api/internal/agent/option/position"
     )
     print("按 Ctrl+C 停止服务。")
     if not args.no_open:

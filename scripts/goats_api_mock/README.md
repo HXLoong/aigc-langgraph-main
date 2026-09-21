@@ -3,13 +3,13 @@
 在仓库根目录运行（使用项目现有 FastAPI / Uvicorn 依赖）：
 
 ```bash
-.venv/bin/python scripts/goats_api_mock/server.py --port 9002
+.venv/bin/python scripts/goats_api_mock/server.py --port 19027
 ```
 
 Java 管理页面中，仅将 `GOATS_OPTION_CLOSING_OUT_CONTRACT_QUERY` 的地址配置为：
 
 ```text
-http://127.0.0.1:9002/api/internal/agent/option/position
+http://127.0.0.1:19027/api/internal/agent/option/position
 ```
 
 该地址适用于 Java 与 mock 运行在同一主机的情况。继续使用现有 runner 和 JSONL
@@ -22,7 +22,7 @@ http://127.0.0.1:9002/api/internal/agent/option/position
 调用需要请求头 `agentid`（群标识），`agentsubid`（用户标识）可选：
 
 ```bash
-curl http://127.0.0.1:9002/api/internal/agent/option/position \
+curl http://127.0.0.1:19027/api/internal/agent/option/position \
   -H 'Content-Type: application/json' \
   -H 'agentid: test-room@tl' \
   -d '{"filter":{"windCode":"000155.SZ","allowCloseOut":"true"},"pageNum":1,"pageSize":0}'
