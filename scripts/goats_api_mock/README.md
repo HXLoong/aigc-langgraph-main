@@ -18,7 +18,14 @@ http://127.0.0.1:20000/api/internal/agent/option/position
 该地址适用于 Java 与 mock 运行在同一主机的情况。继续使用现有 runner 和 JSONL
 测试流程；runner 启动会显示上述提示，mock 需另开终端运行。
 
-`option_positions.json` 保存用户提供的完整 GOATS 响应，包括原顺序的 12 条持仓。
+`option_positions.json` 基于用户提供的完整 GOATS 响应，原 12 条持仓保持原顺序，
+末尾追加一条供平仓数据集使用的测试合约 `OPT-AAAA1`，当前共 13 条。
+该合约复制川能动力欧式期权字段，使用独立测试标识 `9000000001`，不代表 GOATS 真实合约。
+`OPT-SZZSCF20260001` 的剩余本金、质押本金及可平仓本金调整为 100 万，适配
+`case-032` 的全平预期；初始本金仍保留为 1000 万。
+
+Java 展示时按合约编号排序：第一笔为 `OPT-AAAA1`，第二笔为 `OPT-LYAFT20260001`，
+第三笔为 `OPT-SZZSCF20260001`，对应平仓集中的合约和序号引用。
 服务在启动时加载文件，修改后需重启；文件缺失、JSON 损坏或持仓查询字段格式错误
 会明确报错并停止启动。所有测试身份共用这份数据，查询不修改持仓。
 
@@ -39,8 +46,8 @@ curl http://127.0.0.1:20000/api/internal/agent/option/position \
   仅返回可平仓记录，`false` / `"false"` / 空值不限制。
 - Java 当前传入 `pageNum=1, pageSize=0`，返回全部匹配项。`total` 是匹配总数，
   响应 `pageSize` 是本次返回的记录数，无匹配时两者均为 0。正数 `pageSize` 按页返回。
-- 无条件返回 12 条，`windCode=000155.SZ` 返回 3 条，
-  `contractTypeList=["EUROPEAN_VANILLA"]` 返回 3 条。
+- 无条件返回 13 条，`windCode=000155.SZ` 返回 4 条，
+  `contractTypeList=["EUROPEAN_VANILLA"]` 返回 4 条。
 
 离线验证：
 

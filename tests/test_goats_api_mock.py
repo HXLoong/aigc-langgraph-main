@@ -260,10 +260,11 @@ def test_missing_file_fails_startup(tmp_path: Path) -> None:
                 5394291,
                 5380178,
                 5259784,
+                9000000001,
             ],
         ),
-        ({"windCode": "000155.SZ"}, [5252598, 5252540, 5252513]),
-        ({"contractTypeList": ["EUROPEAN_VANILLA"]}, [5252598, 5252540, 5252513]),
+        ({"windCode": "000155.SZ"}, [5252598, 5252540, 5252513, 9000000001]),
+        ({"contractTypeList": ["EUROPEAN_VANILLA"]}, [5252598, 5252540, 5252513, 9000000001]),
         (
             {
                 "contractTypeList": ["AUTOCALL"],
@@ -279,7 +280,13 @@ def test_supplied_positions(filters: dict[str, Any], expected_ids: list[int]) ->
     from scripts.goats_api_mock.server import DEFAULT_DATA_FILE, create_app
 
     original = json.loads(DEFAULT_DATA_FILE.read_text(encoding="utf-8"))
-    assert original["data"]["total"] == len(original["data"]["queryResults"]) == 12
+    assert original["data"]["total"] == len(original["data"]["queryResults"]) == 13
+    # Java 按合约编号排序：case-033 引用第二笔，case-032 引用第三笔全平 100 万。
+    ordered = sorted(original["data"]["queryResults"], key=lambda row: row["contractCode"])
+    assert [row["contractCode"] for row in ordered[:3]] == [
+        "OPT-AAAA1", "OPT-LYAFT20260001", "OPT-SZZSCF20260001",
+    ]
+    assert ordered[2]["availableNotional"] == ordered[2]["notional"] == 1_000_000
     with TestClient(create_app()) as client:
         response = client.post(
             ENDPOINT, headers=HEADERS, json={"filter": filters, "pageNum": 1, "pageSize": 0}

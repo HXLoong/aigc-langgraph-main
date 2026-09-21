@@ -7,8 +7,8 @@
   },
   "data": {
     "pageNum": 1,
-    "pageSize": 12,
-    "total": 12,
+    "pageSize": 13,
+    "total": 13,
     "queryResults": [
       {
         "keyInstrumentId": 5252598,
@@ -542,9 +542,9 @@
         "tradeDate": "2026-01-06",
         "effectiveDate": "2026-01-06",
         "maturityDate": "2027-01-06",
-        "notional": 10000000,
+        "notional": 1000000,
         "initialNotional": 10000000,
-        "collateralNotional": 10000000,
+        "collateralNotional": 1000000,
         "collateralNotionalCurrency": "CNY",
         "initialUnderlyingPrice": 14.22,
         "underlyingInsId": 51749,
@@ -571,7 +571,7 @@
         "allowCloseOut": true,
         "insFamily": "EQUITY",
         "appliedNotional": 0,
-        "availableNotional": 10000000,
+        "availableNotional": 1000000,
         "partitionRates": [
           {
             "seq": 0,
@@ -971,6 +971,81 @@
         "settlementCurrency": "CNY",
         "maturityPricePrecision": 4,
         "contractCode": "OPTG-SZZSCF20260009"
+      },
+      {
+        "keyInstrumentId": 9000000001,
+        "account": null,
+        "keyOtcTradeId": 9000000001,
+        "keyCtptyId": 10049,
+        "ctptyShortName": "临沂阿凡提",
+        "contractType": "EUROPEAN_VANILLA",
+        "contractSubType": null,
+        "direction": "CALL",
+        "trdOtcContrFiles": {
+          "internalTradeId": null,
+          "keyOTCTradeId": 9000000001,
+          "complianceReportFiles": "",
+          "doubleSealedFiles": "",
+          "singleSealedFiles": "",
+          "attachments": "",
+          "createdDateTime": "2026-03-04 15:17:00",
+          "createdBy": "dongshengli",
+          "updatedDateTime": "2026-03-04 15:21:27",
+          "updatedBy": "zhuyanling",
+          "tradeConfirmationFiles": "",
+          "otherSideFiles": "",
+          "unsealedTradeConfirmationFiles": "",
+          "productManualFiles": ""
+        },
+        "contrStatus": "EFFECTIVE",
+        "windcode": "000155.SZ",
+        "windname": "川能动力",
+        "tradeDate": "2026-01-06",
+        "effectiveDate": "2026-01-06",
+        "maturityDate": "2027-01-06",
+        "notional": 10000000,
+        "initialNotional": 10000000,
+        "collateralNotional": 10000000,
+        "collateralNotionalCurrency": "CNY",
+        "initialUnderlyingPrice": 14.21,
+        "underlyingInsId": 51749,
+        "underlyingCurrency": "CNY",
+        "transactionType": "A_SHARE",
+        "privatePlacement": false,
+        "releaseDate": null,
+        "strikes": [
+          {
+            "seq": 0,
+            "strikePct": 0.8,
+            "strike": 11.368,
+            "strikeDeltaBPs": null,
+            "strikeBelongRange": null
+          }
+        ],
+        "premiumRate": 0.293,
+        "premium": 2930000,
+        "koBarrierPct": null,
+        "koBarrier": null,
+        "kiBarrierPct": null,
+        "kiBarrier": null,
+        "hasCloseRecord": null,
+        "allowCloseOut": true,
+        "insFamily": "EQUITY",
+        "appliedNotional": 0,
+        "availableNotional": 10000000,
+        "partitionRates": [
+          {
+            "seq": 0,
+            "participationRate": 1
+          }
+        ],
+        "riskBarrierPct": null,
+        "riskBarrier": null,
+        "crossCurrencyType": null,
+        "initialFx": null,
+        "settlementCurrency": "CNY",
+        "maturityPricePrecision": 4,
+        "contractCode": "OPT-AAAA1"
       }
     ]
   }
