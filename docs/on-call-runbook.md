@@ -154,7 +154,7 @@
 **预防机制**（已实现）：
 - `scripts/deploy-customer.sh` step2 加 advisory（待落地）
 - `scripts/canary_status.py` 检测 `CANARY_ROOM_IDS=ALL` + `dry_run_intercept > 0` 时 P0 即时告警
-- `docs/archive/m3/m3-shadow-compare-dry-run-design.md` §3 安全护栏
+- `docs/deploy/SHADOW_COMPARE_GUIDE.md` 的安全护栏说明
 
 ---
 

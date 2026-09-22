@@ -177,8 +177,8 @@ class OptionClient(Protocol):
 class OptionClientHttpx:
     """走 httpx 的 OptionClient 实现。"""
 
-    #: F4.1 shadow 期写类拦截白名单的"反向集合"——出现在此集合的 intent 视为 read，
-    #: 即使调 operate endpoint 也不拦截。详见 docs/archive/m3/m3-shadow-compare-dry-run-design.md
+    #: shadow / dry-run 期写类拦截白名单的"反向集合"——出现在此集合的 intent 视为 read，
+    #: 即使调 operate endpoint 也不拦截。详见 docs/deploy/SHADOW_COMPARE_GUIDE.md
     _READ_INTENTS: frozenset[str] = frozenset({
         "new_inquiry",           # 询价不下单
         "query_order_status",    # 查订单状态

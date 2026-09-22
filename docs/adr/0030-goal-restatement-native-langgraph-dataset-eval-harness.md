@@ -49,7 +49,7 @@
 ## 后果
 
 - 正面：ADR 只承载决策与契约；评测门只有一套，且与 CI、harness、Judge 的实际入口一一对应。
-- 负面：上线观察阈值的基线数值在重测前为空；`docs/archive/` 下的历史文档仍按当年里程碑口径书写，作为历史保留不改。根 `README.md`、`docs/on-call-runbook.md`、`CLAUDE.md` 已于 2026-09-22 同步清理，~~`docs/m3-m4-roadmap.md`~~ 已删除、由 `docs/work-plan.md` 取代。
+- 负面：上线观察阈值的基线数值在重测前为空；`docs/archive/m2/`、`docs/archive/m3/` 的里程碑过程文档已于 2026-09-22 删除（可从 git 历史找回）；`docs/archive/` 只保留日期型报告、历史叙事与业务用例原始资料。根 `README.md`、`docs/on-call-runbook.md`、`CLAUDE.md` 已于 2026-09-22 同步清理，~~`docs/m3-m4-roadmap.md`~~ 已删除、由 `docs/work-plan.md` 取代。
 - 未决：`unified_golden.jsonl` 是否并入统一验收（当前只用显式 `categories`）；节点 fixture 与代码演进的漂移守护；上线观察窗口的正式起点由部署决定。
 
 ## 关联
