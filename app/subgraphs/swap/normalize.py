@@ -9,6 +9,7 @@ from typing import Any
 from pydantic import BaseModel
 
 from app.extraction.candidates import unpack_candidates
+from app.extraction.fast_execution import resolve_fast_execution
 from app.extraction.fields import FieldCandidate, FieldRecord
 from app.subgraphs.option.normalize import _cn_number
 from app.subgraphs.swap.models import SwapOrderItem, SwapPlaceOrderParams
@@ -48,7 +49,7 @@ _QUANTITIES = {"placeOrderQuantity", "placeOrderQuantityHand", "placeOrderQuanti
 _NUMBERS = {"placeOrderPrice", "placeOrderNotional", "placeOrderMaxVol"}
 _PERCENTAGES = {"placeOrderPovPercent", "placeOrderTotalPovPercent"}
 _TIMES = {"placeOrderStartTime", "placeOrderEndTime"}
-_BOOLEAN_FIELDS = {"placeOrderCloseIntent", "placeOrderPremarket", "hasFastExecutionIntent"}
+_BOOLEAN_FIELDS = {"placeOrderCloseIntent", "placeOrderPremarket"}
 _DIRECTION_TOKEN = re.compile(
     r"(?<![A-Za-z0-9_.-])(?:BUY|SELL|SHORT_OPEN|SHORT_CLOSE|[BSL])(?![A-Za-z0-9_.-])"
     r"|买入|卖出|買入|賣出|平空|平多|做多|做空|卖空|买|卖", re.I,
@@ -185,13 +186,14 @@ def normalize_field(field: str, value: str, evidence: str | None = None) -> Any:
         if not match:
             raise ValueError("相对时间缺少有效数字与单位")
         return float(match[1]) * (60 if match[2] in {"小时", "小時"} else 1)
+    if field == "hasFastExecutionIntent":
+        return resolve_fast_execution(evidence or text)
     if field in _BOOLEAN_FIELDS:
         if text.lower() in {"false", "否", "不"} or re.search(r"不要|无需|不需要|不平|非盘前", evidence):
             return False
         signals = {
             "placeOrderPremarket": ("盘前", "盤前", "集合竞价", "集合競價"),
             "placeOrderCloseIntent": ("平仓", "平倉", "清仓", "清倉", "平空", "平多", "平掉", "全平", "减仓"),
-            "hasFastExecutionIntent": ("尽快", "儘快", "快速", "最大跟量", "尽量成交", "快点"),
         }
         if text.lower() in {"true", "是"} or any(signal in text for signal in signals[field]):
             return True
@@ -204,6 +206,8 @@ def normalize_candidates(
 ) -> tuple[SwapPlaceOrderParams, dict[str, FieldRecord]]:
     def converter(alias: str) -> Callable[[str, FieldCandidate], Any]:
         def convert(value: str, candidate: FieldCandidate) -> Any:
+            if alias == "hasFastExecutionIntent" and candidate.origin not in {"raw", "attachment"}:
+                return None  # 引用和历史不构成本轮最大跟量意图。
             if alias == "placeOrderQuantity" and quantity_unit(value) == "AMOUNT":
                 return None  # the linked notional field is derived below from the same evidence
             context = candidate.evidence
@@ -241,6 +245,20 @@ def normalize_candidates(
         row = item.model_dump()
         original = raw_orders[index]
         prefix = f"{scope}.orderList.{index}."
+        fast = original.get("hasFastExecutionIntent")
+        if fast and fast.get("value") is not None and row.get("hasFastExecutionIntent") is not None:
+            candidate = FieldCandidate.model_validate(fast)
+            context = candidate.evidence
+            # 单笔可核对完整原文中的否定；多笔只用本笔证据，不能全局扫描最大跟量。
+            if candidate.origin == "raw" and len(raw_orders) == 1:
+                context = sources.get("raw", context)
+            elif candidate.origin == "attachment" and candidate.reference:
+                reference = candidate.reference.split(":column:", 1)[0]
+                if ":row:" in reference or len(raw_orders) == 1:
+                    context = sources.get(f"attachment:{reference}", context)
+            row["hasFastExecutionIntent"] = resolve_fast_execution(
+                context, has_explicit_pov_ratio=any(row.get(field) is not None for field in _PERCENTAGES),
+            )
         if index in split_units:
             _, quantity_candidate, unit_candidate = split_units[index]
             dependencies = []

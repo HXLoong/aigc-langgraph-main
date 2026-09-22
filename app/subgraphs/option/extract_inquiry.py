@@ -159,6 +159,15 @@ async def inquiry_normalize(state: InquiryState) -> dict[str, Any]:
                     records[target + alias] = record.model_copy(update={
                         "value": canonical_item.get(alias), "locked": alias not in {"stockCode", "shortName"},
                     })
+            # 100call 同时携带类型与执行价；派生值沿用已验证的原文证据。
+            type_path = prefix + "optionType"
+            type_record = (state.get("iq_field_records") or {}).get(type_path)
+            if (raw_item.strike_percentage is None and type_record is not None
+                    and canonical_item.get("strikePercentage") is not None):
+                records[target + "strikePercentage"] = type_record.model_copy(update={
+                    "value": canonical_item["strikePercentage"], "locked": True,
+                    "derived_from": [target + "optionType"],
+                })
             expanded.append(item)
     params = OptionInquiryParams.model_validate({"orderList": expanded})
     order_list = sanitize_order_list([item.model_dump() for item in params.order_list])

@@ -61,7 +61,7 @@ def test_boolean_fields_need_their_own_semantic_signal(field, value, expected):
     assert module.normalize_field(field, value) is expected
 
 
-@pytest.mark.parametrize("field", ["placeOrderPremarket", "placeOrderCloseIntent", "hasFastExecutionIntent"])
+@pytest.mark.parametrize("field", ["placeOrderPremarket", "placeOrderCloseIntent"])
 def test_unrelated_text_cannot_become_true(field):
     module = importlib.import_module("app.subgraphs.swap.normalize")
     with pytest.raises(ValueError):

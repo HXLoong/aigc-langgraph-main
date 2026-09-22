@@ -8,16 +8,15 @@ ADR 0024 重构 5：原 215 行单节点拆成 LangGraph 子图（`build_place_c
       → place_close_extract（LLM 原文候选与证据）
       → place_close_normalize（代码绑定目标、计算金额与比例、锁定字段）
           ├─ 空列表 → place_close_reject
-          └─ place_close_validate（身份 / 名义本金 / 限价 / POV 预校验）
-                ├─ 校验失败 → place_close_reject
+          └─ place_close_validate（目标身份检查；业务校验交给 Java）
+                ├─ 身份缺失 → place_close_reject
                 └─ place_close_submit（参数聚合 + 真后端 operate）
 
 私有中间态 `pc_*` 住在 PlaceCloseState，不外泄（output_schema=PlaceCloseOutput）；
 `close_place_close(state)` façade 契约不变（close 图用 `build_place_close_graph()` 原生嵌入）。
 
-CLAUDE.md P0：严禁本地拼确认卡掩盖后端真实响应——`reply_text` 不再由本节点
-拼接文案，改为真后端 `financial-orders/operate` 返回的 `api_result` 由
-render 节点透传（`app/nodes/render.py` 已优先读取 `state['api_result']`）。
+业务卡片、补参和业务错误由 Java 返回，render 从 api_result 展示。
+本地仅在无法绑定目标时提示识别问题，不生成业务参数校验话术。
 
 LLM：结构化原文候选；最终业务参数由 normalization.py 生成。
 prompt：app/prompts/option_close/place_close.md。
@@ -52,6 +51,7 @@ from app.prompts import blocks
 from app.prompts.spec import PromptSpec, register
 from app.subgraphs.close.aggregate import build_close_order_req_vo
 from app.subgraphs.close.backend import call_close_backend
+from app.subgraphs.close.execution_fragments import split_execution_fragments
 from app.subgraphs.close.models import CloseOrderItem, ClosePlaceParams
 from app.subgraphs.close.normalization import normalize_place_candidates
 from app.subgraphs.close.reference_parser import ReferenceParseResult, parse_reference_message
@@ -210,6 +210,7 @@ async def place_close_normalize(state: PlaceCloseState) -> dict[str, Any]:
     """步骤 5：合并输出 + 确定性后处理。空列表 → 交给 reject 边。"""
     parsed = state["pc_parsed"]
     candidates = CANDIDATE_MODEL.model_validate(state.get("pc_candidates") or {})
+    candidates = split_execution_fragments(candidates)
     params, records = normalize_place_candidates(
         candidates, evidence_sources(state), parsed, state.get("pc_order_data") or [],
     )
@@ -232,7 +233,7 @@ async def place_close_normalize(state: PlaceCloseState) -> dict[str, Any]:
 
 @safe_node
 async def place_close_validate(state: PlaceCloseState) -> dict[str, Any]:
-    """步骤 6：客户端预校验（fail-fast，不调用真后端——是拒绝提交，不是掩盖后端响应）。"""
+    """步骤 6：确认目标身份；金额、价格、比例和时间业务规则交给 Java。"""
     close_list = [CloseOrderItem.model_validate(o) for o in state.get("pc_close_orders") or []]
     if any(not item.order_id and not item.internal_trade_id for item in close_list):
         return {
@@ -241,31 +242,6 @@ async def place_close_validate(state: PlaceCloseState) -> dict[str, Any]:
             "trace": [TraceEntry(node="place_close_validate", decision="missing_close_order_identity")],
         }
 
-    errors: list[str] = []
-    for leg in close_list:
-        amt = leg.close_order_notional_delta
-        if amt is not None:
-            try:
-                amt_val = float(amt)
-                if amt_val <= 0:
-                    errors.append("平仓名义本金必须大于0")
-                elif amt_val < 1_000_000:
-                    errors.append("平仓名义本金不能低于100万")
-            except (ValueError, TypeError):
-                pass
-        if leg.close_order_type == "限价单" and leg.close_order_price is None:
-            errors.append("限价单必须填写限定价格")
-        if leg.close_order_type == "POV" and leg.close_order_pov_ratio is not None:
-            pov = leg.close_order_pov_ratio
-            if not (1 <= pov <= 100):
-                errors.append(f"POV比例{pov}%超出合法范围(1-100%)")
-    if errors:
-        err_msg = "参数校验不通过：" + "；".join(set(errors))
-        return {
-            "pc_reject_reply": err_msg,
-            "pc_reject_decision": f"validation_failed: {err_msg}",
-            "trace": [TraceEntry(node="place_close_validate", decision="validation_failed")],
-        }
     return {
         "pc_reject_reply": None,
         "pc_reject_decision": None,

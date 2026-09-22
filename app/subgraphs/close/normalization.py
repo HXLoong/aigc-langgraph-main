@@ -9,9 +9,19 @@ from typing import Any, cast
 from pydantic import BaseModel
 
 from app.extraction.candidates import candidate_model, verify_candidates
+from app.extraction.fast_execution import resolve_fast_execution
 from app.extraction.fields import EvidenceError, FieldCandidate, FieldRecord
-from app.subgraphs.close.models import CloseOrderItem, ClosePlaceParams, HoldingQueryParams
+from app.subgraphs.close.models import (
+    CloseOrderItem,
+    ClosePlaceParams,
+    ClosePriceType,
+    HoldingQueryParams,
+)
 from app.subgraphs.close.order_id import CONTRACT_CODE_RE, ORDER_ID_RE, _ordinal_value
+from app.subgraphs.close.order_type import (
+    is_fast_execution_phrase,
+    normalize_close_order_type,
+)
 from app.subgraphs.close.reference_parser import ReferenceParseResult
 from app.subgraphs.option.normalize import _cn_number
 
@@ -19,10 +29,6 @@ _SEQ = re.compile(r"序号\s*[:：]?\s*(\d+)|第\s*([零〇一二两三四五六
 _FULL = re.compile(r"全部平仓|确认全部平仓|全平|全部平掉")
 _KEEP = re.compile(r"(?:保留|只留|留|平到还剩|平到剩|平剩到|剩到|剩)\s*([\d零〇一二两三四五六七八九十百千.]+\s*(?:千万|百万|kw|KW|[万亿wWkKeE])?)")
 _ENUMS = {
-    "closeOrderType": {"市价单": ("市价", "市价单", "market", "mkt", "不用跟量", "不跟量", "不要跟量"),
-                       "限价单": ("限价", "限价单", "limit", "lmt"),
-                       "POV": ("pov", "跟量", "正常挂单", "最大跟量", "拉满跟量", "全跟量"),
-                       "TWAP": ("twap", "时间加权", "时间均价", "均匀执行")},
     "insFamilyList": {"EQUITY": ("股票", "个股"), "INDEX": ("指数",),
                       "FUND": ("基金", "ETF"), "FUTURE": ("期货",)},
     "contractTypeList": {"EUROPEAN_VANILLA": ("欧式", "欧式期权", "欧式看涨", "香草"),
@@ -138,7 +144,9 @@ def _target_segments(
         resolved = _identity(token, parsed, data)
         if resolved and all(not value or target.get(key) == value for key, value in resolved.items()):
             end = positions[index + 1][0] if index + 1 < len(positions) else len(raw)
-            segments.append(raw[start:end])
+            # The prefix before the first target belongs to that target, including
+            # negation such as “不要对 CO-... 市价下单”; do not copy it to later orders.
+            segments.append(raw[0 if index == 0 else start:end])
     # Explicit shared qualifiers apply to the selected targets, never to unrelated holdings.
     segments.extend(m[0] for m in re.finditer(r"(?:^|[，,；;])\s*(?:全部|统一|都|均)[^，,；;]*", raw))
     return segments
@@ -148,6 +156,14 @@ def _record(value: Any, candidate: FieldCandidate | None = None, *, evidence: st
     return FieldRecord(value=value, source="user", evidence=candidate.evidence if candidate else evidence,
                        origin=candidate.origin if candidate else origin,
                        confidence=candidate.confidence if candidate else None, locked=True)
+
+
+def _inferred_order_type(row: Mapping[str, Any]) -> ClosePriceType | None:
+    if row.get("closeOrderAlgoStartTime") or row.get("closeOrderAlgoEndTime"):
+        return "TWAP"
+    if row.get("closeOrderPovRatio") is not None:
+        return "POV"
+    return "限价单" if row.get("closeOrderPrice") is not None else None
 
 
 def normalize_place_candidates(
@@ -213,15 +229,11 @@ def normalize_place_candidates(
                 value: Any = text
                 if alias == "closeOrderNotionalDelta":
                     value = _amount(text, matching)
-                elif alias == "closeOrderType":
-                    value = _enum(alias, text)
                 elif alias == "closeOrderPrice":
                     value = float(_number(text))
                 elif alias == "closeOrderPovRatio":
                     number = _number(text.rstrip("%％"))
-                    if number != number.to_integral_value():
-                        raise ValueError("期权平仓跟量比例必须为整数百分比")
-                    value = int(number)
+                    value = int(number) if number == number.to_integral_value() else float(number)
                 elif alias in {"closeOrderAlgoStartTime", "closeOrderAlgoEndTime"}:
                     match = re.fullmatch(r"(\d{1,2})[:：](\d{1,2})", text)
                     if not match or int(match[1]) > 23 or int(match[2]) > 59:
@@ -234,25 +246,36 @@ def normalize_place_candidates(
                     ):
                         value = False
                 row[alias], ledger[alias] = value, _record(value, candidate)
+            type_candidate = values.get("closeOrderType")
+            inferred = _inferred_order_type(row) if row.get("closeOrderType") is None else None
+            order_type = normalize_close_order_type(
+                type_candidate.value if type_candidate else None, order_texts=segments, inferred=inferred,
+            )
+            if order_type is not None:
+                row["closeOrderType"] = order_type
+                ledger["closeOrderType"] = _record(order_type, type_candidate)
+            else:
+                row.pop("closeOrderType", None)
+                ledger.pop("closeOrderType", None)
+            fast_candidate = values.get("hasFastExecutionIntent")
+            if (fast_candidate is None or fast_candidate.value is None) and (
+                type_candidate and type_candidate.value and is_fast_execution_phrase(type_candidate.value)
+            ):
+                fast_candidate = type_candidate
+            if fast_candidate and fast_candidate.value:
+                fast = resolve_fast_execution(
+                    "；".join(segments),
+                    has_explicit_pov_ratio=row.get("closeOrderPovRatio") is not None,
+                )
+                row["hasFastExecutionIntent"] = fast
+                ledger["hasFastExecutionIntent"] = _record(fast, fast_candidate)
             amount_candidate = values.get("closeOrderNotionalDelta")
             if amount_candidate and amount_candidate.value and _KEEP.search(amount_candidate.value):
                 row["confirmFullClose"] = None
                 ledger.pop("confirmFullClose", None)
-            type_candidate = values.get("closeOrderType")
-            if type_candidate and type_candidate.value and any(
-                word in type_candidate.value for word in ("最大跟量", "拉满跟量", "全跟量")
-            ) and row.get("closeOrderPovRatio") is None and not row.get("confirmFullClose"):
-                row["closeOrderPovRatio"] = 25
-                ledger["closeOrderPovRatio"] = FieldRecord(
-                    value=25, source="default", evidence=type_candidate.evidence, locked=True,
-                )
-            if row.get("closeOrderType") is None:
-                inferred = "TWAP" if row.get("closeOrderAlgoStartTime") or row.get("closeOrderAlgoEndTime") else (
-                    "POV" if row.get("closeOrderPovRatio") is not None else (
-                        "限价单" if row.get("closeOrderPrice") is not None else None))
-                if inferred:
-                    row["closeOrderType"] = inferred
-                    ledger["closeOrderType"] = FieldRecord(value=inferred, source="inferred", evidence=raw, locked=True)
+            if row.get("closeOrderType") is None and inferred:
+                row["closeOrderType"] = inferred
+                ledger["closeOrderType"] = FieldRecord(value=inferred, source="inferred", evidence=raw, locked=True)
             # A declined full-close instruction alone must not become a new write request.
             if row.get("confirmFullClose") is False and not any(
                 row.get(key) is not None for key in values if key not in {"orderId", "internalTradeId", "confirmFullClose"}

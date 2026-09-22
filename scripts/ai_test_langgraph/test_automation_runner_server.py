@@ -54,6 +54,22 @@ class TerminateProcessTests(unittest.TestCase):
 
 
 class RunnerCliTests(unittest.TestCase):
+    def test_startup_explains_option_position_mock(self) -> None:
+        with (
+            patch.object(runner, "ThreadingHTTPServer"),
+            self.assertLogs(runner.__name__, level="INFO") as logs,
+        ):
+            self.assertEqual(runner.main(["--no-open"]), 0)
+
+        output = "\n".join(logs.output)
+        self.assertIn("GOATS 期权 Mock 服务", output)
+        self.assertIn(".venv/bin/python scripts/goats_api_mock/server.py --port 20000", output)
+        self.assertIn("GOATS_OPTION_CLOSING_OUT_CONTRACT_QUERY", output)
+        self.assertIn("http://127.0.0.1:20000/api/internal/agent/option/position", output)
+        for name in ("PLACE_AN_ORDER", "ORDER_QUERY", "ORDER_CANCEL", "ORDER_CANCEL_QUERY"):
+            self.assertIn("GOATS_OPTION_CLOSING_OUT_" + name, output)
+        self.assertIn("http://127.0.0.1:20000/api/internal/agent/option/order/close/withdrawResult", output)
+
     def test_host_argument_controls_server_bind_address(self) -> None:
         with (
             patch.object(runner, "ThreadingHTTPServer") as server_class,
@@ -109,7 +125,7 @@ class RunnerConfigTests(unittest.TestCase):
         self.assertEqual(datasets, {
             str(Path("tests/fixtures/categories") / name): count
             for name, count in {
-                "golden_option_close_case.jsonl": 4,
+                "golden_option_close_case.jsonl": 5,
                 "golden_option_inquiry_case.jsonl": 4,
                 "golden_option_open_case.jsonl": 5,
                 "swap_prod_acceptance_data.jsonl": 162,
