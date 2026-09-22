@@ -1,6 +1,6 @@
 # ADR 0013 · 加载后端动态 prompt 片段（swap_instrument_inference_prompt）
 
-- 状态：**已撤销**（2026-08-28 DSL v2 迁移 a5d0c15 把 `inferencePrompt` 收编为静态 prompt，`app/subgraphs/ticker/tools.py` 不再运行时拉取；`TickerClient.get_inference_prompt` 为遗留死代码，清理见 [ADR 0022](./0022-prompt-governance-after-code-migration.md)）。以下为历史原文。
+- 状态：**已撤销**（2026-08-28 DSL v2 迁移 a5d0c15 把 `inferencePrompt` 收编为静态 prompt，~~`app/subgraphs/ticker/tools.py`~~（2026-09-20 标的识别委托 Java 后端，ticker 子图 / 提示词 / 测试随 commit `2f9ce65` 整体删除，见 `docs/backend-instrument-boundary.md`） 不再运行时拉取；`TickerClient.get_inference_prompt` 为遗留死代码，清理见 [ADR 0022](./0022-prompt-governance-after-code-migration.md)）。以下为历史原文。
 - 日期：2026-05-10
 - 修订：2026-08-27 深度改写为现状口径（wayfinder map #138 / 核查 #141）
 - 作者：图灵科技 + Tony
@@ -16,8 +16,8 @@ Dify 工作流通过后端接口拉取一段**运维可热改的 prompt 片段**
 **实现链路**：
 
 1. 客户端：`app/tools/ticker_client.py` 的 `TickerClient.get_inference_prompt()`（普通 GET → `result.data` 为 `str`；ADR 0001 D2 三 Protocol 拆分后的归属，原文的 `OtcBackendClient` 已不存在）。
-2. 缓存：`app/subgraphs/ticker/tools.py` 的 `_get_dynamic_prompt_cached()` —— **模块级单 key 缓存 + 300s 绝对过期 + 进程重启清空**（非 `functools.lru_cache`；`infer_code` 工具入口调用）。多副本部署时各副本缓存独立，热改后最长 5 分钟不一致，可接受。
-3. 拼接：静态 `app/prompts/ticker/infer_code.md` 作框架（输出格式、调用规范），动态片段以 `## 后端动态片段（实时拼接）` 追加到 system 末尾。
+2. 缓存：~~`app/subgraphs/ticker/tools.py`~~ 的 `_get_dynamic_prompt_cached()` —— **模块级单 key 缓存 + 300s 绝对过期 + 进程重启清空**（非 `functools.lru_cache`；`infer_code` 工具入口调用）。多副本部署时各副本缓存独立，热改后最长 5 分钟不一致，可接受。
+3. 拼接：静态 ~~`app/prompts/ticker/infer_code.md`~~（2026-09-20 标的识别委托 Java 后端，ticker 子图 / 提示词 / 测试随 commit `2f9ce65` 整体删除，见 `docs/backend-instrument-boundary.md`） 作框架（输出格式、调用规范），动态片段以 `## 后端动态片段（实时拼接）` 追加到 system 末尾。
 4. 净化：`_sanitize_dynamic_prompt`（**实现于调用侧** `tools.py`，非原文说的 client 侧；行为等价）——strip + 控制字符剔除 + 4096 字符截断。⚠️ 超限当前是**静默截断**，非原文的"落警并降级"。
 5. 降级：后端不可达 → warning + 空片段（仅静态文件），metrics 计数 `otc_agent_dynamic_prompt_total{status=cache_hit|cache_miss_ok|fallback}`，不让 ticker 崩。
 

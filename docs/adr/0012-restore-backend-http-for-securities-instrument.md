@@ -14,7 +14,7 @@ V1 闭环为脱离 VPN 依赖，曾把标的查询从 Dify 的后端 HTTP 接口
 **Endpoint 与客户端**（原行内 Status update 已吸收）：
 
 - `GET /admin-api/integration/securities-instrument/select` —— **GET + RequestBody**（不规范但合法）；Java 侧 `SecuritiesInstrumentController.java:100` `@GetMapping("/select")` + `:104` `@RequestBody`，`/admin-api` 前缀由 `WebProperties.adminApi` 框架级注入。
-- Python 落点分两层：Protocol/HTTP 实现在 `app/tools/ticker_client.py`（GET-with-body：`await client.request("GET", url, json=payload)`）；子图调用点在 `app/subgraphs/ticker/tools.py`（completeness / rank 工具）与 `resolver.py`。原文的 `ticker_tools.py` 文件名已不存在。
+- Python 落点分两层：Protocol/HTTP 实现在 `app/tools/ticker_client.py`（GET-with-body：`await client.request("GET", url, json=payload)`）；子图调用点在 ~~`app/subgraphs/ticker/tools.py`~~（2026-09-20 标的识别委托 Java 后端，ticker 子图 / 提示词 / 测试随 commit `2f9ce65` 整体删除，见 `docs/backend-instrument-boundary.md`）（completeness / rank 工具）与 `resolver.py`。原文的 `ticker_tools.py` 文件名已不存在。
 - ⚠️ 无契约测试断言 method=GET + body 非空（现有测试全靠 AsyncMock），回归时可能被悄悄改回 POST——护栏待补（见后果）。
 
 **后端业务规则清单**（对照 `aigc/api` 现码更新；正是本 ADR"与后端规则升级自动对齐"收益的实证——2026-07-06 后端 commit `4088b4a5` 改了数字，HTTP 方案零改动跟上）：
