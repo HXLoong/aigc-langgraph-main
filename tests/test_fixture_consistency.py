@@ -226,3 +226,52 @@ def test_intent_ids_must_be_unique_across_categories(tmp_path: Path) -> None:
         categories=[_valid_case(id="intent-shared")],
     )
     assert any("duplicate id 'intent-shared'" in error for error in errors)
+
+
+# ── 意图集 · 标的识别（expected.instruments）────────────────────────────────
+
+
+def _instrument_case(instruments: object) -> dict:
+    case = _intent_case(
+        caseNo="intent-swap-instrument-001",
+        category="intent/swap",
+        send_text="港股市价买一百万京东",
+        expected={
+            "product_type": "swap",
+            "intent": "place_order_request",
+            "instruments": instruments,
+        },
+        sub_scenes=[],
+    )
+    return case
+
+
+def test_intent_case_accepts_instruments_with_expression_and_market_candidates(tmp_path: Path) -> None:
+    case = _instrument_case(
+        [{"expression": ["京东"], "transaction_type": ["HK_STOCK", "SH_HK_CONNECT"]}, {"expression": "300748.sz"}]
+    )
+    assert _validate_intent(tmp_path, [case]) == []
+
+
+def test_intent_case_rejects_malformed_instruments(tmp_path: Path) -> None:
+    errors = _validate_intent(tmp_path, [_instrument_case([])])
+    assert any("expected.instruments must be a non-empty list" in error for error in errors)
+
+    errors = _validate_intent(tmp_path, [_instrument_case([{"expression": ""}])])
+    assert any("instruments[0].expression" in error for error in errors)
+
+    errors = _validate_intent(tmp_path, [_instrument_case([{"expression": "京东", "transaction_type": "HK"}])])
+    assert any("instruments[0].transaction_type 'HK' is not a SwapTransactionType" in error for error in errors)
+
+    errors = _validate_intent(tmp_path, [_instrument_case([{"transaction_type": "HK_STOCK"}])])
+    assert any("instruments[0].expression" in error for error in errors)
+
+
+def test_instruments_only_allowed_for_swap(tmp_path: Path) -> None:
+    case = _intent_case(expected={
+        "product_type": "option_close",
+        "intent": "close_order_query",
+        "instruments": [{"expression": "600519.SH"}],
+    })
+    errors = _validate_intent(tmp_path, [case])
+    assert any("instruments is only supported for product_type 'swap'" in error for error in errors)

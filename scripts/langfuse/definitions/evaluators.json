@@ -39,6 +39,16 @@
       "rule": {
         "target": "experiment_item_root"
       }
+    },
+    {
+      "name": "instrument-match",
+      "description": "意图集·标的识别：逐轮比对 expected.instruments 与 LLM 提取的标的原文 / 交易品种（orderList）。",
+      "source": "harness/evaluators/instrument_match.py",
+      "score_name": "det_instrument_match_pass",
+      "suite": "intent",
+      "rule": {
+        "target": "experiment_item_root"
+      }
     }
   ]
 }

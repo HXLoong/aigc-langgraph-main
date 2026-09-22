@@ -44,6 +44,43 @@ def intent_types_by_product() -> dict[str, tuple[str, ...]]:
     }
 
 
+def swap_transaction_types() -> tuple[str, ...]:
+    """标的识别用例 transaction_type 的合法取值（swap 订单项 placeOrderTransactionType）。"""
+    from typing import get_args
+
+    from app.subgraphs.swap.models import SwapTransactionType
+
+    return tuple(get_args(SwapTransactionType))
+
+
+def _check_instruments(origin: str, product_type: str, instruments: Any) -> list[str]:
+    """expected.instruments：标的识别断言，只支持 swap；expression 任一候选，transaction_type 可选。"""
+    if product_type != "swap":
+        return [f"{origin}: expected.instruments is only supported for product_type 'swap'"]
+    if not isinstance(instruments, list) or not instruments:
+        return [f"{origin}: expected.instruments must be a non-empty list"]
+    errors: list[str] = []
+    markets = swap_transaction_types()
+    for index, item in enumerate(instruments):
+        label = f"{origin}: instruments[{index}]"
+        if not isinstance(item, dict):
+            errors.append(f"{label} must be an object")
+            continue
+        expressions = _lines(item.get("expression"))
+        if not expressions:
+            errors.append(f"{label}.expression must be a non-empty string or list[str]")
+        if "transaction_type" in item:
+            candidates = _lines(item["transaction_type"])
+            if not candidates:
+                errors.append(f"{label}.transaction_type must be a non-empty string or list[str]")
+            for candidate in candidates or []:
+                if candidate not in markets:
+                    errors.append(
+                        f"{label}.transaction_type {candidate!r} is not a SwapTransactionType {markets}"
+                    )
+    return errors
+
+
 def _lines(value: Any) -> list[str] | None:
     if isinstance(value, str):
         return [line.strip() for line in value.splitlines() if line.strip()]
@@ -149,6 +186,8 @@ def _check_intent_turn(origin: str, turn: dict[str, Any], intents: dict[str, tup
         errors.append(
             f"{origin}: intent {intent!r} is not a {product_type} intent {intents[product_type]}"
         )
+    if "instruments" in expected:
+        errors.extend(_check_instruments(origin, product_type, expected["instruments"]))
     return errors
 
 
