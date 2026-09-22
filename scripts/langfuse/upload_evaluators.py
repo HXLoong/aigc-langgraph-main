@@ -18,6 +18,10 @@ sys.path.insert(0, str(PROJECT_ROOT))
 from scripts.langfuse._definitions import load_definition_files, load_definition_list
 from scripts.langfuse._public_api import LangfusePublicApi
 
+#: 套件：business（三个卡片文本断言）/ intent（intent_match）；Rule 按套件绑定，避免互评
+SUITES = ("intent", "business")
+DEFAULT_SUITE = "business"
+
 
 @dataclass(frozen=True)
 class EvaluatorDefinition:
@@ -26,6 +30,16 @@ class EvaluatorDefinition:
     source_path: Path
     score_name: str
     target: str
+    suite: str = DEFAULT_SUITE
+
+
+def resolve_evaluator_suite(suite: str | None, dataset_name: str | None) -> str:
+    """显式 --suite 优先；否则按 dataset 名前缀 intent- 判定，其余（含历史命名）为业务集。"""
+    if suite:
+        return suite
+    if dataset_name and dataset_name.startswith("intent-"):
+        return "intent"
+    return DEFAULT_SUITE
 
 
 @dataclass(frozen=True)
@@ -72,6 +86,10 @@ def load_evaluator_definitions(
         if target != "experiment_item_root":
             raise RuntimeError(f"不支持的 Evaluator Rule target：{target} ({path})")
 
+        suite = payload.get("suite", DEFAULT_SUITE)
+        if suite not in SUITES:
+            raise RuntimeError(f"Evaluator suite 必须是 {SUITES}：{suite!r} ({path})")
+
         definitions.append(
             EvaluatorDefinition(
                 name=_required_string(payload, "name", path),
@@ -79,6 +97,7 @@ def load_evaluator_definitions(
                 source_path=source_path,
                 score_name=_required_string(payload, "score_name", path),
                 target=target,
+                suite=suite,
             )
         )
 
@@ -199,10 +218,13 @@ def sync_evaluators(
     *,
     dataset_name: str | None,
     definitions: tuple[EvaluatorDefinition, ...] | None = None,
+    suite: str | None = None,
     apply: bool,
 ) -> list[EvaluatorSyncResult]:
     if definitions is None:
         definitions = load_evaluator_definitions()
+    if suite is not None:
+        definitions = tuple(definition for definition in definitions if definition.suite == suite)
     names = [definition.name for definition in definitions]
     if len(names) != len(set(names)):
         raise ValueError("Evaluator 定义中存在重复名称")
@@ -289,19 +311,27 @@ def sync_evaluators(
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--dataset-name")
+    parser.add_argument(
+        "--suite",
+        choices=SUITES,
+        help="只同步该套件的 Evaluator；默认按 --dataset-name 前缀 intent- 判定，其余为 business",
+    )
     mode = parser.add_mutually_exclusive_group(required=True)
     mode.add_argument("--dry-run", action="store_true")
     mode.add_argument("--apply", action="store_true")
     args = parser.parse_args()
+    suite = resolve_evaluator_suite(args.suite, args.dataset_name)
 
     results = sync_evaluators(
         LangfusePublicApi.from_env(),
         dataset_name=args.dataset_name,
+        suite=suite,
         apply=args.apply,
     )
     target = args.dataset_name or "all datasets"
     print(f"Target Dataset (Evaluation Rule filter): {target}")
     print(f"Configured Evaluators: {len(results)}")
+    print(f"Suite: {suite}")
     for index, result in enumerate(results, start=1):
         print()
         print(

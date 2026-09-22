@@ -28,6 +28,16 @@ from harness.golden import GoldenCase, TurnSpec, build_overview, load_golden
 
 GOLDEN_PATH = PROJECT_ROOT / "tests" / "fixtures" / "categories"
 DATASET_NAME = "otc-option-golden"
+#: 套件：intent（只调 LLM 评路由/意图，配 mock 后端）/ business（真后端 + 卡片断言 + Judge）
+SUITES = ("intent", "business")
+INTENT_DIR_NAME = "intent"
+BACKENDS = ("mock", "real", "dry-run")
+DEFAULT_BACKEND = {"intent": "mock", "business": "real"}
+
+
+def detect_suite(source: Path) -> str:
+    """tests/fixtures/intent/ 下的 fixture 是意图集，其余按业务集。"""
+    return "intent" if INTENT_DIR_NAME in source.parts else "business"
 
 
 def _turn_input(turn: TurnSpec) -> dict[str, object]:
@@ -116,7 +126,7 @@ def _clear_dataset(dataset_name: str) -> None:
         response.raise_for_status()
 
 
-def _metadata(case: GoldenCase) -> dict[str, Any]:
+def _metadata(case: GoldenCase, *, suite: str, backend: str) -> dict[str, Any]:
     return {
         "id": case.id,
         "type": case.type,
@@ -127,7 +137,9 @@ def _metadata(case: GoldenCase) -> dict[str, Any]:
         "scene": case.scene,
         "test_function": case.category,
         "overview": build_overview(case),
-        "tags": [case.category, case.source],
+        "suite": suite,
+        "backend": backend,
+        "tags": [tag for tag in (case.category, case.source, suite) if tag],
         "turns": len(case.turns),
     }
 
@@ -138,10 +150,22 @@ def main() -> int:
     parser.add_argument("--mode", choices=["overwrite", "append"], default="overwrite")
     parser.add_argument("--dataset-name", default=DATASET_NAME)
     parser.add_argument("--source", default=str(GOLDEN_PATH))
+    parser.add_argument(
+        "--suite",
+        choices=SUITES,
+        help="套件；默认按 --source 路径判定（tests/fixtures/intent/ → intent，其余 business）",
+    )
+    parser.add_argument(
+        "--backend",
+        choices=BACKENDS,
+        help="该数据集设计运行的后端，写入 metadata.backend；默认 intent→mock、business→real",
+    )
     args = parser.parse_args()
+    suite = args.suite or detect_suite(Path(args.source))
+    backend = args.backend or DEFAULT_BACKEND[suite]
 
     cases = load_golden(Path(args.source))
-    print(f"加载 {len(cases)} 条用例：{args.source}")
+    print(f"加载 {len(cases)} 条用例：{args.source}（suite={suite} backend={backend}）")
 
     if args.dry_run:
         single = sum(1 for case in cases if len(case.turns) == 1)
@@ -177,7 +201,7 @@ def main() -> int:
                 dataset_name=args.dataset_name,
                 input=build_input(case),
                 expected_output=build_expected(case),
-                metadata=_metadata(case),
+                metadata=_metadata(case, suite=suite, backend=backend),
             )
             success += 1
         except Exception as exc:  # noqa: BLE001

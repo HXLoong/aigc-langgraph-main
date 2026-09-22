@@ -60,6 +60,52 @@ from harness.multi_turn import early_stop_kind, quote_for_turn
 
 DATASET_NAME = "otc-option-golden"
 
+#: 套件：intent（意图集，只调 LLM + mock 后端，确定性 intent_match 评分，不跑 Judge）
+#: / business（业务集，真后端 + 卡片文本断言 + Judge）
+SUITES = ("intent", "business")
+DEFAULT_SUITE = "business"
+INTENT_DIR_NAME = "intent"
+
+
+def resolve_suite(
+    suite: str | None, local_paths: list[Path] | None, dataset_name: str | None
+) -> str:
+    """显式 --suite 优先；--local 路径含 intent/ 或 dataset 名以 intent- 开头 → intent。"""
+    if suite:
+        return suite
+    if local_paths and any(INTENT_DIR_NAME in path.parts for path in local_paths):
+        return "intent"
+    if dataset_name and dataset_name.startswith("intent-"):
+        return "intent"
+    return DEFAULT_SUITE
+
+
+def judge_enabled(suite: str, *, no_judge: bool) -> bool:
+    """意图集永远不跑 LLM Judge：它只有 product_type / intent 两个确定性断言。"""
+    return suite != "intent" and not no_judge
+
+
+def build_expected_text(case: GoldenCase) -> str:
+    """A 方言没有 expected.output：把逐轮路由期望 + 文本断言拼成 Judge 可读的期望。"""
+    lines: list[str] = []
+    for index, turn in enumerate(case.turns, 1):
+        lines.append(f"第{index}轮 send_text={turn.send_text}")
+        route = ", ".join(
+            f"{key}={turn.expected[key]}"
+            for key in ("product_type", "intent")
+            if turn.expected.get(key)
+        )
+        if route:
+            lines.append(f"  期望路由: {route}")
+        for label, values in (
+            ("必含文本", turn.response_contains),
+            ("任一文本", turn.response_contains_any),
+            ("禁止文本", turn.response_not_contains),
+        ):
+            if values:
+                lines.append(f"  {label}: {'; '.join(values)}")
+    return "\n".join(lines)
+
 
 def _fmt_trace(trace_entries) -> str:
     """把 TraceEntry list 格式化成 node[decision] → ... 字符串。"""
@@ -135,7 +181,7 @@ def _graph_callbacks() -> list:
         return []
 
 
-async def run_langgraph_pipeline(*, item, **kwargs):
+async def run_langgraph_pipeline(*, item, suite: str = DEFAULT_SUITE, **kwargs):
     inp = item.input if isinstance(item.input, dict) else json.loads(item.input)
     turns_data = inp.get("turns")
     if not isinstance(turns_data, list):
@@ -157,7 +203,7 @@ async def run_langgraph_pipeline(*, item, **kwargs):
         "metadata": {
             "trace_id": uuid.uuid4().hex,
             "langfuse_session_id": conversation_id,
-            "langfuse_tags": ["eval"],
+            "langfuse_tags": ["eval", suite],
         },
         "callbacks": _graph_callbacks(),
     }
@@ -531,7 +577,7 @@ def _print_report(name, result):
 class _LocalItem:
     """模拟 LangFuse dataset item 接口。"""
 
-    def __init__(self, case: GoldenCase):
+    def __init__(self, case: GoldenCase, suite: str = DEFAULT_SUITE):
         self.case = case
         self.id = case.id
         self.metadata = {
@@ -541,7 +587,8 @@ class _LocalItem:
             "test_function": case.category,
             "overview": build_overview(case),
             "source": case.source,
-            "tags": [case.category, case.source],
+            "suite": suite,
+            "tags": [tag for tag in (case.category, case.source, suite) if tag],
             "turns": len(case.turns),
         }
         self.input = {
@@ -555,14 +602,23 @@ class _LocalItem:
                 for turn in case.turns
             ]
         }
-        self.expected_output = case.expected_output
+        # B 方言带 expected.output；A 方言没有，用逐轮 expected + 文本断言拼期望，Judge 不盲评
+        self.expected_output = case.expected_output or build_expected_text(case)
 
 
 async def run_local(
-    golden_paths, filter_func, ids, max_concurrency, limit, dry_run, no_judge=False
+    golden_paths,
+    filter_func,
+    ids,
+    max_concurrency,
+    limit,
+    dry_run,
+    no_judge=False,
+    suite: str = DEFAULT_SUITE,
 ):
+    no_judge = not judge_enabled(suite, no_judge=no_judge)
     cases = load_golden(golden_paths)
-    print(f"加载 {len(cases)} 条 (local)")
+    print(f"加载 {len(cases)} 条 (local, suite={suite})")
     cases, unrunnable = select_runnable(cases)
     if unrunnable:
         print(f"跳过不可执行 case: {len(unrunnable)} 条 (某轮 raw_content 为空，见 skip_reason；Issue #113)")
@@ -580,7 +636,7 @@ async def run_local(
     if limit:
         cases = cases[:limit]
         print(f"限制: {len(cases)} 条")
-    items = [_LocalItem(c) for c in cases]
+    items = [_LocalItem(c, suite=suite) for c in cases]
     if dry_run:
         for item in items:
             raw = "; ".join(t["send_text"][:60] for t in item.input["turns"][:2])
@@ -610,7 +666,7 @@ async def run_local(
                     metadata={**item.metadata, "run_name": run_name},
                 ) as span:
                     trace_id = span.trace_id
-                    output = await run_langgraph_pipeline(item=item)
+                    output = await run_langgraph_pipeline(item=item, suite=suite)
                     # 在 span 内完成 judge，把分数 / 期望 / 评价理由也写到 output，AI 一处可读全部
                     if no_judge:
                         reply = output.get("reply_text", "")
@@ -662,7 +718,7 @@ async def run_local(
                     )
                     span.update(output=span_output)
             else:
-                output = await run_langgraph_pipeline(item=item)
+                output = await run_langgraph_pipeline(item=item, suite=suite)
                 if no_judge:
                     reply = output.get("reply_text", "")
                     from langfuse.experiment import Evaluation
@@ -759,12 +815,16 @@ async def run_eval(
     limit,
     dry_run,
     no_judge=False,
+    suite: str = DEFAULT_SUITE,
 ):
+    from functools import partial
+
     from langfuse import Langfuse
 
+    no_judge = not judge_enabled(suite, no_judge=no_judge)
     lf = Langfuse()
     items = list(lf.get_dataset(dataset_name).items)
-    print(f"加载 {len(items)} 条")
+    print(f"加载 {len(items)} 条 (suite={suite})")
     if ids:
         items = [i for i in items if i.id in ids]
         print(f"按 id 过滤: {len(items)} 条")
@@ -777,15 +837,16 @@ async def run_eval(
     if dry_run:
         for item in items:
             inp = item.input if isinstance(item.input, dict) else json.loads(item.input)
-            raw = "; ".join(t.get("send_text", "")[:60] for t in inp.get("turns", [])[:2])
-            print(f"  {item.id}: {raw}")
+            # 上传结构是 send_text + sub_scenes（无 turns 键），与报告共用同一投影
+            print(f"  {item.id}: {_report_input(inp)}")
         return
     mode = "no-judge" if no_judge else "with judge"
     print(f"开始实验 ({len(items)} 条, 并行 {max_concurrency}, {mode})...\n")
+    experiment_prefix = "intent-eval" if suite == "intent" else "option-eval"
     experiment_options = {
-        "name": f"option-eval-{time.strftime('%Y%m%d-%H%M%S')}",
+        "name": f"{experiment_prefix}-{time.strftime('%Y%m%d-%H%M%S')}",
         "data": items,
-        "task": run_langgraph_pipeline,
+        "task": partial(run_langgraph_pipeline, suite=suite),
         "max_concurrency": max_concurrency,
     }
     if not no_judge:
@@ -813,12 +874,18 @@ def main():
         "--local",
         action="append",
         default=None,
-        help="本地 categories JSONL 文件或目录，可重复传入（不走 LangFuse）",
+        help="本地 categories / intent JSONL 文件或目录，可重复传入（不走 LangFuse Dataset）",
+    )
+    p.add_argument(
+        "--suite",
+        choices=SUITES,
+        help="套件；默认按 --local 路径（intent/）或 --dataset 前缀（intent-）判定。intent 不跑 Judge",
     )
     args = p.parse_args()
     id_list = [x.strip() for x in args.ids.split(",")] if args.ids else None
-    if args.local:
-        local_paths = [Path(value) for value in args.local]
+    local_paths = [Path(value) for value in args.local] if args.local else None
+    suite = resolve_suite(args.suite, local_paths, None if args.local else args.dataset)
+    if local_paths:
         asyncio.run(
             run_local(
                 local_paths,
@@ -828,6 +895,7 @@ def main():
                 args.limit,
                 args.dry_run,
                 args.no_judge,
+                suite=suite,
             )
         )
     else:
@@ -840,6 +908,7 @@ def main():
                 args.limit,
                 args.dry_run,
                 args.no_judge,
+                suite=suite,
             )
         )
 

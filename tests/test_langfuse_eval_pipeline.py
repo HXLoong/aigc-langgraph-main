@@ -199,3 +199,23 @@ async def test_pipeline_config_carries_langfuse_callbacks_and_session(
     assert sentinel in cfg["callbacks"]
     assert cfg["metadata"]["langfuse_session_id"] == cfg["configurable"]["thread_id"]
     assert cfg["metadata"]["trace_id"]
+
+
+@pytest.mark.asyncio
+async def test_pipeline_tags_carry_suite(monkeypatch: pytest.MonkeyPatch) -> None:
+    """trace tags 带套件名，Langfuse 里可按 intent / business 过滤观测。"""
+    graph = _RecordingGraph()
+    monkeypatch.setattr(langfuse_eval, "build_main_graph", lambda _cp: graph)
+    monkeypatch.setattr(langfuse_eval, "_TURN_INTERVAL_SECONDS", 0)
+    monkeypatch.setattr(langfuse_eval, "_graph_callbacks", lambda: [])
+    item = SimpleNamespace(
+        id="intent-swap-1",
+        input={"turns": [{"send_text": "市价买一百万京东"}]},
+        expected_output="",
+    )
+
+    await langfuse_eval.run_langgraph_pipeline(item=item, suite="intent")
+    await langfuse_eval.run_langgraph_pipeline(item=item)
+
+    assert graph.configs[0]["metadata"]["langfuse_tags"] == ["eval", "intent"]
+    assert graph.configs[1]["metadata"]["langfuse_tags"] == ["eval", "business"]
