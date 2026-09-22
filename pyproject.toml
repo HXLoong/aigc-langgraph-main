@@ -16,6 +16,8 @@ dependencies = [
     "langchain-openai>=0.2.0",  # 兼容 Qwen OpenAI API
     # 数据库
     "aiomysql>=0.2.0",
+    # PyMySQL 1.2 移除了 aiomysql 依赖的 escape_bytes_prefixed（bytes 参数即 TypeError，checkpoint blob 写入失败）
+    "PyMySQL>=1.1,<1.2",
     "sqlalchemy[asyncio]>=2.0.0",
     "alembic>=1.13.0",
     # 配置 & 工具

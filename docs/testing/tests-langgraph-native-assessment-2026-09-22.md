@@ -142,3 +142,5 @@
 | P2 未做 | 待后续 | `TraceEntry` 字段级脱敏（D5，需实现）；`tests/fixtures/nodes/` 首批节点 fixture；`test_option_close_fixtures.py` 冻结数据式断言；`test_business_params.py` 源码文本断言；ADR 0023 ".md 无 JSON 骨架" lint |
 
 **顺手发现的架构缺口（未在本 PR 处理）**：`add_io_node` 生成的 `__error_handler__<node>` 没有出边——只读节点重试耗尽后子图级兜底节点（`swap_unknown` 等）不会执行，只靠父图 `render` 按 `error` 兜底。行为上用户仍得到兜底回复，但子图 trace 少一跳；如需子图内兜底，应在 `add_io_node` 里把原节点的条件边复制到 handler 节点。
+
+**CI slow job 首次运行（1a3df36）暴露并已修的三项**：`tests/integration/test_nodes_persist_mysql.py` 查的是不存在的 `node_trace` 表（真表名 `langgraph_node_trace`，改用 `persist.NODE_TRACE`）；`test_prompt_input_is_identical_before_and_after_prepare` 比较里含随机器抖动的 `elapsed_ms`（已剔除）；**PyMySQL 1.2 把 `escape_bytes_prefixed` 换成字符串哨兵，aiomysql 0.3 仍导入并调用它，任何 bytes 参数（checkpoint blob / node_trace 二进制列）都会 `TypeError`**——这不只是测试问题，未锁版本的现场部署会同样中招；已在 `pyproject.toml` 钉 `PyMySQL>=1.1,<1.2` 并新增 `tests/test_mysql_driver_compat.py` 守护。

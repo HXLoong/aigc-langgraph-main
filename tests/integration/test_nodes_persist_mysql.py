@@ -13,7 +13,7 @@ from app.api.nodes import router
 from app.config import get_settings
 from app.node_execution.executor import NodeExecutor
 from app.node_execution.registry import build_registry
-from app.nodes.persist import _parse_mysql_uri
+from app.nodes.persist import NODE_TRACE, _parse_mysql_uri
 
 
 @pytest.mark.skipif(os.getenv("RUN_LOCAL_MYSQL_TESTS") != "1", reason="requires local MySQL")
@@ -60,11 +60,11 @@ async def test_persist_endpoint_really_inserts_node_trace() -> None:
         assert response.status_code == 200, response.text
         async with conn.cursor() as cursor:
             await cursor.execute(
-                "SELECT node_name, step_index, duration_ms FROM node_trace WHERE trace_id=%s",
+                f"SELECT node_name, step_index, duration_ms FROM {NODE_TRACE} WHERE trace_id=%s",
                 (trace_id,),
             )
             assert await cursor.fetchall() == (("local_acceptance", 0, 7),)
     finally:
         async with conn.cursor() as cursor:
-            await cursor.execute("DELETE FROM node_trace WHERE trace_id=%s", (trace_id,))
+            await cursor.execute(f"DELETE FROM {NODE_TRACE} WHERE trace_id=%s", (trace_id,))
         conn.close()

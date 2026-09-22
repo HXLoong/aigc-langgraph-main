@@ -535,10 +535,11 @@ def test_prepare_does_not_invoke_node() -> None:
 
 
 def _without_trace_ids(output: dict[str, Any]) -> dict[str, Any]:
-    """TraceEntry.id 每次生成都是随机值，只比较业务内容。"""
+    """TraceEntry.id 每次随机、elapsed_ms 随机器抖动（CI 上 0 vs 1 ms），只比较业务内容。"""
     stripped = dict(output)
     stripped["trace"] = [
-        {k: v for k, v in entry.items() if k != "id"} for entry in output.get("trace", [])
+        {k: v for k, v in entry.items() if k not in ("id", "elapsed_ms")}
+        for entry in output.get("trace", [])
     ]
     return stripped
 
