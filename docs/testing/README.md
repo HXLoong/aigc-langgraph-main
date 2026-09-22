@@ -39,6 +39,7 @@ OTC_API_BASE_URL=http://127.0.0.1:8099 GOATS_BASE_URL=http://127.0.0.1:8099 \
 ```
 
 CI 用到的环境变量（全部指向 mock、只有 `QWEN_API_BASE` / `QWEN_API_KEY` 是 secrets）见 `.github/workflows/intent-eval.yml`。
+未配置这两个 secrets 时，PR 触发只跑 fixture lint 并告警跳过评估（不算通过），手动触发则失败；配好后自动生效。
 
 ## 二、命令速查
 

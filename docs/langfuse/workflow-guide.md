@@ -358,6 +358,8 @@ python scripts/langfuse/langfuse_eval.py --dataset business-swap_prod_data --con
   LLM 网关走 secrets `QWEN_API_BASE` / `QWEN_API_KEY`。PR 触碰 `app/prompts/**`、路由/意图节点、评估器、
   `tests/fixtures/intent/**` 时自动跑；Actions 页可手动 Run workflow 并改 `fixture` / `limit` / `fail_under`
   （首次可用 `fail_under=0` 只出基线报告，再定门槛）
+- 未配置 secrets 时：PR 触发只做 fixture lint，评估步骤跳过并打 warning（Step Summary 注明"已跳过"，不算通过）；
+  手动触发直接失败。配好 secrets 后无需改 workflow，门槛自动生效
 - 启用 Langfuse 时 `--local` 也会把每个评估器的 score（`det_*`）写回 trace；`--no-judge` 的兜底评分现在按
   `reply-check` 名写回（此前误用 `otc-option-judge`）
 - 业务集（`categories/`）依赖 Java 后端与授权账号，只在开发 / staging 环境用 `--dataset business-*` 或
