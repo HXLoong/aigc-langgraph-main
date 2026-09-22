@@ -1,4 +1,4 @@
-"""scripts/rollback_canary.sh · F4 应急回切脚本集成测试。
+"""scripts/rollback_canary.sh · 应急回切脚本集成测试。
 
 测试范围：参数校验、dry-run 隔离、.env 改写正确性、audit log 内容。
 不测：交互式 read（需 expect/pty）—— 所有 case 都用 -y 关掉交互。
@@ -90,7 +90,7 @@ def test_help_prints_usage(tmp_path: Path) -> None:
     _make_env(tmp_path, "r1,r2")
     r = _run_rollback(tmp_path, "--help")
     assert r.returncode == 0
-    assert "F4 灰度上线" in r.stdout
+    assert "灰度上线" in r.stdout
     assert "--reason" in r.stdout
 
 

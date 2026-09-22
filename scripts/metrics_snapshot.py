@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""LangGraph 全指标快照（C1.5/C1.6/C1.7/G5.1 + D2.6 健康检查可视化）。
+"""LangGraph 全指标快照（告警 / 成本 / 金丝雀 / 健康检查可视化）。
 
-F4.2-F4.5 金丝雀切流期间 Tony / 业务方 / on-call 查"当前 LangGraph 健康状态"
+金丝雀切流期间 Tony / 业务方 / on-call 查"当前 LangGraph 健康状态"
 的运维 CLI。不需要 Grafana / Prometheus 客户端，纯 HTTP + 文本解析。
 
 跑法：
@@ -91,7 +91,7 @@ def _parse_metrics(text: str) -> dict[str, dict[tuple, float]]:
     """parse prometheus exposition → counter[name][labels_tuple] = value。
 
     只处理 counter 行；histogram 的 _sum / _count / _bucket 暂不在快照范围
-    （历史 P95 看 latency 不在 F4.2 决策 critical path）。
+    （历史 P95 看 latency 不在 切流决策 critical path）。
     """
     counters: dict[str, dict[tuple, float]] = defaultdict(dict)
     for line in text.splitlines():
@@ -224,7 +224,7 @@ def _render_business_section(counters: dict[str, dict[tuple, float]]) -> list[st
 
 
 def _render_canary_section(counters: dict[str, dict[tuple, float]]) -> list[str]:
-    lines: list[str] = ["## 金丝雀 (otc_agent_canary_traffic_total · G5.1)"]
+    lines: list[str] = ["## 金丝雀 (otc_agent_canary_traffic_total)"]
     canary = counters.get("otc_agent_canary_traffic_total", {})
     if not canary:
         lines.append("  （无数据，金丝雀未启用或服务未收到请求）")
@@ -239,7 +239,7 @@ def _render_canary_section(counters: dict[str, dict[tuple, float]]) -> list[str]
 
 
 def _render_health_section(counters: dict[str, dict[tuple, float]]) -> list[str]:
-    lines: list[str] = ["## 健康检查 (otc_agent_health_check_total · D2.6)"]
+    lines: list[str] = ["## 健康检查 (otc_agent_health_check_total)"]
     health = counters.get("otc_agent_health_check_total", {})
     if not health:
         lines.append("  （无数据，/ready 尚未被调用）")
@@ -306,7 +306,7 @@ def build_snapshot(metrics_url: str) -> MetricsSnapshot:
 
 def cli() -> int:
     parser = argparse.ArgumentParser(
-        description="LangGraph 全指标快照（F4 灰度期运维 CLI）"
+        description="LangGraph 全指标快照（灰度期运维 CLI）"
     )
     parser.add_argument(
         "--url",

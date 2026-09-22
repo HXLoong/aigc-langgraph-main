@@ -1,4 +1,4 @@
-"""G5.1 金丝雀切流监控测试。"""
+"""金丝雀切流监控测试。"""
 from __future__ import annotations
 
 import pytest
@@ -48,7 +48,7 @@ def test_empty_allowlist_returns_false(restore_canary_state, monkeypatch) -> Non
 
 
 def test_all_marker_means_full_rollout(restore_canary_state, monkeypatch) -> None:
-    """ALL 特殊值表示全量上线（F4.4 阶段）。"""
+    """ALL 特殊值表示全量上线。"""
     monkeypatch.setenv("CANARY_ROOM_IDS", "ALL")
     canary_mod.reload_canary_room_ids()
     assert canary_mod.is_canary_room("r-any-room") is True
@@ -124,7 +124,7 @@ async def test_ingest_emits_canary_metric_canary_room(
 async def test_ingest_emits_metric_for_non_canary_room(
     restore_canary_state, monkeypatch
 ) -> None:
-    """F4.2 期间企微管理员误切非测试群 Webhook → ingest 应记 is_canary=false。"""
+    """切流期间企微管理员误切非测试群 Webhook → ingest 应记 is_canary=false。"""
     from app.nodes.ingest import ingest
 
     monkeypatch.setenv("CANARY_ROOM_IDS", "r-canary-1")

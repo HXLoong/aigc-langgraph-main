@@ -6,7 +6,7 @@
   2. `docs/adr/0019-incident-severity-thresholds.md` §1 表（ADR 决策）
   3. `docs/on-call-runbook.md` §3 严重等级表（on-call 操作）
 
-任一不一致 → exit 1 + 输出差异位置，避免 PR #102 那种"代码改了文档没跟上"
+任一不一致 → exit 1 + 输出差异位置，避免"代码改了文档没跟上"
 事故重演（ADR 0017 ↔ 0019 错位）。
 
 跑法：
@@ -275,7 +275,7 @@ _RUNBOOK_KEYWORDS: dict[str, str] = {
     "http_5xx_spike": "HTTP 5xx 率 ≥",
     "cascade_fail_high": "Cascade fail 率 ≥",
     "llm_failure_high": "LLM 失败率 ≥",
-    # #157 裁决：runbook §3 P0 行已补 non_canary_traffic，解除豁免
+    # 2026-08-27 裁决：runbook §3 P0 行已补 non_canary_traffic，解除豁免
     "non_canary_traffic": "非金丝雀流量泄漏 ≥",
     # p95_latency_degraded 在 runbook §3 有 P95 ≥ M2 baseline × 3 条目
     "p95_latency_degraded": "P95 延迟 ≥ M2 baseline",
@@ -311,7 +311,7 @@ def parse_runbook() -> dict[str, AlertSpec]:
         severity = sev_match[-1].group(1)
 
         # 抽 keyword 之后的"≥ N% 持续 N 分钟" / "≥ M2 baseline × N 持续 N 分钟"
-        # #157：截到当前 bullet 结束（<br>），避免相邻条目的"即时/N 分钟"串扰
+        # 截到当前 bullet 结束（<br>），避免相邻条目的"即时/N 分钟"串扰
         suffix = section[kw_idx : kw_idx + 200].split("<br>")[0]
         thresh_value = _extract_threshold_value(suffix, alert_name)
         # 对 P95：M2 baseline × N → 直接用代码侧的实际值（不在 runbook 文本里写绝对 ms）

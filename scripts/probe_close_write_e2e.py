@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""D2.1 follow-up · close.operate 真后端 write 端到端验证（Issue #80）。
+"""close.operate 真后端 write 端到端验证。
 
 按风险从低到高跑：
 1. close_holding_query "我的持仓" → close_order_query (read 类)
@@ -124,7 +124,7 @@ async def main(case_filter: int | None) -> int:
     graph = build_main_graph()
     selected = CASES if case_filter is None else [CASES[case_filter]]
 
-    print(f"=== Issue #80 close.operate 端到端 · {len(selected)} 条 case ===\n")
+    print(f"=== close.operate 端到端 · {len(selected)} 条 case ===\n")
     results: list[dict[str, Any]] = []
     for case in selected:
         print(f"--- {case['id']} · {case['raw_text']!r} ---")
