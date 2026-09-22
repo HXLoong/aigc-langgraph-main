@@ -5,6 +5,7 @@
       "description": "检查 Dataset 用例回复是否包含 response_contains 中的全部必含文本。",
       "source": "harness/evaluators/response_contains.py",
       "score_name": "det_required_text_pass",
+      "suite": "business",
       "rule": {
         "target": "experiment_item_root"
       }
@@ -14,6 +15,7 @@
       "description": "检查 Dataset 用例回复是否至少包含 response_contains_any 中的一项候选文本。",
       "source": "harness/evaluators/response_contains_any.py",
       "score_name": "det_required_any_text_pass",
+      "suite": "business",
       "rule": {
         "target": "experiment_item_root"
       }
@@ -23,6 +25,27 @@
       "description": "检查 Dataset 用例回复是否包含 response_not_contains 禁止文本。",
       "source": "harness/evaluators/response_not_contains.py",
       "score_name": "det_forbidden_text_pass",
+      "suite": "business",
+      "rule": {
+        "target": "experiment_item_root"
+      }
+    },
+    {
+      "name": "intent-match",
+      "description": "意图集：逐轮比对 expected.product_type / intent 与实际路由结果。",
+      "source": "harness/evaluators/intent_match.py",
+      "score_name": "det_intent_match_pass",
+      "suite": "intent",
+      "rule": {
+        "target": "experiment_item_root"
+      }
+    },
+    {
+      "name": "instrument-match",
+      "description": "意图集·标的识别：逐轮比对 expected.instruments 与 LLM 提取的标的原文 / 交易品种（orderList）。",
+      "source": "harness/evaluators/instrument_match.py",
+      "score_name": "det_instrument_match_pass",
+      "suite": "intent",
       "rule": {
         "target": "experiment_item_root"
       }

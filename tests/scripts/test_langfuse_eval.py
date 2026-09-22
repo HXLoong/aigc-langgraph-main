@@ -154,3 +154,87 @@ def test_judge_does_not_return_json_parse_failure_after_truncation(
     assert evaluation.value == 1.0
     assert evaluation.comment == "expected result"
     assert not evaluation.comment.startswith("JSON")
+
+
+def test_local_item_builds_judge_expectation_from_turn_assertions() -> None:
+    """A 方言没有 expected.output：Judge 期望由逐轮 expected + 文本断言拼成，不能是空串。"""
+    case = GoldenCase(
+        id="case-030",
+        category="option_close_case",
+        turns=[
+            TurnSpec(
+                send_text="我想平仓",
+                at_bot=True,
+                expected={"product_type": "option_close", "intent": "close_order_query"},
+                response_contains=["序号", "单号"],
+                response_not_contains=["互换订单"],
+            ),
+            TurnSpec(
+                send_text="确认平仓",
+                quote_previous=True,
+                expected={"intent": "close_order_confirm"},
+                response_contains_any=["确认平仓成功", "平仓已提交"],
+            ),
+        ],
+        expected={"product_type": "option_close", "intent": "close_order_query"},
+    )
+    text = _LocalItem(case).expected_output
+
+    assert "第1轮" in text and "第2轮" in text
+    assert "product_type=option_close, intent=close_order_query" in text
+    assert "必含文本: 序号; 单号" in text
+    assert "禁止文本: 互换订单" in text
+    assert "任一文本: 确认平仓成功; 平仓已提交" in text
+    assert "intent=close_order_confirm" in text
+
+
+def test_local_item_records_suite_in_metadata() -> None:
+    case = GoldenCase(id="intent-swap-1", category="intent/swap", turns=[TurnSpec(send_text="x")])
+    assert _LocalItem(case, suite="intent").metadata["suite"] == "intent"
+    assert _LocalItem(case).metadata["suite"] == "business"
+
+
+def test_resolve_suite_from_local_paths_dataset_name_or_override() -> None:
+    from pathlib import Path
+
+    from scripts.langfuse.langfuse_eval import resolve_suite
+
+    assert resolve_suite(None, [Path("tests/fixtures/intent")], None) == "intent"
+    assert resolve_suite(None, [Path("tests/fixtures/intent/swap.jsonl")], None) == "intent"
+    assert resolve_suite(None, [Path("tests/fixtures/categories")], None) == "business"
+    assert resolve_suite(None, None, "intent-swap") == "intent"
+    assert resolve_suite(None, None, "golden_option_inquiry_case") == "business"
+    assert resolve_suite("intent", [Path("tests/fixtures/categories")], None) == "intent"
+
+
+def test_intent_suite_never_runs_llm_judge() -> None:
+    """意图集只用确定性 intent_match 评分。"""
+    from scripts.langfuse.langfuse_eval import judge_enabled
+
+    assert judge_enabled("intent", no_judge=False) is False
+    assert judge_enabled("business", no_judge=False) is True
+    assert judge_enabled("business", no_judge=True) is False
+
+
+@pytest.mark.asyncio
+async def test_dataset_dry_run_previews_categories_input_shape(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """上传结构是 send_text + sub_scenes，预览不能只打印空输入。"""
+
+    class FakeLangfuse:
+        def get_dataset(self, _name: str) -> SimpleNamespace:
+            return SimpleNamespace(
+                items=[
+                    SimpleNamespace(
+                        id="case-022",
+                        input={"send_text": "快速询价", "sub_scenes": [{"send_text": "补充名义本金"}]},
+                        metadata={},
+                    )
+                ]
+            )
+
+    monkeypatch.setattr(langfuse, "Langfuse", FakeLangfuse)
+    await run_eval("golden_option_inquiry_case", None, None, 1, None, True)
+
+    assert "case-022: 快速询价; 补充名义本金" in capsys.readouterr().out

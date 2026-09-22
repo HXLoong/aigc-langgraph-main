@@ -269,10 +269,99 @@ Online Evaluator 异步执行，Experiment 完成后 Score 可能稍后显示。
 
 | 文件 | 用途 |
 |---|---|
-| `upload_golden_to_langfuse.py` | 上传 categories golden case 到 Dataset |
-| `upload_evaluators.py` | 读取集中定义，同步 Code Evaluators 和全局或指定 Dataset 的 Online Rules |
+| `upload_golden_to_langfuse.py` | 上传 categories / intent golden case 到 Dataset（`--suite` 默认按路径判定，metadata 带 `suite` / `backend`）|
+| `upload_evaluators.py` | 读取集中定义，按套件（`--suite` 或 dataset 前缀 `intent-`）同步 Code Evaluators 和全局或指定 Dataset 的 Online Rules |
 | `upload_score_configs.py` | 读取集中定义，全量同步人工 Score Configs |
-| `langfuse_eval.py` | 执行 Dataset Experiment 或本地评测 |
+| `langfuse_eval.py` | 执行 Dataset Experiment 或本地评测（`--suite intent` 不跑 Judge，trace tags 带套件名）|
 | `promote_langfuse_prompt.py` | 将 Langfuse Prompt 拉取到本地 Git |
 | `_definitions.py` | 读取并校验本地 JSON 定义，不单独执行 |
 | `_public_api.py` | 上传脚本共用的 Public API 客户端，不单独执行 |
+
+## 8. 两套件：意图集 / 业务集分离
+
+意图识别只依赖 LLM，业务操作（询价 / 下单 / 平仓）依赖 Java 后端与授权账号。两类用例放在
+不同目录、上传到不同 Dataset、绑定不同 Evaluator，互不污染：
+
+| 维度 | 意图集（intent） | 业务集（business） |
+|---|---|---|
+| fixture 目录 | `tests/fixtures/intent/<product>.jsonl` | `tests/fixtures/categories/*.jsonl` |
+| 用例形态 | A 方言子集：逐轮 `expected.{product_type, intent}`，**不写** `response_*` | A 方言：卡片文本断言（`response_contains` 等） |
+| 期望值来源 | 各子图 `models.py` 的意图枚举（lint 校验） | Java 真实回复 |
+| 运行后端 | `mock_api`（`metadata.backend=mock`） | 真后端 / staging |
+| Dataset 命名 | `intent-<product>` | `business-<文件名>`（历史 `golden_*` 命名仍按 business） |
+| 自动评分 | `det_intent_match_pass`（`harness/evaluators/intent_match.py`）+ 标的识别子集 `det_instrument_match_pass`（`harness/evaluators/instrument_match.py`） | `det_required_text_pass` / `det_required_any_text_pass` / `det_forbidden_text_pass` + `otc-option-judge` |
+| LLM Judge | 不跑（脚本强制 `no-judge`） | 跑 |
+| Trace tags | `eval, intent` | `eval, business` |
+
+`upload_evaluators.py` 按套件绑定 Rule：`--dataset-name intent-swap` 只创建
+`golden-intent-match:intent-swap`；`--dataset-name business-*` / 历史命名只创建三个文本断言 Rule。
+不要给意图集绑全局（all-datasets）Rule，否则 intent_match 会对业务集 Item 产生大量失败 Score。
+
+### 8.1 意图集从业务集派生
+
+```bash
+# 统计：哪些 case 缺逐轮 intent 标注
+python scripts/derive_intent_fixtures.py --dry-run
+# 写草稿到 tmp/intent_drafts/<product>.jsonl（未标注轮 intent 为空并带 review.pending）
+python scripts/derive_intent_fixtures.py --out tmp/intent_drafts
+# 业务方 review 补齐 intent 后，只把已完整标注的 case 写进意图集
+python scripts/derive_intent_fixtures.py --source tmp/intent_drafts --only-labeled --out tests/fixtures/intent
+python scripts/check_fixture_consistency.py --verbose
+```
+
+脚本只做确定性搬运：`product_type` 沿用原标签或按 category 前缀推导，`intent` 只沿用已有标注，
+不用模型猜；lint 会拒绝空 intent、非法枚举、文本断言和非 `intent-` 前缀的 id。
+
+### 8.1a 标的识别子集（`tests/fixtures/intent/swap_instrument.jsonl`）
+
+标的识别是意图集里的独立数据集：LangGraph 只提取用户原文里的标的表达（`placeOrderWindCode` 逐字保留）
+和市场限定（`placeOrderTransactionType`），权威识别由 Java 完成，所以它同样只调 LLM + mock 后端。
+`expected.instruments[i]` 给出**原文表达的任一候选**与**交易品种候选**，`instrument_match` 按订单无序匹配：
+
+```bash
+# 从三份 swap 业务集派生（订单数以卡片 标的代码 行为准；--ignore-token 只影响抽取，不改 send_text）
+python scripts/derive_instrument_fixtures.py --dry-run --ignore-token "11125测试短名（张天琪专用）" --ignore-token "聚鸣价值精选" --ignore-token "临沂阿凡提"
+python scripts/derive_instrument_fixtures.py --only-reviewed --ignore-token "…" --out tests/fixtures/intent/swap_instrument.jsonl
+python scripts/langfuse/upload_golden_to_langfuse.py --source tests/fixtures/intent/swap_instrument.jsonl --dataset-name intent-swap_instrument --mode overwrite
+python scripts/langfuse/upload_evaluators.py --dataset-name intent-swap_instrument --apply   # 绑 intent_match + instrument_match
+python scripts/langfuse/langfuse_eval.py --dataset intent-swap_instrument --concurrency 3
+```
+
+抽取规则与人工复核口径见 `tests/fixtures/intent/README.md`；`reference.backend_codes` 保留后端码仅供核对。
+
+### 8.2 执行
+
+```bash
+# 意图集：终端 1 起 mock_api，终端 2 以 OTC_API_BASE_URL 指向 mock 起应用
+python scripts/langfuse/upload_golden_to_langfuse.py --source tests/fixtures/intent/option_close.jsonl --dataset-name intent-option_close --mode overwrite
+python scripts/langfuse/upload_evaluators.py --dataset-name intent-option_close --apply
+python scripts/langfuse/langfuse_eval.py --dataset intent-option_close --concurrency 3
+# 本地不上传：路径含 intent/ 自动判定套件
+python scripts/langfuse/langfuse_eval.py --local tests/fixtures/intent --concurrency 3
+
+# 业务集：真后端 / staging，写类流程串行
+python scripts/langfuse/upload_golden_to_langfuse.py --source tests/fixtures/categories/swap_prod_data.jsonl --dataset-name business-swap_prod_data --mode overwrite
+python scripts/langfuse/upload_evaluators.py --dataset-name business-swap_prod_data --apply
+python scripts/langfuse/langfuse_eval.py --dataset business-swap_prod_data --concurrency 1
+```
+
+意图集 Experiment 命名为 `intent-eval-YYYYMMDD-HHMMSS`，业务集沿用 `option-eval-YYYYMMDD-HHMMSS`。
+`--local` 模式下 A 方言用例没有 `expected.output`，Judge 期望由逐轮 `expected` + 文本断言拼成
+（`build_expected_text`），不再是空串。
+
+### 8.3 CI 集成：意图集不依赖后端，业务集只在开发环境跑
+
+- 意图集的评分逻辑与 Langfuse Online Rule 是同一份源码（`harness/evaluators/`），`langfuse_eval.py --local`
+  对 `suite=intent` 直接在本地执行 `intent_match` / `instrument_match`，不需要 Langfuse、Java、GOATS；
+  `--fail-under 0.95` 低于门槛退出码 1，`--report` 写 JSON 摘要
+- `.github/workflows/intent-eval.yml`：runner 上起仓库内 `mock_api`（GOATS 22 + Java 10 端点假实现）顶替后端，
+  LLM 网关走 secrets `QWEN_API_BASE` / `QWEN_API_KEY`。PR 触碰 `app/prompts/**`、路由/意图节点、评估器、
+  `tests/fixtures/intent/**` 时自动跑；Actions 页可手动 Run workflow 并改 `fixture` / `limit` / `fail_under`
+  （首次可用 `fail_under=0` 只出基线报告，再定门槛）
+- 未配置 secrets 时：PR 触发只做 fixture lint，评估步骤跳过并打 warning（Step Summary 注明"已跳过"，不算通过）；
+  手动触发直接失败。配好 secrets 后无需改 workflow，门槛自动生效
+- 启用 Langfuse 时 `--local` 也会把每个评估器的 score（`det_*`）写回 trace；`--no-judge` 的兜底评分现在按
+  `reply-check` 名写回（此前误用 `otc-option-judge`）
+- 业务集（`categories/`）依赖 Java 后端与授权账号，只在开发 / staging 环境用 `--dataset business-*` 或
+  `scripts/local_eval.py` 跑，不进 CI；依赖矩阵见 `docs/testing/README.md` §一a
+

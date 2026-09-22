@@ -24,52 +24,25 @@ if DOTENV.exists():
 
 sys.path.insert(0, str(PROJECT_ROOT))
 
-from harness.golden import GoldenCase, TurnSpec, build_overview, load_golden
+from harness.golden import GoldenCase, build_overview, dataset_expected, dataset_input, load_golden
 
 GOLDEN_PATH = PROJECT_ROOT / "tests" / "fixtures" / "categories"
 DATASET_NAME = "otc-option-golden"
+#: 套件：intent（只调 LLM 评路由/意图，配 mock 后端）/ business（真后端 + 卡片断言 + Judge）
+SUITES = ("intent", "business")
+INTENT_DIR_NAME = "intent"
+BACKENDS = ("mock", "real", "dry-run")
+DEFAULT_BACKEND = {"intent": "mock", "business": "real"}
 
 
-def _turn_input(turn: TurnSpec) -> dict[str, object]:
-    result: dict[str, object] = {
-        "send_text": turn.send_text,
-        "at_bot": turn.at_bot,
-    }
-    if turn.quote_previous is not None:
-        result["quote_previous"] = turn.quote_previous
-    return result
+def detect_suite(source: Path) -> str:
+    """tests/fixtures/intent/ 下的 fixture 是意图集，其余按业务集。"""
+    return "intent" if INTENT_DIR_NAME in source.parts else "business"
 
 
-def _turn_expected(turn: TurnSpec) -> dict[str, object]:
-    result: dict[str, object] = {}
-    for field in (
-        "expected",
-        "response_contains",
-        "response_contains_any",
-        "response_not_contains",
-    ):
-        value = getattr(turn, field)
-        if value:
-            result[field] = value
-    return result
-
-
-def build_input(case: GoldenCase) -> dict[str, object]:
-    """保持 categories 的首轮 + sub_scenes 输入结构。"""
-    first, *sub_scenes = case.turns
-    return {
-        **_turn_input(first),
-        "sub_scenes": [_turn_input(turn) for turn in sub_scenes],
-    }
-
-
-def build_expected(case: GoldenCase) -> dict[str, object]:
-    """保持 categories 的首轮 + sub_scenes 断言结构。"""
-    first, *sub_scenes = case.turns
-    return {
-        **_turn_expected(first),
-        "sub_scenes": [_turn_expected(turn) for turn in sub_scenes],
-    }
+#: 与本地确定性评分（langfuse_eval.py --local）共用同一份投影，避免云端 / 本地口径漂移
+build_input = dataset_input
+build_expected = dataset_expected
 
 
 def _clear_dataset(dataset_name: str) -> None:
@@ -116,7 +89,7 @@ def _clear_dataset(dataset_name: str) -> None:
         response.raise_for_status()
 
 
-def _metadata(case: GoldenCase) -> dict[str, Any]:
+def _metadata(case: GoldenCase, *, suite: str, backend: str) -> dict[str, Any]:
     return {
         "id": case.id,
         "type": case.type,
@@ -127,7 +100,9 @@ def _metadata(case: GoldenCase) -> dict[str, Any]:
         "scene": case.scene,
         "test_function": case.category,
         "overview": build_overview(case),
-        "tags": [case.category, case.source],
+        "suite": suite,
+        "backend": backend,
+        "tags": [tag for tag in (case.category, case.source, suite) if tag],
         "turns": len(case.turns),
     }
 
@@ -138,10 +113,22 @@ def main() -> int:
     parser.add_argument("--mode", choices=["overwrite", "append"], default="overwrite")
     parser.add_argument("--dataset-name", default=DATASET_NAME)
     parser.add_argument("--source", default=str(GOLDEN_PATH))
+    parser.add_argument(
+        "--suite",
+        choices=SUITES,
+        help="套件；默认按 --source 路径判定（tests/fixtures/intent/ → intent，其余 business）",
+    )
+    parser.add_argument(
+        "--backend",
+        choices=BACKENDS,
+        help="该数据集设计运行的后端，写入 metadata.backend；默认 intent→mock、business→real",
+    )
     args = parser.parse_args()
+    suite = args.suite or detect_suite(Path(args.source))
+    backend = args.backend or DEFAULT_BACKEND[suite]
 
     cases = load_golden(Path(args.source))
-    print(f"加载 {len(cases)} 条用例：{args.source}")
+    print(f"加载 {len(cases)} 条用例：{args.source}（suite={suite} backend={backend}）")
 
     if args.dry_run:
         single = sum(1 for case in cases if len(case.turns) == 1)
@@ -177,7 +164,7 @@ def main() -> int:
                 dataset_name=args.dataset_name,
                 input=build_input(case),
                 expected_output=build_expected(case),
-                metadata=_metadata(case),
+                metadata=_metadata(case, suite=suite, backend=backend),
             )
             success += 1
         except Exception as exc:  # noqa: BLE001

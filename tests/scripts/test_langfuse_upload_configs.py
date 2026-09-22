@@ -439,3 +439,80 @@ def test_upload_score_configs_syncs_every_explicit_definition() -> None:
         "first_verdict",
         "second_verdict",
     ]
+
+
+def test_real_definitions_declare_suites() -> None:
+    """业务集三个文本断言 + 意图集 intent_match，按 suite 分别绑定 Rule。"""
+    definitions = load_evaluator_definitions()
+    assert {definition.name: definition.suite for definition in definitions} == {
+        "response-contains": "business",
+        "response-contains-any": "business",
+        "response-not-contains": "business",
+        "intent-match": "intent",
+        "instrument-match": "intent",
+    }
+
+
+def test_sync_evaluators_filters_by_suite(tmp_path) -> None:
+    business_source = tmp_path / "business.py"
+    intent_source = tmp_path / "intent.py"
+    business_source.write_text("def evaluate(ctx):\n    return ctx\n", encoding="utf-8")
+    intent_source.write_text("def evaluate(ctx):\n    return ctx\n", encoding="utf-8")
+    definitions = (
+        EvaluatorDefinition(
+            name="business-check",
+            description="business",
+            source_path=business_source,
+            score_name="business_score",
+            target="experiment_item_root",
+            suite="business",
+        ),
+        EvaluatorDefinition(
+            name="intent-check",
+            description="intent",
+            source_path=intent_source,
+            score_name="intent_score",
+            target="experiment_item_root",
+            suite="intent",
+        ),
+    )
+    api = FakeEvaluatorApi()
+
+    results = sync_evaluators(
+        api,
+        dataset_name="intent-swap",
+        definitions=definitions,
+        suite="intent",
+        apply=True,
+    )
+
+    assert [result.definition.name for result in results] == ["intent-check"]
+    assert [item["name"] for item in api.created_rules] == ["golden-intent-check:intent-swap"]
+
+
+def test_resolve_evaluator_suite_from_dataset_name() -> None:
+    assert upload_evaluators.resolve_evaluator_suite(None, "intent-swap") == "intent"
+    assert upload_evaluators.resolve_evaluator_suite(None, "business-swap_prod_data") == "business"
+    assert upload_evaluators.resolve_evaluator_suite(None, "golden_option_inquiry_case") == "business"
+    assert upload_evaluators.resolve_evaluator_suite(None, None) == "business"
+    assert upload_evaluators.resolve_evaluator_suite("intent", "golden_option_inquiry_case") == "intent"
+
+
+def test_upload_evaluator_cli_binds_only_intent_evaluator_for_intent_dataset(
+    monkeypatch, capsys
+) -> None:
+    api = FakeEvaluatorApi()
+    monkeypatch.setattr(upload_evaluators.LangfusePublicApi, "from_env", lambda: api)
+    monkeypatch.setattr(
+        sys, "argv", ["upload_evaluators.py", "--dataset-name", "intent-swap", "--dry-run"]
+    )
+
+    assert upload_evaluators.main() == 0
+
+    lines = capsys.readouterr().out.splitlines()
+    assert "Configured Evaluators: 2" in lines
+    assert "Suite: intent" in lines
+    assert "  Name: intent-match" in lines
+    assert "  Name: instrument-match" in lines
+    assert "    Name: golden-intent-match:intent-swap" in lines
+    assert "    Name: golden-instrument-match:intent-swap" in lines

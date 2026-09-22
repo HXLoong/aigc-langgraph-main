@@ -69,3 +69,32 @@ def test_dataset_projection_keeps_categories_shape() -> None:
     }
     assert "expected_scope" not in build_expected(case)
     assert "turns" not in build_expected(case)
+
+
+def test_detect_suite_from_source_path() -> None:
+    """意图集放 tests/fixtures/intent/，其余按业务集处理。"""
+    from pathlib import Path
+
+    from scripts.langfuse.upload_golden_to_langfuse import detect_suite
+
+    assert detect_suite(Path("tests/fixtures/intent/swap.jsonl")) == "intent"
+    assert detect_suite(Path("tests/fixtures/intent")) == "intent"
+    assert detect_suite(Path("tests/fixtures/categories/swap_prod_data.jsonl")) == "business"
+    assert detect_suite(Path("tests/fixtures/categories")) == "business"
+
+
+def test_metadata_carries_suite_backend_and_drops_empty_tags() -> None:
+    from scripts.langfuse.upload_golden_to_langfuse import _metadata
+
+    case = GoldenCase(
+        id="intent-swap-1",
+        category="intent/swap",
+        turns=[TurnSpec(send_text="市价买一百万京东", at_bot=True)],
+        expected={"product_type": "swap", "intent": "place_order_request"},
+    )
+    metadata = _metadata(case, suite="intent", backend="mock")
+
+    assert metadata["suite"] == "intent"
+    assert metadata["backend"] == "mock"
+    assert metadata["tags"] == ["intent/swap", "intent"]
+    assert "" not in metadata["tags"]

@@ -34,6 +34,9 @@ python scripts/local_eval.py --base-url http://127.0.0.1:8201 --data tests/fixtu
 
 # Langfuse Dataset Experiment（Judge + 自动 Evaluator；不替代 HTTP/Java 写回与幂等验收）
 python scripts/langfuse/langfuse_eval.py --dataset golden_option_inquiry_case --ids case-022 --concurrency 1
+# 意图集（只调 LLM + 仓库内 mock_api，不依赖 Java/GOATS；确定性评分本地算，--fail-under 给退出码；
+# CI：.github/workflows/intent-eval.yml；业务集 categories/ 依赖 Java 后端只在开发环境跑；workflow-guide §8）
+python scripts/langfuse/langfuse_eval.py --local tests/fixtures/intent --concurrency 3 --fail-under 0.95 --report .harness-runs/intent-eval.json
 
 # Harness CLI（备用 / 本地快速 smoke，无 Judge）
 python -m harness doctor
@@ -100,7 +103,8 @@ docs/api-contracts/          # Java 后端真实业务 API 契约
 docs/m3-m4-roadmap.md        # M3/M4 端到端任务图（6 个交付面，2026-05-11 修订）
 docs/on-call-runbook.md      # 上线 on-call SOP
 tests/                       # 2900+ passed（2026-09-22；按 graph / nodes / subgraphs / api_wire / harness / prompts / scripts 归位）
-tests/fixtures/              # categories/（A 方言，6 文件 / 389 条）+ unified_golden.jsonl（B 方言，921 条，harness 默认并入）+ 历史归档见 docs/archive/fixtures/old_typing/
+tests/fixtures/              # categories/（A 方言业务集，6 文件 / 389 条）+ intent/（意图集：逐轮 product_type/intent，只调 LLM + mock 后端）
+                             # + unified_golden.jsonl（B 方言，921 条，harness 默认并入）+ 历史归档见 docs/archive/fixtures/old_typing/
 ```
 
 ## 团队工具链：Claude Code 与 Codex 共用一份纪律

@@ -19,6 +19,8 @@ import sys
 import time
 import uuid
 from pathlib import Path
+from types import SimpleNamespace
+from typing import Any
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 _DOTENV = PROJECT_ROOT / ".env"
@@ -48,9 +50,11 @@ from langgraph.checkpoint.memory import InMemorySaver
 from app.graph.main import build_main_graph
 from app.prompts import load_prompt
 from app.api.turn_state import inputs_to_state
+from harness.evaluators import instrument_match, intent_match
 from harness.golden import (
     GoldenCase,
     build_overview,
+    dataset_expected,
     filter_by_category,
     filter_by_ids,
     load_golden,
@@ -59,6 +63,52 @@ from harness.golden import (
 from harness.multi_turn import early_stop_kind, quote_for_turn
 
 DATASET_NAME = "otc-option-golden"
+
+#: 套件：intent（意图集，只调 LLM + mock 后端，确定性 intent_match 评分，不跑 Judge）
+#: / business（业务集，真后端 + 卡片文本断言 + Judge）
+SUITES = ("intent", "business")
+DEFAULT_SUITE = "business"
+INTENT_DIR_NAME = "intent"
+
+
+def resolve_suite(
+    suite: str | None, local_paths: list[Path] | None, dataset_name: str | None
+) -> str:
+    """显式 --suite 优先；--local 路径含 intent/ 或 dataset 名以 intent- 开头 → intent。"""
+    if suite:
+        return suite
+    if local_paths and any(INTENT_DIR_NAME in path.parts for path in local_paths):
+        return "intent"
+    if dataset_name and dataset_name.startswith("intent-"):
+        return "intent"
+    return DEFAULT_SUITE
+
+
+def judge_enabled(suite: str, *, no_judge: bool) -> bool:
+    """意图集永远不跑 LLM Judge：它只有 product_type / intent 两个确定性断言。"""
+    return suite != "intent" and not no_judge
+
+
+def build_expected_text(case: GoldenCase) -> str:
+    """A 方言没有 expected.output：把逐轮路由期望 + 文本断言拼成 Judge 可读的期望。"""
+    lines: list[str] = []
+    for index, turn in enumerate(case.turns, 1):
+        lines.append(f"第{index}轮 send_text={turn.send_text}")
+        route = ", ".join(
+            f"{key}={turn.expected[key]}"
+            for key in ("product_type", "intent")
+            if turn.expected.get(key)
+        )
+        if route:
+            lines.append(f"  期望路由: {route}")
+        for label, values in (
+            ("必含文本", turn.response_contains),
+            ("任一文本", turn.response_contains_any),
+            ("禁止文本", turn.response_not_contains),
+        ):
+            if values:
+                lines.append(f"  {label}: {'; '.join(values)}")
+    return "\n".join(lines)
 
 
 def _fmt_trace(trace_entries) -> str:
@@ -135,7 +185,7 @@ def _graph_callbacks() -> list:
         return []
 
 
-async def run_langgraph_pipeline(*, item, **kwargs):
+async def run_langgraph_pipeline(*, item, suite: str = DEFAULT_SUITE, **kwargs):
     inp = item.input if isinstance(item.input, dict) else json.loads(item.input)
     turns_data = inp.get("turns")
     if not isinstance(turns_data, list):
@@ -157,7 +207,7 @@ async def run_langgraph_pipeline(*, item, **kwargs):
         "metadata": {
             "trace_id": uuid.uuid4().hex,
             "langfuse_session_id": conversation_id,
-            "langfuse_tags": ["eval"],
+            "langfuse_tags": ["eval", suite],
         },
         "callbacks": _graph_callbacks(),
     }
@@ -409,6 +459,53 @@ def judge_by_deepseek(*, output, expected_output, metadata=None, **kwargs):
     )
 
 
+def reply_check(output: dict[str, Any]):
+    """--no-judge 的兜底评分：只检查有没有回复。"""
+    from langfuse.experiment import Evaluation
+
+    reply = (output.get("reply_text") or "").strip()
+    return Evaluation(
+        name="reply-check",
+        value=1.0 if reply else 0.0,
+        comment="有回复" if reply else "reply_text 为空",
+    )
+
+
+def code_evaluations(item, output: dict[str, Any]) -> list:
+    """意图集本地评分：直接跑 harness/evaluators 里的确定性评估器（与 Langfuse Online Rule
+    同一份源码），不依赖 Langfuse、Java、GOATS。expected 用 Dataset 同款 categories 结构。"""
+    from langfuse.experiment import Evaluation
+
+    ctx = SimpleNamespace(
+        experiment=SimpleNamespace(item_expected_output=item.expected_structured),
+        observation=SimpleNamespace(output=output),
+    )
+    evaluators = [intent_match.evaluate]
+    if getattr(item, "has_instruments", False):
+        evaluators.append(instrument_match.evaluate)
+    evaluations = []
+    for evaluate in evaluators:
+        for score in evaluate(ctx).scores:
+            evaluations.append(
+                Evaluation(
+                    name=score.name,
+                    value=1.0 if score.value else 0.0,
+                    comment=score.comment,
+                    metadata=score.metadata,
+                )
+            )
+    return evaluations
+
+
+def case_passed(suite: str, evaluations: list) -> bool:
+    """意图集：全部确定性评估器为真；业务集：首个评分（Judge / reply-check）≥ 阈值。"""
+    if not evaluations:
+        return False
+    if suite == "intent":
+        return all(float(ev.value) >= 1.0 for ev in evaluations)
+    return float(evaluations[0].value) >= _PASS_THRESHOLD
+
+
 # ── 报告 ──
 def _report_text(value) -> str:
     if isinstance(value, str):
@@ -531,7 +628,7 @@ def _print_report(name, result):
 class _LocalItem:
     """模拟 LangFuse dataset item 接口。"""
 
-    def __init__(self, case: GoldenCase):
+    def __init__(self, case: GoldenCase, suite: str = DEFAULT_SUITE):
         self.case = case
         self.id = case.id
         self.metadata = {
@@ -541,7 +638,8 @@ class _LocalItem:
             "test_function": case.category,
             "overview": build_overview(case),
             "source": case.source,
-            "tags": [case.category, case.source],
+            "suite": suite,
+            "tags": [tag for tag in (case.category, case.source, suite) if tag],
             "turns": len(case.turns),
         }
         self.input = {
@@ -555,14 +653,28 @@ class _LocalItem:
                 for turn in case.turns
             ]
         }
-        self.expected_output = case.expected_output
+        # B 方言带 expected.output；A 方言没有，用逐轮 expected + 文本断言拼期望，Judge 不盲评
+        self.expected_output = case.expected_output or build_expected_text(case)
+        # Dataset 同款 expectedOutput：本地确定性评估器（intent_match / instrument_match）读这份
+        self.expected_structured = dataset_expected(case)
+        self.has_instruments = any(bool(turn.expected.get("instruments")) for turn in case.turns)
 
 
 async def run_local(
-    golden_paths, filter_func, ids, max_concurrency, limit, dry_run, no_judge=False
-):
+    golden_paths,
+    filter_func,
+    ids,
+    max_concurrency,
+    limit,
+    dry_run,
+    no_judge=False,
+    suite: str = DEFAULT_SUITE,
+    report: Path | None = None,
+) -> dict[str, Any] | None:
+    """本地评估；返回摘要（dry-run 返回 None）。意图集用确定性评估器，业务集用 Judge。"""
+    no_judge = not judge_enabled(suite, no_judge=no_judge)
     cases = load_golden(golden_paths)
-    print(f"加载 {len(cases)} 条 (local)")
+    print(f"加载 {len(cases)} 条 (local, suite={suite})")
     cases, unrunnable = select_runnable(cases)
     if unrunnable:
         print(f"跳过不可执行 case: {len(unrunnable)} 条 (某轮 raw_content 为空，见 skip_reason；Issue #113)")
@@ -580,24 +692,63 @@ async def run_local(
     if limit:
         cases = cases[:limit]
         print(f"限制: {len(cases)} 条")
-    items = [_LocalItem(c) for c in cases]
+    items = [_LocalItem(c, suite=suite) for c in cases]
     if dry_run:
         for item in items:
             raw = "; ".join(t["send_text"][:60] for t in item.input["turns"][:2])
             print(f"  {item.id}: {raw}")
-        return
+        return None
 
     # 启用 Langfuse 时，把 pipeline 调用包到 outer span 里，使 CallbackHandler 的
     # per-node trace 自动嵌套（OTel context propagation），并能拿到稳定 trace_id 挂 score。
-    try:
-        from langfuse import Langfuse  # type: ignore[import-not-found]
+    # 双 key 不齐（CI / 纯本地）就不构造客户端：SDK 无 key 时静默 no-op，会误报"写入成功"
+    lf: object | None = None
+    if _langfuse_enabled():
+        try:
+            from langfuse import Langfuse  # type: ignore[import-not-found]
 
-        lf: object | None = Langfuse()
-    except Exception:
-        lf = None
+            lf = Langfuse()
+        except Exception:
+            lf = None
     run_name = f"local-{time.strftime('%Y%m%d-%H%M%S')}"
 
     sem = asyncio.Semaphore(max_concurrency)
+
+    def _evaluate(item, output: dict[str, Any]) -> list:
+        if suite == "intent":
+            return code_evaluations(item, output)
+        if no_judge:
+            return [reply_check(output)]
+        return [
+            judge_by_deepseek(
+                output=output, expected_output=item.expected_output, metadata=item.metadata
+            )
+        ]
+
+    def _turns_out(output: dict[str, Any]) -> list[dict[str, Any]]:
+        return [
+            {
+                "turn": t.get("turn"),
+                "raw": t.get("raw_content", ""),
+                "reply": t.get("reply_text", ""),
+                "product_type": t.get("product_type"),
+                "intent": t.get("intent"),
+                "tickers": t.get("tickers"),
+                "place_params": t.get("place_params"),
+                "api_result": t.get("api_result"),
+                "api_code": t.get("api_code"),
+                "error": t.get("error"),
+                "trace": t.get("trace", ""),
+                "quote_passed": t.get("quote_passed", ""),
+            }
+            for t in output.get("turns", [])
+        ]
+
+    def _evaluation_dicts(evaluations: list) -> list[dict[str, Any]]:
+        return [
+            {"name": ev.name, "value": float(ev.value), "comment": ev.comment}
+            for ev in evaluations
+        ]
 
     async def _run_one(item):
         async with sem:
@@ -610,90 +761,51 @@ async def run_local(
                     metadata={**item.metadata, "run_name": run_name},
                 ) as span:
                     trace_id = span.trace_id
-                    output = await run_langgraph_pipeline(item=item)
-                    # 在 span 内完成 judge，把分数 / 期望 / 评价理由也写到 output，AI 一处可读全部
-                    if no_judge:
-                        reply = output.get("reply_text", "")
-                        from langfuse.experiment import Evaluation
-
-                        ev = Evaluation(
-                            name="reply-check",
-                            value=1.0 if reply.strip() else 0.0,
-                            comment="有回复" if reply.strip() else "reply_text 为空",
-                        )
-                    else:
-                        ev = judge_by_deepseek(
-                            output=output,
-                            expected_output=item.expected_output,
-                            metadata=item.metadata,
-                        )
+                    output = await run_langgraph_pipeline(item=item, suite=suite)
+                    # 在 span 内完成评分，把分数 / 期望 / 评价理由也写到 output，AI 一处可读全部
+                    evaluations = _evaluate(item, output)
+                    ev = evaluations[0]
+                    turns_out = _turns_out(output)
                     # 富 output：顶层 expected/score/comment + 每轮 turn/raw/reply/trace + 抽取详情
-                    turns_out = [
-                        {
-                            "turn": t.get("turn"),
-                            "raw": t.get("raw_content", ""),
-                            "reply": t.get("reply_text", ""),
-                            "product_type": t.get("product_type"),
-                            "intent": t.get("intent"),
-                            "tickers": t.get("tickers"),
-                            "place_params": t.get("place_params"),
-                            "api_result": t.get("api_result"),
-                            "api_code": t.get("api_code"),
-                            "error": t.get("error"),
-                            "trace": t.get("trace", ""),
-                            "quote_passed": t.get("quote_passed", ""),
-                        }
-                        for t in output.get("turns", [])
-                    ]
-                    span_output = (
-                        {
-                            "expected": item.expected_output,
-                            "score": float(ev.value),
-                            "judge_comment": ev.comment,
-                            "turns": turns_out,
-                        }
-                        if turns_out
-                        else {
-                            "reply": output.get("reply_text", ""),
-                            "expected": item.expected_output,
-                            "score": float(ev.value),
-                            "judge_comment": ev.comment,
-                        }
-                    )
+                    span_output: dict[str, Any] = {
+                        "expected": item.expected_output,
+                        "score": float(ev.value),
+                        "judge_comment": ev.comment,
+                        "evaluations": _evaluation_dicts(evaluations),
+                    }
+                    if turns_out:
+                        span_output["turns"] = turns_out
+                    else:
+                        span_output["reply"] = output.get("reply_text", "")
                     span.update(output=span_output)
             else:
-                output = await run_langgraph_pipeline(item=item)
-                if no_judge:
-                    reply = output.get("reply_text", "")
-                    from langfuse.experiment import Evaluation
+                output = await run_langgraph_pipeline(item=item, suite=suite)
+                evaluations = _evaluate(item, output)
+                ev = evaluations[0]
+            return {
+                "item": item,
+                "output": output,
+                "eval": ev,
+                "evals": evaluations,
+                "trace_id": trace_id,
+            }
 
-                    ev = Evaluation(
-                        name="reply-check",
-                        value=1.0 if reply.strip() else 0.0,
-                        comment="有回复" if reply.strip() else "reply_text 为空",
-                    )
-                else:
-                    ev = judge_by_deepseek(
-                        output=output, expected_output=item.expected_output, metadata=item.metadata
-                    )
-            return {"item": item, "output": output, "eval": ev, "trace_id": trace_id}
-
-    print(
-        f"开始实验 ({len(items)} 条, 并行 {max_concurrency}, {'no-judge' if no_judge else 'with judge'})...\n"
-    )
+    mode = "code-evaluators" if suite == "intent" else ("no-judge" if no_judge else "with judge")
+    print(f"开始实验 ({len(items)} 条, 并行 {max_concurrency}, {mode})...\n")
     t0 = time.time()
     results = await asyncio.gather(*[_run_one(it) for it in items])
     elapsed = time.time() - t0
 
     scores = []
     for r in results:
-        score = float(r["eval"].value)
-        comment = r["eval"].comment
+        evaluations = r["evals"]
         scores.append(
             {
                 "id": r["item"].id,
-                "score": score,
-                "comment": comment,
+                "score": float(evaluations[0].value),
+                "comment": evaluations[0].comment,
+                "passed": case_passed(suite, evaluations),
+                "evaluations": _evaluation_dicts(evaluations),
                 "reply": r["output"].get("reply_text", ""),
                 "expected": r["item"].expected_output,
                 "turns": r["output"].get("turns", []),
@@ -701,18 +813,22 @@ async def run_local(
             }
         )
 
-    passed = sum(1 for s in scores if s["score"] >= _PASS_THRESHOLD)
+    passed = sum(1 for s in scores if s["passed"])
     avg = sum(s["score"] for s in scores) / len(scores) if scores else 0
+    pass_rate = passed / len(scores) if scores else 0.0
     print(f"\n{'=' * 60}")
     print(
-        f"用例数: {len(scores)}  通过率: {passed}/{len(scores)} ({passed / len(scores) * 100:.1f}%)  平均分: {avg:.2f}  耗时: {elapsed:.1f}s"
+        f"套件: {suite}  用例数: {len(scores)}  通过率: {passed}/{len(scores)} ({pass_rate * 100:.1f}%)"
+        f"  平均分: {avg:.2f}  耗时: {elapsed:.1f}s"
     )
-    failed = [s for s in scores if s["score"] < _PASS_THRESHOLD]
+    failed = [s for s in scores if not s["passed"]]
     if failed:
         print(f"\n失败 case ({len(failed)}):")
         for s in failed:
             print(f"  [{s['score']}] {s['id']}: {s['comment']}")
-            print(f"    期望: {s['expected'][:100]}")
+            for ev in s["evaluations"]:
+                print(f"    [{ev['name']}={ev['value']}] {ev['comment']}")
+            print(f"    期望: {str(s['expected'])[:100]}")
             for tr in s.get("turns", []):
                 n = tr.get("turn", "?")
                 pt = tr.get("product_type", "?")
@@ -730,24 +846,51 @@ async def run_local(
     else:
         print("\n全部通过")
 
-    # LangFuse 评分写回：直接把 score 挂到 _run_one 里 outer span 的 trace_id 上。
+    # LangFuse 评分写回：每个评估器一个 score，挂到 _run_one 里 outer span 的 trace_id 上。
     # 这样 per-node trace（CallbackHandler 写的）和 score 在同一个 trace 里。
     if lf is not None:
         try:
             for r in results:
                 if not r.get("trace_id"):
                     continue
-                lf.create_score(  # type: ignore[union-attr]
-                    trace_id=r["trace_id"],
-                    name="otc-option-judge",
-                    value=float(r["eval"].value),
-                    comment=r["eval"].comment,
-                )
+                for ev in r["evals"]:
+                    lf.create_score(  # type: ignore[union-attr]
+                        trace_id=r["trace_id"],
+                        name=ev.name,
+                        value=float(ev.value),
+                        comment=ev.comment,
+                    )
             lf.flush()  # type: ignore[union-attr]
             host = os.environ.get("LANGFUSE_HOST", "https://cloud.langfuse.com")
             print(f"\nLangFuse 写入成功  run={run_name}  host={host}")
         except Exception as e:
             print(f"\nLangFuse 写入失败（不影响本地结果）: {e}")
+
+    summary: dict[str, Any] = {
+        "suite": suite,
+        "run_name": run_name,
+        "total": len(scores),
+        "passed": passed,
+        "pass_rate": pass_rate,
+        "elapsed_seconds": round(elapsed, 1),
+        "cases": [
+            {
+                "id": s["id"],
+                "passed": s["passed"],
+                "score": s["score"],
+                "evaluations": s["evaluations"],
+                "turns": s["turns"],
+            }
+            for s in scores
+        ],
+    }
+    if report is not None:
+        report.parent.mkdir(parents=True, exist_ok=True)
+        report.write_text(
+            json.dumps(summary, ensure_ascii=False, indent=2, default=str), encoding="utf-8"
+        )
+        print(f"报告已写入 {report}")
+    return summary
 
 
 # ── 主流程（LangFuse 云端） ──
@@ -759,12 +902,16 @@ async def run_eval(
     limit,
     dry_run,
     no_judge=False,
+    suite: str = DEFAULT_SUITE,
 ):
+    from functools import partial
+
     from langfuse import Langfuse
 
+    no_judge = not judge_enabled(suite, no_judge=no_judge)
     lf = Langfuse()
     items = list(lf.get_dataset(dataset_name).items)
-    print(f"加载 {len(items)} 条")
+    print(f"加载 {len(items)} 条 (suite={suite})")
     if ids:
         items = [i for i in items if i.id in ids]
         print(f"按 id 过滤: {len(items)} 条")
@@ -777,15 +924,16 @@ async def run_eval(
     if dry_run:
         for item in items:
             inp = item.input if isinstance(item.input, dict) else json.loads(item.input)
-            raw = "; ".join(t.get("send_text", "")[:60] for t in inp.get("turns", [])[:2])
-            print(f"  {item.id}: {raw}")
+            # 上传结构是 send_text + sub_scenes（无 turns 键），与报告共用同一投影
+            print(f"  {item.id}: {_report_input(inp)}")
         return
     mode = "no-judge" if no_judge else "with judge"
     print(f"开始实验 ({len(items)} 条, 并行 {max_concurrency}, {mode})...\n")
+    experiment_prefix = "intent-eval" if suite == "intent" else "option-eval"
     experiment_options = {
-        "name": f"option-eval-{time.strftime('%Y%m%d-%H%M%S')}",
+        "name": f"{experiment_prefix}-{time.strftime('%Y%m%d-%H%M%S')}",
         "data": items,
-        "task": run_langgraph_pipeline,
+        "task": partial(run_langgraph_pipeline, suite=suite),
         "max_concurrency": max_concurrency,
     }
     if not no_judge:
@@ -798,7 +946,7 @@ async def run_eval(
     )
 
 
-def main():
+def main() -> int:
     p = argparse.ArgumentParser()
     p.add_argument("--ids")
     p.add_argument("--limit", type=int)
@@ -813,13 +961,31 @@ def main():
         "--local",
         action="append",
         default=None,
-        help="本地 categories JSONL 文件或目录，可重复传入（不走 LangFuse）",
+        help="本地 categories / intent JSONL 文件或目录，可重复传入（不走 LangFuse Dataset）",
+    )
+    p.add_argument(
+        "--suite",
+        choices=SUITES,
+        help="套件；默认按 --local 路径（intent/）或 --dataset 前缀（intent-）判定。intent 不跑 Judge",
+    )
+    p.add_argument(
+        "--fail-under",
+        type=float,
+        default=None,
+        help="通过率低于该值时退出码 1（CI 门槛；仅 --local 生效）",
+    )
+    p.add_argument(
+        "--report",
+        type=Path,
+        default=None,
+        help="把本地评估摘要写成 JSON（仅 --local 生效）",
     )
     args = p.parse_args()
     id_list = [x.strip() for x in args.ids.split(",")] if args.ids else None
-    if args.local:
-        local_paths = [Path(value) for value in args.local]
-        asyncio.run(
+    local_paths = [Path(value) for value in args.local] if args.local else None
+    suite = resolve_suite(args.suite, local_paths, None if args.local else args.dataset)
+    if local_paths:
+        summary = asyncio.run(
             run_local(
                 local_paths,
                 args.filter,
@@ -828,21 +994,32 @@ def main():
                 args.limit,
                 args.dry_run,
                 args.no_judge,
+                suite=suite,
+                report=args.report,
             )
         )
-    else:
-        asyncio.run(
-            run_eval(
-                args.dataset,
-                args.filter,
-                id_list,
-                args.concurrency,
-                args.limit,
-                args.dry_run,
-                args.no_judge,
-            )
+        if (
+            args.fail_under is not None
+            and summary is not None
+            and summary["pass_rate"] < args.fail_under
+        ):
+            print(f"通过率 {summary['pass_rate']:.1%} 低于门槛 {args.fail_under:.1%}")
+            return 1
+        return 0
+    asyncio.run(
+        run_eval(
+            args.dataset,
+            args.filter,
+            id_list,
+            args.concurrency,
+            args.limit,
+            args.dry_run,
+            args.no_judge,
+            suite=suite,
         )
+    )
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

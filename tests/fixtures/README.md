@@ -82,3 +82,20 @@ python -m harness run --data tests/fixtures/unified_golden.jsonl --limit 5   # �
 “聚鸣价值精选”，并同时验证其余订单字段和输入 State 不变。
 
 这组数据验证固定模型响应后的节点行为，不计入真实 LLM 准确率，也不代表真实后端验收。
+
+## 7. 意图集：`intent/<product>.jsonl`
+
+与 `categories/` 业务集分离（`docs/langfuse/workflow-guide.md` §8）。只评一级路由 `product_type`
+与子图 `intent`，只依赖 LLM，配 `mock_api` 运行；不写任何 `response_*` 卡片断言。
+
+- A 方言子集：`caseNo`（`intent-` 前缀）+ `category=intent/<product>` + `type=positive|negative`
+  + `send_text/at_bot/quote_previous` + 逐轮 `expected.{product_type, intent}`；多轮用 `sub_scenes[]`
+- `expected.intent` 取各子图 `models.py` 的枚举；`product_type=unknown` 的反案例不标 intent
+- id 与 `categories/` / `unified_golden.jsonl` 共用唯一性约束（`scripts/check_fixture_consistency.py`）
+- `harness.golden.discover_fixtures()` 默认**不**纳入该目录；显式 `load_golden(Path("tests/fixtures/intent"))`
+  或 `langfuse_eval.py --local tests/fixtures/intent`
+- 来源：`scripts/derive_intent_fixtures.py` 从业务集派生草稿，业务方补齐 intent 后 `--only-labeled` 写入
+- 运行环境：只依赖 LLM 网关，后端由仓库内 `mock_api/` 顶替；GitHub Actions `intent-eval` 自动 / 手动跑，
+  本地 `langfuse_eval.py --local tests/fixtures/intent --fail-under 0.95`。`categories/` 业务集依赖 Java 后端，只在开发环境跑
+- 标的识别子集 `intent/swap_instrument.jsonl`（375 条，来自三份 `swap*.jsonl`）：`expected.instruments[]` 断言 LLM 提取的
+  标的原文任一候选与交易品种候选，评估器 `det_instrument_match_pass`；见 `intent/README.md`

@@ -1,7 +1,10 @@
 #!/usr/bin/env python3
-"""Validate the active fixtures: categories/*.jsonl (A dialect) + unified_golden.jsonl (B dialect).
+"""Validate the active fixtures: categories/*.jsonl (A dialect) + unified_golden.jsonl (B dialect)
++ intent/*.jsonl (意图集，A 方言子集).
 
-ADR 0024 D6：两份现役数据源同受 lint；一个文件只放一种方言，id 跨文件唯一。
+ADR 0024 D6：现役数据源同受 lint；一个文件只放一种方言，id 跨文件唯一。
+意图集（tests/fixtures/intent/）只评路由与意图：逐轮必须标 expected.product_type / intent
+且取运行时枚举值，禁止出现卡片文本断言（那是 categories/ 业务集的职责）。
 """
 from __future__ import annotations
 
@@ -16,6 +19,66 @@ ROOT = Path(__file__).resolve().parents[1]
 UNIFIED_FIXTURE_NAME = "unified_golden.jsonl"
 #: 运行时 product_type 取值（app/graph/state.py ProductType）；fixture 标了别的值只告警不阻断
 KNOWN_PRODUCT_TYPES = ("swap", "option", "option_close", "unknown")
+#: 意图集目录（与 categories/ 平级）；文件按产品命名，id 以 intent- 开头
+INTENT_DIR_NAME = "intent"
+INTENT_ID_PREFIX = "intent-"
+INTENT_CASE_TYPES = ("positive", "negative")
+INTENT_PRODUCTS = ("swap", "option", "option_close")
+TEXT_ASSERTION_FIELDS = ("response_contains", "response_contains_any", "response_not_contains")
+
+
+def intent_types_by_product() -> dict[str, tuple[str, ...]]:
+    """运行时意图枚举（唯一真源是各子图 models.py 的 Literal，不在此复制）。"""
+    from typing import get_args
+
+    from app.subgraphs.close.models import CloseIntentType
+    from app.subgraphs.option.models import OptionIntentType
+    from app.subgraphs.swap.models import SwapIntentType
+
+    return {
+        "swap": tuple(get_args(SwapIntentType)),
+        "option": tuple(get_args(OptionIntentType)),
+        "option_close": tuple(get_args(CloseIntentType)),
+        # 一级路由落 unknown 时不进子图，运行时 intent 为空：反案例不标 intent
+        "unknown": (),
+    }
+
+
+def swap_transaction_types() -> tuple[str, ...]:
+    """标的识别用例 transaction_type 的合法取值（swap 订单项 placeOrderTransactionType）。"""
+    from typing import get_args
+
+    from app.subgraphs.swap.models import SwapTransactionType
+
+    return tuple(get_args(SwapTransactionType))
+
+
+def _check_instruments(origin: str, product_type: str, instruments: Any) -> list[str]:
+    """expected.instruments：标的识别断言，只支持 swap；expression 任一候选，transaction_type 可选。"""
+    if product_type != "swap":
+        return [f"{origin}: expected.instruments is only supported for product_type 'swap'"]
+    if not isinstance(instruments, list) or not instruments:
+        return [f"{origin}: expected.instruments must be a non-empty list"]
+    errors: list[str] = []
+    markets = swap_transaction_types()
+    for index, item in enumerate(instruments):
+        label = f"{origin}: instruments[{index}]"
+        if not isinstance(item, dict):
+            errors.append(f"{label} must be an object")
+            continue
+        expressions = _lines(item.get("expression"))
+        if not expressions:
+            errors.append(f"{label}.expression must be a non-empty string or list[str]")
+        if "transaction_type" in item:
+            candidates = _lines(item["transaction_type"])
+            if not candidates:
+                errors.append(f"{label}.transaction_type must be a non-empty string or list[str]")
+            for candidate in candidates or []:
+                if candidate not in markets:
+                    errors.append(
+                        f"{label}.transaction_type {candidate!r} is not a SwapTransactionType {markets}"
+                    )
+    return errors
 
 
 def _lines(value: Any) -> list[str] | None:
@@ -121,6 +184,94 @@ def validate_unified(path: Path, ids: list[str]) -> tuple[list[str], list[str]]:
     return errors, warnings
 
 
+def _check_intent_turn(origin: str, turn: dict[str, Any], intents: dict[str, tuple[str, ...]]) -> list[str]:
+    """一轮意图集断言：只允许 expected.product_type / intent，值取运行时枚举。"""
+    errors: list[str] = []
+    for field_name in TEXT_ASSERTION_FIELDS:
+        if field_name in turn:
+            errors.append(
+                f"{origin}: {field_name} belongs to the business suite (categories/), not {INTENT_DIR_NAME}/"
+            )
+    expected = turn.get("expected")
+    if not isinstance(expected, dict):
+        errors.append(f"{origin}: expected.product_type is required")
+        errors.append(f"{origin}: expected.intent is required")
+        return errors
+    product_type = expected.get("product_type")
+    if not isinstance(product_type, str) or not product_type.strip():
+        errors.append(f"{origin}: expected.product_type is required")
+        return errors
+    if product_type not in intents:
+        errors.append(
+            f"{origin}: product_type {product_type!r} is not a runtime ProductType {KNOWN_PRODUCT_TYPES}"
+        )
+        return errors
+    intent = expected.get("intent")
+    if product_type == "unknown":
+        if intent is not None:
+            errors.append(f"{origin}: product_type 'unknown' has no subgraph intent; drop expected.intent")
+        return errors
+    if not isinstance(intent, str) or not intent.strip():
+        errors.append(f"{origin}: expected.intent is required")
+    elif intent not in intents[product_type]:
+        errors.append(
+            f"{origin}: intent {intent!r} is not a {product_type} intent {intents[product_type]}"
+        )
+    if "instruments" in expected:
+        errors.extend(_check_instruments(origin, product_type, expected["instruments"]))
+    return errors
+
+
+def validate_intent(path: Path, ids: list[str]) -> list[str]:
+    """意图集 lint：A 方言子集 + 逐轮 expected + 命名约定；返回 errors。"""
+    errors: list[str] = []
+    intents = intent_types_by_product()
+    for origin, obj in _iter_jsonl(path, errors):
+        b_fields = sorted(key for key in ("conversation", "raw_content") if key in obj)
+        if b_fields:
+            errors.append(f"{origin}: fields {b_fields} belong to the B dialect, not {INTENT_DIR_NAME}/")
+        case_id = obj.get("id") or obj.get("caseNo")
+        if not isinstance(case_id, str) or not case_id.strip():
+            errors.append(f"{origin}: missing id/caseNo")
+        else:
+            ids.append(case_id)
+            if not case_id.startswith(INTENT_ID_PREFIX):
+                errors.append(f"{origin}: id must start with {INTENT_ID_PREFIX!r}: {case_id!r}")
+        if not isinstance(obj.get("name", obj.get("caseNo")), str):
+            errors.append(f"{origin}: missing name/caseNo")
+        category = obj.get("category")
+        if not isinstance(category, str) or category not in {
+            f"{INTENT_DIR_NAME}/{product}" for product in INTENT_PRODUCTS
+        }:
+            errors.append(
+                f"{origin}: category must be '{INTENT_DIR_NAME}/<product>' with product in {INTENT_PRODUCTS}: {category!r}"
+            )
+        if obj.get("type") not in INTENT_CASE_TYPES:
+            errors.append(f"{origin}: type must be positive or negative: {obj.get('type')!r}")
+        if not isinstance(obj.get("send_text"), str) or not obj["send_text"].strip():
+            errors.append(f"{origin}: missing send_text")
+        errors.extend(_check_intent_turn(origin, obj, intents))
+        sub_scenes = obj.get("sub_scenes", [])
+        if not isinstance(sub_scenes, list):
+            errors.append(f"{origin}: sub_scenes must be a list")
+            continue
+        for index, sub_scene in enumerate(sub_scenes):
+            sub_origin = f"{origin}: sub_scenes[{index}]"
+            if not isinstance(sub_scene, dict):
+                errors.append(f"{sub_origin} must be an object")
+                continue
+            if not isinstance(sub_scene.get("send_text"), str) or not sub_scene["send_text"].strip():
+                errors.append(f"{sub_origin} missing send_text")
+            errors.extend(_check_intent_turn(sub_origin, sub_scene, intents))
+    return errors
+
+
+def _intent_paths(root: Path) -> list[Path]:
+    fixtures_root = root.parent if root.name == "categories" else root
+    intent_dir = fixtures_root / INTENT_DIR_NAME
+    return sorted(intent_dir.glob("*.jsonl")) if intent_dir.is_dir() else []
+
+
 def _unified_path(root: Path) -> Path:
     fixtures_root = root.parent if root.name == "categories" else root
     return fixtures_root / UNIFIED_FIXTURE_NAME
@@ -188,6 +339,9 @@ def validate(root: Path, verbose: bool = False) -> list[str]:
                 for index, sub_scene in enumerate(sub_scenes):
                     if not isinstance(sub_scene, dict) or not isinstance(sub_scene.get("send_text"), str) or not sub_scene["send_text"].strip():
                         errors.append(f"{origin}: sub_scenes[{index}] missing send_text")
+    for intent_path in _intent_paths(root):
+        errors.extend(validate_intent(intent_path, ids))
+        paths.append(intent_path)
     unified = _unified_path(root)
     warnings: list[str] = []
     if unified.is_file():
