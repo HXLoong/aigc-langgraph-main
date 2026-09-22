@@ -28,8 +28,10 @@ async def test_two_failed_swap_selection_branches_merge_without_crashing(monkeyp
 
     @io_node
     async def extract(state):
-        return {"place_params": {"orderList": []}, "swap_counterparties": [{"sort": "A", "shortName": "测试对手"}],
-        "quote_ticker_candidates": [{"candidates": []}]}
+        # 单笔订单 + 代码选择规则无法匹配的原文（"另一个吧"：无序号 / 动词 / 名称 / 代码），让对手与标的两条分支都落到 LLM 路径
+        return {"place_params": {"orderList": [{"orderId": "H-20260921-0000000001"}]},
+                "swap_counterparties": [{"sort": "A", "shortName": "测试对手"}],
+                "quote_ticker_candidates": [{"orderId": "H-20260921-0000000001", "candidates": [{"windCode": "600519.SH"}]}]}
 
     def failing(name):
         async def node(state):
@@ -43,7 +45,7 @@ async def test_two_failed_swap_selection_branches_merge_without_crashing(monkeyp
     monkeypatch.setattr(graph_module, "swap_select_ticker", failing("swap_select_ticker"))
     backend = AsyncMock()
     monkeypatch.setattr(SwapClientHttpx, "operate", backend)
-    result = await graph_module.build_swap_graph().ainvoke({"raw_text": "选第二个", "quote_content": "引用"})
+    result = await graph_module.build_swap_graph().ainvoke({"raw_text": "另一个吧", "quote_content": "引用"})
     assert result.get("error")
     nodes = {result["error"].node, *(e.node for e in result["error"].causes)}
     assert {"swap_select_counterparty", "swap_select_ticker"} <= nodes
