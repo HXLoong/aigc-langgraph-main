@@ -34,8 +34,9 @@ python scripts/local_eval.py --base-url http://127.0.0.1:8201 --data tests/fixtu
 
 # Langfuse Dataset Experiment（Judge + 自动 Evaluator；不替代 HTTP/Java 写回与幂等验收）
 python scripts/langfuse/langfuse_eval.py --dataset golden_option_inquiry_case --ids case-022 --concurrency 1
-# 意图集（只调 LLM + mock 后端，det_intent_match_pass 确定性评分，不跑 Judge；docs/langfuse/workflow-guide.md §8）
-python scripts/langfuse/langfuse_eval.py --local tests/fixtures/intent --concurrency 3
+# 意图集（只调 LLM + 仓库内 mock_api，不依赖 Java/GOATS；确定性评分本地算，--fail-under 给退出码；
+# CI：.github/workflows/intent-eval.yml；业务集 categories/ 依赖 Java 后端只在开发环境跑；workflow-guide §8）
+python scripts/langfuse/langfuse_eval.py --local tests/fixtures/intent --concurrency 3 --fail-under 0.95 --report .harness-runs/intent-eval.json
 
 # Harness CLI（备用 / 本地快速 smoke，无 Judge）
 python -m harness doctor

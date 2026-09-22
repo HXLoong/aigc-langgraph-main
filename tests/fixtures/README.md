@@ -95,5 +95,7 @@ python -m harness run --data tests/fixtures/unified_golden.jsonl --limit 5   # �
 - `harness.golden.discover_fixtures()` 默认**不**纳入该目录；显式 `load_golden(Path("tests/fixtures/intent"))`
   或 `langfuse_eval.py --local tests/fixtures/intent`
 - 来源：`scripts/derive_intent_fixtures.py` 从业务集派生草稿，业务方补齐 intent 后 `--only-labeled` 写入
+- 运行环境：只依赖 LLM 网关，后端由仓库内 `mock_api/` 顶替；GitHub Actions `intent-eval` 自动 / 手动跑，
+  本地 `langfuse_eval.py --local tests/fixtures/intent --fail-under 0.95`。`categories/` 业务集依赖 Java 后端，只在开发环境跑
 - 标的识别子集 `intent/swap_instrument.jsonl`（375 条，来自三份 `swap*.jsonl`）：`expected.instruments[]` 断言 LLM 提取的
   标的原文任一候选与交易品种候选，评估器 `det_instrument_match_pass`；见 `intent/README.md`

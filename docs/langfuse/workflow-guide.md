@@ -348,3 +348,18 @@ python scripts/langfuse/langfuse_eval.py --dataset business-swap_prod_data --con
 意图集 Experiment 命名为 `intent-eval-YYYYMMDD-HHMMSS`，业务集沿用 `option-eval-YYYYMMDD-HHMMSS`。
 `--local` 模式下 A 方言用例没有 `expected.output`，Judge 期望由逐轮 `expected` + 文本断言拼成
 （`build_expected_text`），不再是空串。
+
+### 8.3 CI 集成：意图集不依赖后端，业务集只在开发环境跑
+
+- 意图集的评分逻辑与 Langfuse Online Rule 是同一份源码（`harness/evaluators/`），`langfuse_eval.py --local`
+  对 `suite=intent` 直接在本地执行 `intent_match` / `instrument_match`，不需要 Langfuse、Java、GOATS；
+  `--fail-under 0.95` 低于门槛退出码 1，`--report` 写 JSON 摘要
+- `.github/workflows/intent-eval.yml`：runner 上起仓库内 `mock_api`（GOATS 22 + Java 10 端点假实现）顶替后端，
+  LLM 网关走 secrets `QWEN_API_BASE` / `QWEN_API_KEY`。PR 触碰 `app/prompts/**`、路由/意图节点、评估器、
+  `tests/fixtures/intent/**` 时自动跑；Actions 页可手动 Run workflow 并改 `fixture` / `limit` / `fail_under`
+  （首次可用 `fail_under=0` 只出基线报告，再定门槛）
+- 启用 Langfuse 时 `--local` 也会把每个评估器的 score（`det_*`）写回 trace；`--no-judge` 的兜底评分现在按
+  `reply-check` 名写回（此前误用 `otc-option-judge`）
+- 业务集（`categories/`）依赖 Java 后端与授权账号，只在开发 / staging 环境用 `--dataset business-*` 或
+  `scripts/local_eval.py` 跑，不进 CI；依赖矩阵见 `docs/testing/README.md` §一a
+

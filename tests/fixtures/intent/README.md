@@ -52,3 +52,13 @@ python scripts/langfuse/langfuse_eval.py --local tests/fixtures/intent --concurr
 
 Langfuse 侧：Dataset `intent-<product>`，评估器 `det_intent_match_pass`（`harness/evaluators/intent_match.py`），
 详见 `docs/langfuse/workflow-guide.md` §8。
+
+## 在哪跑
+
+- **不依赖 Java / GOATS**：后端由仓库内 `mock_api/` 顶替，唯一外部依赖是 LLM 网关
+- **CI**：`.github/workflows/intent-eval.yml`——PR 触碰提示词 / 路由意图节点 / 评估器 / 本目录时自动跑，
+  也可在 Actions 手动触发；评分在本地算（`intent_match` / `instrument_match`），`--fail-under 0.95` 拦截
+- **本地**：起 `uvicorn mock_api.server:app --port 8099`，`OTC_API_BASE_URL` / `GOATS_BASE_URL` 指向它，
+  `python scripts/langfuse/langfuse_eval.py --local tests/fixtures/intent --fail-under 0.95 --report .harness-runs/intent-eval.json`
+- 依赖 Java 后端的业务集在 `../categories/`，只在开发 / staging 环境跑（`docs/testing/README.md` §一a）
+

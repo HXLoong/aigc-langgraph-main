@@ -1,0 +1,142 @@
+name: intent-eval
+
+# 意图集（tests/fixtures/intent/）评估：只依赖 LLM，不依赖 Java / GOATS 后端。
+# 后端由仓库内 mock_api（GOATS 22 + Java 10 端点的假实现）在 runner 上顶替；
+# 评分用 harness/evaluators 的确定性评估器在本地算，不需要 Langfuse。
+# 业务集（tests/fixtures/categories/）依赖真实后端与授权账号，只在开发环境跑，绝不进这里。
+#
+# 手动：Actions → intent-eval → Run workflow（可改 fixture / limit / fail_under）
+# 自动：PR 触碰提示词、路由/意图节点、评估器、意图集时运行
+# 前置：仓库 secrets 配置 QWEN_API_BASE / QWEN_API_KEY（LLM 网关）；可选 variables
+#       QWEN_MODEL_STANDARD / QWEN_MODEL_THINKING / QWEN_MODEL_COMPLEX 覆盖默认模型
+
+on:
+  workflow_dispatch:
+    inputs:
+      fixture:
+        description: "意图集路径（文件或目录）"
+        default: "tests/fixtures/intent"
+        required: false
+      concurrency:
+        description: "并行数"
+        default: "3"
+        required: false
+      limit:
+        description: "只跑前 N 条（留空 = 全部）"
+        default: ""
+        required: false
+      fail_under:
+        description: "通过率门槛，低于则失败（0 = 只出报告不拦截）"
+        default: "0.95"
+        required: false
+  pull_request:
+    paths:
+      - "app/prompts/**"
+      - "app/nodes/intent_route.py"
+      - "app/nodes/route_rules.py"
+      - "app/subgraphs/*/intent.py"
+      - "app/subgraphs/swap/place_order.py"
+      - "app/subgraphs/swap/normalize.py"
+      - "app/subgraphs/swap/quote_hints.py"
+      - "app/extraction/**"
+      - "harness/evaluators/**"
+      - "harness/golden.py"
+      - "scripts/langfuse/langfuse_eval.py"
+      - "tests/fixtures/intent/**"
+      - ".github/workflows/intent-eval.yml"
+
+concurrency:
+  group: intent-eval-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  intent-eval:
+    # fork PR 拿不到 secrets，自动跳过；同仓库 PR 与手动触发正常跑
+    if: github.event_name == 'workflow_dispatch' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    env:
+      ENVIRONMENT: development
+      ENABLE_LANGFUSE: "false"
+      USE_MYSQL_CHECKPOINTER: "false"
+      REQUEST_IDEMPOTENCY: "false"
+      # 未启用持久化；persist 节点写库失败只打 warning，不影响评分
+      MYSQL_URI: mysql://ci:ci@127.0.0.1:3306/ci_unused
+      # 全部指向 runner 上的 mock_api，绝不指向 Java / GOATS
+      OTC_API_BASE_URL: http://127.0.0.1:8099
+      OTC_API_SECRET: mock-secret
+      GOATS_BASE_URL: http://127.0.0.1:8099
+      GOATS_CLIENT_ID: mock-client-id
+      GOATS_CLIENT_SECRET: mock-client-secret
+      GOATS_EXTAPP_SALT: mock-salt
+      SECURITIES_INSTRUMENT_URL: http://127.0.0.1:8099/admin-api/integration/securities-instrument/select
+      # LLM 网关（唯一外部依赖）
+      QWEN_API_BASE: ${{ secrets.QWEN_API_BASE }}
+      QWEN_API_KEY: ${{ secrets.QWEN_API_KEY }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
+
+      - name: 检查 LLM secrets
+        run: |
+          if [ -z "$QWEN_API_KEY" ] || [ -z "$QWEN_API_BASE" ]; then
+            echo "::error::缺少 QWEN_API_BASE / QWEN_API_KEY secrets：意图集只依赖 LLM（不依赖 Java/GOATS），但必须配置模型网关"
+            exit 1
+          fi
+
+      - name: 可选模型覆盖（仓库 variables，未设置则用 app/config.py 默认）
+        env:
+          STANDARD: ${{ vars.QWEN_MODEL_STANDARD }}
+          THINKING: ${{ vars.QWEN_MODEL_THINKING }}
+          COMPLEX: ${{ vars.QWEN_MODEL_COMPLEX }}
+        run: |
+          if [ -n "$STANDARD" ]; then echo "QWEN_MODEL_STANDARD=$STANDARD" >> "$GITHUB_ENV"; fi
+          if [ -n "$THINKING" ]; then echo "QWEN_MODEL_THINKING=$THINKING" >> "$GITHUB_ENV"; fi
+          if [ -n "$COMPLEX" ]; then echo "QWEN_MODEL_COMPLEX=$COMPLEX" >> "$GITHUB_ENV"; fi
+
+      - name: fixture 一致性 lint（意图集格式门槛）
+        run: python scripts/check_fixture_consistency.py
+
+      - name: 启动 mock_api（仓库内假后端，顶替 Java + GOATS）
+        run: |
+          nohup python -m uvicorn mock_api.server:app --host 127.0.0.1 --port 8099 > mock_api.log 2>&1 &
+          for i in $(seq 1 30); do
+            curl -sf http://127.0.0.1:8099/ > /dev/null && break
+            sleep 1
+          done
+          curl -sf http://127.0.0.1:8099/ > /dev/null || { echo "::error::mock_api 未就绪"; cat mock_api.log; exit 1; }
+
+      - name: 运行意图集评估（确定性评分，无 Judge）
+        env:
+          FIXTURE: ${{ github.event.inputs.fixture || 'tests/fixtures/intent' }}
+          CONCURRENCY: ${{ github.event.inputs.concurrency || '3' }}
+          LIMIT: ${{ github.event.inputs.limit || '' }}
+          FAIL_UNDER: ${{ github.event.inputs.fail_under || '0.95' }}
+        run: |
+          python scripts/langfuse/langfuse_eval.py \
+            --local "$FIXTURE" --suite intent \
+            --concurrency "$CONCURRENCY" ${LIMIT:+--limit "$LIMIT"} \
+            --fail-under "$FAIL_UNDER" \
+            --report .harness-runs/intent-eval.json
+
+      - name: 上传报告
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: intent-eval-report
+          path: |
+            .harness-runs/intent-eval.json
+            mock_api.log
+          if-no-files-found: warn

@@ -24,7 +24,7 @@ if DOTENV.exists():
 
 sys.path.insert(0, str(PROJECT_ROOT))
 
-from harness.golden import GoldenCase, TurnSpec, build_overview, load_golden
+from harness.golden import GoldenCase, build_overview, dataset_expected, dataset_input, load_golden
 
 GOLDEN_PATH = PROJECT_ROOT / "tests" / "fixtures" / "categories"
 DATASET_NAME = "otc-option-golden"
@@ -40,46 +40,9 @@ def detect_suite(source: Path) -> str:
     return "intent" if INTENT_DIR_NAME in source.parts else "business"
 
 
-def _turn_input(turn: TurnSpec) -> dict[str, object]:
-    result: dict[str, object] = {
-        "send_text": turn.send_text,
-        "at_bot": turn.at_bot,
-    }
-    if turn.quote_previous is not None:
-        result["quote_previous"] = turn.quote_previous
-    return result
-
-
-def _turn_expected(turn: TurnSpec) -> dict[str, object]:
-    result: dict[str, object] = {}
-    for field in (
-        "expected",
-        "response_contains",
-        "response_contains_any",
-        "response_not_contains",
-    ):
-        value = getattr(turn, field)
-        if value:
-            result[field] = value
-    return result
-
-
-def build_input(case: GoldenCase) -> dict[str, object]:
-    """保持 categories 的首轮 + sub_scenes 输入结构。"""
-    first, *sub_scenes = case.turns
-    return {
-        **_turn_input(first),
-        "sub_scenes": [_turn_input(turn) for turn in sub_scenes],
-    }
-
-
-def build_expected(case: GoldenCase) -> dict[str, object]:
-    """保持 categories 的首轮 + sub_scenes 断言结构。"""
-    first, *sub_scenes = case.turns
-    return {
-        **_turn_expected(first),
-        "sub_scenes": [_turn_expected(turn) for turn in sub_scenes],
-    }
+#: 与本地确定性评分（langfuse_eval.py --local）共用同一份投影，避免云端 / 本地口径漂移
+build_input = dataset_input
+build_expected = dataset_expected
 
 
 def _clear_dataset(dataset_name: str) -> None:
