@@ -97,17 +97,41 @@ def test_futures_contract_and_index_expressions() -> None:
     assert case["expected"]["instruments"] == [{"expression": ["恒生科技指数2706", "恒生科技指数"]}]
 
 
-def test_unresolvable_expression_is_marked_pending() -> None:
+def test_backend_unresolved_still_takes_user_expression() -> None:
+    """后端【待补充】不影响 LLM-only 口径：用户表达仍是期望值。"""
     case = _derive(_case("帮我买入100股International Drawdown Managed Eq，限价为10元，", ["【待补充】"]))
+    assert "review" not in case
+    assert case["expected"]["instruments"] == [{"expression": ["International Drawdown Managed Eq"]}]
+
+
+def test_candidate_card_without_code_lines_uses_contains_any_as_reference() -> None:
+    raw = _case("市价买一百万京东", [])
+    raw["response_contains"] = "-----场外收益互换详情-----\n委托方向：买入"
+    raw["response_contains_any"] = "9618.HK\n89618.HK\nJD.O\n"
+    case = _derive(raw)
+    assert case["expected"]["instruments"] == [{"expression": ["京东"]}]
+    assert case["reference"] == {"backend_codes": ["9618.HK", "89618.HK", "JD.O"]}
+
+
+def test_missing_expression_is_marked_pending() -> None:
+    case = _derive(_case("买入 25000股 限价300", ["IBM.N"]))
     assert case["review"]["status"] == "pending"
     assert case["expected"]["instruments"][0]["expression"] == []
+
+
+def test_colloquial_and_traditional_noise_is_stripped() -> None:
+    assert _derive(_case("3939hk 暫買入 38000 股 @ 7.4747", ["3939.HK"]))["expected"]["instruments"] == [{"expression": ["3939hk"]}]
+    assert _derive(_case("京东集团-sw  空29万股  市价跟5%", ["9618.HK"]))["expected"]["instruments"] == [{"expression": ["京东集团-sw", "京东集团"]}]
+    assert _derive(_case("买入开仓 000993 神火股份 64万股 POV10%市价", ["000933.SZ"]))["expected"]["instruments"] == [{"expression": ["000993 神火股份", "000993", "神火股份"]}]
+    assert _derive(_case("9901 暫買入 45000@ 41.07167， 325 暫買入 39300@133.7282", ["9901.HK", "0325.HK"]))["expected"]["instruments"] == [{"expression": ["9901"]}, {"expression": ["325"]}]
+    assert _derive(_case("麻烦继续挂单486平仓500股腾讯", ["0700.HK"]))["expected"]["instruments"] == [{"expression": ["腾讯"]}]
 
 
 def test_write_drafts_filters_pending_and_keeps_intent_fields(tmp_path: Path) -> None:
     source = tmp_path / "swap_test_fuzzy_target_recog_data.jsonl"
     rows = [
         _case("港股市价买一百万京东", ["9618.HK"]),
-        _case("帮我买入100股International Drawdown Managed Eq，限价为10元，", ["【待补充】"], caseNo="c2"),
+        _case("买入 25000股 限价300", ["IBM.N"], caseNo="c2"),
     ]
     source.write_text("".join(json.dumps(r, ensure_ascii=False) + "\n" for r in rows), encoding="utf-8")
 
