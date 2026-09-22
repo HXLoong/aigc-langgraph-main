@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import copy
 import json
-from typing import Any
+from typing import Any, TypedDict
 from unittest.mock import AsyncMock, MagicMock
 
 import httpx
@@ -15,7 +15,7 @@ from app.node_execution.executor import NodeExecutor
 from app.node_execution.registry import NodeRegistration, build_registry
 from app.subgraphs.close.models import CloseIntentOutput
 from app.subgraphs.close.reference_parser import parse_reference_message
-from app.subgraphs.ticker.resolver import OrgItemInput
+from tests.intent_fixtures import intent_reply
 
 CONTEXT = {
     "conversation_id": "prepare-test",
@@ -326,45 +326,24 @@ def _all_schema_inputs() -> dict[str, dict[str, Any]]:
     }
     inquiry = agent | {
         "iq_rfq_data": {},
-        "iq_reject_reply": "reason",
         "iq_raw_params": {},
+        "iq_field_records": {},
         "iq_order_list": [],
         "iq_types": [],
-        "iq_backend_order_list": [],
-        "iq_bindings": [],
-        "iq_hitl": [],
     }
     place_close = agent | {
         "pc_parsed": parse_reference_message("", ""),
         "pc_order_data": [],
-        "pc_llm_orders": [],
+        "pc_candidates": {},
         "pc_llm_output": {},
         "pc_close_orders": [],
         "pc_reject_reply": "reason",
         "pc_reject_decision": "reason",
     }
-    ticker = {
-        "raw_text": "腾讯",
-        "candidates": ["腾讯"],
-        "infer_codes": {},
-        "split_codes": {},
-        "ins_family": {},
-        "pending_items": [],
-        "winners": [],
-        "resolved": [],
-    }
-    org_item = {
-        "index": 0,
-        "org_str": "腾讯",
-        "keywords": [{"keyword": "腾讯", "isFull": False}],
-        "predicted_family": "EQUITY",
-    }
     return {
         "AgentState": agent,
         "InquiryState": inquiry,
         "PlaceCloseState": place_close,
-        "TickerState": ticker,
-        "OrgItemInput": org_item,
     }
 
 
@@ -373,7 +352,7 @@ def test_every_registration_prepares_to_an_executor_valid_request() -> None:
 
     executor = NodeExecutor(build_registry())
     schema_inputs = _all_schema_inputs()
-    assert len(executor.registrations) == 65
+    assert len(executor.registrations) == 59
 
     for key, registration in executor.registrations.items():
         original = copy.deepcopy(schema_inputs[registration.input_schema.__name__])
@@ -386,7 +365,7 @@ def test_every_registration_prepares_to_an_executor_valid_request() -> None:
 
 def test_registry_declarations_are_explicit_valid_and_cover_known_dependencies() -> None:
     registrations = {(item.product, item.name): item for item in build_registry()}
-    assert len(registrations) == 65
+    assert len(registrations) == 59
     for key, item in registrations.items():
         assert isinstance(item.input_fields, tuple), key
         assert len(item.input_fields) == len(set(item.input_fields)), key
@@ -423,15 +402,14 @@ def test_registry_declarations_are_explicit_valid_and_cover_known_dependencies()
             "quote_content",
             "conversation_orders",
         },
-        ("ticker", "resolve_org_item"): {
-            "index",
-            "org_str",
-            "keywords",
-            "predicted_family",
-        },
     }
     for key, expected in expected_subsets.items():
         assert expected <= set(registrations[key].effective_input_fields), key
+
+
+class _RequiredSchema(TypedDict):
+    index: int
+    org_str: str
 
 
 def test_registration_rejects_invalid_field_contracts() -> None:
@@ -456,10 +434,10 @@ def test_registration_rejects_invalid_field_contracts() -> None:
         )
     with pytest.raises(ValueError, match="Required fields not declared"):
         NodeRegistration(
-            "ticker",
+            "main",
             "schema_required",
             target,
-            OrgItemInput,
+            _RequiredSchema,
             input_fields=("index",),
         )
     with pytest.raises(ValueError, match="Required fields not declared"):
@@ -556,6 +534,16 @@ def test_prepare_does_not_invoke_node() -> None:
     assert calls == 0
 
 
+def _without_trace_ids(output: dict[str, Any]) -> dict[str, Any]:
+    """TraceEntry.id 每次随机、elapsed_ms 随机器抖动（CI 上 0 vs 1 ms），只比较业务内容。"""
+    stripped = dict(output)
+    stripped["trace"] = [
+        {k: v for k, v in entry.items() if k not in ("id", "elapsed_ms")}
+        for entry in output.get("trace", [])
+    ]
+    return stripped
+
+
 async def test_prompt_input_is_identical_before_and_after_prepare(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -565,7 +553,8 @@ async def test_prompt_input_is_identical_before_and_after_prepare(
     original = {
         "raw_text": "我要平仓",
         "quote_content": "上一轮",
-        "history_messages": [{"role": "user", "content": "查持仓"}],
+        # 历史消息带显式 id：证据引用键为 history:<id>，随机 id 会让两次校验的提示词不同
+        "history_messages": [{"id": "history-1", "role": "user", "content": "查持仓"}],
         "trace": [{"node": "legacy"}],
         "message_id": 99,
     }
@@ -579,16 +568,17 @@ async def test_prompt_input_is_identical_before_and_after_prepare(
 
     captured: list[Any] = []
     llm = MagicMock()
+    reply = intent_reply(CloseIntentOutput, type="close_order_request")
 
     async def invoke(messages: Any) -> CloseIntentOutput:
         captured.append(messages)
-        return CloseIntentOutput(type="close_order_request")
+        return reply(messages)
 
     llm.with_structured_output.return_value.ainvoke = AsyncMock(side_effect=invoke)
     monkeypatch.setattr("app.subgraphs.close.intent.get_qwen_thinking", lambda: llm)
     before = await executor.run("option_close", "close_intent", before_state)
     after = await executor.run("option_close", "close_intent", after_state)
-    assert before == after
+    assert _without_trace_ids(before) == _without_trace_ids(after)
     assert captured[0] == captured[1]
 
 
@@ -624,7 +614,7 @@ async def test_backend_request_is_identical_before_and_after_prepare(
     before = await executor.run("option", "option_extract_query", before_state)
     after = await executor.run("option", "option_extract_query", after_state)
 
-    assert before == after
+    assert _without_trace_ids(before) == _without_trace_ids(after)
     assert requests[0] == requests[1]
     assert "history_messages" in original
     assert "history_messages" not in prepared.state

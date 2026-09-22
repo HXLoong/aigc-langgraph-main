@@ -17,6 +17,7 @@ class NodeLabel:
 NODE_LABELS: dict[str, NodeLabel] = {
     "main_graph": NodeLabel("交易指令处理", "graph"),
     "ingest": NodeLabel("消息接收与状态初始化"),
+    "entry_route": NodeLabel("业务入口选择"),
     "quick_inquiry": NodeLabel("期权快速询价", "io"),
     "existing_command_query": NodeLabel("存量交易指令查询", "io"),
     "pre_route": NodeLabel("交易对手与候选信息整理"),

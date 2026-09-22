@@ -30,7 +30,7 @@ for target in (
     "app.subgraphs.close.backend.OptionClientHttpx",
 ):
     monkeypatch.setattr(target, factory)
-# swap / ticker 同理：app.subgraphs.swap.backend.SwapClientHttpx、app/subgraphs/ticker 的 _make_client
+# swap 同理：app.subgraphs.swap.backend.SwapClientHttpx（标的识别已委托 Java，本地无 ticker 子图）
 ```
 
 ## E2E 测试

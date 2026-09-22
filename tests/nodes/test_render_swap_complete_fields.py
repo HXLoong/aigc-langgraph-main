@@ -13,6 +13,7 @@ import pytest
 
 from app.graph.state import AgentState, TickerCandidate
 from app.nodes.render import render
+from app.tools.receipts import UNCERTAIN_REPLY
 
 
 @pytest.mark.parametrize(
@@ -51,8 +52,6 @@ async def test_order_fields_never_rebuild_backend_card(
     update = await render(state)
 
     assert update["reply_text"] == (
-        backend_reply
-        if backend_reply is not None
-        else "互换服务未返回有效结果，本次未生成业务回执，请稍后重试或联系交易员。"
+        backend_reply if backend_reply is not None else UNCERTAIN_REPLY
     )
     assert state == original

@@ -6,13 +6,13 @@ from unittest.mock import AsyncMock, MagicMock
 
 import httpx
 import pytest
-from evidence_support import candidate_output
 
 from app.nodes.render import render
 from app.subgraphs.swap import backend, place_order
 from app.subgraphs.swap.fresh_counterparty import swap_recognize_fresh_counterparty
 from app.subgraphs.swap.models import SwapOrderItem, SwapPlaceOrderParams
 from app.tools.swap_client import SwapClientHttpx
+from tests.evidence_support import candidate_output
 from tests.subgraphs.swap.test_fresh_counterparty import patch_recognition
 
 SHORTNAME = "11125测试短名（张天琪专用）"

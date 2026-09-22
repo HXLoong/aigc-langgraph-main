@@ -9,7 +9,6 @@ from uuid import UUID
 
 import httpx
 import pytest
-from evidence_support import candidate_output
 from fastapi.testclient import TestClient
 from pydantic import BaseModel
 
@@ -22,6 +21,7 @@ from app.subgraphs.option.models import (
 from app.tools.message_client import MessageClientHttpx
 from app.tools.option_client import OptionClientHttpx
 from app.tools.swap_client import SwapClientHttpx
+from tests.evidence_support import candidate_output
 
 FIRST_MESSAGE = "300773.SZ，欧式看涨，80%"
 INQUIRY_CARD = (

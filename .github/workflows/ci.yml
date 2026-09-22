@@ -1,18 +1,28 @@
 name: CI
 
+# 2026-05-12 曾暂停自动触发；2026-09-22 按 ADR 0024 D6 / D8 阶段 0 门槛恢复：
+# fast job（每次 push / PR，< 2 min）守 lint + 一致性检查 + 快速测试，
+# slow job（PR + main）跑全量 pytest 与真实 MySQL 用例（ADR 0024 D4）。
 on:
-  # 2026-05-12 暂停自动 CI（M3 数据集 + 文档密集期，CI 临时关闭）
-  # 恢复方法：取消下方 workflow_dispatch，恢复 push + pull_request 触发即可
+  push:
+    branches: [main, develop]
+  pull_request:
   workflow_dispatch:
 
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # ADR 0014 D8: CI 中默认关闭 LangFuse（不跑 server，避免成本与脆弱性）
+  ENABLE_LANGFUSE: "false"
+  PYTHONUTF8: "1"
+
 jobs:
-  test:
+  fast:
+    name: lint + 一致性 + 快速测试
     runs-on: ubuntu-latest
-
-    env:
-      # ADR 0014 D8: CI 中默认关闭 LangFuse（不跑 server，避免成本与脆弱性）
-      ENABLE_LANGFUSE: "false"
-
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
 
@@ -28,32 +38,99 @@ jobs:
           pip install -e ".[dev]"
 
       - name: Lint (ruff)
-        # M1 重写期允许有警告，但语法错误会失败
-        run: ruff check app/ tests/ || echo "::warning::ruff issues (allowed during M1)"
+        run: ruff check app/ tests/ harness/ scripts/probe_goats/
 
       - name: Type check (mypy)
-        # M1 重写期允许有类型错误（旧代码已删，新代码逐步补）
-        run: mypy app/ harness/ || echo "::warning::mypy issues (allowed during M1)"
+        # 尚未清零；先以 warning 形式可见，清零后改为硬失败
+        run: python -m mypy app/ harness/ || echo "::warning::mypy issues (tracked, not yet gating)"
 
       - name: ADR 0019 阈值一致性 (alerts.py ↔ ADR 0019 ↔ runbook)
-        # PR #102 / #103 / #104 / #106：3 处阈值同步是 F4 切流硬约束，
-        # 任一不一致 → 此步骤 fail，详见 docs/adr/0019-incident-severity-thresholds.md §5
         run: python scripts/check_alert_threshold_consistency.py
 
       - name: tests/fixtures 一致性（unified ⊇ golden + ADR 0015 锚点）
-        # PR #109：M2/M3 基线数据集职责矩阵 + 不变量
-        # 详见 tests/fixtures/README.md §3
         run: python scripts/check_fixture_consistency.py
 
       - name: ADR 引用一致性（互引虚悬 + 代码路径存在性）
-        # Issue #161（#152 裁决落地）：承接 AUDIT-2026-05-13 §4 复检能力，
-        # 跳过 ~~删除线~~ 段；详见 docs/adr/README.md "卫生检查"
         run: python scripts/check_adr_refs.py
 
-      - name: Run tests
+      - name: AGENTS.md / .agents 与 CLAUDE.md / .claude 同步
+        run: python scripts/sync_agents_md.py --check
+
+      - name: 无配置可导入（tests/test_import_without_env.py）
+        # 不带 .env：模块级 get_settings() 一旦回潮，这一步先于全量测试失败
+        run: pytest tests/test_import_without_env.py -q -p no:cacheprovider
+
+      - name: Fast tests (pytest -k "not e2e")
+        env:
+          USE_MYSQL_CHECKPOINTER: "false"
+          REQUEST_IDEMPOTENCY: "false"
+          MYSQL_URI: mysql+aiomysql://ci:ci@127.0.0.1:3306/otc_goats_ai_trading_dev
+          QWEN_API_BASE: http://llm.invalid/v1
+          QWEN_API_KEY: ci-only
+          OTC_API_BASE_URL: http://otc.invalid
+          OTC_API_SECRET: ci-only
+        run: pytest tests/ -q -p no:cacheprovider -k "not e2e"
+
+  slow:
+    name: 全量测试 + 真实 MySQL
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    needs: fast
+    if: github.event_name != 'push' || github.ref == 'refs/heads/main'
+    services:
+      mysql:
+        image: mysql:8.0
+        env:
+          MYSQL_ROOT_PASSWORD: root
+          MYSQL_DATABASE: otc_goats_ai_trading_dev
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd "mysqladmin ping -h 127.0.0.1 -uroot -proot"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      USE_MYSQL_CHECKPOINTER: "false"
+      REQUEST_IDEMPOTENCY: "false"
+      # 集成用例只接受本机地址 + 该库名（tests/integration/*_mysql.py）；shared 用例会自建临时库，需 root
+      MYSQL_URI: mysql+aiomysql://root:root@127.0.0.1:3306/otc_goats_ai_trading_dev
+      RUN_LOCAL_MYSQL_TESTS: "1"
+      QWEN_API_BASE: http://llm.invalid/v1
+      QWEN_API_KEY: ci-only
+      OTC_API_BASE_URL: http://otc.invalid
+      OTC_API_SECRET: ci-only
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install dependencies
         run: |
-          if [ -d tests ] && [ -n "$(find tests -name 'test_*.py' -type f 2>/dev/null)" ]; then
-            pytest tests/ -v
-          else
-            echo "No tests yet (M1 skeleton phase)"
-          fi
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
+
+      - name: 初始化业务库（sql/init.sql，与现场部署同一份）
+        run: |
+          python - <<'PY'
+          import re
+          import pymysql
+
+          sql = open("sql/init.sql", encoding="utf-8").read()
+          clean = re.sub(r"(?m)^\s*--.*$", "", sql)
+          conn = pymysql.connect(host="127.0.0.1", port=3306, user="root", password="root",
+                                 database="otc_goats_ai_trading_dev", autocommit=True, charset="utf8mb4")
+          with conn.cursor() as cur:
+              for statement in clean.split(";"):
+                  if statement.strip():
+                      cur.execute(statement)
+              cur.execute("SHOW TABLES")
+              print(sorted(row[0] for row in cur.fetchall()))
+          PY
+
+      - name: Full tests (含 RUN_LOCAL_MYSQL_TESTS=1 的真实 MySQL 用例)
+        run: pytest tests/ -q -p no:cacheprovider

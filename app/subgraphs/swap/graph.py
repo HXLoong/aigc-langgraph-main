@@ -36,7 +36,6 @@ from __future__ import annotations
 
 from typing import Any
 
-from langchain_core.runnables import RunnableLambda
 from langgraph.graph import END, START, StateGraph
 from langgraph.graph.state import CompiledStateGraph
 
@@ -145,7 +144,7 @@ def build_swap_graph() -> CompiledStateGraph[AgentState, None, AgentState, Subgr
     g: StateGraph[AgentState, None, AgentState, SubgraphOutput] = StateGraph(AgentState, output_schema=SubgraphOutput)
     add_io_node(g, "swap_intent", swap_intent)
     g.add_node("swap_place_order", build_place_graph())
-    g.add_node("swap_recognize_fresh_counterparty", RunnableLambda(swap_recognize_fresh_counterparty))
+    add_io_node(g, "swap_recognize_fresh_counterparty", swap_recognize_fresh_counterparty)
     add_io_node(g, "swap_select_counterparty", swap_select_counterparty)
     add_io_node(g, "swap_select_ticker", swap_select_ticker)
     g.add_node("swap_apply_picks", swap_apply_picks)

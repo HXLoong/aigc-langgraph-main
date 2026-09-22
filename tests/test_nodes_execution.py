@@ -21,9 +21,16 @@ from app.subgraphs.close.place_close import build_place_close_graph
 from app.subgraphs.option.extract_inquiry import build_inquiry_graph
 from app.subgraphs.option.graph import build_option_graph
 from app.subgraphs.swap.graph import build_swap_graph
-from app.subgraphs.ticker.graph import build_ticker_graph
 from app.tools.message_client import MessageClientHttpx
 from mock_api.server import app as mock_app
+from tests.intent_fixtures import intent_reply, mock_ainvoke
+
+_QUOTE_CARD = (
+    "-----场外期权询价详情-----\r\n"
+    "Q-20250616-000011\r\n"
+    "标的代码：300098.SZ；欧式看涨；80%\r\n"
+    "期限待补充，请引用本消息回复期限。如需下单，请提供建仓参数。"
+)
 
 CONTEXT = {"conversation_id": "nodes-test", "room_id": "room", "user_id": "user", "message_id": 1}
 
@@ -46,7 +53,6 @@ def test_catalog_matches_all_registered_graph_nodes_and_policies() -> None:
         ("option", build_inquiry_graph()),
         ("option_close", build_close_graph()),
         ("option_close", build_place_close_graph()),
-        ("ticker", build_ticker_graph()),
     ]
     executor = NodeExecutor(build_registry())
     expected = set()
@@ -193,10 +199,6 @@ async def test_private_inquiry_and_place_close_fields_are_not_filtered() -> None
     )
     assert normalized.status_code == 200, normalized.text
     assert normalized.json()["output"]["pc_close_orders"] == []
-    reject = await request(
-        executor, "option", "inquiry_reject", {"iq_reject_reply": "specific reason"}
-    )
-    assert reject.json()["output"]["reply_text"] == "specific reason"
 
 
 async def test_persist_write_failure_keeps_existing_success_output(
@@ -247,39 +249,6 @@ async def test_persist_intent_skip_and_real_http_client() -> None:
     assert json.loads(transport.requests[0].content)["conversationId"] == CONTEXT["conversation_id"]
 
 
-async def test_org_item_single_http_call_input_and_winners_preserved(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    from app.tools.ticker_client import TickerClientHttpx
-
-    transport = RecordingTransport()
-    monkeypatch.setattr(
-        "app.subgraphs.ticker.resolver._make_client",
-        lambda: TickerClientHttpx(
-            base_url="http://mock",
-            token="mock-only",
-            transport=transport,
-        ),
-    )
-    response = await request(
-        NodeExecutor(build_registry()),
-        "ticker",
-        "resolve_org_item",
-        {
-            "index": 7,
-            "org_str": "00700.HK",
-            "keywords": [{"keyword": "00700.HK", "isFull": True}],
-            "predicted_family": "EQUITY",
-        },
-    )
-    assert response.status_code == 200, response.text
-    output = response.json()["output"]
-    assert set(output) == {"winners"}
-    assert output["winners"][0]["index"] == 7
-    assert output["winners"][0]["winner"]["windCode"] == "0700.HK"
-    assert len(transport.requests) == 1
-
-
 @pytest.mark.parametrize("composite", [False, True])
 async def test_option_real_client_to_http_mock_and_composite_output(
     composite: bool,
@@ -298,8 +267,8 @@ async def test_option_real_client_to_http_mock_and_composite_output(
         ),
     )
     llm = MagicMock()
-    llm.with_structured_output.return_value.ainvoke = AsyncMock(
-        return_value=OptionIntentOutput(type="query_order_status"),
+    llm.with_structured_output.return_value.ainvoke = mock_ainvoke(
+        intent_reply(OptionIntentOutput, type="query_order_status"),
     )
     monkeypatch.setattr("app.subgraphs.option.intent.get_qwen_structured", lambda: llm)
     response = await request(
@@ -341,7 +310,7 @@ async def test_write_node_failure_calls_http_once_and_keeps_error(
         NodeExecutor(build_registry()),
         "option",
         "option_extract_confirm_place",
-        CONTEXT | {"raw_text": "确认下单 Q-12345678"},
+        CONTEXT | {"raw_text": "确认下单", "quote_content": _QUOTE_CARD},
     )
     assert response.status_code == 500, response.text
     assert calls == 1
@@ -371,41 +340,11 @@ async def test_business_rejection_is_unchanged_output(monkeypatch: pytest.Monkey
         NodeExecutor(build_registry()),
         "option",
         "option_extract_confirm_place",
-        CONTEXT | {"raw_text": "确认下单 Q-12345678"},
+        CONTEXT | {"raw_text": "确认下单", "quote_content": _QUOTE_CARD},
     )
     assert response.status_code == 200, response.text
     assert response.json()["output"]["api_code"] == 409
     assert response.json()["output"]["api_result"] == "正在处理，请勿重复提交"
-
-
-async def test_ticker_swallowed_http_failure_remains_empty_success(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    from app.tools.ticker_client import TickerClientHttpx
-
-    def offline(req: httpx.Request) -> httpx.Response:
-        raise httpx.ConnectError("offline", request=req)
-
-    monkeypatch.setattr(
-        "app.subgraphs.ticker.resolver._make_client",
-        lambda: TickerClientHttpx(
-            base_url="http://mock",
-            transport=httpx.MockTransport(offline),
-        ),
-    )
-    response = await request(
-        NodeExecutor(build_registry()),
-        "ticker",
-        "resolve_org_item",
-        {
-            "index": 0,
-            "org_str": "x",
-            "keywords": [{"keyword": "x", "isFull": False}],
-            "predicted_family": "",
-        },
-    )
-    assert response.status_code == 200
-    assert response.json()["output"] == {"winners": [{"index": 0, "org_str": "x", "winner": None}]}
 
 
 @pytest.mark.parametrize("mode", ["image", "excel"])
@@ -415,6 +354,7 @@ async def test_multimodal_stages_use_http_and_llm_boundaries_only(
 ) -> None:
     from openpyxl import Workbook
 
+    from app.extraction.candidates import candidate_model
     from app.subgraphs.swap.models import SwapPlaceOrderParams
 
     workbook = Workbook()
@@ -435,22 +375,27 @@ async def test_multimodal_stages_use_http_and_llm_boundaries_only(
         return original_client(*args, **kwargs)
 
     monkeypatch.setattr("app.subgraphs.swap.multimodal.httpx.AsyncClient", client_factory)
+    def field(value: str, column: str) -> dict:
+        reference = f"file:0:sheet:0:row:2:column:{column}" if mode == "excel" else "file:0:image"
+        return {
+            "value": value, "evidence": value, "confidence": 0.9,
+            "origin": "attachment", "reference": reference,
+        }
+
     model = MagicMock()
     model.with_structured_output.return_value.ainvoke = AsyncMock(
-        return_value=SwapPlaceOrderParams.model_validate(
-            {
-                "orderList": [
-                    {
-                        "placeOrderWindCode": "600519.SH",
-                        "placeOrderQuantity": 100,
-                    }
-                ]
-            }
-        ),
+        return_value=candidate_model(SwapPlaceOrderParams).model_validate({
+            "orderList": [{
+                "placeOrderWindCode": field("600519.SH", "A"),
+                "placeOrderQuantity": field("100", "B"),
+            }]
+        }),
     )
     monkeypatch.setattr("app.subgraphs.swap.multimodal.get_qwen_structured", lambda: model)
     vision = MagicMock()
-    vision.ainvoke = AsyncMock(return_value=MagicMock(content="600519.SH 买入100股"))
+    vision.with_structured_output.return_value.ainvoke = AsyncMock(
+        return_value={"text": "600519.SH 100"},
+    )
     monkeypatch.setattr("app.subgraphs.swap.multimodal.get_qwen_vl", lambda: vision)
     response = await request(
         NodeExecutor(build_registry()),
@@ -463,9 +408,9 @@ async def test_multimodal_stages_use_http_and_llm_boundaries_only(
     assert response.status_code == 200, response.text
     output = response.json()["output"]
     assert output["place_params"]["orderList"][0]["placeOrderWindCode"] == "600519.SH"
+    assert output["place_params"]["orderList"][0]["placeOrderQuantity"] == 100
     assert "api_code" not in output
     assert downloads == (["/order.excel"] if mode == "excel" else [])
-
 
 async def test_lifespan_uses_same_message_factory_for_both_apis(
     monkeypatch: pytest.MonkeyPatch,

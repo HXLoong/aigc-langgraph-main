@@ -1,6 +1,6 @@
 """close.place_close 链 · 引用消息解析纯函数测试。
 
-对齐 Dify `平仓参数提取-引用消息解析`（spec/code_nodes/平仓参数提取-引用消息解析.py）。
+引用消息解析规则（原 DSL v2「平仓参数提取-引用消息解析」代码节点，现以本仓实现为准）。
 """
 from __future__ import annotations
 
@@ -124,7 +124,7 @@ class TestCloseResultPath:
         quote = "期权平仓订单CO-20260306-54948DB0：合约名义本金≤100万，只能全部平仓。"
         result = parse_reference_message(quote, "")
         assert result["fullCloseIds"] == ["CO-20260306-54948DB0"]
-        # errorOrderIds = errorIds ∪ fullCloseIds（Dify 合并语义）
+        # errorOrderIds = errorIds ∪ fullCloseIds（合并语义）
         assert result["errorOrderIds"] == ["CO-20260306-54948DB0"]
         # pureErrorOrderIds = errorOrderIds - fullCloseIds → 空
         assert result["pureErrorOrderIds"] == []

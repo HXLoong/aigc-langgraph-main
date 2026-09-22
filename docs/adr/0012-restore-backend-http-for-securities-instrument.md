@@ -1,20 +1,27 @@
 # ADR 0012 · 标的查询恢复走后端 HTTP API，弃用 MySQL 直连
 
-- 状态：已采纳（已完整落地；MySQL 直连路径已 100% 移除）
+- 状态：已采纳（不直连标的数据库的边界继续有效；Python 标的查询编排已于 2026-09-20 退役）
 - 日期：2026-05-10
 - 修订：2026-08-27 深度改写为现状口径（wayfinder map #138 / 核查 #141）
 - 作者：图灵科技 + Tony
+
+## 当前职责（2026-09-22 修订）
+
+主链经既有 Java 业务接口提交标的原文，由 Java 完成识别与权威校验，见
+[标的识别边界](../backend-instrument-boundary.md)。保留的 `app/tools/ticker_client.py`
+是遗留客户端，不代表现役业务仍由 Python 查询证券池。本轮不修改 Java 源码、配置或契约。
+下文端点、性能与遗留待办为 2026-08-27 快照，保留作历史依据。
 
 ## 上下文（历史）
 
 V1 闭环为脱离 VPN 依赖，曾把标的查询从 Dify 的后端 HTTP 接口改成 aiomysql 直连标的池表（`aigc-test.stock_exchange_sec_data`）。这次"优化"丢失了后端 `InstrumentApiSearchHelper.searchAndScore` 的非平凡业务规则，导致"找得到但找得不准"。决定**恢复走后端 HTTP API**，把 `yudao-module-integration` 作为标的查询唯一真理来源。
 
-## 落地现状（2026-08-27）
+## 历史落地记录（2026-08-27）
 
 **Endpoint 与客户端**（原行内 Status update 已吸收）：
 
 - `GET /admin-api/integration/securities-instrument/select` —— **GET + RequestBody**（不规范但合法）；Java 侧 `SecuritiesInstrumentController.java:100` `@GetMapping("/select")` + `:104` `@RequestBody`，`/admin-api` 前缀由 `WebProperties.adminApi` 框架级注入。
-- Python 落点分两层：Protocol/HTTP 实现在 `app/tools/ticker_client.py`（GET-with-body：`await client.request("GET", url, json=payload)`）；子图调用点在 `app/subgraphs/ticker/tools.py`（completeness / rank 工具）与 `resolver.py`。原文的 `ticker_tools.py` 文件名已不存在。
+- Python 落点分两层：Protocol/HTTP 实现在 `app/tools/ticker_client.py`（GET-with-body：`await client.request("GET", url, json=payload)`）；子图调用点在 ~~`app/subgraphs/ticker/tools.py`~~（completeness / rank 工具）与 `resolver.py`。原文的 `ticker_tools.py` 文件名已不存在。
 - ⚠️ 无契约测试断言 method=GET + body 非空（现有测试全靠 AsyncMock），回归时可能被悄悄改回 POST——护栏待补（见后果）。
 
 **后端业务规则清单**（对照 `aigc/api` 现码更新；正是本 ADR"与后端规则升级自动对齐"收益的实证——2026-07-06 后端 commit `4088b4a5` 改了数字，HTTP 方案零改动跟上）：
@@ -40,7 +47,7 @@ V1 闭环为脱离 VPN 依赖，曾把标的查询从 Dify 的后端 HTTP 接口
 - **恢复 HTTP（已选）**：单一真理来源，与后端规则升级自动对齐（已被 2026-07-06 事件验证）。
 - **保留双路径 feature flag**：运维复杂度增加，无收益。
 
-## 后果（现状口径）
+## 后果（2026-08-27 历史口径）
 
 - 生产必须有到 `yudao-module-integration` 的网络可达性（`.env` 的 `OTC_API_BASE_URL`）。
 - [ADR 0009](./0009-mysql-version-and-tdsql-compatibility.md) 的"标的池 MySQL 兼容性"风险解除——由后端代理。

@@ -39,7 +39,7 @@ Windows 测试进程使用 `PYTHONUTF8=1`、`PYTHONIOENCODING=utf-8`，并关闭
 
 ### 先失败、再修复
 
-- `pytest tests/test_api.py -q --tb=short`：先得到 **15 failed / 25 passed**，复现顶层 ID 被忽略、非空 ID 被裁剪及空别名冲突；修复统一解析后通过。
+- `pytest tests/api_wire/test_api.py -q --tb=short`：先得到 **15 failed / 25 passed**，复现顶层 ID 被忽略、非空 ID 被裁剪及空别名冲突；修复统一解析后通过。
 - `pytest tests/subgraphs/option/test_intent.py -q --tb=short`：先得到 **7 failed / 16 passed**，复现卡片关键词将 `new_inquiry` 强制改成下单；删除后处理后 **23 passed**。
 - 两轮 HTTP 回归先发现 checkpoint 历史为空：已有 `record_history` 节点未接主图；接入后进一步复现 `OptionInquiryItem` 丢 `orderId`、`OptionOrderItem` 丢 `tenor`，随后补齐可选字段。
 - 历史接入后，第二轮旧历史被业务子图完整输出重复累加；新增三类业务分支回归先 **3 failed**，再由主图过滤子图回传的旧历史，仅在每轮结束统一追加当前消息，连续三轮验证通过。

@@ -99,8 +99,8 @@ docs/adr/                    # 架构决定 ADR 0000-0024（共 25 篇）+ READM
 docs/api-contracts/          # Java 后端真实业务 API 契约
 docs/m3-m4-roadmap.md        # M3/M4 端到端任务图（6 个交付面，2026-05-11 修订）
 docs/on-call-runbook.md      # 上线 on-call SOP
-tests/                       # 1864 passed + 15 skipped
-tests/fixtures/              # categories/（A 方言，6 文件 / 389 条）+ unified_golden.jsonl（B 方言，921 条，harness 默认并入）+ old_typing/（归档）
+tests/                       # 2900+ passed（2026-09-22；按 graph / nodes / subgraphs / api_wire / harness / prompts / scripts 归位）
+tests/fixtures/              # categories/（A 方言，6 文件 / 389 条）+ unified_golden.jsonl（B 方言，921 条，harness 默认并入）+ 历史归档见 docs/archive/fixtures/old_typing/
 ```
 
 ## 团队工具链：Claude Code 与 Codex 共用一份纪律
@@ -124,6 +124,7 @@ tests/fixtures/              # categories/（A 方言，6 文件 / 389 条）+ u
 - 真实写入测试仅由主代理调度；先确认授权测试账号、群、对手及持仓。业务回归使用 scripts/local_eval.py 和显式 tests/fixtures/categories，不并入 unified。
 - 任务和证据记录在 tmp；区分实现完成、专项通过、待用户验收、外部阻塞。外部阻塞不可写成已完成；全量结果未经运行不得宣称通过。
 - 不 push、不创建 PR；保留用户原有未提交改动。新 worktree 显式准备依赖与所需本地配置，禁止输出或提交密钥。
+- 2026-09-22 issue 裁决：#218 不处理；#219 仅待部署环境核查；#220 categories 标注后续单列；#221 暂不改脱敏默认值与审计原文；#222 协议迁移暂缓，保持 Java 源码、配置、agentUrl、DTO 和现行 wire 契约；#224 的 shadow_compare 保留待 F4.1 裁决。
 
 ## 子目录陷阱页（按需加载）
 
@@ -369,7 +370,7 @@ result = await model.with_structured_output(SwapIntentOutput).ainvoke(messages)
 - 节点默认只用 system 段 + 代码拼变量的 user；user 里若有**规则文本**，写进 `.md` 的 `[user]` 段用 `{{var}}` 占位，`user_builder` 里用 `load_prompt(...).render_user(**vars)` 渲染（先例 `swap/fresh_counterparty.md`）
 - **禁止**把提示词正文硬编码进 Python（含"后置追加一段格式指令"这种写法）；**禁止**在 `.md` 里维护 JSON 骨架 / 字段表——字段语义只写在 Pydantic `Field(description=)`
 - 共享拼装（历史、对手列表、JSON 列表）只在 `app/prompts/blocks.py` 定义一次，不在子图里复制
-- `injects` 登记的占位符必须在 `.md` system 段里真实存在，`build_messages` 构造期校验（`tests/test_prompt_spec.py`）
+- `injects` 登记的占位符必须在 `.md` system 段里真实存在，`build_messages` 构造期校验（`tests/prompts/test_prompt_spec.py`）
 - 灰度节点必须把 `build_messages` 返回的 `prompt_name` 写进 `TraceEntry.llm_output["prompt_name"]`（ADR 0003 硬前置：进 `_versions.yaml` 前必须先写 trace，否则版本对比失真）
 - 当前 15 个业务 PromptSpec；标的工具在后端执行。system 使用固定资产，历史和参考数据经 `blocks.source_payload` 放入 user。`fresh_counterparty` 的 `[user]` 模板继续经 `render_user` 渲染。
 
@@ -435,7 +436,7 @@ for target in (
     "app.subgraphs.close.backend.OptionClientHttpx",
 ):
     monkeypatch.setattr(target, factory)
-# swap / ticker 同理：app.subgraphs.swap.backend.SwapClientHttpx、app/subgraphs/ticker 的 _make_client
+# swap 同理：app.subgraphs.swap.backend.SwapClientHttpx（标的识别已委托 Java，本地无 ticker 子图）
 ```
 
 ## E2E 测试
