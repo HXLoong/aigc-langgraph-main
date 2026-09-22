@@ -39,38 +39,65 @@ Session ────────────────────────
 
 ## 3. Dataset 数据结构
 
-上传后的 Dataset Item 与 `tests/fixtures/categories/` 保持同一种结构：
+Dataset Item 的三个字段全部由 `scripts/langfuse/upload_golden_to_langfuse.py` 写入，Langfuse 不会自动补充任何字段：
 
-- `input`：首轮输入和 `sub_scenes` 多轮输入。
-- `expectedOutput`：首轮断言和 `sub_scenes` 多轮断言。
-- `metadata`：case ID、分类、场景、来源和轮次数。
+- `input`：首轮输入与 `sub_scenes` 多轮输入，键为 `send_text`、`at_bot`、`quote_previous`（有子场景时才有 `sub_scenes`）。
+- `expectedOutput`：首轮断言与 `sub_scenes` 多轮断言。**只写非空字段**，所以各用例的键不完全一致：`expected`、`response_contains`、`response_contains_any`、`response_not_contains` 中保留有值的那些，另外总有 `sub_scenes`。
+- `metadata`：固定 11 个字段，见 3.1。
+
+### 3.1 metadata 字段
+
+`metadata` 由 `upload_golden_to_langfuse.py::_metadata()` 构造，共 11 个字段，全部来自本地 fixture 或由脚本派生：
+
+| 字段 | 来源 | 用途 |
+|---|---|---|
+| `id` | fixture 的 `id`（无则用 `caseNo`） | 用例编号；同时是 Dataset Item 的 ID，定位单条用例、回写结果都靠它 |
+| `caseNo` | fixture 的 `caseNo`，缺失回退 `id` | 原始用例编号，用于和本地 fixture 对账 |
+| `name` | fixture 的 `name`，缺失回退 `id` | 用例名，列表展示用 |
+| `category` | fixture 的 `category`，缺失回退文件名 | 用例分类，按业务域统计通过率 |
+| `test_function` | 由 `category` 复制 | 供 `langfuse_eval.py --filter` 匹配，决定这一轮跑哪一批用例 |
+| `type` | fixture 的 `type` | 区分正例 / 负例（`positive` / `negative`）。**A 方言没有这个字段，上传后是空串** |
+| `source` | fixture 的 `source` | 用例来源（`business_seed`、`llm_paraphrase`），追溯用例怎么来的。**A 方言没有这个字段，上传后是空串** |
+| `scene` | fixture 的 `scene` | 场景标签。**A 方言没有这个字段，上传后是空串** |
+| `overview` | 脚本生成 | 多行概览：ID / 类别 / 类型 / 来源 / 期望路由 + 逐轮对话。**本地 Judge 直接用它作为“题目”拼进评分提示词**，是这里最有实际作用的一个字段 |
+| `tags` | 脚本生成 | `[category, source]`，列表里的分类标签；`source` 为空时会带一个空串，如 `["option_inquiry_case", ""]` |
+| `turns` | 脚本计算 | 轮次数，用于分辨单轮 / 多轮用例 |
+
+> A 方言指 `tests/fixtures/categories/*.jsonl`，B 方言指 `tests/fixtures/unified_golden.jsonl`；只有 B 方言带 `type` / `source` / `scene`。另外，早期用旧版脚本上传的 Dataset（如 `otc-option-golden`，350 条，2026-05 创建）只有 8 个字段，没有 `name` / `caseNo` / `scene`，需要当前字段集就用当前脚本重新上传。
+
+下面是一条真实上传后的 Item（取自 Dataset `golden_option_inquiry_case` 的 `case-024`，`response_contains` 已截断）：
 
 ```json
 {
   "input": {
-    "send_text": "快速询价：欧式看涨，600519.SH，80%，1M",
-    "at_bot": true,
+    "send_text": "快速询价：参与型看涨，000002.SZ，80/80，3M",
+    "at_bot": false,
+    "quote_previous": false,
     "sub_scenes": []
   },
   "expectedOutput": {
-    "expected": {
-      "product_type": "option",
-      "intent": "new_inquiry",
-      "winners": ["600519.SH"]
-    },
-    "response_contains": ["场外期权询价详情"],
-    "response_contains_any": [],
-    "response_not_contains": ["未搜索到相关标的信息"],
-    "sub_scenes": []
+    "sub_scenes": [],
+    "response_contains": ["-----场外期权询价详情-----", "标的代码：000002.SZ"]
   },
   "metadata": {
-    "id": "case-022",
-    "category": "option/inquiry"
+    "id": "case-024",
+    "caseNo": "case-024",
+    "name": "case-024",
+    "category": "option_inquiry_case",
+    "test_function": "option_inquiry_case",
+    "type": "",
+    "source": "",
+    "scene": "",
+    "tags": ["option_inquiry_case", ""],
+    "turns": 1,
+    "overview": "ID: case-024\n类别: option_inquiry_case\n用例类型: \n来源: \n期望路由: product_type=, intent=\n对话:\n  第1轮: send_text=快速询价：参与型看涨，000002.SZ，80/80，3M; 无引用"
   }
 }
 ```
 
 多轮用例通过 `input.sub_scenes[n]` 与 `expectedOutput.sub_scenes[n]` 按下标对应。上传脚本不转换成另一套 `turns` 或 `expected_scope` 结构。
+
+上传结果的字段值取决于 `--source` 指向的方言：`tests/fixtures/categories/*.jsonl`（A 方言）的 `category` 形如 `option_inquiry_case`；`tests/fixtures/unified_golden.jsonl`（B 方言）的 `category` 形如 `option/inquiry`，并会带上 `type` 与 `source`。
 
 ## 4. 首次配置
 
