@@ -8,7 +8,7 @@ import pytest
 
 from scripts.probe_goats import _utils
 
-PROBE_DIR = Path(__file__).resolve().parents[1] / "scripts" / "probe_goats"
+PROBE_DIR = Path(__file__).resolve().parents[2] / "scripts" / "probe_goats"
 # 明文地址 / 凭据 / agent id 的特征：内网域名、疑似 secret 赋值、"数字@tl" 形态的 agent id
 _PLAINTEXT_RX = re.compile(
     r"https?://[a-z0-9.-]+\.(?:gf\.com\.cn|local)|"

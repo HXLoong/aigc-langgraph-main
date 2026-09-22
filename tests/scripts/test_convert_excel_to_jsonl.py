@@ -12,7 +12,7 @@ from typing import Any
 import pytest
 from openpyxl import Workbook
 
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(__file__).resolve().parents[2]
 SCRIPT = ROOT / "scripts" / "convert_excel_to_jsonl.py"
 HEADERS = [
     "来源文件",

@@ -24,7 +24,6 @@ from __future__ import annotations
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
-from evidence_support import swap_candidate_output
 
 import app.subgraphs.swap.multimodal as mm_module
 import app.subgraphs.swap.select_counterparty as sc_module
@@ -50,6 +49,7 @@ from app.subgraphs.swap.models import (
     SwapSelectTickerOutput,
     SwapTickerPick,
 )
+from tests.evidence_support import swap_candidate_output
 from tests.intent_fixtures import intent_reply, mock_ainvoke
 
 

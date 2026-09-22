@@ -8,7 +8,7 @@ from pathlib import Path
 
 from app.prompts import clear_cache, load_prompt
 
-PROJECT_ROOT = Path(__file__).resolve().parents[1]
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
 
 
 class TestJudgePromptExtracted:

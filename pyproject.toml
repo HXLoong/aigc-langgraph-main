@@ -57,9 +57,8 @@ ignore = ["E501"]
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]
-# repo root 加到 sys.path 让 tests/observability/test_*.py 能 `from scripts.* import ...`
-# （scripts/ 不是 package，没装到 site-packages；同级 tests/test_*.py 用
-# sys.path.insert workaround，深层目录靠 pythonpath 兜底）
+# repo root 加到 sys.path 让 tests/**/test_*.py 能 `from scripts.* import ...` / `from harness.* import ...`
+# （scripts/ 不是 package，没装到 site-packages）；测试文件里禁止再写 sys.path.insert
 pythonpath = ["."]
 
 [tool.mypy]

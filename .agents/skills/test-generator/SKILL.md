@@ -25,7 +25,7 @@ metadata:
   - 路由测试：`tests/test_intent_route.py`
   - 模型测试：`tests/subgraphs/swap/test_models.py`（或对应子图目录）
   - 集成 / E2E：`tests/integration/` + `tests/test_cascade_e2e.py`
-  - 提示词加载 / spec：`tests/test_prompt_loader.py` / `tests/test_prompt_spec.py`
+  - 提示词加载 / spec：`tests/prompts/test_prompt_loader.py` / `tests/prompts/test_prompt_spec.py`
 
 ### Step 2：选择测试层次
 

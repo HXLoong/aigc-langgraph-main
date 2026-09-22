@@ -4,7 +4,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-DATASET = Path(__file__).parent / "fixtures/categories/golden_option_close_case.jsonl"
+DATASET = Path(__file__).resolve().parents[1] / "fixtures/categories/golden_option_close_case.jsonl"
 
 
 def _cases() -> dict[str, dict]:

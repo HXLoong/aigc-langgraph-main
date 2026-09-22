@@ -1,12 +1,6 @@
 """F4.1 shadow_compare 字段级 diff 测试。"""
 from __future__ import annotations
 
-import sys
-from pathlib import Path
-
-# 让 tests 能 import scripts/ 下的模块
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-
 from scripts.shadow_compare import (
     DEFAULT_IGNORED_PATHS,
     _flatten,

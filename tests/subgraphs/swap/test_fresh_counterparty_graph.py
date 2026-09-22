@@ -11,7 +11,6 @@ from unittest.mock import AsyncMock, MagicMock
 import httpx
 import openpyxl
 import pytest
-from evidence_support import candidate_output, swap_candidate_output
 
 from app.graph.state import AgentState
 from app.subgraphs.swap import (
@@ -31,6 +30,7 @@ from app.subgraphs.swap.models import (
     SwapSelectTickerOutput,
 )
 from app.tools.swap_client import SwapClientHttpx
+from tests.evidence_support import candidate_output, swap_candidate_output
 from tests.intent_fixtures import intent_reply, mock_ainvoke
 from tests.subgraphs.swap.test_fresh_counterparty import fresh_state, patch_recognition
 

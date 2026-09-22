@@ -4,7 +4,6 @@ from __future__ import annotations
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
-from evidence_support import swap_candidate_output
 from pydantic import ValidationError
 
 from app.subgraphs.swap import place_order as po_module
@@ -16,6 +15,7 @@ from app.subgraphs.swap.place_order import (
     _expected_action,
     swap_place_order,
 )
+from tests.evidence_support import swap_candidate_output
 
 
 def _patch_llm(

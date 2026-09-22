@@ -7,7 +7,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(__file__).resolve().parents[2]
 TABLES = {
     "langgraph_checkpoints", "langgraph_checkpoint_blobs", "langgraph_checkpoint_writes",
     "langgraph_checkpoint_migrations", "langgraph_message_log", "langgraph_node_trace",

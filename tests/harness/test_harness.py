@@ -27,7 +27,7 @@ from harness.golden import (
 )
 from harness.multi_turn import run_case_multi
 
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(__file__).resolve().parents[2]
 
 
 def test_load_categories_total() -> None:

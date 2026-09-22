@@ -13,7 +13,7 @@ from pathlib import Path
 
 import pytest
 
-SCRIPT = Path(__file__).resolve().parents[1] / "scripts" / "rollback_canary.sh"
+SCRIPT = Path(__file__).resolve().parents[2] / "scripts" / "rollback_canary.sh"
 
 
 def _bash_executable() -> str:

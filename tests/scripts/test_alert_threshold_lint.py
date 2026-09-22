@@ -16,11 +16,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parents[1]
-SCRIPT = ROOT / "scripts" / "check_alert_threshold_consistency.py"
-
-sys.path.insert(0, str(ROOT))
-from scripts.check_alert_threshold_consistency import (  # noqa: E402
+from scripts.check_alert_threshold_consistency import (
     AlertSpec,
     _extract_sustain_seconds,
     _extract_threshold_value,
@@ -29,6 +25,9 @@ from scripts.check_alert_threshold_consistency import (  # noqa: E402
     parse_alerts_py,
     parse_runbook,
 )
+
+ROOT = Path(__file__).resolve().parents[2]
+SCRIPT = ROOT / "scripts" / "check_alert_threshold_consistency.py"
 
 # ============================================================
 # _extract_threshold_value · 阈值文本抽数字

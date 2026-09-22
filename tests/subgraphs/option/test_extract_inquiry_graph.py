@@ -5,7 +5,6 @@ from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
-from evidence_support import candidate_output
 
 from app.subgraphs.option import extract_inquiry as ei_module
 from app.subgraphs.option.extract_inquiry import (
@@ -14,6 +13,7 @@ from app.subgraphs.option.extract_inquiry import (
     option_extract_inquiry,
 )
 from app.subgraphs.option.models import OptionInquiryRawItem, OptionInquiryRawParams
+from tests.evidence_support import candidate_output
 
 STAGES = {
     "inquiry_fast_parse", "inquiry_fast_submit",

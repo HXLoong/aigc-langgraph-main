@@ -21,11 +21,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-ROOT = Path(__file__).resolve().parents[1]
-SCRIPT = ROOT / "scripts" / "probe_real_backend_e2e.py"
-
-sys.path.insert(0, str(ROOT))
-from scripts.probe_real_backend_e2e import (  # noqa: E402
+from scripts.probe_real_backend_e2e import (
     CASES,
     ProbeCase,
     ProbeResult,
@@ -35,6 +31,9 @@ from scripts.probe_real_backend_e2e import (  # noqa: E402
     summarize,
     write_outputs,
 )
+
+ROOT = Path(__file__).resolve().parents[2]
+SCRIPT = ROOT / "scripts" / "probe_real_backend_e2e.py"
 
 # ============================================================
 # CASES 库基本约束

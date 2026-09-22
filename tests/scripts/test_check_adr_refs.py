@@ -15,7 +15,7 @@ from scripts.check_adr_refs import (
     find_missing_paths,
 )
 
-PROJECT_ROOT = Path(__file__).resolve().parents[1]
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
 
 
 def _mk_adr(tmp_path: Path, name: str, text: str) -> Path:

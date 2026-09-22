@@ -41,11 +41,11 @@ result = await llm.with_structured_output(SPEC.output_model).ainvoke(messages)
 
 - `inputs ⊆ get_type_hints(AgentState)`：构造时校验，改 State 字段名立刻在 import 阶段报错
 - `render_system` 对 `injects` 中登记但 `.md` 里不存在的占位符抛错：manifest / spec / `.md` 三者不可能悄悄不一致
-- 注册表 `all_specs()` 与 `_manifest.yaml` 交叉核对（`tests/test_prompt_spec.py`）：`output_model` / `injects` 必须相等；`scripts/prompt_inventory.py --check` 把 `PromptSpec(category=, name=)` 视为与 `load_prompt` 等价的加载点（2026-09-16：manifest 与 `prompt_inventory` 已随 ADR 0022 废弃移除，交叉核对以注册表测试为准）
+- 注册表 `all_specs()` 与 `_manifest.yaml` 交叉核对（`tests/prompts/test_prompt_spec.py`）：`output_model` / `injects` 必须相等；`scripts/prompt_inventory.py --check` 把 `PromptSpec(category=, name=)` 视为与 `load_prompt` 等价的加载点（2026-09-16：manifest 与 `prompt_inventory` 已随 ADR 0022 废弃移除，交叉核对以注册表测试为准）
 
 ### D2 · 输出契约只有一份：Pydantic `Field(description=)`
 
-- 输出模型每个字段必须有 `description`（`tests/test_prompt_spec.py::test_output_model_fields_have_description` 守护已注册的 spec），语义经 function calling schema 下发
+- 输出模型每个字段必须有 `description`（`tests/prompts/test_prompt_spec.py::test_output_model_fields_have_description` 守护已注册的 spec），语义经 function calling schema 下发
 - 提示词正文**不再**维护 JSON 骨架 / 字段表 / "必须输出如下 JSON 结构"；保留的是业务规则（何时填、如何换算）。本次删除 option 7 个 extract 的 JSON 骨架与 close intent 的代码内追加指令
 - 字段级取值规则（枚举、格式）优先写进 `description`，跨字段规则留在 `.md` system 段
 

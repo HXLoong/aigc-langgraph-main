@@ -4,7 +4,6 @@ from __future__ import annotations
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
-from evidence_support import candidate_output
 
 from app.subgraphs.option import build_option_graph
 from app.subgraphs.option import extract_cancel as cancel_module
@@ -21,6 +20,7 @@ from app.subgraphs.option.models import (
     OptionInquiryRawParams,
     OptionIntentOutput,
 )
+from tests.evidence_support import candidate_output
 from tests.intent_fixtures import intent_reply, mock_ainvoke
 from tests.llm_guard import forbid_llm
 

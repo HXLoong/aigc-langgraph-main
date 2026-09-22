@@ -5,7 +5,7 @@ from pathlib import Path
 
 
 def test_replay_migration_emits_additive_reviewable_sql():
-    root = Path(__file__).resolve().parents[1]
+    root = Path(__file__).resolve().parents[2]
     result = subprocess.run(
         [sys.executable, "-m", "alembic", "-c", str(root / "alembic.ini"), "upgrade", "head", "--sql"],
         cwd=root, text=True, capture_output=True, check=False,
@@ -18,7 +18,7 @@ def test_replay_migration_emits_additive_reviewable_sql():
 
 
 def test_migration_owns_only_prefixed_tables():
-    root = Path(__file__).resolve().parents[1]
+    root = Path(__file__).resolve().parents[2]
     result = subprocess.run([sys.executable, "-m", "alembic", "upgrade", "head", "--sql"], cwd=root, text=True, capture_output=True, check=True)
     assert "ALTER TABLE langgraph_message_log" in result.stdout
     assert "CREATE TABLE langgraph_alembic_version" in result.stdout

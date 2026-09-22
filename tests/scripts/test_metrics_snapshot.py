@@ -1,11 +1,6 @@
 """scripts/metrics_snapshot.py · 解析器 + 渲染单元测试。"""
 from __future__ import annotations
 
-import sys
-from pathlib import Path
-
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-
 from scripts.metrics_snapshot import (
     MetricsSnapshot,
     _parse_labels,
