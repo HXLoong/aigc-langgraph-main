@@ -610,7 +610,7 @@ _NODES = (
         replayable=True,
         side_effect="read",
         inputs=("raw_text", "quote_content", "pc_parsed", "pc_order_data"),
-        outputs=("pc_llm_orders", "pc_llm_output"),
+        outputs=("pc_candidates", "pc_llm_output"),
         callable_path="app.subgraphs.close.place_close:place_close_extract",
     ),
     _node(
@@ -623,9 +623,9 @@ _NODES = (
             "quote_content",
             "pc_parsed",
             "pc_order_data",
-            "pc_llm_orders",
+            "pc_candidates",
         ),
-        outputs=("pc_close_orders", "pc_reject_reply", "pc_reject_decision"),
+        outputs=("pc_close_orders", "pc_reject_reply", "pc_reject_decision", "field_records"),
         callable_path="app.subgraphs.close.place_close:place_close_normalize",
     ),
     _node(

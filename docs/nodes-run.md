@@ -2,7 +2,7 @@
 
 `POST /v1/nodes/run` 用于隔离执行一个已注册的 LangGraph 节点或复合子图，返回该目标的实际 State 更新。它适合定位意图识别、参数提取、后端调用和内部阶段问题；完整会话仍应使用 `POST /v1/workflows/run`。
 
-当前工作区共注册 65 项：`main` 14、`option` 16、`swap` 13、`option_close` 15、`ticker` 7。注册名称以 [registry.py](../app/node_execution/registry.py) 为准，文末有[节点中英文对照表](#9-节点中英文对照表)。
+当前工作区共注册 59 项：`main` 17、`option` 14、`swap` 13、`option_close` 15（标的识别已委托 Java 后端，不再有 `ticker` 命名空间）。注册名称以 [registry.py](../app/node_execution/registry.py) 为准，文末有[节点中英文对照表](#9-节点中英文对照表)。
 
 > `/v1/nodes/run` 不执行上游节点、不恢复 checkpoint，也不继承前一次调用的 State。复合子图会按原路由执行内部链路；下单、确认、撤单、持久化等节点会保留原有副作用。连接真实后端时应先测试只读节点。
 
@@ -57,10 +57,10 @@ python -c "from app.config import get_settings; s=get_settings(); print('OTC =',
 
 ```json
 {
-  "product": "ticker",
-  "node": "extract_candidates",
+  "product": "main",
+  "node": "fallback",
   "state": {
-    "raw_text": "腾讯控股"
+    "error": {"node": "option_intent", "type": "ValidationError", "message": "demo"}
   }
 }
 ```
@@ -69,10 +69,12 @@ python -c "from app.config import get_settings; s=get_settings(); print('OTC =',
 
 ```json
 {
-  "product": "ticker",
-  "node": "extract_candidates",
+  "product": "main",
+  "node": "fallback",
   "output": {
-    "candidates": ["腾讯控股"]
+    "trace": [
+      {"node": "fallback", "decision": "triggered_by:option_intent"}
+    ]
   }
 }
 ```
@@ -81,9 +83,9 @@ PowerShell 调用方式：
 
 ```powershell
 $body = @{
-    product = 'ticker'
-    node = 'extract_candidates'
-    state = @{ raw_text = '腾讯控股' }
+    product = 'main'
+    node = 'fallback'
+    state = @{ error = @{ node = 'option_intent'; type = 'ValidationError'; message = 'demo' } }
 } | ConvertTo-Json -Depth 50
 
 Invoke-RestMethod `
@@ -127,7 +129,7 @@ Invoke-RestMethod `
 
 | 字段 | 说明 |
 | --- | --- |
-| `product` | 注册命名空间：`main`、`option`、`swap`、`option_close` 或 `ticker` |
+| `product` | 注册命名空间：`main`、`option`、`swap` 或 `option_close` |
 | `node` | 注册表中的节点名，不是 Python 导入路径 |
 | `state` | 目标节点本次读取的 JSON State |
 
@@ -140,8 +142,6 @@ Invoke-RestMethod `
 | `AgentState` | 主图、业务子图和大多数节点 | [app/graph/state.py](../app/graph/state.py) |
 | `InquiryState` | `option/inquiry_*` | [extract_inquiry.py](../app/subgraphs/option/extract_inquiry.py) |
 | `PlaceCloseState` | `option_close/place_close_*` | [place_close.py](../app/subgraphs/close/place_close.py) |
-| `TickerState` | ticker 内部阶段 | [resolver.py](../app/subgraphs/ticker/resolver.py) |
-| `OrgItemInput` | `ticker/resolve_org_item` | [resolver.py](../app/subgraphs/ticker/resolver.py) |
 
 调用后端的节点通常要求以下上下文：
 
@@ -160,7 +160,7 @@ Invoke-RestMethod `
 - 内部阶段只执行该阶段；例如 `inquiry_submit` 不会先运行 `inquiry_extract`，必须显式提供所需中间字段。
 - 每次请求彼此独立。需要历史时显式传入 `history_messages` 或相应记忆字段。
 - `input_files` 中的图片 URL 必须能被视觉模型访问；远端模型通常不能访问本机 `127.0.0.1`。Excel 文件只需应用进程可下载。
-- 复合项 `main/swap`、`main/option`、`main/option_close` 会执行完整子图，可能调用 LLM、GOATS、Ticker 和订单后端。
+- 复合项 `main/swap`、`main/option`、`main/option_close` 会执行完整子图，可能调用 LLM、GOATS 和订单后端。
 
 查看当前注册项：
 
@@ -238,7 +238,7 @@ Invoke-RestMethod `
 2. `intent`、参数、订单号、标的、回复等目标字段符合输入语义。
 3. 预期调用后端或写库时，有对应的服务日志、请求记录或数据库记录。
 
-`api_code=0` 也必须结合 `api_result` 判断。`inquiry_reject` 返回拒绝文案、`persist` 返回 `{}` 都可能是正常结果；`/health` 或 HTTP 200 不能单独证明业务链路成功。
+`api_code=0` 也必须结合 `api_result` 判断。`option_unknown` 返回兜底文案、`persist` 返回 `{}` 都可能是正常结果；`/health` 或 HTTP 200 不能单独证明业务链路成功。
 
 ## 7. 自动化验证
 
@@ -284,6 +284,9 @@ Remove-Item Env:RUN_NODE_MYSQL_TEST
 | `main` | `ingest` | 入口消息整理与当轮状态初始化 |
 | `main` | `quick_inquiry` | 快速询价 |
 | `main` | `existing_command_query` | 存量指令查询 |
+| `main` | `entry_route` | 三类业务入口选择 |
+| `main` | `plan_instructions` | 多指令拆分与依赖规划 |
+| `main` | `instructions` | 多指令按依赖编排执行（复合项） |
 | `main` | `pre_route` | 路由前置处理 |
 | `main` | `intent_route` | 一级意图路由 |
 | `main` | `swap` | 互换业务子图 |
@@ -306,10 +309,8 @@ Remove-Item Env:RUN_NODE_MYSQL_TEST
 | `option` | `option_unknown` | 期权未知意图兜底 |
 | `option` | `inquiry_fast_parse` | 快速询价指令解析 |
 | `option` | `inquiry_fast_submit` | 快速询价提交 |
-| `option` | `inquiry_precheck` | 询价标的预检 |
-| `option` | `inquiry_reject` | 无效标的询价拒绝 |
 | `option` | `inquiry_extract` | 询价参数提取 |
-| `option` | `inquiry_resolve` | 询价标的解析与绑定 |
+| `option` | `inquiry_normalize` | 询价参数归一化与多值展开 |
 | `option` | `inquiry_submit` | 询价请求提交 |
 | `swap` | `swap_intent` | 互换意图识别 |
 | `swap` | `swap_place_order` | 互换下单参数提取 |
@@ -339,10 +340,3 @@ Remove-Item Env:RUN_NODE_MYSQL_TEST
 | `option_close` | `place_close_validate` | 平仓参数预校验 |
 | `option_close` | `place_close_submit` | 平仓请求提交 |
 | `option_close` | `place_close_reject` | 平仓请求拒绝 |
-| `ticker` | `extract_candidates` | 候选标的提取与去噪 |
-| `ticker` | `infer_codes` | 标的代码推断 |
-| `ticker` | `split_keywords` | 标的关键词拆分 |
-| `ticker` | `judge_type` | 标的类型判断 |
-| `ticker` | `merge_candidates` | 候选标的合并与校验 |
-| `ticker` | `resolve_org_item` | 单条机构标的查询与排序 |
-| `ticker` | `assemble` | 标的结果汇总与去重 |

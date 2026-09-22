@@ -77,7 +77,7 @@ async def test_rejects_unknown_fields_and_wrong_types(state: dict) -> None:
         ("bad", "ingest"),
         ("swap", "option_intent"),
         ("main", "__start__"),
-        ("ticker", "fan_out_org_items"),
+        ("ticker", "extract_candidates"),
         ("main", "app.nodes.ingest.ingest"),
     ],
 )
@@ -90,9 +90,6 @@ async def test_not_registered(product: str, node: str) -> None:
     ("product", "node", "state"),
     [
         ("option_close", "place_close_fetch_orders", {}),
-        ("ticker", "extract_candidates", {}),
-        ("ticker", "infer_codes", {}),
-        ("ticker", "resolve_org_item", {"raw_text": "腾讯"}),
         ("option", "inquiry_submit", {}),
         ("swap", "swap_image_order", {}),
         ("swap", "swap_excel_order", {}),
@@ -102,32 +99,6 @@ async def test_not_registered(product: str, node: str) -> None:
 async def test_missing_required_context_is_422(product: str, node: str, state: dict) -> None:
     response = await post_node(product, node, state)
     assert response.status_code == 422, response.text
-
-
-async def test_ticker_empty_result_has_no_synthetic_trace() -> None:
-    response = await post_node("ticker", "assemble", {})
-    assert response.status_code == 200, response.text
-    assert response.json()["output"] == {"resolved": []}
-
-
-async def test_ticker_assemble_order_dedup_and_models() -> None:
-    response = await post_node(
-        "ticker",
-        "assemble",
-        {
-            "candidates": ["腾讯", "腾讯控股", "茅台"],
-            "winners": [
-                {"index": 2, "org_str": "腾讯控股", "winner": {"windCode": "00700.HK"}},
-                {"index": 1, "org_str": "茅台", "winner": {"windCode": "600519.SH"}},
-                {"index": 0, "org_str": "腾讯", "winner": {"windCode": "00700.HK"}},
-            ],
-        },
-    )
-    assert response.status_code == 200, response.text
-    resolved = response.json()["output"]["resolved"]
-    assert [item["windCode"] for item in resolved] == ["00700.HK", "600519.SH"]
-    assert resolved[0]["sourceKeywords"] == ["腾讯", "腾讯控股"]
-    assert all(item["from_goats"] for item in resolved)
 
 
 async def test_existing_node_error_is_500_and_preserves_output() -> None:

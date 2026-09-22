@@ -9,7 +9,9 @@ from typing import Any, get_type_hints
 from pydantic import BaseModel
 from typing_extensions import is_typeddict
 
+from app.graph.instructions import build_instructions_graph, plan_instructions
 from app.graph.state import AgentState
+from app.nodes.entry_route import entry_route
 from app.nodes.fallback import fallback
 from app.nodes.fast_query import existing_command_query, quick_inquiry
 from app.nodes.ingest import ingest
@@ -48,15 +50,19 @@ from app.subgraphs.swap.place_order import swap_place_order, swap_place_order_su
 from app.subgraphs.swap.query_order import swap_query_order
 from app.subgraphs.swap.select_counterparty import swap_select_counterparty
 from app.subgraphs.swap.select_ticker import swap_select_ticker
-from app.subgraphs.ticker import resolver as ticker
 from app.tools.bot_context import REQUIRED_FIELDS
 from app.tools.message_client import MessageClient
 
 
-class OrgItemState(ticker.OrgItemInput, total=False):
-    """单条 ticker 调用承载输入与输出；不包含 fan-out 或 assemble。"""
+def _build_instructions_composite() -> Any:
+    """多指令编排复合项：与主图同款 worker 图与去重窗口。"""
+    from app.config import get_settings
+    from app.graph.main import build_main_graph
 
-    winners: list[ticker.OrgWinner]
+    return build_instructions_graph(
+        build_main_graph(_instruction_worker=True),
+        dedup_window_seconds=get_settings().backend_dedup_window_seconds,
+    )
 
 
 @dataclass(frozen=True)
@@ -129,6 +135,12 @@ def build_registry(
         r("main", "ingest", ingest, input_fields=("room_id", "trace_id")),
         r(
             "main",
+            "entry_route",
+            entry_route,
+            input_fields=("fast_query", "existing_command", "at_bot"),
+        ),
+        r(
+            "main",
             "quick_inquiry",
             quick_inquiry,
             input_fields=("raw_text", "quote_content", "quote_appinfo", "guid"),
@@ -139,6 +151,13 @@ def build_registry(
             "existing_command_query",
             existing_command_query,
             input_fields=("raw_text", "room_id", "operator_user_id", "user_id"),
+            io=True,
+        ),
+        r(
+            "main",
+            "plan_instructions",
+            plan_instructions,
+            input_fields=("raw_text", "quote_content", "input_files", "sub_instructions"),
             io=True,
         ),
         r(
@@ -207,6 +226,24 @@ def build_registry(
                 "option_counterparties",
                 "last_confirmed_params",
                 "conversation_orders",
+                *_BOT_CONTEXT_OPTIONAL,
+            ),
+            backend_context=True,
+            factory=True,
+        ),
+        r(
+            "main",
+            "instructions",
+            _build_instructions_composite,
+            input_fields=(
+                "sub_instructions",
+                "error",
+                "history_messages",
+                "input_files",
+                "bot_name",
+                "swap_counterparties",
+                "option_counterparties",
+                "last_confirmed_params",
                 *_BOT_CONTEXT_OPTIONAL,
             ),
             backend_context=True,
@@ -368,23 +405,6 @@ def build_registry(
         ),
         r(
             "option",
-            "inquiry_precheck",
-            iq.inquiry_precheck,
-            iq.InquiryState,
-            iq.InquiryState,
-            input_fields=("raw_text",),
-            io=True,
-        ),
-        r(
-            "option",
-            "inquiry_reject",
-            iq.inquiry_reject,
-            iq.InquiryState,
-            iq.InquiryState,
-            input_fields=("iq_reject_reply",),
-        ),
-        r(
-            "option",
             "inquiry_extract",
             iq.inquiry_extract,
             iq.InquiryState,
@@ -394,12 +414,11 @@ def build_registry(
         ),
         r(
             "option",
-            "inquiry_resolve",
-            iq.inquiry_resolve,
+            "inquiry_normalize",
+            iq.inquiry_normalize,
             iq.InquiryState,
             iq.InquiryState,
-            input_fields=("raw_text", "iq_order_list"),
-            io=True,
+            input_fields=("iq_raw_params", "iq_field_records"),
         ),
         r(
             "option",
@@ -409,12 +428,8 @@ def build_registry(
             iq.InquiryState,
             input_fields=(
                 "iq_order_list",
-                "tickers",
-                "iq_hitl",
-                "iq_backend_order_list",
                 "iq_types",
                 "iq_raw_params",
-                "iq_bindings",
                 *_BOT_CONTEXT_OPTIONAL,
             ),
             backend_context=True,
@@ -431,7 +446,6 @@ def build_registry(
             "swap_place_order",
             swap_place_order,
             input_fields=("raw_text", "quote_content", "swap_counterparties", "conversation_id"),
-            io=True,
         ),
         r(
             "swap",
@@ -600,7 +614,7 @@ def build_registry(
             pc.PlaceCloseState,
             input_fields=(
                 "pc_parsed",
-                "pc_llm_orders",
+                "pc_candidates",
                 "raw_text",
                 "quote_content",
                 "pc_order_data",
@@ -636,74 +650,5 @@ def build_registry(
                 "pc_reject_decision",
                 "pc_llm_output",
             ),
-        ),
-        r(
-            "ticker",
-            "extract_candidates",
-            ticker.extract_candidates,
-            ticker.TickerState,
-            ticker.TickerState,
-            input_fields=("raw_text",),
-            required=("raw_text",),
-        ),
-        r(
-            "ticker",
-            "infer_codes",
-            ticker.infer_codes,
-            ticker.TickerState,
-            ticker.TickerState,
-            input_fields=("candidates",),
-            required=("candidates",),
-            io=True,
-            with_error_handler=False,
-        ),
-        r(
-            "ticker",
-            "split_keywords",
-            ticker.split_keywords,
-            ticker.TickerState,
-            ticker.TickerState,
-            input_fields=("candidates",),
-            required=("candidates",),
-            io=True,
-            with_error_handler=False,
-        ),
-        r(
-            "ticker",
-            "judge_type",
-            ticker.judge_type,
-            ticker.TickerState,
-            ticker.TickerState,
-            input_fields=("candidates",),
-            required=("candidates",),
-            io=True,
-            with_error_handler=False,
-        ),
-        r(
-            "ticker",
-            "merge_candidates",
-            ticker.merge_candidates,
-            ticker.TickerState,
-            ticker.TickerState,
-            input_fields=("raw_text", "infer_codes", "split_codes", "ins_family"),
-            required=("raw_text",),
-        ),
-        r(
-            "ticker",
-            "resolve_org_item",
-            ticker.resolve_org_item,
-            ticker.OrgItemInput,
-            OrgItemState,
-            input_fields=("index", "org_str", "keywords", "predicted_family"),
-            io=True,
-            with_error_handler=False,
-        ),
-        r(
-            "ticker",
-            "assemble",
-            ticker.assemble,
-            ticker.TickerState,
-            ticker.TickerState,
-            input_fields=("candidates", "winners"),
         ),
     )
