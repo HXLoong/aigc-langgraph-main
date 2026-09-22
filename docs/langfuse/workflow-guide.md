@@ -289,7 +289,7 @@ Online Evaluator 异步执行，Experiment 完成后 Score 可能稍后显示。
 | 期望值来源 | 各子图 `models.py` 的意图枚举（lint 校验） | Java 真实回复 |
 | 运行后端 | `mock_api`（`metadata.backend=mock`） | 真后端 / staging |
 | Dataset 命名 | `intent-<product>` | `business-<文件名>`（历史 `golden_*` 命名仍按 business） |
-| 自动评分 | `det_intent_match_pass`（`harness/evaluators/intent_match.py`） | `det_required_text_pass` / `det_required_any_text_pass` / `det_forbidden_text_pass` + `otc-option-judge` |
+| 自动评分 | `det_intent_match_pass`（`harness/evaluators/intent_match.py`）+ 标的识别子集 `det_instrument_match_pass`（`harness/evaluators/instrument_match.py`） | `det_required_text_pass` / `det_required_any_text_pass` / `det_forbidden_text_pass` + `otc-option-judge` |
 | LLM Judge | 不跑（脚本强制 `no-judge`） | 跑 |
 | Trace tags | `eval, intent` | `eval, business` |
 
@@ -311,6 +311,23 @@ python scripts/check_fixture_consistency.py --verbose
 
 脚本只做确定性搬运：`product_type` 沿用原标签或按 category 前缀推导，`intent` 只沿用已有标注，
 不用模型猜；lint 会拒绝空 intent、非法枚举、文本断言和非 `intent-` 前缀的 id。
+
+### 8.1a 标的识别子集（`tests/fixtures/intent/swap_instrument.jsonl`）
+
+标的识别是意图集里的独立数据集：LangGraph 只提取用户原文里的标的表达（`placeOrderWindCode` 逐字保留）
+和市场限定（`placeOrderTransactionType`），权威识别由 Java 完成，所以它同样只调 LLM + mock 后端。
+`expected.instruments[i]` 给出**原文表达的任一候选**与**交易品种候选**，`instrument_match` 按订单无序匹配：
+
+```bash
+# 从三份 swap 业务集派生（订单数以卡片 标的代码 行为准；--ignore-token 只影响抽取，不改 send_text）
+python scripts/derive_instrument_fixtures.py --dry-run --ignore-token "11125测试短名（张天琪专用）" --ignore-token "聚鸣价值精选" --ignore-token "临沂阿凡提"
+python scripts/derive_instrument_fixtures.py --only-reviewed --ignore-token "…" --out tests/fixtures/intent/swap_instrument.jsonl
+python scripts/langfuse/upload_golden_to_langfuse.py --source tests/fixtures/intent/swap_instrument.jsonl --dataset-name intent-swap_instrument --mode overwrite
+python scripts/langfuse/upload_evaluators.py --dataset-name intent-swap_instrument --apply   # 绑 intent_match + instrument_match
+python scripts/langfuse/langfuse_eval.py --dataset intent-swap_instrument --concurrency 3
+```
+
+抽取规则与人工复核口径见 `tests/fixtures/intent/README.md`；`reference.backend_codes` 保留后端码仅供核对。
 
 ### 8.2 执行
 

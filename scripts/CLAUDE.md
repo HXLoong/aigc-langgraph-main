@@ -57,6 +57,7 @@
 | `convert_excel_to_jsonl.py` | 黄金 Excel → 期权/互换 JSONL；严格匹配 10/13 列表头顺序，同用例多步合并为一行，支持 `--dry-run` |
 | `convert_jsonl_to_excel.py` | categories JSONL → 黄金 Excel，便于人工查看和维护 |
 | `derive_intent_fixtures.py` | categories 业务集 → 意图集草稿（只搬 product_type/intent 标签，未标注轮标 review.pending；`--only-labeled` 写入 `tests/fixtures/intent/`）|
+| `derive_instrument_fixtures.py` | swap 业务集 → 标的识别意图集草稿（订单数以卡片 `标的代码` 行为准，原文表达任一候选 + 市场限定 → `expected.instruments`；`--dry-run` 出复核表，`--only-reviewed` 写入）|
 | `langfuse/upload_golden_to_langfuse.py` | 本地 categories / intent fixture → Langfuse Dataset（`--suite` 按路径自动判定）|
 | `cleanup_checkpoints.py` | checkpoint 三表按线程清理（客户现场运维）|
 | `sync_agents_md.py` | CLAUDE.md + .claude/{rules,skills,agents} → AGENTS.md + .agents/skills/（Codex 读取；`--check` 供提交前自检，产物禁止手改）|

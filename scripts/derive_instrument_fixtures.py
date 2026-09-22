@@ -11,8 +11,9 @@
 - 原文含该代码的主体（300748 / NVDA / 9618 …）→ 候选 = [名称+代码, 代码, 名称]
 - 原文不含代码（京东 / 阿里巴巴 …）→ 去掉交易词汇后的残留名称
 - 市场限定词（港股 / A股 / 美股 / 深港通 / 沪港通 …）→ placeOrderTransactionType 候选；无限定词不断言
-- 卡片为【待补充】或残留无法与订单一一对应 → review.pending，需人工补标
-原业务卡片的代码保留在 reference.backend_codes 供人工核对，不参与评分。
+- 残留无法与订单一一对应 → review.pending，需人工补标（后端【待补充】不影响：用户表达仍然明确）
+原业务卡片 / 候选列表的后端码保留在 reference.backend_codes 供人工核对，不参与评分。
+抽取只是草稿：`--dry-run` 的复核表需逐条人工核对后再 `--only-reviewed` 写入意图集。
 """
 
 from __future__ import annotations
@@ -51,7 +52,21 @@ _CN_VOCAB = (
     "市价", "限价", "均价", "收盘", "跟量", "买入", "卖出", "卖空", "平空", "沽出", "清仓",
     "全部", "全天", "剩下", "备注", "标的", "方向", "数量", "金额", "帮我", "谢谢", "稳健",
     "互换", "平仓", "挂单", "继续", "占", "再", "转", "沽", "买", "卖", "的话",
+    # 口语 / 繁体 / 现场噪声
+    "请告诉我们股数", "请检查", "最大跟量", "暫買入", "暫買", "買入了", "買入", "賣出", "價格",
+    "价格", "麻烦", "大概", "现在", "全保", "一半儿", "一半", "减仓", "最大", "元平仓",
+    "开盘请您执行", "请您执行", "辛苦执行", "顺便核对", "请确认", "剩余全部", "剩余", "全减",
+    "全卖出", "卖开", "买开", "早上", "已改", "已買", "已沽", "已", "暫沒成交", "沒成交", "暫沽",
+    "暫入", "多头", "空头", "均價", "除了", "多策略", "持仓", "左右", "然後", "收到", "够",
 )
+#: 市场限定词可粘在相邻名称头尾（"0013.HK沪港通"）；数量单位只会粘在头部（"万股001896"），
+#: 尾部不剥单位，否则 "豫能控股" 会被剥成 "豫能控"
+_MARKET_WORDS = tuple(hint for hint, _ in _MARKET_HINTS)
+_HEAD_NOISE = ("万股", "万元", "万", "股", "元", "手", "张", "亿", "个") + _MARKET_WORDS
+_TAIL_NOISE = _MARKET_WORDS
+#: 只在数量前出现的"空"（"空29万股"）当方向词；名称里的"空"（航空）不受影响
+_DIRECTION_RE = re.compile(r"(?<![\u4e00-\u9fa5])空(?=\s*[\d一二两三四五六七八九十])")
+_SEQ_RE = re.compile(r"第[一二三四五六七八九十\d]+笔[：:]?")
 _LATIN_VOCAB = ("pov", "twap", "vwap", "mkt", "asap", "cny", "usd", "hkd", "b", "s")
 _VOCAB_RE = re.compile(
     "|".join(re.escape(word) for word in sorted(_CN_VOCAB, key=len, reverse=True))
@@ -62,12 +77,17 @@ _MARKET_RE = re.compile("|".join(re.escape(hint) for hint, _ in _MARKET_HINTS))
 #: 带单位 / 价格 / 时间 / 1–3 位独立数字视为数量或价格；4–6 位独立数字和粘在名称上的数字
 #: 可能是证券代码或合约月份，保留给分块阶段
 _NUMERIC_RE = re.compile(
-    r"@\s*[\d.,]+|[\d.,]*\d\s*(?:%|万股|万元|万|亿|股|手|元|张|个亿|个|[wWkK](?![A-Za-z]))"
+    r"约\s*(?=[\d.])|@\s*[\d.,]+|\d[\d,]*\s*(?=@)|[\d.,]*\d\s*(?:%|万股|万元|万|亿|股|手|元|张|个亿|个|[wWkK](?![A-Za-z]))"
     r"|\d{1,2}:\d{2}(?::\d{2})?|\d+\.\d+|(?<![A-Za-z0-9一-龥])\d{1,3}(?![0-9])"
 )
 _CN_NUMBER_RE = re.compile(r"[一二两三四五六七八九十]+[一二两三四五六七八九十百千]*(?:万|亿|个亿)*(?:股|元|手|张|个)?")
 _PUNCT_RE = re.compile(r"[，。、；;：:,.（）()【】\[\]!！?？\-—~《》\"'“”]+")
 _CN_CHUNK_RE = re.compile(r"(?P<name>[一-龥]{2,12})(?P<letter>[A-Z](?![A-Za-z]))?(?P<num>\d{4})?(?P<suffix>合约)?")
+#: "京东集团-sw" 这类名称带连字符后缀，先于标点清洗抽取
+_CN_DASH_SUFFIX_RE = re.compile(r"(?P<name>[一-龥]{2,12})-(?P<suffix>[A-Za-z]{1,3})(?![A-Za-z])")
+#: "000993 神火股份" / "nvda英伟达"：代码 + 相邻名称视为同一标的
+_DIGIT_CODE_NAME_RE = re.compile(r"(?<![A-Za-z0-9一-龥])(?P<code>\d{4,6})\s?(?P<name>[一-龥]{2,12})")
+_LATIN_CODE_NAME_RE = re.compile(r"(?<![A-Za-z0-9])(?P<code>[A-Za-z]{2,6})(?P<name>[一-龥]{2,12})")
 _LATIN_CODE_CHUNK_RE = re.compile(r"(?<![A-Za-z])(?P<code>[A-Za-z]{1,6}\d{3,6})(?P<suffix>合约)?")
 _DIGIT_CODE_CHUNK_RE = re.compile(r"(?<![A-Za-z0-9一-龥])\d{4,6}(?![0-9])")
 _LATIN_WORDS_RE = re.compile(r"[A-Za-z][A-Za-z]+(?:\s+[A-Za-z][A-Za-z]+)*")
@@ -91,14 +111,28 @@ def _card_codes(obj: dict[str, Any]) -> list[str]:
 
 
 def _strip_vocab_tail(name: str) -> str:
-    """相邻中文名末尾若粘着交易词（"苹果市价"），逐词剥掉。"""
+    """相邻中文名末尾若粘着交易词（"苹果市价" / "沽出"），逐词剥掉，可剥空。"""
     changed = True
     while changed and name:
         changed = False
-        for word in sorted(_CN_VOCAB, key=len, reverse=True):
-            if name.endswith(word) and len(name) > len(word):
+        for word in sorted(_CN_VOCAB + _TAIL_NOISE, key=len, reverse=True):
+            if name.endswith(word):
                 name = name[: -len(word)]
                 changed = True
+                break
+    return name
+
+
+def _strip_vocab_head(name: str) -> str:
+    """相邻中文名开头若粘着交易词（"卖出300748" 的 "卖出"），逐词剥掉，可剥空。"""
+    changed = True
+    while changed and name:
+        changed = False
+        for word in sorted(_CN_VOCAB + _HEAD_NOISE, key=len, reverse=True):
+            if name.startswith(word):
+                name = name[len(word):]
+                changed = True
+                break
     return name
 
 
@@ -107,19 +141,29 @@ def _code_in_text(text: str, code: str) -> dict[str, str] | None:
     key = code.split(".", 1)[0]
     if not key or code == _UNRESOLVED_CODE:
         return None
-    pattern = re.compile(
-        rf"(?P<before>[一-龥]{{2,8}})?(?P<token>{re.escape(key)}(?:\.[A-Za-z]{{1,3}})?)"
-        rf"(?![A-Za-z0-9])\s?(?P<after>[一-龥]{{2,8}})?",
-        re.IGNORECASE,
-    )
-    match = pattern.search(text)
-    if match is None:
-        return None
-    return {
-        "token": match.group("token"),
-        "before": match.group("before") or "",
-        "after": _strip_vocab_tail(match.group("after") or ""),
-    }
+    keys = [key]
+    if key.isdigit() and key.lstrip("0") and key.lstrip("0") != key:
+        keys.append(key.lstrip("0"))  # 用户少打前导零（325 → 0325.HK）
+    for candidate in keys:
+        if candidate.isdigit():
+            body, suffix = rf"0*{re.escape(candidate)}", r"(?:\.?[A-Za-z]{1,3})?"  # 03939 / 3939hk
+        else:
+            body, suffix = re.escape(candidate), r"(?:\.[A-Za-z]{1,3})?"
+        pattern = re.compile(
+            rf"(?P<before>[一-龥]{{2,}})?(?P<token>(?<![A-Za-z0-9]){body}{suffix})"
+            rf"(?![A-Za-z0-9])(?P<sep>[\s-]?)(?P<after>[一-龥]{{2,}})?",
+            re.IGNORECASE,
+        )
+        match = pattern.search(text)
+        if match is not None:
+            return {
+                "token": match.group("token"),
+                "before": _strip_vocab_head(match.group("before") or ""),
+                "sep": match.group("sep") or "",
+                "after": _strip_vocab_tail(match.group("after") or ""),
+                "span": match.span(),
+            }
+    return None
 
 
 def _code_alternatives(found: dict[str, str], text: str) -> list[str]:
@@ -128,8 +172,7 @@ def _code_alternatives(found: dict[str, str], text: str) -> list[str]:
     if before:
         alternatives.append(f"{before}{token}")
     if after:
-        joiner = " " if f"{token} {after}" in text else ""
-        alternatives.append(f"{token}{joiner}{after}")
+        alternatives.append(f"{token}{found.get('sep', '')}{after}")
     alternatives.append(token)
     for name in (before, after):
         if name and name not in _GENERIC_SUFFIX and name not in alternatives:
@@ -137,15 +180,40 @@ def _code_alternatives(found: dict[str, str], text: str) -> list[str]:
     return alternatives
 
 
+def _pre_alternatives(match: re.Match[str]) -> list[str]:
+    groups = match.groupdict()
+    if "code" in groups:
+        code, name = groups["code"], _strip_vocab_tail(groups["name"])
+        joiner = " " if match.group(0)[len(code)] == " " else ""
+        return [f"{code}{joiner}{name}", code, name] if name else [code]
+    name = groups["name"]
+    return [f"{name}-{groups['suffix']}", name]
+
+
 def _residual_chunks(text: str) -> list[list[str]]:
     """去掉交易词汇 / 数量 / 价格后，剩下的名称片段（每个片段给出候选表达）。"""
+    found: list[tuple[int, list[str]]] = []
+    pre_chunks: list[list[str]] = []
     cleaned = _MARKET_RE.sub(" ", text)
+    cleaned = _SEQ_RE.sub(" ", cleaned)
     cleaned = _VOCAB_RE.sub(" ", cleaned)
+    cleaned = _DIRECTION_RE.sub(" ", cleaned)
+
+    def _lift(match: re.Match[str]) -> str:
+        """把先行抽取的片段从文本里挖走，用字母占位（数字会被数量清洗误删）以保持顺序。"""
+        pre_chunks.append(_pre_alternatives(match))
+        return f" \x00{chr(ord('A') + len(pre_chunks) - 1)}\x00 "
+
     cleaned = _NUMERIC_RE.sub(" ", cleaned)
     cleaned = _CN_NUMBER_RE.sub(" ", cleaned)
+    cleaned = _CN_DASH_SUFFIX_RE.sub(_lift, cleaned)
+    cleaned = _DIGIT_CODE_NAME_RE.sub(_lift, cleaned)
+    cleaned = _LATIN_CODE_NAME_RE.sub(_lift, cleaned)
     cleaned = _PUNCT_RE.sub(" ", cleaned)
-    found: list[tuple[int, list[str]]] = []
     consumed: list[tuple[int, int]] = []
+    for match in re.finditer(r"\x00([A-Z])\x00", cleaned):
+        found.append((match.start(), pre_chunks[ord(match.group(1)) - ord("A")]))
+        consumed.append(match.span())
 
     def _taken(start: int) -> bool:
         return any(begin <= start < end for begin, end in consumed)
@@ -178,7 +246,11 @@ def _residual_chunks(text: str) -> list[list[str]]:
         words = match.group(0).strip()
         if len(words) >= 2:
             found.append((match.start(), [words]))
-    return [alternatives for _, alternatives in sorted(found, key=lambda item: item[0])]
+    chunks: list[list[str]] = []
+    for _, alternatives in sorted(found, key=lambda item: item[0]):
+        if alternatives not in chunks:  # 同一名称在句中重复出现（"金力永磁第三笔：…卖出金力永磁"）
+            chunks.append(alternatives)
+    return chunks
 
 
 def derive_case(
@@ -195,10 +267,18 @@ def derive_case(
     text = text.strip()
 
     codes = _card_codes(obj)
+    if not codes:
+        # 后端返回多候选卡片（无 标的代码 行）：单标的，参考码取 response_contains_any
+        any_codes = obj.get("response_contains_any") or ""
+        codes = [_UNRESOLVED_CODE]
+        reference = [line.strip() for line in str(any_codes).splitlines() if line.strip()]
+    else:
+        reference = list(codes)
     markets = market_candidates(text)
     pending_reasons: list[str] = []
     instruments: list[dict[str, Any]] = []
     unresolved: list[int] = []
+    residual_text = text
     for index, code in enumerate(codes):
         found = _code_in_text(text, code)
         if found is None:
@@ -206,13 +286,13 @@ def derive_case(
             unresolved.append(index)
         else:
             instruments.append({"expression": _code_alternatives(found, text)})
+            start, end = found["span"]
+            residual_text = residual_text[:start] + " " * (end - start) + residual_text[end:]
 
     if unresolved:
-        residual = _residual_chunks(text)
+        residual = _residual_chunks(residual_text)
         unresolved_codes = {codes[i] for i in unresolved}
-        if any(codes[i] == _UNRESOLVED_CODE for i in unresolved):
-            pending_reasons.append("backend card has 【待补充】; expected expression unknown")
-        elif len(residual) == len(unresolved):
+        if len(residual) == len(unresolved):
             for index, chunk in zip(unresolved, residual, strict=True):
                 instruments[index]["expression"] = chunk
         elif len(residual) == 1 and len(unresolved_codes) == 1:
@@ -222,8 +302,6 @@ def derive_case(
             pending_reasons.append(
                 f"{len(unresolved)} order(s) unresolved but {len(residual)} residual chunk(s): {residual}"
             )
-    if not codes:
-        pending_reasons.append("backend card has no 标的代码 line")
     if markets:
         for item in instruments:
             item["transaction_type"] = list(markets)
@@ -244,7 +322,7 @@ def derive_case(
         "quote_previous": obj.get("quote_previous", False),
         "expected": {"product_type": "swap", "intent": intent, "instruments": instruments},
         "sub_scenes": [],
-        "reference": {"backend_codes": codes},
+        "reference": {"backend_codes": reference},
     }
     if pending_reasons:
         case["review"] = {"status": "pending", "reasons": pending_reasons}
