@@ -1,6 +1,6 @@
 # ADR 0023 · 提示词即代码：按 LangGraph 高代码范式管理提示词（PromptSpec）
 
-- 状态：**已采纳**（2026-09-15；2026-09-17 第二 / 三批迁移完成共 28 个 LLM 节点，同日 D 批去 LLM 化再移除 option 4 + close 4 个——现役注册 20 个，迁移路径见 D5）
+- 状态：**已采纳**（2026-09-22 加载主图核实注册 15 个 PromptSpec；历史 28 → 20 的迁移过程见 D5）
 - 日期：2026-09-15
 - 起源：ADR 0022 落地后，用户要求"提示词管理需要考虑 LangGraph 高代码实现、使用 AgentState 等内容，按 LangGraph 高代码范式重新评估"；评估过程与证据见 [docs/prompt-maintainability-assessment.md 第十节](../prompt-maintainability-assessment.md)
 - 修订：[ADR 0022](./0022-prompt-governance-after-code-migration.md) D5（`.md` 契约从"system 段 + 手拼 user"收敛为 PromptSpec 声明）、[ADR 0001 D5](./0001-rewrite-app-with-harness-first.md)（改写决定登记）；2026-09-17：第二 / 三批迁移完成（ADR 0022 ticker 未决项同步关闭）
@@ -59,6 +59,10 @@ result = await llm.with_structured_output(SPEC.output_model).ainvoke(messages)
 - 禁止在代码里后置追加 system 文本（含"格式指令"）；测试 `test_system_has_no_code_appended_format_instruction` 守护
 
 ### D5 · 迁移路径（不一次性全迁）
+
+以下批次为历史记录。2026-09-20 标的识别委托后端后，ticker 提示词及其输出模型已删除；
+现役注册以主图加载后的 `all_specs()` 为准（2026-09-22：15 个，含 router/split_instructions）。
+职责见[标的识别边界](../backend-instrument-boundary.md)，不恢复已退役的本地推断节点。
 
 | 批次 | 节点 | 说明 |
 |---|---|---|

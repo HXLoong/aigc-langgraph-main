@@ -60,8 +60,12 @@ _Avoid_: LangSmith（数据出境，已废止）、可观测性平台（窄了�
 _Avoid_: action（与下单 algorithm type 的 "action" 字段冲突）、type（太泛）
 
 **标的（Ticker / Instrument）**：
-交易对象的唯一标识。在本项目内必须是经过 goats 库校验过的代码（`from_goats=True` 是绝对约束），不接受未经校验的字符串。
+交易指令指向的证券、指数或其他金融工具，最终身份由后端权威识别和校验。
 _Avoid_: stock（仅指股票）、symbol（不准确）、underlying（仅期权语境）
+
+**标的表达**：
+用户原话或引用消息中的证券名称、代码或月份表达；它是识别输入，不等同于已经校验的标的。
+_Avoid_: 把提取到的名称或引用候选直接当作后端已校验结果
 
 **Confirm 节点的 action 参数**：
 合并版 `swap.confirm(action: "place" | "cancel" | "modify")`——同一个节点处理三种动作的二次确认，动作由 intent 推导并写入 AgentState 顶层 `expected_action`（ADR 0024 D2；`place` / `modify` / `cancel` / `inquiry` / `close`）。
@@ -72,8 +76,8 @@ _Avoid_: 三个独立的"确认下单 / 确认撤单 / 确认改单"节点（已
 - 一份 **Golden case** 既被 **Harness** 用作回归基线，也可被 **Shadow compare** 用作双跑输入
 - **Harness** 的失败报告会指向具体的 **节点（Node）**，让 AI 工具知道改哪里
 - 一条用户原话先经一级路由到 **product_type**（swap / option / close），再由该子图内识别 **意图（Intent）**
-- 任何 **标的** 出现在 LangGraph 输出前，必须经过 ticker 子图（ReAct Agent，4 个工具：tokenize / completeness / rank / infer_code）校验，最终输出 `from_goats=True`
-- LangGraph 通过 3 个 **Protocol**（OptionClient / SwapClient / TickerClient）调用 Java 后端业务 API，契约定义见 `docs/api-contracts/java-backend.md`
+- 助手保留 **标的表达** 及用户的候选选择，后端负责识别最终 **标的** 并返回业务结果；职责见 [标的识别边界](docs/backend-instrument-boundary.md)。
+- 业务卡片与订单执行结果来自 Java 后端，原始回执是业务核查依据。
 
 **Context-dependent case（上下文依赖 case）**：
 golden case 中，正确的 product_type 或 intent 只有在已知多轮对话历史时才能确定的一类 case（如裸"撤单"/"确认下单"）。
