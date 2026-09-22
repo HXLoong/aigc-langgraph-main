@@ -88,11 +88,11 @@ def test_batch_names_order_dry_run_and_overwrite(tmp_path: Path) -> None:
     write_csv(folder / "nested" / "ignored.csv", [["数据"], ["忽略"]])
     result = run_cli("--input", folder, "--dry-run")
     assert result.returncode == 0, result.stderr
-    assert not (folder / "测试集.xlsx").exists()
+    assert not (folder / "黄金数据集.xlsx").exists()
     assert "sheet=" in result.stderr and "rows=1" in result.stderr
     result = run_cli("--input", folder)
     assert result.returncode == 0, result.stderr
-    target = folder / "测试集.xlsx"
+    target = folder / "黄金数据集.xlsx"
     workbook = openpyxl.load_workbook(target)
     try:
         assert len(workbook.sheetnames) == 5
@@ -140,6 +140,21 @@ def test_blank_lines_header_only_and_explicit_output(tmp_path: Path) -> None:
         assert workbook.active.max_row == 1
         assert workbook.active.max_column == 2
         assert workbook.active.auto_filter.ref == "A1:B1"
+    finally:
+        workbook.close()
+
+
+def test_trailing_fully_empty_csv_columns_are_not_exported(tmp_path: Path) -> None:
+    path = tmp_path / "trailing-empty.csv"
+    write_csv(path, [["A", "B", "", ""], ["x", "y", "", ""]])
+
+    result = run_cli("--input", path)
+
+    assert result.returncode == 0, result.stderr
+    workbook = openpyxl.load_workbook(path.with_suffix(".xlsx"))
+    try:
+        assert workbook.active.max_column == 2
+        assert [cell.value for cell in workbook.active[1]] == ["A", "B"]
     finally:
         workbook.close()
 

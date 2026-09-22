@@ -107,6 +107,30 @@ async def test_factory_respects_llm_trust_env(
         await llm.root_async_client.close()
 
 
+@pytest.mark.usefixtures("_clear_factory_caches")
+async def test_rebuilt_factory_does_not_reuse_closed_http_clients(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        clients, "get_settings", lambda: _fake_settings("external-deepseek-v4-pro")
+    )
+    first = clients.get_qwen_structured()
+    first_sync = first.root_client._client
+    first_async = first.root_async_client._client
+    first.root_client.close()
+    await first.root_async_client.close()
+    clients.get_qwen_structured.cache_clear()
+
+    second = clients.get_qwen_structured()
+    try:
+        assert second.root_client._client is not first_sync
+        assert second.root_async_client._client is not first_async
+        assert not second.root_async_client._client.is_closed
+    finally:
+        second.root_client.close()
+        await second.root_async_client.close()
+
+
 @pytest.mark.parametrize("configured", [False, True])
 def test_llm_trust_env_loads_from_dotenv(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path, configured: bool
@@ -118,6 +142,7 @@ def test_llm_trust_env_loads_from_dotenv(
     env_file.write_text("LLM_TRUST_ENV=false\n" if configured else "", encoding="utf-8")
     settings = Settings(
         _env_file=env_file,
+        mysql_uri="mysql://test:test@localhost/test",
         checkpoint_mysql_uri="mysql://test:test@localhost/test",
         business_mysql_uri="mysql+aiomysql://test:test@localhost/test",
         qwen_api_base="https://llm.example/v1",
