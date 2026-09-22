@@ -27,6 +27,7 @@ NODE_LABELS: dict[str, NodeLabel] = {
     "swap": NodeLabel("互换业务", "graph"),
     "option": NodeLabel("期权开仓与订单操作", "graph"),
     "option_close": NodeLabel("期权平仓", "graph"),
+    "entry_route": NodeLabel("会话保护后的业务入口分流"),
     "fallback": NodeLabel("异常与未知指令处理"),
     "render": NodeLabel("业务结果回复"),
     "persist_intent": NodeLabel("消息会话与意图写回", "io"),

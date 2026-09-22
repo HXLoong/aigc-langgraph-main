@@ -107,7 +107,6 @@ curl -X POST http://localhost:8000/v1/workflows/run \
 # .env 指向 mock（LLM 仍走真实 DeepSeek，只有后端是假的）
 OTC_API_BASE_URL=http://127.0.0.1:8099
 GOATS_BASE_URL=http://127.0.0.1:8099
-SECURITIES_INSTRUMENT_URL=http://127.0.0.1:8099/admin-api/integration/securities-instrument/select
 ```
 
 - mock 返回**固定 stub**，验证的是"链路通 + 契约对 + 参数提取对"，不验证业务数值正确性

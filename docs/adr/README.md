@@ -83,8 +83,8 @@
 
 | 项 | 出处 | 动作 |
 |---|---|---|
-| CI 仍仅 `workflow_dispatch`，ADR 0024 D8 阶段 0 门槛"CI 在 PR 上跑"未执行 | 0024 / 0009 | 恢复 push / PR 触发，把 `scripts/check_adr_refs.py` 与 fixture lint 加进 fast job |
-| `app/config.py` 死配置 `ticker_mysql_*` / `securities_instrument_*`；`app/tools/ticker_client.py` 无调用方 | 0012 / 0025 | 清理或裁决保留理由 |
+| ~~CI 仍仅 `workflow_dispatch`~~ | 0024 / 0009 | ✅ 2026-09-22 恢复 push / PR 触发（fast + full 两个 job）；CI MySQL service 仍待办 |
+| ~~`app/config.py` 死配置~~；`app/tools/ticker_client.py` 无调用方 | 0012 / 0025 | ✅ 死配置已清理；`ticker_client.py` 去留待裁决 |
 | VL 接线后 `llm_failure_high` 未按 `model` 拆分；`.env.customer.template` 视觉模型留空 | 0019 / 0020 | 阈值重估 + 部署 checklist |
 | Dify 明文 key 的 revoke 无记录 | 0024 附录 | 运维确认后打勾 |
 | ADR 0001 / 0024 的落地记录仍在正文内 | 本索引 | 后续迁到 `docs/` 实施日志；0024 已冻结止损 |

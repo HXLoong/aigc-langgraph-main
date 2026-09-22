@@ -2,7 +2,7 @@
 
 `POST /v1/nodes/run` 用于隔离执行一个已注册的 LangGraph 节点或复合子图，返回该目标的实际 State 更新。它适合定位意图识别、参数提取、后端调用和内部阶段问题；完整会话仍应使用 `POST /v1/workflows/run`。
 
-当前工作区共注册 59 项：`main` 17、`option` 14、`swap` 13、`option_close` 15（标的识别已委托 Java 后端，不再有 `ticker` 命名空间）。注册名称以 [registry.py](../app/node_execution/registry.py) 为准，文末有[节点中英文对照表](#9-节点中英文对照表)。
+注册命名空间为 `main`、`option`、`swap`、`option_close`（标的识别已于 2026-09-20 移交 Java，ADR 0025，本地不再有 `ticker` 命名空间）。注册名称与数量以 [registry.py](../app/node_execution/registry.py) 为准，文末有[节点中英文对照表](#9-节点中英文对照表)。
 
 > `/v1/nodes/run` 不执行上游节点、不恢复 checkpoint，也不继承前一次调用的 State。复合子图会按原路由执行内部链路；下单、确认、撤单、持久化等节点会保留原有副作用。连接真实后端时应先测试只读节点。
 
@@ -31,7 +31,7 @@ docker compose up -d mysql
 docker compose ps mysql
 ```
 
-如果只调试不依赖 checkpoint 或数据库的节点，可以在 `.env` 中暂时设 `USE_MYSQL_CHECKPOINTER=false`。要测试 `main/persist`，还需确认业务库已执行 [sql/schema.sql](../sql/schema.sql)。
+如果只调试不依赖 checkpoint 或数据库的节点，可以在 `.env` 中暂时设 `USE_MYSQL_CHECKPOINTER=false`。要测试 `main/persist`，还需确认业务库已执行 [sql/init.sql](../sql/init.sql)。
 
 启动应用：
 
@@ -57,24 +57,23 @@ python -c "from app.config import get_settings; s=get_settings(); print('OTC =',
 
 ```json
 {
-  "product": "main",
-  "node": "fallback",
+  "product": "option",
+  "node": "option_unknown",
   "state": {
-    "error": {"node": "option_intent", "type": "ValidationError", "message": "demo"}
+    "raw_text": "腾讯控股",
+    "intent": "unknown"
   }
 }
 ```
 
-预期 HTTP 200，主要输出为：
+预期 HTTP 200，输出只含目标节点自己写入的 `trace`（一条 `option_unknown` 条目）：
 
 ```json
 {
-  "product": "main",
-  "node": "fallback",
+  "product": "option",
+  "node": "option_unknown",
   "output": {
-    "trace": [
-      {"node": "fallback", "decision": "triggered_by:option_intent"}
-    ]
+    "trace": [{"node": "option_unknown", "...": "..."}]
   }
 }
 ```
@@ -83,9 +82,9 @@ PowerShell 调用方式：
 
 ```powershell
 $body = @{
-    product = 'main'
-    node = 'fallback'
-    state = @{ error = @{ node = 'option_intent'; type = 'ValidationError'; message = 'demo' } }
+    product = 'option'
+    node = 'option_unknown'
+    state = @{ raw_text = '腾讯控股'; intent = 'unknown' }
 } | ConvertTo-Json -Depth 50
 
 Invoke-RestMethod `
@@ -238,7 +237,7 @@ Invoke-RestMethod `
 2. `intent`、参数、订单号、标的、回复等目标字段符合输入语义。
 3. 预期调用后端或写库时，有对应的服务日志、请求记录或数据库记录。
 
-`api_code=0` 也必须结合 `api_result` 判断。`option_unknown` 返回兜底文案、`persist` 返回 `{}` 都可能是正常结果；`/health` 或 HTTP 200 不能单独证明业务链路成功。
+`api_code=0` 也必须结合 `api_result` 判断。`inquiry_normalize` 返回空订单列表、`persist` 返回 `{}` 都可能是正常结果；`/health` 或 HTTP 200 不能单独证明业务链路成功。
 
 ## 7. 自动化验证
 
@@ -277,11 +276,14 @@ Remove-Item Env:RUN_LOCAL_MYSQL_TESTS
 
 ## 9. 节点中英文对照表
 
-以下是当前 `/v1/nodes/run` 的全部 65 个注册项。所属对应请求中的 `product`，英文名对应 `node`；业务子图入口会执行内部链路。注册名称以 [registry.py](../app/node_execution/registry.py) 为准。
+以下是 `/v1/nodes/run` 的注册项（以注册表为准，本表不维护计数）。所属对应请求中的 `product`，英文名对应 `node`；业务子图入口会执行内部链路。注册名称以 [registry.py](../app/node_execution/registry.py) 为准。
 
 | 所属（product） | 节点英文名（node） | 中文名 |
 | --- | --- | --- |
 | `main` | `ingest` | 入口消息整理与当轮状态初始化 |
+| `main` | `entry_route` | 会话保护后的三分支入口分流 |
+| `main` | `plan_instructions` | 多指令计划（拆分与依赖校验） |
+| `main` | `instructions` | 多指令编排子图（Send 并行准备 + 批量提交） |
 | `main` | `quick_inquiry` | 快速询价 |
 | `main` | `existing_command_query` | 存量指令查询 |
 | `main` | `entry_route` | 三类业务入口选择 |
@@ -310,7 +312,7 @@ Remove-Item Env:RUN_LOCAL_MYSQL_TESTS
 | `option` | `inquiry_fast_parse` | 快速询价指令解析 |
 | `option` | `inquiry_fast_submit` | 快速询价提交 |
 | `option` | `inquiry_extract` | 询价参数提取 |
-| `option` | `inquiry_normalize` | 询价参数归一化与多值展开 |
+| `option` | `inquiry_normalize` | 询价参数代码归一化与证据绑定 |
 | `option` | `inquiry_submit` | 询价请求提交 |
 | `swap` | `swap_intent` | 互换意图识别 |
 | `swap` | `swap_place_order` | 互换下单参数提取 |

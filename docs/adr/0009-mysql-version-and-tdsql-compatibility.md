@@ -49,7 +49,7 @@ checkpoint 的 JSON_TABLE 字符列也显式使用该规则，不改变 Java 现
 ## 后果（现状口径）
 
 - **TDSQL SQL 兼容性是隐藏风险**：协议兼容 ≠ 100% SQL 特性兼容；每次升级 `langgraph-checkpoint-mysql` 后需在 TDSQL 上回归（前提是 checkpointer 先接线）。
-- **CI 现状**：`.github/workflows/ci.yml` **无 MySQL service**，且 2026-05-12 起仅保留 `workflow_dispatch` 手动触发——原文"CI 用原生 MySQL"不成立。技术债的下一步应先恢复 CI 的 MySQL service，再谈 TDSQL 容器。
+- **CI 现状**：`.github/workflows/ci.yml` 于 2026-09-22 恢复 push / pull_request 触发，但仍**无 MySQL service**（`tests/integration` 的真实 MySQL 用例靠 `RUN_LOCAL_MYSQL_TESTS=1` 本地 opt-in）——原文"CI 用原生 MySQL"仍不成立。技术债的下一步是补 CI 的 MySQL service，再谈 TDSQL 容器。
 - **checkpoint URI**：`AIOMySQLSaver.parse_conn_string` 实际忽略 scheme（`mysql://` 与 `mysql+aiomysql://` 均可连），`app/config.py` 注释的格式约束比实际严，无功能风险。
 - **数据库版本升级前必须 review**：DBA 升级 TDSQL 前先在测试环境跑 checkpointer setup + 业务表迁移验证。
 - 早期文档曾误称 "GoldenDB"，统一理解为 TDSQL 旧称。

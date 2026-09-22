@@ -66,21 +66,10 @@ class Settings(BaseSettings):
     goats_com_agent_id: str = ""
     goats_com_agent_sub_id: str = ""
 
-    # === securities-instrument 标的查询 ===
-    securities_instrument_url: str = ""
-    securities_instrument_key: str = ""
-
     # === 真实环境测试账号（D2.* probe / 阶段 2 联调用，不进生产路径）===
     eval_room_id: str = ""
     eval_user_id: str = ""
     eval_guid: str = ""
-
-    # 标的池 MySQL（直连查询）—— 凭据走 .env，源码里只留空默认值
-    ticker_mysql_host: str = ""
-    ticker_mysql_port: int = 3306
-    ticker_mysql_user: str = ""
-    ticker_mysql_password: str = ""
-    ticker_mysql_db: str = ""
 
     # === 外部搜索 ===
     bocha_api_key: str = ""

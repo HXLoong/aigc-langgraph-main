@@ -2,6 +2,7 @@
 
 契约见 docs/api-contracts/java-backend.md §3.1。旧版要求 render 补齐固定
 模板的断言已失效；保留最少、完整和空订单三个场景，防止恢复本地拼卡。
+缺少后端回执时统一为"待核对"文案（ADR 0026 D3）。
 """
 
 from __future__ import annotations
@@ -13,6 +14,7 @@ import pytest
 
 from app.graph.state import AgentState, TickerCandidate
 from app.nodes.render import render
+from app.tools.receipts import UNCERTAIN_REPLY
 from app.tools.receipts import UNCERTAIN_REPLY
 
 

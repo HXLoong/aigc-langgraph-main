@@ -74,3 +74,15 @@ async def test_lifespan_wires_idempotency_using_single_mysql_uri(monkeypatch):
     async with app_main.lifespan(app_main.app):
         store = app_main.app.state.idempotency_store
         assert store._conn_args == ("localhost", 3308, "user", "pass", "shared_java")
+
+
+def test_instrument_lookup_settings_are_gone(monkeypatch):
+    """ADR 0025：标的识别已移交 Java，ADR 0012 遗留的标的池直连与 securities-instrument 配置不再存在。"""
+    kwargs = _isolate_settings(monkeypatch)
+    monkeypatch.setenv("MYSQL_URI", URI)
+    settings = Settings(**kwargs)
+    leftovers = sorted(
+        name for name in type(settings).model_fields
+        if name.startswith("ticker_mysql_") or name.startswith("securities_instrument_")
+    )
+    assert leftovers == []

@@ -53,4 +53,4 @@ V1 闭环为脱离 VPN 依赖，曾把标的查询从 Dify 的后端 HTTP 接口
 - [ADR 0009](./0009-mysql-version-and-tdsql-compatibility.md) 的"标的池 MySQL 兼容性"风险解除——由后端代理。
 - 性能：1 次 HTTP 额外 ~10-30ms，整体 P95 由 LLM 决定，可接受。
 - "迁移完整度审计"机制持续有效：任何把后端逻辑搬进 LangGraph 的"性能优化"必须先在 ADR 评估丢失的业务规则。
-- 待办（2026-09-22 复核仍未清理）：`app/config.py` 死配置 `ticker_mysql_*`（5 项）与 `securities_instrument_url/key`；`.env.example` 双前缀需核对。GET-with-body 契约测试随 LangGraph 侧调用方退役而不再需要。
+- ✅ 2026-09-22 已清理：`app/config.py` 死配置 `ticker_mysql_*`（5 项）与 `securities_instrument_url/key`，及 `.env.example` / `.env.customer.template` / `infra/nodes-run.env.example` 对应段（`tests/test_database_config.py` 守护不复活）。GET-with-body 契约测试随 LangGraph 侧调用方退役而不再需要。
