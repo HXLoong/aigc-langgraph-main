@@ -121,3 +121,108 @@ def test_empty_fixture_file_rejected(tmp_path: Path) -> None:
     categories.mkdir()
     (categories / "option.jsonl").write_text("", encoding="utf-8")
     assert any("empty file" in error for error in checker.validate(tmp_path))
+
+
+# ── 意图集（tests/fixtures/intent/）────────────────────────────────────────
+
+
+def _intent_case(**overrides: object) -> dict:
+    case: dict = {
+        "caseNo": "intent-option_close-001",
+        "name": "查持仓后确认平仓",
+        "category": "intent/option_close",
+        "type": "positive",
+        "send_text": "我想平仓",
+        "at_bot": True,
+        "expected": {"product_type": "option_close", "intent": "close_order_query"},
+        "sub_scenes": [
+            {
+                "send_text": "确认平仓",
+                "at_bot": False,
+                "quote_previous": True,
+                "expected": {"product_type": "option_close", "intent": "close_order_confirm"},
+            }
+        ],
+    }
+    case.update(overrides)
+    return case
+
+
+def _validate_intent(root: Path, payloads: list[dict], *, categories: list[dict] | None = None) -> list[str]:
+    (root / "categories").mkdir(exist_ok=True)
+    category_lines = [json.dumps(payload, ensure_ascii=False) for payload in (categories or [_valid_case()])]
+    (root / "categories" / "option.jsonl").write_text("\n".join(category_lines), encoding="utf-8")
+    intent_dir = root / "intent"
+    intent_dir.mkdir(exist_ok=True)
+    lines = [json.dumps(payload, ensure_ascii=False) for payload in payloads]
+    (intent_dir / "option_close.jsonl").write_text("\n".join(lines), encoding="utf-8")
+    return checker.validate(root)
+
+
+def test_intent_fixture_dir_is_optional(tmp_path: Path) -> None:
+    assert _validate(tmp_path, [_valid_case()]) == []
+
+
+def test_valid_intent_case_passes(tmp_path: Path) -> None:
+    assert _validate_intent(tmp_path, [_intent_case()]) == []
+
+
+def test_intent_case_rejects_text_assertions(tmp_path: Path) -> None:
+    """意图集只评路由与意图；卡片文本断言属于业务集。"""
+    case = _intent_case(response_contains=["场外期权平仓"])
+    case["sub_scenes"][0]["response_not_contains"] = ["互换订单"]
+    errors = _validate_intent(tmp_path, [case])
+    assert any("response_contains" in error and "business suite" in error for error in errors)
+    assert any("sub_scenes[0]" in error and "response_not_contains" in error for error in errors)
+
+
+def test_intent_case_requires_expected_on_every_turn(tmp_path: Path) -> None:
+    case = _intent_case()
+    case["sub_scenes"][0].pop("expected")
+    errors = _validate_intent(tmp_path, [case])
+    assert any("sub_scenes[0]" in error and "expected.intent is required" in error for error in errors)
+
+    case = _intent_case(expected={"product_type": "option_close"})
+    errors = _validate_intent(tmp_path, [case])
+    assert any("expected.intent is required" in error for error in errors)
+
+
+def test_intent_case_rejects_intent_outside_product_enum(tmp_path: Path) -> None:
+    case = _intent_case(expected={"product_type": "swap", "intent": "new_inquiry"})
+    errors = _validate_intent(tmp_path, [case])
+    assert any("intent 'new_inquiry' is not a swap intent" in error for error in errors)
+
+    case = _intent_case(expected={"product_type": "query", "intent": "close_order_query"})
+    errors = _validate_intent(tmp_path, [case])
+    assert any("product_type 'query' is not a runtime ProductType" in error for error in errors)
+
+
+def test_intent_negative_case_may_omit_intent_for_unknown_product(tmp_path: Path) -> None:
+    case = _intent_case(
+        caseNo="intent-option_close-002",
+        type="negative",
+        send_text="今天天气不错",
+        expected={"product_type": "unknown"},
+        sub_scenes=[],
+    )
+    assert _validate_intent(tmp_path, [case]) == []
+
+
+def test_intent_case_naming_and_type_rules(tmp_path: Path) -> None:
+    errors = _validate_intent(tmp_path, [_intent_case(caseNo="case-030")])
+    assert any("id must start with 'intent-'" in error for error in errors)
+
+    errors = _validate_intent(tmp_path, [_intent_case(category="option_close/place")])
+    assert any("category must be 'intent/<product>'" in error for error in errors)
+
+    errors = _validate_intent(tmp_path, [_intent_case(type="smoke")])
+    assert any("type must be positive or negative" in error for error in errors)
+
+
+def test_intent_ids_must_be_unique_across_categories(tmp_path: Path) -> None:
+    errors = _validate_intent(
+        tmp_path,
+        [_intent_case(caseNo="intent-shared")],
+        categories=[_valid_case(id="intent-shared")],
+    )
+    assert any("duplicate id 'intent-shared'" in error for error in errors)
