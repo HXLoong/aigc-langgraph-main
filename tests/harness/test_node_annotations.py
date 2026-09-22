@@ -334,7 +334,6 @@ def test_write_nodes_declare_stable_outputs_for_annotation() -> None:
             "api_result",
             "reply_text",
         },
-        "inquiry_fast_submit": {"api_code", "api_result", "reply_text"},
         "inquiry_submit": {
             "expected_action",
             "place_params",

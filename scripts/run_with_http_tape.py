@@ -10,7 +10,6 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from functools import partial
 from pathlib import Path
-from types import SimpleNamespace
 from typing import Any
 from urllib.parse import urlsplit
 
@@ -27,30 +26,22 @@ logger = logging.getLogger(__name__)
 async def injected_tool_clients(
     transport: httpx.AsyncBaseTransport, *, timeout: float,
 ) -> AsyncIterator[None]:
-    """Scoped adapters for the shared pool, set-intent and the direct RFQ parser."""
+    """共享池覆盖业务与 GOATS 客户端；单独适配 set-intent 的独立连接。"""
     from app.tools import http_pool
 
     main: Any = importlib.import_module("app.main")
-    goats_rfq: Any = importlib.import_module("app.tools.goats_rfq")
 
     if http_pool.get_shared_http_client() is not None:
         raise RuntimeError("tool tape requires its own application process and HTTP pool")
     original_message_factory = main.MessageClientHttpx
-    original_rfq_httpx = goats_rfq.httpx
     try:
         await http_pool.open_shared_http_client(timeout=timeout, transport=transport)
         main.MessageClientHttpx = partial(
             original_message_factory, transport=BorrowedTransport(transport),
         )
-        # Only this module's AsyncClient symbol is adapted. The actual httpx module
-        # used by model clients, attachment fetchers and other libraries is untouched.
-        goats_rfq.httpx = SimpleNamespace(
-            AsyncClient=partial(httpx.AsyncClient, transport=BorrowedTransport(transport)),
-        )
         yield
     finally:
         main.MessageClientHttpx = original_message_factory
-        goats_rfq.httpx = original_rfq_httpx
         await http_pool.close_shared_http_client()
         await transport.aclose()
 

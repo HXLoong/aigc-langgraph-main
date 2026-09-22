@@ -74,9 +74,9 @@ async def test_parallel_duplicate_requests_replay_in_dispatch_order_and_misses_f
     assert count == 2
 
 
-async def test_pool_and_direct_tool_adapters_share_tape_and_restore_modules(tmp_path, monkeypatch):
+async def test_pool_and_message_adapter_record_goats_and_restore_factory(tmp_path, monkeypatch):
     from app import config, main
-    from app.tools import goats_rfq
+    from app.tools.goats_agent_client import make_goats_agent_client
     from app.tools.message_client import SetIntentRequest
     from app.tools.swap_client import SwapClientHttpx
     from harness.http_tape import RecordingTransport, ReplayTransport
@@ -85,10 +85,10 @@ async def test_pool_and_direct_tool_adapters_share_tape_and_restore_modules(tmp_
     settings = config.get_settings().model_copy(update={
         "otc_api_base_url": "http://localhost:48080", "goats_base_url": "http://localhost:4999",
         "goats_client_id": "client", "goats_client_secret": "private-secret",
-        "goats_opt_agent_id": "agent", "dry_run_backend": False,
+        "goats_extapp_salt": "test-salt", "dry_run_backend": False,
     })
     monkeypatch.setattr(config, "get_settings", lambda: settings)
-    original_factory, original_httpx = main.MessageClientHttpx, goats_rfq.httpx
+    original_factory = main.MessageClientHttpx
     real_async_client = httpx.AsyncClient
     path = tmp_path / "tools.jsonl"
     requests = []
@@ -104,13 +104,15 @@ async def test_pool_and_direct_tool_adapters_share_tape_and_restore_modules(tmp_
                 await main.MessageClientHttpx().set_intent(SetIntentRequest(
                     conversationId="c", messageId="12", intent="confirm_order", productType=1,
                 ))
-            assert await goats_rfq.parse_rfq_instrument("询价") == {"ok": True}
+            parsed = await make_goats_agent_client().parse_rfq_instrument("询价", "room", "user")
+            assert parsed["code"] == 0 and parsed["api_data_result_obj"] == {"ok": True}
             assert httpx.AsyncClient is real_async_client
 
     await use_tools(RecordingTransport(path, httpx.MockTransport(upstream)))
     await use_tools(ReplayTransport(path))
     assert len(requests) == 4
-    assert main.MessageClientHttpx is original_factory and goats_rfq.httpx is original_httpx
+    assert requests.count("/api/internal/agent/option_rfq_instrument_parser") == 1
+    assert main.MessageClientHttpx is original_factory and httpx.AsyncClient is real_async_client
 
 
 async def test_transport_timeout_is_recorded_and_replayed_without_exception_secrets(tmp_path):

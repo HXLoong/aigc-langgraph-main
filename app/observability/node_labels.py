@@ -56,8 +56,6 @@ NODE_LABELS: dict[str, NodeLabel] = {
     "option_extract_confirm_cancel": NodeLabel("期权确认撤单", "io"),
     "option_extract_query": NodeLabel("期权订单查询", "io"),
     "option_unknown": NodeLabel("期权未知意图与错误出口"),
-    "inquiry_fast_parse": NodeLabel("期权快速询价参数解析", "io"),
-    "inquiry_fast_submit": NodeLabel("期权快速询价提交", "io"),
     "inquiry_extract": NodeLabel("期权询价要素抽取", "llm"),
     "inquiry_normalize": NodeLabel("期权询价参数归一化"),
     "inquiry_submit": NodeLabel("期权询价提交", "io"),

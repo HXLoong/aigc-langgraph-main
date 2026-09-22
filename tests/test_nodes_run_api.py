@@ -86,6 +86,21 @@ async def test_not_registered(product: str, node: str) -> None:
     assert response.status_code == 404
 
 
+@pytest.mark.parametrize("node", ["inquiry_fast_parse", "inquiry_fast_submit"])
+@pytest.mark.parametrize("endpoint", ["prepare", "run"])
+async def test_retired_inquiry_nodes_are_not_registered(node: str, endpoint: str) -> None:
+    # 非法类型确保旧实现即便仍注册，也会在校验阶段退出，避免触发实际 IO。
+    field = "langfuse_input" if endpoint == "prepare" else "state"
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app), base_url="http://test",
+    ) as client:
+        response = await client.post(f"/v1/nodes/{endpoint}", json={
+            "product": "option", "node": node, field: {"raw_text": 1},
+        })
+    assert response.status_code == 404
+    assert response.json()["detail"] == "Node not registered"
+
+
 @pytest.mark.parametrize(
     ("product", "node", "state"),
     [

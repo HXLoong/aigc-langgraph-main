@@ -67,17 +67,13 @@ async def test_invalid_explicit_change_never_restores_old_tenor(wire, raw):
     assert "期限" in result.get("reply_text", "")
 
 
-@pytest.mark.parametrize("path", ["entry", "subgraph"])
-async def test_both_fast_inquiry_paths_normalize_all_tenors(wire, monkeypatch, path):
+async def test_fast_inquiry_entry_normalizes_all_tenors(wire, monkeypatch):
     _, sent = wire
     data = {"tenor": ["半年", "1Y", "1年", "3m"], "chatInstrument": "原始1Y询价"}
-    if path == "entry":
-        agent = AsyncMock()
-        agent.parse_rfq_instrument.return_value = {"code": 0, "api_data_result_obj": data}
-        monkeypatch.setattr(fast_query, "_make_agent_client", lambda: agent)
-        await fast_query.quick_inquiry({**CONTEXT, "raw_text": "1Y询价"})
-    else:
-        await inquiry.inquiry_fast_submit({**CONTEXT, "raw_text": "1Y询价", "iq_rfq_data": data})
+    agent = AsyncMock()
+    agent.parse_rfq_instrument.return_value = {"code": 0, "api_data_result_obj": data}
+    monkeypatch.setattr(fast_query, "_make_agent_client", lambda: agent)
+    await fast_query.quick_inquiry({**CONTEXT, "raw_text": "1Y询价"})
     assert sent[0]["optionRfq"]["tenor"] == ["6M", "12M", "12M", "3M"]
     assert data["tenor"] == ["半年", "1Y", "1年", "3m"]
 
@@ -137,17 +133,13 @@ async def test_ordinary_inquiry_stops_before_submit_on_invalid_tenor(wire, monke
     assert not sent and "期限" in result.get("reply_text", "")
 
 
-@pytest.mark.parametrize("path", ["entry", "subgraph"])
-async def test_fast_inquiry_invalid_array_is_a_correction_not_a_write(wire, monkeypatch, path):
+async def test_fast_inquiry_invalid_array_is_a_correction_not_a_write(wire, monkeypatch):
     _, sent = wire
     data = {"tenor": ["1Y", "abc"]}
-    if path == "entry":
-        agent = AsyncMock()
-        agent.parse_rfq_instrument.return_value = {"code": 0, "api_data_result_obj": data}
-        monkeypatch.setattr(fast_query, "_make_agent_client", lambda: agent)
-        result = await fast_query.quick_inquiry({**CONTEXT, "raw_text": "询价"})
-    else:
-        result = await inquiry.inquiry_fast_submit({**CONTEXT, "iq_rfq_data": data})
+    agent = AsyncMock()
+    agent.parse_rfq_instrument.return_value = {"code": 0, "api_data_result_obj": data}
+    monkeypatch.setattr(fast_query, "_make_agent_client", lambda: agent)
+    result = await fast_query.quick_inquiry({**CONTEXT, "raw_text": "询价"})
     assert not sent and "期限" in result.get("reply_text", "")
 
 

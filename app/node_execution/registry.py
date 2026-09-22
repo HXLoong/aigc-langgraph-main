@@ -84,16 +84,6 @@ _EXECUTION_OPTIONS: dict[str, dict[str, Any]] = {
     "option_extract_cancel": {"backend_context": True},
     "option_extract_confirm_cancel": {"backend_context": True},
     "option_extract_query": {"backend_context": True, "io": True},
-    "inquiry_fast_parse": {
-        "io": True,
-        "input_schema": "app.subgraphs.option.extract_inquiry:InquiryState",
-        "state_schema": "app.subgraphs.option.extract_inquiry:InquiryState",
-    },
-    "inquiry_fast_submit": {
-        "backend_context": True,
-        "input_schema": "app.subgraphs.option.extract_inquiry:InquiryState",
-        "state_schema": "app.subgraphs.option.extract_inquiry:InquiryState",
-    },
     "inquiry_extract": {
         "io": True,
         "input_schema": "app.subgraphs.option.extract_inquiry:InquiryState",

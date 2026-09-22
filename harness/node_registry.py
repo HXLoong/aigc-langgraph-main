@@ -97,8 +97,6 @@ _VIEWS = (
     ),
     _view("option_intent", "意图识别", replayable=True),
     _view("option_extract_inquiry", "询价子图", replayable=False),
-    _view("inquiry_fast_parse", "快速询价解析", replayable=True),
-    _view("inquiry_fast_submit", "后端写入", replayable=False),
     _view("inquiry_extract", "参数提取", replayable=True),
     _view("inquiry_normalize", "参数归一化", replayable=True),
     _view("inquiry_submit", "后端写入", replayable=False),

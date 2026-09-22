@@ -325,7 +325,6 @@ def _all_schema_inputs() -> dict[str, dict[str, Any]]:
         "candidates": [],
     }
     inquiry = agent | {
-        "iq_rfq_data": {},
         "iq_raw_params": {},
         "iq_field_records": {},
         "iq_order_list": [],
@@ -352,7 +351,7 @@ def test_every_registration_prepares_to_an_executor_valid_request() -> None:
 
     executor = NodeExecutor(build_registry())
     schema_inputs = _all_schema_inputs()
-    assert len(executor.registrations) == 57
+    assert len(executor.registrations) == 55
 
     for key, registration in executor.registrations.items():
         original = copy.deepcopy(schema_inputs[registration.input_schema.__name__])
@@ -365,7 +364,7 @@ def test_every_registration_prepares_to_an_executor_valid_request() -> None:
 
 def test_registry_declarations_are_explicit_valid_and_cover_known_dependencies() -> None:
     registrations = {(item.product, item.name): item for item in build_registry()}
-    assert len(registrations) == 57
+    assert len(registrations) == 55
     for key, item in registrations.items():
         assert isinstance(item.input_fields, tuple), key
         assert len(item.input_fields) == len(set(item.input_fields)), key

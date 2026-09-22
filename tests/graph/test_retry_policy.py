@@ -149,7 +149,7 @@ READ_NODES: dict[str, set[str]] = {
     },
     "swap_place": {"swap_extract_candidates"},
     "option": {"option_intent", "option_extract_query"},
-    "inquiry": {"inquiry_fast_parse", "inquiry_extract"},
+    "inquiry": {"inquiry_extract"},
     "close": {"close_intent", "close_holding_query", "close_query_status"},
     "place_close": {"place_close_fetch_orders", "place_close_extract"},
 }
@@ -161,7 +161,7 @@ WRITE_NODES: dict[str, set[str]] = {
         "option_extract_inquiry", "option_extract_place", "option_extract_confirm_place",
         "option_extract_cancel", "option_extract_cancel_place", "option_extract_confirm_cancel",
     },
-    "inquiry": {"inquiry_fast_submit", "inquiry_submit"},
+    "inquiry": {"inquiry_submit"},
     "close": {"close_confirm_close", "close_cancel_close", "close_confirm_cancel"},
     "place_close": {"place_close_submit"},
 }

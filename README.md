@@ -70,6 +70,8 @@ python scripts/langfuse/langfuse_eval.py --dataset golden_option_inquiry_case --
 标的名称/代码由 LangGraph 按原文提取，Java 业务接口调用标的识别、分词和排序工具。
 本地不再运行 ticker 子图；职责和兼容约定见 [后端标的边界](docs/backend-instrument-boundary.md)。
 
+询价入口由请求标志决定：`fast_query=1` 走主图 `quick_inquiry`，调用 GOATS 解析并以 `optionRfq` 提交；普通入口的 `new_inquiry` 只走模型提取、归一化和 `orderList` 提交。文本中出现雪球、参与型或“快速询价”等词不改变入口。
+
 每条消息按既有产品与意图优先级进入一个业务分支，同一动作允许多笔订单。
 混合输入沿用原路由，不做多动作拆分、依赖调度或新增识别门禁。
 选定本轮动作后，该业务分支识别出的订单统一使用这个动作，不再按分句分配不同动作。

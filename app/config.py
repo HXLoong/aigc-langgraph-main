@@ -51,7 +51,6 @@ class Settings(BaseSettings):
     multimodal_fetch_timeout_seconds: float = Field(default=5.0, gt=0)  # 图片 / Excel 远端文件下载（swap/multimodal.py）
     goats_agent_rfq_timeout_seconds: float = Field(default=5.0, gt=0)        # GOATS agent：快速询价参数解析
     goats_agent_instruction_timeout_seconds: float = Field(default=5.0, gt=0)  # GOATS agent：存量兼容指令查询
-    goats_rfq_direct_timeout_seconds: float = Field(default=5.0, gt=0)       # GOATS 快速询价直连（app/tools/goats_rfq.py）
 
     # === goats ===
     goats_base_url: str = ""

@@ -2,7 +2,9 @@
 
 `POST /v1/nodes/run` 用于隔离执行一个已注册的 LangGraph 节点或复合子图，返回该目标的实际 State 更新。它适合定位意图识别、参数提取、后端调用和内部阶段问题；完整会话仍应使用 `POST /v1/workflows/run`。
 
-当前工作区共注册 57 项：`main` 15、`option` 14、`swap` 13、`option_close` 15（标的识别已委托 Java 后端，不再有 `ticker` 命名空间）。单条消息只执行一个业务动作，该动作可包含多笔订单；多动作编排节点已退役。注册名称以 [registry.py](../app/node_execution/registry.py) 为准，文末有[节点中英文对照表](#9-节点中英文对照表)。
+当前工作区共注册 55 项：`main` 15、`option` 12、`swap` 13、`option_close` 15（标的识别已委托 Java 后端，不再有 `ticker` 命名空间）。单条消息只执行一个业务动作，该动作可包含多笔订单；多动作编排节点已退役。注册名称以 [registry.py](../app/node_execution/registry.py) 为准，文末有[节点中英文对照表](#9-节点中英文对照表)。
+
+普通期权询价仅执行 `inquiry_extract → inquiry_normalize → inquiry_submit`，通过 `orderList` 提交。快速询价仅保留 `main/quick_inquiry`，主图依据 `fast_query=1` 选择该入口。旧的 `option/inquiry_fast_parse`、`option/inquiry_fast_submit` 已退役；调用其 `/prepare` 或 `/run` 返回 404，不重定向到其他节点。
 
 > `/v1/nodes/run` 不执行上游节点、不恢复 checkpoint，也不继承前一次调用的 State。复合子图会按原路由执行内部链路；下单、确认、撤单、持久化等节点会保留原有副作用。连接真实后端时应先测试只读节点。
 
@@ -277,7 +279,7 @@ Remove-Item Env:RUN_LOCAL_MYSQL_TESTS
 
 ## 9. 节点中英文对照表
 
-以下是当前 `/v1/nodes/run` 的全部 65 个注册项。所属对应请求中的 `product`，英文名对应 `node`；业务子图入口会执行内部链路。单条消息只执行一个业务动作，该动作可包含多笔订单；多动作编排节点已退役。注册名称以 [registry.py](../app/node_execution/registry.py) 为准。
+以下是当前 `/v1/nodes/run` 的全部 55 个注册项。所属对应请求中的 `product`，英文名对应 `node`；业务子图入口会执行内部链路。单条消息只执行一个业务动作，该动作可包含多笔订单；多动作编排节点已退役。注册名称以 [registry.py](../app/node_execution/registry.py) 为准。
 
 | 所属（product） | 节点英文名（node） | 中文名 |
 | --- | --- | --- |
@@ -305,8 +307,6 @@ Remove-Item Env:RUN_LOCAL_MYSQL_TESTS
 | `option` | `option_extract_confirm_cancel` | 期权确认撤单订单号提取 |
 | `option` | `option_extract_query` | 期权订单查询参数提取 |
 | `option` | `option_unknown` | 期权未知意图兜底 |
-| `option` | `inquiry_fast_parse` | 快速询价指令解析 |
-| `option` | `inquiry_fast_submit` | 快速询价提交 |
 | `option` | `inquiry_extract` | 询价参数提取 |
 | `option` | `inquiry_normalize` | 询价参数归一化与多值展开 |
 | `option` | `inquiry_submit` | 询价请求提交 |

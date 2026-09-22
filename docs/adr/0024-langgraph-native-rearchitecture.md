@@ -149,7 +149,7 @@ DSL v2 迁移（2026-08）后，代码在 LangGraph 上跑通了全部业务链�
 
 以下工作量与分类为原方案快照；原生 endpoint / adapter 迁移按 D7 暂缓，shadow 工具保留。
 
-- **A 保留**：`app/api/routes.py` wire schema + 502 语义 + `_INPUT_FIELD_ALIASES`；`app/tools/{swap,option}_client.py` 意图枚举；`app/tools/goats_rfq.py` 签名；`docs/on-call-runbook.md` 回切预案（G5.2b 后失效）。
+- **A 保留**：`app/api/routes.py` wire schema + 502 语义 + `_INPUT_FIELD_ALIASES`；`app/tools/{swap,option}_client.py` 意图枚举；~~`app/tools/goats_rfq.py` 签名~~（2026-09-22 普通询价快捷分支退役，主图快速询价使用 `app/tools/goats_agent_client.py`）；`docs/on-call-runbook.md` 回切预案（G5.2b 后失效）。
 - **B 替换**（19-26 人日）：原生 endpoint + adapter；`DifyWorkflowRun*` 重命名；提示词 `node_id` / `model` 行；31 处死 `[user]` 段与占位符；`fresh_counterparty.py:24-28` hack；4 处 system 占位符命名；`intent_route.py:36-51` 中文标签；两条纪律；~110 处注释；~30 处测试；`option_close`/`close`；`app/main.py:68` description；活跃文档。
 - **C 删除**（4-6 人日）：dify/、scripts/export_dify_prompts.py、sync-dify-prompts / migrate-prompt 技能与 dify-reviewer / prompt-migrator agent（含 `.agents` 镜像）、`mock_api` rerank 桩、tests/api/test_20_dify_rerank.py、3 个 0 流量 *_v2.md、docs/archive/dify-originals/、日期型对比报告、ADR 0022 移 archive。（2026-09-17 除 shadow_compare 与 ADR 0022 外已全部执行，见落地记录）
 - **安全（历史提案）**：曾提出对 ~~`tests/api/_utils.py:12`~~ 中的历史凭据执行 revoke；本轮历史 GOATS 测试凭据按 #218 用户裁决不处理。
@@ -161,6 +161,7 @@ DSL v2 迁移（2026-08）后，代码在 LangGraph 上跑通了全部业务链�
 
 ## 2026-09-22 巡检裁决与本地实现
 
+- 用户确认按当前 Dify 的入口边界收敛询价：普通 `new_inquiry` 仅保留 `inquiry_extract → inquiry_normalize → inquiry_submit`，产品关键词不再触发 GOATS 解析。`inquiry_fast_parse / inquiry_fast_submit` 及旧直连客户端退役；GOATS 快速询价保留在主图 `fast_query=1` 的 `quick_inquiry`。上文 2026-09-17 三管线记录作为历史保留。本次仅对齐入口与链路，询价字段契约差异另行处理。
 - #218：用户决定不处理历史 GOATS 测试凭据，不纳入本轮验收。
 - #219：Python 依赖已限制 PyMySQL < 1.2；已部署环境与离线包核查仍待执行，不宣称现场已修复。
 - #223：7dfed2a 在原 IO 节点最后一次失败时返回错误，恢复正常图边与并行收尾；专项 RED 8 条失败，GREEN 85 条通过。
