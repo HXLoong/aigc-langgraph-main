@@ -70,7 +70,7 @@ def test_java_500_reply_policy_retains_original_result():
     assert state["api_result"] == "内部业务异常详情"
 
 
-def test_default_reply_matches_dify_guidance():
+def test_default_reply_matches_business_guidance():
     from app.config import Settings
 
     reply = Settings.model_fields["default_reply"].default
@@ -122,7 +122,7 @@ def test_retry_900_scope_excludes_quick_inquiry():
     )
 
 
-async def test_batch_500_with_no_message_uses_dify_reply(monkeypatch):
+async def test_batch_500_with_no_message_uses_service_unavailable_reply(monkeypatch):
     from unittest.mock import MagicMock
 
     from app.execution import operations
@@ -155,7 +155,7 @@ async def test_batch_500_with_no_message_uses_dify_reply(monkeypatch):
     assert result["instruction_results"][0]["api_code"] == 500
 
 
-async def test_quick_parser_invalid_response_uses_dify_copy_without_losing_reason():
+async def test_quick_parser_invalid_response_uses_business_copy_without_losing_reason():
     import httpx
 
     from app.tools.goats_agent_client import GoatsAgentClientHttpx

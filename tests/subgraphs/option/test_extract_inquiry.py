@@ -59,7 +59,7 @@ class TestOptionOrderItemForInquiry:
             OptionOrderItem(optionType="美式看涨")  # type: ignore[arg-type]
 
     def test_removed_option_types_rejected(self) -> None:
-        """Dify DSL v2 收窄：不再支持 欧式看跌/气囊。"""
+        """期权类型收窄为 3 值（DSL v2 迁移），不再支持 欧式看跌/气囊。"""
         for removed in ("欧式看跌", "气囊"):
             with pytest.raises(ValidationError):
                 OptionOrderItem(optionType=removed)  # type: ignore[arg-type]

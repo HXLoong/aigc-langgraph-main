@@ -137,7 +137,7 @@ class TestHasUsableQuote:
         assert _has_usable_quote({"quote_content": "订单H-1（序号1）："}) is True
 
     def test_whitespace_only_is_usable(self) -> None:
-        """仅空白也算「非空」（与 Dify 原判断一致：只排除空/null）。"""
+        """仅空白也算「非空」：引用判空只排除空串与 null 字面量（业务规则，不做 strip）。"""
         assert _has_usable_quote({"quote_content": "   "}) is True
 
 
@@ -263,7 +263,6 @@ class TestSwapGraphEndToEnd:
         ]
         assert final.get("intent") == "place_order_request"
         assert final.get("expected_action") == "place"
-        assert "swap_todo" not in trace_nodes
         # ticker 集成验证
         assert final["place_params"]["orderList"][0]["placeOrderWindCode"] == "腾讯"
 

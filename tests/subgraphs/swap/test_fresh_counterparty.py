@@ -1,4 +1,4 @@
-"""全新交易对手节点：模型候选经 Dify 聚合规则校验后写回订单。"""
+"""全新交易对手节点：模型候选经聚合规则校验后写回订单。"""
 from __future__ import annotations
 
 import json
@@ -138,7 +138,7 @@ async def test_unusable_recall_preserves_entire_batch_and_explains_why(
 
 
 @pytest.mark.parametrize("accounts", [["1", "1"], ["1", "2"], [None, None]])
-async def test_dify_deduplicates_names_regardless_of_backend_account_ids(
+async def test_deduplicates_names_regardless_of_backend_account_ids(
     monkeypatch: pytest.MonkeyPatch, accounts: list[str | None],
 ) -> None:
     from app.subgraphs.swap.fresh_counterparty import swap_recognize_fresh_counterparty

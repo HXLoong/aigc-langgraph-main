@@ -1,6 +1,6 @@
 """route_rules（DSL v2「脚本判断期权、互换、其他查询指令」移植）单测。
 
-对照源:dify/yaml/主干工作流.yml node 1755072896717。
+规则真源：app/nodes/route_rules.py（DSL v2 迁移后代码即真源，ADR 0024 D1）。
 标签约定与 DSL 完全一致:互换-文本 / 期权-文本 / 期权平仓-文本 / 互换-图片 / 互换-Excel /
 无法识别文件类型 / unknown。
 """

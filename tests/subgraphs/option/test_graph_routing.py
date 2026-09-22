@@ -1,4 +1,4 @@
-"""option 子图路由测试 · intent → conditional → 7 个 extract 节点 / unknown（Dify DSL v2）。"""
+"""option 子图路由测试 · intent → conditional → 7 个 extract 节点 / unknown。"""
 from __future__ import annotations
 
 from unittest.mock import AsyncMock, MagicMock
@@ -15,6 +15,7 @@ from app.subgraphs.option import extract_inquiry as inquiry_module
 from app.subgraphs.option import extract_place as place_module
 from app.subgraphs.option import extract_query as query_module
 from app.subgraphs.option import intent as intent_module
+from app.subgraphs.option.graph import _INTENT_TO_NODE, _route_after_option_intent
 from app.subgraphs.option.models import (
     OptionInquiryRawItem,
     OptionInquiryRawParams,
@@ -104,7 +105,6 @@ async def test_place_order_from_quote_routes_to_extract_place(
     trace_nodes = [e.node for e in final.get("trace", [])]
     assert "option_intent" in trace_nodes
     assert "option_extract_place" in trace_nodes
-    assert "option_todo" not in trace_nodes
     assert final.get("intent") == "place_order_from_quote"
     assert final.get("expected_action") == "place"
 
@@ -194,3 +194,22 @@ async def test_unknown_intent_routes_to_option_unknown(
         "option_extract_query",
     ):
         assert unexpected not in trace_nodes
+
+
+# ============================================================
+# 纯函数路由：_route_after_option_intent
+# ============================================================
+
+
+@pytest.mark.parametrize(("intent", "node"), sorted(_INTENT_TO_NODE.items()))
+def test_route_after_option_intent_maps_every_intent(intent: str, node: str) -> None:
+    assert _route_after_option_intent({"intent": intent}) == node
+
+
+@pytest.mark.parametrize(
+    "state",
+    [{"intent": "unknown_intent"}, {}, {"intent": "new_inquiry", "error": object()}],
+    ids=["unknown_intent", "missing_intent", "error_wins_over_intent"],
+)
+def test_route_after_option_intent_falls_back(state: dict) -> None:
+    assert _route_after_option_intent(state) == "option_unknown"

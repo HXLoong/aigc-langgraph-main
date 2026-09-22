@@ -195,7 +195,7 @@ async def test_code_500_preserves_original_receipt(monkeypatch):
     assert (await render({**result, "product_type": "option_close"}))["reply_text"] == "交易指令服务暂不可用"
 
 
-def test_unknown_counterparty_keeps_dify_sentinel_filter():
+def test_unknown_counterparty_keeps_unmatched_sentinel_filter():
     params, _ = normalize_holding_candidates(
         holding_candidates(keyCtptyIdList=["未匹配账户"]),
         {"raw": "查对手未匹配账户的持仓"},

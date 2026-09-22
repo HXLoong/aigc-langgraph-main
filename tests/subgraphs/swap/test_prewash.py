@@ -1,8 +1,8 @@
-"""swap.prewash · 互换开仓-前置清洗 测试（Dify code 节点 1:1）。
+"""swap.prewash · 互换开仓-前置清洗 测试（确定性清洗规则，代码为真源）。
 
 覆盖 `app/subgraphs/swap/prewash.py::sanitize_order_list`，在
 `app/subgraphs/swap/backend.py:98` 由 `call_swap_backend` 对 6 个意图统一调用一次
-（对应 Dify「模型数据聚合 → 互换开仓-前置清洗 → 互换开仓」的单一清洗落点）。
+（「模型数据聚合 → 前置清洗 → 互换开仓」链路上的单一清洗落点）。
 
 对齐参考：`tests/subgraphs/option/test_sanitize.py`（同一清洗语义的另一份实现）。
 测试方法：G1 纯函数确定性。
@@ -39,7 +39,7 @@ class TestSanitizeOrderList:
         assert out == [{"placeOrderWindCode": "600519.SH"}]
 
     def test_order_item_itself_not_dropped(self) -> None:
-        """订单条目本身不会因为字段被清成 None 而从列表消失（对齐 Dify 语义）。"""
+        """订单条目本身不会因为字段被清成 None 而从列表消失（条目数由用户输入决定）。"""
         out = sanitize_order_list(
             [{"orderId": "null", "placeOrderWindCode": "null"}]
         )
@@ -92,7 +92,7 @@ class TestSanitizeOrderList:
         assert out == [{"outer": {"inner": None, "keep": "x"}}]
 
     def test_custom_null_literals(self) -> None:
-        """null_literals 可覆盖默认 {'null'}（Dify NULL_LITERALS 环境变量语义）。"""
+        """null_literals 可覆盖默认 {'null'}（空值字面量清单可配置）。"""
         out = sanitize_order_list(
             [{"a": "none", "b": "null"}],
             null_literals=frozenset({"none"}),

@@ -1,4 +1,4 @@
-"""OptionIntentOutput Pydantic 模型测试（Dify DSL v2：7 基础意图 + unknown_intent）。"""
+"""OptionIntentOutput Pydantic 模型测试（7 基础意图 + unknown_intent）。"""
 from __future__ import annotations
 
 import pytest
@@ -7,7 +7,7 @@ from pydantic import ValidationError
 from app.subgraphs.option.models import OptionIntentOutput
 
 # ============================================================
-# 8 个合法 type 值（Dify DSL v2：7 基础意图 + unknown_intent，不含 close_order_*，
+# 8 个合法 type 值（7 基础意图 + unknown_intent，不含 close_order_*，
 # 不再含 request_modify_order / confirm_modify_order）
 # ============================================================
 
@@ -35,7 +35,7 @@ def test_all_eight_intent_types_accepted(intent_type: str) -> None:
     ["request_modify_order", "confirm_modify_order"],
 )
 def test_removed_modify_intents_rejected(removed_intent: str) -> None:
-    """Dify DSL v2：期权无独立改单流程，这两个旧枚举值必须被拒绝。"""
+    """期权无独立改单流程（DSL v2 迁移收窄），这两个旧枚举值必须被拒绝。"""
     with pytest.raises(ValidationError):
         OptionIntentOutput(type=removed_intent, confidence=0.91, evidence=[{"text": "本轮意图模型测试输入", "origin": "raw"}])  # type: ignore[arg-type]
 
