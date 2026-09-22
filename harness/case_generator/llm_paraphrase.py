@@ -14,6 +14,7 @@
 from __future__ import annotations
 
 import json
+from typing import Any, cast
 
 from langchain_core.messages import HumanMessage, SystemMessage
 from pydantic import BaseModel, ConfigDict, Field
@@ -106,9 +107,9 @@ async def paraphrase_case(
         expected=json.dumps(seed.expected, ensure_ascii=False),
         quote_content="(首轮无引用)",
     )
-    result = await llm.ainvoke(
+    result = cast(ParaphraseBatch, await llm.ainvoke(
         [SystemMessage(content=_SYSTEM_PROMPT), HumanMessage(content=user_msg)]
-    )
+    ))
     return list(result.variants)
 
 
@@ -116,7 +117,7 @@ def to_golden_dict(
     seed: GoldenCase,
     paraphrased: ParaphrasedCase,
     new_id: str,
-) -> dict:
+) -> dict[str, Any]:
     """把 LLM 生成的变体转为 golden.jsonl 格式（不直接合入，等 review）。"""
     return {
         "id": new_id,

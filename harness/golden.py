@@ -253,11 +253,12 @@ def load_golden(
     *,
     root: Path = Path("tests/fixtures"),
 ) -> list[GoldenCase]:
+    fixture_paths: list[Path]
     if paths is None:
         fixture_paths = discover_fixtures(root)
     else:
         raw_paths = [paths] if isinstance(paths, Path) else list(paths)
-        fixture_paths: list[Path] = []
+        fixture_paths = []
         for path in raw_paths:
             fixture_paths.extend(sorted(path.glob("*.jsonl")) if path.is_dir() else [path])
 

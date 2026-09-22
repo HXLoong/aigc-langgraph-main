@@ -1,8 +1,7 @@
 name: CI
 
 on:
-  # 2026-05-12 暂停自动 CI（M3 数据集 + 文档密集期，CI 临时关闭）
-  # 恢复方法：取消下方 workflow_dispatch，恢复 push + pull_request 触发即可
+  pull_request:
   workflow_dispatch:
 
 jobs:
@@ -10,8 +9,15 @@ jobs:
     runs-on: ubuntu-latest
 
     env:
-      # ADR 0014 D8: CI 中默认关闭 LangFuse（不跑 server，避免成本与脆弱性）
+      # 离线测试不读取开发机 .env，不连接数据库、LLM 或 Java 服务。
       ENABLE_LANGFUSE: "false"
+      USE_MYSQL_CHECKPOINTER: "false"
+      REQUEST_IDEMPOTENCY: "false"
+      MYSQL_URI: "mysql+aiomysql://ci:ci@127.0.0.1:1/ci"
+      QWEN_API_BASE: "http://127.0.0.1:1/v1"
+      QWEN_API_KEY: "ci-placeholder"
+      OTC_API_BASE_URL: "http://127.0.0.1:1"
+      OTC_API_SECRET: "ci-placeholder"
 
     steps:
       - uses: actions/checkout@v4
@@ -28,12 +34,13 @@ jobs:
           pip install -e ".[dev]"
 
       - name: Lint (ruff)
-        # M1 重写期允许有警告，但语法错误会失败
-        run: ruff check app/ tests/ || echo "::warning::ruff issues (allowed during M1)"
+        run: ruff check app/ tests/ harness/
 
       - name: Type check (mypy)
-        # M1 重写期允许有类型错误（旧代码已删，新代码逐步补）
-        run: mypy app/ harness/ || echo "::warning::mypy issues (allowed during M1)"
+        run: mypy app/ harness/
+
+      - name: 指令文件同步
+        run: python scripts/sync_agents_md.py --check
 
       - name: ADR 0019 阈值一致性 (alerts.py ↔ ADR 0019 ↔ runbook)
         # PR #102 / #103 / #104 / #106：3 处阈值同步是 F4 切流硬约束，
@@ -51,9 +58,4 @@ jobs:
         run: python scripts/check_adr_refs.py
 
       - name: Run tests
-        run: |
-          if [ -d tests ] && [ -n "$(find tests -name 'test_*.py' -type f 2>/dev/null)" ]; then
-            pytest tests/ -v
-          else
-            echo "No tests yet (M1 skeleton phase)"
-          fi
+        run: pytest tests/ -v
