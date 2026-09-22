@@ -38,7 +38,7 @@ ruff format app/ tests/                # 格式化
 mypy app/                              # 类型
 
 # 评估
-python scripts/langfuse_eval.py --local tests/fixtures/categories
+python scripts/langfuse/langfuse_eval.py --local tests/fixtures/categories
 python scripts/shadow_compare.py --langgraph ... --dify ... --sample ...
 
 # 提示词
@@ -169,7 +169,7 @@ ORDER BY step_index;
   - 减少不必要的节点（Agent 循环次数）
 
 ### 当准确率下降
-- 跑 `scripts/langfuse_eval.py --local <fixture>` 定位失败 category
+- 跑 `scripts/langfuse/langfuse_eval.py --local <fixture>` 定位失败 category
 - 用 `dify-reviewer` agent 做对齐分析
 - 检查是否提示词被意外改动：`git log app/prompts/`
 

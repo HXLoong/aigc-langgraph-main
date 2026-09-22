@@ -1,22 +1,20 @@
 # ADR 0013 · 加载后端动态 prompt 片段（swap_instrument_inference_prompt）
 
-- 状态：**已撤销**（2026-08-28 DSL v2 迁移 a5d0c15 把 `inferencePrompt` 收编为静态 prompt，~~`app/subgraphs/ticker/tools.py`~~ 不再运行时拉取；`TickerClient.get_inference_prompt` 为遗留死代码，清理见 [ADR 0022](./0022-prompt-governance-after-code-migration.md)）。以下为历史原文。
+- 状态：**已撤销**（2026-08-28 停止动态片段拉取；2026-09-20 本地标的推断与静态 prompt 一并退役）。遗留客户端不代表主链仍使用该能力。
 - 日期：2026-05-10
 - 修订：2026-08-27 深度改写为现状口径（wayfinder map #138 / 核查 #141）
 - 作者：图灵科技 + Tony
 
+## 当前职责（2026-09-22 修订）
 
-## 后续边界（2026-09-20）
+标的识别由 Java 负责，见[标的识别边界](../backend-instrument-boundary.md)。本轮不恢复
+动态片段、缓存或本地推断，也不修改 Java。下文记录撤销前的决策与行为，不是现役待办。
 
-本 ADR 保持已撤销状态。此后标的识别职责进一步迁至 Java，LangGraph 不再运行本地 ticker
-推断提示词或动态片段拼接链路。现役职责见[标的识别后端边界](../backend-instrument-boundary.md)。
-以下决策、缓存时效和降级约定均为历史记录，不是当前实现要求。
-
-## 决策
+## 历史决策
 
 Dify 工作流通过后端接口拉取一段**运维可热改的 prompt 片段**（全局配置 `swap_instrument_inference_prompt`）注入标的推断 LLM 节点。LangGraph 若只用静态 `infer_code.md`，业务方/运维临时调整推断规则（加新约束、新字典）就必须发版。决定补上：ticker 推断前先拉取动态片段，与静态文件拼接后喂给 LLM。
 
-## 历史落地（2026-08-27，原两条行内 Status update 已吸收）
+## 历史落地记录（2026-08-27）
 
 **Endpoint**：`GET /admin-api/counterparty/info/instrument-inference-prompt`，返回 `CommonResult<String>`（包裹纯字符串）。Java 侧 `CounterpartyInfoController.java:32`（`@GetMapping`）/ `:36`（方法签名）——原修订注的 `:33` 是行号偏移，`docs/api-contracts/java-backend.md` 同处偏移待一并修正。`/admin-api` 前缀由 `WebProperties.adminApi` 框架级注入。
 
@@ -42,7 +40,7 @@ Dify 工作流通过后端接口拉取一段**运维可热改的 prompt 片段**
 - **拼接策略反向**：动态片段是规则补充非框架，反向风险高。
 - **拉取 + 拼接 + 降级（已选）**：3 步恢复等价行为。
 
-## 后果（历史落地口径）
+## 后果（历史口径）
 
 - 热改后最长 5 分钟生效；即时生效的缓存清除接口暂不做。
 - 推断 prompt 不再"完全静态可读"：读 `infer_code.md` 只见框架，完整提示词 = 框架 + 后端 config；排错依赖后端配置变更审计、结构化日志和 metrics。

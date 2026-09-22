@@ -8,7 +8,7 @@
 
 | 脚本 | 用途 |
 |---|---|
-| `langfuse_eval.py` | **M3 主用**：DeepSeek Judge + per-turn JSON → Langfuse |
+| `langfuse/langfuse_eval.py` | **M3 主用**：DeepSeek Judge + per-turn JSON → Langfuse |
 
 ### 真后端探针（M3 联调）
 
@@ -19,6 +19,7 @@
 | `probe_option_write_e2e.py` | 期权下单写后端 |
 | `probe_close_write_e2e.py` | 平仓下单写后端 |
 | `probe_fast_query.py` | 快速询价 GOATS 解析交互式探针（不调后端询价接口）|
+| `probe_goats/` | GOATS 19 个业务接口逐个 / 一键探针（原 tests/api，2026-09-22 迁入；凭据从 `.env` 读，写类接口需 `--confirm-write`）|
 
 > 探针**不参与**自动 CI（依赖真后端 + VPN）。本地或客户现场手动跑。
 
@@ -30,7 +31,7 @@
 | `rollback_canary.sh` | 一键回切 |
 | `drill_smoke.sh` | 上线 smoke checklist |
 | `shadow_compare.py` | LangGraph vs Dify 双跑对比（`DRY_RUN_BACKEND` 模式可用）|
-| `promote_langfuse_prompt.py` | Prompt 晋升（label `production`）|
+| `langfuse/promote_langfuse_prompt.py` | Prompt 晋升（label `production`）|
 | `run_alerts.py` | 告警轮询 |
 | `llm_cost_report.py` | LLM 成本日报 |
 
@@ -45,7 +46,7 @@
 | 脚本 | 用途 |
 |---|---|
 | `check_alert_threshold_consistency.py` | 告警阈值一致性 lint |
-| `check_fixture_consistency.py` | fixture 一致性 lint（categories）|
+| `check_fixture_consistency.py` | fixture 一致性 lint（categories 业务集 + intent 意图集 + unified）|
 | `check_adr_refs.py` | ADR 互引虚悬 + 引用路径存在性 lint（跳过删除线段）|
 
 ### 数据维护
@@ -55,7 +56,10 @@
 | `convert_csv_to_excel.py` | CSV 测试集 → 单个 Excel 工作簿（每 CSV 一个 sheet）|
 | `convert_jsonl_to_csv.py` | JSONL 测试集 → 逐步中文 CSV（仅标准库）|
 | `convert_excel_to_jsonl.py` | 黄金 Excel → 期权/互换 JSONL；严格匹配 10/13 列表头顺序，同用例多步合并为一行，支持 `--dry-run` |
-| `upload_golden_to_langfuse.py` | 本地 categories fixture → Langfuse dataset |
+| `convert_jsonl_to_excel.py` | categories JSONL → 黄金 Excel，便于人工查看和维护 |
+| `derive_intent_fixtures.py` | categories 业务集 → 意图集草稿（只搬 product_type/intent 标签，未标注轮标 review.pending；`--only-labeled` 写入 `tests/fixtures/intent/`）|
+| `derive_instrument_fixtures.py` | swap 业务集 → 标的识别意图集草稿（订单数以卡片 `标的代码` 行为准，原文表达任一候选 + 市场限定 → `expected.instruments`；`--dry-run` 出复核表，`--only-reviewed` 写入）|
+| `langfuse/upload_golden_to_langfuse.py` | 本地 categories / intent fixture → Langfuse Dataset（`--suite` 按路径自动判定）|
 | `cleanup_checkpoints.py` | checkpoint 三表按线程清理（客户现场运维）|
 | `sync_agents_md.py` | CLAUDE.md + .claude/{rules,skills,agents} → AGENTS.md + .agents/skills/（Codex 读取；`--check` 供提交前自检，产物禁止手改）|
 

@@ -1,0 +1,1 @@
+{"caseNo": "intent-option-case-021", "name": "case-021", "category": "intent/option", "type": "positive", "source": "derived:golden_option_inquiry_case#case-021", "send_text": "600519.SH，欧式看涨,1M，80%", "at_bot": true, "quote_previous": false, "expected": {"product_type": "option", "intent": "new_inquiry"}, "sub_scenes": []}

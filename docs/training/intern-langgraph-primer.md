@@ -312,7 +312,7 @@ mypy app/                             # 类型检查
 # 评估
 python -m harness run                 # golden 全集（本地快速 smoke）
 python -m harness diff <run-a> <run-b>
-python scripts/langfuse_eval.py --local tests/fixtures/golden.jsonl --ids opt-001 --concurrency 2
+python scripts/langfuse/langfuse_eval.py --local tests/fixtures/golden.jsonl --ids opt-001 --concurrency 2
                                       # 带 DeepSeek Judge 的正式评估（M3 主用）
 
 # 服务

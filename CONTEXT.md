@@ -71,6 +71,10 @@ _Avoid_: 将多个订单等同于多个动作；识别到订单就视为交易�
 交易指令指向的证券、基金、期货等交易对象。输入表达可以是用户原始名称、代码或月份描述，标准代码及可交易性由 Java 权威识别。用户原文与引用候选选择本身不等于 GOATS 已验证的标的。
 _Avoid_: stock（仅指股票）、symbol（不准确）、underlying（仅期权语境）
 
+**标的表达**：
+用户原话或引用消息中的证券名称、代码或月份表达；它是识别输入，不等同于已经校验的标的。
+_Avoid_: 把提取到的名称或引用候选直接当作后端已校验结果
+
 **Confirm 节点的 action 参数**：
 合并版 `swap.confirm(action: "place" | "cancel" | "modify")`——同一个节点处理三种动作的二次确认，动作由 intent 推导并写入 AgentState 顶层 `expected_action`（ADR 0024 D2；`place` / `modify` / `cancel` / `inquiry` / `close`）。
 _Avoid_: 三个独立的"确认下单 / 确认撤单 / 确认改单"节点（已合并）
@@ -82,6 +86,7 @@ _Avoid_: 三个独立的"确认下单 / 确认撤单 / 确认改单"节点（已
 - 用户原话先经 **入口路由** 分流；LLM 指令分支内按 **product_type** 和 **意图（Intent）** 处理
 - LangGraph 保留 **标的** 原文及用户引用选择，Java 负责权威识别与校验；空 `tickers` 兼容字段不表示零命中，原文不标记为 `from_goats=True`。职责见 [标的识别后端边界](docs/backend-instrument-boundary.md)
 - LangGraph 通过 3 个 **Protocol**（OptionClient / SwapClient / TickerClient）调用 Java 后端业务 API，契约定义见 `docs/api-contracts/java-backend.md`
+- 业务卡片与订单执行结果来自 Java 后端，原始回执是业务核查依据。
 
 **Context-dependent case（上下文依赖 case）**：
 golden case 中，正确的 product_type 或 intent 只有在已知多轮对话历史时才能确定的一类 case（如裸"撤单"/"确认下单"）。

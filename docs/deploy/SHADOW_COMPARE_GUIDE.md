@@ -180,11 +180,11 @@ shadow 是**等价性验证**，不是"哪边对"的裁决。三种典型差异�
 
 **Q: 没有 Dify 实例怎么验证 LangGraph？**
 
-A: 用 `scripts/langfuse_eval.py --local <fixture>` 跑本地评估 — fixture 的 expected_output 就是
+A: 用 `scripts/langfuse/langfuse_eval.py --local <fixture>` 跑本地评估 — fixture 的 expected_output 就是
 "我们认为正确的答案"，不依赖 Dify：
 
 ```bash
-python scripts/langfuse_eval.py --local tests/fixtures/categories
+python scripts/langfuse/langfuse_eval.py --local tests/fixtures/categories
 ```
 
 **Q: Dify 返回结构和我们约定的不一样怎么办？**

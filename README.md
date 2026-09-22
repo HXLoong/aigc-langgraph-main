@@ -22,7 +22,7 @@
 - `scripts/drill_smoke.sh` · 演练 smoke（PR #100）
 - `scripts/shadow_compare.py` · LangGraph vs Dify 字段级 diff（PR #90 / #112，含 `DRY_RUN_BACKEND` 模式）
 - `scripts/canary_status.py` / `scripts/metrics_snapshot.py` · 灰度状态 + F4 全指标快照（PR #92 / #94）
-- `scripts/promote_langfuse_prompt.py` · LangFuse Prompt 晋升（F4.6 / PR #95）
+- `scripts/langfuse/promote_langfuse_prompt.py` · LangFuse Prompt 晋升（F4.6 / PR #95）
 - `scripts/run_alerts.py` · 阈值告警干跑（5xx / cascade / P95 延迟 / LLM 失败率）
 - Grafana 灰度观测面板 JSON 模板（`infra/`，F4.2-F4.5 / PR #97）
 - `docs/on-call-runbook.md` · on-call 应急回切剧本（F4.0 / PR #99）
@@ -60,6 +60,9 @@ USE_MYSQL_CHECKPOINTER=false REQUEST_IDEMPOTENCY=false ENABLE_LANGFUSE=false pyt
 # 联调服务可使用 ENVIRONMENT=staging uvicorn app.main:app --host 127.0.0.1 --port 8201
 python scripts/local_eval.py --base-url http://127.0.0.1:8201 --data tests/fixtures/categories --case case-025 --concurrency 1
 # 统一验收去掉 --case，明确只跑388条 categories；不默认并入 unified。
+
+# 6. Langfuse Dataset Experiment
+python scripts/langfuse/langfuse_eval.py --dataset golden_option_inquiry_case --ids case-022 --concurrency 1
 ```
 
 ## 架构
@@ -122,6 +125,7 @@ tests/fixtures/             # golden.jsonl（350+ 条）+ golden_ticker_2026-05.
 
 | 文档 | 用途 |
 |------|------|
+| [节点执行接口](docs/nodes-run.md) | `/v1/nodes/run`：65 个节点目录、State 契约、本地启动与真实后端切换 |
 | [CLAUDE.md](./CLAUDE.md) | AI 工具加载的项目 memory |
 | [CONTEXT.md](./CONTEXT.md) | 领域术语 + 概念边界 |
 | [HOW_TO_RUN.md](./HOW_TO_RUN.md) | 完整启动流程 |

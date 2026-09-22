@@ -1,20 +1,19 @@
 # ADR 0008 · 标的识别采用 ReAct Agent 而非固定链式流程
 
-- 状态：**已裁决；标的识别职责已于 2026-09-20 迁至 Java**——[#154](https://github.com/GZTL-AI/aigc-langgraph/issues/154) 选项 (b)：确定性编排 + LLM 定点兜底（LLM 输出必须过 GOATS 校验），ReAct Agent 死代码已随 Dify DSL v2 迁移删除
+- 状态：**已被替代**（2026-09-20 标的识别委托 Java；此前 #154 裁决与实现沿革保留供追溯）
 - 日期：2026-05-10
 - 修订：**2026-08-28 P1 ticker 域迁移落地**（Dify DSL v2 → LangGraph，见下方「迁移落地」段）；2026-08-27 深度改写为现状口径（wayfinder map #138 / 核查 #140）
 - 作者：图灵科技 + Tony
 
+## 当前职责（2026-09-20 起，2026-09-22 核对）
 
-## 当前边界（2026-09-20）
+现役主链只提取证券原文、校验引用选择并调用 Java 业务接口；识别、排序、多候选与权威
+校验由 Java 负责，见[标的识别边界](../backend-instrument-boundary.md)。本地 ticker 子图、
+提示词及测试均已退役，原文和引用候选不标记为 `from_goats=True`。
 
-标的识别已由 Java 负责，见[标的识别后端边界](../backend-instrument-boundary.md)。
-LangGraph 提取用户原文、处理引用候选选择并调用业务接口；标准代码、证券池和多候选判断由 Java 完成。
-本地不再运行 ticker resolver，也不以 `from_goats=True` 作为提交前提；空 `tickers` 不表示零命中。
+以下章节记录迁移前的方案、约束和待办，不再作为当前实现要求。
 
-以下内容保留 2026-08 的历史裁决与实现记录；其中的管线、约束和后果不代表当前业务链路。
-
-## 迁移落地（历史，2026-08-28）
+## 历史迁移落地（2026-08-28）
 
 ~~`app/subgraphs/ticker/react_agent.py`~~ / ~~`graph.py`~~ 已删除（无任何生产/测试引用，`build_ticker_graph` 从未被主图接线）。`resolver.py` 重写为对齐 Dify 新 DSL「标的智能化推断和分词工具」（12 节点）+「标的相关性排序工具」的确定性编排管线：
 
@@ -62,7 +61,7 @@ tokenize（本地候选提取，暂代 P5 路由域的"候选标的提取"节点
 - **LLM 单次结构化输出**：无法访问外部字典。
 - **ReAct Agent（原选）**：路径长度自适应；代价是步数/token 浮动需单独监测。
 
-## 运行时约束（历史核查）
+## 历史运行时约束（原文三条的当时状态）
 
 | 原约束 | 现状 | 裁定 |
 |---|---|---|
@@ -72,13 +71,13 @@ tokenize（本地候选提取，暂代 P5 路由域的"候选标的提取"节点
 
 另：`infer_code` 实现为 raw invoke + 正则抽取 `<result>`/windCode（非原文的 `with_structured_output`），经 `make_qwen_thinking()` 在子线程同步调用（100s 超时）；thinking 模式已随 [ADR 0020](./0020-unify-all-llm-on-deepseek-v4-pro.md) 全局关闭。
 
-## 后续迁移澄清（历史，Dify 等价性）
+## 历史迁移澄清（已随本地识别退役）
 
 - **数据源**：走后端 HTTP `GET /admin-api/integration/securities-instrument/select`（[ADR 0012](./0012-restore-backend-http-for-securities-instrument.md)），已落地于 `TickerClientHttpx`。
-- **动态 prompt 片段**：`instrument-inference-prompt` 拉取 + 拼接（[ADR 0013](./0013-load-dynamic-inference-prompt-fragment.md)），已落地（5 分钟缓存 + 净化 + 降级）。
+- **动态 prompt 片段**：曾实现拉取、缓存与拼接，2026-08-28 已撤销，见 [ADR 0013](./0013-load-dynamic-inference-prompt-fragment.md)。
 - "收敛 Dify 31 节点"在结构层面有效，收敛载体是共享 ticker 模块（resolver），非 ReAct Agent。
 
-## 后果（历史落地口径）
+## 后果（历史口径）
 
 - ticker 模块跨子图共享（swap.place_order + option.extract_inquiry），任何改动同时影响两条业务线，golden 须覆盖两方的标的识别 case。
 - 高频俗称的本地字典缓存仍未建（依赖 `infer_code.md` 内置词典 + LLM 通用知识推断；注意 CLAUDE.md "禁止硬编码业务数据字典"红线——缓存只能做运行时 LRU，不能做静态清单）。

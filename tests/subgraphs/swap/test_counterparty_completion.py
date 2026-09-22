@@ -45,12 +45,12 @@ async def test_extraction_leaves_all_counterparty_decisions_to_downstream_node(
 
 
 @pytest.mark.parametrize("original_name", [None, "1453"])
-async def test_dify_numeric_name_exclusion_is_model_recall_rule_and_preserves_extracted_value(
+async def test_numeric_name_exclusion_is_model_recall_rule_and_preserves_extracted_value(
     monkeypatch: pytest.MonkeyPatch, original_name: str | None,
 ) -> None:
-    """旧规则在有“对手/账号”标签时补数字名；Dify prompt 一律跳过纯数字候选。
+    """旧规则在有“对手/账号”标签时补数字名；现行提示词一律跳过纯数字候选。
 
-    模拟 Dify 合规的无信号输出，代码保留提取值；不宣称此测试验证真实模型识别率。
+    模拟符合提示词约定的无信号输出，代码保留提取值；不宣称此测试验证真实模型识别率。
     """
     from app.subgraphs.swap.fresh_counterparty import swap_recognize_fresh_counterparty
 

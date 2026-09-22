@@ -14,7 +14,7 @@
 
 比内容更根本的是**管理**问题——同样的内容病灶会在下一次 Dify 同步后重新长回来：
 
-1. **真源之争**：ADR 0014 D3-2 规定生产真源是 git `.md`；2026-09-11 又按用户要求把 7 个文件回归为 `dify/yaml/场外交易-test.yml` 原文并用 `tests/test_prompt_governance.py` 逐字锁定。任何对这 7 个文件的瘦身都会让测试失败。更重要的是**锁定守的是文本相等而非代码契约**：这次回归把 Dify 靠 code 节点前置分流的 `confirm_order` 从提示词枚举中删掉，代码 Literal / 路由 / 二次校验没有同步，互换确认下单链路一度不可达（评估 SW-INC-01，已补前置分流）。
+1. **真源之争**：ADR 0014 D3-2 规定生产真源是 git `.md`；2026-09-11 又按用户要求把 7 个文件回归为 `dify/yaml/场外交易-test.yml` 原文并用 `tests/prompts/test_prompt_governance.py` 逐字锁定。任何对这 7 个文件的瘦身都会让测试失败。更重要的是**锁定守的是文本相等而非代码契约**：这次回归把 Dify 靠 code 节点前置分流的 `confirm_order` 从提示词枚举中删掉，代码 Literal / 路由 / 二次校验没有同步，互换确认下单链路一度不可达（评估 SW-INC-01，已补前置分流）。
 2. **活跃/非活跃靠手写**：`app/prompts/CLAUDE.md` 手写"禁止直接删"清单，其中 `swap/place_order.dify_original.md`、`swap/v2/` 已不存在；没有机器可读清单，也没有"每个 .md 必须有加载点"的守护。
 3. **三套版本化形态并存**：`_versions.yaml` 同目录灰度（在用）、`compose_prompt` + `swap/v2/` 子目录拼装（零调用点、目录不存在）、`promote_langfuse_prompt` 的 `_v{N+1}` 晋升；ADR 0003 ">2 并存版本视为治理债"无执行机制。
 4. **v2 灰度位漂移无防护**：2026-08-28 切出的 `swap/intent_v2` / `place_order_v2` 在 09-11 v1 被 Dify 更新后没有同步，若此时放量会丢规则。
@@ -37,7 +37,7 @@
 采用 B。落地方式：
 
 - manifest 每条镜像自 Dify 的条目登记 `dify: {file, node_id, system_sha256}`（上次同步时上游节点 system 的 sha）；~~`scripts/prompt_inventory.py`~~ 的 `check_upstream` 在上游节点变化时输出「上游有更新待人工 diff 合入」告警、上游存在但未映射的 llm 节点告警（如 1786439000001「互换-全新下单交易对手识别」），映射的节点不存在才 fail
-- `tests/test_prompt_governance.py` 的逐字相等断言退役，改为「每个镜像条目都声明了 dify 映射且节点存在」+「本地修改不阻断」
+- `tests/prompts/test_prompt_governance.py` 的逐字相等断言退役，改为「每个镜像条目都声明了 dify 映射且节点存在」+「本地修改不阻断」
 - 零风险瘦身直接落 v1（`manifest.changelog` 登记）；`swap/intent_v2` / `place_order_v2` 因已与 v1 产生业务规则代差且失去用途而删除，多模态三个 v2 保留待 eval
 - Dify 侧同步方向仍是单向（sync → export → 人工 diff）；dify/sync.py 对主干 app 的导出文件名改为 场外交易-test.yml（治理读取的那份），主干工作流.yml 冻结为 2026-08 拓扑参照（**2026-09-17：整条链路随 ADR 0024 D1 移除**）
 - M4 全量切换后业务方书面同意 Dify 下线（roadmap 既有门），Dify 停止更新，上游告警自然归零

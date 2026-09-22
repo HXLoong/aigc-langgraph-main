@@ -1,6 +1,6 @@
 """一轮输入 → AgentState 的**唯一**入口（ADR 0024 D2）。
 
-生产（app/api/routes.py）与 eval（scripts/langfuse_eval.py）都走本函数；此前 eval 走 M1 兼容层
+生产（app/api/routes.py）与 eval（scripts/langfuse/langfuse_eval.py）都走本函数；此前 eval 走 M1 兼容层
 make_initial_state，它硬清空业务对象、写 AgentState 里不存在的键，评估结论与生产行为系统性偏差。
 """
 from __future__ import annotations

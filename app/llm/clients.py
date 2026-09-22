@@ -30,14 +30,14 @@ from app.config import get_settings
 
 
 def _http_client_kwargs(trust_env: bool) -> dict[str, Any]:
-    """按 LLM 独立配置连接，非缓存工厂也独占连接池，避免跨 event loop 复用。"""
-    if trust_env:
-        return {}
-    return {
-        "http_client": DefaultHttpxClient(trust_env=False),
-        "http_async_client": DefaultAsyncHttpxClient(trust_env=False),
-        "openai_proxy": None,
+    """每个 LLM 实例独占连接池，避免缓存重建后复用已关闭的跨 loop 客户端。"""
+    kwargs: dict[str, Any] = {
+        "http_client": DefaultHttpxClient(trust_env=trust_env),
+        "http_async_client": DefaultAsyncHttpxClient(trust_env=trust_env),
     }
+    if not trust_env:
+        kwargs["openai_proxy"] = None
+    return kwargs
 
 
 def _is_deepseek(model: str) -> bool:

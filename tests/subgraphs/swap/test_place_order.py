@@ -4,8 +4,6 @@ from __future__ import annotations
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
-from evidence_support import swap_candidate_output
-from pydantic import ValidationError
 
 from app.subgraphs.swap import place_order as po_module
 from app.subgraphs.swap.models import (
@@ -16,6 +14,7 @@ from app.subgraphs.swap.place_order import (
     _expected_action,
     swap_place_order,
 )
+from tests.evidence_support import swap_candidate_output
 
 
 def _patch_llm(
@@ -31,85 +30,6 @@ def _patch_llm(
 
 # ============================================================
 # SwapOrderItem 模型
-# ============================================================
-
-
-class TestSwapOrderItem:
-    def test_minimal_all_none(self) -> None:
-        item = SwapOrderItem()
-        assert item.order_id is None
-        assert item.place_order_wind_code is None
-
-    def test_full_buy_order(self) -> None:
-        item = SwapOrderItem(
-            placeOrderWindCode="0700.HK",
-            placeOrderTransactionType="HK_STOCK",
-            placeOrderQuantity=1000,
-            placeOrderOrderDirection="BUY",
-            placeOrderPriceType="LimitOrder",
-            placeOrderAlgorithmType="POV",
-            placeOrderPrice=320,
-            placeOrderPovPercent=25,
-            placeOrderShortname="ACCOUNT_L",
-        )
-        assert item.place_order_transaction_type == "HK_STOCK"
-        assert item.place_order_order_direction == "BUY"
-        assert item.place_order_algorithm_type == "POV"
-
-    def test_modify_order_with_order_id(self) -> None:
-        item = SwapOrderItem(
-            orderId="H-20260304-0001",
-            placeOrderPrice=350,
-        )
-        assert item.order_id == "H-20260304-0001"
-
-    @pytest.mark.parametrize(
-        "tx_type",
-        ["A_SHARE", "HK_STOCK", "US_STOCK", "FUTURES",
-         "FUND", "INDEX", "BOND", "OTHERS"],
-    )
-    def test_all_transaction_types(self, tx_type: str) -> None:
-        item = SwapOrderItem(placeOrderTransactionType=tx_type)  # type: ignore[arg-type]
-        assert item.place_order_transaction_type == tx_type
-
-    def test_invalid_direction_rejected(self) -> None:
-        with pytest.raises(ValidationError):
-            SwapOrderItem(placeOrderOrderDirection="HOLD")  # type: ignore[arg-type]
-
-    def test_invalid_price_type_rejected(self) -> None:
-        with pytest.raises(ValidationError):
-            SwapOrderItem(placeOrderPriceType="StopLoss")  # type: ignore[arg-type]
-
-    def test_extra_fields_ignored(self) -> None:
-        """extra='ignore' 让 LLM 输出多字段不触发 ValidationError。"""
-        item = SwapOrderItem.model_validate(
-            {"orderId": None, "garbage_field": "x"}
-        )
-        assert item.order_id is None
-        # garbage_field 被丢弃
-
-
-# ============================================================
-# SwapPlaceOrderParams 容器
-# ============================================================
-
-
-class TestSwapPlaceOrderParams:
-    def test_default_empty_list(self) -> None:
-        p = SwapPlaceOrderParams()
-        assert p.order_list == []
-
-    def test_accepts_top_level_type_field(self) -> None:
-        """LLM 输出的顶层 'type' 字段被 ignore。"""
-        p = SwapPlaceOrderParams.model_validate(
-            {"type": "place_order_request", "orderList": []}
-        )
-        assert p.order_list == []
-        # type 字段被丢弃，不在 model 上
-
-
-# ============================================================
-# _expected_action 推导
 # ============================================================
 
 

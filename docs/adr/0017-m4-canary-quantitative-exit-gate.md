@@ -38,7 +38,7 @@ M4 金丝雀走完 100% 切流后，需要明确退出门判定"是否可以下�
 - **× 1.5**：给真后端网络往返 + LangFuse 上报 + checkpoint 写入留预算；2 倍即放任退化。
 - **错例 ≤ 5 次而非 0**：7 天约 700-1400 条流量，5 次 ≈ 0.5%；0 次会造成"业务方挑刺永不签字"的扯皮。
 
-⚠️ **baseline 注记**：上表 "M2 baseline" 为 Qwen 口径，已被 [ADR 0020](./0020-unify-all-llm-on-deepseek-v4-pro.md) 作废。**Amendment 触发条件**：DeepSeek-V4-pro 上重跑 `scripts/langfuse_eval.py` + 重测 P95 后，回填本表数值。
+⚠️ **baseline 注记**：上表 "M2 baseline" 为 Qwen 口径，已被 [ADR 0020](./0020-unify-all-llm-on-deepseek-v4-pro.md) 作废。**Amendment 触发条件**：DeepSeek-V4-pro 上重跑 `scripts/langfuse/langfuse_eval.py` + 重测 P95 后，回填本表数值。
 
 ## 替代方案
 

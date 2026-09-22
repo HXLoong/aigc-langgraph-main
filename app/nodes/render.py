@@ -17,8 +17,6 @@ from app.tools.receipts import SERVICE_UNAVAILABLE, UNCERTAIN_REPLY, receipt_tex
 # 话术常量
 # ============================================================
 
-# DSL v2 env.default_reply 等价物:统一兜底文案从配置读(现场可改不发版)
-_ERROR_REPLY = get_settings().default_reply
 _UNREACHABLE_REPLY = SERVICE_UNAVAILABLE
 _OPTION_MISSING_CONTEXT_REPLY = (
     "请求信息不完整，暂时无法调用期权服务，请重新发送原消息或联系运营。"
@@ -28,6 +26,11 @@ _SWAP_MISSING_CONTEXT_REPLY = (
     "请求信息不完整，暂时无法调用互换服务，请重新发送原消息或联系运营。"
 )
 _SWAP_NO_RESULT_REPLY = UNCERTAIN_REPLY
+
+
+def _default_reply() -> str:
+    """统一兜底文案从配置读（现场可改不发版）；调用期求值，模块 import 不依赖 Settings。"""
+    return get_settings().default_reply
 
 
 @safe_node
@@ -76,12 +79,12 @@ def _render_branch(state: AgentState) -> tuple[dict[str, Any], str]:
             emit_fallback(reason="backend_unreachable")
             return {"reply_text": _UNREACHABLE_REPLY}, "error:backend_unreachable"
         emit_fallback(reason="cascade_fail")
-        return {"reply_text": _ERROR_REPLY}, "error:cascade_fail"
+        return {"reply_text": _default_reply()}, "error:cascade_fail"
 
     if product_type == "unknown" or state.get("intent") == "unknown_intent":
-        return {"reply_text": _ERROR_REPLY}, "unknown_intent"
+        return {"reply_text": _default_reply()}, "unknown_intent"
 
     intent = state.get("intent") or ""
     if product_type in ("option", "option_close", "swap") and intent:
         return {"reply_text": UNCERTAIN_REPLY}, "backend_no_result"
-    return {"reply_text": _ERROR_REPLY}, "no_reply"
+    return {"reply_text": _default_reply()}, "no_reply"

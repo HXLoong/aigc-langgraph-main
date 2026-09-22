@@ -8,7 +8,7 @@
 
 两者共同约定（见各自模块 docstring）：
 - 只覆盖**非空**解析结果，非破坏性——解析空/无信号时保留 swap.place_order 原值
-- `candidate_list` 为空时 select_ticker **跳过 LLM 调用**（Dify 原节点语义）
+- `candidate_list` 为空时 select_ticker **跳过 LLM 调用**（无候选无需选择）
 - `@safe_node` 兜底：LLM 异常 → state['error']
 
 测试方法：G2 节点单测（mock LLM 工厂，patch 打在**使用点**模块）。

@@ -1,7 +1,8 @@
 # LangGraph 自动化测试工具
 
 > **状态：deprecated（ADR 0024 D6，2026-09-17）。** 唯一 gate 是 `harness/`（`python -m harness run`），
-> 三种 fixture 方言的现役加载器是 `harness/golden.py`；本目录仅作历史工作台保留，不再新增校验。
+> 三种 fixture 方言的现役加载器是 `harness/golden.py`；本目录保留本地运行、节点标注和
+> 节点回归工作台，不作为发布 gate；页面节点回归与 `python -m harness node-run` 共用执行器。
 
 这套工具默认按文件名排序读取本仓库 `tests/fixtures/categories/` 直属的全部 JSONL，并调用
 `aigc-langgraph` 暴露的 `POST /v1/workflows/run`。同时兼容旧版
@@ -17,8 +18,8 @@ API Key 或 Console 账号，也不会执行部署、推送代码或修改工作
 | `langgraph_direct_regression.py` | 运行一个或多个 JSONL 数据集并生成 Markdown/JSON 报告 |
 | `wecom_dataset_push.py` | 运行回归并预览或推送企微报告 |
 | `yaml_to_jsonl.py` | 复用 Dify 测试工具已校验的 YAML 转 JSONL 能力 |
-| `automation_runner_server.py` | 启动本地串行任务队列和页面 API |
-| `automation_runner.html` | 本地任务配置、运行状态和日志页面 |
+| `automation_runner_server.py` | 启动本地串行任务队列、历史报告、节点标注和节点回归 API |
+| `automation_runner.html` | 本地任务配置、运行状态、历史报告、节点标注和节点回归页面 |
 
 ## 前置条件
 
@@ -141,11 +142,38 @@ python scripts/ai_test_langgraph/automation_runner_server.py --no-open --allow-n
 ```
 
 默认打开 `http://127.0.0.1:9001`。监听 `0.0.0.0` 时，请使用服务器的实际 IP 和端口访问，
-并只在可信网络中开放对应防火墙端口。页面提供两种测试方式：
+并只在可信网络中开放对应防火墙端口。页面提供四种测试方式：
 
 - “自由对话”可直接发送自定义指令，首轮自动建立 `conversation_id`，后续消息沿用
   同一会话；支持引用 LangGraph 回复、模拟 `@机器人`，并展示完整 `outputs`。
 - “回归队列”可选择多个仓库内 JSONL 数据集，任务按加入顺序串行执行。
+- “节点回归”自动递归发现 `tests/fixtures/nodes/**/*.jsonl`，可选择 Direct 或受保护的
+  HTTP 节点接口执行；任务后台运行并逐条展示 PASS / FAIL / SKIP、字段级差异和 JSON 报告。
+  HTTP 密钥只从工作台服务端环境读取，不下发浏览器；节点数量和文件列表均不硬编码。
+- “历史报告标注”读取 `docs/testing/test-reports/` 下已有 JSON 报告；打开用例后，
+  “节点标注”页签会按轮次从 Langfuse **只读**获取业务节点。可按产品、节点类型和
+  回归能力筛选，选择字段级或对象级期望值后保存到
+  `tests/fixtures/nodes/<product>/<node>.jsonl`。
+
+节点 observation 必须来自当前 `.env` 配置的 Langfuse 项目。工作台只读取
+Trace/Observation，不创建或修改 Langfuse 数据；标注结果仅写入本地 JSONL。
+历史报告若生成时未启用 Langfuse，或对应 Trace 已过保留期，仍可查看执行日志，但无法
+加载节点详情。写后端节点始终禁止单节点回放；当前已开放的节点可运行：
+
+```bash
+python -m harness node-run --data tests/fixtures/nodes
+NODE_RUN_API_KEY='<key>' python -m harness node-run \
+  --transport http \
+  --base-url http://127.0.0.1:8000 \
+  --data tests/fixtures/nodes
+python -m harness node-run \
+  --data tests/fixtures/nodes/swap/swap_place_order.jsonl \
+  --mock \
+  --out .harness-runs/swap-place-order-mock-report.json
+```
+
+`--mock` 只在 harness 内替换 fixture 声明的 LLM / Ticker 外部返回，仍执行真实
+`swap_place_order` 节点逻辑；不会进入 `swap_place_order_submit`，因此不会调用下单接口。
 
 开发环境启用 LangFuse 后，用例详情会在 `conversation_id` 右侧显示可点击的
 `tracing_id`。每条顶层用例生成一个名为“测试任务名称-用例 ID”的父 Trace，

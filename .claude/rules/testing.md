@@ -30,7 +30,7 @@ for target in (
     "app.subgraphs.close.backend.OptionClientHttpx",
 ):
     monkeypatch.setattr(target, factory)
-# swap / ticker 同理：app.subgraphs.swap.backend.SwapClientHttpx、app/subgraphs/ticker 的 _make_client
+# swap 同理：app.subgraphs.swap.backend.SwapClientHttpx（标的识别已委托 Java，本地无 ticker 子图）
 ```
 
 ## E2E 测试
@@ -48,7 +48,7 @@ for target in (
 
 - 所有新增意图必须在 `tests/fixtures/categories/` 加至少 2 条用例（现役数据源，`scripts/check_fixture_consistency.py` 校验一致性）
 - case 格式沿用对应文件既有方言（详见 `scripts/ai_test_langgraph/README.md`）
-- 跑评估：`python scripts/langfuse_eval.py --local <fixture>`
+- 跑评估：`python scripts/langfuse/langfuse_eval.py --local <fixture>`
 
 ## 验证范围
 
@@ -68,7 +68,7 @@ mypy app/                                     # 类型无错
 - ✅ 新增 Pydantic 模型 → 加字段校验测试
 - ✅ 新增业务逻辑分支 → 加 E2E 覆盖
 - ✅ 修 bug → 先写复现测试，再修
-- ⚠️ 改活跃提示词 → 直接改 `.md` + 普通 PR review，`prompt(<scope>)` commit；需要时自行跑 `scripts/langfuse_eval.py` 验证
+- ⚠️ 改活跃提示词 → 直接改 `.md` + 普通 PR review，`prompt(<scope>)` commit；需要时自行跑 `scripts/langfuse/langfuse_eval.py` 验证
 
 ## 跑慢测试的技巧
 

@@ -54,6 +54,14 @@
 
     * { box-sizing: border-box; }
     [hidden] { display: none !important; }
+    .sr-only {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      overflow: hidden;
+      clip: rect(0, 0, 0, 0);
+      white-space: nowrap;
+    }
     html { min-width: 320px; background: var(--canvas); }
     body {
       min-width: 320px;
@@ -193,7 +201,7 @@
 
     .workspace-tabs {
       display: inline-grid;
-      grid-template-columns: repeat(2, minmax(124px, 1fr));
+      grid-template-columns: repeat(4, minmax(124px, 1fr));
       gap: 3px;
       margin-bottom: 16px;
       padding: 3px;
@@ -226,6 +234,128 @@
 
     .layout > * { min-width: 0; }
 
+    .history-panel { min-height: 480px; }
+
+    .node-regression-layout {
+      display: grid;
+      grid-template-columns: clamp(340px, 28vw, 430px) minmax(0, 1fr);
+      align-items: start;
+      gap: 16px;
+    }
+
+    .node-regression-layout > * { min-width: 0; }
+
+    .node-regression-results-panel { min-height: 520px; }
+
+    .node-regression-results { padding: 14px 18px 20px; }
+
+    .node-regression-task-card .task-actions:empty { display: none; }
+    .node-regression-task-card .case-table-wrap { max-height: clamp(300px, 52dvh, 620px); }
+    .node-regression-task-card th:nth-child(4),
+    .node-regression-task-card td:nth-child(4) { width: 82px; }
+    .node-regression-task-card th:nth-child(5),
+    .node-regression-task-card td:nth-child(5) { width: 72px; }
+
+    .node-regression-detail-summary {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 14px;
+      padding: 9px 11px;
+      border: 1px solid var(--line);
+      border-radius: var(--radius-control);
+      color: var(--ink-soft);
+      background: var(--surface-subtle);
+      font-size: 12px;
+    }
+
+    .node-regression-detail-summary.failed {
+      border-color: var(--danger-line);
+      color: var(--danger);
+      background: var(--danger-soft);
+    }
+
+    .node-regression-detail-summary.success {
+      border-color: var(--success-line);
+      color: var(--success);
+      background: var(--success-soft);
+    }
+
+    .node-regression-diff-table-wrap {
+      margin-bottom: 14px;
+      overflow: auto;
+      border: 1px solid var(--line);
+      border-radius: var(--radius-control);
+    }
+
+    .node-regression-diff-table { table-layout: fixed; }
+    .node-regression-diff-table th:nth-child(1) { width: 42%; }
+    .node-regression-diff-table th:nth-child(2),
+    .node-regression-diff-table th:nth-child(3) { width: 29%; }
+
+    .node-regression-diff-table td { padding: 10px; vertical-align: middle; }
+
+    .node-regression-diff-table td:first-child code {
+      display: block;
+      min-width: 0;
+      color: var(--ink-soft);
+      font-size: 12px;
+      overflow-wrap: anywhere;
+      word-break: break-word;
+    }
+
+    .node-regression-value {
+      min-height: 38px;
+      margin: 0;
+      padding: 8px 9px;
+      overflow: auto;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      color: var(--ink);
+      background: var(--surface-raised);
+      white-space: pre-wrap;
+      overflow-wrap: anywhere;
+    }
+
+    .node-regression-value.expected {
+      border-color: var(--accent-line);
+      background: var(--accent-soft);
+    }
+
+    .node-regression-value.actual {
+      border-color: var(--danger-line);
+      color: var(--danger);
+      background: var(--danger-soft);
+    }
+
+    #node-regression-detail-dialog { width: min(960px, calc(100% - 32px)); }
+
+    .history-controls {
+      display: flex;
+      min-width: min(100%, 680px);
+      align-items: center;
+      gap: 8px;
+    }
+
+    .history-controls select { min-width: 0; }
+
+    .history-body { padding: 16px 18px 20px; }
+
+    .history-summary {
+      margin-bottom: 12px;
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    .history-table-wrap {
+      overflow: auto;
+      border: 1px solid var(--line);
+      border-radius: var(--radius-control);
+    }
+
+    .history-table th:nth-child(5),
+    .history-table td:nth-child(5) { width: 112px; }
+
     .chat-layout {
       display: grid;
       grid-template-columns: clamp(320px, 25vw, 390px) minmax(0, 1fr);
@@ -247,7 +377,7 @@
       position: sticky;
       top: 16px;
       z-index: 10;
-      max-height: calc(100dvh - 126px);
+      max-height: var(--config-panel-max-height, calc(100dvh - 194px));
       overflow: auto;
       overscroll-behavior: contain;
       box-shadow: var(--shadow-rail);
@@ -418,6 +548,13 @@
     }
 
     .dataset-option:hover { background: var(--surface-subtle); }
+
+    .dataset-option.annotation-only {
+      color: var(--muted);
+      cursor: not-allowed;
+    }
+
+    .dataset-option.annotation-only:hover { background: transparent; }
 
     .dataset-option input {
       width: 16px;
@@ -1335,7 +1472,57 @@
 
     #case-log-dialog[open] {
       display: grid;
+      grid-template-rows: auto auto minmax(0, 1fr);
+    }
+
+    #node-json-dialog {
+      width: min(1600px, calc(100% - 24px));
+      height: min(960px, calc(100dvh - 24px));
+    }
+
+    #node-json-dialog[open] {
+      display: grid;
       grid-template-rows: auto minmax(0, 1fr);
+    }
+
+    #node-json-content {
+      min-width: 0;
+      min-height: 0;
+      margin: 0;
+      padding: 18px 22px;
+      overflow: auto;
+      color: var(--code-ink);
+      background: var(--code-bg);
+      font-family: ui-monospace, "SFMono-Regular", "Cascadia Code", Menlo, Consolas, monospace;
+      font-size: 13px;
+      line-height: 1.6;
+      tab-size: 2;
+      white-space: pre;
+    }
+
+    .node-json-dialog-actions { display: flex; align-items: center; gap: 8px; }
+
+    .case-dialog-tabs {
+      display: flex;
+      gap: 4px;
+      padding: 7px 20px;
+      border-bottom: 1px solid var(--line);
+      background: var(--surface-raised);
+    }
+
+    .case-dialog-tab {
+      min-height: 32px;
+      padding: 6px 11px;
+      border-color: transparent;
+      color: var(--muted);
+      background: transparent;
+      font-size: 12px;
+    }
+
+    .case-dialog-tab[aria-selected="true"] {
+      border-color: var(--accent-line);
+      color: var(--accent);
+      background: var(--accent-soft);
     }
 
     dialog::backdrop {
@@ -1395,6 +1582,18 @@
       background: var(--danger-soft);
     }
 
+    .dialog-status.success {
+      border-color: var(--success-line);
+      color: var(--success);
+      background: var(--success-soft);
+    }
+
+    .dialog-status.failed {
+      border-color: var(--danger-line);
+      color: var(--danger);
+      background: var(--danger-soft);
+    }
+
     .dialog-subtitle {
       margin: 4px 0 0;
       color: var(--muted);
@@ -1430,6 +1629,216 @@
       max-height: none;
       padding: 0;
       background: var(--surface-subtle);
+    }
+
+    .node-panel {
+      display: grid;
+      min-height: 0;
+      grid-template-rows: auto minmax(0, 1fr);
+      overflow: hidden;
+      background: var(--surface-subtle);
+    }
+
+    .node-toolbar {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(130px, 220px)) auto;
+      align-items: end;
+      gap: 10px;
+      padding: 12px 18px;
+      border-bottom: 1px solid var(--line);
+      background: var(--surface-raised);
+    }
+
+    .node-toolbar label {
+      display: grid;
+      gap: 4px;
+      color: var(--muted);
+      font-size: 11px;
+      font-weight: 650;
+    }
+
+    .node-toolbar select { min-height: 36px; padding-block: 5px; font-size: 12px; }
+    .node-toolbar button { min-height: 36px; }
+
+    .node-workbench {
+      display: grid;
+      min-height: 0;
+      grid-template-columns: minmax(230px, 300px) minmax(0, 1fr);
+    }
+
+    .node-list {
+      min-height: 0;
+      overflow: auto;
+      padding: 10px;
+      border-right: 1px solid var(--line);
+      background: var(--surface-raised);
+    }
+
+    .node-list-item {
+      display: grid;
+      width: 100%;
+      min-height: 0;
+      gap: 3px;
+      margin-bottom: 6px;
+      padding: 9px 10px;
+      border-color: var(--line);
+      text-align: left;
+      white-space: normal;
+    }
+
+    .node-list-item.active {
+      border-color: var(--accent);
+      color: var(--accent);
+      background: var(--accent-soft);
+    }
+
+    .node-editor {
+      min-width: 0;
+      min-height: 0;
+      overflow: auto;
+      padding: 14px 16px 22px;
+    }
+
+    .node-io-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 12px;
+      margin-bottom: 14px;
+    }
+
+    .node-annotation-form {
+      display: grid;
+      gap: 12px;
+      padding: 14px;
+      border: 1px solid var(--line);
+      border-radius: var(--radius-surface);
+      background: var(--surface-raised);
+    }
+
+    .node-annotation-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 10px;
+    }
+
+    .node-field-tools {
+      display: grid;
+      grid-template-columns: minmax(180px, 1fr) auto;
+      align-items: center;
+      gap: 8px 12px;
+      padding: 10px;
+      border: 1px solid var(--line);
+      border-radius: var(--radius-control);
+      background: var(--surface-subtle);
+    }
+
+    .node-field-search input { min-height: 36px; }
+
+    .node-field-actions {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+      gap: 6px;
+    }
+
+    .node-field-actions button {
+      min-height: 36px;
+      padding: 6px 10px;
+    }
+
+    .node-field-selection {
+      grid-column: 1 / -1;
+      color: var(--muted);
+      font-size: 12px;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .node-field-list { display: grid; gap: 8px; }
+
+    .node-field-group {
+      overflow: clip;
+      border: 1px solid var(--line);
+      border-radius: var(--radius-control);
+      background: var(--surface-subtle);
+    }
+
+    .node-field-group-summary {
+      display: flex;
+      min-width: 0;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      min-height: 42px;
+      padding: 9px 12px;
+      color: var(--ink-soft);
+      background: var(--surface-raised);
+      cursor: pointer;
+    }
+
+    .node-field-group-summary strong {
+      min-width: 0;
+      font-family: ui-monospace, "SFMono-Regular", "Cascadia Code", Menlo, Consolas, monospace;
+      font-size: 12px;
+      overflow-wrap: anywhere;
+    }
+
+    .node-field-group-count {
+      flex: 0 0 auto;
+      color: var(--muted);
+      font-size: 12px;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .node-field-group-body {
+      display: grid;
+      gap: 6px;
+      padding: 8px;
+      border-top: 1px solid var(--line);
+      content-visibility: auto;
+      contain-intrinsic-size: auto 240px;
+    }
+
+    .node-field-row {
+      display: grid;
+      grid-template-columns: 18px minmax(150px, .8fr) minmax(220px, 1.6fr);
+      align-items: start;
+      gap: 8px;
+      padding: 8px;
+      border: 1px solid transparent;
+      border-radius: var(--radius-control);
+      background: var(--surface-raised);
+    }
+
+    .node-field-row:focus-within { border-color: var(--accent-line); }
+
+    .node-field-path {
+      padding-top: 8px;
+      color: var(--ink-soft);
+      font-family: ui-monospace, "SFMono-Regular", "Cascadia Code", Menlo, Consolas, monospace;
+      font-size: 11px;
+      overflow-wrap: anywhere;
+    }
+
+    .node-field-row textarea {
+      min-height: 58px;
+      font-family: ui-monospace, "SFMono-Regular", "Cascadia Code", Menlo, Consolas, monospace;
+      font-size: 12px;
+    }
+
+    .node-save-status { min-height: 20px; color: var(--muted); font-size: 12px; }
+    .node-save-status.error { color: var(--danger); }
+    .node-save-status.success { color: var(--success); }
+
+    @media (max-width: 880px) {
+      .node-toolbar { grid-template-columns: 1fr 1fr; }
+      .node-workbench { grid-template-columns: 1fr; }
+      .node-list { max-height: 220px; border-right: 0; border-bottom: 1px solid var(--line); }
+      .node-io-grid, .node-annotation-grid { grid-template-columns: 1fr; }
+      .node-field-tools { grid-template-columns: 1fr; }
+      .node-field-actions { justify-content: flex-start; }
+      .node-field-selection { grid-column: 1; }
+      .node-field-row { grid-template-columns: 18px minmax(0, 1fr); }
+      .node-field-row textarea { grid-column: 2; }
     }
 
     .case-summary {
@@ -1612,6 +2021,40 @@
       background: var(--surface-subtle);
     }
 
+    .node-io-grid .log-block pre {
+      height: clamp(220px, 34dvh, 360px);
+      max-height: none;
+    }
+
+    .node-output-json {
+      height: clamp(220px, 34dvh, 360px);
+      overflow: auto;
+      padding: 10px;
+      border-radius: var(--radius-control);
+      color: var(--code-ink);
+      background: var(--code-bg);
+      font-family: ui-monospace, "SFMono-Regular", "Cascadia Code", Menlo, Consolas, monospace;
+      font-size: 12px;
+      font-variant-numeric: tabular-nums;
+      scrollbar-gutter: stable;
+    }
+
+    .node-output-json-row {
+      display: grid;
+      grid-template-columns: 18px minmax(0, 1fr);
+      gap: 6px;
+      align-items: start;
+      min-height: 24px;
+      padding: 2px 4px;
+      border-radius: 5px;
+      line-height: 1.5;
+    }
+
+    .node-output-json-row:hover { background: rgba(255, 255, 255, .07); }
+    .node-output-json-row.selected { background: rgba(105, 139, 255, .18); }
+    .node-output-json-row input { margin: 2px 0 0; accent-color: #92adff; }
+    .node-output-json-row code { white-space: pre-wrap; overflow-wrap: anywhere; font: inherit; }
+
     .assertion-panel {
       margin: 14px 15px 0;
       overflow: hidden;
@@ -1736,7 +2179,8 @@
 
     @media (max-width: 980px) {
       .layout,
-      .chat-layout { grid-template-columns: 1fr; }
+      .chat-layout,
+      .node-regression-layout { grid-template-columns: 1fr; }
       .config-panel,
       .chat-config-panel {
         position: static;
@@ -1758,7 +2202,6 @@
       .config-panel,
       .chat-config-panel {
         top: 12px;
-        max-height: calc(100dvh - 110px);
       }
 
       .panel-header {
@@ -1829,6 +2272,7 @@
       }
       .turn-content,
       .case-summary { grid-template-columns: 1fr; }
+      .node-regression-diff { grid-template-columns: 1fr; }
       .case-summary-action { justify-content: flex-start; }
       .turn-head {
         align-items: flex-start;
@@ -1946,6 +2390,8 @@
     <div class="workspace-tabs" role="tablist" aria-label="测试方式">
       <button id="chat-tab" class="workspace-tab" type="button" role="tab" aria-selected="true" aria-controls="chat-workspace" data-workspace="chat">自由对话</button>
       <button id="queue-tab" class="workspace-tab" type="button" role="tab" aria-selected="false" aria-controls="queue-workspace" data-workspace="queue" tabindex="-1">回归队列</button>
+      <button id="node-regression-tab" class="workspace-tab" type="button" role="tab" aria-selected="false" aria-controls="node-regression-workspace" data-workspace="node-regression" tabindex="-1">节点回归</button>
+      <button id="history-tab" class="workspace-tab" type="button" role="tab" aria-selected="false" aria-controls="history-workspace" data-workspace="history" tabindex="-1">历史报告标注</button>
     </div>
 
     <section id="chat-workspace" class="workspace-view" role="tabpanel" aria-labelledby="chat-tab">
@@ -2133,6 +2579,74 @@
       </section>
     </div>
     </section>
+
+    <section id="node-regression-workspace" class="workspace-view" role="tabpanel" aria-labelledby="node-regression-tab" hidden>
+      <div class="node-regression-layout">
+        <section class="panel config-panel" aria-labelledby="node-regression-config-title">
+          <div class="panel-header">
+            <div class="panel-title"><h2 id="node-regression-config-title">节点回归配置</h2></div>
+          </div>
+          <form id="node-regression-form" class="settings-form">
+            <fieldset>
+              <legend>已沉淀节点用例</legend>
+              <div id="node-fixture-list" class="dataset-list" role="group" aria-label="节点 fixture">
+                <span class="hint">正在加载节点 fixture…</span>
+              </div>
+            </fieldset>
+            <fieldset>
+              <legend>执行方式 · HTTP（应用节点接口）</legend>
+              <div class="field-grid">
+                <label class="field">
+                  <span class="label-row"><span>超时（秒）</span></span>
+                  <input id="node-regression-timeout" type="number" min="1" max="3600" value="60">
+                </label>
+                <label class="field wide">
+                  <span class="label-row"><span>LangGraph 地址</span></span>
+                  <input id="node-regression-base-url" type="url" autocomplete="off" spellcheck="false" value="__DEFAULT_LANGGRAPH_BASE__">
+                </label>
+              </div>
+            </fieldset>
+            <div class="form-actions">
+              <button id="node-regression-run-button" class="primary" type="submit">运行节点回归</button>
+              <button id="node-regression-refresh-button" class="secondary" type="button">刷新用例</button>
+            </div>
+          </form>
+          <div id="node-regression-error" class="error-banner" role="alert" aria-live="assertive" tabindex="-1"></div>
+        </section>
+
+        <section class="panel node-regression-results-panel" aria-labelledby="node-regression-results-title">
+          <div class="panel-header">
+            <div class="panel-title"><h2 id="node-regression-results-title">节点回归结果</h2></div>
+            <small id="node-regression-status">尚未运行</small>
+          </div>
+          <div id="node-regression-results" class="node-regression-results" aria-live="polite">
+            <div class="empty-state"><strong>还没有节点回归结果</strong>保存节点标注后，可在这里直接验证单节点输出。</div>
+          </div>
+        </section>
+      </div>
+    </section>
+
+    <section id="history-workspace" class="workspace-view" role="tabpanel" aria-labelledby="history-tab" hidden>
+      <section class="panel history-panel" aria-labelledby="history-title">
+        <div class="panel-header">
+          <div class="panel-title"><h2 id="history-title">历史测试记录</h2></div>
+          <div class="history-controls">
+            <label class="sr-only" for="history-report-select">选择历史报告</label>
+            <select id="history-report-select"><option value="">正在加载历史报告…</option></select>
+            <button id="history-refresh-button" class="secondary" type="button">刷新</button>
+          </div>
+        </div>
+        <div class="history-body">
+          <div id="history-summary" class="history-summary">选择报告后可查看历史用例并进入同一套节点标注工作台。</div>
+          <div class="history-table-wrap">
+            <table class="history-table">
+              <thead><tr><th>#</th><th>状态</th><th>用例</th><th>耗时</th><th>操作</th></tr></thead>
+              <tbody id="history-case-list"><tr><td colspan="5" class="case-empty">正在加载…</td></tr></tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+    </section>
   </main>
 
   <template id="assistant-message-template">
@@ -2168,6 +2682,39 @@
     </article>
   </template>
 
+  <template id="node-regression-task-template">
+    <article class="task-card node-regression-task-card">
+      <div class="task-top">
+        <div class="task-title-block">
+          <div class="task-title-row"><span class="task-order">#1</span><h3 class="task-name"></h3></div>
+        </div>
+        <span class="status-badge task-status"></span>
+      </div>
+      <div class="progress-area">
+        <div class="progress-head"><span class="progress-label"></span><span class="progress-counts"></span></div>
+        <div class="progress-track" role="progressbar"><div class="progress-bar"></div></div>
+      </div>
+      <div class="case-section">
+        <div class="case-toolbar">
+          <strong>用例进度</strong>
+          <div class="case-filters">
+            <button class="case-filter active" type="button" data-node-regression-filter="all">全部</button>
+            <button class="case-filter" type="button" data-node-regression-filter="passed">成功</button>
+            <button class="case-filter" type="button" data-node-regression-filter="failed">失败</button>
+            <button class="case-filter" type="button" data-node-regression-filter="skipped">跳过</button>
+          </div>
+        </div>
+        <div class="case-table-wrap">
+          <table>
+            <thead><tr><th>#</th><th>状态</th><th>用例 / 失败原因</th><th>耗时</th><th>详情</th></tr></thead>
+            <tbody class="node-regression-case-list"></tbody>
+          </table>
+        </div>
+        <div class="report-links"></div>
+      </div>
+    </article>
+  </template>
+
   <template id="pause-button-template"><button class="pause-button" type="button" data-action="pause">暂停</button></template>
 
   <dialog id="case-log-dialog" aria-labelledby="case-dialog-title">
@@ -2180,7 +2727,75 @@
       </div>
       <button class="dialog-close" type="button" data-close-dialog="case-log-dialog" aria-label="关闭">×</button>
     </div>
+    <div class="case-dialog-tabs" role="tablist" aria-label="用例详情">
+      <button id="case-log-tab" class="case-dialog-tab" type="button" role="tab" aria-selected="true" aria-controls="case-dialog-body">执行日志</button>
+      <button id="case-node-tab" class="case-dialog-tab" type="button" role="tab" aria-selected="false" aria-controls="case-node-panel">节点标注</button>
+    </div>
     <div id="case-dialog-body" class="dialog-body"></div>
+    <section id="case-node-panel" class="node-panel" role="tabpanel" aria-labelledby="case-node-tab" hidden>
+      <div class="node-toolbar">
+        <label>产品
+          <select id="node-product-filter"><option value="all">全部产品</option></select>
+        </label>
+        <label>节点类型
+          <select id="node-category-filter"><option value="all">全部类型</option></select>
+        </label>
+        <label>回归能力
+          <select id="node-replay-filter">
+            <option value="all">全部节点</option>
+            <option value="replayable">可单节点回归</option>
+            <option value="blocked">禁止单独回放</option>
+          </select>
+        </label>
+        <button id="node-refresh-button" class="secondary" type="button">刷新节点</button>
+      </div>
+      <div class="node-workbench">
+        <div id="node-list" class="node-list"><div class="case-detail-empty">切换到节点标注后加载 Langfuse 数据。</div></div>
+        <div id="node-editor" class="node-editor">
+          <div id="node-editor-empty" class="case-detail-empty">请选择一个节点。</div>
+          <div id="node-editor-content" hidden>
+            <div class="node-io-grid">
+              <div id="node-input-block"></div>
+              <div id="node-output-block"></div>
+            </div>
+            <form id="node-annotation-form" class="node-annotation-form">
+              <div class="node-annotation-grid">
+                <label class="field"><span class="label-row"><span>标注人</span></span><input id="node-annotator" required maxlength="100" placeholder="例如 LLW"></label>
+                <label class="field"><span class="label-row"><span>标注粒度</span></span><select id="node-annotation-mode"><option value="fields">字段级</option><option value="object">对象级</option></select></label>
+              </div>
+              <div id="node-field-tools" class="node-field-tools">
+                <label class="node-field-search">
+                  <span class="sr-only">搜索字段路径或内容</span>
+                  <input id="node-field-search" name="node-field-search" type="search" autocomplete="off" spellcheck="false" placeholder="搜索字段路径或内容…">
+                </label>
+                <div class="node-field-actions" role="group" aria-label="批量选择标注字段">
+                  <button class="secondary" type="button" data-node-field-action="stable">推荐字段</button>
+                  <button class="secondary" type="button" data-node-field-action="all">全选</button>
+                  <button class="secondary" type="button" data-node-field-action="clear">清空</button>
+                </div>
+                <span id="node-field-selection" class="node-field-selection" role="status" aria-live="polite"></span>
+              </div>
+              <div id="node-field-source-hint" class="hint">直接在上方“实际输出”的字段旁勾选；这里仅显示已选字段，可修改期望值。搜索可查找其他字段。</div>
+              <div id="node-field-list" class="node-field-list"></div>
+              <label id="node-object-field" class="field" hidden><span class="label-row"><span>期望输出对象</span><span class="hint">JSON 对象</span></span><textarea id="node-object-editor" class="json-editor" spellcheck="false"></textarea></label>
+              <div id="node-save-status" class="node-save-status" role="status" aria-live="polite"></div>
+              <div class="form-actions"><button id="node-save-button" class="primary" type="submit">保存节点用例</button></div>
+            </form>
+          </div>
+        </div>
+      </div>
+    </section>
+  </dialog>
+
+  <dialog id="node-json-dialog" aria-labelledby="node-json-title">
+    <div class="dialog-header">
+      <h3 id="node-json-title">节点 JSON</h3>
+      <div class="node-json-dialog-actions">
+        <button id="node-json-copy" class="secondary" type="button" aria-label="复制放大查看的 JSON">复制</button>
+        <button class="dialog-close" type="button" data-close-dialog="node-json-dialog" aria-label="关闭放大查看">×</button>
+      </div>
+    </div>
+    <pre id="node-json-content" tabindex="0" aria-label="完整节点 JSON"></pre>
   </dialog>
 
   <dialog id="task-log-dialog" aria-labelledby="task-dialog-title">
@@ -2189,6 +2804,20 @@
       <button class="dialog-close" type="button" data-close-dialog="task-log-dialog" aria-label="关闭">×</button>
     </div>
     <div class="dialog-body"><pre id="task-raw-log">正在加载…</pre></div>
+  </dialog>
+
+  <dialog id="node-regression-detail-dialog" aria-labelledby="node-regression-detail-title">
+    <div class="dialog-header">
+      <div>
+        <div class="dialog-title-line">
+          <span id="node-regression-detail-status" class="dialog-status">状态</span>
+          <h3 id="node-regression-detail-title">节点回归详情</h3>
+        </div>
+        <p id="node-regression-detail-subtitle" class="dialog-subtitle"></p>
+      </div>
+      <button class="dialog-close" type="button" data-close-dialog="node-regression-detail-dialog" aria-label="关闭">×</button>
+    </div>
+    <div id="node-regression-detail-body" class="dialog-body"></div>
   </dialog>
 
   <script>
@@ -2209,6 +2838,17 @@
     let chatQuote = "";
     let chatSending = false;
     let chatTurns = 0;
+    let currentCaseDetailUrl = "";
+    let currentCaseNodes = [];
+    let selectedNodeObservationId = "";
+    let caseNodesLoaded = false;
+    let historyReportsLoaded = false;
+    let nodeRegressionFixturesLoaded = false;
+    let nodeRegressionJobId = "";
+    let nodeRegressionPollTimer = 0;
+    let nodeRegressionReports = [];
+    let nodeRegressionFilter = "all";
+    let configPanelHeightFrame = 0;
 
     const statusLabels = {
       ready: "待启动",
@@ -2236,18 +2876,52 @@
       if (message) banner.focus();
     }
 
+    function syncConfigPanelHeight() {
+      const stacked = window.matchMedia("(max-width: 980px)").matches;
+      for (const panel of document.querySelectorAll(".config-panel, .chat-config-panel")) {
+        if (stacked) {
+          panel.style.removeProperty("--config-panel-max-height");
+          continue;
+        }
+        if (panel.closest("[hidden]")) continue;
+        const stickyTop = Number.parseFloat(window.getComputedStyle(panel).top) || 0;
+        const panelTop = Math.max(panel.getBoundingClientRect().top, stickyTop);
+        const bottomGap = 16;
+        const availableHeight = Math.max(240, window.innerHeight - panelTop - bottomGap);
+        panel.style.setProperty("--config-panel-max-height", `${availableHeight}px`);
+      }
+    }
+
+    function scheduleConfigPanelHeightSync() {
+      if (configPanelHeightFrame) return;
+      configPanelHeightFrame = window.requestAnimationFrame(() => {
+        configPanelHeightFrame = 0;
+        syncConfigPanelHeight();
+      });
+    }
+
     function switchWorkspace(workspace) {
-      activeWorkspace = workspace === "queue" ? "queue" : "chat";
+      activeWorkspace = ["chat", "queue", "node-regression", "history"].includes(workspace) ? workspace : "chat";
       const isChat = activeWorkspace === "chat";
+      const isQueue = activeWorkspace === "queue";
       $("chat-workspace").hidden = !isChat;
-      $("queue-workspace").hidden = isChat;
+      $("queue-workspace").hidden = !isQueue;
+      $("node-regression-workspace").hidden = activeWorkspace !== "node-regression";
+      $("history-workspace").hidden = activeWorkspace !== "history";
       $("chat-summary").hidden = !isChat;
-      $("queue-summary").hidden = isChat;
+      $("queue-summary").hidden = !isQueue;
       for (const tab of document.querySelectorAll("[data-workspace]")) {
         const selected = tab.dataset.workspace === activeWorkspace;
         tab.setAttribute("aria-selected", String(selected));
         tab.tabIndex = selected ? 0 : -1;
       }
+      if (activeWorkspace === "history" && !historyReportsLoaded && !IS_STATIC_PREVIEW) {
+        loadHistoryReports();
+      }
+      if (activeWorkspace === "node-regression" && !nodeRegressionFixturesLoaded && !IS_STATIC_PREVIEW) {
+        loadNodeRegressionWorkspace();
+      }
+      scheduleConfigPanelHeightSync();
     }
 
     async function readJsonResponse(response) {
@@ -2263,13 +2937,409 @@
 
     async function api(path, options = {}) {
       const request = {...options, cache: "no-store"};
-      if ((request.method || "GET") !== "GET") {
-        request.headers = {...(request.headers || {}), "X-Runner-Token": RUNNER_TOKEN};
-      }
+      request.headers = {...(request.headers || {}), "X-Runner-Token": RUNNER_TOKEN};
       const response = await fetch(path, request);
       const payload = await readJsonResponse(response);
       if (!response.ok) throw new Error(payload.error || `请求失败：HTTP ${response.status}`);
       return payload;
+    }
+
+    function showNodeRegressionError(message) {
+      const banner = $("node-regression-error");
+      banner.textContent = message || "";
+      banner.classList.toggle("visible", Boolean(message));
+      if (message) banner.focus();
+    }
+
+    async function loadNodeRegressionFixtures() {
+      const list = $("node-fixture-list");
+      list.innerHTML = '<span class="hint">正在加载节点 fixture…</span>';
+      try {
+        const payload = await api("/api/node-regressions/fixtures");
+        const fixtures = payload.fixtures || [];
+        list.replaceChildren();
+        for (const fixture of fixtures) {
+          const replayableCases = Number(fixture.replayable_cases || 0);
+          const annotationOnlyCases = Number(fixture.annotation_only_cases || 0);
+          const row = document.createElement("label");
+          row.className = "dataset-option";
+          row.classList.toggle("annotation-only", replayableCases === 0);
+          const checkbox = document.createElement("input");
+          checkbox.type = "checkbox";
+          checkbox.name = "node-fixtures";
+          checkbox.value = fixture.path;
+          checkbox.disabled = replayableCases === 0;
+          checkbox.checked = replayableCases > 0;
+          const name = document.createElement("span");
+          name.className = "dataset-option-name";
+          name.textContent = fixture.path;
+          const scope = `${(fixture.products || []).join(", ")} · ${(fixture.nodes || []).join(", ")}`;
+          name.title = replayableCases > 0
+            ? scope
+            : `${scope} · 该节点可能写入真实后端，仅保留标注，不允许单节点回放`;
+          const count = document.createElement("span");
+          count.className = "dataset-option-count";
+          count.textContent = replayableCases > 0
+            ? `${replayableCases} 可回归 / ${annotationOnlyCases} 仅标注`
+            : `${fixture.cases || 0} 条 · 仅标注`;
+          row.append(checkbox, name, count);
+          list.appendChild(row);
+        }
+        if (!fixtures.length) {
+          list.innerHTML = '<span class="hint">tests/fixtures/nodes 下还没有节点 fixture。</span>';
+        }
+        nodeRegressionFixturesLoaded = true;
+      } catch (error) {
+        list.replaceChildren();
+        const message = document.createElement("span");
+        message.className = "failure-text";
+        message.textContent = error.message;
+        list.appendChild(message);
+      }
+    }
+
+    async function loadNodeRegressionWorkspace() {
+      await loadNodeRegressionFixtures();
+      try {
+        const payload = await api("/api/node-regressions/jobs");
+        const latest = (payload.jobs || [])[0];
+        if (latest) renderNodeRegressionJob(latest);
+      } catch (error) {
+        showNodeRegressionError(error.message);
+      }
+    }
+
+    function nodeResultStatus(report) {
+      if (report.skipped) return ["SKIP", "pending"];
+      return report.passed ? ["PASS", "success"] : ["FAIL", "failed"];
+    }
+
+    function nodeRegressionFilterKey(report) {
+      if (report.skipped) return "skipped";
+      return report.passed ? "passed" : "failed";
+    }
+
+    function compactNodeRegressionValue(value) {
+      const encoded = JSON.stringify(value);
+      if (encoded === undefined) return "null";
+      return encoded.length > 90 ? `${encoded.slice(0, 87)}…` : encoded;
+    }
+
+    function nodeRegressionFailure(report) {
+      if (report.error || report.reason) return report.error || report.reason;
+      const first = (report.diffs || [])[0];
+      if (!first) return "";
+      return `${formatJsonPointer(first.path)}：期望 ${compactNodeRegressionValue(first.expected)}，实际 ${compactNodeRegressionValue(first.actual)}`;
+    }
+
+    function renderNodeRegressionCases(tbody, reports) {
+      tbody.replaceChildren();
+      const visible = reports
+        .map((report, index) => ({report, index}))
+        .filter(({report}) => nodeRegressionFilter === "all" || nodeRegressionFilterKey(report) === nodeRegressionFilter);
+      if (!visible.length) {
+        const row = document.createElement("tr");
+        const cell = document.createElement("td");
+        cell.colSpan = 5;
+        cell.className = "case-empty";
+        cell.textContent = reports.length ? "当前筛选下没有用例" : "等待节点回归结果…";
+        row.appendChild(cell);
+        tbody.appendChild(row);
+        return;
+      }
+      for (const {report, index: reportIndex} of visible) {
+        const row = document.createElement("tr");
+        const index = document.createElement("td");
+        index.textContent = String(reportIndex + 1);
+        const status = document.createElement("td");
+        const [label, state] = nodeResultStatus(report);
+        const badge = document.createElement("span");
+        badge.className = `case-status ${state}`;
+        badge.textContent = label;
+        status.appendChild(badge);
+        const name = document.createElement("td");
+        const nameText = document.createElement("span");
+        nameText.className = "case-name";
+        nameText.textContent = report.fixture_id || `用例 ${reportIndex + 1}`;
+        name.appendChild(nameText);
+        const failureText = nodeRegressionFailure(report);
+        if (failureText) {
+          const failure = document.createElement("span");
+          failure.className = "failure-text";
+          failure.textContent = failureText;
+          name.appendChild(failure);
+        }
+        const duration = document.createElement("td");
+        duration.textContent = Number.isFinite(Number(report.duration))
+          ? `${Number(report.duration).toFixed(2)}s`
+          : "-";
+        const action = document.createElement("td");
+        const button = makeButton("查看", "node-regression-detail", "case-log-button");
+        button.dataset.reportIndex = String(reportIndex);
+        action.appendChild(button);
+        row.append(index, status, name, duration, action);
+        tbody.appendChild(row);
+      }
+    }
+
+    function openNodeRegressionDetail(report) {
+      if (!report) return;
+      const [label, state] = nodeResultStatus(report);
+      const status = $("node-regression-detail-status");
+      status.textContent = label;
+      status.className = `dialog-status ${state}`;
+      $("node-regression-detail-title").textContent = report.fixture_id || "节点回归详情";
+      $("node-regression-detail-subtitle").textContent = `${report.node_name || "未知节点"} · ${Number.isFinite(Number(report.duration)) ? `${Number(report.duration).toFixed(2)}s` : "耗时未知"}`;
+      const body = $("node-regression-detail-body");
+      body.replaceChildren();
+      const allDiffs = report.diffs || [];
+      const summary = document.createElement("div");
+      summary.className = "node-regression-detail-summary";
+      const executionError = report.error || report.reason;
+      summary.classList.add(report.passed ? "success" : "failed");
+      summary.textContent = executionError
+        || (allDiffs.length ? `${allDiffs.length} 个字段不一致` : "所有字段断言均已通过");
+      body.appendChild(summary);
+      if (allDiffs.length) {
+        const tableWrap = document.createElement("div");
+        tableWrap.className = "node-regression-diff-table-wrap";
+        const table = document.createElement("table");
+        table.className = "node-regression-diff-table";
+        const head = document.createElement("thead");
+        const headRow = document.createElement("tr");
+        for (const label of ["字段", "期望值", "实际值"]) {
+          const cell = document.createElement("th");
+          cell.textContent = label;
+          headRow.appendChild(cell);
+        }
+        head.appendChild(headRow);
+        const tableBody = document.createElement("tbody");
+        for (const diff of allDiffs) {
+          const row = document.createElement("tr");
+          const pathCell = document.createElement("td");
+          const path = document.createElement("code");
+          path.textContent = formatJsonPointer(diff.path);
+          pathCell.appendChild(path);
+          const expectedCell = document.createElement("td");
+          const expected = document.createElement("pre");
+          expected.className = "node-regression-value expected";
+          expected.textContent = JSON.stringify(diff.expected, null, 2);
+          expectedCell.appendChild(expected);
+          const actualCell = document.createElement("td");
+          const actual = document.createElement("pre");
+          actual.className = "node-regression-value actual";
+          actual.textContent = JSON.stringify(diff.actual, null, 2);
+          actualCell.appendChild(actual);
+          row.append(pathCell, expectedCell, actualCell);
+          tableBody.appendChild(row);
+        }
+        table.append(head, tableBody);
+        tableWrap.appendChild(table);
+        body.appendChild(tableWrap);
+      }
+      if (report.actual !== undefined) {
+        const actualOutput = document.createElement("details");
+        actualOutput.className = "structured-panel";
+        const heading = document.createElement("summary");
+        heading.textContent = "实际节点输出";
+        const content = document.createElement("div");
+        content.className = "structured-body";
+        content.appendChild(makeLogBlock("output", JSON.stringify(report.actual, null, 2)));
+        actualOutput.append(heading, content);
+        body.appendChild(actualOutput);
+      }
+      openDialog($("node-regression-detail-dialog"));
+    }
+
+    function renderNodeRegressionJob(job) {
+      nodeRegressionJobId = job.job_id || nodeRegressionJobId;
+      const summary = job.summary || {};
+      const reports = job.reports || [];
+      nodeRegressionReports = reports;
+      const statusText = statusLabels[job.status] || job.status || "等待";
+      $("node-regression-status").textContent = statusText;
+      const results = $("node-regression-results");
+      results.replaceChildren();
+      if (!job.job_id) {
+        const empty = document.createElement("div");
+        empty.className = "empty-state";
+        empty.innerHTML = "<strong>还没有节点回归结果</strong>选择 fixture 后运行。";
+        results.appendChild(empty);
+        return;
+      }
+      const fragment = $("node-regression-task-template").content.cloneNode(true);
+      const card = fragment.querySelector(".node-regression-task-card");
+      card.dataset.status = job.status || "queued";
+      const fixtureNames = (job.fixtures || []).map((name) => name.replace(/\.jsonl$/i, ""));
+      card.querySelector(".task-name").textContent = fixtureNames.length > 1
+        ? `${fixtureNames[0]} 等 ${fixtureNames.length} 个数据集`
+        : fixtureNames[0] || "节点回归";
+      const status = card.querySelector(".task-status");
+      status.textContent = statusText;
+      status.classList.add(job.status || "queued");
+      const total = Number(summary.total || 0);
+      const completed = reports.length;
+      const percent = total ? Math.min(100, completed / total * 100) : 0;
+      card.querySelector(".progress-label").textContent = total
+        ? `${completed} / ${total} 已完成`
+        : "正在初始化用例清单";
+      const counts = card.querySelector(".progress-counts");
+      const passed = document.createElement("span");
+      passed.className = "pass";
+      passed.textContent = `成功 ${summary.passed || 0}`;
+      const failed = document.createElement("span");
+      failed.className = "fail";
+      failed.textContent = `失败 ${summary.failed || 0}`;
+      const skipped = document.createElement("span");
+      skipped.textContent = `跳过 ${summary.skipped || 0}`;
+      counts.append(passed, failed, skipped);
+      const track = card.querySelector(".progress-track");
+      track.setAttribute("aria-valuenow", String(Math.round(percent)));
+      track.setAttribute("aria-valuemin", "0");
+      track.setAttribute("aria-valuemax", "100");
+      card.querySelector(".progress-bar").style.width = `${percent}%`;
+      for (const button of card.querySelectorAll("[data-node-regression-filter]")) {
+        button.classList.toggle("active", button.dataset.nodeRegressionFilter === nodeRegressionFilter);
+      }
+      renderNodeRegressionCases(card.querySelector(".node-regression-case-list"), reports);
+      if (job.report_url) {
+        const link = document.createElement("a");
+        link.className = "report-link";
+        link.href = job.report_url;
+        link.textContent = "下载 JSON 报告";
+        card.querySelector(".report-links").appendChild(link);
+      }
+      if (job.error) {
+        const error = document.createElement("span");
+        error.className = "failure-text";
+        error.textContent = job.error;
+        card.querySelector(".report-links").prepend(error);
+      }
+      results.appendChild(fragment);
+      window.clearTimeout(nodeRegressionPollTimer);
+      if (["queued", "running"].includes(job.status)) {
+        nodeRegressionPollTimer = window.setTimeout(pollNodeRegressionJob, 700);
+      } else {
+        const button = $("node-regression-run-button");
+        button.disabled = false;
+        button.textContent = "运行节点回归";
+      }
+    }
+
+    async function pollNodeRegressionJob() {
+      if (!nodeRegressionJobId) return;
+      try {
+        renderNodeRegressionJob(await api(`/api/node-regressions/jobs/${nodeRegressionJobId}`));
+      } catch (error) {
+        showNodeRegressionError(error.message);
+      }
+    }
+
+    async function runNodeRegression(event) {
+      event.preventDefault();
+      showNodeRegressionError("");
+      const fixtures = [...document.querySelectorAll('#node-fixture-list input[name="node-fixtures"]:checked')]
+        .map((input) => input.value);
+      if (!fixtures.length) return showNodeRegressionError("请至少选择一个节点 fixture");
+      const payload = {
+        fixtures,
+        transport: "http",
+        base_url: $("node-regression-base-url").value.trim(),
+        timeout: Number($("node-regression-timeout").value),
+        mock_external: false,
+      };
+      const button = $("node-regression-run-button");
+      button.disabled = true;
+      button.textContent = "正在启动…";
+      try {
+        const job = await api("/api/node-regressions/jobs", {
+          method: "POST",
+          headers: {"Content-Type": "application/json"},
+          body: JSON.stringify(payload),
+        });
+        renderNodeRegressionJob(job);
+      } catch (error) {
+        showNodeRegressionError(error.message);
+        button.disabled = false;
+        button.textContent = "运行节点回归";
+      }
+    }
+
+    async function loadHistoryReports() {
+      const select = $("history-report-select");
+      const caseList = $("history-case-list");
+      select.disabled = true;
+      caseList.innerHTML = '<tr><td colspan="5" class="case-empty">正在加载历史报告…</td></tr>';
+      try {
+        const payload = await api("/api/history");
+        const reports = payload.reports || [];
+        select.replaceChildren();
+        for (const report of reports) {
+          const option = document.createElement("option");
+          option.value = report.report_id;
+          const summary = report.summary || {};
+          option.textContent = `${report.path} · ${summary.passed || 0}/${summary.total || report.case_count || 0} 通过`;
+          select.appendChild(option);
+        }
+        historyReportsLoaded = true;
+        if (!reports.length) {
+          const option = document.createElement("option");
+          option.value = "";
+          option.textContent = "暂无历史 JSON 报告";
+          select.appendChild(option);
+          caseList.innerHTML = '<tr><td colspan="5" class="case-empty">docs/testing/test-reports 下暂无报告。</td></tr>';
+          $("history-summary").textContent = "没有可标注的历史测试记录。";
+          return;
+        }
+        select.value = reports[0].report_id;
+        await loadHistoricalReport(reports[0].report_id);
+      } catch (error) {
+        caseList.innerHTML = "";
+        const row = document.createElement("tr");
+        const cell = document.createElement("td");
+        cell.colSpan = 5;
+        cell.className = "case-empty";
+        cell.textContent = error.message;
+        row.appendChild(cell);
+        caseList.appendChild(row);
+      } finally {
+        select.disabled = false;
+      }
+    }
+
+    async function loadHistoricalReport(reportId) {
+      if (!reportId) return;
+      const payload = await api(`/api/history/${reportId}`);
+      const report = payload.report || {};
+      const cases = report.cases || [];
+      const summary = report.summary || {};
+      $("history-summary").textContent = `共 ${summary.total ?? cases.length} 条，通过 ${summary.passed ?? "-"}，失败 ${summary.failed ?? "-"}`;
+      const list = $("history-case-list");
+      list.replaceChildren();
+      cases.forEach((item, offset) => {
+        const index = offset + 1;
+        const row = document.createElement("tr");
+        const number = document.createElement("td");
+        number.textContent = String(index);
+        const status = document.createElement("td");
+        const badge = document.createElement("span");
+        badge.className = `case-status ${item.passed ? "success" : "failed"}`;
+        badge.textContent = item.passed ? "成功" : "失败";
+        status.appendChild(badge);
+        const name = document.createElement("td");
+        name.textContent = item.name || item.case_no || `用例 ${index}`;
+        const duration = document.createElement("td");
+        duration.textContent = Number.isFinite(Number(item.duration)) ? `${Number(item.duration).toFixed(2)}s` : "-";
+        const action = document.createElement("td");
+        const button = makeButton("查看并标注", "history-case-log", "case-log-button");
+        button.dataset.url = `/api/history/${reportId}/cases/${index}`;
+        action.appendChild(button);
+        row.append(number, status, name, duration, action);
+        list.appendChild(row);
+      });
+      if (!cases.length) {
+        list.innerHTML = '<tr><td colspan="5" class="case-empty">该报告没有用例。</td></tr>';
+      }
     }
 
     function prettyJson(raw) {
@@ -2284,7 +3354,8 @@
         ["swap-counterparties", "swap_counterparties"],
         ["chat-base-url", "base_url"], ["chat-user-id", "user_id"],
         ["chat-room-id", "room_id"], ["chat-option-counterparties", "option_counterparties"],
-        ["chat-swap-counterparties", "swap_counterparties"]
+        ["chat-swap-counterparties", "swap_counterparties"],
+        ["node-regression-base-url", "base_url"]
       ];
       for (const [id, key] of mappings) {
         const input = $(id);
@@ -2596,7 +3667,15 @@
       return button;
     }
 
-    function makeLogBlock(label, value, kind = "") {
+    function openNodeJsonDialog(label, value) {
+      $("node-json-title").textContent = label;
+      $("node-json-content").textContent = value || "暂无内容";
+      $("node-json-content").scrollTop = 0;
+      $("node-json-content").scrollLeft = 0;
+      openDialog($("node-json-dialog"));
+    }
+
+    function makeLogBlock(label, value, kind = "", expandable = false) {
       const text = value === null || value === undefined ? "" : String(value);
       const block = document.createElement("section");
       block.className = `log-block ${kind}`.trim();
@@ -2605,7 +3684,17 @@
       const title = document.createElement("span");
       title.className = "log-block-title";
       title.textContent = label;
-      head.append(title, makeCopyButton(text, `复制${label}`));
+      head.append(title);
+      if (expandable) {
+        const button = document.createElement("button");
+        button.type = "button";
+        button.className = "copy-button";
+        button.textContent = "放大";
+        button.setAttribute("aria-label", `放大查看${label}`);
+        button.addEventListener("click", () => openNodeJsonDialog(label, text));
+        head.appendChild(button);
+      }
+      head.appendChild(makeCopyButton(text, `复制${label}`));
       const pre = document.createElement("pre");
       pre.textContent = text || "暂无内容";
       pre.tabIndex = 0;
@@ -2820,6 +3909,410 @@
       if (typeof dialog.showModal === "function") dialog.showModal(); else dialog.setAttribute("open", "");
     }
 
+    function setSelectOptions(select, values, allLabel) {
+      const current = select.value || "all";
+      select.replaceChildren();
+      const all = document.createElement("option");
+      all.value = "all";
+      all.textContent = allLabel;
+      select.appendChild(all);
+      [...new Set(values.filter(Boolean))].sort().forEach((value) => {
+        const option = document.createElement("option");
+        option.value = value;
+        option.textContent = value;
+        select.appendChild(option);
+      });
+      select.value = [...select.options].some((option) => option.value === current) ? current : "all";
+    }
+
+    async function switchCaseDialogTab(tab) {
+      const showNodes = tab === "nodes";
+      $("case-log-tab").setAttribute("aria-selected", String(!showNodes));
+      $("case-node-tab").setAttribute("aria-selected", String(showNodes));
+      $("case-dialog-body").hidden = showNodes;
+      $("case-node-panel").hidden = !showNodes;
+      if (showNodes && !caseNodesLoaded) await loadCaseNodes();
+    }
+
+    function escapeJsonPointerToken(value) {
+      return String(value).replaceAll("~", "~0").replaceAll("/", "~1");
+    }
+
+    function jsonPointerTokens(pointer) {
+      return String(pointer).split("/").slice(1).map((token) =>
+        token.replaceAll("~1", "/").replaceAll("~0", "~")
+      );
+    }
+
+    function formatJsonPointer(pointer) {
+      const tokens = jsonPointerTokens(pointer);
+      if (!tokens.length || (tokens.length === 1 && tokens[0] === "")) return "$";
+      return tokens.reduce((display, token) => {
+        if (/^\d+$/.test(token)) return `${display}[${token}]`;
+        if (/^[A-Za-z_$][A-Za-z0-9_$]*$/.test(token)) {
+          return display ? `${display}.${token}` : token;
+        }
+        return `${display}[${JSON.stringify(token)}]`;
+      }, "");
+    }
+
+    function flattenJsonPointers(value, path = "") {
+      const current = path ? [[path, value]] : [];
+      if (Array.isArray(value)) {
+        return current.concat(value.flatMap((item, index) => flattenJsonPointers(item, `${path}/${index}`)));
+      }
+      if (value && typeof value === "object") {
+        const entries = Object.entries(value);
+        return current.concat(entries.flatMap(([key, item]) => flattenJsonPointers(item, `${path}/${escapeJsonPointerToken(key)}`)));
+      }
+      return current;
+    }
+
+    function makeSelectableOutputJson(value) {
+      const view = document.createElement("div");
+      view.className = "node-output-json";
+      view.tabIndex = 0;
+      view.setAttribute("aria-label", "实际输出 JSON，字段前的复选框可选择标注字段");
+      const fieldCheckboxes = new Map(
+        [...$("node-field-list").querySelectorAll('.node-field-row input[type="checkbox"]')]
+          .map((checkbox) => [checkbox.dataset.pointer, checkbox])
+      );
+
+      function appendValue(item, pointer, depth, key, last) {
+        const container = item !== null && typeof item === "object";
+        const array = Array.isArray(item);
+        const entries = container ? (array ? item.map((child, index) => [String(index), child]) : Object.entries(item)) : [];
+        const opening = container ? (array ? "[" : "{") : JSON.stringify(item);
+        const closing = array ? "]" : "}";
+        const row = document.createElement("div");
+        row.className = "node-output-json-row";
+        row.style.paddingLeft = `${depth * 18 + 4}px`;
+        const fieldCheckbox = fieldCheckboxes.get(pointer);
+        if (fieldCheckbox) {
+          const checkbox = document.createElement("input");
+          checkbox.type = "checkbox";
+          checkbox.dataset.outputPointer = pointer;
+          checkbox.checked = fieldCheckbox.checked;
+          checkbox.setAttribute("aria-label", `选择实际输出字段 ${formatJsonPointer(pointer)}`);
+          row.classList.toggle("selected", checkbox.checked);
+          row.appendChild(checkbox);
+        } else {
+          row.appendChild(document.createElement("span"));
+        }
+        const code = document.createElement("code");
+        const prefix = key === null ? "" : `${JSON.stringify(key)}: `;
+        code.textContent = `${prefix}${opening}${container && !entries.length ? closing : ""}${container && entries.length ? "" : last ? "" : ","}`;
+        row.appendChild(code);
+        view.appendChild(row);
+        if (!container || !entries.length) return;
+
+        entries.forEach(([childKey, child], index) => {
+          appendValue(child, `${pointer}/${escapeJsonPointerToken(childKey)}`, depth + 1,
+            array ? null : childKey, index === entries.length - 1);
+        });
+        const endRow = document.createElement("div");
+        endRow.className = "node-output-json-row";
+        endRow.style.paddingLeft = `${depth * 18 + 4}px`;
+        endRow.appendChild(document.createElement("span"));
+        const endCode = document.createElement("code");
+        endCode.textContent = `${closing}${last ? "" : ","}`;
+        endRow.appendChild(endCode);
+        view.appendChild(endRow);
+      }
+
+      appendValue(value, "", 0, null, true);
+      return view;
+    }
+
+    function isVolatileAnnotationPointer(pointer) {
+      const token = (jsonPointerTokens(pointer).at(-1) || "").toLowerCase();
+      return new Set([
+        "id", "ts", "timestamp", "created_at", "updated_at",
+        "trace_id", "traceid", "observation_id", "observationid",
+        "message_id", "messageid", "conversation_id", "conversationid",
+      ]).has(token);
+    }
+
+    function annotationFieldGroup(pointer) {
+      const tokens = jsonPointerTokens(pointer);
+      if (!tokens.length) return "$";
+      const numericIndex = tokens.findIndex((token) => /^\d+$/.test(token));
+      const groupTokens = numericIndex >= 0 ? tokens.slice(0, numericIndex + 1) : tokens.slice(0, 1);
+      return formatJsonPointer(`/${groupTokens.map(escapeJsonPointerToken).join("/")}`);
+    }
+
+    function updateNodeFieldSelectionSummary() {
+      const checkboxes = [...$("node-field-list").querySelectorAll('.node-field-row input[type="checkbox"]')];
+      const selected = checkboxes.filter((checkbox) => checkbox.checked).length;
+      const recommended = checkboxes.filter((checkbox) => checkbox.dataset.recommended === "true").length;
+      $("node-field-selection").textContent = `已选 ${selected}/${checkboxes.length} 个字段，推荐 ${recommended} 个`;
+      for (const group of $("node-field-list").querySelectorAll(".node-field-group")) {
+        const groupCheckboxes = [...group.querySelectorAll('.node-field-row input[type="checkbox"]')];
+        const groupSelected = groupCheckboxes.filter((checkbox) => checkbox.checked).length;
+        group.querySelector(".node-field-group-count").textContent = `${groupSelected}/${groupCheckboxes.length} 已选`;
+      }
+      filterNodeAnnotationFields();
+      syncNodeOutputFieldCheckboxes();
+    }
+
+    function syncNodeOutputFieldCheckboxes() {
+      const selected = new Set(
+        [...$("node-field-list").querySelectorAll('.node-field-row input[type="checkbox"]')]
+          .filter((checkbox) => checkbox.checked)
+          .map((checkbox) => checkbox.dataset.pointer)
+      );
+      for (const checkbox of $("node-output-block").querySelectorAll('input[data-output-pointer]')) {
+        checkbox.checked = selected.has(checkbox.dataset.outputPointer);
+        checkbox.closest(".node-output-json-row").classList.toggle("selected", checkbox.checked);
+      }
+    }
+
+    function filterNodeAnnotationFields() {
+      const query = $("node-field-search").value.trim().toLocaleLowerCase();
+      for (const group of $("node-field-list").querySelectorAll(".node-field-group")) {
+        let visibleRows = 0;
+        for (const row of group.querySelectorAll(".node-field-row")) {
+          const checkbox = row.querySelector('input[type="checkbox"]');
+          row.hidden = !checkbox.checked;
+          if (query) row.hidden = !row.dataset.searchValue.includes(query);
+          if (!row.hidden) visibleRows += 1;
+        }
+        group.hidden = visibleRows === 0;
+        if (query && visibleRows > 0) group.open = true;
+      }
+    }
+
+    function applyNodeFieldSelection(action) {
+      for (const checkbox of $("node-field-list").querySelectorAll('.node-field-row input[type="checkbox"]')) {
+        if (action === "all") checkbox.checked = true;
+        if (action === "clear") checkbox.checked = false;
+        if (action === "stable") checkbox.checked = checkbox.dataset.recommended === "true";
+      }
+      updateNodeFieldSelectionSummary();
+    }
+
+    function filteredCaseNodes() {
+      const product = $("node-product-filter").value;
+      const category = $("node-category-filter").value;
+      const replay = $("node-replay-filter").value;
+      return currentCaseNodes.filter((node) => {
+        if (product !== "all" && node.product_type !== product) return false;
+        if (category !== "all" && node.category !== category) return false;
+        if (replay === "replayable" && !node.replayable) return false;
+        if (replay === "blocked" && node.replayable) return false;
+        return true;
+      });
+    }
+
+    function selectedCaseNode() {
+      return currentCaseNodes.find((node) => node.observation_id === selectedNodeObservationId) || null;
+    }
+
+    function renderNodeEditor(node) {
+      selectedNodeObservationId = node?.observation_id || "";
+      $("node-editor-empty").hidden = Boolean(node);
+      $("node-editor-content").hidden = !node;
+      $("node-save-status").textContent = "";
+      $("node-save-status").className = "node-save-status";
+      if (!node) return;
+
+      $("node-input-block").replaceChildren(makeLogBlock("节点输入", JSON.stringify(node.input || {}, null, 2), "input-block", true));
+      const annotationOutput = {};
+      for (const field of node.output_fields || []) {
+        if (Object.hasOwn(node.output || {}, field)) annotationOutput[field] = node.output[field];
+      }
+      $("node-object-editor").value = JSON.stringify(annotationOutput, null, 2);
+      const availableOutput = Object.fromEntries(
+        Object.entries(node.output || {}).filter(([key]) => key !== "trace" && !key.startsWith("_"))
+      );
+      const fields = $("node-field-list");
+      fields.replaceChildren();
+      $("node-field-search").value = "";
+      const hasFieldCandidates = Object.keys(availableOutput).length > 0;
+      const groupedFields = new Map();
+      for (const item of hasFieldCandidates ? flattenJsonPointers(availableOutput) : []) {
+        const groupName = annotationFieldGroup(item[0]);
+        if (!groupedFields.has(groupName)) groupedFields.set(groupName, []);
+        groupedFields.get(groupName).push(item);
+      }
+      for (const [groupName, items] of groupedFields) {
+        const details = document.createElement("details");
+        details.className = "node-field-group";
+        const summary = document.createElement("summary");
+        summary.className = "node-field-group-summary";
+        const groupTitle = document.createElement("strong");
+        groupTitle.textContent = groupName;
+        const groupCount = document.createElement("span");
+        groupCount.className = "node-field-group-count";
+        summary.append(groupTitle, groupCount);
+        const groupBody = document.createElement("div");
+        groupBody.className = "node-field-group-body";
+        for (const [pointer, value] of items) {
+          const displayPath = formatJsonPointer(pointer);
+          const row = document.createElement("label");
+          row.className = "node-field-row";
+          row.dataset.searchValue = `${displayPath} ${JSON.stringify(value)}`.toLocaleLowerCase();
+          const checkbox = document.createElement("input");
+          checkbox.type = "checkbox";
+          checkbox.checked = (node.output_fields || []).includes(jsonPointerTokens(pointer)[0])
+            && (value === null || typeof value !== "object" || !Object.keys(value).length)
+            && !isVolatileAnnotationPointer(pointer);
+          checkbox.dataset.pointer = pointer;
+          checkbox.dataset.volatile = String(isVolatileAnnotationPointer(pointer));
+          checkbox.dataset.recommended = String(checkbox.checked);
+          checkbox.setAttribute("aria-label", `选择字段 ${displayPath}`);
+          const path = document.createElement("span");
+          path.className = "node-field-path";
+          path.textContent = formatJsonPointer(pointer);
+          const editor = document.createElement("textarea");
+          editor.name = `node-expected-${pointer}`;
+          editor.rows = 2;
+          editor.value = JSON.stringify(value, null, 2);
+          editor.spellcheck = false;
+          editor.setAttribute("autocomplete", "off");
+          editor.setAttribute("aria-label", `期望值 ${displayPath}`);
+          row.append(checkbox, path, editor);
+          groupBody.appendChild(row);
+        }
+        details.append(summary, groupBody);
+        details.open = Boolean(groupBody.querySelector('input[type="checkbox"]:checked'));
+        fields.appendChild(details);
+      }
+      const outputBlock = makeLogBlock("实际输出", JSON.stringify(node.output || {}, null, 2), "output-block", true);
+      outputBlock.querySelector("pre").replaceWith(makeSelectableOutputJson(node.output || {}));
+      $("node-output-block").replaceChildren(outputBlock);
+      updateNodeFieldSelectionSummary();
+      const annotatable = node.annotatable !== false;
+      $("node-save-button").disabled = !annotatable;
+      if (!annotatable) {
+        $("node-save-status").textContent = node.annotation_reason || "该节点仅支持查看。";
+      }
+      $("node-annotator").value = window.localStorage.getItem("node-annotator") || "";
+      const modeSelect = $("node-annotation-mode");
+      modeSelect.querySelector('option[value="fields"]').disabled = !hasFieldCandidates;
+      modeSelect.value = hasFieldCandidates ? "fields" : "object";
+      syncNodeAnnotationMode();
+    }
+
+    function renderNodeList() {
+      const list = $("node-list");
+      list.replaceChildren();
+      const nodes = filteredCaseNodes();
+      if (!nodes.length) {
+        const empty = document.createElement("div");
+        empty.className = "case-detail-empty";
+        empty.textContent = currentCaseNodes.length ? "当前筛选下没有节点。" : "没有可标注的 LangGraph 业务节点。";
+        list.appendChild(empty);
+        renderNodeEditor(null);
+        return;
+      }
+      if (!nodes.some((node) => node.observation_id === selectedNodeObservationId)) {
+        selectedNodeObservationId = nodes[0].observation_id;
+      }
+      for (const node of nodes) {
+        const button = document.createElement("button");
+        button.type = "button";
+        button.className = "node-list-item";
+        button.classList.toggle("active", node.observation_id === selectedNodeObservationId);
+        button.dataset.observationId = node.observation_id;
+        const title = document.createElement("strong");
+        title.textContent = `第 ${node.turn} 轮 · ${node.name}`;
+        button.append(title);
+        list.appendChild(button);
+      }
+      renderNodeEditor(selectedCaseNode());
+    }
+
+    async function loadCaseNodes() {
+      const list = $("node-list");
+      list.innerHTML = '<div class="case-detail-empty">正在从 Langfuse 获取节点…</div>';
+      try {
+        const payload = await api(`${currentCaseDetailUrl}/nodes`);
+        currentCaseNodes = payload.nodes || [];
+        caseNodesLoaded = true;
+        selectedNodeObservationId = currentCaseNodes[0]?.observation_id || "";
+        setSelectOptions($("node-product-filter"), currentCaseNodes.map((node) => node.product_type), "全部产品");
+        setSelectOptions($("node-category-filter"), currentCaseNodes.map((node) => node.category), "全部类型");
+        renderNodeList();
+      } catch (error) {
+        currentCaseNodes = [];
+        caseNodesLoaded = false;
+        list.innerHTML = "";
+        const message = document.createElement("div");
+        message.className = "case-error-note";
+        message.textContent = error.message;
+        list.appendChild(message);
+        renderNodeEditor(null);
+      }
+    }
+
+    function syncNodeAnnotationMode() {
+      const objectMode = $("node-annotation-mode").value === "object";
+      $("node-field-list").hidden = objectMode;
+      $("node-field-tools").hidden = objectMode || !$("node-field-list").children.length;
+      $("node-object-field").hidden = !objectMode;
+    }
+
+    async function saveNodeFixture(event) {
+      event.preventDefault();
+      const node = selectedCaseNode();
+      if (!node) return;
+      const status = $("node-save-status");
+      const button = $("node-save-button");
+      status.textContent = "";
+      status.className = "node-save-status";
+      button.disabled = true;
+      try {
+        const mode = $("node-annotation-mode").value;
+        const payload = {
+          observation_id: node.observation_id,
+          annotator: $("node-annotator").value.trim(),
+          mode,
+        };
+        if (!payload.annotator) throw new Error("请填写标注人");
+        if (mode === "fields") {
+          payload.expected_fields = {};
+          for (const row of $("node-field-list").querySelectorAll(".node-field-row")) {
+            const checkbox = row.querySelector('input[type="checkbox"]');
+            if (!checkbox.checked) continue;
+            const editor = row.querySelector("textarea");
+            try { payload.expected_fields[checkbox.dataset.pointer] = JSON.parse(editor.value); }
+            catch { throw new Error(`${checkbox.dataset.pointer} 的期望值不是合法 JSON`); }
+          }
+          if (!Object.keys(payload.expected_fields).length) throw new Error("请至少选择一个输出字段");
+        } else {
+          try { payload.expected_object = JSON.parse($("node-object-editor").value); }
+          catch { throw new Error("期望输出对象不是合法 JSON"); }
+          if (!payload.expected_object || Array.isArray(payload.expected_object) || typeof payload.expected_object !== "object") {
+            throw new Error("期望输出必须是 JSON 对象");
+          }
+        }
+        const result = await api(`${currentCaseDetailUrl}/node-fixtures`, {
+          method: "POST",
+          headers: {"Content-Type": "application/json"},
+          body: JSON.stringify(payload),
+        });
+        window.localStorage.setItem("node-annotator", payload.annotator);
+        node.annotated = true;
+        status.className = "node-save-status success";
+        status.textContent = `已保存：${result.saved_path}`;
+      } catch (error) {
+        status.className = "node-save-status error";
+        status.textContent = error.message;
+      } finally {
+        button.disabled = node.annotatable === false;
+      }
+    }
+
+    async function showCaseDetail(detailUrl) {
+      currentCaseDetailUrl = detailUrl;
+      currentCaseNodes = [];
+      selectedNodeObservationId = "";
+      caseNodesLoaded = false;
+      renderCaseDetail(await api(detailUrl));
+      await switchCaseDialogTab("log");
+    }
+
     function renderCaseDetail(detail) {
       const result = detail.case;
       const dialog = $("case-log-dialog");
@@ -2944,7 +4437,7 @@
       if (action === "delete" && !window.confirm("确认删除这条任务记录？已生成的报告文件会保留。")) return;
       button.disabled = true;
       try {
-        if (action === "case-log") { renderCaseDetail(await api(button.dataset.url)); return; }
+        if (action === "case-log") { await showCaseDetail(button.dataset.url); return; }
         if (action === "task-log") { await showTaskLog(jobId); return; }
         if (action === "case-filter") { caseFilters.set(jobId, button.dataset.filter); renderQueue(queueState); return; }
         if (action === "delete") {
@@ -3023,6 +4516,81 @@
     });
     $("dataset-list").addEventListener("change", syncDatasetField);
     $("start-queue-button").addEventListener("click", startQueue);
+    $("history-refresh-button").addEventListener("click", () => {
+      historyReportsLoaded = false;
+      loadHistoryReports();
+    });
+    $("history-report-select").addEventListener("change", (event) => {
+      loadHistoricalReport(event.target.value);
+    });
+    $("node-regression-form").addEventListener("submit", runNodeRegression);
+    $("node-regression-refresh-button").addEventListener("click", () => {
+      nodeRegressionFixturesLoaded = false;
+      loadNodeRegressionFixtures();
+    });
+    $("node-regression-results").addEventListener("click", (event) => {
+      const filter = event.target.closest("[data-node-regression-filter]");
+      if (filter) {
+        nodeRegressionFilter = filter.dataset.nodeRegressionFilter;
+        for (const button of $("node-regression-results").querySelectorAll("[data-node-regression-filter]")) {
+          button.classList.toggle("active", button === filter);
+        }
+        const tbody = $("node-regression-results").querySelector(".node-regression-case-list");
+        if (tbody) renderNodeRegressionCases(tbody, nodeRegressionReports);
+        return;
+      }
+      const detail = event.target.closest('button[data-action="node-regression-detail"]');
+      if (detail) openNodeRegressionDetail(nodeRegressionReports[Number(detail.dataset.reportIndex)]);
+    });
+    $("history-case-list").addEventListener("click", (event) => {
+      const button = event.target.closest("button[data-url]");
+      if (button) showCaseDetail(button.dataset.url);
+    });
+    $("case-log-tab").addEventListener("click", () => switchCaseDialogTab("log"));
+    $("case-node-tab").addEventListener("click", () => switchCaseDialogTab("nodes"));
+    $("node-refresh-button").addEventListener("click", () => {
+      caseNodesLoaded = false;
+      loadCaseNodes();
+    });
+    $("node-product-filter").addEventListener("change", renderNodeList);
+    $("node-category-filter").addEventListener("change", renderNodeList);
+    $("node-replay-filter").addEventListener("change", renderNodeList);
+    $("node-annotation-mode").addEventListener("change", syncNodeAnnotationMode);
+    $("node-field-search").addEventListener("input", filterNodeAnnotationFields);
+    $("node-field-search").addEventListener("keydown", (event) => {
+      if (event.key === "Enter") event.preventDefault();
+    });
+    $("node-field-tools").addEventListener("click", (event) => {
+      const button = event.target.closest("[data-node-field-action]");
+      if (button) applyNodeFieldSelection(button.dataset.nodeFieldAction);
+    });
+    $("node-field-list").addEventListener("change", (event) => {
+      if (event.target.matches('input[type="checkbox"]')) updateNodeFieldSelectionSummary();
+    });
+    $("node-output-block").addEventListener("change", (event) => {
+      const outputCheckbox = event.target.closest('input[data-output-pointer]');
+      if (!outputCheckbox) return;
+      const fieldCheckbox = [...$("node-field-list").querySelectorAll('.node-field-row input[type="checkbox"]')]
+        .find((checkbox) => checkbox.dataset.pointer === outputCheckbox.dataset.outputPointer);
+      if (!fieldCheckbox) return;
+      $("node-annotation-mode").value = "fields";
+      syncNodeAnnotationMode();
+      fieldCheckbox.checked = outputCheckbox.checked;
+      if (fieldCheckbox.checked) fieldCheckbox.closest(".node-field-group").open = true;
+      updateNodeFieldSelectionSummary();
+    });
+    $("node-annotation-form").addEventListener("submit", saveNodeFixture);
+    $("node-json-copy").addEventListener("click", (event) => {
+      copyText($("node-json-content").textContent, event.currentTarget);
+    });
+    window.addEventListener("scroll", scheduleConfigPanelHeightSync, {passive: true});
+    window.addEventListener("resize", scheduleConfigPanelHeightSync);
+    $("node-list").addEventListener("click", (event) => {
+      const button = event.target.closest("button[data-observation-id]");
+      if (!button) return;
+      selectedNodeObservationId = button.dataset.observationId;
+      renderNodeList();
+    });
     queueElement.addEventListener("click", (event) => {
       const button = event.target.closest("button[data-action]");
       const card = event.target.closest(".task-card");
@@ -3036,6 +4604,7 @@
     if (IS_STATIC_PREVIEW) {
       $("add-task-button").disabled = true;
       $("chat-send-button").disabled = true;
+      $("node-regression-run-button").disabled = true;
       showError("当前是静态预览。请启动 automation_runner_server.py 后使用任务队列。");
       showChatError("当前是静态预览。请启动 automation_runner_server.py 后使用自由对话。");
     } else {

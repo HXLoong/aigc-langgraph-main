@@ -125,7 +125,7 @@ checkpoint 库（AIOMySQLSaver 管理，MySQL 8.0.19 ≤ v < 9.6.0）
 
 ```
 golden 三桶（B 业务种子 / C 对抗改写 / D 客户真实输入,350+ 条）
-    → scripts/langfuse_eval.py（DeepSeek Judge + per-turn 富集）
+    → scripts/langfuse/langfuse_eval.py（DeepSeek Judge + per-turn 富集）
     → 按桶退出门（B ≥90% / C ≥80%）
     → harness（run / diff / sync-golden，仅 import build_main_graph）
 ```

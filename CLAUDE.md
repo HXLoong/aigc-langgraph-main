@@ -27,7 +27,16 @@ USE_MYSQL_CHECKPOINTER=false REQUEST_IDEMPOTENCY=false ENABLE_LANGFUSE=false pyt
 python scripts/local_eval.py --base-url http://127.0.0.1:8201 --data tests/fixtures/categories --case case-025 --concurrency 1
 # 全量验收时去掉 --case；显式 categories 当前388条，不并入 unified。
 # 本地真实联调：ENVIRONMENT=staging uvicorn app.main:app --host 127.0.0.1 --port 8201
-# scripts/langfuse_eval.py 保留为 Judge 辅助入口，不替代 HTTP/Java 写回与幂等验收。
+
+# Langfuse Dataset Experiment（Judge + 自动 Evaluator；不替代 HTTP/Java 写回与幂等验收）
+python scripts/langfuse/langfuse_eval.py --dataset golden_option_inquiry_case --ids case-022 --concurrency 1
+# 意图集（只调 LLM + 仓库内 mock_api，不依赖 Java/GOATS；确定性评分本地算，--fail-under 给退出码；
+# CI：.github/workflows/intent-eval.yml；业务集 categories/ 依赖 Java 后端只在开发环境跑；workflow-guide §8）
+python scripts/langfuse/langfuse_eval.py --local tests/fixtures/intent --concurrency 3 --fail-under 0.95 --report .harness-runs/intent-eval.json
+
+# Harness CLI（备用 / 本地快速 smoke，无 Judge）
+python -m harness doctor
+python -m harness run --backend real|mock|dry-run
 
 # 真后端探针（M3 联调）
 python scripts/probe_real_backend_e2e.py
@@ -89,8 +98,9 @@ docs/adr/                    # 架构决定 ADR 0000-0024（共 25 篇）+ READM
 docs/api-contracts/          # Java 后端真实业务 API 契约
 docs/m3-m4-roadmap.md        # M3/M4 端到端任务图（6 个交付面，2026-05-11 修订）
 docs/on-call-runbook.md      # 上线 on-call SOP
-tests/                       # 1864 passed + 15 skipped
-tests/fixtures/              # categories/（A 方言，6 文件 / 389 条）+ unified_golden.jsonl（B 方言，921 条，harness 默认并入）+ old_typing/（归档）
+tests/                       # 2900+ passed（2026-09-22；按 graph / nodes / subgraphs / api_wire / harness / prompts / scripts 归位）
+tests/fixtures/              # categories/（A 方言业务集，6 文件 / 389 条）+ intent/（意图集：逐轮 product_type/intent，只调 LLM + mock 后端）
+                             # + unified_golden.jsonl（B 方言，921 条，harness 默认并入）+ 历史归档见 docs/archive/fixtures/old_typing/
 ```
 
 ## 团队工具链：Claude Code 与 Codex 共用一份纪律
@@ -114,6 +124,7 @@ tests/fixtures/              # categories/（A 方言，6 文件 / 389 条）+ u
 - 真实写入测试仅由主代理调度；先确认授权测试账号、群、对手及持仓。业务回归使用 scripts/local_eval.py 和显式 tests/fixtures/categories，不并入 unified。
 - 任务和证据记录在 tmp；区分实现完成、专项通过、待用户验收、外部阻塞。外部阻塞不可写成已完成；全量结果未经运行不得宣称通过。
 - 不 push、不创建 PR；保留用户原有未提交改动。新 worktree 显式准备依赖与所需本地配置，禁止输出或提交密钥。
+- 2026-09-22 issue 裁决：#218 不处理；#219 仅待部署环境核查；#220 categories 标注后续单列；#221 暂不改脱敏默认值与审计原文；#222 协议迁移暂缓，保持 Java 源码、配置、agentUrl、DTO 和现行 wire 契约；#224 的 shadow_compare 保留待 F4.1 裁决。
 
 ## 子目录陷阱页（按需加载）
 
@@ -134,14 +145,15 @@ tests/fixtures/              # categories/（A 方言，6 文件 / 389 条）+ u
    - 禁止先改代码再补测试，也禁止跳过 RED 验证
    - `/test-driven-development` skill 包含完整 workflow，修改代码前调用
 6. **git 里的提示词是唯一真源** —— 改提示词直接改 `app/prompts/**/*.md` + 普通 PR review，`prompt(<scope>)` commit；Dify 已退出上游地位（ADR 0024 D1），YAML 快照冻结在 tag `dify-assets-frozen-20260917（指向 commit fddd94e；tag 仅存本地，远端拒绝 tag 推送，维护者可从该 sha 重建）`，不再有同步 / 导出链路
-7. **标的原文交后端识别** —— LangGraph 只提取代码/名称原文和用户候选选择，不补代码、不计算近月、不查证券池；Java 业务接口负责调用标的工具及权威校验。原文及引用候选不标记为 `from_goats=True`；HTTP `tickers` 保留为空的兼容字段。详见 `docs/backend-instrument-boundary.md`。
-8. **节点失败必须 cascade 防御** —— 任一节点写入 `state['error']` 后，下游 conditional 路由必须检查并跳到 fallback render，禁止 cascade 失败。具体：主图 `_route_by_product` 与每子图首节点后的 conditional 都加 `if state.get('error'): return 'fallback'`。fallback 节点输出友好回复（"我没完全理解你的意思，能换种说法重新告诉我吗"）+ trace 记录原 fail 节点名。LLM 解析失败由 `with_structured_output` 自带 1 次重试 + `@safe_node` 兜底捕获 ValidationError 写入 error；不走 HITL（HITL 仅用于 ADR 0006 的业务参数二次确认场景）
+7. **单动作多订单** —— 每条消息按既有产品与意图优先级执行一个业务动作，多笔订单共用该动作；主图、节点执行接口和评测目录均不提供多动作编排。
+8. **标的原文交后端识别** —— LangGraph 只提取代码/名称原文和用户候选选择，不补代码、不计算近月、不查证券池；Java 业务接口负责调用标的工具及权威校验。原文及引用候选不标记为 `from_goats=True`；HTTP `tickers` 保留为空的兼容字段。详见 `docs/backend-instrument-boundary.md`。
+9. **节点失败必须 cascade 防御** —— 任一节点写入 `state['error']` 后，下游 conditional 路由必须检查并跳到 fallback render，禁止 cascade 失败。具体：主图 `_route_by_product` 与每子图首节点后的 conditional 都加 `if state.get('error'): return 'fallback'`。fallback 节点输出友好回复（"我没完全理解你的意思，能换种说法重新告诉我吗"）+ trace 记录原 fail 节点名。LLM 解析失败由 `with_structured_output` 自带 1 次重试 + `@safe_node` 兜底捕获 ValidationError 写入 error；不走 HITL（HITL 仅用于 ADR 0006 的业务参数二次确认场景）
 
 ## 排查与修复流程（Bug Debug Workflow）
 
 ### 1. 从 Langfuse 富 output 定位根因（首选）
 
-`scripts/langfuse_eval.py` 每跑完一条 case 会把**结构化富集 JSON** 写到 Langfuse Cloud
+`scripts/langfuse/langfuse_eval.py` 每跑完一条 case 会把**结构化富集 JSON** 写到 Langfuse Cloud
 （https://us.cloud.langfuse.com），outer span output 包含：
 
 ```jsonc
@@ -217,7 +229,7 @@ tests/fixtures/              # categories/（A 方言，6 文件 / 389 条）+ u
 修完跑对应 case 确认：
 
 ```bash
-.venv/bin/python scripts/langfuse_eval.py --local tests/fixtures/categories --ids case-025,case-026 --concurrency 2
+.venv/bin/python scripts/langfuse/langfuse_eval.py --local tests/fixtures/categories --ids case-025,case-026 --concurrency 2
 ```
 
 ## 绝对禁止
@@ -249,7 +261,7 @@ ADR 0016 把"M3 = shadow 双跑"重新定义为"M3 = 工程联调闭环 + 评估
 1. **代码完整性** ✅：24 节点蓝图 → 主干 20 节点已落地；P2 辅助节点（place_order_image / place_order_excel / image_recognize）按线上流量增量补
 2. **数据集完整性** ✅：fixture 集已扩到 350+；fixture 职责矩阵 + 一致性 lint 已就位（PR #109）；按 B / C / D 桶分别维护
 3. **客户现场部署能力** ✅：infra/langfuse self-hosted、`scripts/deploy-customer.sh`（C1.13 / Issue #58）、`.env.customer.template`（C1.12 / Issue #52）、私有化部署文档（C1.11 / Issue #51）
-4. **联调与回归** ✅：真后端 e2e 探针（`scripts/probe_*_e2e.py`，D2.1–D2.6 + Dx.1–Dx.2 已 closed）+ DeepSeek Judge 评估（`scripts/langfuse_eval.py`）+ business 子图 → 真 client → mock_api 全链路（PR #110，27 测试）
+4. **联调与回归** ✅：真后端 e2e 探针（`scripts/probe_*_e2e.py`，D2.1–D2.6 + Dx.1–Dx.2 已 closed）+ DeepSeek Judge 评估（`scripts/langfuse/langfuse_eval.py`）+ business 子图 → 真 client → mock_api 全链路（PR #110，27 测试）
 5. **可观测 + 运维** ✅：`/metrics` Prometheus 端点（C1.5 / Issue #50） + 5xx 计数闭环（PR #104） + P95 延迟告警（PR #103） + LLM 成本监控（C1.7 / Issue #56） + 阈值一致性 CI lint（PR #106） + on-call 应急回切剧本（PR #99） + `scripts/rollback_canary.sh`（PR #98）
 6. **上线策略** ✅工具链就绪：Shadow 双跑（M4 第二意见，含 `DRY_RUN_BACKEND` 模式 PR #112）+ 按群组金丝雀（`scripts/canary_status.py` PR #92 / `scripts/metrics_snapshot.py` PR #94）+ Grafana 灰度面板 JSON 模板（PR #97）+ LangFuse Prompt 晋升工具（F4.6 / PR #95）
 

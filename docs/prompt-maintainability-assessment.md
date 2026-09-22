@@ -39,7 +39,7 @@
 
 | 提示词 | 状态 | 加载点 | system 字符 | ≈tokens | JSON 禁令行 | Dify 占位符 | user 段字符 |
 |---|---|---|---:|---:|---:|---:|---:|
-| `judge/option_judge` | active | `scripts/langfuse_eval.py` | 427 | 267 | 1 | 0 | 0 |
+| `judge/option_judge` | active | `scripts/langfuse/langfuse_eval.py` | 427 | 267 | 1 | 0 | 0 |
 | `option/extract_cancel` | active | `app/subgraphs/option/extract_cancel.py` | 1,344 | 840 | 0 | 0 | 44 |
 | `option/extract_cancel_place` | active | `app/subgraphs/option/extract_cancel_place.py` | 1,116 | 698 | 0 | 0 | 44 |
 | `option/extract_confirm_cancel` | active | `app/subgraphs/option/extract_confirm_cancel.py` | 1,325 | 828 | 0 | 0 | 44 |
@@ -246,7 +246,7 @@ Dify YAML（上游输入，sync.py 拉取）          │ lint: prompt_inventory
 | `ticker/tools.py` | 注入 Asia/Shanghai 当前日期 | TRJ-01 P0 |
 | `dify/sync.py` | 删默认凭据 | GOV-03 P0 |
 | `router/unknown_intent.md` | 删 代码↔公司名 字典 | C-02 P0 |
-| `scripts/promote_langfuse_prompt.py` | 产物按加载器契约渲染 + 自动登记 manifest gray | GOV-05 |
+| `scripts/langfuse/promote_langfuse_prompt.py` | 产物按加载器契约渲染 + 自动登记 manifest gray | GOV-05 |
 | `swap/place_order.py` / `multimodal.py` | trace 写 `prompt_name` | GOV-07 |
 | `.claude/rules/prompt-management.md` 重写、`testing.md`、ADR 0000/0001/0003/0013、`app/prompts/CLAUDE.md`、handbook | 陈旧口径与已删文件引用 | GOV-11/12, OPT-15 |
 | ADR 0022 + ADR README + ADR 0001 D5 登记 | 治理模型决策 | — |
@@ -256,7 +256,7 @@ Dify YAML（上游输入，sync.py 拉取）          │ lint: prompt_inventory
 | `.github/workflows/governance.yml` | push/PR 触发的 <2 分钟守护 | GOV-04 |
 | `.claude/skills/sync-dify-prompts/SKILL.md` 映射表、`docs/on-call-runbook.md` 热修口径、CLAUDE.md / README eval 入口 | 批评员补出的陈旧口径 | 第九节 |
 
-**未能在本环境完成**：eval 回归（无 LLM 密钥、golden 迁移中）——所有提示词相关改动（router 红线、holding_query 渲染）需现场用 `scripts/langfuse_eval.py` 补跑对应子集；Dify 账号密码轮换。
+**未能在本环境完成**：eval 回归（无 LLM 密钥、golden 迁移中）——所有提示词相关改动（router 红线、holding_query 渲染）需现场用 `scripts/langfuse/langfuse_eval.py` 补跑对应子集；Dify 账号密码轮换。
 
 ## 九、完整性批评：六路评估都没覆盖的维度
 

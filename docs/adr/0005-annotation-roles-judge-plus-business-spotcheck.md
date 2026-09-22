@@ -17,7 +17,7 @@
 
 ## judge 层落地现状（2026-08-27，先于 Phase 4 以离线形态落地）
 
-- 载体：`scripts/langfuse_eval.py`（M3 主用评估入口）——**覆盖面是离线 golden 批跑，不是线上流量**；"100% 线上流量"仍是 Phase 4 目标而非现状。
+- 载体：`scripts/langfuse/langfuse_eval.py`（M3 主用评估入口）——**覆盖面是离线 golden 批跑，不是线上流量**；"100% 线上流量"仍是 Phase 4 目标而非现状。
 - judge 模型：经 DeepSeek 的 Anthropic 兼容端点调用，默认 **`deepseek-v4-flash`**（`ANTHROPIC_MODEL` 可覆盖；与 [ADR 0020](./0020-unify-all-llm-on-deepseek-v4-pro.md) 业务侧的 v4-pro 不同型号，flash 为评估成本考量）。
 - 输出契约：**`{pass: bool, score: 0.0-1.0, reason: str}`**（原设计的 `confidence ∈ {high, medium, low}` 三档未采用；Phase 4 若要驱动"业务方只看低置信"队列，需定义 score→confidence 映射阈值）。
 - ⚠️ 存在双实现：`langfuse_eval_clean.py` 亦含 judge 逻辑，有提示词漂移风险。
@@ -37,7 +37,7 @@
 
 | 偏离 | 现状 |
 |---|---|
-| ~~judge 提示词硬编码在脚本里~~ | ✅ #159 已修复：正文迁至 `app/prompts/judge/option_judge.md`，评估脚本统一通过 `load_prompt("judge", "option_judge")` 加载；`tests/test_prompt_governance.py` 防回归 |
+| ~~judge 提示词硬编码在脚本里~~ | ✅ #159 已修复：正文迁至 `app/prompts/judge/option_judge.md`，评估脚本统一通过 `load_prompt("judge", "option_judge")` 加载；`tests/prompts/test_prompt_governance.py` 防回归 |
 | **golden 的"标注来源"字段被占用** | `golden.jsonl` 的 `source` 字段 535/535 全是数据出处路径（`csv/…/rowN`）；本 ADR 要求的标注权威性维度（judge / business / engineer）无处可放，Phase 4 回流前需另起字段（如 `annotation_source`） |
 
 ## 后果

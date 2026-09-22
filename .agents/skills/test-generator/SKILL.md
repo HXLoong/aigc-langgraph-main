@@ -25,7 +25,7 @@ metadata:
   - 路由测试：`tests/test_intent_route.py`
   - 模型测试：`tests/subgraphs/swap/test_models.py`（或对应子图目录）
   - 集成 / E2E：`tests/integration/` + `tests/test_cascade_e2e.py`
-  - 提示词加载 / spec：`tests/test_prompt_loader.py` / `tests/test_prompt_spec.py`
+  - 提示词加载 / spec：`tests/prompts/test_prompt_loader.py` / `tests/prompts/test_prompt_spec.py`
 
 ### Step 2：选择测试层次
 
@@ -99,7 +99,7 @@ pytest tests/ -v
 ### Step 6：fixture 补充（若改了业务逻辑）
 - 在 `tests/fixtures/categories/` 对应文件末尾加 2-3 条 case（现役数据源）
 - 字段沿用该文件既有方言（结构化方言含 `expected.product_type/intent`；任务队列方言用 `response_contains` 文本断言；格式见 `scripts/ai_test_langgraph/README.md`）
-- 运行 `python scripts/langfuse_eval.py --local tests/fixtures/categories` 验证
+- 运行 `python scripts/langfuse/langfuse_eval.py --local tests/fixtures/categories` 验证
 
 ## 测试命名
 

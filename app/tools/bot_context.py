@@ -60,6 +60,18 @@ class BotContext(BaseModel):
             missing.append("message_id")
         return missing
 
+    @classmethod
+    def missing_required_from_state(cls, state: Mapping[str, Any]) -> list[str]:
+        """不要求 State 已完成类型校验，供准备接口聚合全部诊断。"""
+        missing = [
+            field
+            for field in ("conversation_id", "room_id", "user_id")
+            if not isinstance(state.get(field), str) or not state.get(field)
+        ]
+        if normalize_message_id(state.get("message_id")) <= 0:
+            missing.append("message_id")
+        return missing
+
     @property
     def message_content(self) -> str:
         """后端 messageContent：原文 + 换行 + 引用（有引用时）。"""

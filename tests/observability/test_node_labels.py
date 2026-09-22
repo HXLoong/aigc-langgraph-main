@@ -363,7 +363,7 @@ def test_eval_uses_shared_factory_and_keeps_disable_gate(monkeypatch):
 
     # The legacy script bootstraps .env at import; keep that confined to this test.
     monkeypatch.setattr(os, "environ", os.environ.copy())
-    from scripts import langfuse_eval
+    from scripts.langfuse import langfuse_eval
 
     sentinel = object()
     monkeypatch.setattr(tracing, "create_callback_handler", lambda: sentinel)

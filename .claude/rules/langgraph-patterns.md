@@ -11,6 +11,7 @@
 ## IO 与错误
 
 - 纯计算及写类节点用 @safe_node；只读 IO 用 @io_node，并通过 add_io_node 注册 RetryPolicy。默认最多2次尝试，LLM SDK max_retries=0；写接口不自动重试。
+- add_io_node 在最后一次可重试失败时由原节点返回 ErrorInfo，沿原图边完成汇合、回复和审计；with_error_handler=False 才在耗尽后继续抛出。主图与并行错误收尾由 tests/graph/test_retry_recovery.py 守护。
 - 错误由 ErrorInfo 和 cascade 路由处理；后端查询失败不能伪装成空记录继续交易。
 - 条件路由为纯函数，错误优先转 fallback；副作用只在节点里执行。
 - 业务请求通过 OptionClient/SwapClient/TickerClient Protocol。子图 backend.py 负责 DTO 构造、BotContext 身份、字段锁定和真实回复透传。
@@ -31,6 +32,7 @@
 - 确认采用文本两阶段：七条最终确认路径均须明确动作并引用当前订单，范围由 app/execution/confirmation.py 校验；历史记忆及程序生成的引用不能替代用户引用。
 - 不引入 interrupt 确认；递归上限通过 API 的统一 config 设置。
 - Langfuse callbacks 由请求入口统一注入，子图自然继承；本地审计写 langgraph_node_trace。
+- 节点公共契约只维护在 app/node_execution/catalog.py；执行平台负责 schema 与客户端注入，harness 负责展示和回放策略。暴露范围可不同，写节点保持禁止回放。
 
 ## 并行开发
 

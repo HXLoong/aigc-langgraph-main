@@ -22,7 +22,7 @@ Java 负责精确匹配、标的工具调用、多候选、权限及市场校验
 - Java DTO 和业务 HTTP 路径不变，`placeOrderWindCode`、`stockCode` 可以承载原始名称或代码。
 - 旧 checkpoint 的 `tickers`、`ticker_hitl_candidates` 继续可读、在入口清理；当前业务不产生本地证券结果。
   HTTP `tickers` 保持空列表，不能将其解释为后端未匹配。本地不再生成证券零命中或 ticker 消歧卡。
-- 15 个业务 PromptSpec 保留固定 system。生成的当前时间和机器人名称名单均不送入 LLM。
+- 14 个业务 PromptSpec 保留固定 system。生成的当前时间和机器人名称名单均不送入 LLM。
 - `sources` 每个来源只展示一次，历史 ID 与原文保留，`source_roles` 标记角色，参考信息在 `context`。
 - 原字段旁的 `CandidateDescription` 定义原文候选语义；业务 DTO 描述继续定义最终值语义。
   保留候选结构和证据校验，本次不裁剪历史或压缩候选 schema 的嵌套结构。

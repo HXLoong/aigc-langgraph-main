@@ -1,10 +1,20 @@
-"""未知意图使用配置的引导；已知业务无回执时提示结果待核对。"""
+"""render 节点：known product + unknown_intent 时不应空回复。
+
+Round 11 eval trace 暴露：用户在询价后输入乱字符（如 "123456789"），路由识别
+product_type=option 但 option_intent 返回 unknown_intent，option_unknown 节点
+只写 trace 不写 reply_text，render 也没有对应分支 → 最终 reply_text 为空，
+"(无回复)" 让用户困惑且 Judge 直接判 0。
+
+修复：render 增加分支 — product 已识别但 intent 是 unknown_intent → 输出
+统一兜底文案（Settings.default_reply，现场可配）。
+"""
 from __future__ import annotations
 
 import pytest
 
 from app.config import get_settings
 from app.nodes.render import render
+from app.tools.receipts import UNCERTAIN_REPLY
 
 
 @pytest.mark.asyncio
@@ -49,8 +59,8 @@ class TestRenderUnknownIntent:
         reply = update.get("reply_text") or ""
         assert reply == get_settings().default_reply
 
-    async def test_known_intent_without_receipt_requires_verification(self) -> None:
-        """正常 intent 且无回执 → 结果待核对，空 tickers 不表示识别失败。"""
+    async def test_known_intent_unchanged(self) -> None:
+        """正常 intent 且无后端回执 → 不被 unknown 分支干扰，输出待核对提示。"""
         state: dict = {
             "product_type": "option",
             "intent": "new_inquiry",
@@ -59,5 +69,5 @@ class TestRenderUnknownIntent:
             "tickers": [],
         }
         update = await render(state)  # type: ignore[arg-type]
-        reply = update.get("reply_text") or ""
-        assert reply == "交易指令执行结果待核对，请勿重复提交，请联系交易员或运营核查。"
+        assert update.get("reply_text") == UNCERTAIN_REPLY
+        assert update["trace"][0].decision == "backend_no_result"

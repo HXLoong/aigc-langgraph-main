@@ -32,7 +32,7 @@ def _patch_llm(monkeypatch: pytest.MonkeyPatch, return_type: str) -> AsyncMock:
 
 
 class TestBuildUserMessage:
-    def test_includes_all_four_dify_inputs(self) -> None:
+    def test_includes_all_four_declared_inputs(self) -> None:
         msg = _build_user_message(
             {
                 "raw_text": "期权询价 腾讯 1个月",

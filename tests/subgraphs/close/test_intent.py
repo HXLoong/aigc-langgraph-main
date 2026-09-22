@@ -52,7 +52,7 @@ class TestOutputContractLivesInSchema:
 
 
 class TestBuildUserMessage:
-    def test_includes_dify_inputs(self) -> None:
+    def test_includes_declared_inputs(self) -> None:
         msg = _build_user_message(
             {
                 "raw_text": "我有哪些期权持仓",

@@ -1,25 +1,22 @@
 # ADR 0012 · 标的查询恢复走后端 HTTP API，弃用 MySQL 直连
 
-- 状态：已采纳（后端权威识别与禁用 MySQL 直连仍有效；Python 直接编排标的查询的实现已于 2026-09-20 被 Java 业务接口取代）
+- 状态：已采纳（不直连标的数据库的边界继续有效；Python 标的查询编排已于 2026-09-20 退役）
 - 日期：2026-05-10
 - 修订：2026-08-27 深度改写为现状口径（wayfinder map #138 / 核查 #141）
 - 作者：图灵科技 + Tony
 
+## 当前职责（2026-09-22 修订）
 
-## 当前边界（2026-09-20）
-
-“后端是标的识别的权威来源、禁止绕过业务规则直查数据库”的决策继续有效。
-当前 LangGraph 将用户证券原文及引用选择交给 Java 业务接口，由 Java 内部调用标的工具；
-不再由 Python 子图调用工具后输出经 GOATS 校验的证券结果。
-详见[标的识别后端边界](../backend-instrument-boundary.md)。
-
-以下 2026-08 的接口调用点、测试和落地说明作为历史记录保留。
+主链经既有 Java 业务接口提交标的原文，由 Java 完成识别与权威校验，见
+[标的识别边界](../backend-instrument-boundary.md)。保留的 `app/tools/ticker_client.py`
+是遗留客户端，不代表现役业务仍由 Python 查询证券池。本轮不修改 Java 源码、配置或契约。
+下文端点、性能与遗留待办为 2026-08-27 快照，保留作历史依据。
 
 ## 上下文（历史）
 
 V1 闭环为脱离 VPN 依赖，曾把标的查询从 Dify 的后端 HTTP 接口改成 aiomysql 直连标的池表（`aigc-test.stock_exchange_sec_data`）。这次"优化"丢失了后端 `InstrumentApiSearchHelper.searchAndScore` 的非平凡业务规则，导致"找得到但找得不准"。决定**恢复走后端 HTTP API**，把 `yudao-module-integration` 作为标的查询唯一真理来源。
 
-## 历史落地（2026-08-27）
+## 历史落地记录（2026-08-27）
 
 **Endpoint 与客户端**（原行内 Status update 已吸收）：
 
@@ -50,7 +47,7 @@ V1 闭环为脱离 VPN 依赖，曾把标的查询从 Dify 的后端 HTTP 接口
 - **恢复 HTTP（已选）**：单一真理来源，与后端规则升级自动对齐（已被 2026-07-06 事件验证）。
 - **保留双路径 feature flag**：运维复杂度增加，无收益。
 
-## 后果（历史落地口径）
+## 后果（2026-08-27 历史口径）
 
 - 生产必须有到 `yudao-module-integration` 的网络可达性（`.env` 的 `OTC_API_BASE_URL`）。
 - [ADR 0009](./0009-mysql-version-and-tdsql-compatibility.md) 的"标的池 MySQL 兼容性"风险解除——由后端代理。

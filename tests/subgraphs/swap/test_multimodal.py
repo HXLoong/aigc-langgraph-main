@@ -1,7 +1,7 @@
 """swap 图片/Excel 多模态链测试(DSL v2 互换-图片 / 互换-Excel 分支)。
 
 覆盖 `app/subgraphs/swap/multimodal.py`：
-- `parse_excel_rows`：openpyxl 解析 + 「产品」列改名「交易对手」（Dify code 节点）
+- `parse_excel_rows`：openpyxl 解析 + 「产品」列改名「交易对手」（确定性代码规则）
 - `_image_urls`：remote_url / url / base64 三键取值
 - `swap_image_order`：VL OCR → 参数提取 → place_params
 - `swap_excel_order`：下载 → 解析 → 参数提取 → place_params

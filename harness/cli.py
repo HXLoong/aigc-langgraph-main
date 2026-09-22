@@ -1,4 +1,5 @@
 """Command line entry point for categories-based HTTP regression."""
+
 from __future__ import annotations
 
 import argparse
@@ -7,6 +8,7 @@ import json
 import os
 import sys
 import time
+from dataclasses import asdict
 from pathlib import Path
 from typing import Any
 
@@ -26,6 +28,14 @@ from harness.golden import (
     select_runnable,
 )
 from harness.multi_turn import MultiTurnResult, run_case_multi
+from harness.node_registry import DEFAULT_NODE_REGISTRY
+from harness.node_runner import (
+    NodeFixtureSkipError,
+    NodeRunnerError,
+    load_node_fixtures,
+    run_node_fixture,
+    run_node_fixture_http,
+)
 
 
 def _paths(values: list[str] | None) -> list[Path] | Path | None:
@@ -40,11 +50,15 @@ def _turn_diffs(
 ) -> dict[int | str, list[FieldDiff]]:
     diffs: dict[int | str, list[FieldDiff]] = {}
     for outcome, spec in zip(result.turns, case.turns, strict=False):
-        turn_diffs = check_text_assertions(outcome.reply_text, spec, allow_dry_run=backend == "dry-run")
+        turn_diffs = check_text_assertions(
+            outcome.reply_text, spec, allow_dry_run=backend == "dry-run"
+        )
         turn_diffs.extend(check_structured_assertions(outcome.outputs, spec.expected))
         diffs[outcome.index] = turn_diffs
     if case.expected_scope == "any_turn":
-        case_diffs = check_case_assertions([outcome.outputs for outcome in result.turns], case.expected)
+        case_diffs = check_case_assertions(
+            [outcome.outputs for outcome in result.turns], case.expected
+        )
         if case_diffs:
             diffs["case"] = case_diffs
     if result.failure:
@@ -109,7 +123,10 @@ def _report_case(
 
 
 def _summarize(reports: list[dict[str, Any]]) -> dict[str, Any]:
-    counts = {status: sum(1 for r in reports if r["status"] == status) for status in ("PASS", "FAIL", "REJECTED")}
+    counts = {
+        status: sum(1 for r in reports if r["status"] == status)
+        for status in ("PASS", "FAIL", "REJECTED")
+    }
     return {
         "total": len(reports),
         "passed": counts["PASS"],
@@ -235,7 +252,9 @@ async def _run(args: argparse.Namespace) -> int:
     )
     cases, skipped = select_runnable(cases)
     if skipped:
-        print(f"skipped {len(skipped)} unrunnable cases (skip_reason set), e.g. {skipped[0].id}: {skipped[0].skip_reason}")
+        print(
+            f"skipped {len(skipped)} unrunnable cases (skip_reason set), e.g. {skipped[0].id}: {skipped[0].skip_reason}"
+        )
     if args.limit is not None:
         cases = cases[: args.limit]
     if not cases:
@@ -284,6 +303,100 @@ async def _run(args: argparse.Namespace) -> int:
     return 0 if passed == len(reports) else 1
 
 
+async def _run_nodes(args: argparse.Namespace) -> int:
+    """执行节点级 fixture；写副作用节点会在 runner 内被拒绝。"""
+    try:
+        fixtures = load_node_fixtures([Path(value) for value in args.data])
+    except NodeRunnerError as exc:
+        print(f"ERROR: {exc}", file=sys.stderr)
+        return 2
+    if not fixtures:
+        print("ERROR: no node fixtures selected", file=sys.stderr)
+        return 2
+    if args.transport == "http" and args.mock:
+        print("ERROR: HTTP 节点回放不支持 --mock", file=sys.stderr)
+        return 2
+
+    api_key = os.getenv("NODE_RUN_API_KEY", "")
+    if args.transport == "http" and not api_key:
+        print("ERROR: HTTP 节点回放需要 NODE_RUN_API_KEY", file=sys.stderr)
+        return 2
+    client = (
+        httpx.AsyncClient(base_url=args.base_url, timeout=args.timeout)
+        if args.transport == "http"
+        else None
+    )
+
+    reports: list[dict[str, Any]] = []
+    failed = 0
+    skipped = 0
+    for fixture in fixtures:
+        report: dict[str, Any]
+        try:
+            if client is not None:
+                result = await run_node_fixture_http(
+                    fixture,
+                    registry=DEFAULT_NODE_REGISTRY,
+                    client=client,
+                    api_key=api_key,
+                )
+            else:
+                result = await run_node_fixture(
+                    fixture,
+                    registry=DEFAULT_NODE_REGISTRY,
+                    mock_external=args.mock,
+                )
+        except NodeFixtureSkipError as exc:
+            report = {
+                "fixture_id": str(fixture.get("id") or ""),
+                "node_name": str(fixture.get("node_name") or ""),
+                "passed": False,
+                "skipped": True,
+                "reason": str(exc),
+            }
+        except NodeRunnerError as exc:
+            report = {
+                "fixture_id": str(fixture.get("id") or ""),
+                "node_name": str(fixture.get("node_name") or ""),
+                "passed": False,
+                "error": str(exc),
+            }
+        else:
+            report = asdict(result)
+        reports.append(report)
+        status = "SKIP" if report.get("skipped") else "PASS" if report["passed"] else "FAIL"
+        print(f"[{status}] {report['fixture_id']} ({report['node_name']})")
+        if report.get("skipped"):
+            skipped += 1
+            print(f"  {report['reason']}")
+        elif not report["passed"]:
+            failed += 1
+            if report.get("error"):
+                print(f"  {report['error']}")
+            for diff in report.get("diffs", []):
+                print(f"  {diff['path']}: expected={diff['expected']!r} actual={diff['actual']!r}")
+
+    if client is not None:
+        await client.aclose()
+
+    summary = {
+        "total": len(reports),
+        "passed": len(reports) - failed - skipped,
+        "failed": failed,
+    }
+    if skipped:
+        summary["skipped"] = skipped
+    if args.out:
+        output = Path(args.out)
+        output.parent.mkdir(parents=True, exist_ok=True)
+        output.write_text(
+            json.dumps({"summary": summary, "reports": reports}, ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
+        print(f"report -> {output}")
+    return 0 if failed == 0 else 1
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="harness")
     subparsers = parser.add_subparsers(dest="command", required=True)
@@ -305,6 +418,22 @@ def build_parser() -> argparse.ArgumentParser:
     doctor.add_argument("--base-url", default="http://127.0.0.1:8000")
     doctor.add_argument("--checkpoint", choices=("none", "mysql"), default="none")
     doctor.set_defaults(check_backend=True)
+    node_run = subparsers.add_parser("node-run")
+    node_run.add_argument("--data", action="append", required=True)
+    node_run.add_argument("--out")
+    node_run.add_argument(
+        "--transport",
+        choices=("direct", "http"),
+        default="direct",
+        help="direct 在当前进程调用节点；http 调受保护的外部节点执行接口",
+    )
+    node_run.add_argument("--base-url", default="http://127.0.0.1:8000")
+    node_run.add_argument("--timeout", type=float, default=60.0)
+    node_run.add_argument(
+        "--mock",
+        action="store_true",
+        help="使用 fixture 中声明的 mock 数据替代节点外部依赖",
+    )
     return parser
 
 
@@ -312,6 +441,8 @@ def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     if args.command == "doctor":
         return asyncio.run(_doctor(args.base_url, args.checkpoint))
+    if args.command == "node-run":
+        return asyncio.run(_run_nodes(args))
     return asyncio.run(_run(args))
 
 

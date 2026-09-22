@@ -61,6 +61,9 @@ class Settings(BaseSettings):
     #: 期权业务 GOATS agent 标识（option_rfq_instrument_parser 等内部 endpoint 需要）
     goats_opt_agent_id: str = ""
     goats_opt_agent_sub_id: str = ""
+    #: 互换 / 通用业务 GOATS agent 标识（scripts/probe_goats 探针用；生产路径不读）
+    goats_com_agent_id: str = ""
+    goats_com_agent_sub_id: str = ""
 
     # === securities-instrument 标的查询 ===
     securities_instrument_url: str = ""

@@ -65,7 +65,7 @@
 <pre><code>pytest tests/ -v                        <span class="cm"># 全套测试（约 2 分钟）</span>
 ruff check app/ tests/ && mypy app/     <span class="cm"># lint + 类型</span>
 python -m harness run                   <span class="cm"># golden 全集快速 smoke</span>
-python scripts/langfuse_eval.py --local tests/fixtures/golden.jsonl --ids opt-001 --concurrency 2
+python scripts/langfuse/langfuse_eval.py --local tests/fixtures/golden.jsonl --ids opt-001 --concurrency 2
                                         <span class="cm"># DeepSeek Judge 正式评估（M3 主用）</span>
 uvicorn app.main:app --reload           <span class="cm"># 启动 FastAPI</span></code></pre>
 

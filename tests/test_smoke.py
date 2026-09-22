@@ -8,9 +8,9 @@ ADR 0001 D1 + ADR 0015：M1 smoke 已升级为含 intent_route 的端到端验�
 from __future__ import annotations
 
 import pytest
-from evidence_support import swap_candidate_output
 
 from app.graph.main import build_main_graph
+from tests.evidence_support import swap_candidate_output
 from tests.intent_fixtures import intent_reply, mock_ainvoke, route_reply
 
 

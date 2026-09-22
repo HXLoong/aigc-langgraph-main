@@ -4,7 +4,6 @@ from __future__ import annotations
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
-from evidence_support import swap_candidate_output
 
 from app.subgraphs.swap import backend as backend_mod
 from app.subgraphs.swap.backend import (
@@ -16,6 +15,7 @@ from app.tools.exceptions import (
     EmptyBackendResultError,
     MissingBackendContextError,
 )
+from tests.evidence_support import swap_candidate_output
 
 # ============================================================
 # _message_id

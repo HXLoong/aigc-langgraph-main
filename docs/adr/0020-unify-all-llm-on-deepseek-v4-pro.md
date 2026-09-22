@@ -84,7 +84,7 @@ DeepSeek，**当前不可用**——实际影响面为零：`get_qwen_vl` 全库
 ### 负面 / 风险
 
 - **baseline 作废**：Qwen 口径的 92.5%（mock）/ 84.6%（真 LLM）不再是对照基线，
-  需在 DeepSeek 上重跑 `scripts/langfuse_eval.py` 重建（沿用 ADR 0018 C1.19 红线思路）
+  需在 DeepSeek 上重跑 `scripts/langfuse/langfuse_eval.py` 重建（沿用 ADR 0018 C1.19 红线思路）
 - 开发期 API key 计费与管理归属需要与客户/内部重新明确（原 ADR 0018 的"key 边界清晰"优势失效）
 - 开发环境依赖公网 DeepSeek API 的可用性与延迟
 - 长提示词节点（swap/place_order ≈ 40K tokens）在 DeepSeek 上的 P95 延迟需重新测量

@@ -324,3 +324,39 @@ def filter_by_ids(cases: Iterable[GoldenCase], ids: list[str] | None) -> list[Go
         return list(cases)
     wanted = set(ids)
     return [case for case in cases if case.id in wanted]
+
+
+# ── Langfuse Dataset / 本地确定性评分共用的 categories 结构投影 ──
+
+
+def _dataset_turn_input(turn: TurnSpec) -> dict[str, Any]:
+    result: dict[str, Any] = {"send_text": turn.send_text, "at_bot": turn.at_bot}
+    if turn.quote_previous is not None:
+        result["quote_previous"] = turn.quote_previous
+    return result
+
+
+def _dataset_turn_expected(turn: TurnSpec) -> dict[str, Any]:
+    result: dict[str, Any] = {}
+    for field_name in (
+        "expected",
+        "response_contains",
+        "response_contains_any",
+        "response_not_contains",
+    ):
+        value = getattr(turn, field_name)
+        if value:
+            result[field_name] = value
+    return result
+
+
+def dataset_input(case: GoldenCase) -> dict[str, Any]:
+    """Dataset Item input：保持 categories 的首轮 + sub_scenes 输入结构。"""
+    first, *sub_scenes = case.turns
+    return {**_dataset_turn_input(first), "sub_scenes": [_dataset_turn_input(t) for t in sub_scenes]}
+
+
+def dataset_expected(case: GoldenCase) -> dict[str, Any]:
+    """Dataset Item expectedOutput：首轮 + sub_scenes 断言；Code Evaluator（云端与本地）都吃这一份。"""
+    first, *sub_scenes = case.turns
+    return {**_dataset_turn_expected(first), "sub_scenes": [_dataset_turn_expected(t) for t in sub_scenes]}

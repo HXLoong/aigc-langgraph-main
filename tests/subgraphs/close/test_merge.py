@@ -1,6 +1,6 @@
 """close.place_close 链 · 合并输出纯函数测试。
 
-对齐 Dify `平仓参数提取-合并输出`（spec/code_nodes/平仓参数提取-合并输出.py）。
+平仓参数合并输出规则（原 DSL v2「平仓参数提取-合并输出」代码节点，现以本仓实现为准）。
 """
 from __future__ import annotations
 
