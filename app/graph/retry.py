@@ -3,8 +3,8 @@
 分工：
 - `@io_node`：@safe_node 的只读 IO 变体——**可重试异常**（网络不可达 / LLM 限流超时）穿透
   到 LangGraph 的 RetryPolicy；其它异常与 @safe_node 一样就地落 `state['error']`
-- `add_io_node(g, name, fn)`：注册时挂 RetryPolicy + 节点级 error_handler，重试耗尽后由
-  `retry_exhausted_handler` 把异常写成 ErrorInfo，图不崩、cascade 照常走 fallback
+- `add_io_node(g, name, fn)`：RetryPolicy 执行重试，最后一次失败由原节点返回
+  ErrorInfo，保留原条件边、并行汇合及父图收尾（#223）
 - 写类节点（下单 / 撤单 / 确认 / 平仓）**绝不**用本模块：超时后自动重试可能重复下单，
   它们保持 @safe_node，超时直接交 render 出"系统暂时不可用"
 
@@ -22,6 +22,7 @@ import openai
 from langchain_core.exceptions import OutputParserException
 from langgraph.errors import NodeError
 from langgraph.graph import StateGraph
+from langgraph.runtime import Runtime
 from langgraph.types import RetryPolicy
 from pydantic import ValidationError
 
@@ -80,7 +81,7 @@ def io_retry_policy(
 
 
 async def retry_exhausted_handler(state: Any, error: NodeError) -> dict[str, Any]:
-    """节点级 error_handler：重试耗尽后把异常落成 ErrorInfo，与 @safe_node 的错误形状一致。"""
+    """构造耗尽后的错误更新，由原节点返回，与 @safe_node 的错误形状一致。"""
     exc = error.error
     emit_node_completed(node=error.node, status="error")
     return {
@@ -106,16 +107,25 @@ def add_io_node(
     """注册只读 IO 节点：RetryPolicy + 重试耗尽兜底。fn 必须是 @io_node（否则可重试异常会被
     safe_node 吞掉，RetryPolicy 永远不触发——静默失效比没有更糟）。
 
-    with_error_handler=False 用于异常本就该穿透给父节点 safe_node 的私有子图（ticker）。
+    with_error_handler=False 保留耗尽后向调用方抛异常的语义。
     """
     if not getattr(fn, _IO_NODE_FLAG, False) and with_error_handler:
         raise TypeError(f"{name}: add_io_node 只接受 @io_node 装饰的节点函数")
-    g.add_node(
-        name,
-        fn,
-        retry_policy=io_retry_policy(max_attempts=max_attempts, initial_interval=initial_interval),
-        error_handler=retry_exhausted_handler if with_error_handler else None,
-    )
+    policy = io_retry_policy(max_attempts=max_attempts, initial_interval=initial_interval)
+
+    async def recover_exhausted(state: Any, runtime: Runtime[Any]) -> dict[str, Any]:
+        try:
+            return await fn(state)
+        except IO_RETRYABLE as exc:
+            info = runtime.execution_info
+            if info is None or info.node_attempt < policy.max_attempts:
+                raise
+            # LangGraph 1.2 的独立 error handler 不继承原节点出边；并行任务还可能
+            # 在处理后重新抛出原异常。最后一次尝试正常返回更新，重试仍由框架调度。
+            return await retry_exhausted_handler(state, NodeError(node=name, error=exc))
+
+    recover_exhausted.__name__ = name
+    g.add_node(name, recover_exhausted if with_error_handler else fn, retry_policy=policy)
 
 
 __all__ = [

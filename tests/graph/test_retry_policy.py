@@ -1,7 +1,7 @@
 """IO 节点 RetryPolicy + @safe_node 分工（ADR 0024 D3）。
 
 - 只读 IO 节点（LLM / 后端查询）用 @io_node：可重试异常穿透到 LangGraph RetryPolicy，
-  重试耗尽由节点级 error_handler 落 state['error']；
+  重试耗尽由原节点落 state['error']，沿原图边收尾；
 - 写类节点（下单 / 撤单 / 确认 / 平仓）保持 @safe_node：绝不自动重试（金融正确性）。
 """
 from __future__ import annotations
@@ -139,7 +139,7 @@ def test_add_io_node_rejects_function_without_io_node_decorator() -> None:
         add_io_node(g, "writer", writer)
 
 
-#: 只读 IO 节点：必须带 RetryPolicy + error_handler
+#: 只读 IO 节点：必须带 RetryPolicy；耗尽收尾由 test_retry_recovery.py 验证
 READ_NODES: dict[str, set[str]] = {
     "main": {"intent_route", "existing_command_query", "plan_instructions"},
     "swap": {
@@ -209,7 +209,6 @@ def test_real_graphs_retry_reads_and_never_writes() -> None:
         for name in names:
             spec = builders[graph_name].nodes[name]
             assert spec.retry_policy is not None, f"{graph_name}.{name} 缺 RetryPolicy"
-            assert spec.error_handler_node, f"{graph_name}.{name} 缺 error_handler"
     for graph_name, names in WRITE_NODES.items():
         for name in names:
             spec = builders[graph_name].nodes[name]

@@ -179,14 +179,9 @@ async def test_fresh_recognition_failure_stops_submission_and_reaches_fallback(
     assert final["error"].node == "swap_recognize_fresh_counterparty"
     assert final["error"].type == ("RuntimeError" if failure == "request" else "ValidationError")
     trace_nodes = [entry.node for entry in final["trace"]]
-    if failure == "request":
-        # 不可重试异常：safe_node 就地落 error，条件边照常把它送到 swap_unknown
-        assert trace_nodes[-2:] == ["swap_recognize_fresh_counterparty", "swap_unknown"]
-    else:
-        # 可重试异常：RetryPolicy 耗尽后由 error_handler 落 error 并结束子图
-        # （父图 render 按 error 兜底）；LangGraph 的 handler 节点没有出边，不会再进 swap_unknown
-        assert trace_nodes[-1] == "swap_recognize_fresh_counterparty"
-        assert final["trace"][-1].decision == "error:retry_exhausted"
+    assert trace_nodes[-2:] == ["swap_recognize_fresh_counterparty", "swap_unknown"]
+    if failure == "structured":
+        assert final["trace"][-2].decision == "error:retry_exhausted"
     assert "swap_place_order_submit" not in trace_nodes
 
 
