@@ -113,6 +113,68 @@ async def test_single_action_submits_both_orders_and_keeps_original_receipt(
     no_model.assert_not_called()
 
 
+@pytest.mark.parametrize("product", ["option", "option_close"])
+@pytest.mark.parametrize("mixed_wording", [False, True])
+async def test_all_recognized_orders_share_the_selected_action(
+    monkeypatch: pytest.MonkeyPatch, product: str, mixed_wording: bool,
+) -> None:
+    """单消息单动作：混合措辞不将识别到的订单再按分句拆成不同动作。"""
+    from app.subgraphs.close import intent as close_intent
+    from app.subgraphs.close.models import CloseIntentOutput
+    from app.subgraphs.option import intent as option_intent
+    from app.subgraphs.option.models import OptionIntentOutput
+
+    is_close = product == "option_close"
+    order_ids = (
+        ["CO-20260922-00000001", "CO-20260922-00000002"] if is_close else
+        ["Q-20260922-0000000001", "Q-20260922-0000000002"]
+    )
+    first_clause = f"撤单 {order_ids[0]}"
+    raw = first_clause + ("；查询订单 " if mixed_wording else "、") + order_ids[1]
+    intent = "close_order_cancel_request" if is_close else "request_cancel_order"
+    output_model = CloseIntentOutput if is_close else OptionIntentOutput
+    model = Mock()
+    model.with_structured_output.return_value.ainvoke = AsyncMock(return_value=output_model(
+        type=intent, confidence=1, evidence=[{"origin": "raw", "text": first_clause}],
+    ))
+    # 保留真实主图、参数提取与 DTO，仅固定意图结果并替换外部 IO。
+    monkeypatch.setattr(_ChatLLM, "with_structured_output", Mock(
+        side_effect=AssertionError("unexpected extra model call"),
+    ))
+    if is_close:
+        monkeypatch.setattr(close_intent, "get_qwen_thinking", lambda: model)
+    else:
+        monkeypatch.setattr(option_intent, "get_qwen_structured", lambda: model)
+    receipt = "Java：两笔订单的撤单申请已受理，等待确认。"
+    client = Mock(operate=AsyncMock(return_value={"code": 0, "data": receipt}))
+    for module in ("option", "close"):
+        monkeypatch.setattr(f"app.subgraphs.{module}.backend.OptionClientHttpx", lambda: client)
+    monkeypatch.setattr(main, "persist", AsyncMock(return_value={}))
+    message_client = Mock(set_intent=AsyncMock())
+
+    result = await main.build_main_graph(message_client_factory=lambda: message_client).ainvoke({
+        "raw_text": raw, "message_content": raw, "message_id": 1234567890123456789,
+        "conversation_id": "one-action-two-orders", "room_id": "room", "user_id": "user",
+    })
+
+    assert result.get("error") is None
+    assert result["product_type"] == product and result["intent"] == intent
+    model.with_structured_output.return_value.ainvoke.assert_awaited_once()
+    client.operate.assert_awaited_once()
+    request = client.operate.await_args.args[0].model_dump(mode="json", by_alias=True)
+    assert request["type"] == intent
+    selected = (request["closeOrderReqVO"]["cancelOrderNoList"] if is_close else
+                [row["orderId"] for row in request["orderList"]])
+    assert selected == order_ids
+    assert request["rawContent"] == raw and request["messageContent"] == raw
+    assert request["messageId"] == 1234567890123456789
+    assert request["roomId"] == "room" and request["userId"] == "user"
+    assert result["reply_text"] == receipt and result["api_result"] == receipt
+    message_client.set_intent.assert_awaited_once()
+    assert message_client.set_intent.await_args.args[0].intent == intent
+    assert "instruction_results" not in _state_to_outputs(result)
+
+
 class _LegacyState(TypedDict):
     history_messages: list[Message]
     product_type: str
