@@ -21,6 +21,7 @@ from app.subgraphs.option.models import (
     OptionIntentOutput,
 )
 from tests.intent_fixtures import intent_reply, mock_ainvoke
+from tests.llm_guard import forbid_llm
 
 #: 不含 conversation_id/user_id/room_id——保持 call_option_backend() 的早退门禁
 #: 生效（三者缺一即返回 {}），路由测试只关心 intent → 节点分发 + state 业务字段
@@ -61,10 +62,7 @@ def _patch_backend(monkeypatch: pytest.MonkeyPatch, module: object) -> None:
         AsyncMock(return_value={"api_code": 0, "api_result": "backend reply"}),
     )
 
-    def _forbid(*_args: object, **_kwargs: object) -> None:
-        raise AssertionError("去 LLM 化节点不应调用 LLM")
-
-    monkeypatch.setattr(module, "get_qwen_thinking", _forbid, raising=False)
+    forbid_llm(monkeypatch, module)
 
 
 def _patch_intent(monkeypatch: pytest.MonkeyPatch, intent_type: str) -> None:

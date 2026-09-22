@@ -10,16 +10,14 @@ import pytest
 
 from app.subgraphs.option import extract_cancel_place as cancel_place_module
 from app.subgraphs.option.extract_cancel_place import option_extract_cancel_place
+from tests.llm_guard import forbid_llm
 
 
 def _patch(monkeypatch: pytest.MonkeyPatch) -> AsyncMock:
     backend = AsyncMock(return_value={"api_code": 0, "api_result": "backend reply"})
     monkeypatch.setattr(cancel_place_module, "call_option_backend", backend)
 
-    def _forbid(*_args: object, **_kwargs: object) -> None:
-        raise AssertionError("去 LLM 化节点不应调用 LLM")
-
-    monkeypatch.setattr(cancel_place_module, "get_qwen_thinking", _forbid, raising=False)
+    forbid_llm(monkeypatch, cancel_place_module)
     return backend
 
 

@@ -17,6 +17,7 @@ import pytest
 
 from app.subgraphs.option import extract_place as ep_module
 from app.subgraphs.option.extract_place import option_extract_place
+from tests.llm_guard import forbid_llm
 
 _QUOTE_CARD = (
     "-----场外期权询价详情-----\r\n"
@@ -42,10 +43,7 @@ def _patch(monkeypatch: pytest.MonkeyPatch) -> AsyncMock:
     backend = AsyncMock(return_value={"api_code": 0, "api_result": "backend reply"})
     monkeypatch.setattr(ep_module, "call_option_backend", backend)
 
-    def _forbid(*_args: Any, **_kwargs: Any) -> None:
-        raise AssertionError("去 LLM 化节点不应调用 LLM")
-
-    monkeypatch.setattr(ep_module, "get_qwen_thinking", _forbid, raising=False)
+    forbid_llm(monkeypatch, ep_module)
     return backend
 
 

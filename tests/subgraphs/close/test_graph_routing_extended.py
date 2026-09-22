@@ -10,6 +10,7 @@ from app.subgraphs.close import build_close_graph
 from app.subgraphs.close import intent as intent_module
 from app.subgraphs.close.models import CloseIntentOutput
 from tests.intent_fixtures import intent_reply, mock_ainvoke
+from tests.llm_guard import forbid_llm
 
 
 def _patch_close_backend(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -24,16 +25,10 @@ def _patch_close_backend(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def _forbid_deterministic_llms(monkeypatch: pytest.MonkeyPatch) -> None:
-    """confirm_close / cancel_close 已去 LLM 化：工厂若被调用即报错。"""
+    """confirm_close / cancel_close 已去 LLM 化：模块不得再持有 LLM 工厂。"""
+    from app.subgraphs.close import cancel_close, confirm_close
 
-    def _forbid(*_args: object, **_kwargs: object) -> None:
-        raise AssertionError("去 LLM 化节点不应调用 LLM")
-
-    for target in (
-        "app.subgraphs.close.confirm_close.get_qwen_thinking",
-        "app.subgraphs.close.cancel_close.get_qwen_thinking",
-    ):
-        monkeypatch.setattr(target, _forbid, raising=False)
+    forbid_llm(monkeypatch, confirm_close, cancel_close)
 
 
 def _patch_intent(monkeypatch: pytest.MonkeyPatch, intent_type: str) -> None:

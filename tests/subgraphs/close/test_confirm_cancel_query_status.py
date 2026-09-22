@@ -14,6 +14,7 @@ from app.subgraphs.close import confirm_cancel as cc_module
 from app.subgraphs.close import query_status as qs_module
 from app.subgraphs.close.confirm_cancel import close_confirm_cancel
 from app.subgraphs.close.query_status import close_query_status
+from tests.llm_guard import forbid_llm
 
 _QUOTE_TWO = "1. CO-20260304-4FE9C941\n2. CO-20260304-E2BA7501"
 
@@ -22,10 +23,7 @@ def _patch(monkeypatch: pytest.MonkeyPatch, module: object) -> AsyncMock:
     backend = AsyncMock(return_value={"api_code": 0, "api_result": "backend reply"})
     monkeypatch.setattr(module, "call_close_backend", backend)
 
-    def _forbid(*_args: object, **_kwargs: object) -> None:
-        raise AssertionError("去 LLM 化节点不应调用 LLM")
-
-    monkeypatch.setattr(module, "get_qwen_thinking", _forbid, raising=False)
+    forbid_llm(monkeypatch, module)
     return backend
 
 
