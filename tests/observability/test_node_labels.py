@@ -60,6 +60,15 @@ def test_catalogue_covers_registered_graphs_and_model_kinds():
     for graph in graphs:
         assert set(graph.builder.nodes) - {n for n in graph.builder.nodes
                                           if n.startswith("__error_handler__")} <= labels.keys()
+        for node, branches in graph.builder.branches.items():
+            for name, branch in branches.items():
+                original = branch.path.name or name
+                display = _labels().label_observation(
+                    original, kind="chain", metadata={"langgraph_node": node}, parent_node=node,
+                )
+                assert any("\u4e00" <= char <= "\u9fff" for char in display.name), (node, original)
+                assert display.node_id == node
+    assert labels["entry_route"].kind == "code"
     assert labels["inquiry_extract"].kind == "llm"
     assert labels["plan_instructions"].kind == "hybrid"
     assert labels["option_intent"].kind == "hybrid"
@@ -70,6 +79,12 @@ def test_catalogue_covers_registered_graphs_and_model_kinds():
 
 @pytest.mark.parametrize("name,kind,node,parent,expected", [
     ("LangGraph", "chain", None, None, "交易指令处理 [main_graph]"),
+    ("entry_route", "chain", "entry_route", "main_graph", "业务入口分流 [entry_route]"),
+    ("select_entry_branch", "chain", "entry_route", None,
+     "业务入口分流 · 路由判断 [entry_route/select_entry_branch]"),
+    ("select_entry_branch", "chain", None, "entry_route",
+     "业务入口分流 · 路由判断 [entry_route/select_entry_branch]"),
+    ("select_custom_branch", "chain", "entry_route", None, "select_custom_branch"),
     ("LangGraph", "chain", "option_close", "option_close", "期权平仓子图 [option_close/graph]"),
     ("option_intent", "chain", "option_intent", "option", "[Code/LLM] 期权意图识别 [option_intent]"),
     ("inquiry_extract", "chain", "inquiry_extract", "option", "[LLM] 期权询价要素抽取 [inquiry_extract]"),
@@ -107,6 +122,41 @@ def memory_langfuse():
         yield client, exporter, public_key
     finally:
         client.shutdown()
+
+
+@pytest.mark.parametrize("flags,expected", [
+    ({"fast_query": "1"}, "quick_inquiry"),
+    ({"existing_command": "1", "at_bot": False}, "existing_command_query"),
+    ({}, "pre_route"),
+])
+async def test_entry_route_labels_preserve_identity_and_span_parent(memory_langfuse, flags, expected):
+    from app.graph.state import AgentState
+    from app.nodes.entry_route import entry_route, select_entry_branch
+
+    client, exporter, public_key = memory_langfuse
+    graph = StateGraph(AgentState)
+    graph.add_node("entry_route", entry_route)
+    graph.add_edge(START, "entry_route")
+    graph.add_conditional_edges("entry_route", select_entry_branch, {
+        branch: END for branch in ("quick_inquiry", "existing_command_query", "pre_route")
+    })
+    handler = _factory(public_key=public_key)
+    result = await graph.compile().ainvoke(flags, config={"callbacks": [handler]})
+    assert result["trace"][0].node == "entry_route"
+    assert result["trace"][0].decision == expected
+    client.flush()
+    prefix = "langfuse.observation.metadata."
+    spans = exporter.get_finished_spans()
+    entry = next(s for s in spans if s.attributes.get(prefix + "otc_original_run_name") == "entry_route")
+    branch = next(s for s in spans if s.attributes.get(prefix + "otc_original_run_name") == "select_entry_branch")
+    assert entry.name == "业务入口分流 [entry_route]"
+    assert branch.name == "业务入口分流 · 路由判断 [entry_route/select_entry_branch]"
+    assert branch.parent.span_id == entry.context.span_id
+    for span in (entry, branch):
+        assert span.attributes[prefix + "otc_node_id"] == "entry_route"
+        assert span.attributes[prefix + "otc_node_label_zh"] == "业务入口分流"
+    assert all(s.attributes.get("langfuse.observation.type") != "generation" for s in spans)
+    assert not handler._name_contexts
 
 
 class _State(TypedDict, total=False):

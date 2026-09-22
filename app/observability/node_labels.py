@@ -17,6 +17,7 @@ class NodeLabel:
 NODE_LABELS: dict[str, NodeLabel] = {
     "main_graph": NodeLabel("交易指令处理", "graph"),
     "ingest": NodeLabel("消息接收与状态初始化"),
+    "entry_route": NodeLabel("业务入口分流"),
     "quick_inquiry": NodeLabel("期权快速询价", "io"),
     "existing_command_query": NodeLabel("存量交易指令查询", "io"),
     "pre_route": NodeLabel("交易对手与候选信息整理"),
@@ -142,7 +143,10 @@ def label_observation(
             name = f"{prefix}{zh} [{node}]"
     elif original_name in _FRAMEWORK_STEPS:
         name = stage(*_FRAMEWORK_STEPS[original_name])
-    elif original_name.startswith(("_route", "route_", "fan_out_", "dispatch_")) or original_name == "route":
+    elif (
+        original_name.startswith(("_route", "route_", "fan_out_", "dispatch_"))
+        or original_name in {"route", "select_entry_branch"}
+    ):
         name = stage("路由判断", original_name)
 
     projected.update(otc_node_id=node, otc_node_label_zh=zh or None,
