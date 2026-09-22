@@ -69,6 +69,9 @@ curl -X POST http://localhost:8000/v1/workflows/run \
 .venv/bin/python scripts/langfuse/langfuse_eval.py --local tests/fixtures/categories --limit 20 --concurrency 5
 .venv/bin/python scripts/langfuse/langfuse_eval.py --local tests/fixtures/categories --ids case-025 --no-judge  # 单 case 冒烟
 
+# 层 4a · 意图集（只调 LLM + mock 后端，确定性 product_type/intent 比对，不跑 Judge；见 docs/langfuse/workflow-guide.md §8）
+.venv/bin/python scripts/langfuse/langfuse_eval.py --local tests/fixtures/intent --concurrency 3
+
 # 层 5 · 真后端探针（需 VPN）
 .venv/bin/python scripts/probe_real_backend_e2e.py     # 通用连通性
 .venv/bin/python scripts/probe_swap_write_e2e.py       # 互换写

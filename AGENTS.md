@@ -34,6 +34,8 @@ python scripts/local_eval.py --base-url http://127.0.0.1:8201 --data tests/fixtu
 
 # Langfuse Dataset Experiment（Judge + 自动 Evaluator；不替代 HTTP/Java 写回与幂等验收）
 python scripts/langfuse/langfuse_eval.py --dataset golden_option_inquiry_case --ids case-022 --concurrency 1
+# 意图集（只调 LLM + mock 后端，det_intent_match_pass 确定性评分，不跑 Judge；docs/langfuse/workflow-guide.md §8）
+python scripts/langfuse/langfuse_eval.py --local tests/fixtures/intent --concurrency 3
 
 # Harness CLI（备用 / 本地快速 smoke，无 Judge）
 python -m harness doctor
@@ -100,7 +102,8 @@ docs/api-contracts/          # Java 后端真实业务 API 契约
 docs/m3-m4-roadmap.md        # M3/M4 端到端任务图（6 个交付面，2026-05-11 修订）
 docs/on-call-runbook.md      # 上线 on-call SOP
 tests/                       # 1864 passed + 15 skipped
-tests/fixtures/              # categories/（A 方言，6 文件 / 389 条）+ unified_golden.jsonl（B 方言，921 条，harness 默认并入）+ old_typing/（归档）
+tests/fixtures/              # categories/（A 方言业务集，6 文件 / 389 条）+ intent/（意图集：逐轮 product_type/intent，只调 LLM + mock 后端）
+                             # + unified_golden.jsonl（B 方言，921 条，harness 默认并入）+ old_typing/（归档）
 ```
 
 ## 团队工具链：Claude Code 与 Codex 共用一份纪律
