@@ -7,7 +7,7 @@
 
 ## 上下文
 
-主图入口需要把客户原话路由到 `product_type` 一级类目。复盘 golden 与 Java 后端约定后确认：ProductType 真值集 4 个（`swap` / `option` / `option_close` / `unknown`）；订单号 prefix 是业务硬约定（"订单号 over 关键词"，g029 案例）；强信号 case 占比高（立项时 30 条 golden 约 14 条——M2 立项时口径，golden 现已 535 条）；口语化 case 必须 LLM。
+主图入口需要把客户原话路由到 `product_type` 一级类目。复盘 golden 与 Java 后端约定后确认：ProductType 真值集 4 个（`swap` / `option` / `option_close` / `unknown`）；订单号 prefix 是业务硬约定（"订单号 over 关键词"，g029 案例）；强信号 case 占比高（立项时 30 条 golden 约 14 条——M2 立项时口径，golden 规模以 `tests/fixtures/` 为准）；口语化 case 必须 LLM。
 
 ## 历史落地（DSL v2 前的四层路由，已由文末迁移修订取代）
 
@@ -79,6 +79,10 @@ Dify 主干工作流 2026-08 版重写了一级路由,本 ADR 的分层结构随
 - **前置分流**:路由之前主图先分流 fast_query(快速询价)与 existing_command(存量兼容),
   并由 `pre_route` 解析对手列表/引用候选标的(见 `app/graph/main.py`)。
 - trace decision 取值变为 `rule→<DSL 标签>` / `llm→<DSL 标签>` 两种。
+
+## 入口层修订（2026-09-21，[ADR 0028](./0028-session-entry-and-multi-instruction-send-orchestration.md)）
+
+一级路由之前新增独立入口层：`ingest`（会话空闲过期 → 直接 `render`）→ `entry_route`（快速询价 / 存量兼容 / 普通智能指令三分支，纯函数）→ `plan_instructions`（多指令计划，>1 条走 `instructions` 子图）→ `pre_route` → `intent_route`。本 ADR 的覆盖面收窄为 `pre_route → intent_route` 段；入口分流与多指令编排见 ADR 0028。
 
 ## 多轮引用语境修正（2026-08-28 二次修订，#167 客户反馈 bug）
 

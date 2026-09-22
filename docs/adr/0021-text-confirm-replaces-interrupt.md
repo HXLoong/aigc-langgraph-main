@@ -33,7 +33,7 @@ ADR 0006 决策用 `interrupt_before` 拦截写+资金类节点，但核查确�
 
 - 新增配置 `use_mysql_checkpointer`（`app/config.py`）：**生产必须 true**——lifespan 在 `environment=production` 且未启用时直接 fail-fast；显式启用后 AIOMySQLSaver 初始化失败同样直接抛（硬依赖，不静默降级）
 - 开发/CI 默认 false：本地测试不被 MySQL 依赖绑架，避免 checkpoint 脏状态引起测试翻转；本地要验证持久化行为时在 `.env` 打开
-- `.env.customer.template` 已加 `USE_MYSQL_CHECKPOINTER=true`；现场首启即执行 `.setup()` 建表——**这是 TDSQL 兼容性（ADR 0009 上下界约束）第一次真实验证的时点**，部署 checklist 须包含
+- `.env.customer.template` 已加 `USE_MYSQL_CHECKPOINTER=true`；~~现场首启即执行 `.setup()` 建表~~ **2026-09-18 修订（[ADR 0009](./0009-mysql-version-and-tdsql-compatibility.md) 共库调整）**：建表统一走 `sql/init.sql`（`langgraph_` 前缀表、与 Java 共库），应用启动只读校验 schema、缺表 / 版本不符明确失败，不在节点或 lifespan 调用 `saver.setup()`——TDSQL 兼容性第一次真实验证的时点相应为"现场执行 `sql/init.sql` + 首启校验"，部署 checklist 须包含
 - 回归测试：`tests/test_checkpointer_wiring.py`（fail-fast / 硬依赖 / 接线 / 默认关 5 用例）
 
 ## 备选方案
@@ -45,6 +45,6 @@ ADR 0006 决策用 `interrupt_before` 拦截写+资金类节点，但核查确�
 ## 后果
 
 - ADR 0006 标记被本 ADR 取代（风险象限表保留引用）；[ADR 0008](./0008-ticker-resolution-as-react-agent.md) c 段的 interrupt 消歧同理不做（ticker 消歧走 render 文本卡片，已是现状）。
-- 现场部署 checklist 新增：首启验证 checkpoint 4 张系统表建表成功（TDSQL 上跑通 `.setup()`）。
+- 现场部署 checklist 新增：执行 `sql/init.sql` 后首启校验 checkpoint 4 张 `langgraph_checkpoint*` 表通过（ADR 0009 09-18 口径）。
 - 未来若业务方强烈要求按钮式确认，重开 ADR 评估 interrupt——届时 checkpointer 已就位，增量只剩端点与按钮回调。
 - `confirm_*` 意图的 golden 覆盖成为确认链路的唯一回归防线（相关缺口见 Issue #113 的 modify 意图补充要求）。

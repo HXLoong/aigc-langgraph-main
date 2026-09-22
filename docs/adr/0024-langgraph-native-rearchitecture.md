@@ -5,6 +5,7 @@
 - 起源：用户要求"拉取最新 main，评估代码是否按 LangGraph 特性（checkpoint、共享 state、golden、LangFuse）开发，目的是彻底改造以前 Dify 的实现，用全新 LangGraph 架构做彻底重构"。评估报告：[docs/langgraph-architecture-assessment.md](../langgraph-architecture-assessment.md)
 - 修订：[ADR 0000](./0000-migrate-from-dify-to-langgraph.md) 后果段"需要长期维护 Dify YAML 同步工具、让业务方继续用 Dify UI 调整提示词"（**被取代**：Dify 不再是上游）；[ADR 0001 D3](./0001-rewrite-app-with-harness-first.md)"完全模拟 Dify Workflow Run API……跑稳后如需干净协议另开 ADR"（**本 ADR 即该 ADR**）；[ADR 0001 D6](./0001-rewrite-app-with-harness-first.md)（AgentState 分层）；[ADR 0009](./0009-mysql-version-and-tdsql-compatibility.md)（saver 连接与 CI 覆盖）；[ADR 0014](./0014-langfuse-as-harness-backend.md) D7（trace 关联键在生产必须生效）；沿用 [ADR 0021](./0021-text-confirm-replaces-interrupt.md)（文本二阶段确认）与 [ADR 0023](./0023-prompt-as-code-langgraph.md)（PromptSpec）
 - 作者：图灵科技 + Tony
+- **冻结（2026-09-22）**：本 ADR 不再追加落地记录，后续决策一律开新编号——已拆出：[ADR 0025](./0025-instrument-resolution-delegated-to-backend.md)（标的移交 Java，撤销 D3 ticker 真子图）、[ADR 0026](./0026-request-idempotency-uncertain-receipts-reconciliation.md)（D4 留白的幂等 / 回执 / 对账裁决）、[ADR 0027](./0027-field-evidence-contract.md)（字段证据契约）、[ADR 0028](./0028-session-entry-and-multi-instruction-send-orchestration.md)（入口分流与多指令 `Send` 编排）、[ADR 0029](./0029-node-level-debug-api-and-regression-workbench.md)（D6 之下的节点层）。D8 阶段 0 的"CI 在 PR 上跑"门槛至 2026-09-22 仍未执行（`ci.yml` 仅 `workflow_dispatch`）。
 
 ## 上下文
 
@@ -71,7 +72,7 @@ DSL v2 迁移（2026-08）后，代码在 LangGraph 上跑通了全部业务链�
 ### D6 · 评估契约：harness 唯一 gate
 
 - CI 恢复 push / PR 触发（fast job < 2 min：ruff + fixture lint + ADR lint + `pytest -k "not e2e"`；慢 job 全量）。
-- `harness/` 为唯一 gate：并入 B 方言（`conversation[]`）加载器，可执行样本 389 → 1310、多轮 9 → 260；修 `windCode`；业务拒绝不算 PASS（单独桶）；早停后未执行轮次显式记失败；`--backend dry-run` 真生效。`scripts/langfuse/langfuse_eval.py` 降为 Judge + LangFuse 上报薄层，`scripts/ai_test_langgraph/` 标 deprecated。
+- `harness/` 为唯一 gate（全链路之下的节点层见 [ADR 0029](./0029-node-level-debug-api-and-regression-workbench.md)，不改变 gate 归属）：并入 B 方言（`conversation[]`）加载器，可执行样本 389 → 1310、多轮 9 → 260；修 `windCode`；业务拒绝不算 PASS（单独桶）；早停后未执行轮次显式记失败；`--backend dry-run` 真生效。`scripts/langfuse/langfuse_eval.py` 降为 Judge + LangFuse 上报薄层，`scripts/ai_test_langgraph/` 标 deprecated。
 - 写类 case 必须有 `expected.place_params`（从 `response_contains` 反向生成后人工抽检），fixture lint 守护；Judge 阈值 0.9 + 中间档定义；每个线上 P0/P1 先补 fixture 再修代码。
 - D 桶：`annotation_source` / `captured_at` / `redacted` 字段 + LangFuse trace → fixture 的反向脚本（新增于 `scripts/`）。
 

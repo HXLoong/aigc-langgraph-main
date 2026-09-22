@@ -30,7 +30,7 @@
 
 "在 TDSQL 上跑通 `.setup()`"验收已列入现场部署 checklist（ADR 0021 §2）。
 
-## 2026-09-18 共库调整
+## 2026-09-18 共库调整（现行建表口径；取代 [ADR 0021](./0021-text-confirm-replaces-interrupt.md) §2 的"首启 `.setup()` 建表"）
 
 业务与 checkpoint 改为使用 Java 现有 MySQL 数据库，全部表使用 `langgraph_` 前缀。
 本地目标为 `otc_goats_ai_trading_dev`；新表及 LangGraph 连接使用 `utf8mb4_general_ci`，

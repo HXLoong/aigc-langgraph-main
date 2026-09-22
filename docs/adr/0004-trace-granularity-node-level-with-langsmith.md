@@ -15,7 +15,7 @@
 
 `id / message_id / thread_id（= conversation_id）/ node_name / step_index / input_preview / output_preview / status / error / duration_ms / created_at`
 
-⚠️ 当前仓库没有原文引用的 `sql/init.sql`，也找不到 `CREATE TABLE node_trace` 的迁移资产；上述字段是代码期待的契约，不代表部署库一定已初始化。实测未建表时 `persist` 记录 warning 并按“不阻塞业务”策略继续，因此 SQL 统计和 SQL ↔ LangFuse 关联能力在补齐 schema 前不可用。
+**建表资产（2026-09-18 共库调整，[ADR 0009](./0009-mysql-version-and-tdsql-compatibility.md)）**：`sql/init.sql` 的 `langgraph_node_trace`（表名加 `langgraph_` 前缀，与 Java 共库；`sql/migrations/` 承载版本化迁移）。应用启动只读校验 schema，缺表 / 版本不符明确失败；运行期写库失败仍不阻塞业务。
 
 与原设计的差异：
 
@@ -44,5 +44,5 @@
 
 ## 后果（现状口径）
 
-- SQL ↔ LangFuse 的 `trace_id` 关联字段与写入代码已就位（#156）；补齐并部署 `node_trace` schema 后，E3.4 才能从 SQL 行关联对应 LangFuse trace（按 metadata.trace_id 过滤）。
+- SQL ↔ LangFuse 的 `trace_id` 关联字段与写入代码已就位（#156）；schema 已随 2026-09-18 共库调整入库，E3.4 可从 SQL 行关联对应 LangFuse trace（按 metadata.trace_id 过滤）。
 - 文档残留（LangSmith 字样）已随 #151 引用修正清理完毕。

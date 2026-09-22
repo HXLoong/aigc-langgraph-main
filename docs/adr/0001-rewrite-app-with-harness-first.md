@@ -2,7 +2,7 @@
 
 - 状态：已采纳（重写已完成，M1/M2 落地；本文含蓝图与落地的差异对照）
 - 日期：2026-05-10
-- 修订：2026-08-27 深度改写为现状口径（wayfinder map #138 / 核查 #139）
+- 修订：2026-09-22 按 [ADR 0025](./0025-instrument-resolution-delegated-to-backend.md) 修订 D4 / D6 / 节点表（ticker 移交 Java）并订正计数；2026-08-27 深度改写为现状口径（wayfinder map #138 / 核查 #139）
 - 作者：图灵科技 + Tony
 
 ## 上下文（历史）
@@ -46,7 +46,9 @@
 
 `POST /v1/workflows/run` 完全模拟 Dify Workflow Run API（`app/api/routes.py`），仅支持 **blocking**（Java 侧 `StockBotMessageServiceImpl.java` 写死 blocking，核查时行号已漂移至 :1885）。迁移期协议一致 → 回滚只需改 `agentUrl`；跑稳后如需干净协议另开 ADR —— **已另开：[ADR 0024](./0024-langgraph-native-rearchitecture.md) D7（原生 `POST /v1/runs`，Dify 形态降为回滚期 adapter）**。
 
-### D4 · 标的查询职责归 LangGraph（endpoint 已存在，Java 工作量 0）
+### D4 · ~~标的查询职责归 LangGraph~~（2026-09-20 已反转，见 [ADR 0025](./0025-instrument-resolution-delegated-to-backend.md)）
+
+> **2026-09-22 修订**：标的识别整体移交 Java 后端，LangGraph 只提取原文候选与引用选择，`app/tools/ticker_client.py` 在 `app/` 内已无调用方。以下为历史论证。
 
 审计 Java 源码确认 endpoint 已存在：`SecuritiesInstrumentController.java:100` `GET /admin-api/integration/securities-instrument/select`（GET + RequestBody，不规范但合法）。httpx 实现用 GET-with-body：`await client.request("GET", url, json=payload)`（已落地于 `app/tools/ticker_client.py`）。
 
@@ -70,14 +72,14 @@
 | **回归副作用补齐（2026-09-15）** | 09-11 回归把 Dify 靠 code 节点前置分流的「确认下单」从 `swap/intent.md` 枚举中移除，app 未移植分流 → 确认下单链路不可达；已在 `app/subgraphs/swap/intent.py` 移植同款 `has_confirmation_keyword` 前置（不调 LLM）。同批：`select_counterparty.md` 把简写唯一性交给代码 → `aggregate.shortname_from_pick` 改「精确 → 唯一子串 → None」；ticker / holding_query 补齐 Dify 上游注入的 日期 / 对手列表 占位符渲染 | 评估 SW-INC-01 / SW-INC-06 / TRJ-01 / OC-01 |
 | **保持** | 其他 Dify LLM 节点 1:1 复刻，提示词照搬 | — |
 
-**节点数：蓝图 24 → 主干落地 20**（与 CLAUDE.md / README 口径一致）：
+**节点数：蓝图 24 → 主干落地 19**（2026-09-22 口径：swap 6 + option 6 + option_close 7；ticker 已移交 Java）：
 
 | 子图 | 蓝图 | 落地 | 差异说明 |
 |---|---|---|---|
-| swap | 10 | **6**（intent / place_order / confirm / cancel / query_order / unknown 兜底）| `place_order_image` / `place_order_excel` / `image_recognize` / `cancel_extract` 为 **P2 backlog**（按线上流量增量补）；`hand_to_share.py` 已实现**未接线** |
+| swap | 10 | **6**（intent / place_order / confirm / cancel / query_order / unknown 兜底）+ 多模态分支 | `place_order_image` / `place_order_excel` 已落地（`app/subgraphs/swap/multimodal.py`，swap 图 image / excel 分支）；`cancel_extract` 已被确定性提取取代；`hand_to_share.py` 已删除（手转股退役） |
 | option | 6 | 6（另有 unknown 兜底节点）| 与蓝图一致 |
 | option_close | 7 | 7（另有 unknown 兜底）| 与蓝图一致 |
-| ticker | 1（ReAct 子图）| 1 | ⚠️ 实为 resolver 确定性编排，见下"实现偏离" |
+| ticker | 1（ReAct 子图）| **0** | 2026-09-20 整体移交 Java（[ADR 0025](./0025-instrument-resolution-delegated-to-backend.md)），本地无 ticker 节点 |
 
 补充事实：`intent_extract.md`（2870 行）已冻结为 diff 快照，为非活跃资产；`place_order.dify_original.md` 已随 DSL v2 迁移（99a4c2f）删除。非活跃资产曾以 ~~`app/prompts/_manifest.yaml`~~ 为准（ADR 0022）；manifest 机制已于 2026-09-16 废弃移除。
 
@@ -100,23 +102,23 @@ app/
 ├── nodes/                     # ingest / intent_route / persist / render / fallback
 ├── subgraphs/
 │   ├── swap/                  # graph / intent / place_order / confirm / cancel /
-│   │                          #   query_order / hand_to_share(未接线) / backend / models
+│   │                          #   query_order / multimodal / backend / models
 │   ├── option/                # graph / intent / extract_*×5 / backend / models
 │   ├── close/                 # graph / intent / place_close / cancel_close / confirm_close /
 │   │                          #   confirm_cancel / holding_query / query_status / models（7 节点）
-│   └── ticker/                # graph / react_agent(死代码) / tools(4 @tool) / resolver(生产路径)
+│   └── ~~ticker/~~            # 2026-09-20 整体删除（ADR 0025）
 ├── tools/                     # option_client / swap_client / ticker_client（3 Protocol）
 │                              #   + models / auth / exceptions / goats_rfq
 ├── llm/clients.py             # LLM 统一工厂（ADR 0020 vendor 适配层）
 ├── checkpointer/factory.py    # AIOMySQLSaver（已随 ADR 0021/#153 接线，use_mysql_checkpointer）
 ├── observability/             # tracing / metrics / alerts / canary / health_probes
-└── prompts/                   # 41 个业务 .md + _versions.yaml（_manifest.yaml 已随 ADR 0022 废弃移除）
+└── prompts/                   # 业务 .md（数量以目录为准）+ _versions.yaml（_manifest.yaml 已随 ADR 0022 废弃移除）
 harness/                       # 评测台（模块清单见 ADR 0002）
 ```
 
 工程纪律与落地情况：
 
-1. **一节点一文件，50-150 行** —— 多数达标；越界豁免名单：`close/place_close.py` 280、`ticker/tools.py` 547、`ticker/resolver.py` 373、`option/extract_inquiry.py` 187、`swap/place_order.py` 179（软纪律，超 200 行需在 PR 说明）
+1. **一节点一文件，50-150 行** —— 多数达标；越界豁免名单（2026-08 口径；ticker 两文件已删除）：`close/place_close.py` 280、`option/extract_inquiry.py` 187、`swap/place_order.py` 179（软纪律，超 200 行需在 PR 说明；place_close / extract_inquiry 已按 ADR 0024 拆为子图）
 2. **测试一对一** —— 实际按"意图组/链路"分组（如 `test_confirm_cancel_query.py` 覆盖 3 节点），语义等价
 3. **harness 只 import `app.graph.main.build_main_graph`** —— ~~主链路成立~~（2026-09-16 核查：主链路已改 HTTP 调用，不再 import app 代码主图）；例外见"实现偏离"
 
@@ -148,7 +150,7 @@ P0（swap.place_order / option intent+extract / close.place_close / ticker）→
 
 | 偏离 | 现状 | 裁决 issue |
 |---|---|---|
-| **ticker "1 节点 = ReAct Agent 子图"名存实亡** | 主图从未 `add_node("ticker", ...)`；生产走 `ticker/resolver.py` 确定性流水线（tokenize → GOATS → 规则选优 → infer_code 兜底），`react_agent.py` 为死代码。节点计数 20 中的这 1 个是虚的 | [#154](https://github.com/GZTL-AI/aigc-langgraph/issues/154) |
+| ~~**ticker "1 节点 = ReAct Agent 子图"名存实亡**~~ | ✅ 关闭（2026-09-20）：ticker 域整体移交 Java（[ADR 0025](./0025-instrument-resolution-delegated-to-backend.md)），本地无 ticker 节点；历史现状见 ADR 0008 存根 | [#154](https://github.com/GZTL-AI/aigc-langgraph/issues/154) |
 | ~~AgentState 业务参数字段无类型契约~~ | ✅ **#160 落地（2026-08-27）**：新增 `app/graph/business_params.py` 状态级模型，15 个写入点全部经 `validated_*` 校验（extra=forbid 防字段名拼错，输出与历史 dict 逐字节一致）；运行时保持 dict（读取侧/checkpoint/eval 零改动）——这是 D6 意图在 M3.3 阶段的实现形态，全运行时对象化留 M4 后评估 |
 | ~~D9.1 `--mock-ticker` 开关~~ | ✅ #160 裁决：**承诺撤销**——CI 回归由 pytest + mock LLM 承担（977 collected），harness golden 人工/评估触发；D9.1 该段转历史 |
 | ~~harness 依赖面超纪律 3~~ | ✅ #160 裁决：**纪律放宽**为"harness 仅依赖三个稳定入口：`app.graph.main` / `app.config` / `app.llm.clients`"——现状即合规，新增依赖需回本表登记 |
@@ -166,7 +168,7 @@ P0（swap.place_order / option intent+extract / close.place_close / ticker）→
 ### 积极（均已兑现）
 
 - AI 工具自驱迭代：harness/LangFuse 输出可直接定位到 .md 文件
-- bug 修复有回归基线：golden 已扩到 535 条
+- bug 修复有回归基线：golden 规模以 `tests/fixtures/` 为准（2026-09-22：categories 389 + unified 921）
 - 联调零阻塞：Protocol 切换实现即可
 - 新意图有模板：`@safe_node` + Pydantic Output + .md 提示词 + golden case 四件套
 
@@ -182,9 +184,9 @@ P0（swap.place_order / option intent+extract / close.place_close / ticker）→
 
 - [ADR 0000](./0000-migrate-from-dify-to-langgraph.md) · 迁移动机（四痛点）
 - [ADR 0002](./0002-comprehensive-runtime-harness.md) · Harness 三阶段，本 ADR D7-D9 是其落地
-- [ADR 0008](./0008-ticker-resolution-as-react-agent.md) · ticker ReAct 决策（现状偏离见上表 + [#154](https://github.com/GZTL-AI/aigc-langgraph/issues/154)）
+- [ADR 0008](./0008-ticker-resolution-as-react-agent.md) · ticker ReAct 决策（历史存根，已被 [ADR 0025](./0025-instrument-resolution-delegated-to-backend.md) 取代）
 - [ADR 0011](./0011-split-option-intent-and-extraction.md) · option 拆 **1 intent + 5 extract**（二次修订口径）
-- [ADR 0012](./0012-restore-backend-http-for-securities-instrument.md) · 标的查询走后端 HTTP，D4 是其精确化（endpoint = `GET /admin-api/integration/securities-instrument/select`）
+- [ADR 0012](./0012-restore-backend-http-for-securities-instrument.md) · 标的查询走后端 HTTP，D4 曾是其精确化（D4 已随 ADR 0025 反转）
 - [ADR 0014](./0014-langfuse-as-harness-backend.md) · LangFuse 后台（修订 D7）
 - [ADR 0015](./0015-intent-route-rules-first-llm-fallback.md) · 一级路由（精确化 D6 的 intent_route）
 - [ADR 0020](./0020-unify-all-llm-on-deepseek-v4-pro.md) · LLM 全量 DeepSeek-V4-pro（取代 ADR 0010 的选型口径）

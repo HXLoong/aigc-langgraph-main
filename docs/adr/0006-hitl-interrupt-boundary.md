@@ -38,4 +38,4 @@
 
 - "不可逆"是判断关键词：新增产品（如结构化产品）必须先标注每个意图是否"不可逆 + 资金"。
 - 若走裁决选项 (a)：`interrupt_before` 列表是图结构一部分，增删拦截点影响已有 checkpoint 恢复语义，须配合 schema 演进策略；确认卡片回调链路需可用性监测 + 降级文案。
-- 文档修正项（随外部引用修正处理）：`.claude/rules/langgraph-patterns.md` 的 interrupt 示例用了不存在的节点名 `call_swap_api`（应为 `swap_place_order` 等真实节点）；`otc_agent_hitl_total{node}` 指标统计的是 **ticker 消歧卡片渲染次数**（`app/nodes/render.py`，非阻塞文本卡片），不是 interrupt 触发数，引用该指标的文档勿混淆。
+- ~~文档修正项：`.claude/rules/langgraph-patterns.md` 的 interrupt 示例用了不存在的节点名 `call_swap_api`~~ ✅ 已修正（2026-09-22 复核：该规则现写"不引入 interrupt 确认"，无 interrupt 示例）；`otc_agent_hitl_total{node}` 指标统计的是 **ticker 消歧卡片渲染次数**（`app/nodes/render.py`，非阻塞文本卡片），不是 interrupt 触发数，引用该指标的文档勿混淆。

@@ -53,8 +53,8 @@ LangSmith 是海外 SaaS，所有 prompt + LLM 输出（含客户企微原话、
 
 ### D5 · Harness CLI 接入点（现状订正）
 
-- `harness run` ✅、`harness promote-prompt` ✅（委托脚本）
-- **`eval` / `diff` / `sync-golden` 仍是 stub（退出码 64）**——评估主入口现为 `scripts/langfuse/langfuse_eval.py`（M3 主用）
+- `harness run` ✅、`harness node-run` ✅（[ADR 0029](./0029-node-level-debug-api-and-regression-workbench.md)）；提示词晋升直接跑 `scripts/langfuse/promote_langfuse_prompt.py`
+- 早期 `eval` / `diff` / `sync-golden` stub 子命令已删除（2026-09）——评估主入口为 `scripts/langfuse/langfuse_eval.py`（M3 主用）
 - `harness/langfuse_client.py` 实为 **LangChain CallbackHandler 单例封装**（非 SDK client 封装；未启用返回 None 走 no-op）
 
 ### D6 · 数据保留策略（运维约定，仓库内无可验证载体）

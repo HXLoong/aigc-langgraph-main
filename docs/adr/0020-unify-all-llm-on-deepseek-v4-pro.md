@@ -46,11 +46,7 @@ DeepSeek 的 OpenAI 兼容接口与 Qwen/dashscope 有两处硬差异，已在�
 
 ### 3. VL 视觉模型例外
 
-DeepSeek 暂无视觉模型。`get_qwen_vl` 仍指向 `qwen-vl-max-latest`，但 base 已切
-DeepSeek，**当前不可用**——实际影响面为零：`get_qwen_vl` 全库无调用方（M3 未使用
-图片链路，place_order_image / image_recognize 为 P2 增量节点）。启用时需给 VL 工厂
-单独配 Qwen base（新增独立 env var，将引入第二个 vendor 依赖，[ADR 0019](./0019-incident-severity-thresholds.md)
-的"LLM 单一外部依赖"论证需同步修订），届时修订本 ADR。
+DeepSeek 暂无视觉模型。**2026-09-22 修订**：`get_qwen_vl` 已有调用方（`app/subgraphs/swap/multimodal.py`，swap 图片 / Excel 分支已接线），视觉模型经 `QWEN_MODEL_VL` 单独配置——第二个 vendor 依赖已成立，[ADR 0019](./0019-incident-severity-thresholds.md) §3 已同步标注。`.env.customer.template` 的 `QWEN_MODEL_VL` 为留空占位：现场未配置视觉模型时图片 / Excel 链路不可用，部署 checklist 须明确该项。
 
 ### 4. 对 ADR 0010 选型规则的影响
 

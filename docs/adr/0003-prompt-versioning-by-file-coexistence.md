@@ -33,9 +33,9 @@ _versions.yaml（灰度配置，如 swap.intent = 95% intent / 5% intent_v2）
 
 ## 后果与纪律（现状口径）
 
-- 加载器支持任意文件名 ✅；trace / 评估报告须记录实际加载的文件名——~~`harness/reporter.py`~~ 曾按 `prompt_name` 分桶统计（模块已移除，2026-09-16 核查）。**A/B 前置纪律（#156 裁决）**：现仅 swap_intent 写 `prompt_name`（1/21），不批量回改；但**对任何提示词开启 A/B（进 `_versions.yaml`）前，其节点必须先在 trace 写入 `prompt_name`**，否则版本对比失真——此为 `_versions.yaml` 加条目的硬前置。
+- 加载器支持任意文件名 ✅；trace / 评估报告须记录实际加载的文件名——~~`harness/reporter.py`~~ 曾按 `prompt_name` 分桶统计（模块已移除，2026-09-16 核查）。**A/B 前置纪律（#156 裁决）**：`PromptSpec.build_messages` 统一返回 `prompt_name`（ADR 0023），灰度节点须写入 trace；但**对任何提示词开启 A/B（进 `_versions.yaml`）前，其节点必须先在 trace 写入 `prompt_name`**，否则版本对比失真——此为 `_versions.yaml` 加条目的硬前置。
 - **文件分两类，清理规则不同**（本次改写澄清原文与 `app/prompts/CLAUDE.md` "禁止直接删"的冲突）：
   - **A/B 实验位**（`*_v2.md` 等）：新版满一个金丝雀周期 + 稳定 7 天后清理、去后缀；
   - **Dify 原始快照 / 回滚资产**（冻结的 `intent_extract.md` 等；`*.dify_original.md` 已于 DSL v2 迁移删除）：曾按 ADR 0022 D6 在 ~~`app/prompts/_manifest.yaml`~~ 登记为 `inactive` 并写保留理由与可删条件；manifest 机制已于 2026-09-16 废弃移除，清理时以 git 历史与文件内注释为准。
-- ">2 个并存版本视为治理债"目前**无执行机制且已被突破**（`swap/place_order` 3 变体；`ticker/tokenize*.md` 双死文件）——裁决见 [#159](https://github.com/GZTL-AI/aigc-langgraph/issues/159)。
+- ">2 个并存版本视为治理债"曾被突破（`swap/place_order` 3 变体、ticker 双死文件），裁决见 [#159](https://github.com/GZTL-AI/aigc-langgraph/issues/159)；**2026-09-22 现状**：所有 `*_v2.md` 已随 ADR 0024 D1 删除、ticker 提示词随 ADR 0025 删除，`_versions.yaml` 为 `overrides: {}`，当前无并存版本、无在跑灰度。
 - Dify 同步策略：原决策要求"拉下来的新版放 `_v{N+1}.md`、不覆盖原文件"。#159 曾补保护（export_dify_prompts.py 默认跳过已存在文件）；2026-09-17 同步 / 导出链路随 ADR 0024 D1 整体退役，本条不再适用。

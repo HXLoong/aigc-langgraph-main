@@ -46,4 +46,4 @@
 
 - 30% 是经验阈值，每年回顾一次；"预计 ≥ 4 个意图"是预测，上线后超阈值但归了现有子图的，下次重构窗口拆出。
 - 业务方对"产品线"分类拥有否决权（条件 3）。
-- 文档修正项（随外部引用修正处理）：`.claude/skills/add-intent/SKILL.md` 与 `.claude/agents/subgraph-builder.md` 仍在教旧路径（`app/subgraphs/$1.py`、`route_product_condition`），照抄会生成错误代码。
+- ~~文档修正项：`.claude/skills/add-intent/SKILL.md` 与 `.claude/agents/subgraph-builder.md` 仍在教旧路径~~ ✅ 已修正（2026-09-22 复核：技能已改为包目录 `app/subgraphs/$1/` 布局）。

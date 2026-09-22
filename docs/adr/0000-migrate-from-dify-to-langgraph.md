@@ -19,14 +19,14 @@
 
 ## 决策与落地现状（2026-08-27）
 
-决定迁移到 **LangGraph + FastAPI**，把 Dify YAML 中的提示词导出为 `app/prompts/**/*.md`（现有 37 个业务提示词 .md）。
+决定迁移到 **LangGraph + FastAPI**，把 Dify YAML 中的提示词导出为 `app/prompts/**/*.md`（业务提示词数量随瘦身与去 LLM 化持续下降，以目录为准，不在本文写计数）。
 
 原决策的两条执行方式已按后续 ADR 演进：
 
 - **"提示词只做加载不改写"** → 已由 [ADR 0001 D5](./0001-rewrite-app-with-harness-first.md) 在重构期解禁：合并/拆分/瘦身类改写须在 D5 处置表登记，Dify 原版以非活跃快照保留并在 ~~`app/prompts/_manifest.yaml`~~ 登记（2026-09-16 已废弃）；M4 后改写走 eval 门 + PR review（[ADR 0022](./0022-prompt-governance-after-code-migration.md)）。
 - **"shadow 双跑校准到金丝雀切换"** → 已由 [ADR 0016](./0016-m3-scope-engineering-loop-not-shadow.md) 降级为 **F4.1（M4 阶段的第二意见）**，M3 的合格性判定改为 golden PASS 率退出门。
 
-四个痛点的主要解药均已建成（详见 [ADR 0002](./0002-comprehensive-runtime-harness.md)）：`harness/` 评测台、`node_trace` 写入代码 + LangFuse trace、golden set 535 条（主）+ 34 条（ticker）按 B/C/D 桶管理、DeepSeek Judge 评估（`scripts/langfuse/langfuse_eval.py`）。其中 `node_trace` 的建表/迁移资产尚未入库，部署不能仅凭当前仓库完成落库初始化。
+四个痛点的主要解药均已建成（详见 [ADR 0002](./0002-comprehensive-runtime-harness.md)）：`harness/` 评测台、`node_trace` 写入代码 + LangFuse trace、golden set（2026-09-22：`tests/fixtures/categories/` 389 条 + `tests/fixtures/unified_golden.jsonl` 921 条，按 B/C/D 桶管理）、DeepSeek Judge 评估（`scripts/langfuse/langfuse_eval.py`）。`node_trace` 建表资产已随 2026-09-18 共库调整入库（`sql/init.sql` 的 `langgraph_node_trace`，见 [ADR 0009](./0009-mysql-version-and-tdsql-compatibility.md) 09-18 段）。
 
 ## 备选方案
 

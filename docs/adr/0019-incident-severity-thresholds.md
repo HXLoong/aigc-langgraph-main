@@ -34,7 +34,7 @@
 
 - 5xx 1%/5min 与退出门 0.1% 拉开十倍：故障升级关心突发，退出门关心稳态。
 - cascade 5%/10min = P1 非 P0：fallback 给用户友好回复，非服务崩溃。
-- **LLM 失败 ≥ 10%/5min（论证前提按 [ADR 0020](./0020-unify-all-llm-on-deepseek-v4-pro.md) 重写）**：LLM 现为**单一外部依赖 DeepSeek API**（5 个文本工厂同一 endpoint），失败冲高通常是上游故障；10% 是 retry × 2 后仍不通的水位。⚠️ 若未来启用 VL 图片链路（需单独接 Qwen base），将引入**第二个 vendor 依赖**，"单一依赖"论证与本条阈值需重估。
+- **LLM 失败 ≥ 10%/5min（论证前提按 [ADR 0020](./0020-unify-all-llm-on-deepseek-v4-pro.md) 重写）**：LLM 现为**单一外部依赖 DeepSeek API**（5 个文本工厂同一 endpoint），失败冲高通常是上游故障；10% 是 retry × 2 后仍不通的水位。⚠️ **2026-09-22 复核：VL 图片链路已接线**（`app/subgraphs/swap/multimodal.py`，swap 图 image / excel 分支；`QWEN_MODEL_VL` 走独立视觉模型）——第二个 vendor 依赖已成事实，"单一依赖"论证不再成立；`llm_failure_high` 按 `model` label 拆分阈值列为待办，重估前本条阈值继续沿用。
 - non_canary ≥ 1 即时 P0：切流白名单外任何流量 = 企微 Webhook 配错，单条泄漏 1 秒内即可造成损失。
 - P95 × 3/10min = P1：慢但未崩，10 分钟窗口区分抖动与卡死。
 - HITL 30min = P1：金融业务方一般 10 分钟内响应明确提问，30 分钟未回大概率是系统问题。
