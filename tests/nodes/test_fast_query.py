@@ -214,7 +214,7 @@ class TestQuickInquiry:
 
 
 class TestErrorCopyDisambiguation:
-    def test_parser_and_java_failures_follow_dify_copy(self):
+    def test_parser_failure_and_backend_failure_have_distinct_copy(self):
         import app.tools.goats_agent_client as goats
 
         texts = {

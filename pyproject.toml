@@ -16,6 +16,8 @@ dependencies = [
     "langchain-openai>=0.2.0",  # 兼容 Qwen OpenAI API
     # 数据库
     "aiomysql>=0.2.0",
+    # PyMySQL 1.2 移除了 aiomysql 依赖的 escape_bytes_prefixed（bytes 参数即 TypeError，checkpoint blob 写入失败）
+    "PyMySQL>=1.1,<1.2",
     "sqlalchemy[asyncio]>=2.0.0",
     "alembic>=1.13.0",
     # 配置 & 工具
@@ -57,12 +59,9 @@ ignore = ["E501"]
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]
-# repo root 加到 sys.path 让 tests/observability/test_*.py 能 `from scripts.* import ...`
-# （scripts/ 不是 package，没装到 site-packages；同级 tests/test_*.py 用
-# sys.path.insert workaround，深层目录靠 pythonpath 兜底）
+# repo root 加到 sys.path 让 tests/**/test_*.py 能 `from scripts.* import ...` / `from harness.* import ...`
+# （scripts/ 不是 package，没装到 site-packages）；测试文件里禁止再写 sys.path.insert
 pythonpath = ["."]
-# tests/api 是 GOATS 接口连通性测试，需要真实后端 + VPN，M3 阶段联调时再启用
-addopts = "--ignore=tests/api"
 
 [tool.mypy]
 plugins = ["pydantic.mypy"]

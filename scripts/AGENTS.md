@@ -22,6 +22,7 @@
 | `probe_option_write_e2e.py` | 期权下单写后端 |
 | `probe_close_write_e2e.py` | 平仓下单写后端 |
 | `probe_fast_query.py` | 快速询价 GOATS 解析交互式探针（不调后端询价接口）|
+| `probe_goats/` | GOATS 19 个业务接口逐个 / 一键探针（原 tests/api，2026-09-22 迁入；凭据从 `.env` 读，写类接口需 `--confirm-write`）|
 
 > 探针**不参与**自动 CI（依赖真后端 + VPN）。本地或客户现场手动跑。
 

@@ -1,4 +1,4 @@
-"""可选本地 MySQL 验收；默认收集，显式 RUN_NODE_MYSQL_TEST=1 时执行。"""
+"""可选本地 MySQL 验收；默认收集，显式 RUN_LOCAL_MYSQL_TESTS=1 时执行。"""
 
 from __future__ import annotations
 
@@ -13,14 +13,14 @@ from app.api.nodes import router
 from app.config import get_settings
 from app.node_execution.executor import NodeExecutor
 from app.node_execution.registry import build_registry
-from app.nodes.persist import _parse_mysql_uri
+from app.nodes.persist import NODE_TRACE, _parse_mysql_uri
 
 
-@pytest.mark.skipif(os.getenv("RUN_NODE_MYSQL_TEST") != "1", reason="requires local MySQL")
+@pytest.mark.skipif(os.getenv("RUN_LOCAL_MYSQL_TESTS") != "1", reason="requires local MySQL")
 async def test_persist_endpoint_really_inserts_node_trace() -> None:
     import aiomysql
 
-    host, port, user, password, database = _parse_mysql_uri(get_settings().business_mysql_uri)
+    host, port, user, password, database = _parse_mysql_uri(get_settings().mysql_uri)
     assert host in {"localhost", "127.0.0.1", "::1"}, "local acceptance only"
     trace_id = "node-api-" + uuid.uuid4().hex
     app = FastAPI()
@@ -60,11 +60,11 @@ async def test_persist_endpoint_really_inserts_node_trace() -> None:
         assert response.status_code == 200, response.text
         async with conn.cursor() as cursor:
             await cursor.execute(
-                "SELECT node_name, step_index, duration_ms FROM node_trace WHERE trace_id=%s",
+                f"SELECT node_name, step_index, duration_ms FROM {NODE_TRACE} WHERE trace_id=%s",
                 (trace_id,),
             )
             assert await cursor.fetchall() == (("local_acceptance", 0, 7),)
     finally:
         async with conn.cursor() as cursor:
-            await cursor.execute("DELETE FROM node_trace WHERE trace_id=%s", (trace_id,))
+            await cursor.execute(f"DELETE FROM {NODE_TRACE} WHERE trace_id=%s", (trace_id,))
         conn.close()

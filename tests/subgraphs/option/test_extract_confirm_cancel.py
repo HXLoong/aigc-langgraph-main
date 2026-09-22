@@ -11,16 +11,14 @@ import pytest
 
 from app.subgraphs.option import extract_confirm_cancel as ecc_module
 from app.subgraphs.option.extract_confirm_cancel import option_extract_confirm_cancel
+from tests.llm_guard import forbid_llm
 
 
 def _patch(monkeypatch: pytest.MonkeyPatch) -> AsyncMock:
     backend = AsyncMock(return_value={"api_code": 0, "api_result": "backend reply"})
     monkeypatch.setattr(ecc_module, "call_option_backend", backend)
 
-    def _forbid(*_args: object, **_kwargs: object) -> None:
-        raise AssertionError("去 LLM 化节点不应调用 LLM")
-
-    monkeypatch.setattr(ecc_module, "get_qwen_thinking", _forbid, raising=False)
+    forbid_llm(monkeypatch, ecc_module)
     return backend
 
 

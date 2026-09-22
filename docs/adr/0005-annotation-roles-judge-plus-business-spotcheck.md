@@ -37,7 +37,7 @@
 
 | 偏离 | 现状 |
 |---|---|
-| ~~judge 提示词硬编码在脚本里~~ | ✅ #159 已修复：正文迁至 `app/prompts/judge/option_judge.md`，评估脚本统一通过 `load_prompt("judge", "option_judge")` 加载；`tests/test_prompt_governance.py` 防回归 |
+| ~~judge 提示词硬编码在脚本里~~ | ✅ #159 已修复：正文迁至 `app/prompts/judge/option_judge.md`，评估脚本统一通过 `load_prompt("judge", "option_judge")` 加载；`tests/prompts/test_prompt_governance.py` 防回归 |
 | **golden 的"标注来源"字段被占用** | `golden.jsonl` 的 `source` 字段 535/535 全是数据出处路径（`csv/…/rowN`）；本 ADR 要求的标注权威性维度（judge / business / engineer）无处可放，Phase 4 回流前需另起字段（如 `annotation_source`） |
 
 ## 后果

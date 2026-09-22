@@ -255,7 +255,6 @@ class AgentState(TypedDict, total=False):
     history_messages: Annotated[list[Message], merge_history]
     #: 上一轮已确认业务对象（ADR 0024 D4）：{product_type, intent, expected_action, order_ids, message_id}
     #: 由主图 remember_confirmed_params 写入；确认链路裸确认时优先读它，显式引用 / 单号仍优先
-    conversation_orders: list[dict[str, Any]]
     last_confirmed_params: dict[str, Any] | None
     #: 兼容平仓撤单链的最近会话订单；内容由上游提供，节点只读取最后一笔订单号
     conversation_orders: list[dict[str, Any]]

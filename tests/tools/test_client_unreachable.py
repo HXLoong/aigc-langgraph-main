@@ -1,7 +1,8 @@
 """D2.3 client 不可达场景集成测试（Issue #73）。
 
 3 个 client × 4 类故障 = 12 个测试。
-用 httpx.MockTransport 模拟 timeout / ConnectError / 5xx / 4xx。
+用各 Client 自带的 transport= 注入 httpx.MockTransport 模拟 timeout / ConnectError / 5xx / 4xx，
+不再全局 patch httpx.AsyncClient.__init__（会顺带劫持 http_pool 单例）。
 """
 from __future__ import annotations
 
@@ -27,17 +28,6 @@ from app.tools.ticker_client import KeywordItem, TickerClientHttpx
 # ============================================================
 
 
-def _patch_async_client(monkeypatch: pytest.MonkeyPatch, handler) -> None:
-    """把 httpx.AsyncClient 的构造行为替换：所有请求走 handler。"""
-    real_init = httpx.AsyncClient.__init__
-
-    def _patched_init(self, *args, **kwargs) -> None:  # type: ignore[no-untyped-def]
-        kwargs["transport"] = httpx.MockTransport(handler)
-        real_init(self, *args, **kwargs)
-
-    monkeypatch.setattr(httpx.AsyncClient, "__init__", _patched_init)
-
-
 def _timeout_handler(request: httpx.Request) -> httpx.Response:
     raise httpx.TimeoutException("simulated timeout", request=request)
 
@@ -59,19 +49,19 @@ def _400_handler(request: httpx.Request) -> httpx.Response:
 # ============================================================
 
 
-@pytest.fixture
-def option_client() -> OptionClientHttpx:
-    return OptionClientHttpx(base_url="http://example.invalid", timeout=2.0, token="t")
+def _option_client(handler) -> OptionClientHttpx:  # type: ignore[no-untyped-def]
+    return OptionClientHttpx(base_url="http://example.invalid", timeout=2.0, token="t",
+                             transport=httpx.MockTransport(handler))
 
 
-@pytest.fixture
-def swap_client() -> SwapClientHttpx:
-    return SwapClientHttpx(base_url="http://example.invalid", timeout=2.0, token="t")
+def _swap_client(handler) -> SwapClientHttpx:  # type: ignore[no-untyped-def]
+    return SwapClientHttpx(base_url="http://example.invalid", timeout=2.0, token="t",
+                           transport=httpx.MockTransport(handler))
 
 
-@pytest.fixture
-def ticker_client() -> TickerClientHttpx:
-    return TickerClientHttpx(base_url="http://example.invalid", timeout=2.0, token="t")
+def _ticker_client(handler) -> TickerClientHttpx:  # type: ignore[no-untyped-def]
+    return TickerClientHttpx(base_url="http://example.invalid", timeout=2.0, token="t",
+                             transport=httpx.MockTransport(handler))
 
 
 def _option_req() -> FinancialOrderOpenApiSaveReqVO:
@@ -121,12 +111,10 @@ def _ticker_req() -> SecuritiesInstrumentReqVO:
     ],
 )
 async def test_option_operate_unreachable(
-    option_client: OptionClientHttpx,
-    monkeypatch: pytest.MonkeyPatch,
     handler,
     expected_reason: str,
 ) -> None:
-    _patch_async_client(monkeypatch, handler)
+    option_client = _option_client(handler)
     with pytest.raises(BackendUnreachableError) as exc_info:
         await option_client.operate(_option_req())
     assert exc_info.value.target == "option"
@@ -143,13 +131,11 @@ async def test_option_operate_unreachable(
     ],
 )
 async def test_option_query_close_orders_unreachable(
-    option_client: OptionClientHttpx,
-    monkeypatch: pytest.MonkeyPatch,
     handler,
     expected_reason: str,
 ) -> None:
     """query_close_orders 新签名（order_ids/contract_codes）也走 translate_httpx_errors。"""
-    _patch_async_client(monkeypatch, handler)
+    option_client = _option_client(handler)
     with pytest.raises(BackendUnreachableError) as exc_info:
         await option_client.query_close_orders(
             order_ids=["CO-20260301-ABC"], contract_codes=["OPTG-AAPL"]
@@ -168,12 +154,10 @@ async def test_option_query_close_orders_unreachable(
     ],
 )
 async def test_swap_operate_unreachable(
-    swap_client: SwapClientHttpx,
-    monkeypatch: pytest.MonkeyPatch,
     handler,
     expected_reason: str,
 ) -> None:
-    _patch_async_client(monkeypatch, handler)
+    swap_client = _swap_client(handler)
     with pytest.raises(BackendUnreachableError) as exc_info:
         await swap_client.operate(_swap_req())
     assert exc_info.value.target == "swap"
@@ -190,12 +174,10 @@ async def test_swap_operate_unreachable(
     ],
 )
 async def test_ticker_search_unreachable(
-    ticker_client: TickerClientHttpx,
-    monkeypatch: pytest.MonkeyPatch,
     handler,
     expected_reason: str,
 ) -> None:
-    _patch_async_client(monkeypatch, handler)
+    ticker_client = _ticker_client(handler)
     with pytest.raises(BackendUnreachableError) as exc_info:
         await ticker_client.search_securities_instrument(_ticker_req())
     assert exc_info.value.target == "ticker"
@@ -209,29 +191,23 @@ async def test_ticker_search_unreachable(
 
 @pytest.mark.asyncio
 async def test_option_operate_4xx_not_unreachable(
-    option_client: OptionClientHttpx,
-    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    _patch_async_client(monkeypatch, _400_handler)
+    option_client = _option_client(_400_handler)
     with pytest.raises(httpx.HTTPStatusError):
         await option_client.operate(_option_req())
 
 
 @pytest.mark.asyncio
 async def test_swap_operate_4xx_not_unreachable(
-    swap_client: SwapClientHttpx,
-    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    _patch_async_client(monkeypatch, _400_handler)
+    swap_client = _swap_client(_400_handler)
     with pytest.raises(httpx.HTTPStatusError):
         await swap_client.operate(_swap_req())
 
 
 @pytest.mark.asyncio
 async def test_ticker_search_4xx_not_unreachable(
-    ticker_client: TickerClientHttpx,
-    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    _patch_async_client(monkeypatch, _400_handler)
+    ticker_client = _ticker_client(_400_handler)
     with pytest.raises(httpx.HTTPStatusError):
         await ticker_client.search_securities_instrument(_ticker_req())

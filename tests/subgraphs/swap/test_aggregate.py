@@ -1,10 +1,10 @@
-"""swap.aggregate · 互换-标的对手覆盖聚合 纯函数测试（Dify code 节点 1:1）。
+"""swap.aggregate · 互换-标的对手覆盖聚合 纯函数测试（确定性业务规则，代码为真源）。
 
 覆盖 `app/subgraphs/swap/aggregate.py` 的 7 个纯函数：
 `build_id_to_seq` / `match_order_index` / `resolve_candidate_block` /
 `windcode_from_pick` / `shortname_from_pick` / `apply_underlying` / `apply_counterparty`。
 
-对齐 Dify「互换-标的对手覆盖聚合」code 节点（spec/code_nodes/互换-标的对手覆盖聚合.py）。
+业务规则源自 DSL v2 迁移前的「互换-标的对手覆盖聚合」代码节点，现以本仓实现为准（ADR 0024 D1）。
 核心不变量：**非破坏性覆盖** —— 指针解析不到值时保留原值，绝不置 None。
 
 测试方法：G1 纯函数确定性（无 mock / 无 IO / 直接断言输入输出）。
@@ -168,7 +168,7 @@ class TestWindcodeFromPick:
         assert windcode_from_pick(pick, _CANDIDATES) == "00700.HK"
 
     def test_direct_ref_unmatched_returns_raw_ref(self) -> None:
-        """匹配不到候选时原样返回用户输入（Dify 行为）。"""
+        """匹配不到候选时原样返回用户输入（原文交后端识别，不本地拒绝）。"""
         pick = {"orderId": "H-1", "directRef": " 999999.SH "}
         assert windcode_from_pick(pick, _CANDIDATES) == "999999.SH"
 
@@ -341,7 +341,7 @@ class TestApplyCounterparty:
 
 class TestShortnameFromPickUniqueness:
     """提示词治理评估 SW-INC-06：select_counterparty.md 2026-09-11 版把唯一性判断交给代码
-    （|M|=1 才是唯一简写，多命中不得按列表顺序取第一项），对齐 Dify code 节点 1780652971845
+    （|M|=1 才是唯一简写，多命中不得按列表顺序取第一项），业务规则见本模块实现
     shortname_from_pick：精确 → 唯一连续子串 → None。"""
 
     _AMBIGUOUS = [
