@@ -1,6 +1,6 @@
 # ADR 0029 · 节点级调试接口与节点回归工作台（含私有工具 HTTP 录放）
 
-- 状态：已采纳（`/v1/nodes/run` 2026-09-20 `e1f373e`；`/v1/nodes/prepare` 2026-09-21 `4f6173a`；HTTP tape 2026-09-18 `b7915e8`；节点标注与回归工作台 2026-09-22 PR #211 / #214；本篇为 2026-09-22 追认记录）
+- 状态：已采纳（`/v1/nodes/run` 2026-09-20 `e1f373e`；`/v1/nodes/prepare` 2026-09-21 `4f6173a`；HTTP tape 2026-09-18 `b7915e8`；节点标注与回归工作台 2026-09-22 合入 main；本篇为 2026-09-22 追认记录）
 - 日期：2026-09-22
 - 起源：[docs/节点级测试用例维护与回归平台产品需求文档.md](../节点级测试用例维护与回归平台产品需求文档.md)；使用指南 [docs/nodes-run.md](../nodes-run.md)
 - 修订：[ADR 0024](./0024-langgraph-native-rearchitecture.md) D6（"harness 唯一 gate"在全链路之下增加节点层，不改变 gate 归属）；沿用 [ADR 0002](./0002-comprehensive-runtime-harness.md)（开发期 harness）

@@ -4,19 +4,19 @@
 - 日期：2026-08-27
 - 取代：[ADR 0018](./0018-dev-qwen-prod-deepseek-llm-split.md)（双模型分立）；修订 [ADR 0010](./0010-llm-model-selection-rules.md)（Qwen 三型号分工）
 - 起源：Tony 2026-08-27 指示"全部使用 DeepSeek-V4-pro"
-- 修订：2026-08-27 按核查 #142 订正 4 处事实（调用点计数、§4 措辞、C1.19、工厂清单）
+- 修订：2026-08-27 订正 4 处事实（调用点计数、§4 措辞、smoke gate、工厂清单）
 - 作者：图灵科技 + Tony
 
 ## 上下文
 
 ADR 0018 规定"开发期 Qwen / 客户现场 DeepSeek-v4-pro"双轨制，代价是：
 
-- M2 的 92.5% PASS baseline 只对 Qwen 有效，DeepSeek 上要靠 C1.19 单独重建
+- 早期 92.5% PASS baseline 只对 Qwen 有效，DeepSeek 上要单独重建
 - prompt 适配、行为漂移排查都要在两套模型上做两遍
 - 开发环境验证过的行为不能直接外推到现场
 
-M3.3 进入真后端 golden 回归 + 业务方 sign-off 阶段，评估结论必须与现场同口径。
-2026-08-27 Tony 决定：**开发 / 测试 / harness 评测 / 现场生产全部统一使用 DeepSeek-V4-pro**。
+真后端数据集回归的评估结论必须与现场同口径。
+2026-08-27 决定：**开发 / 测试 / harness 评测 / 现场生产全部统一使用 DeepSeek-V4-pro**。
 
 ## 决策
 
@@ -54,15 +54,15 @@ DeepSeek 暂无视觉模型。**2026-09-22 修订**：`get_qwen_vl` 已有调用
   import 语义保留，未来按节点切不同模型时只改 `.env` 或对应工厂
 - ADR 0010 的核心约束"thinking 模型不支持 structured output"在 DeepSeek 下不再成立
   （function calling 全模型可用），该规则降级为历史背景
-- ⚠️ **工厂语义现状如实记录**（2026-08-27 核查 #142 订正本节原措辞）：ADR 0010 的
+- ⚠️ **工厂语义现状如实记录**（2026-08-27 订正本节原措辞）：ADR 0010 的
   "structured output 强制 standard"**从未被执行**——20 个 structured output 调用点实际
   分布为 thinking 15 / structured 2 / complex 1 / standard 0。当前同模型无运行时后果，
-  该偏离已裁决（[#158](https://github.com/GZTL-AI/aigc-langgraph/issues/158)，2026-08-27）：**追认 thinking 工厂为事实默认**；
+  该偏离已裁决（2026-08-27）：**追认 thinking 工厂为事实默认**；
   **分化前置纪律**——按工厂分化模型前必须先做调用点统一 PR，否则 15 个节点会静默跟随 thinking 工厂
 
 ## 替代方案
 
-- **维持 ADR 0018 双轨制**：放弃。双口径评估成本在 M3.3 sign-off 阶段不可接受，且
+- **维持 ADR 0018 双轨制**：放弃。双口径评估成本不可接受，且
   客户现场只认 DeepSeek 上的表现。
 - **开发期用 DeepSeek 其他型号（如更便宜的非 pro）**：放弃。引入新的行为漂移维度，
   与"同口径"目标矛盾。
@@ -72,19 +72,19 @@ DeepSeek 暂无视觉模型。**2026-09-22 修订**：`get_qwen_vl` 已有调用
 ### 正面
 
 - 开发 / 评测 / 现场单一口径，golden 回归结论可直接外推现场
-- ADR 0018 C1.19 的验证意图由日常评估天然承接（注：C1.19 gate 本身已于 2026-05-12
-  标记跳过、从未执行，见 ADR 0018 存根第 3 条——事后证明"风险低"是误判，两处硬差异由
+- ADR 0018 的 DeepSeek smoke gate 验证意图由日常评估天然承接（注：该 gate 曾于 2026-05-12
+  被跳过、从未执行，见 ADR 0018 存根第 3 条——事后证明"风险低"是误判，两处硬差异由
   本 ADR §2 适配层补救）
 - vendor 差异集中在 clients.py 一处，节点代码零改动（20 处 `with_structured_output` 调用点未动）
 
 ### 负面 / 风险
 
 - **baseline 作废**：Qwen 口径的 92.5%（mock）/ 84.6%（真 LLM）不再是对照基线，
-  需在 DeepSeek 上重跑 `scripts/langfuse/langfuse_eval.py` 重建（沿用 ADR 0018 C1.19 红线思路）
+  需在 DeepSeek 上重跑 `scripts/langfuse/langfuse_eval.py` 重建（沿用 ADR 0018 的 PASS 红线思路）
 - 开发期 API key 计费与管理归属需要与客户/内部重新明确（原 ADR 0018 的"key 边界清晰"优势失效）
 - 开发环境依赖公网 DeepSeek API 的可用性与延迟
 - 长提示词节点（swap/place_order ≈ 40K tokens）在 DeepSeek 上的 P95 延迟需重新测量
-  （ADR 0017 量化指标同步在 DeepSeek 上重建）
+  （ADR 0030 D3 上线观察指标同步在 DeepSeek 上重建）
 
 ### 回退路径
 
@@ -95,5 +95,5 @@ DeepSeek 暂无视觉模型。**2026-09-22 修订**：`get_qwen_vl` 已有调用
 
 - ADR 0018 · 开发 Qwen / 现场 DeepSeek 双模型分立（被本 ADR 取代）
 - ADR 0010 · Qwen 三型号分工（被本 ADR 修订为历史背景）
-- ADR 0017 · M4 金丝雀退出门量化指标（在 DeepSeek 上重新测量）
+- ADR 0030 D3 · 上线观察层指标（在 DeepSeek 上重新测量）
 - ADR 0001 D5 · DeepSeek 适配类 prompt 改写仍须独立标记（沿用 ADR 0018 约定）

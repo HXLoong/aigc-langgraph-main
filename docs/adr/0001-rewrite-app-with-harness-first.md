@@ -1,15 +1,15 @@
 # ADR 0001 · 推倒重写 `app/`，按 Harness-first 范式落实 LangGraph 替换 Dify
 
-- 状态：已采纳（重写已完成，M1/M2 落地；本文含蓝图与落地的差异对照）
+- 状态：已采纳（重写已完成；本文含蓝图与落地的差异对照；上线节奏与实现优先级段已随 [ADR 0030](./0030-goal-restatement-native-langgraph-dataset-eval-harness.md) 退役）
 - 日期：2026-05-10
-- 修订：2026-09-22 按 [ADR 0025](./0025-instrument-resolution-delegated-to-backend.md) 修订 D4 / D6 / 节点表（ticker 移交 Java）并订正计数；2026-08-27 深度改写为现状口径（wayfinder map #138 / 核查 #139）
+- 修订：2026-09-22 按 [ADR 0025](./0025-instrument-resolution-delegated-to-backend.md) 修订 D4 / D6 / 节点表（ticker 移交 Java）并订正计数；2026-09-22 按 ADR 0030 退役 D8 / D9 里程碑段；2026-08-27 深度改写为现状口径（对照代码核查）
 - 作者：图灵科技 + Tony
 
 ## 上下文（历史）
 
 2026-05 时 `app/` 下代码是早期自动生成的迁移骨架，存在结构性问题：与真实 Dify 主干工作流的节点划分不一一对应（互换 12 个 LLM 节点 / 期权 7 个 LLM 节点的实际结构没被精确还原）、对 Java Worker 的契约不明确、缺少独立可 replay 的节点接口、测试按"代码先有再补测试"的传统顺序。迁移目标已在 CLAUDE.md 钉死：用 LangGraph 替换 Dify。
 
-决定**推倒重写**，按 Harness-first 范式推进。重写已随 M1/M2 完成（M2 PR #41 合 main）。以下各节按"决策 + 落地现状"记述。
+决定**推倒重写**，按 Harness-first 范式推进。重写已完成并合入 main。以下各节按"决策 + 落地现状"记述。
 
 ## Decision
 
@@ -19,7 +19,7 @@
 |------|------|---|
 | 保留 | `app/prompts/`（现 **37 个**业务 .md）· `app/checkpointer/factory.py` · dify/sync.py + dify/yaml/（2026-09-17 随 ADR 0024 D1 移除，tag dify-assets-frozen-20260917（指向 commit fddd94e；tag 仅存本地，远端拒绝 tag 推送，维护者可从该 sha 重建））· `docs/archive/fixtures/old_typing/golden.jsonl` | `app/llm/clients.py` 保留路径、**内容已按 [ADR 0020](./0020-unify-all-llm-on-deepseek-v4-pro.md) 重写**为 vendor 适配层 |
 | ~~保留~~ 已下线 | `mock_api/server.py` | 2026-05-13 随"切换真实后端环境"删除（commit `4ac9f0b`），单测改 AsyncMock、e2e 走 `scripts/probe_*_e2e.py` 真后端探针 |
-| 重写 | `app/graph/state.py` · `app/graphs/` · `app/subgraphs/` · `app/nodes/` · `app/tools/` · `app/api/routes.py` · `tests/` · `scripts/` | M1 的 M1 状态兼容模块（已删） 兼容 shim 与 `app/graphs/` shim 均已删除（2026-08-28 / 2026-09-17 ADR 0024），真源在 `app/graph/`，入口在 `app/api/turn_state.py` |
+| 重写 | `app/graph/state.py` · `app/graphs/` · `app/subgraphs/` · `app/nodes/` · `app/tools/` · `app/api/routes.py` · `tests/` · `scripts/` | 早期状态兼容 shim 与 `app/graphs/` shim 均已删除（2026-08-28 / 2026-09-17 ADR 0024），真源在 `app/graph/`，入口在 `app/api/turn_state.py` |
 | 新增 | `harness/` 顶层目录（评测台，与 `app/` 解耦） | 已建成，模块清单见 [ADR 0002](./0002-comprehensive-runtime-harness.md) |
 
 ### D2 · `tools/` 层的契约策略（落地与蓝图一致）
@@ -65,6 +65,8 @@
 | **询价补参修复** | `option/intent.md`：期限补充归 `new_inquiry`，建仓补参/确认/撤单按动作和业务阶段判断，删除引用卡片关键词强制改写意图的后处理；`extract_inquiry.md` 增加可选原单号 `orderId`；`extract_place.md` 保留可选期限 `tenor`，原单号与新增期限同传，缺省参数由 Java 合并；保留冻结的 `intent_extract.md` | 2026-09-07 用户明确授权；两轮 HTTP + checkpoint + Java HTTP 请求回归，见 [API 契约](../api-contracts/java-backend.md) |
 | **回归当前 Dify 原文** | 将 `option/{intent,extract_inquiry,extract_place}.md` 与 `swap/{intent,place_order,select_counterparty,select_ticker}.md` 的 system/user 提示词完整同步为 `dify/yaml/场外交易-test.yml` 对应 LLM 节点的 `prompt_template`，移除上述文件相对当前 Dify 工作流的本地提示词改写 | 2026-09-11 用户明确要求；`tests/prompts/test_prompt_governance.py` 按 node_id 锁定 7 个提示词与 YAML 一致 |
 | **瘦身** | `app/prompts/swap/place_order.md`：Dify 原版 3059 行 / 152,546 字符 → **2249 行 / 126,171 字符**（删冗余示例、压缩重复规则，保留语义；原版存为 `place_order.dify_original.md`）。注：DSL v2（2026-08）Dify 侧已自行重写该提示词，旧瘦身版随迁移被替换 | 2026-05-12 grill 授权，M2/M3 执行，本次补登记 |
+| **回归当前 Dify 原文** | 将 `option/{intent,extract_inquiry,extract_place}.md` 与 `swap/{intent,place_order,select_counterparty,select_ticker}.md` 的 system/user 提示词完整同步为 `dify/yaml/场外交易-test.yml` 对应 LLM 节点的 `prompt_template`，移除上述文件相对当前 Dify 工作流的本地提示词改写 | 2026-09-11 用户明确要求；`tests/test_prompt_governance.py` 按 node_id 锁定 7 个提示词与 YAML 一致 |
+| **瘦身** | `app/prompts/swap/place_order.md`：Dify 原版 3059 行 / 152,546 字符 → **2249 行 / 126,171 字符**（删冗余示例、压缩重复规则，保留语义；原版存为 `place_order.dify_original.md`）。注：DSL v2（2026-08）Dify 侧已自行重写该提示词，旧瘦身版随迁移被替换 | 2026-05-12 授权执行，本次补登记 |
 | **瘦身 P0 批（2026-08-28）** | 客户反馈提示词冗长/规则写死损害泛化性，全量评估见 `docs/swap-prompt-slimming-assessment.md`。P0 零风险档产出 4 个 v2 共存文件：`swap/{intent,image_extract,excel_extract,image_ocr}_v2.md`——只删死重（JSON 格式禁令，structured output 已强制）、悬空规则（bot_name_list/shortname_list/序号/total 等未注入变量）、重复陈述（同一规则 2~9 遍收敛为 1 处权威表述）、自相矛盾的补丁修订史（"POV 空格"）；**业务规则语义不变**。灰度经 `_versions.yaml`/env 控制，默认 0 流量，eval PASS ≥ v1 基线后方可放量（ADR 0003） | 本 ADR + 评估报告 |
 | **去 LLM 化（2026-08-28 瘦身 P1）** | swap 撤单/查单/三确认共 5 个节点的唯一任务是提取 `H-` 订单号，改为确定性提取（`app/subgraphs/swap/order_id.py`，来源优先级 1:1 对照原提示词规约）；省 5 次 LLM 调用（≈4.8K tokens/请求）与幻觉面。5 个提示词转非活跃资产保留。二次校验/后端调用/输出形状不变 | 本 ADR + 评估报告 |
 | **治理机制（2026-09-15）** | 客户反馈提示词臃肿 → 全域可维护性评估（`docs/prompt-maintainability-assessment.md`）；资产状态（active / gray / inactive）改由 ~~`app/prompts/_manifest.yaml`~~ + `scripts/prompt_inventory.py --check` 机器守护（2026-09-16 已废弃移除），本表只登记改写决定；删除零调用点的 `compose_prompt` 形态 | [ADR 0022](./0022-prompt-governance-after-code-migration.md) |
@@ -87,7 +89,7 @@
 
 不走激进合并的理由（保留原论证）：用户最痛的三件事（标的不准 / 参数 bug / 评估缺失）分别靠 ticker 算法、Pydantic 契约、harness 解决，不靠节点合并；激进合并会让提示词信息密度过载、diff 颗粒度变粗。
 
-提示词纪律：重构期内合并/新写/瘦身须在本表登记；M4 全量后恢复只读（[ADR 0003](./0003-prompt-versioning-by-file-coexistence.md) 管版本化）。
+提示词纪律：合并/新写/瘦身须在本表登记并过 ADR 0030 D3 评测门（[ADR 0003](./0003-prompt-versioning-by-file-coexistence.md) 管版本化）。
 
 ### D6 · 目录结构 + AgentState（按落地现状重画）
 
@@ -96,7 +98,7 @@ app/
 ├── api/                       # routes.py（POST /v1/workflows/run）+ health.py
 ├── graph/
 │   ├── main.py                # 主图组装 + 一级路由（_route_after_intent）
-│   ├── state.py               # AgentState（真源；M1 shim 已删）
+│   ├── state.py               # AgentState（真源；早期兼容 shim 已删）
 │   ├── safe_node.py           # @safe_node 装饰器
 │   └── cascade.py             # cascade fallback 防御
 ├── nodes/                     # ingest / intent_route / persist / render / fallback
@@ -110,7 +112,7 @@ app/
 ├── tools/                     # option_client / swap_client / ticker_client（3 Protocol）
 │                              #   + models / auth / exceptions / goats_rfq
 ├── llm/clients.py             # LLM 统一工厂（ADR 0020 vendor 适配层）
-├── checkpointer/factory.py    # AIOMySQLSaver（已随 ADR 0021/#153 接线，use_mysql_checkpointer）
+├── checkpointer/factory.py    # AIOMySQLSaver（已随 ADR 0021 接线，use_mysql_checkpointer）
 ├── observability/             # tracing / metrics / alerts / canary / health_probes
 └── prompts/                   # 业务 .md（数量以目录为准）+ _versions.yaml（_manifest.yaml 已随 ADR 0022 废弃移除）
 harness/                       # 评测台（模块清单见 ADR 0002）
@@ -133,29 +135,24 @@ harness/                       # 评测台（模块清单见 ADR 0002）
 
 四个关键设计不变：字段级 diff 比 unified diff 快、trace 定位到具体 LLM 调用、suspected_node 启发式、suspected_prompt 给出可直接编辑的 .md 路径。
 
-### D8 · 上线节奏（现状）
+### D8 · 上线节奏（已退役）
 
-| 里程碑 | 内容 | 状态 |
-|--------|------|---|
-| M1 · 骨架 | 新 graph/state + 3 Protocol + harness MVP | ✅（30 条 golden 全 PASS，历史退出门）|
-| M2 · 子图实现 | 主干节点逐个实现 + golden 扩张 | ✅（PR #41；mock baseline 92.5% / 真 LLM 84.6%——**Qwen 口径，已被 ADR 0020 作废待重建**）|
-| M3 · 工程联调闭环（[ADR 0016](./0016-m3-scope-engineering-loop-not-shadow.md) 重定义，非 shadow 双跑）| 真后端联调 + 真 LLM 评测 + 灰度工具链 | M3.1/M3.2 ✅；历史 #82-#87 已关闭，M3.3 是否满足退出门以当前 DeepSeek 评估与验收证据为准 |
-| M4 · 金丝雀切换 | 按群组切流 + F4.1 shadow 第二意见 | 工具链就绪，未启动（[ADR 0017](./0017-m4-canary-quantitative-exit-gate.md) / [0019](./0019-incident-severity-thresholds.md)）|
+原表以 M1–M4 里程碑记录骨架 / 子图实现 / 联调 / 切流的进度，2026-09-22 随 [ADR 0030](./0030-goal-restatement-native-langgraph-dataset-eval-harness.md) 退役：里程碑与任务码不再是门槛，所有改动统一走 ADR 0030 D3 的评测门（数据集 PASS 率 / 节点 fixture / CI / 上线观察）。历史事实：骨架与主干子图已全部落地；真后端联调已打通；灰度工具链（`scripts/canary_status.py` / `scripts/rollback_canary.sh` / `scripts/shadow_compare.py`）就绪但不定义任何阶段。
 
-### D9 · M2 节点实现优先级（历史记录）
+### D9 · 节点实现优先级（已退役）
 
-P0（swap.place_order / option intent+extract / close.place_close / ticker）→ P1（cancel / confirm / query 类）→ P2（image / excel / hand_to_share / query_status——除 query_status 已落地外仍是 backlog）。D9.2 退出门（ticker PASS ≥ 90% + 100% from_goats、三链路 ≥ 85%、P0 golden ≥ 80 条）已按当时口径通过。
+原文按 P0 / P1 / P2 排定子图实现顺序并附早期退出门（ticker PASS ≥ 90% 等），已全部执行或作废（ticker 域移交 Java，ADR 0025）；剩余增量按线上流量与数据集错例决定，不再维护优先级表。
 
-## 实现偏离（2026-08-27 核查 [#139](https://github.com/GZTL-AI/aigc-langgraph/issues/139)，裁决另行处理）
+## 实现偏离（2026-08-27 核查，裁决同日落地）
 
-| 偏离 | 现状 | 裁决 issue |
+| 偏离 | 现状 | 裁决 |
 |---|---|---|
-| ~~**ticker "1 节点 = ReAct Agent 子图"名存实亡**~~ | ✅ 关闭（2026-09-20）：ticker 域整体移交 Java（[ADR 0025](./0025-instrument-resolution-delegated-to-backend.md)），本地无 ticker 节点；历史现状见 ADR 0008 存根 | [#154](https://github.com/GZTL-AI/aigc-langgraph/issues/154) |
-| ~~AgentState 业务参数字段无类型契约~~ | ✅ **#160 落地（2026-08-27）**：新增 `app/graph/business_params.py` 状态级模型，15 个写入点全部经 `validated_*` 校验（extra=forbid 防字段名拼错，输出与历史 dict 逐字节一致）；运行时保持 dict（读取侧/checkpoint/eval 零改动）——这是 D6 意图在 M3.3 阶段的实现形态，全运行时对象化留 M4 后评估 |
-| ~~D9.1 `--mock-ticker` 开关~~ | ✅ #160 裁决：**承诺撤销**——CI 回归由 pytest + mock LLM 承担（977 collected），harness golden 人工/评估触发；D9.1 该段转历史 |
-| ~~harness 依赖面超纪律 3~~ | ✅ #160 裁决：**纪律放宽**为"harness 仅依赖三个稳定入口：`app.graph.main` / `app.config` / `app.llm.clients`"——现状即合规，新增依赖需回本表登记 |
+| ~~**ticker "1 节点 = ReAct Agent 子图"名存实亡**~~ | ✅ 关闭（2026-09-20）：ticker 域整体移交 Java（[ADR 0025](./0025-instrument-resolution-delegated-to-backend.md)），本地无 ticker 节点；历史现状见 ADR 0008 存根 | 2026-08-27 裁决 |
+| ~~AgentState 业务参数字段无类型契约~~ | ✅ **2026-08-27 落地**：新增 `app/graph/business_params.py` 状态级模型，15 个写入点全部经 `validated_*` 校验（extra=forbid 防字段名拼错，输出与历史 dict 逐字节一致）；运行时保持 dict（读取侧/checkpoint/eval 零改动）——这是 D6 意图的当前实现形态，全运行时对象化留后续评估 |
+| ~~`--mock-ticker` 开关~~ | ✅ 2026-08-27 裁决：**承诺撤销**——CI 回归由 pytest + mock LLM 承担，harness 数据集回归按 ADR 0030 D3 触发 |
+| ~~harness 依赖面超纪律 3~~ | ✅ 2026-08-27 裁决：**纪律放宽**为"harness 仅依赖三个稳定入口：`app.graph.main` / `app.config` / `app.llm.clients`"——现状即合规，新增依赖需回本表登记 |
 
-关联的 checkpointer 未接线问题已由 [ADR 0021](./0021-text-confirm-replaces-interrupt.md) / [#153](https://github.com/GZTL-AI/aigc-langgraph/issues/153) 修复；数据库兼容边界见 [ADR 0009](./0009-mysql-version-and-tdsql-compatibility.md)。
+关联的 checkpointer 未接线问题已由 [ADR 0021](./0021-text-confirm-replaces-interrupt.md) 修复；数据库兼容边界见 [ADR 0009](./0009-mysql-version-and-tdsql-compatibility.md)。
 
 ## 备选方案（历史论证，保留）
 
@@ -176,8 +173,8 @@ P0（swap.place_order / option intent+extract / close.place_close / ticker）→
 
 | 后果 | 现状 |
 |------|---|
-| 重写期 `app/` 不可用 | 已过去（feature 分支已合 main）|
-| `app/prompts/` 重构期可改写 | D5 处置表登记制运行中；M4 后恢复只读 |
+| 重写期 `app/` 不可用 | 已过去（已合 main）|
+| `app/prompts/` 重构期可改写 | D5 处置表登记制运行中；改写经 ADR 0030 D3 评测门 |
 | harness 运行成本 | 已可度量（token_tracker + llm_cost_report）；golden 分类分层跑 |
 
 ## Related

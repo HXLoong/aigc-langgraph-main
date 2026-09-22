@@ -2,12 +2,12 @@
 
 - 状态：已采纳（2026-08-28 起按 Dify DSL v2 重构为两层：规则层移植 + unknown LLM 兜底,见文末「DSL v2 迁移落地」）
 - 日期：2026-05-10
-- 修订：2026-08-27 深度改写为现状口径（wayfinder map #138 / 核查 #142）
+- 修订：2026-08-27 深度改写为现状口径（对照代码核查）
 - 作者：图灵科技 + Tony
 
 ## 上下文
 
-主图入口需要把客户原话路由到 `product_type` 一级类目。复盘 golden 与 Java 后端约定后确认：ProductType 真值集 4 个（`swap` / `option` / `option_close` / `unknown`）；订单号 prefix 是业务硬约定（"订单号 over 关键词"，g029 案例）；强信号 case 占比高（立项时 30 条 golden 约 14 条——M2 立项时口径，golden 规模以 `tests/fixtures/` 为准）；口语化 case 必须 LLM。
+主图入口需要把客户原话路由到 `product_type` 一级类目。复盘 golden 与 Java 后端约定后确认：ProductType 真值集 4 个（`swap` / `option` / `option_close` / `unknown`）；订单号 prefix 是业务硬约定（"订单号 over 关键词"，g029 案例）；强信号 case 占比高（立项时 30 条数据集约 14 条；数据集规模以 `tests/fixtures/` 为准）；口语化 case 必须 LLM。
 
 ## 历史落地（DSL v2 前的四层路由，已由文末迁移修订取代）
 
@@ -35,13 +35,13 @@
 - ~~`load_prompt("router", "product_type")`~~（DSL v2 迁移后改为 `load_prompt("router", "unknown_intent")`,391 行,原 product_type.md 已删除）
 - 入参：`raw_text` **+ `quote_content`**（拼接到 user 段，原文只写 raw_text，本次补录）
 - `with_structured_output(ProductTypeOutput)`，Literal 四值
-- **历史工厂偏离已裁决**（[#158](https://github.com/GZTL-AI/aigc-langgraph/issues/158)）：旧决策选 standard，实际用 thinking；#158 追认 thinking 工厂为事实默认，并规定未来按工厂分化模型前先统一调用点。
+- **历史工厂偏离已裁决（2026-08-27）**：旧决策选 standard，实际用 thinking；追认 thinking 工厂为事实默认，并规定未来按工厂分化模型前先统一调用点。
 
 ### 第 4 层 · unknown 兜底
 
 LLM 判 unknown 或异常 → `product_type="unknown"` → 主图走 fallback render（友好回复 + trace，不进子图）。`ProductType` Literal 与 `app/graph/main.py` 的 `option_close` / `unknown` 分支均已落地。
 
-### trace 决策来源（E3.4 错例追溯用，现为 4 种取值）
+### trace 决策来源（错例追溯用，现为 4 种取值）
 
 `rule:order_no→X` / `rule:quote_marker→X` / `rule:keyword[kw:词]→X` 或 `rule:keyword[re:正则]→X`（带命中 token）/ `llm→X`。
 
@@ -84,7 +84,7 @@ Dify 主干工作流 2026-08 版重写了一级路由,本 ADR 的分层结构随
 
 一级路由之前新增独立入口层：`ingest`（会话空闲过期 → 直接 `render`）→ `entry_route`（快速询价 / 存量兼容 / 普通智能指令三分支，纯函数）→ `plan_instructions`（多指令计划，>1 条走 `instructions` 子图）→ `pre_route` → `intent_route`。本 ADR 的覆盖面收窄为 `pre_route → intent_route` 段；入口分流与多指令编排见 ADR 0028。
 
-## 多轮引用语境修正（2026-08-28 二次修订，#167 客户反馈 bug）
+## 多轮引用语境修正（2026-08-28 二次修订，客户反馈 bug）
 
 客户反馈意图识别 bug；评估（`docs/archive/reports/intent-recognition-assessment-2026-08.md`）定位为 DSL v2 1:1 移植
 丢失了旧 quote_marker 层的多轮工程修复。本次在规则层叠加三处**工程增强**（偏离 DSL 源，特此登记）：
@@ -101,6 +101,6 @@ Dify 主干工作流 2026-08 版重写了一级路由,本 ADR 的分层结构随
    `product_type="unknown"` 的每轮重置（eval 入口原会覆盖 checkpoint 粘性）。
 
 量化（golden 802 轮 · 真实卡片近似口径）：规则层精准率 **90.2% → 99.7%**（错分 76 → 2 条边角），
-详见评估报告附录。`Q-` 单号归 option 由 Tony 裁决确认（2026-08-28），golden opt_close-064 已同步。
+详见评估报告附录。`Q-` 单号归 option 于 2026-08-28 裁决确认，数据集 opt_close-064 已同步。
 trace decision 新增第三种取值 `sticky→<pt>`。回归：`tests/nodes/test_route_rules_context.py`
 （真实卡片 fixture 矩阵，P0-2 口径修正）+ `tests/nodes/test_intent_route_sticky.py`。

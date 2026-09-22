@@ -3,7 +3,7 @@
 - 状态：已采纳（2026-09-18 第四 / 五 / 八批落地，起始 commit `58e5650`；2026-09-20 确认协议收口 `9493cb9`；本篇为 2026-09-22 追认记录，接入进度以 [docs/migration-20260918/README.md](../migration-20260918/README.md) 为准）
 - 日期：2026-09-18（记录：2026-09-22）
 - 起源：[docs/langgraph-reconstruction-20260918.md](../langgraph-reconstruction-20260918.md) 用户确认的完整重构计划——"字段 evidence / confidence / source、来源校验与字段锁定"
-- 修订：[ADR 0023](./0023-prompt-as-code-langgraph.md) D2（输出契约从"模型直接输出规范值"改为"模型输出原文候选，规范值由 Code 产生"）、[ADR 0024](./0024-langgraph-native-rearchitecture.md) D2（AgentState 新增 `field_records` 通道）与阶段 2 落地记录中"记忆补裸确认"的口径；配合 [ADR 0025](./0025-instrument-resolution-delegated-to-backend.md)（标的原文透传）
+- 修订：[ADR 0023](./0023-prompt-as-code-langgraph.md) D2（输出契约从"模型直接输出规范值"改为"模型输出原文候选，规范值由 Code 产生"）、[ADR 0024](./0024-langgraph-native-rearchitecture.md) D2（AgentState 新增 `field_records` 通道）与落地记录中"记忆补裸确认"的口径；配合 [ADR 0025](./0025-instrument-resolution-delegated-to-backend.md)（标的原文透传）
 - 作者：图灵科技 + Tony
 
 ## 上下文
@@ -38,7 +38,7 @@ swap 三确认、option 确认下单 / 确认撤单、close 确认平仓 / 确�
 2. 引用当前订单（单号 `H-` / `Q-` / `CO-`、序号、或合约编号）且范围与业务对象一致；
 3. 否定、疑问、条件句（"不确认" / "是否" / "吗" / "成交后"）与携带新参数的文本不触发写入。
 
-`last_confirmed_params`（ADR 0024 ConversationMemory）与程序生成的引用**不能替代用户引用**——ADR 0024 阶段 2 落地记录中"记忆只补裸确认"的口径由此收紧为"记忆仅作上下文"。
+`last_confirmed_params`（ADR 0024 ConversationMemory）与程序生成的引用**不能替代用户引用**——ADR 0024 落地记录中"记忆只补裸确认"的口径由此收紧为"记忆仅作上下文"。
 
 ## 备选方案
 

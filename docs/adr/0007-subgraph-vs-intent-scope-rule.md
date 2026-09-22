@@ -2,7 +2,7 @@
 
 - 状态：已采纳
 - 日期：2026-05-10
-- 修订：2026-08-27 深度改写为现状口径（wayfinder map #138 / 核查 #140）
+- 修订：2026-08-27 深度改写为现状口径（对照代码核查）
 - 作者：图灵科技 + Tony
 
 ## 决策（规则本体，仍有效）
@@ -20,7 +20,7 @@
 
 **归入现有子图（新意图）**：
 
-- 意图枚举：在 `app/subgraphs/<product>/models.py` 的 `<Product>IntentType` Literal 加值（不是原文写的 M1 状态兼容模块——该 shim 已随 ADR 0024 删除；`app/graph/state.py` 的 `intent` 字段是裸 `str`）
+- 意图枚举：在 `app/subgraphs/<product>/models.py` 的 `<Product>IntentType` Literal 加值（不是原文写的早期状态兼容模块——该 shim 已随 ADR 0024 删除；`app/graph/state.py` 的 `intent` 字段是裸 `str`）
 - 更新 `app/prompts/<product>/intent.md` 提示词；新增对应 extract 提示词文件
 - 子图加 `@safe_node` 节点函数 + **两处路由都要改**：`graph.py` 的 `_INTENT_TO_NODE` 路由表 **和** `add_conditional_edges` 的 path_map（漏一处会静默走 unknown 兜底）
 - `tests/fixtures/unified_golden.jsonl`（历史 `old_typing/golden.jsonl` 已归档到 docs/archive/fixtures/） 至少 2 条 case（CI 的 `check_fixture_consistency.py` 会查）
@@ -38,7 +38,7 @@
 - **由工程师独立判断**：容易做出业务方看不懂的代码组织。
 - **四条规则触发制（已选）**：业务直觉（3）+ 技术内聚（1、2）+ 复杂度阈值（4）合一，可机械执行。
 
-## 实现偏离（#160 裁决落地）
+## 实现偏离（2026-08-27 裁决落地）
 
 - ~~"PR 模板强制 review 四条规则"无载体~~ ✅ 已创建 `.github/pull_request_template.md`（2026-08-27）：含"是否触发独立子图条件"判定项与提交检查清单。
 

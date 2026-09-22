@@ -2,7 +2,7 @@
 
 - 状态：已采纳
 - 日期：2026-08-27
-- 起源：#153 裁决（wayfinder map #138 全量核查发现 [ADR 0006](./0006-hitl-interrupt-boundary.md) 0% 落地）
+- 起源：2026-08-27 裁决（全量核查发现 [ADR 0006](./0006-hitl-interrupt-boundary.md) 0% 落地）
 - 取代：[ADR 0006](./0006-hitl-interrupt-boundary.md) 的 interrupt 机制部分（其"写 + 资金双轴"风险象限规则仍沿用）
 - 作者：图灵科技 + Tony
 
@@ -23,7 +23,7 @@ ADR 0006 决策用 `interrupt_before` 拦截写+资金类节点，但核查确�
 
 不实现 `interrupt_before` / 确认按钮回调端点。理由：
 
-- 文本路径已被验证可用且被 golden 覆盖；interrupt 路径需要企微按钮回调链路 + Java 侧配合新联调面，M3.3 阶段引入不现实
+- 文本路径已被验证可用且被 golden 覆盖；interrupt 路径需要企微按钮回调链路 + Java 侧配合新联调面，当前引入不现实
 - 二阶段语义等价：写操作同样需要客户显式二次表达，风险象限规则（ADR 0006 表）继续用于判断"哪些意图必须走二阶段"
 - 单轮结束 + 新消息重新起图的模型更简单，不依赖 interrupt 的 checkpoint 恢复语义
 
@@ -38,7 +38,7 @@ ADR 0006 决策用 `interrupt_before` 拦截写+资金类节点，但核查确�
 
 ## 备选方案
 
-- **补齐 interrupt 全套**（ADR 0006 原设计）：需企微按钮回调 + Java 配合 + checkpoint 恢复语义管理，M3.3 阶段成本与风险不成比例；文本路径已可用，收益增量小。
+- **补齐 interrupt 全套**（ADR 0006 原设计）：需企微按钮回调 + Java 配合 + checkpoint 恢复语义管理，成本与风险不成比例；文本路径已可用，收益增量小。
 - **checkpointer 也不接**：多轮状态继续无持久化，重启失忆 + HITL 类场景永久受限——生产不可接受。
 - **checkpointer 默认全局开**：本地/CI 测试被 MySQL 绑架，同 conversation_id 的 checkpoint 残留造成测试翻转（`tests/CLAUDE.md` 根纪律）。
 
@@ -47,4 +47,4 @@ ADR 0006 决策用 `interrupt_before` 拦截写+资金类节点，但核查确�
 - ADR 0006 标记被本 ADR 取代（风险象限表保留引用）；[ADR 0008](./0008-ticker-resolution-as-react-agent.md) c 段的 interrupt 消歧同理不做（ticker 消歧走 render 文本卡片，已是现状）。
 - 现场部署 checklist 新增：执行 `sql/init.sql` 后首启校验 checkpoint 4 张 `langgraph_checkpoint*` 表通过（ADR 0009 09-18 口径）。
 - 未来若业务方强烈要求按钮式确认，重开 ADR 评估 interrupt——届时 checkpointer 已就位，增量只剩端点与按钮回调。
-- `confirm_*` 意图的 golden 覆盖成为确认链路的唯一回归防线（相关缺口见 Issue #113 的 modify 意图补充要求）。
+- `confirm_*` 意图的数据集覆盖成为确认链路的唯一回归防线（范围校验见 [ADR 0027](./0027-field-evidence-contract.md) D5）。

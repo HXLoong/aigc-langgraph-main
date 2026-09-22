@@ -107,7 +107,7 @@ app/                        # LangGraph 应用层
 harness/                    # 评测台 CLI（python -m harness <doctor|run>，经 HTTP 调本地 /v1/workflows/run）
 scripts/                    # langfuse_eval.py / probe_*.py / promote_*.py / canary_*.sh ...
 infra/langfuse/             # LangFuse self-hosted Docker Compose（PG + ClickHouse + Redis + MinIO + Web + Worker）
-docs/adr/                   # 架构决定 ADR 0000-0029（共 30 篇）+ README 索引
+docs/adr/                   # 架构决定 ADR 0000-0030（共 31 篇）+ README 索引
 docs/api-contracts/         # Java 后端真实业务 API 契约
 tests/                      # 1864 passed + 15 skipped
 tests/fixtures/             # golden.jsonl（350+ 条）+ golden_ticker_2026-05.jsonl

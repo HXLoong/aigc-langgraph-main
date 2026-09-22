@@ -7,7 +7,7 @@
 场外衍生品 AI 指令助手。**FastAPI + LangGraph + MySQL + LangFuse self-hosted**，从 Dify 工作流迁移而来。
 企微群客户消息 → 意图解析 → 后端业务/交易系统。
 
-> 当前阶段：**M1 / M2 / M3.1 / M3.2 已完成**（M2 PR #41 已合 main，主干 24 节点蓝图实际落地 19 节点：swap 6 + option 6 + option_close 7，ticker 已于 2026-09-20 移交 Java（ADR 0025）；mock_api baseline PASS ≥ 92.5%，真 LLM baseline 84.6%）→ **M3.3 真后端 golden 回归 + 错例修 P0/P1 + 业务方现场 sign-off 进行中**（open issues #82–#87，参见 [ADR 0016](./docs/adr/0016-m3-scope-engineering-loop-not-shadow.md) 与 [docs/m3-m4-roadmap.md](./docs/m3-m4-roadmap.md)）；**M4 灰度工具链已就绪**（rollback_canary / drill_smoke / shadow_compare / deploy-customer / Grafana 模板 / Prompt 晋升 + on-call runbook，详见 README "M4 准备就绪的工具链"）
+> 当前阶段：**M1 / M2 / M3.1 / M3.2 已完成**（M2 PR #41 已合 main，主干 24 节点蓝图实际落地 19 节点：swap 6 + option 6 + option_close 7，ticker 已于 2026-09-20 移交 Java（ADR 0025）；mock_api baseline PASS ≥ 92.5%，真 LLM baseline 84.6%）→ **M3.3 真后端 golden 回归 + 错例修 P0/P1 + 业务方现场 sign-off 进行中**（目标口径见 [ADR 0030](./docs/adr/0030-goal-restatement-native-langgraph-dataset-eval-harness.md)：原生 LangGraph 重构 + 数据集评测 + Harness 工程；M 里程碑与 issue 口径已从 ADR 退役）；**M4 灰度工具链已就绪**（rollback_canary / drill_smoke / shadow_compare / deploy-customer / Grafana 模板 / Prompt 晋升 + on-call runbook，详见 README "M4 准备就绪的工具链"）
 
 ## 关键命令
 
@@ -98,7 +98,7 @@ scripts/                     # langfuse_eval.py（Judge 评估，M3 主用） / 
                              # rollback_canary.sh / run_alerts.py / llm_cost_report.py / shadow_compare.py 等
 
 infra/langfuse/              # LangFuse self-hosted Docker Compose（PG + ClickHouse + Redis + MinIO + Web + Worker）
-docs/adr/                    # 架构决定 ADR 0000-0029（共 30 篇）+ README 索引
+docs/adr/                    # 架构决定 ADR 0000-0030（共 31 篇）+ README 索引
 docs/api-contracts/          # Java 后端真实业务 API 契约
 docs/m3-m4-roadmap.md        # M3/M4 端到端任务图（6 个交付面，2026-05-11 修订）
 docs/on-call-runbook.md      # 上线 on-call SOP
@@ -257,7 +257,7 @@ tests/fixtures/              # categories/（A 方言业务集，6 文件 / 389 
 
 ## 下一步：M3.3 真后端 golden 回归 + 业务方 sign-off（进行中）
 
-ADR 0016 把"M3 = shadow 双跑"重新定义为"M3 = 工程联调闭环 + 评估迭代"，分 M3.1 / M3.2 / M3.3 三段：
+ADR 0030 已把里程碑口径从 ADR 退役，统一为数据集评测门（D3）；以下里程碑叙述仅保留为本文件的历史进度记录：
 
 **已完成（六大交付面）**：
 
@@ -309,7 +309,7 @@ ADR 0016 把"M3 = shadow 双跑"重新定义为"M3 = 工程联调闭环 + 评估
 详见：
 
 - 领域语言：`@CONTEXT.md`
-- 架构决定：`@docs/adr/`（ADR 0000-0029 共 30 篇，索引见 `docs/adr/README.md`）
+- 架构决定：`@docs/adr/`（ADR 0000-0030 共 31 篇，索引见 `docs/adr/README.md`）
 - LangGraph 原生重构评估与路线：`@docs/langgraph-architecture-assessment.md` + ADR 0024
 - Java 契约：`@docs/api-contracts/java-backend.md`
 - M3/M4 路线图：`@docs/m3-m4-roadmap.md`

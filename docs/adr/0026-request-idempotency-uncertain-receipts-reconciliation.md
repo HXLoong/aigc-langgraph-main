@@ -2,7 +2,7 @@
 
 - 状态：已采纳（2026-09-17 幂等首版 → 2026-09-18 完整响应回放 / 不确定写入 / 对账（commit `67f74c3`）→ 2026-09-20 重投通知（`8249510`）与回执文案；本篇为 2026-09-22 追认记录）
 - 日期：2026-09-18（记录：2026-09-22）
-- 起源：[ADR 0024](./0024-langgraph-native-rearchitecture.md) D4 把"写路径提交前的 durability 裁决与幂等设计"留待阶段 1 记录；执行过程见 [docs/langgraph-reconstruction-20260918.md](../langgraph-reconstruction-20260918.md) 第二、六、八批
+- 起源：[ADR 0024](./0024-langgraph-native-rearchitecture.md) D4 把"写路径提交前的 durability 裁决与幂等设计"留待后续记录；执行过程见 [docs/langgraph-reconstruction-20260918.md](../langgraph-reconstruction-20260918.md) 第二、六、八批
 - 修订：[ADR 0024](./0024-langgraph-native-rearchitecture.md) D4（幂等落地形态）；补 [ADR 0021](./0021-text-confirm-replaces-interrupt.md)（确认链路的写操作在此获得回执与超时语义）；沿用 [ADR 0019](./0019-incident-severity-thresholds.md)（E 类错误进告警）
 - 作者：图灵科技 + Tony
 
@@ -76,7 +76,7 @@ HTTP 输出只暴露分类、节点与异常类型，不返回内部详情与堆
 ## 备选方案
 
 - **图内 durability 提交前落盘 + 自动恢复**：恢复后仍不知道 `operate` 是否已执行，自动重放等于自动重复下单。否决。
-- **后端幂等 token**：需 Java 改契约（Java 源码不修改是本期硬约束）。否决，留作 M4 后议题。
+- **后端幂等 token**：需 Java 改契约（Java 源码不修改是本期硬约束）。否决，留作后续议题。
 - **超时后自动重试写请求**：与 ADR 0024 D3"写类节点不重试"矛盾。否决。
 - **占位 + 完整回放 + 不确定态人工对账（已选）**。
 

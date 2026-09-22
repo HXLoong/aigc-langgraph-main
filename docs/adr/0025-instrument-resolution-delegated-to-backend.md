@@ -3,13 +3,13 @@
 - 状态：已采纳（2026-09-20 落地，commit `2f9ce65`；本篇为 2026-09-22 追认记录，决策本体已由用户当日指定）
 - 日期：2026-09-20（记录：2026-09-22）
 - 起源：用户按 `tmp/场外交易-test (20).yml` 指定主工作流职责边界；执行说明见 [docs/backend-instrument-boundary.md](../backend-instrument-boundary.md)
-- 取代：[ADR 0008](./0008-ticker-resolution-as-react-agent.md)（标的识别在 LangGraph 内编排，含 #154 裁决的"确定性编排 + LLM 定点兜底"形态）
+- 取代：[ADR 0008](./0008-ticker-resolution-as-react-agent.md)（标的识别在 LangGraph 内编排，含 2026-08-27 裁决的"确定性编排 + LLM 定点兜底"形态）
 - 修订：[ADR 0001](./0001-rewrite-app-with-harness-first.md) D4（"标的查询职责归 LangGraph"）与 D6（ticker 子图）、[ADR 0012](./0012-restore-backend-http-for-securities-instrument.md)（后端为标的真源的结论保留，LangGraph 侧调用点退役）、[ADR 0024](./0024-langgraph-native-rearchitecture.md) D2（`tickers` 业务对象）与 D3（ticker 真子图）、[ADR 0023](./0023-prompt-as-code-langgraph.md) D5 第三批（ticker 4 个 PromptSpec）；[ADR 0013](./0013-load-dynamic-inference-prompt-fragment.md) 的残余引用随之清空
 - 作者：图灵科技 + Tony
 
 ## 上下文
 
-标的识别在本仓经历了三种形态：ReAct Agent（ADR 0008 原决策，从未接线）→ 确定性 resolver + GOATS 二次校验（#154 裁决）→ 2026-09-17 按 ADR 0024 D3 做成真子图（`Send` 三路 LLM 并行 + GOATS 检索 + LLM 排序）。三种形态共同的前提是"LangGraph 本地产出证券代码，且必须 `from_goats=True`"。
+标的识别在本仓经历了三种形态：ReAct Agent（ADR 0008 原决策，从未接线）→ 确定性 resolver + GOATS 二次校验（2026-08-27 裁决）→ 2026-09-17 按 ADR 0024 D3 做成真子图（`Send` 三路 LLM 并行 + GOATS 检索 + LLM 排序）。三种形态共同的前提是"LangGraph 本地产出证券代码，且必须 `from_goats=True`"。
 
 这一前提带来三类持续成本：
 
@@ -60,7 +60,7 @@ Java 负责精确匹配、标的工具调用、多候选处理、权限与市场
 
 ## 备选方案
 
-- **保留本地 resolver + GOATS 二次校验**（#154 选项 b，ADR 0024 D3 真子图形态）：标的准确性最终仍由后端工具决定，本地实现只是多一份会漂移的副本，且业务清单必然进代码。否决。
+- **保留本地 resolver + GOATS 二次校验**（2026-08-27 裁决选项 b，ADR 0024 D3 真子图形态）：标的准确性最终仍由后端工具决定，本地实现只是多一份会漂移的副本，且业务清单必然进代码。否决。
 - **本地只做 GOATS 精确匹配、不做 LLM 推断**：仍需本地维护匹配规则与零命中语义，且"本地未匹配即阻止后端"会误伤后端能识别的表达。否决。
 - **原文透传 + 后端权威识别（已选）**：单一真源，代码与业务清单解耦。
 

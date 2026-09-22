@@ -2,7 +2,7 @@
 
 - 状态：已采纳（checkpointer 已随 [ADR 0021](./0021-text-confirm-replaces-interrupt.md) 接线；TDSQL 现场兼容性仍待首次部署实测）
 - 日期：2026-05-10
-- 修订：2026-08-27 深度改写为现状口径（wayfinder map #138 / 核查 #141）
+- 修订：2026-08-27 深度改写为现状口径（对照代码核查）
 - 作者：图灵科技 + Tony
 
 ## 决策
@@ -20,7 +20,7 @@
 
 **生产 TDSQL 版本口径修正**：原文的 `8.0.24-v24-txsq1-22.1.4-20230224` **无法由 `aigc/api` 的 `application-prod.yaml` 印证**（该 yaml 只有 jdbc 地址 + `tdsql_test_2025` 密码默认值，全仓无版本号字样）——版本号来源应视为运维口头确认，落在上下界内的结论待现场 `SELECT VERSION()` 实测回填。⚠️ 顺带记录疑点：该 prod profile 连的库名是 `goats_ai_trading_dev`（prod 指向 dev 库，Java 侧配置问题，不属本 ADR 范围，建议单独反馈）。
 
-## 实现偏离（已随 [ADR 0021](./0021-text-confirm-replaces-interrupt.md) / #153 修复）
+## 实现偏离（已随 [ADR 0021](./0021-text-confirm-replaces-interrupt.md) 修复）
 
 ~~**AIOMySQLSaver checkpointer 从未接线（严重）**~~ ✅ 2026-08-27 已接线（`use_mysql_checkpointer` 配置，生产 fail-fast，`tests/test_checkpointer_wiring.py`）。原偏离记录：`app/checkpointer/factory.py` 实现完整但全仓无调用点；`app/main.py` 以 `checkpointer=None` 编译主图（注释停留在"M1 阶段不强制"）；测试只用 InMemorySaver。后果：
 
