@@ -21,7 +21,7 @@
 
 ### D2 · 退役口径
 
-- M1–M4、F / E / D / C 任务码、roadmap 阶段表、GitHub issue / PR 编号不再出现在 ADR 正文与状态行；历史裁决只保留"日期 + 结论"。
+- M1–M4、F / E / D / C 任务码、roadmap 阶段表、GitHub issue / PR 编号不再出现在 ADR 正文与状态行；历史裁决只保留"日期 + 结论"。~~`docs/m3-m4-roadmap.md`~~ 退役并删除，由 `docs/work-plan.md`（三条主线的现状与待办）取代。
 - 由这些任务码定义的"退出门"（M2 mock baseline、M3.3 sign-off、M4 金丝雀 7 天）全部改写为 D3 的评测门；相关基线数值（Qwen 口径 92.5% / 84.6%、4200ms P95）作废，以当前模型（[ADR 0020](./0020-unify-all-llm-on-deepseek-v4-pro.md)）与真后端 / dry-run 模式重测后的报告为准。
 - ADR 0016 / 0017 改写为历史存根；ADR 0001 D8 / D9、0002 阶段表、0005 "Phase 4"、0024 D8 按本篇修订。
 
@@ -49,7 +49,7 @@
 ## 后果
 
 - 正面：ADR 只承载决策与契约；评测门只有一套，且与 CI、harness、Judge 的实际入口一一对应。
-- 负面：根 `README.md`、`docs/m3-m4-roadmap.md`、`docs/on-call-runbook.md` 等文档仍含 M 里程碑与 issue 口径，需另行清理；上线观察阈值的基线数值在重测前为空。
+- 负面：上线观察阈值的基线数值在重测前为空；`docs/archive/` 下的历史文档仍按当年里程碑口径书写，作为历史保留不改。根 `README.md`、`docs/on-call-runbook.md`、`CLAUDE.md` 已于 2026-09-22 同步清理，~~`docs/m3-m4-roadmap.md`~~ 已删除、由 `docs/work-plan.md` 取代。
 - 未决：`unified_golden.jsonl` 是否并入统一验收（当前只用显式 `categories`）；节点 fixture 与代码演进的漂移守护；上线观察窗口的正式起点由部署决定。
 
 ## 关联

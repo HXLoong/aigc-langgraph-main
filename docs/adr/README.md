@@ -72,7 +72,6 @@
 | 上线观察层基线（5xx / cascade / P95）待当前模型口径重测 | 0030 D3 / 0020 | 跑 `scripts/langfuse/langfuse_eval.py` + P95 重测后回填 |
 | Dify 明文 key 的 revoke 无记录 | 0024 附录 | 运维确认后打勾 |
 | ADR 0001 / 0024 的落地记录仍在正文内 | 0030 D4 | 迁到 `docs/` 实施日志 |
-| 根 `README.md` / `docs/m3-m4-roadmap.md` / `docs/on-call-runbook.md` 仍含 M 里程碑口径 | 0030 D2 | 另行清理 |
 
 ## ADR 写作与卫生约定
 

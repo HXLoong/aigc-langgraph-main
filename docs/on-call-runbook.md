@@ -1,7 +1,7 @@
 # otc-agent On-Call Runbook · 值班手册（草稿）
 
 > **版本**：v0.1 草稿（2026-05-12）
-> **状态**：草稿——M3 阶段 1 C1.16 产出；**真实回切演练（F4.0）**在阶段 4 完成后基于实测更新到 v1.0
+> **状态**：草稿；真实回切演练完成后基于实测更新到 v1.0（演练计划见 §8）
 > **适用范围**：客户现场生产环境的 LangGraph + 后台依赖（Java 后端 / DeepSeek-v4-pro / LangFuse / MySQL）
 > **维护**：图灵科技工程团队 + 客户企微管理员
 
@@ -22,7 +22,7 @@
 | 角色 | 职责 | 联系方式 |
 |---|---|---|
 | **图灵科技 on-call 值班工程师** | 第一响应（监控告警 → 诊断 → 决策）；非工作时间随叫随到 | 待填：手机 / 企微 |
-| **图灵科技工程负责人 #25** | 升级响应（P0/P1 故障 30 分钟内介入） | 待填：手机 / 企微 |
+| **图灵科技工程负责人** | 升级响应（P0/P1 故障 30 分钟内介入） | 待填：手机 / 企微 |
 | **项目负责人 Tony** | 业务方沟通 + 客户协调 + 回切授权 | 待填：手机 / 企微 |
 | **客户企微管理员** | 执行紧急回切（改 Webhook 地址） | 待填：企微 ID / 备用电话 |
 | **客户 IT 联系人** | LangFuse / 服务器 / 网络层故障 | 待填：手机 / 邮箱 |
@@ -43,6 +43,8 @@
 | **P2** | · 单条业务错例（"严重错例"标注）<br>· 监控指标偶发越线但未持续<br>· 客户业务方反馈"个别 case 不准" | 24 小时内响应 | 记录 + 周报跟进；通常进入下一迭代修补 |
 
 > **不要为 P2 触发回滚**——回滚的恢复成本高于个别 case 错误。
+>
+> 表中 `M2 baseline` 即 `app/observability/alerts.py` 的 `M2_BASELINE_P95_MS` 常量（历史命名，取当前模型口径重测值；退出门见 [ADR 0030](./adr/0030-goal-restatement-native-langgraph-dataset-eval-harness.md) D3）。
 
 ---
 
@@ -51,8 +53,8 @@
 | 来源 | 监控对象 | 阈值（对齐 [ADR 0019](./adr/0019-incident-severity-thresholds.md)） |
 |---|---|---|
 | LangFuse trace 仪表盘 | 5xx 率 / cascade fail 率 / P95 延迟 / fallback render 触发率 | 见 §3 P0/P1 判定标准 |
-| 业务监控埋点（C1.5 产出） | 每意图 PASS 率 / 节点错误 / HITL 触发率 | 见 §3 P0/P1 判定标准 |
-| Java 后端健康检查 | `/health` `/ready`（C1.9 产出，依赖 4 个上游） | 上游任一不通 → P1；持续 3 分钟 → P0 |
+| 业务监控埋点 | 每意图 PASS 率 / 节点错误 / HITL 触发率 | 见 §3 P0/P1 判定标准 |
+| Java 后端健康检查 | `/health` `/ready`（依赖 4 个上游） | 上游任一不通 → P1；持续 3 分钟 → P0 |
 | MySQL Checkpointer | 连接池打满 / write timeout | 持续 1 分钟 → P1 |
 | 业务方反馈 | 企微群 @值班工程师 或 sign-off 人邮件 | 单条 P2；多条同类 P1 |
 
@@ -108,7 +110,7 @@
 | 2 | curl `/admin-api/health`（如有）或某个低频读 endpoint 试连通性 |
 | 3 | 不通 → 联系客户 IT 排查 Java 服务状态、网络、端口 |
 | 4 | 持续 3 分钟不通 → 升 P0 + 紧急回滚（§7） |
-| 5 | 注：tools 层有不可达降级（D2.3）会返回友好 fallback，但不能掩盖业务影响 |
+| 5 | 注：tools 层有不可达降级会返回友好 fallback，但不能掩盖业务影响 |
 
 ### 5.5 LangFuse 不可达
 
@@ -128,18 +130,18 @@
 | 3 | 客户 IT 排查 MySQL 状态、连接数、磁盘 |
 | 4 | 短期可重启应用清理连接池；长期需扩 MySQL 资源 |
 
-### 5.7 DRY_RUN_BACKEND 误配（F4.1 ↔ F4.2 切换时）
+### 5.7 DRY_RUN_BACKEND 误配（shadow 期 ↔ 切流后）
 
-**误配场景 A**：F4.2 切流后忘记把 `DRY_RUN_BACKEND` 改回 false → 用户下单全部被拦截 → 业务方反馈"下单没反应/订单查不到"
+**误配场景 A**：切流后忘记把 `DRY_RUN_BACKEND` 改回 false → 用户下单全部被拦截 → 业务方反馈"下单没反应/订单查不到"
 
 | 步骤 | 动作 |
 |---|---|
 | 1 | 现象判定：`curl /metrics | grep dry_run_intercept` 看是否在涨；业务方反馈"下单按了但 GOATS 没记录" |
-| 2 | 立即查 `.env::DRY_RUN_BACKEND`：F4.2+ 必须 `false`（F4.1 shadow 期才 `true`）|
+| 2 | 立即查 `.env::DRY_RUN_BACKEND`：切流后必须 `false`（shadow 期才 `true`）|
 | 3 | 修 .env 后**必须重启** otc-agent 让 settings 重新加载（lru_cache 单例）|
 | 4 | 验证：跑一条业务 case，看 GOATS 是否真创建订单；`/metrics` 上 `dry_run_intercept` 计数不应再涨 |
 
-**误配场景 B**：F4.1 shadow 期忘开 `DRY_RUN_BACKEND=true` → LangGraph 真下单 → **严重事故** + 业务方信任损失
+**误配场景 B**：shadow 期忘开 `DRY_RUN_BACKEND=true` → LangGraph 真下单 → **严重事故** + 业务方信任损失
 
 | 步骤 | 动作 |
 |---|---|
@@ -150,7 +152,7 @@
 | 5 | 事后必须 postmortem：为什么 deploy 时 step2 advisory 没拦住 |
 
 **预防机制**（已实现）：
-- `scripts/deploy-customer.sh` step2 加 advisory（待落地，#113）
+- `scripts/deploy-customer.sh` step2 加 advisory（待落地）
 - `scripts/canary_status.py` 检测 `CANARY_ROOM_IDS=ALL` + `dry_run_intercept > 0` 时 P0 即时告警
 - `docs/archive/m3/m3-shadow-compare-dry-run-design.md` §3 安全护栏
 
@@ -173,7 +175,7 @@
 
 **目标**：5 分钟内把企微群消息流量切回 Dify。
 
-**前提**：阶段 5 G5.2a 之前（即"Dify 半下线"前）回切能力一直保留；阶段 5 G5.2b 之后回切不可用，详见路线图阶段 5。
+**前提**：回切到 Dify 只在 Dify 实例仍在线的回滚期可用；Dify 已退出上游地位（ADR 0024 D1），回滚期结束后回切预案改为"回滚上一版本 LangGraph"（ADR 0024 D7）。
 
 ### 7.1 决策权
 
@@ -218,9 +220,7 @@
 
 ---
 
-## 8. F4.0 演练计划（阶段 4 启动前）
-
-> 详见路线图 F4.0 任务卡。
+## 8. 回切演练计划（首次切流前）
 
 | 演练点 | 验证内容 | 通过标准 |
 |---|---|---|
@@ -238,8 +238,9 @@
 
 | 版本 | 日期 | 修改人 | 变更摘要 |
 |---|---|---|---|
-| v0.1 草稿 | 2026-05-12 | 图灵科技团队 | 初版草稿（C1.16 产出），含 5 类故障 playbook + 紧急回滚步骤 + 演练计划 |
-| v1.0 | 待定（F4.0 演练后） | 图灵科技团队 | 基于演练实测更新 |
+| v0.1 草稿 | 2026-05-12 | 图灵科技团队 | 初版草稿，含 5 类故障 playbook + 紧急回滚步骤 + 演练计划 |
+| v0.2 | 2026-09-22 | 图灵科技团队 | 去掉里程碑 / 任务码口径（ADR 0030）；回切前提改按 ADR 0024 D7 |
+| v1.0 | 待定（回切演练后） | 图灵科技团队 | 基于演练实测更新 |
 
 ---
 
@@ -264,10 +265,10 @@
 ## 关联资源
 
 - **[ADR 0019](./adr/0019-incident-severity-thresholds.md)** · 故障升级阈值（本手册 §3-§4 严重等级 + alerts.py 阈值的依据）
-- **[ADR 0017](./adr/0017-m4-canary-quantitative-exit-gate.md)** · M4 金丝雀退出门量化指标（互补：金丝雀结束判定，不是故障升级）
+- **[ADR 0030](./adr/0030-goal-restatement-native-langgraph-dataset-eval-harness.md)** D3 · 上线观察退出门（互补：灰度结束判定，不是故障升级）
 - **CONTEXT.md** · "紧急回滚"术语定义（本手册 §7 的语义来源）
-- **`docs/m3-m4-roadmap.md`** · C1.16（本草稿任务卡）/ F4.0（演练任务卡）
-- **`docs/deploy/SHADOW_COMPARE_GUIDE.md`** · Shadow 双跑工具（F4.1，与本手册无直接依赖）
+- **`docs/work-plan.md`** · 工作计划（本手册与回切演练的归属）
+- **`docs/deploy/SHADOW_COMPARE_GUIDE.md`** · Shadow 对照工具（可选，与本手册无直接依赖）
 - **`docs/TROUBLESHOOTING.md`** · 开发期通用故障排查（与生产 on-call 不同语境）
 
 ## checkpoint 表清理(客户现场例行运维,2026-08 架构体检改进 B)

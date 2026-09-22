@@ -119,13 +119,13 @@ GOATS_BASE_URL=http://127.0.0.1:8099
 1. **改 .env**：三个 URL 换成真实地址（内网格式参考 `.env.example` 注释），需 VPN 可达
 2. **跑探针**（层 5）：五个 `probe_*_e2e.py` 逐条过，确认契约与连通性；任何 4xx/5xx
    先解决再往下走
-3. **真后端 golden 回归**（层 6）：`langfuse_eval.py` 跑 B 桶全集，退出门见
-   `docs/m3-m4-roadmap.md`（E3.1 总 PASS ≥ 92.5%；B 桶 ≥ 90% / C 桶 ≥ 80%）
-4. **现场 smoke**：≥ 5 条真实业务流走通（E3.5 / #86），部署用
+3. **真后端数据集回归**（层 6）：`langfuse_eval.py` 跑 B 桶全集，退出门见
+   ADR 0030 D3（总 PASS 率不低于上一基线；B 桶 ≥ 90% / C 桶 ≥ 80%）
+4. **现场 smoke**：≥ 5 条真实业务流走通，部署用
    `scripts/deploy-customer.sh`（自带预检 + smoke 自检）
 
 已知坑（真后端联调前必读）：
-- **#178（2026-09-18 定案）** · GOATS agent 路径统一为 `GOATS_BASE_URL`（主机根，或带
+- **GOATS agent 路径（2026-09-18 定案）** · 路径统一为 `GOATS_BASE_URL`（主机根，或带
   `/api` 尾缀，客户端归一）+ 客户端补全 `/api/internal/agent/*`。此前 `goats_agent_client`
   漏前缀，在 tstgoats 被 APISIX 网关以 405 / 静态页拒绝（快速询价恒报"参数解析服务异常"）；
   两个客户端已统一，单测锁定两种基址写法，实调（tstgoats）验证通过

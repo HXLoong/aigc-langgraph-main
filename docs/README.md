@@ -20,8 +20,8 @@
 | [troubleshooting-sop.md](./troubleshooting-sop.md) | **生产**故障根因诊断（SOP 导向） |
 | [on-call-runbook.md](./on-call-runbook.md) | **值班**应急决策（回切/降级导向） |
 | [observability.md](./observability.md) | LangFuse / Prometheus / 告警接线 |
-| [m3-m4-roadmap.md](./m3-m4-roadmap.md) | 里程碑任务图与 owner 表 |
-| [swap-prompt-slimming-assessment.md](./swap-prompt-slimming-assessment.md) | 提示词瘦身依据（#173/#174 进行中） |
+| [work-plan.md](./work-plan.md) | 三条主线的现状与待办（ADR 0030） |
+| [swap-prompt-slimming-assessment.md](./swap-prompt-slimming-assessment.md) | 提示词瘦身依据 |
 | 本文件 | 找不到文档时 |
 
 三份排障文档是**有意分层**（开发 Q&A / 生产 SOP / 值班手册），入口选错会绕路——按上表时机选。

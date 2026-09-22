@@ -277,11 +277,11 @@
 
 ## 关联资源
 
-- **路线图 C1.9 / C1.10 / C1.11-C1.14**（`docs/m3-m4-roadmap.md`）—— 本调研是这几个任务的输入
+- **`docs/work-plan.md`** §2 客户现场部署 —— 本调研是其输入
 - **ADR 0009** · MySQL 版本兼容性硬约束（§4 依据）
 - **ADR 0012** · `securities-instrument/select` 后端 HTTP 路径（§5 依据）
 - **ADR 0013** · 动态推断 prompt 后端拉取（§5 endpoint 清单）
 - **ADR 0018** · 双模型分立（§6 依据）
 - **`docs/api-contracts/java-backend.md`** · Java 业务 API 完整契约
-- **`docs/on-call-runbook.md`** · C1.16 草稿，附录 A 联系人由本调研 §12 回填
+- **`docs/on-call-runbook.md`** · 附录 A 联系人由本调研 §12 回填
 - **CONTEXT.md** · 项目术语
