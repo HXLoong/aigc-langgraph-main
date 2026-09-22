@@ -16,6 +16,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from app.extraction.tenor import TenorError
 from app.graph.business_params import validated_place_params
 from app.graph.safe_node import safe_node
 from app.graph.state import AgentState, TraceEntry
@@ -39,7 +40,7 @@ async def option_extract_place(state: AgentState) -> dict[str, Any]:
             state.get("quote_content"),
             state.get("history_messages") or [],
         )
-    except OrderScopeError as exc:
+    except (OrderScopeError, TenorError) as exc:
         return {"reply_text": str(exc), "trace": [TraceEntry(
             node="option_extract_place", decision="order_scope_unresolved",
         )]}

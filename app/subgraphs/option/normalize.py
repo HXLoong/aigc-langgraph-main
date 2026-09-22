@@ -19,27 +19,13 @@ import re
 from collections.abc import Sequence
 from typing import Any
 
+from app.extraction.tenor import _cn_number as _cn_number
+from app.extraction.tenor import normalize_tenor
 from app.subgraphs.option.models import OptionInquiryRawItem
 
 # ============================================================
 # 名义本金（下单链路共用）
 # ============================================================
-
-#: 中文数字（≤ 万级组合，如 三千五百 → 3500）
-_CN_DIGITS = {
-    "零": 0,
-    "〇": 0,
-    "一": 1,
-    "二": 2,
-    "两": 2,
-    "三": 3,
-    "四": 4,
-    "五": 5,
-    "六": 6,
-    "七": 7,
-    "八": 8,
-    "九": 9,
-}
 
 #: 数字 + 单位（千万 / kw / 亿 / 万 / w / e）
 _DIGIT_AMOUNT_RE = re.compile(
@@ -58,32 +44,13 @@ _AMOUNT_MULTIPLIERS = {
 }
 
 
-def _cn_number(text: str) -> int | None:
-    """解析中文数字（≤ 千级组合），如 两千 → 2000、三千五百 → 3500。"""
-    total = 0
-    current = 0
-    for char in text:
-        if char in _CN_DIGITS:
-            current = _CN_DIGITS[char]
-        elif char == "十":
-            total += (current or 1) * 10
-            current = 0
-        elif char == "百":
-            total += (current or 1) * 100
-            current = 0
-        elif char == "千":
-            total += (current or 1) * 1000
-            current = 0
-        else:
-            return None
-    return total + current
-
-
 def _format_amount(value: float) -> str:
     return str(int(round(value)))
 
 
-def normalize_notional(text: str | None, *, allow_plain_digits: bool = False) -> str | None:
+def normalize_notional(
+    text: str | None, *, allow_plain_digits: bool = False, require_unique: bool = False,
+) -> str | None:
     """名义本金："XX万 / XXW / XXkw / XX亿 / XXE / 两千万" → 数字字符串。
 
     `allow_plain_digits`：询价链路 LLM 片段可能是纯数字（如 "1000000"），置 True；
@@ -92,6 +59,12 @@ def normalize_notional(text: str | None, *, allow_plain_digits: bool = False) ->
     value = (text or "").strip()
     if not value:
         return None
+    if require_unique:
+        amounts = {normalize_notional(match[0])
+                   for pattern in (_DIGIT_AMOUNT_RE, _CN_AMOUNT_RE)
+                   for match in pattern.finditer(value)} - {None}
+        if len(amounts) > 1:
+            raise ValueError("同一订单出现多个名义本金，请明确每笔订单的金额。")
     if allow_plain_digits and _PLAIN_DIGITS_RE.fullmatch(value):
         return value
     match = _DIGIT_AMOUNT_RE.search(value)
@@ -103,51 +76,6 @@ def normalize_notional(text: str | None, *, allow_plain_digits: bool = False) ->
         if number:
             unit = 100_000_000 if cn_match.group(2) == "亿" else 10_000
             return _format_amount(number * unit)
-    return None
-
-
-# ============================================================
-# 期限
-# ============================================================
-
-_TENOR_YEAR_RE = re.compile(r"^(\d+(?:\.\d+)?)\s*[Yy年]$")
-_TENOR_MONTH_RE = re.compile(r"^(\d+(?:\.\d+)?)\s*(?:个?月|[Mm])$")
-_TENOR_PLAIN_RE = re.compile(r"^(\d+(?:\.\d+)?)$")
-_TENOR_CN_YEAR_RE = re.compile(r"^([零〇一二两三四五六七八九十]+)年$")
-_TENOR_CN_MONTH_RE = re.compile(r"^([零〇一二两三四五六七八九十]+)个?月$")
-
-
-def _months_to_tenor(months: float) -> str | None:
-    """正整数月份 → "XM"；小数月 / 非正数非法（提示词原文规约）。"""
-    if months <= 0 or months != int(months):
-        return None
-    return f"{int(months)}M"
-
-
-def normalize_tenor(text: str | None) -> str | None:
-    """期限原文片段 → "XM"；无法解析 → None。"""
-    value = (text or "").strip()
-    if not value:
-        return None
-    if value == "半年":
-        return "6M"
-    cn_year = _TENOR_CN_YEAR_RE.fullmatch(value)
-    if cn_year:
-        number = _cn_number(cn_year.group(1))
-        return _months_to_tenor(number * 12) if number else None
-    cn_month = _TENOR_CN_MONTH_RE.fullmatch(value)
-    if cn_month:
-        number = _cn_number(cn_month.group(1))
-        return _months_to_tenor(number) if number else None
-    year = _TENOR_YEAR_RE.fullmatch(value)
-    if year:
-        return _months_to_tenor(float(year.group(1)) * 12)
-    month = _TENOR_MONTH_RE.fullmatch(value)
-    if month:
-        return _months_to_tenor(float(month.group(1)))
-    plain = _TENOR_PLAIN_RE.fullmatch(value)
-    if plain:
-        return _months_to_tenor(float(plain.group(1)))
     return None
 
 

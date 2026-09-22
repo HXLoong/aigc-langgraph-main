@@ -149,6 +149,9 @@ async def inquiry_normalize(state: InquiryState) -> dict[str, Any]:
     records: dict[str, FieldRecord] = {}
     for index, raw_item in enumerate(raw_params.order_list):
         items = expand_inquiry_items([raw_item])
+        if raw_item.tenor and any(item["tenor"] is None for item in items):
+            return {"reply_text": "期限无法转换为正整数月份，请明确所有期限后重新提交。",
+                    "trace": [TraceEntry(node="inquiry_normalize", decision="invalid_tenor")]}
         prefix = f"option/inquiry.orderList.{index}."
         for item in items:
             canonical_item = OptionOrderItem.model_validate(item).model_dump()
@@ -227,7 +230,7 @@ def _route_after_fast_parse(state: InquiryState) -> str:
 
 def _route_or_end(next_node: str):  # type: ignore[no-untyped-def]
     def _router(state: InquiryState) -> str:
-        return END if has_error(state) else next_node
+        return END if has_error(state) or state.get("reply_text") else next_node
 
     return _router
 

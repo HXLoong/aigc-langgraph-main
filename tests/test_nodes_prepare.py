@@ -220,7 +220,7 @@ async def test_union_string_is_not_parsed_when_already_accepted() -> None:
     [
         ("12x", "int_type"),
         (1.2, "int_type"),
-        (None, "int_type"),
+        (None, "missing"),  # State 允许显式清空，业务节点仍按缺失上下文拒绝执行。
     ],
 )
 async def test_unsafe_integer_values_are_retained_for_correction(

@@ -6,6 +6,7 @@ from typing import Any
 
 from app.graph.safe_node import NodeFn, safe_node
 from app.graph.state import AgentState, TraceEntry
+from app.tools.bot_context import normalize_message_id
 from app.tools.message_client import MessageClient, SetIntentRequest
 
 
@@ -18,6 +19,11 @@ def make_persist_intent(
     async def persist_intent(state: AgentState) -> dict[str, Any]:
         if message_client_factory is None:
             return {"trace": [TraceEntry(node="persist_intent", decision="skipped")]}
+
+        if normalize_message_id(state.get("message_id")) <= 0:
+            return {"trace": [TraceEntry(
+                node="persist_intent", decision="skipped:missing_message_id",
+            )]}
 
         req = SetIntentRequest(
             conversation_id=state["conversation_id"],

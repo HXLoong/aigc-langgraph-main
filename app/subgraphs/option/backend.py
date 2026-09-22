@@ -5,6 +5,7 @@ import logging
 from typing import Any
 
 from app.extraction.locks import protect_orders
+from app.extraction.tenor import TenorError, normalize_request_tenors
 from app.graph.state import AgentState
 from app.observability.metrics import (
     emit_option_backend_empty_result,
@@ -64,7 +65,12 @@ async def call_option_backend(
         emit_option_backend_missing_context()
         raise MissingBackendContextError("option", missing_fields)
 
-    cleaned_order_list = sanitize_order_list(order_list)
+    try:
+        normalized = normalize_request_tenors({"orderList": order_list, "optionRfq": option_rfq})
+    except TenorError as exc:
+        return {"reply_text": str(exc)}
+    cleaned_order_list = sanitize_order_list(normalized["orderList"])
+    option_rfq = normalized["optionRfq"]
     req = FinancialOrderOpenApiSaveReqVO(
         type=OptionIntentionType(intent),
         operate=_INTENT_TO_OPERATE.get(intent),

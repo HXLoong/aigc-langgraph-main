@@ -18,18 +18,12 @@ from __future__ import annotations
 
 import re
 
-#: Q-YYYYMMDD-XXXXXXXXXX（8 位日期 + 4~16 位字母数字，与后端期权订单号生成器一致）
-ORDER_ID_RE = re.compile(r"Q-\d{8}-[A-Za-z0-9]{4,16}")
-
-
-def extract_order_ids(text: str | None) -> list[str]:
-    """按首现顺序提取全部订单号并去重。"""
-    if not text:
-        return []
-    seen: dict[str, None] = {}
-    for match in ORDER_ID_RE.finditer(text):
-        seen.setdefault(match.group(0))
-    return list(seen)
+from app.subgraphs.option.order_scope import (
+    ORDER_ID_RE,
+    OrderScopeError,
+    extract_order_ids,
+    selectors,
+)
 
 
 def _first_nonempty(*candidates: list[str]) -> list[str | None]:
@@ -40,8 +34,13 @@ def _first_nonempty(*candidates: list[str]) -> list[str | None]:
 
 
 def extract_for_request_cancel(raw: str | None, quote: str | None) -> list[str | None]:
-    """撤单请求：raw 指定则用 raw，否则 quote 取全部；均无 → [None]。"""
-    return _first_nonempty(extract_order_ids(raw), extract_order_ids(quote))
+    """指定范围必须完整解析；裸撤单仍默认引用全部，均无 → [None]。"""
+    if re.search(r"(?:不|别|不要|不用|无需|勿)\s*(?:撤|取消)|(?:撤|取消)\S*\s*(?:不要|不行)", raw or ""):
+        raise OrderScopeError("撤单范围含否定指令，请明确需要撤销的订单。")
+    selected = selectors(raw or "", quote or "")
+    if selected:
+        return list(dict.fromkeys(item.order_id for item in selected))
+    return _first_nonempty(extract_order_ids(quote))
 
 
 def extract_for_cancel_place(raw: str | None, quote: str | None) -> list[str | None]:

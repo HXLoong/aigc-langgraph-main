@@ -128,7 +128,12 @@ class TestQuickInquiry:
         monkeypatch.setattr(fq, "_make_agent_client", lambda: agent)
         monkeypatch.setattr(fq, "_make_option_client", make_backend)
         out = await quick_inquiry({"raw_text": "参与型看涨 茅台 1M", "room_id": "R",
-                                   "user_id": user_id, "operator_user_id": "operator"})
+                                   "user_id": user_id, "operator_user_id": "operator",
+                                   "conversation_id": "c", "message_id": 1})
+        if not user_id:
+            assert events == ["goats"] and not backend.reqs
+            assert out["error"].type == "MissingBackendContextError"
+            return
         assert out["api_code"] == 0
         assert events == ["goats", "backend"]
         assert len(backend.reqs) == 1
@@ -180,7 +185,8 @@ class TestQuickInquiry:
         monkeypatch.setattr(fq, "_make_agent_client", lambda: agent)
         monkeypatch.setattr(fq, "_make_option_client", lambda: backend)
         out = await quick_inquiry(
-            {"raw_text": "参与型看涨 茅台 1M", "room_id": "R", "conversation_id": "c1", "message_id": 5}
+            {"raw_text": "参与型看涨 茅台 1M", "room_id": "R", "user_id": "U",
+             "conversation_id": "c1", "message_id": 5}
         )
         assert out["api_code"] == 0
         assert out["reply_text"] == "询价卡片"
@@ -197,7 +203,8 @@ class TestQuickInquiry:
         backend = FakeOptionClient({"code": 500, "data": None, "msg": "ignored"})
         monkeypatch.setattr(fq, "_make_agent_client", lambda: agent)
         monkeypatch.setattr(fq, "_make_option_client", lambda: backend)
-        out = await quick_inquiry({"raw_text": "q", "room_id": "R"})
+        out = await quick_inquiry({"raw_text": "q", "room_id": "R", "user_id": "U",
+                                   "conversation_id": "c", "message_id": 1})
         assert out["api_code"] == 500
         assert out["reply_text"] == "交易指令服务暂不可用"
         assert out["api_result"] == "ignored"

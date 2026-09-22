@@ -220,7 +220,7 @@ class AgentState(TypedDict, total=False):
     # -------- 入口（contracts §2.1 §3.1 的 9 个机器人上下文字段）--------
     raw_text: str  # rawContent
     conversation_id: str  # conversationId
-    message_id: int  # messageId
+    message_id: int | None  # messageId；缺失必须覆盖旧 checkpoint，禁止补用上一轮编号
     user_id: str  # userId
     room_id: str  # roomId
     guid: str | None  # guid
