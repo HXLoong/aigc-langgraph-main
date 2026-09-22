@@ -67,17 +67,22 @@ python scripts/local_eval.py --base-url http://127.0.0.1:8201 --data tests/fixtu
 标的名称/代码由 LangGraph 按原文提取，Java 业务接口调用标的识别、分词和排序工具。
 本地不再运行 ticker 子图；职责和兼容约定见 [后端标的边界](docs/backend-instrument-boundary.md)。
 
+每条消息按既有产品与意图优先级进入一个业务分支，同一动作允许多笔订单。
+混合输入沿用原路由，不做多动作拆分、依赖调度或新增识别门禁。
+
 ```text
-企微回调 → Java Worker → POST /v1/workflows/run（Dify-兼容）→ FastAPI → LangGraph
-                                                                        ↓
-                              ingest → intent_route → swap / option / option_close 子图
-                                                                        ↓
-                                          persist (node_trace) → render → outputs
-                                                                        ↓
-                                LangFuse（trace + dataset + eval + annotation；
-                                          self-hosted 或 Cloud 二选一）
-                                                                        ↓
-              Java Backend（option / swap / ticker；契约见 docs/api-contracts/）
+企微回调 → Java Worker → POST /v1/workflows/run（Dify-兼容）→ FastAPI
+  → ingest（会话保护）→ entry_route
+      ├─ 快速询价 → quick_inquiry ──────────────────────────┐
+      ├─ 存量指令 → existing_command_query ────────────────┤
+      └─ 普通指令 → pre_route → intent_route                │
+          → swap / option / option_close / fallback        │
+          → persist_intent（Java 消息会话与意图写回）────────┤
+                                                           ↓
+  render → remember_confirmed_params → record_history → persist → outputs
+
+会话过期或入口异常：ingest → render。
+业务子图通过 Client Protocol 调用 Java；请求级 callback 记录 Langfuse trace。
 ```
 
 详见 [ADR 0001](./docs/adr/0001-rewrite-app-with-harness-first.md)（推倒重写决定）+ [ADR 0014](./docs/adr/0014-langfuse-as-harness-backend.md)（LangFuse 后台）+ [ADR 0016](./docs/adr/0016-m3-scope-engineering-loop-not-shadow.md)（M3 范围重定义）。

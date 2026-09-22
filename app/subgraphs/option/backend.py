@@ -4,7 +4,6 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from app.execution.operations import capture_operation
 from app.extraction.locks import protect_orders
 from app.graph.state import AgentState
 from app.observability.metrics import (
@@ -80,8 +79,6 @@ async def call_option_backend(
         ),
         **_context(state),
     )
-    if capture_operation("option", req):
-        return {"field_records": rejected} if rejected else {}
     async with receipt_guard("option"):
         result = await OptionClientHttpx().operate(req)
     try:

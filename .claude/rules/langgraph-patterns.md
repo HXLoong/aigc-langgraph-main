@@ -14,7 +14,7 @@
 - 错误由 ErrorInfo 和 cascade 路由处理；后端查询失败不能伪装成空记录继续交易。
 - 条件路由为纯函数，错误优先转 fallback；副作用只在节点里执行。
 - 业务请求通过 OptionClient/SwapClient/TickerClient Protocol。子图 backend.py 负责 DTO 构造、BotContext 身份、字段锁定和真实回复透传。
-- 多指令并行用于隔离后的独立工作；提交按 Java 的幂等和批量契约编排，不能伪造 messageId 绕过去重。
+- 每条消息按既有产品与意图优先级进入一个业务分支，同一动作允许多笔订单；混合输入沿用原路由，不拆分编排或新增多动作识别门禁。提交保留原 messageId，遵守 Java 幂等与批量契约。
 
 ## 提示词
 

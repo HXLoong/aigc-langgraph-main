@@ -27,7 +27,7 @@ async def ingest(state: AgentState) -> dict[str, Any]:
     product_type 路由完全交给 `intent_route`。
 
     一轮的边界只在这里维护（ADR 0024 D2）：
-    - per-turn 输出：reply_text / api_result / api_code / error 清空（否则 render 看到上一轮
+    - per-turn 输出：intent / reply_text / api_result / api_code / error 清空（否则 render 看到上一轮
       非空 reply_text 直接跳过本轮渲染）
     - per-turn 业务对象：tickers / place_params / cancel_params / confirm / query_filter /
       close_params / ticker_hitl_candidates / swap 选择链指针通道清空。评估核实没有任何业务
@@ -59,10 +59,10 @@ async def ingest(state: AgentState) -> dict[str, Any]:
         "api_result": None,
         "api_code": None,
         "error": None,
+        # 意图由本轮子图重算；未知产品或早退不能回写旧意图。产品上下文仍供路由使用。
+        "intent": "",
         # per-turn 业务对象（ADR 0024 D2）
         "expected_action": None,
-        "sub_instructions": [],
-        "instruction_results": [],
         "field_records": Overwrite({}),
         "tickers": None,
         "place_params": None,

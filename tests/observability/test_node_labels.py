@@ -43,7 +43,6 @@ def test_tracing_entrypoint_imports_without_preloading_business_graph():
 
 
 def test_catalogue_covers_registered_graphs_and_model_kinds():
-    from app.graph.instructions import build_instructions_graph
     from app.graph.main import build_main_graph
     from app.subgraphs.close.graph import build_close_graph
     from app.subgraphs.close.place_close import build_place_close_graph
@@ -53,8 +52,7 @@ def test_catalogue_covers_registered_graphs_and_model_kinds():
     from app.subgraphs.swap.place_order import build_place_graph
 
     labels = _labels().NODE_LABELS
-    worker = build_main_graph(_instruction_worker=True)
-    graphs = [build_main_graph(), worker, build_instructions_graph(worker), build_swap_graph(),
+    graphs = [build_main_graph(), build_swap_graph(),
               build_place_graph(), build_option_graph(), build_inquiry_graph(), build_close_graph(),
               build_place_close_graph()]
     for graph in graphs:
@@ -70,7 +68,6 @@ def test_catalogue_covers_registered_graphs_and_model_kinds():
                 assert display.node_id == node
     assert labels["entry_route"].kind == "code"
     assert labels["inquiry_extract"].kind == "llm"
-    assert labels["plan_instructions"].kind == "hybrid"
     assert labels["option_intent"].kind == "hybrid"
     assert labels["inquiry_normalize"].kind == "code"
     assert labels["quick_inquiry"].kind == "io"

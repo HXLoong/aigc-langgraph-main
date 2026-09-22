@@ -22,7 +22,6 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Any
 
-from app.execution.confirmation import only_execution_parameters
 from app.extraction.fast_execution import resolve_fast_execution
 from app.extraction.fields import FieldRecord
 from app.subgraphs.option.normalize import normalize_notional
@@ -377,22 +376,6 @@ def quote_blocks_for_order(quote: str, order_id: str | None) -> list[str]:
         quote[match.start():matches[index + 1].start() if index + 1 < len(matches) else len(quote)]
         for index, match in enumerate(matches) if match[0] == order_id
     ]
-
-
-def is_quoted_batch_supplement(raw: str, quote: str) -> bool:
-    """Only an explicit same-product, same-action numbered supplement bypasses planning."""
-    if (not extract_order_ids(quote) or re.search(r"(?:H-|CO-)\d{8}-|OPTG?-", quote)
-            or re.search(r"确认|确定|询价|撤单|撤销|取消|互换|买入|卖出|然后|如果|成交后", raw)):
-        return False
-    segments = _split_ordinal_segments(raw)
-    if len(segments) < 2:
-        return False
-    for _, segment in segments:
-        params = _a_class_params(segment, quote)
-        if not any(value is not None for value in params.values()) or not only_execution_parameters(segment, allow_choice=True):
-            return False
-    parse_place_params_with_lineage(raw, quote)  # reject duplicate/out-of-range before any submission
-    return True
 
 
 def parse_place_params_with_lineage(
