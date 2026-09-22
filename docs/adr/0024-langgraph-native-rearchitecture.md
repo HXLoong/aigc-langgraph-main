@@ -6,6 +6,17 @@
 - 修订：[ADR 0000](./0000-migrate-from-dify-to-langgraph.md) 后果段"需要长期维护 Dify YAML 同步工具、让业务方继续用 Dify UI 调整提示词"（**被取代**：Dify 不再是上游）；[ADR 0001 D3](./0001-rewrite-app-with-harness-first.md)"完全模拟 Dify Workflow Run API……跑稳后如需干净协议另开 ADR"（**本 ADR 即该 ADR**）；[ADR 0001 D6](./0001-rewrite-app-with-harness-first.md)（AgentState 分层）；[ADR 0009](./0009-mysql-version-and-tdsql-compatibility.md)（saver 连接与 CI 覆盖）；[ADR 0014](./0014-langfuse-as-harness-backend.md) D7（trace 关联键在生产必须生效）；沿用 [ADR 0021](./0021-text-confirm-replaces-interrupt.md)（文本二阶段确认）与 [ADR 0023](./0023-prompt-as-code-langgraph.md)（PromptSpec）
 - 作者：图灵科技 + Tony
 
+
+## 当前边界修订（2026-09-20）
+
+本 ADR 的 State、并行、RetryPolicy、回执及可观测性决策继续有效。以下三项落地已被后续协议取代：
+
+- 标的识别迁至 Java，删除本地 ticker 子图。LangGraph 保留证券原文与引用选择，`tickers` 仅作空列表兼容字段；不据此判断零命中或生成消歧卡。见[标的识别后端边界](../backend-instrument-boundary.md)。
+- 业务卡片由 Java 生成。render 透传有效回执；业务码 500 仅投影展示文案，原始码和结果保留。无回执时不得根据本地参数推断交易成功。
+- 七条最终确认路径要求当前订单引用及明确动作；跨轮记忆只作上下文，不再为裸确认隐式绑定单号，也不拼接确认请求。
+
+下文日期化落地记录保留历史事实；其中 ticker 子图、节点计数和确认记忆回退均需按上述修订理解。
+
 ## 上下文
 
 DSL v2 迁移（2026-08）后，代码在 LangGraph 上跑通了全部业务链路，但评估显示它在四个决定性能力上仍是 Dify 形态（详见评估报告第一节评分卡）：
@@ -36,13 +47,13 @@ DSL v2 迁移（2026-08）后，代码在 LangGraph 上跑通了全部业务链�
 | BusinessObjects | tickers / place_params / cancel_params / confirm / query_filter / close_params；`expected_action` 提升为顶层 `Literal["place","modify","cancel","inquiry","close"]` | **per-turn**：ingest 统一重置，render 不得读上一轮残留 |
 | Engineering | trace（per-turn）、error、trace_id | 每轮重置 |
 
-- 三个业务子图声明 `output_schema`：只允许写回 BusinessObjects + reply / api_* + trace / error；父图路由键（`product_type` / `intent` / `swap_input_mode`）对子图只读。ticker 子图另有私有 state 与 input / output schema。
+- 三个业务子图声明 `output_schema`：只允许写回 BusinessObjects + reply / api_* + trace / error；父图路由键（`product_type` / `intent` / `swap_input_mode`）对子图只读。历史 ticker 子图曾另有私有 state 与 input / output schema；2026-09-20 已退出业务链路。
 - 一轮的边界只在一个位置维护（`ingest`），删除 `_reset_turn_trace` 与 API 层 `setdefault` 清理。
 
 ### D3 · 图即架构：原生子图、Send 并行、RetryPolicy
 
 - 子图用 `add_node(name, compiled_subgraph)` 原生嵌入，删除 `_as_subgraph_node`。
-- ticker resolver 变真子图（在 ticker 子图目录新增 graph 编译入口）：候选格式化 → `Send` 按关键词 fan-out 3 路 LLM → merge_and_validate → GOATS 检索 + rank，每步一个节点、一条 TraceEntry。
+- 历史方案（2026-09-20 已由 Java 标的识别取代）：ticker resolver 变真子图：候选格式化 → `Send` 按关键词 fan-out 3 路 LLM → merge_and_validate → GOATS 检索 + rank，每步一个节点、一条 TraceEntry。
 - swap 选对手 ‖ 选标的并行：`place_params` 按 order_index 合并的 reducer，或拆 `counterparty_picks` / `ticker_picks` 两通道 + join 节点。
 - `place_close`（6 阶段）、`render`（18 分支）、`extract_inquiry`（3 管线）拆为小节点或表驱动；每个分支写 `TraceEntry(decision=)`。
 - IO 节点（LLM / 后端）挂 `RetryPolicy`，可重试异常穿透到 LangGraph，重试耗尽才由 `@safe_node` 落 `error`；`@safe_node` 支持 `(state, config)` 与 `Runtime` 注入，HTTP 客户端提升为 lifespan 单例，协议层吃 `BotContext` 而非 `AgentState`。
@@ -105,11 +116,11 @@ DSL v2 迁移（2026-08）后，代码在 LangGraph 上跑通了全部业务链�
 - 负面：阶段 1-3 约 8-10 周工程量；阶段 3 需 Java 侧联调发版；State 分层与子图 output schema 会让一批"子图顺手改父图字段"的隐式行为在类型层暴露，需要逐个显式化。
 - 未决：写路径提交前的 durability 裁决（与幂等设计一起在阶段 1 记录）；`history_messages` 窗口 N 的取值需 eval 校准（机制已落地，默认 40）；`option_close` / `close` 命名统一方向；Store 是否引入。
 
-## 落地记录
+## 落地记录（按日期保留历史；当前边界见文首）
 
 - 2026-09-17 阶段 0 首批（本 ADR 同一 PR，TDD）：`harness/differ.py` `windCode` 修正 + 真实 `TickerCandidate` 契约测试；`record_history` 加 `@safe_node`；`AgentState.reply_text` 重复声明清理、`api_result` 类型改为 `str | dict | list | None`；`_build_run_config` 增加 `langfuse_session_id` / `langfuse_user_id` / `langfuse_tags`；`graph.ainvoke(..., durability="exit")`；生产 saver `serde` 白名单固化；`tracing.py` 客户端注册顺序修正；撤销 `route_rules.py` 与 `git-workflow.md` 两条"Dify 为真源"纪律。其余阶段 0 项（CI 触发恢复、saver 连接池、请求级幂等、LLM 指标 callback、`/ready` 软硬分离、revoke 明文 key）需团队决策或真实 MySQL 环境，列为待办。
 - 2026-09-17 重构 1（D2 / D3，TDD）：`TraceEntry` / `Message` 增加不参与 dump 与相等比较的 `id`，`trace` / `history_messages` 的 reducer 由 `operator.add` 改为 `merge_by_id`（与 LangGraph `add_messages` 同款按 id 去重）；新增 `SubgraphOutput` TypedDict，三个业务子图 `StateGraph(AgentState, output_schema=SubgraphOutput)`，子图对 `product_type` / `swap_input_mode` / `history_messages` / 入口字段的写入停在子图内；主图改为 `add_node(name, compiled_subgraph)` 原生嵌入，删除 `_as_subgraph_node`。实验（`tests/graph/test_reducers.py` / `test_subgraph_contract.py`）证实：原生子图节点回传完整输出 state，`operator.add` 会把父图已有 trace 再加一遍，按 id 合并后零重复；`_reset_turn_trace` 暂留（一轮边界收敛到 ingest 待下一步）。
-- 2026-09-17 重构 2（D3，TDD）：ticker resolver 变真子图 `app/subgraphs/ticker/graph.py`——私有 `TickerState`，`extract_candidates` → 三路 LLM 并行分支（`infer_codes` ‖ `split_keywords` ‖ `judge_type`）→ `merge_candidates` → `Send` 按 orgStr fan-out `resolve_org_item`（GOATS + rank，此前串行）→ `assemble` 按输入 index 汇总；`compile(checkpointer=False)` 不继承父 checkpointer；节点函数留在 `resolver.py`（测试 monkeypatch 边界不变），`resolve_ticker_full()` façade 契约不变。`tests/subgraphs/ticker/test_graph.py` 断言拓扑与并发峰值 ≥ 2。
+- 2026-09-17 重构 2（D3，TDD）：ticker resolver 变真子图 ~~`app/subgraphs/ticker/graph.py`~~——私有 `TickerState`，`extract_candidates` → 三路 LLM 并行分支（`infer_codes` ‖ `split_keywords` ‖ `judge_type`）→ `merge_candidates` → `Send` 按 orgStr fan-out `resolve_org_item`（GOATS + rank，此前串行）→ `assemble` 按输入 index 汇总；`compile(checkpointer=False)` 不继承父 checkpointer；节点函数留在 `resolver.py`（测试 monkeypatch 边界不变），`resolve_ticker_full()` façade 契约不变。~~`tests/subgraphs/ticker/test_graph.py`~~ 断言拓扑与并发峰值 ≥ 2。
 - 2026-09-17 重构 3（D3，TDD）：swap 选对手 ‖ 选标的 并行——两个 LLM 节点只产出指针到 `swap_counterparty_picks` / `swap_ticker_picks`（AgentState 新增两通道），确定性查表覆盖收敛到新汇合节点 `swap_apply_picks`（用后清空通道）；`_route_after_place_order` 返回并行分支列表，两条边汇合到 `swap_apply_picks` 再路由提交 / 兜底。热路径少一次串行 LLM 往返；`place_params` 保持单值覆盖语义，不引入 dict 合并 reducer。
 - 2026-09-17 重构 4（D3，TDD）：`render` 18 分支决策树每个出口写 `TraceEntry(node="render", decision=…)`（`passthrough` / `api_result` / `hitl_card` / `zero_match` / `error:*` / `unknown_*` / `close_card` / `cancel_ack` / `no_reply` 等），回复文本零变化；eval 失败归因不再看不到 render 走了哪条分支。
 - 2026-09-17 重构 5（D3，TDD）：`close_place_close` 215 行 6 阶段厚节点拆成子图 `build_place_close_graph()`：`place_close_parse` → `fetch_orders` → `extract`（LLM）→ `normalize`（合并 + 确定性后处理）→ `validate` → `submit` / `reject`，两处早退（空列表、校验失败）做成图边，每阶段一条 TraceEntry，错误归因到具体阶段（如 `place_close_extract`）；私有 `PlaceCloseState`（AgentState + `pc_*` 中间态）+ `PlaceCloseOutput` output_schema，中间态不外泄；close 图 `add_node("close_place_close", build_place_close_graph())` 原生嵌入；`close_place_close(state)` façade 契约不变，汇总条目沿用 `close_place_close` 名兼容既有归因。

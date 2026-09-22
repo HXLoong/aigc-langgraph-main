@@ -53,6 +53,6 @@ async def test_order_fields_never_rebuild_backend_card(
     assert update["reply_text"] == (
         backend_reply
         if backend_reply is not None
-        else "互换服务未返回有效结果，本次未生成业务回执，请稍后重试或联系交易员。"
+        else "交易指令执行结果待核对，请勿重复提交，请联系交易员或运营核查。"
     )
     assert state == original

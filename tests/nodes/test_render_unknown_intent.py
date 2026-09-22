@@ -1,17 +1,9 @@
-"""render 节点：known product + unknown_intent 时不应空回复。
-
-Round 11 eval trace 暴露：用户在询价后输入乱字符（如 "123456789"），路由识别
-product_type=option 但 option_intent 返回 unknown_intent，option_unknown 节点
-只写 trace 不写 reply_text，render 也没有对应分支 → 最终 reply_text 为空，
-"(无回复)" 让用户困惑且 Judge 直接判 0。
-
-修复：render 增加分支 — product 已识别但 intent 是 unknown_intent → 输出
-友好引导："未能识别您的指令，请重新描述或..."。
-"""
+"""未知意图使用配置的引导；已知业务无回执时提示结果待核对。"""
 from __future__ import annotations
 
 import pytest
 
+from app.config import get_settings
 from app.nodes.render import render
 
 
@@ -29,7 +21,7 @@ class TestRenderUnknownIntent:
         update = await render(state)  # type: ignore[arg-type]
         reply = update.get("reply_text") or ""
         assert reply, "unknown_intent 应有友好引导，不应留空"
-        assert "未能识别" in reply or "未识别" in reply or "请" in reply
+        assert reply == get_settings().default_reply
 
     async def test_swap_unknown_intent_gives_friendly_reply(self) -> None:
         """product_type=swap + intent=unknown_intent → 同样有引导。"""
@@ -40,7 +32,7 @@ class TestRenderUnknownIntent:
         }
         update = await render(state)  # type: ignore[arg-type]
         reply = update.get("reply_text") or ""
-        assert reply
+        assert reply == get_settings().default_reply
 
     async def test_unknown_with_quote_reuses_prompt(self) -> None:
         """unknown_intent + 引用前序询价卡 → 引导用户补充原模板要求的参数。"""
@@ -55,18 +47,17 @@ class TestRenderUnknownIntent:
         }
         update = await render(state)  # type: ignore[arg-type]
         reply = update.get("reply_text") or ""
-        assert reply
+        assert reply == get_settings().default_reply
 
-    async def test_known_intent_unchanged(self) -> None:
-        """正常 intent → 不被这个新分支干扰。"""
+    async def test_known_intent_without_receipt_requires_verification(self) -> None:
+        """正常 intent 且无回执 → 结果待核对，空 tickers 不表示识别失败。"""
         state: dict = {
             "product_type": "option",
             "intent": "new_inquiry",
             "expected_action": "inquiry",
-        "place_params": {"orderList": []},
+            "place_params": {"orderList": []},
             "tickers": [],
         }
         update = await render(state)  # type: ignore[arg-type]
         reply = update.get("reply_text") or ""
-        # 期望走的是已有的 zero_match 分支，含"无法识别"提示
-        assert "无法识别" in reply
+        assert reply == "交易指令执行结果待核对，请勿重复提交，请联系交易员或运营核查。"

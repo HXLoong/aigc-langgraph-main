@@ -1,4 +1,4 @@
-"""render 每个分支必须在 trace 里留下 decision（ADR 0024 D3：18 分支决策树可观测）。"""
+"""回执、待核对与错误兜底分支均须保留可区分的 trace decision。"""
 from __future__ import annotations
 
 import pytest
@@ -28,21 +28,22 @@ async def test_api_result_branch() -> None:
 
 
 @pytest.mark.asyncio
-async def test_hitl_card_branch() -> None:
+async def test_local_candidates_without_receipt_use_uncertain_branch() -> None:
     out = await render({
-        "product_type": "swap",
+        "product_type": "swap", "intent": "place_order_request",
         "ticker_hitl_candidates": [{"keyword": "茅台", "candidates": [{"windCode": "600519.SH"}]}],
     })
-    assert _decision(out) == "hitl_card"
+    assert _decision(out) == "backend_no_result"
+    assert "600519.SH" not in out["reply_text"]
 
 
 @pytest.mark.asyncio
-async def test_zero_match_branch() -> None:
+async def test_empty_tickers_do_not_select_zero_match_branch() -> None:
     out = await render({
         "product_type": "option", "tickers": [], "expected_action": "place", "place_params": {"orderList": [{}]},
-        "raw_text": "x",
+        "raw_text": "x", "intent": "place_order",
     })
-    assert _decision(out) == "zero_match"
+    assert _decision(out) == "backend_no_result"
 
 
 @pytest.mark.asyncio
@@ -59,7 +60,12 @@ async def test_error_branches_are_distinguished() -> None:
 
 
 @pytest.mark.asyncio
-async def test_no_reply_fallthrough_is_labelled() -> None:
+async def test_known_intent_without_receipt_is_labelled() -> None:
     out = await render({"product_type": "option", "intent": "new_inquiry",
                         "tickers": [TickerCandidate(windCode="600519.SH", from_goats=True)]})
-    assert _decision(out) == "no_reply"
+    assert _decision(out) == "backend_no_result"
+
+
+@pytest.mark.asyncio
+async def test_empty_state_fallback_is_labelled() -> None:
+    assert _decision(await render({})) == "no_reply"
