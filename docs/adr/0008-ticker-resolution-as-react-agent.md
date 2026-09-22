@@ -38,7 +38,7 @@ tokenize（本地候选提取，暂代 P5 路由域的"候选标的提取"节点
 核查（[#140](https://github.com/GZTL-AI/aigc-langgraph/issues/140)）确认：
 
 - ~~`app/subgraphs/ticker/react_agent.py`~~ / ~~`graph.py`~~（2026-08-28 已删除，见上方「迁移落地」段）已构建但**主图从未接线**（`app/graph/main.py` 无 ticker 节点），仅测试里编译冒烟；
-- 生产链路是 `app/subgraphs/ticker/resolver.py` 的**确定性 async 编排**：`resolve_ticker_full()` = tokenize（纯正则）→ 逐 keyword 查 GOATS → `_pick_winner` 规则选优 → 命中不足时 `infer_code` LLM 推断 + **GOATS 二次校验**。函数名 `_resolve_via_react_full` 只保留了命名，无 ReAct 语义——这正是原决策否决的"固定链式流程"形态（但比原链式方案多了 LLM 定点兜底）；
+- 生产链路是 ~~`app/subgraphs/ticker/resolver.py`~~ 的**确定性 async 编排**：`resolve_ticker_full()` = tokenize（纯正则）→ 逐 keyword 查 GOATS → `_pick_winner` 规则选优 → 命中不足时 `infer_code` LLM 推断 + **GOATS 二次校验**。函数名 `_resolve_via_react_full` 只保留了命名，无 ReAct 语义——这正是原决策否决的"固定链式流程"形态（但比原链式方案多了 LLM 定点兜底）；
 - 调用方是 **2 个节点**：`swap/place_order.py` 与 `option/extract_inquiry.py`（原文"swap/option/close 三子图共用"不成立——close 基于订单号平仓，明确不依赖标的识别）；
 - 4 个 `@tool` 中业务链路只用 `tokenize` + `infer_code`；`completeness` / `rank` 零调用，被 resolver 的三套私有选优逻辑（`_pick_winner` / `_pick_within_a_share` / `tools.pick_best`）替代且互不一致；
 - `app/prompts/ticker/{tokenize,completeness,rank,tokenize_v2}.md` 均为非活跃资产（tokenize 已纯规则化），仅 `infer_code.md` 在用。

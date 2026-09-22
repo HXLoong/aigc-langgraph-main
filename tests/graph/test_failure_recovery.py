@@ -1,5 +1,5 @@
 """Recovery invariants across real LangGraph merges and checkpoint serialization."""
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock
 
 import pytest
 
@@ -18,8 +18,8 @@ def test_checkpoint_preserves_reducer_identity(item):
 
 
 async def test_two_failed_swap_selection_branches_merge_without_crashing(monkeypatch):
+    """选对手 ‖ 选标的并行分支同时失败：error 通道按 merge_errors 汇合，不互相覆盖也不崩图。"""
     from app.subgraphs.swap import graph as graph_module
-    from app.subgraphs.swap import select_counterparty, select_ticker
     from app.tools.swap_client import SwapClientHttpx
 
     @io_node
@@ -31,12 +31,16 @@ async def test_two_failed_swap_selection_branches_merge_without_crashing(monkeyp
         return {"place_params": {"orderList": []}, "swap_counterparties": [{"sort": "A", "shortName": "测试对手"}],
         "quote_ticker_candidates": [{"candidates": []}]}
 
-    model = MagicMock()
-    model.with_structured_output.return_value.ainvoke = AsyncMock(side_effect=ValueError("bad output"))
+    def failing(name):
+        async def node(state):
+            raise ValueError(f"{name} bad output")
+        node.__name__ = name  # safe_node 以函数名归因 error.node，必须先改名再装饰
+        return io_node(node)
+
     monkeypatch.setattr(graph_module, "swap_intent", intent)
     monkeypatch.setattr(graph_module, "build_place_graph", lambda: extract)
-    monkeypatch.setattr(select_counterparty, "get_qwen_complex", lambda: model)
-    monkeypatch.setattr(select_ticker, "get_qwen_complex", lambda: model)
+    monkeypatch.setattr(graph_module, "swap_select_counterparty", failing("swap_select_counterparty"))
+    monkeypatch.setattr(graph_module, "swap_select_ticker", failing("swap_select_ticker"))
     backend = AsyncMock()
     monkeypatch.setattr(SwapClientHttpx, "operate", backend)
     result = await graph_module.build_swap_graph().ainvoke({"raw_text": "选第二个", "quote_content": "引用"})
