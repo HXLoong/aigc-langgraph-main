@@ -9,9 +9,9 @@ F4.6 灰度期错例修复流程：
     5. 生产按 ADR 0003 v1/v2 同目录机制金丝雀切换
 
 跑法：
-    python scripts/promote_langfuse_prompt.py swap.intent
-    python scripts/promote_langfuse_prompt.py option.extract_inquiry
-    python scripts/promote_langfuse_prompt.py swap.intent --version 5  # 强制 _v5
+    python scripts/langfuse/promote_langfuse_prompt.py swap.intent
+    python scripts/langfuse/promote_langfuse_prompt.py option.extract_inquiry
+    python scripts/langfuse/promote_langfuse_prompt.py swap.intent --version 5  # 强制 _v5
 
 输出 → `app/prompts/{category}/{name}_v{N+1}.md`
 退出码：
@@ -28,9 +28,10 @@ import sys
 from pathlib import Path
 
 # 让脚本能直接运行
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(PROJECT_ROOT))
 
-PROMPTS_ROOT = Path(__file__).resolve().parents[1] / "app" / "prompts"
+PROMPTS_ROOT = PROJECT_ROOT / "app" / "prompts"
 
 
 def _parse_target(arg: str) -> tuple[str, str]:

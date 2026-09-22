@@ -5,7 +5,7 @@ from uuid import UUID
 
 import pytest
 
-from scripts import langfuse_eval
+from scripts.langfuse import langfuse_eval
 
 
 class _FailingFirstTurnGraph:
@@ -59,6 +59,34 @@ class _RecordingGraph:
             "api_code": 0,
             "error": None,
         }
+
+
+@pytest.mark.asyncio
+async def test_pipeline_accepts_categories_input_shape(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    graph = _RecordingGraph()
+    monkeypatch.setattr(langfuse_eval, "build_main_graph", lambda _cp: graph)
+    monkeypatch.setattr(langfuse_eval, "_TURN_INTERVAL_SECONDS", 0)
+    item = SimpleNamespace(
+        id="case-categories",
+        input={
+            "send_text": "第一轮",
+            "at_bot": True,
+            "sub_scenes": [
+                {
+                    "send_text": "第二轮",
+                    "at_bot": False,
+                    "quote_previous": True,
+                }
+            ],
+        },
+    )
+
+    output = await langfuse_eval.run_langgraph_pipeline(item=item)
+
+    assert graph.calls
+    assert len(output["turns"]) == 2
 
 
 @pytest.mark.asyncio

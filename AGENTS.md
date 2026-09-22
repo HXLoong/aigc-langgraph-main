@@ -31,7 +31,13 @@ USE_MYSQL_CHECKPOINTER=false REQUEST_IDEMPOTENCY=false ENABLE_LANGFUSE=false pyt
 python scripts/local_eval.py --base-url http://127.0.0.1:8201 --data tests/fixtures/categories --case case-025 --concurrency 1
 # 全量验收时去掉 --case；显式 categories 当前388条，不并入 unified。
 # 本地真实联调：ENVIRONMENT=staging uvicorn app.main:app --host 127.0.0.1 --port 8201
-# scripts/langfuse_eval.py 保留为 Judge 辅助入口，不替代 HTTP/Java 写回与幂等验收。
+
+# Langfuse Dataset Experiment（Judge + 自动 Evaluator；不替代 HTTP/Java 写回与幂等验收）
+python scripts/langfuse/langfuse_eval.py --dataset golden_option_inquiry_case --ids case-022 --concurrency 1
+
+# Harness CLI（备用 / 本地快速 smoke，无 Judge）
+python -m harness doctor
+python -m harness run --backend real|mock|dry-run
 
 # 真后端探针（M3 联调）
 python scripts/probe_real_backend_e2e.py
@@ -145,7 +151,7 @@ tests/fixtures/              # categories/（A 方言，6 文件 / 389 条）+ u
 
 ### 1. 从 Langfuse 富 output 定位根因（首选）
 
-`scripts/langfuse_eval.py` 每跑完一条 case 会把**结构化富集 JSON** 写到 Langfuse Cloud
+`scripts/langfuse/langfuse_eval.py` 每跑完一条 case 会把**结构化富集 JSON** 写到 Langfuse Cloud
 （https://us.cloud.langfuse.com），outer span output 包含：
 
 ```jsonc
@@ -221,7 +227,7 @@ tests/fixtures/              # categories/（A 方言，6 文件 / 389 条）+ u
 修完跑对应 case 确认：
 
 ```bash
-.venv/bin/python scripts/langfuse_eval.py --local tests/fixtures/categories --ids case-025,case-026 --concurrency 2
+.venv/bin/python scripts/langfuse/langfuse_eval.py --local tests/fixtures/categories --ids case-025,case-026 --concurrency 2
 ```
 
 ## 绝对禁止
@@ -253,7 +259,7 @@ ADR 0016 把"M3 = shadow 双跑"重新定义为"M3 = 工程联调闭环 + 评估
 1. **代码完整性** ✅：24 节点蓝图 → 主干 20 节点已落地；P2 辅助节点（place_order_image / place_order_excel / image_recognize）按线上流量增量补
 2. **数据集完整性** ✅：fixture 集已扩到 350+；fixture 职责矩阵 + 一致性 lint 已就位（PR #109）；按 B / C / D 桶分别维护
 3. **客户现场部署能力** ✅：infra/langfuse self-hosted、`scripts/deploy-customer.sh`（C1.13 / Issue #58）、`.env.customer.template`（C1.12 / Issue #52）、私有化部署文档（C1.11 / Issue #51）
-4. **联调与回归** ✅：真后端 e2e 探针（`scripts/probe_*_e2e.py`，D2.1–D2.6 + Dx.1–Dx.2 已 closed）+ DeepSeek Judge 评估（`scripts/langfuse_eval.py`）+ business 子图 → 真 client → mock_api 全链路（PR #110，27 测试）
+4. **联调与回归** ✅：真后端 e2e 探针（`scripts/probe_*_e2e.py`，D2.1–D2.6 + Dx.1–Dx.2 已 closed）+ DeepSeek Judge 评估（`scripts/langfuse/langfuse_eval.py`）+ business 子图 → 真 client → mock_api 全链路（PR #110，27 测试）
 5. **可观测 + 运维** ✅：`/metrics` Prometheus 端点（C1.5 / Issue #50） + 5xx 计数闭环（PR #104） + P95 延迟告警（PR #103） + LLM 成本监控（C1.7 / Issue #56） + 阈值一致性 CI lint（PR #106） + on-call 应急回切剧本（PR #99） + `scripts/rollback_canary.sh`（PR #98）
 6. **上线策略** ✅工具链就绪：Shadow 双跑（M4 第二意见，含 `DRY_RUN_BACKEND` 模式 PR #112）+ 按群组金丝雀（`scripts/canary_status.py` PR #92 / `scripts/metrics_snapshot.py` PR #94）+ Grafana 灰度面板 JSON 模板（PR #97）+ LangFuse Prompt 晋升工具（F4.6 / PR #95）
 
@@ -369,13 +375,13 @@ result = await model.with_structured_output(SwapIntentOutput).ainvoke(messages)
 
 ## 来源优先级（ADR 0014 D3-2）
 
-生产真源永远是 git 里的 `app/prompts/**/*.md`；`USE_LANGFUSE_PROMPTS=true` 只允许开发/staging 演练，生产开启即 fail-fast。LangFuse 演练稿用 `scripts/promote_langfuse_prompt.py` 晋升为 `_v{N+1}.md`，再走 PR。
+生产真源永远是 git 里的 `app/prompts/**/*.md`；`USE_LANGFUSE_PROMPTS=true` 只允许开发/staging 演练，生产开启即 fail-fast。LangFuse 演练稿用 `scripts/langfuse/promote_langfuse_prompt.py` 晋升为 `_v{N+1}.md`，再走 PR。
 
 ## 改提示词的三条路
 
 | 场景 | 做法 | 门槛 |
 |---|---|---|
-| 瘦身 / 修规则 | 直接改 `app/prompts/**/*.md`；需要时先跑 `scripts/langfuse_eval.py` 对比 | 普通 PR review；`prompt(<scope>)` commit |
+| 瘦身 / 修规则 | 直接改 `app/prompts/**/*.md`；需要时先跑 `scripts/langfuse/langfuse_eval.py` 对比 | 普通 PR review；`prompt(<scope>)` commit |
 | 新 LLM 节点 | `.md` 放对目录 + Pydantic Output 模型（每字段 `Field(description=)`）+ `PromptSpec` 声明 + `@safe_node` 节点 + golden case | 普通 PR review |
 
 ## 字符数 / 延迟
@@ -447,7 +453,7 @@ for target in (
 
 - 所有新增意图必须在 `tests/fixtures/categories/` 加至少 2 条用例（现役数据源，`scripts/check_fixture_consistency.py` 校验一致性）
 - case 格式沿用对应文件既有方言（详见 `scripts/ai_test_langgraph/README.md`）
-- 跑评估：`python scripts/langfuse_eval.py --local <fixture>`
+- 跑评估：`python scripts/langfuse/langfuse_eval.py --local <fixture>`
 
 ## 验证范围
 
@@ -467,7 +473,7 @@ mypy app/                                     # 类型无错
 - ✅ 新增 Pydantic 模型 → 加字段校验测试
 - ✅ 新增业务逻辑分支 → 加 E2E 覆盖
 - ✅ 修 bug → 先写复现测试，再修
-- ⚠️ 改活跃提示词 → 直接改 `.md` + 普通 PR review，`prompt(<scope>)` commit；需要时自行跑 `scripts/langfuse_eval.py` 验证
+- ⚠️ 改活跃提示词 → 直接改 `.md` + 普通 PR review，`prompt(<scope>)` commit；需要时自行跑 `scripts/langfuse/langfuse_eval.py` 验证
 
 ## 跑慢测试的技巧
 

@@ -115,13 +115,13 @@ pytest --lf                      # last-failed
 
 ```bash
 # 全量（现役数据源 tests/fixtures/categories，350+ 条）
-python scripts/langfuse_eval.py --local tests/fixtures/categories --concurrency 4
+python scripts/langfuse/langfuse_eval.py --local tests/fixtures/categories --concurrency 4
 
 # 指定 case 子集
-python scripts/langfuse_eval.py --local tests/fixtures/categories --ids case-025,case-026 --concurrency 2
+python scripts/langfuse/langfuse_eval.py --local tests/fixtures/categories --ids case-025,case-026 --concurrency 2
 
 # Langfuse Dataset 模式（运行后到 UI 看 score + judge_comment + turns[i] 富集字段）
-python scripts/langfuse_eval.py --concurrency 4
+python scripts/langfuse/langfuse_eval.py --concurrency 4
 ```
 
 跑完后 stdout 会输出 `LangFuse 写入成功  run=local-YYYYMMDD-HHMMSS`，到 Langfuse UI 按 run name 过滤即可逐条查错（详见 CLAUDE.md "排查与修复流程"）。
@@ -137,7 +137,7 @@ python -m harness run --case case-025     # 单 case
 **C · 上传 golden 到 Langfuse Dataset（同步工具）**：
 
 ```bash
-python scripts/upload_golden_to_langfuse.py   # tests/fixtures/categories/ → Langfuse Dataset
+python scripts/langfuse/upload_golden_to_langfuse.py   # tests/fixtures/categories/ → Langfuse Dataset
 ```
 
 ### 真后端 e2e 探针（M3 联调用）
@@ -167,7 +167,7 @@ python scripts/canary_status.py
 python scripts/metrics_snapshot.py
 
 # LangFuse Prompt 晋升（staging → production，F4.6）
-python scripts/promote_langfuse_prompt.py
+python scripts/langfuse/promote_langfuse_prompt.py
 
 # 告警阈值干跑（5xx / cascade / P95 延迟 / LLM 失败率）
 python scripts/run_alerts.py

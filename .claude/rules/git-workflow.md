@@ -78,7 +78,7 @@ test(e2e): 新增 2 条雪球询价的 golden case
 
 - [ ] `pytest tests/ -v` 全部通过
 - [ ] `ruff check app/ tests/` 零警告
-- [ ] 如果改了提示词加载：跑 `python scripts/langfuse_eval.py --local <fixture>`，准确率不低于上一版
+- [ ] 如果改了提示词加载：跑 `python scripts/langfuse/langfuse_eval.py --local <fixture>`，准确率不低于上一版
 - [ ] 如果新增节点/意图：golden set 加了 case
 - [ ] 如果改了 State：`app/api/turn_state.py::inputs_to_state` 与 `app/nodes/ingest.py` 的 per-turn 重置同步更新
 - [ ] 如果改了 pyproject.toml 依赖：说明原因

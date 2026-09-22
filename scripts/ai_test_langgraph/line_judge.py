@@ -24,7 +24,7 @@ _DISABLED_VALUES = {"0", "false", "off", "no"}
 
 
 def _load_dotenv_into_environ(path: Path) -> None:
-    """与 scripts/langfuse_eval.py 同款 bootstrap：.env → os.environ。
+    """与 scripts/langfuse/langfuse_eval.py 同款 bootstrap：.env → os.environ。
 
     让 `get_settings()`（pydantic-settings 从环境变量读）在任意 cwd 下都能取到配置。
     """

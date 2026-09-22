@@ -41,13 +41,13 @@ result = await model.with_structured_output(SwapIntentOutput).ainvoke(messages)
 
 ## 来源优先级（ADR 0014 D3-2）
 
-生产真源永远是 git 里的 `app/prompts/**/*.md`；`USE_LANGFUSE_PROMPTS=true` 只允许开发/staging 演练，生产开启即 fail-fast。LangFuse 演练稿用 `scripts/promote_langfuse_prompt.py` 晋升为 `_v{N+1}.md`，再走 PR。
+生产真源永远是 git 里的 `app/prompts/**/*.md`；`USE_LANGFUSE_PROMPTS=true` 只允许开发/staging 演练，生产开启即 fail-fast。LangFuse 演练稿用 `scripts/langfuse/promote_langfuse_prompt.py` 晋升为 `_v{N+1}.md`，再走 PR。
 
 ## 改提示词的三条路
 
 | 场景 | 做法 | 门槛 |
 |---|---|---|
-| 瘦身 / 修规则 | 直接改 `app/prompts/**/*.md`；需要时先跑 `scripts/langfuse_eval.py` 对比 | 普通 PR review；`prompt(<scope>)` commit |
+| 瘦身 / 修规则 | 直接改 `app/prompts/**/*.md`；需要时先跑 `scripts/langfuse/langfuse_eval.py` 对比 | 普通 PR review；`prompt(<scope>)` commit |
 | 新 LLM 节点 | `.md` 放对目录 + Pydantic Output 模型（每字段 `Field(description=)`）+ `PromptSpec` 声明 + `@safe_node` 节点 + golden case | 普通 PR review |
 
 ## 字符数 / 延迟

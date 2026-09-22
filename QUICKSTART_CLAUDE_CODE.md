@@ -54,7 +54,7 @@ claude              # 启动交互式 session
 | 命令 | 场景 |
 |---|---|
 | `/test-driven-development`（或说"使用 tdd"）| **强制 TDD workflow**：bug fix / 新功能先写 RED 测试，再写最小修复，全量回归 |
-| `/run-eval` | 通用评估：跑 `scripts/langfuse_eval.py` 在 golden set 上端到端评估，输出 JSON + markdown 报告 |
+| `/run-eval` | 通用评估：跑 `scripts/langfuse/langfuse_eval.py` 在 golden set 上端到端评估，输出 JSON + markdown 报告 |
 | `/iterate-option` | 期权链路批量评估迭代：批量跑→按失败 trace 归类根因→TDD 修→重跑，连续自驱动循环 |
 | `/shadow-test` | 跑 LangGraph vs Dify 双跑对比（M4 切流前的第二意见，非 M3 退出门）|
 | `/migrate-prompt <yaml> <node-title>` | 单个提示词迁移 |
@@ -134,7 +134,7 @@ Claude Code：
 你：/iterate-option --limit 20
 
 Claude Code：
-- 跑 scripts/langfuse_eval.py 子集
+- 跑 scripts/langfuse/langfuse_eval.py 子集
 - 读 Langfuse outer span output 的 turns[i] 字段定位错误层
   （product_type / intent / tickers / place_params / api_result / error）
 - 用 /test-driven-development 写 RED 测试 → 改代码 → GREEN

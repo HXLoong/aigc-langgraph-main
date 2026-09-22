@@ -33,8 +33,8 @@
 
 | 组件 | 文件 | 状态 |
 |---|---|---|
-| 评估脚本（DeepSeek Judge + per-turn 富集 JSON）| `scripts/langfuse_eval.py` | ✅ 单轮 / 多轮 / Langfuse Cloud 写回 |
-| Dataset 上传 | `scripts/upload_golden_to_langfuse.py`（categories → Langfuse） | ✅ |
+| 评估脚本（DeepSeek Judge + per-turn 富集 JSON）| `scripts/langfuse/langfuse_eval.py` | ✅ 单轮 / 多轮 / Langfuse Cloud 写回 |
+| Dataset 上传 | `scripts/langfuse/upload_golden_to_langfuse.py`（categories → Langfuse） | ✅ |
 | 数据转换 | `scripts/convert_csv_to_excel.py` / `convert_jsonl_to_csv.py` | ✅ |
 | 本地 fixture | `tests/fixtures/categories/`（A 方言，6 文件 / 389 条）+ `unified_golden.jsonl`（B 方言，921 条，harness 默认并入，ADR 0024 D6）；`old_typing/` 归档 | ✅ |
 | 真后端 e2e 探针 | `scripts/probe_*_e2e.py`（swap / option / close / ticker / real_backend） | ✅ |
@@ -48,13 +48,13 @@
 ```
 本地 tests/fixtures/categories/（现役，350+ 条）
         │
-        ├──→ scripts/upload_golden_to_langfuse.py
+        ├──→ scripts/langfuse/upload_golden_to_langfuse.py
         │            │
         │            ▼
         │     Langfuse Dataset
         │            │
         ▼            ▼
-scripts/langfuse_eval.py
+scripts/langfuse/langfuse_eval.py
   ├── InMemorySaver（不依赖 MySQL checkpoint）
   ├── 真实 DeepSeek-V4-pro（测提示词效果，ADR 0020）
   ├── 真实后端 / 本地 mock（OTC_API_BASE_URL 切换）
@@ -76,10 +76,10 @@ scripts/langfuse_eval.py
 
 ```bash
 # 全量基线
-python scripts/langfuse_eval.py --local tests/fixtures/categories --concurrency 4
+python scripts/langfuse/langfuse_eval.py --local tests/fixtures/categories --concurrency 4
 
 # 按 case 子集复跑（修一处 bug 后验证）
-python scripts/langfuse_eval.py --local tests/fixtures/categories --ids case-025,case-026 --concurrency 2
+python scripts/langfuse/langfuse_eval.py --local tests/fixtures/categories --ids case-025,case-026 --concurrency 2
 
 # 按子链路批量（option 链路）
 .claude/skills/iterate-option/SKILL.md  # 跑→归因→TDD 修→重跑的自驱动循环
@@ -111,12 +111,12 @@ TDD 修复（先写 RED 测试 → 写最小修复 → GREEN + 全量回归）
 
 ```bash
 # 评估
-python scripts/langfuse_eval.py --local tests/fixtures/categories --concurrency 4
-python scripts/langfuse_eval.py --local tests/fixtures/categories --ids case-025
-python scripts/langfuse_eval.py --local tests/fixtures/categories --dry-run --limit 5
+python scripts/langfuse/langfuse_eval.py --local tests/fixtures/categories --concurrency 4
+python scripts/langfuse/langfuse_eval.py --local tests/fixtures/categories --ids case-025
+python scripts/langfuse/langfuse_eval.py --local tests/fixtures/categories --dry-run --limit 5
 
 # 数据集
-python scripts/upload_golden_to_langfuse.py        # categories → Langfuse Dataset
+python scripts/langfuse/upload_golden_to_langfuse.py        # categories → Langfuse Dataset
 
 # Harness CLI（无 Judge 快速 smoke）
 python -m harness doctor

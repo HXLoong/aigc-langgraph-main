@@ -17,7 +17,7 @@
 
 ## judge 层落地现状（2026-08-27，先于 Phase 4 以离线形态落地）
 
-- 载体：`scripts/langfuse_eval.py`（M3 主用评估入口）——**覆盖面是离线 golden 批跑，不是线上流量**；"100% 线上流量"仍是 Phase 4 目标而非现状。
+- 载体：`scripts/langfuse/langfuse_eval.py`（M3 主用评估入口）——**覆盖面是离线 golden 批跑，不是线上流量**；"100% 线上流量"仍是 Phase 4 目标而非现状。
 - judge 模型：经 DeepSeek 的 Anthropic 兼容端点调用，默认 **`deepseek-v4-flash`**（`ANTHROPIC_MODEL` 可覆盖；与 [ADR 0020](./0020-unify-all-llm-on-deepseek-v4-pro.md) 业务侧的 v4-pro 不同型号，flash 为评估成本考量）。
 - 输出契约：**`{pass: bool, score: 0.0-1.0, reason: str}`**（原设计的 `confidence ∈ {high, medium, low}` 三档未采用；Phase 4 若要驱动"业务方只看低置信"队列，需定义 score→confidence 映射阈值）。
 - ⚠️ 存在双实现：`langfuse_eval_clean.py` 亦含 judge 逻辑，有提示词漂移风险。

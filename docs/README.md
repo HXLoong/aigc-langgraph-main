@@ -32,7 +32,8 @@
 |---|---|
 | [adr/](./adr/) | 架构决策记录（0000–0023），只增不改，被取代标 Superseded |
 | [api-contracts/](./api-contracts/) | Java 后端真实 API 契约 |
-| [deploy/](./deploy/) | 客户私有化部署、LangFuse self-hosted、shadow 双跑指南 |
+| [deploy/](./deploy/) | 应用私有化部署和 shadow 双跑指南 |
+| [langfuse/](./langfuse/) | Langfuse 功能、评测链路、配置上传、Experiment 执行与问题追踪 |
 | [customer/](./customer/) | 客户环境评估 |
 | [training/](./training/) | 团队培训材料（LangGraph 手册、课程、Windows 环境搭建） |
 | [agents/](./agents/) | AI agent 协作约定（issue tracker / triage 标签 / 领域文档布局） |

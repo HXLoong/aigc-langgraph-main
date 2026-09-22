@@ -22,7 +22,9 @@ class TestJudgePromptExtracted:
 
     def test_eval_script_uses_loader_not_literal(self) -> None:
         """评估脚本必须走 load_prompt，不允许硬编码 judge 正文。"""
-        text = (PROJECT_ROOT / "scripts" / "langfuse_eval.py").read_text(encoding="utf-8")
+        text = (
+            PROJECT_ROOT / "scripts" / "langfuse" / "langfuse_eval.py"
+        ).read_text(encoding="utf-8")
         assert 'load_prompt("judge", "option_judge")' in text
         assert "你是场外衍生品AI指令助手的测试审查员" not in text, (
             "langfuse_eval.py 仍硬编码 judge 提示词正文"
