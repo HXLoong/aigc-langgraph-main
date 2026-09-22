@@ -257,6 +257,8 @@ class AgentState(TypedDict, total=False):
     #: 由主图 remember_confirmed_params 写入；确认链路裸确认时优先读它，显式引用 / 单号仍优先
     conversation_orders: list[dict[str, Any]]
     last_confirmed_params: dict[str, Any] | None
+    #: 兼容平仓撤单链的最近会话订单；内容由上游提供，节点只读取最后一笔订单号
+    conversation_orders: list[dict[str, Any]]
     last_activity_at: float  # 最近一轮开始时间；仅图内部写入，不能由请求覆盖
     session_status: Literal["active", "expired"]
 

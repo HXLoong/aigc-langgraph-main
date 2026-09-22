@@ -117,6 +117,7 @@ tests/fixtures/             # golden.jsonl（350+ 条）+ golden_ticker_2026-05.
 
 | 文档 | 用途 |
 |------|------|
+| [节点执行接口](docs/nodes-run.md) | `/v1/nodes/run`：65 个节点目录、State 契约、本地启动与真实后端切换 |
 | [CLAUDE.md](./CLAUDE.md) | AI 工具加载的项目 memory |
 | [CONTEXT.md](./CONTEXT.md) | 领域术语 + 概念边界 |
 | [HOW_TO_RUN.md](./HOW_TO_RUN.md) | 完整启动流程 |
