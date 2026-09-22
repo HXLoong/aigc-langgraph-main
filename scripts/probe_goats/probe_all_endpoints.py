@@ -1,66 +1,16 @@
-"""GOATS 全部 20 个接口连通性测试（最终版）。
+"""GOATS 全部 19 个业务接口连通性探针（手工脚本，不是 pytest 用例）。
 
-逐接口测试，链式调用：下单→拿ID→撤单/改单/状态查询。
-用法: python tests/api/test_gotats_endpoints.py
+逐接口探测，链式调用：下单→拿ID→撤单/改单/状态查询。
+用法: python scripts/probe_goats/probe_all_endpoints.py [--confirm-write]
+写类接口默认拒绝执行，见 _utils.post。
 """
 from __future__ import annotations
 
-import hashlib
 import sys
 import time
 from datetime import datetime
-from typing import Any
 
-import requests
-
-# ==================== 配置 ====================
-BASE_URL = "http://tstgoats.gf.com.cn"
-DIFY_BASE_URL = "http://agent.smart-zone-dev.gf.com.cn"
-CLIENT_ID = "TL_AGENT"
-CLIENT_SECRET = "tltest"
-SALT = "aaa"
-
-COM_AID = "10821094351495088@tl"
-COM_SUB = "1688855175747584"
-OPT_AID = "10955866372569317@tl"
-OPT_SUB = "1688856778752437"
-
-
-def sig():
-    ts = str(int(time.time() * 1000))
-    return hashlib.md5((CLIENT_ID + ts + SALT).encode()).hexdigest().upper()[:16], ts
-
-
-def headers(agentid: str, agentsubid: str) -> dict:
-    s, ts = sig()
-    return {
-        "clientid": CLIENT_ID, "clientsecret": CLIENT_SECRET,
-        "signature": s, "timestamp": ts,
-        "agenttype": "WECHAT", "agentid": agentid, "agentsubid": agentsubid,
-        "Content-Type": "application/json",
-    }
-
-
-def post(path: str, body: Any, aid: str, asid: str) -> dict:
-    r = requests.post(f"{BASE_URL}{path}", json=body,
-                      headers=headers(aid, asid), timeout=15)
-    return r.json()
-
-
-def get(path: str, params: dict, aid: str, asid: str) -> dict:
-    r = requests.get(f"{BASE_URL}{path}", params=params,
-                     headers=headers(aid, asid), timeout=15)
-    return r.json()
-
-
-def check(d: dict) -> tuple[bool, int | None, str]:
-    """返回 (是否通过, errCode, 备注)。errCode=200 且 data 非空算通过。"""
-    ec = d.get("errCode", {}) or {}
-    code = ec.get("code")
-    msg = d.get("errMsg") or ""
-    # errCode=200 算通过，即使 data 为空（查询类接口返回空列表是合法的）
-    ok = code == 200
-    return ok, code, msg
+from _utils import COM_AID, COM_SUB, OPT_AID, OPT_SUB, check, get, post  # noqa: F401
 
 
 class Result:
@@ -84,7 +34,7 @@ def main():
     print("=" * 70)
 
     # ==================== 01. 期权询价查询 ====================
-    print("[01/20] 期权询价查询...", end=" ")
+    print("[01/19] 期权询价查询...", end=" ")
     d = post("/api/internal/agent/get_option_rfq",
              {"chatType": "json", "chatInstrument": "快速询价：欧式看涨，688472.SH，100，6M",
               "productType": "EUROPEAN_VANILLA", "productSubtypeList": [],
@@ -100,7 +50,7 @@ def main():
     print("OK" if ok else f"FAIL({code})")
 
     # ==================== 02. 期权下单 ====================
-    print("[02/20] 期权下单...", end=" ")
+    print("[02/19] 期权下单...", end=" ")
     d = post("/api/internal/agent/option/order",
              {"id": 37053781, "contractType": "EUROPEAN_VANILLA",
               "direction": "CALL", "tradeDirection": "BUY",
@@ -118,7 +68,7 @@ def main():
     print("OK" if ok else f"FAIL({code})")
 
     # ==================== 03. 期权下单状态查询 ====================
-    print("[03/20] 期权下单状态查询...", end=" ")
+    print("[03/19] 期权下单状态查询...", end=" ")
     d = get("/api/internal/agent/option/order/status",
             {"orderId": opt_order_id or "test"},
             OPT_AID, OPT_SUB)
@@ -131,7 +81,7 @@ def main():
     print("OK" if ok else f"FAIL({code})")
 
     # ==================== 04. 期权下单结果查询 ====================
-    print("[04/20] 期权下单结果查询...", end=" ")
+    print("[04/19] 期权下单结果查询...", end=" ")
     d = post("/api/internal/agent/option/order/query",
              {"filter": {"contractType": "EUROPEAN_VANILLA", "keyStockOrderId": 973409},
               "pageNum": 1, "pageSize": 10},
@@ -145,7 +95,7 @@ def main():
     print("OK" if ok else f"FAIL({code})")
 
     # ==================== 05. 期权撤单 ====================
-    print("[05/20] 期权撤单...", end=" ")
+    print("[05/19] 期权撤单...", end=" ")
     # 测试环境无可撤期权订单，用已知 ID 验证连通性
     d = post("/api/internal/agent/option/order/withdraw",
              {"keyStockOrderId": 271473},
@@ -163,7 +113,7 @@ def main():
     print("OK" if ok else f"FAIL({code})")
 
     # ==================== 06. 期权撤单结果查询 ====================
-    print("[06/20] 期权撤单结果查询...", end=" ")
+    print("[06/19] 期权撤单结果查询...", end=" ")
     d = get("/api/internal/agent/option/order/withdrawResult",
             {"stockOrderCode": "OPTG-WFJJ202509030002"},
             OPT_AID, OPT_SUB)
@@ -174,7 +124,7 @@ def main():
     print("OK" if ok else f"FAIL({code})")
 
     # ==================== 07. 可平仓合约列表 ====================
-    print("[07/20] 可平仓合约列表...", end=" ")
+    print("[07/19] 可平仓合约列表...", end=" ")
     d = post("/api/internal/agent/option/position",
              {"filter": {"allowCloseOut": True}, "pageNum": 1, "pageSize": 15},
              COM_AID, COM_SUB)
@@ -187,7 +137,7 @@ def main():
     print("OK" if ok else f"FAIL({code})")
 
     # ==================== 08. 期权平仓 ====================
-    print("[08/20] 期权平仓...", end=" ")
+    print("[08/19] 期权平仓...", end=" ")
     d = post("/api/internal/agent/option/order/close",
              {"notionalDelta": 1000000, "algoType": "LIMIT", "price": 15.1,
               "contractCode": "OPT-SZZSCF20260002"},
@@ -201,7 +151,7 @@ def main():
     print("OK" if ok else f"FAIL({code})")
 
     # ==================== 09. 期权平仓订单查询 ====================
-    print("[09/20] 期权平仓订单查询...", end=" ")
+    print("[09/19] 期权平仓订单查询...", end=" ")
     d = post("/api/internal/agent/option/order/close/query",
              {"filter": {"tradeDate": datetime.now().strftime("%Y-%m-%d")},
               "pageNum": 1, "pageSize": 100},
@@ -215,7 +165,7 @@ def main():
     print("OK" if ok else f"FAIL({code})")
 
     # ==================== 10. 期权平仓撤单 ====================
-    print("[10/20] 期权平仓撤单...", end=" ")
+    print("[10/19] 期权平仓撤单...", end=" ")
     d = post("/api/internal/agent/option/order/close/withdraw",
              {"keyStockOrderId": close_ksoid or 1150076},
              COM_AID, COM_SUB)
@@ -231,7 +181,7 @@ def main():
     print("OK" if ok else f"FAIL({code})")
 
     # ==================== 11. 期权平仓撤单结果查询 ====================
-    print("[11/20] 期权平仓撤单结果查询...", end=" ")
+    print("[11/19] 期权平仓撤单结果查询...", end=" ")
     d = get("/api/internal/agent/option/order/close/withdrawResult",
             {"stockOrderCode": cw_code or "OPTG-SZZSCF202602040001"},
             COM_AID, "")
@@ -242,7 +192,7 @@ def main():
     print("OK" if ok else f"FAIL({code})")
 
     # ==================== 12. 互换下单 ====================
-    print("[12/20] 互换下单...", end=" ")
+    print("[12/19] 互换下单...", end=" ")
     d = post("/api/internal/agent/trs/order",
              {"transactionType": "HK_STOCK", "orderType": "BY_QTY", "quantity": 200,
               "windCode": "0700.HK", "price": 400, "priceType": "LimitOrder",
@@ -259,7 +209,7 @@ def main():
     time.sleep(2)
 
     # ==================== 13. 互换下单状态查询 ====================
-    print("[13/20] 互换下单状态查询...", end=" ")
+    print("[13/19] 互换下单状态查询...", end=" ")
     d = post("/api/internal/agent/trs/order/status",
              [{"keyOrderId": trs_koid}],
              COM_AID, COM_SUB)
@@ -274,7 +224,7 @@ def main():
     print("OK" if ok else f"FAIL({code})")
 
     # ==================== 14. 互换下单/撤单结果查询 ====================
-    print("[14/20] 互换下单/撤单结果查询...", end=" ")
+    print("[14/19] 互换下单/撤单结果查询...", end=" ")
     d = post("/api/internal/agent/trs/order/query",
              {"keyOrderIdList": [trs_koid]},
              COM_AID, COM_SUB)
@@ -289,7 +239,7 @@ def main():
     print("OK" if ok else f"FAIL({code})")
 
     # ==================== 15. 互换撤单 ====================
-    print("[15/20] 互换撤单...", end=" ")
+    print("[15/19] 互换撤单...", end=" ")
     d = post("/api/internal/agent/trs/order/withdraw",
              {"orderList": [trs_koid]},
              COM_AID, COM_SUB)
@@ -303,7 +253,7 @@ def main():
     print("OK" if ok else f"FAIL({code})")
 
     # ==================== 16. 互换改单 ====================
-    print("[16/20] 互换改单...", end=" ")
+    print("[16/19] 互换改单...", end=" ")
     # 新下一个单用于改单
     d2 = post("/api/internal/agent/trs/order",
               {"transactionType": "HK_STOCK", "orderType": "BY_QTY", "quantity": 300,
@@ -327,7 +277,7 @@ def main():
     print("OK" if ok else f"FAIL({code})")
 
     # ==================== 17. 互换改单状态查询 ====================
-    print("[17/20] 互换改单状态查询...", end=" ")
+    print("[17/19] 互换改单状态查询...", end=" ")
     d = post("/api/internal/agent/trs/order/replaceResults",
              {"orderList": [replace_koid]},
              COM_AID, COM_SUB)
@@ -340,7 +290,7 @@ def main():
     print("OK" if ok else f"FAIL({code})")
 
     # ==================== 18. 企微群绑定交易对手查询 ====================
-    print("[18/20] 企微群绑定交易对手查询...", end=" ")
+    print("[18/19] 企微群绑定交易对手查询...", end=" ")
     d = get("/api/internal/agent/getCtptyListByChatRoomId",
             {"type": "TRS"}, COM_AID, COM_SUB)
     ok, code, msg = check(d)
@@ -352,7 +302,7 @@ def main():
     print("OK" if ok else f"FAIL({code})")
 
     # ==================== 19. 互换交易时间配置查询 ====================
-    print("[19/20] 互换交易时间配置查询...", end=" ")
+    print("[19/19] 互换交易时间配置查询...", end=" ")
     d = get("/api/uniweb/rpa/trs/tradingHoursConfig",
             {}, COM_AID, COM_SUB)
     ok, code, msg = check(d)
@@ -362,38 +312,6 @@ def main():
                           "/api/uniweb/rpa/trs/tradingHoursConfig",
                           ok, code, msg, detail))
     print("OK" if ok else f"FAIL({code})")
-
-    # ==================== 20. Dify 大模型rerank ====================
-    print("[20/20] 大模型rerank(Dify)...", end=" ")
-    try:
-        r = requests.post(f"{DIFY_BASE_URL}/v1/workflows/run",
-                          json={
-                              "inputs": {
-                                  "list": '[{"windCode":"0200.HK","insShtDesc":"新濠国际发展"}]',
-                                  "keyword": "0200.hk",
-                              },
-                              "user": "ai-trading-assistant",
-                              "response_mode": "blocking",
-                          },
-                          headers={"Content-Type": "application/json"},
-                          timeout=15)
-        d = r.json()
-        if r.status_code == 200:
-            results.append(Result("大模型rerank(Dify)", "POST",
-                                  "/v1/workflows/run", True, 200,
-                                  "", f"task_id={d.get('task_id','')}"))
-            print("OK")
-        else:
-            msg = d.get("message", "") if isinstance(d, dict) else str(d)[:80]
-            results.append(Result("大模型rerank(Dify)", "POST",
-                                  "/v1/workflows/run", False, r.status_code,
-                                  msg, "需要 Bearer token"))
-            print(f"FAIL({r.status_code})")
-    except requests.exceptions.ConnectError:
-        results.append(Result("大模型rerank(Dify)", "POST",
-                              "/v1/workflows/run", False, 0,
-                              "连接失败", "Dify 不在当前网络可达"))
-        print("FAIL(连接失败)")
 
     # ==================== 汇总 ====================
     print("\n" + "=" * 70)
@@ -412,7 +330,7 @@ def main():
         detail_str = r.detail[:50] if r.detail else ""
         print(f"{i:<3} {r.name:<28} {r.method:<5} {code_str:<8} {status:<6} {detail_str}")
 
-    print(f"\n通过: {passed}/20  |  未通过: {failed}/20")
+    print(f"\n通过: {passed}/19  |  未通过: {failed}/19")
     if failed:
         print("\n未通过接口:")
         for r in results:
@@ -422,7 +340,7 @@ def main():
                 print(f"    detail={r.detail}")
         sys.exit(1)
     else:
-        print("\n全部 20 个接口连通正常")
+        print("\n全部 19 个接口连通正常")
 
 
 if __name__ == "__main__":

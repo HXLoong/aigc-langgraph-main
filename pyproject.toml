@@ -61,8 +61,6 @@ testpaths = ["tests"]
 # （scripts/ 不是 package，没装到 site-packages；同级 tests/test_*.py 用
 # sys.path.insert workaround，深层目录靠 pythonpath 兜底）
 pythonpath = ["."]
-# tests/api 是 GOATS 接口连通性测试，需要真实后端 + VPN，M3 阶段联调时再启用
-addopts = "--ignore=tests/api"
 
 [tool.mypy]
 plugins = ["pydantic.mypy"]

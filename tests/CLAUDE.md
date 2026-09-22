@@ -9,12 +9,12 @@
 tests/
 ├── conftest.py            # 全局 pytest 配置（仅占位；根纪律禁止用 autouse 绕过真实业务路径）
 ├── fixtures/              # categories/（A 方言）+ unified_golden.jsonl（B 方言，harness 默认并入）+ old_typing/（归档）+ README.md
-├── api/                   # FastAPI 路由测试
 ├── nodes/                 # 节点级测试（intent_route / render / fallback ...）
-├── subgraphs/{swap,option,close,ticker}/  # 子图级测试
+├── subgraphs/{swap,option,close}/  # 子图级测试（标的识别已委托 Java，无 ticker 子图）
 ├── tools/                 # backend client / auth / exception
 ├── observability/         # tracing / metrics
-└── test_*.py              # 根级跨模块集成测试（含 test_e2e.py）
+├── integration/           # mock_api ASGI 内存集成 + 本地 MySQL opt-in（RUN_LOCAL_MYSQL_TESTS=1）
+└── test_*.py              # 根级跨模块集成测试（含 test_cascade_e2e.py / test_smoke.py）
 ```
 
 ## 局部命令（不需要全量跑时）

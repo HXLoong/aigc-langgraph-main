@@ -43,7 +43,7 @@ $env:ENABLE_LANGFUSE = 'false'
 当前是 6 份、389 条顶层用例；可重复传入 `--data` 显式选择多个文件，兼容既有格式。
 详见 [工作台使用文档](../../scripts/ai_test_langgraph/README.md)。
 
-联合 pytest 保留 `tests/api` 的原有排除及 15 项条件跳过，不新增 skip/xfail，
+联合 pytest 不再排除任何目录（GOATS 探针已迁至 `scripts/probe_goats/`），保留本地 MySQL 等条件跳过，不新增 skip/xfail，
 以零失败、零警告及 Ruff 零告警为通过条件。默认 dry-run 只验证数据加载与筛选；
 两项自检不执行真实交易。检查记录分别报告本地自动化和真实业务验收状态，
 真实模型准确率、客户 GOATS 业务闭环须另行取得证据。

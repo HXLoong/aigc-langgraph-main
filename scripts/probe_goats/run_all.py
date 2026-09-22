@@ -1,5 +1,6 @@
-"""一键运行全部 20 个 GOATS 接口测试。
-用法: python tests/api/run_all.py
+"""一键运行全部 19 个 GOATS 接口探针（手工脚本，不是 pytest 用例）。
+用法: python scripts/probe_goats/run_all.py [--confirm-write]
+写类探针未加 --confirm-write 时会以 [SKIP-WRITE] 退出并计为 FAIL。
 """
 from __future__ import annotations
 
@@ -9,11 +10,11 @@ from pathlib import Path
 
 HERE = Path(__file__).parent
 FILES = sorted(
-    f.name for f in HERE.glob("test_[0-9][0-9]_*.py")
+    f.name for f in HERE.glob("probe_[0-9][0-9]_*.py")
 )
 
 print("=" * 60)
-print(f"GOATS 全接口测试 ({len(FILES)} 个)")
+print(f"GOATS 全接口探针 ({len(FILES)} 个)")
 print("=" * 60)
 
 passed = 0
@@ -21,7 +22,7 @@ failed = 0
 
 for name in FILES:
     r = subprocess.run(
-        [sys.executable, str(HERE / name)],
+        [sys.executable, str(HERE / name), *sys.argv[1:]],
         capture_output=True, text=True,
     )
     # 最后一行是结果

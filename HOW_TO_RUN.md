@@ -107,7 +107,7 @@ pytest -k "not e2e"              # 跳过端到端
 pytest --lf                      # last-failed
 ```
 
-> `tests/api/` 是 GOATS 接口连通性测试，需真实后端 + VPN，已通过 pyproject `addopts = "--ignore=tests/api"` 默认跳过；M3 现场联调时手动 `pytest tests/api/`。
+> GOATS 接口连通性探针在 `scripts/probe_goats/`（手工脚本，需真实后端 + VPN，凭据从 `.env` 读，写类接口需 `--confirm-write`）；`tests/` 下的所有文件都能被 pytest 直接收集执行。
 
 ### 评估入口（M3 阶段主用）
 
@@ -239,7 +239,7 @@ aigc-langgraph/
 |------|------|
 | `app.main:app` 启动失败 | 检查 `pip install -e ".[dev]"` 是否完成 |
 | LangFuse Web 起不来 | 看 `docker compose logs langfuse-web` 是否缺密钥（SALT / ENCRYPTION_KEY / NEXTAUTH_SECRET） |
-| 测试 collect error | tests/api 默认已 ignore；如要跑需真实后端 + VPN |
+| 测试 collect error | 先跑 `pytest tests/test_import_without_env.py`：模块必须能在无配置环境 import |
 | harness 报 LangFuse 未连接 | 确认 `.env` 的 `ENABLE_LANGFUSE=true` + API Key 已配 |
 | `scripts.llm_cost_report` ImportError | 已修：pyproject `pythonpath = ["."]`，重新 `pip install -e .` 即可 |
 
