@@ -21,6 +21,8 @@ from urllib.parse import urlparse
 
 SCRIPT_DIR = Path(__file__).resolve().parent
 REPO_ROOT = SCRIPT_DIR.parents[1]
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
 from regression_support import (  # noqa: E402 - sibling script module
     DEFAULT_BOT_NAME,
     DEFAULT_GUID,
@@ -38,6 +40,8 @@ from regression_support import (  # noqa: E402 - sibling script module
     require_config,
     select_cases,
 )
+
+from harness.scenario_inputs import resolve_order_reference  # noqa: E402
 
 __all__ = ["parse_dotenv_value"]
 
@@ -315,6 +319,15 @@ def run_case(
                 previous_reply if turn_index and turn_spec.get("quote_previous") is True
                 else main_reply if turn_index and "quote_previous" not in turn_spec else ""
             )
+            delay = float(turn_spec.get("wait_before_seconds", 0))
+            if not 0 <= delay <= 300:
+                raise RunnerError("wait_before_seconds 必须在 0 到 300 之间")
+            try:
+                query = resolve_order_reference(query, previous_reply)
+            except ValueError as exc:
+                raise RunnerError(str(exc)) from exc
+            if delay:
+                time.sleep(delay)
             answer, run_id, _, elapsed = client.send(
                 query, conversation_id=conversation_id, quote_content=quote_content,
                 at_bot=at_bot,

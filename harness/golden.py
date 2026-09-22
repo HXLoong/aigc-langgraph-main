@@ -28,6 +28,7 @@ class TurnSpec(BaseModel):
     send_text: str
     at_bot: bool = False
     quote_previous: bool | None = None
+    wait_before_seconds: float = Field(default=0, ge=0, le=300)
     #: B 方言的引用说明原文（"用户引用上一条机器人消息"）；首轮标注了引用的上下文依赖 case
     #: 无上一轮回复可引，只能留在这里供概览与人工判读
     quote_desc: str = ""
@@ -86,6 +87,7 @@ def _turn_from_object(
         send_text=send_text,
         at_bot=obj.get("at_bot", default_at_bot),
         quote_previous=obj.get("quote_previous"),
+        wait_before_seconds=obj.get("wait_before_seconds", 0),
         expected=expected,
         response_contains=_assertion_lines(
             obj.get("response_contains"), origin=origin, field_name="response_contains"
