@@ -62,16 +62,18 @@
 
 被修订而非取代的 ADR 状态词不变，在头部"修订"行与正文相应段落用"**YYYY-MM-DD 修订（ADR NNNN）**"标注；README 总表的状态列须与各篇头部一致。
 
-## 待办（不再用 issue 跟踪，完成后直接改本表）
+## 待办（需人工裁决 / 执行的项以 GitHub issue 跟踪，其余完成后直接改本表）
 
-| 项 | 出处 | 动作 |
-|---|---|---|
-| CI 无 MySQL service，`tests/integration` 真实 MySQL 用例只能本地 opt-in | 0009 / 0024 D4 | 补 CI MySQL service |
-| `app/tools/ticker_client.py` 在 `app/` 内无调用方 | 0025 | 删除或写明保留理由 |
-| VL 接线后 `llm_failure_high` 未按 `model` 拆分；`.env.customer.template` 视觉模型留空 | 0019 / 0020 | 阈值重估 + 部署 checklist |
-| 上线观察层基线（5xx / cascade / P95）待当前模型口径重测 | 0030 D3 / 0020 | 跑 `scripts/langfuse/langfuse_eval.py` + P95 重测后回填 |
-| Dify 明文 key 的 revoke 无记录 | 0024 附录 | 运维确认后打勾 |
-| ADR 0001 / 0024 的落地记录仍在正文内 | 0030 D4 | 迁到 `docs/` 实施日志 |
+| 项 | 出处 | 动作 | issue |
+|---|---|---|---|
+| CI 无 MySQL service，`tests/integration` 真实 MySQL 用例只能本地 opt-in | 0009 / 0024 D4 | 补 CI MySQL service | — |
+| `app/tools/ticker_client.py` 在 `app/` 内无调用方 | 0025 | 删除或写明保留理由 | #231 |
+| VL 接线后 `llm_failure_high` 未按 `model` 拆分；`.env.customer.template` 视觉模型留空 | 0019 / 0020 | 阈值重估 + 部署 checklist | #232 |
+| 上线观察层基线（5xx / cascade / P95）待当前模型口径重测 | 0030 D3 / 0020 | 跑 `scripts/langfuse/langfuse_eval.py` + P95 重测后回填 | #233 |
+| Dify 明文 key 的 revoke 无记录 | 0024 附录 | 运维确认后打勾 | #218 |
+| ADR 0001 / 0024 的落地记录仍在正文内 | 0030 D4 | 迁到 `docs/` 实施日志 | — |
+| `unified_golden.jsonl` 是否并入统一验收 | 0030 后果 | 三选一裁决后统一 `harness run` 默认行为 | #235 |
+| `POST /v1/runs` 原生协议与 Dify wire adapter 退役 | 0024 D7 | 与 Java 侧排期 | #222 |
 
 ## ADR 写作与卫生约定
 
