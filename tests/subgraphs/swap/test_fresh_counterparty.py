@@ -172,19 +172,20 @@ async def test_dify_deduplicates_names_regardless_of_backend_account_ids(
         {"shortName": "聚鸣价值精选", "evidence": "价值精选", "unexpected": True},
     ]},
 ])
-async def test_invalid_structured_output_enters_safe_node_error(
+async def test_invalid_structured_output_penetrates_to_retry_policy(
     monkeypatch: pytest.MonkeyPatch, payload: dict[str, Any],
 ) -> None:
+    """只读 LLM 节点（@io_node）：结构化输出校验失败属可重试异常，直调时穿透给 RetryPolicy，
+    不在节点内就地落 error（图内重试耗尽后由 error_handler 落 ErrorInfo，见 *_graph 测试）。"""
+    from pydantic import ValidationError
+
     from app.subgraphs.swap.fresh_counterparty import swap_recognize_fresh_counterparty
 
     patch_recognition(monkeypatch, payload)
     state = fresh_state()
     original = deepcopy(state)
-    output = await swap_recognize_fresh_counterparty(state)
-
-    assert output["error"].node == "swap_recognize_fresh_counterparty"
-    assert output["error"].type == "ValidationError"
-    assert "place_params" not in output
+    with pytest.raises(ValidationError):
+        await swap_recognize_fresh_counterparty(state)
     assert state == original
 
 

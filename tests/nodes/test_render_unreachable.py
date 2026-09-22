@@ -4,7 +4,7 @@ from __future__ import annotations
 import pytest
 
 from app.graph.state import ErrorInfo
-from app.nodes.render import _ERROR_REPLY, _UNREACHABLE_REPLY, render
+from app.nodes.render import _UNREACHABLE_REPLY, _default_reply, render
 
 
 @pytest.mark.asyncio
@@ -23,7 +23,7 @@ async def test_backend_unreachable_error_uses_unreachable_reply() -> None:
 
 @pytest.mark.asyncio
 async def test_other_error_uses_generic_reply() -> None:
-    """ValidationError / 一般异常仍走 _ERROR_REPLY。"""
+    """ValidationError / 一般异常仍走统一兜底文案。"""
     state: dict = {
         "error": ErrorInfo(
             node="intent_route",
@@ -33,7 +33,7 @@ async def test_other_error_uses_generic_reply() -> None:
         ),
     }
     update = await render(state)  # type: ignore[arg-type]
-    assert update["reply_text"] == _ERROR_REPLY
+    assert update["reply_text"] == _default_reply()
 
 
 @pytest.mark.asyncio

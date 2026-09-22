@@ -452,6 +452,7 @@ def build_registry(
             "swap_recognize_fresh_counterparty",
             swap_recognize_fresh_counterparty,
             input_fields=("raw_text", "swap_counterparties", "place_params"),
+            io=True,
         ),
         r(
             "swap",

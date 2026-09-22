@@ -141,9 +141,10 @@ def test_add_io_node_rejects_function_without_io_node_decorator() -> None:
 
 #: 只读 IO 节点：必须带 RetryPolicy + error_handler
 READ_NODES: dict[str, set[str]] = {
-    "main": {"intent_route", "existing_command_query"},
+    "main": {"intent_route", "existing_command_query", "plan_instructions"},
     "swap": {
         "swap_intent", "swap_select_counterparty", "swap_select_ticker",
+        "swap_recognize_fresh_counterparty",
         "swap_query_order", "swap_image_order", "swap_excel_order",
     },
     "swap_place": {"swap_extract_candidates"},
@@ -154,7 +155,7 @@ READ_NODES: dict[str, set[str]] = {
 }
 #: 写类节点：绝不自动重试
 WRITE_NODES: dict[str, set[str]] = {
-    "main": {"quick_inquiry"},
+    "main": {"quick_inquiry", "persist_intent", "persist"},
     "swap": {"swap_place_order_submit", "swap_confirm", "swap_cancel"},
     "option": {
         "option_extract_inquiry", "option_extract_place", "option_extract_confirm_place",
@@ -163,6 +164,22 @@ WRITE_NODES: dict[str, set[str]] = {
     "inquiry": {"inquiry_fast_submit", "inquiry_submit"},
     "close": {"close_confirm_close", "close_cancel_close", "close_confirm_cancel"},
     "place_close": {"place_close_submit"},
+}
+#: 纯计算 / 编排 / 原生嵌入子图节点：无 IO，不挂 RetryPolicy 也不算写类
+PURE_NODES: dict[str, set[str]] = {
+    "main": {
+        "ingest", "entry_route", "pre_route", "fallback", "render",
+        "remember_confirmed_params", "record_history",
+        "swap", "option", "option_close", "instructions",
+    },
+    "swap": {"swap_place_order", "swap_apply_picks", "swap_unknown"},
+    "swap_place": {"swap_normalize", "swap_place_result"},
+    "option": {"option_unknown"},
+    "inquiry": {"inquiry_normalize"},
+    "close": {"close_place_close", "close_unknown"},
+    "place_close": {
+        "place_close_parse", "place_close_normalize", "place_close_validate", "place_close_reject",
+    },
 }
 
 
@@ -197,6 +214,26 @@ def test_real_graphs_retry_reads_and_never_writes() -> None:
         for name in names:
             spec = builders[graph_name].nodes[name]
             assert spec.retry_policy is None, f"{graph_name}.{name} 是写类节点，不得自动重试"
+
+
+def test_every_graph_node_is_classified_read_write_or_pure() -> None:
+    """完整性守护：新增节点必须显式归类，否则写类节点被误挂 RetryPolicy（超时重发下单）不会被发现。"""
+    for graph_name, builder in _builders().items():
+        actual = {name for name, spec in builder.nodes.items() if not spec.is_error_handler}
+        expected = (
+            READ_NODES.get(graph_name, set())
+            | WRITE_NODES.get(graph_name, set())
+            | PURE_NODES.get(graph_name, set())
+        )
+        assert actual == expected, (
+            f"{graph_name}: 未归类 {sorted(actual - expected)} / 已不存在 {sorted(expected - actual)}"
+        )
+        overlap = READ_NODES.get(graph_name, set()) & WRITE_NODES.get(graph_name, set())
+        assert not overlap, f"{graph_name}: 同时归为读写 {sorted(overlap)}"
+    for graph_name, names in PURE_NODES.items():
+        for name in names:
+            spec = _builders()[graph_name].nodes[name]
+            assert spec.retry_policy is None, f"{graph_name}.{name} 是纯计算节点，不应挂 RetryPolicy"
 
 
 def test_inquiry_has_no_local_ticker_stages():
