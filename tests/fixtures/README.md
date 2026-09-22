@@ -2,7 +2,7 @@
 
 ## 1. 职责矩阵
 
-下表中的历史基准文件已迁入 `old_typing/`；`unified_golden.jsonl` 仍在本目录。
+下表中的历史基准文件已归档到 `docs/archive/fixtures/old_typing/`（无代码消费者，2026-09-22 移出 tests/）；`unified_golden.jsonl` 仍在本目录。
 测试、合并脚本和一致性检查均读取迁移后的路径。
 
 | 文件 | 用途 | 编号 | 记录数 |

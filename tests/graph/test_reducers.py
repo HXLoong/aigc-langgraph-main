@@ -59,7 +59,7 @@ def test_merge_history_keeps_only_last_n(monkeypatch) -> None:
     left = [Message(role="user", content=str(i)) for i in range(3)]
     right = [Message(role="assistant", content="a"), Message(role="user", content="b")]
     merged = merge_history(left, right)
-    assert [m.content for m in merged] == ["2", "a", "b"][-4:] or [m.content for m in merged] == ["1", "2", "a", "b"]
+    assert [m.content for m in merged] == ["1", "2", "a", "b"]  # 5 条按 id 合并后只留最近 4 条
     assert len(merged) == 4
     # 仍按 id 去重（原生子图回传完整 history 时不重复）
     assert len(merge_history(merged, merged)) == 4

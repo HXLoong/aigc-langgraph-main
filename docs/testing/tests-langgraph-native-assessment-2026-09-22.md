@@ -115,3 +115,30 @@
 | tests/ 根 test_*.py | 79 | 41 | 11 | 23 | 4 |
 | tests/{graph,nodes,subgraphs,integration}/ | 19+23+68+6 | 全部 | 0 | 0 | 0 |
 | tests/fixtures/ | — | — | categories 389 条 + unified_golden.jsonl 921 行 | — | old_typing 932K（零消费）、nodes/ 仅 README |
+
+## 八、修复落地记录（2026-09-22，同一 PR）
+
+按第六节顺序逐项落地，每项先 RED 再 GREEN，全量 pytest 绿后本地 commit：
+
+| 项 | 状态 | 落点 |
+|---|---|---|
+| P0-1 主入口不可 import | 已修 | `app/node_execution/registry.py` 对齐现役图（摘 ticker、询价 / 平仓字段、补 entry_route / plan_instructions / instructions）；`tests/test_node_registry_importable.py` 守护 |
+| P0-2 CI 无自动触发 | 已修 | `.github/workflows/ci.yml` push / PR 触发，fast（lint + 一致性 + `-k "not e2e"`）/ slow（mysql:8.0 service + 全量）；slow 的 MySQL 段未在本地验证，以首个 CI 运行为准 |
+| P0-3 `tests/api` 明文凭据 | 已修 | 迁 `scripts/probe_goats/`，凭据走 Settings，写类接口需 `--confirm-write`；`tests/scripts/test_probe_goats_gate.py` 守护。**历史提交里的测试环境 secret / salt 仍需在 GOATS 侧 revoke** |
+| P1-1 render 旧分支断言 | 已修 | 删 3 文件，`test_render_decision.py` 按现役 decision 重写 |
+| P1-2 测试暴露的缺陷 | 已修 | `AgentState.conversation_orders` 去重；并行失败合并测试改在图模块 patch；`node_labels` 补 entry_route；ADR 死路径加删除线 |
+| P1-3 无 `.env` 不可 import | 已修 | `render.py` 兜底文案改调用期读取；`tests/test_import_without_env.py` 子进程守护 + CI 单独一步 |
+| P1-4 / P1-5 空转 / 死守卫 | 已修 | `tests/llm_guard.py::forbid_llm`；标的边界改为导入面断言 |
+| P1-6 RetryPolicy 清单 | 已修 | `READ / WRITE / PURE` 三清单 + 完整性断言；`swap_recognize_fresh_counterparty` 按 D3 改 `@io_node` |
+| P1-7 真 MySQL 用例 | 已接通 | 统一 `RUN_LOCAL_MYSQL_TESTS`，CI slow job 打开 |
+| P1-8 `expected.place_params` | lint 已加 | 写类 positive case 缺失记 WARNING（当前 560 / 1310），结构错误记 ERROR；**补数据需业务方反向生成 + 抽检** |
+| P1-9 Dify 口径 | 已改写 | 30 余处测试名 / docstring；`test_shadow_compare.py` 保留（工具本身待 F4.1 裁决） |
+| P1-10 close 路由重复 | 已合并 | 四文件合一，按 `_INTENT_TO_NODE` 参数化，`cancel_confirm` / `order_query` 首次在真图上跑 |
+| P1-11 假 e2e | 已修 | `test_ingest_reset.py` 改为诚实的单节点断言 |
+| P1-12 两套节点注册表 | 部分 | app 侧注册表已对齐并有 catalog 守护；两表统一或 ADR 仍待决 |
+| P1-13 D7 `/v1/runs` | 未做 | 需先实现协议；wire 测试已归入 `tests/api_wire/` 并在 tests/CLAUDE.md 标注 adapter 身份 |
+| P1-14 / P1-15 路由纯函数 / 子图越权 | 已修 | `tests/graph/test_main_routing.py`、option / close 参数化、`test_subgraph_cannot_rewrite_parent_routing_key_at_runtime` |
+| P2 组织 | 已修 | `tests/{scripts,harness,prompts,api_wire}/` 归位、`tests/__init__.py`、删 6 处 `sys.path.insert`、日期后缀重命名、`old_typing` 归档到 `docs/archive/fixtures/`、去重 swap 模型测试、删冗余 `test_session_expiry`、`test_client_unreachable` 改 transport 注入、`test_reducers` 或断言钉死 |
+| P2 未做 | 待后续 | `TraceEntry` 字段级脱敏（D5，需实现）；`tests/fixtures/nodes/` 首批节点 fixture；`test_option_close_fixtures.py` 冻结数据式断言；`test_business_params.py` 源码文本断言；ADR 0023 ".md 无 JSON 骨架" lint |
+
+**顺手发现的架构缺口（未在本 PR 处理）**：`add_io_node` 生成的 `__error_handler__<node>` 没有出边——只读节点重试耗尽后子图级兜底节点（`swap_unknown` 等）不会执行，只靠父图 `render` 按 `error` 兜底。行为上用户仍得到兜底回复，但子图 trace 少一跳；如需子图内兜底，应在 `add_io_node` 里把原节点的条件边复制到 handler 节点。
