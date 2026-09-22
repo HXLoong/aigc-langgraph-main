@@ -47,6 +47,36 @@ def _iter_jsonl(path: Path, errors: list[str]):
         yield origin, obj
 
 
+#: 写类 category（下单 / 确认 / 询价建单 / 平仓）：ADR 0024 D6 要求 positive case 带
+#: `expected.place_params`（从真实 HTTP payload 反向生成后人工抽检），否则评估门只靠文案。
+#: 现阶段缺失记 WARNING；业务方补齐后升为 ERROR。
+WRITE_CATEGORIES = frozenset({
+    "swap/place_order", "swap/modify", "swap/confirm", "swap/confirm_modify",
+    "option/place_order", "option/place_from_quote", "option/inquiry", "option/inquiry_place",
+    "option/confirm", "option/modify_request",
+    "option_close/place", "option_close/place_amend", "option_close/confirm",
+})
+_ORDER_LIST_KEYS = ("orderList", "closeOrderList")
+
+
+def _lint_place_params(origin: str, obj: dict[str, Any], expected: dict[str, Any],
+                       errors: list[str], warnings: list[str]) -> None:
+    case_id = obj.get("id")
+    if "place_params" in expected:
+        params = expected["place_params"]
+        order_list = params.get("orderList", params.get("closeOrderList")) if isinstance(params, dict) else None
+        if not isinstance(params, dict) or not isinstance(order_list, list):
+            errors.append(
+                f"{origin}: {case_id!r} expected.place_params must be an object with {'/'.join(_ORDER_LIST_KEYS)} list"
+            )
+        return
+    if obj.get("category") in WRITE_CATEGORIES and obj.get("type", "positive") == "positive":
+        warnings.append(
+            f"{origin}: {case_id!r} write-class case {obj.get('category')!r} has no expected.place_params"
+            " (ADR 0024 D6; evaluation gate falls back to text only)"
+        )
+
+
 def validate_unified(path: Path, ids: list[str]) -> tuple[list[str], list[str]]:
     """B 方言 lint：id + conversation[].raw_content + expected{product_type, intent}；返回 (errors, warnings)。"""
     errors: list[str] = []
@@ -81,6 +111,7 @@ def validate_unified(path: Path, ids: list[str]) -> tuple[list[str], list[str]]:
         for field_name in ("product_type", "intent"):
             if not isinstance(expected.get(field_name), str) or not expected[field_name].strip():
                 errors.append(f"{origin}: expected.{field_name} is required")
+        _lint_place_params(origin, obj, expected, errors, warnings)
         product_type = expected.get("product_type")
         if isinstance(product_type, str) and product_type not in KNOWN_PRODUCT_TYPES:
             warnings.append(
@@ -168,6 +199,9 @@ def validate(root: Path, verbose: bool = False) -> list[str]:
             errors.append(f"duplicate id {duplicate!r}: {count} occurrences")
     if verbose:
         print(f"validated {len(paths)} fixture files and {len(ids)} cases")
+        missing_params = sum("expected.place_params" in warning for warning in warnings)
+        if missing_params:
+            print(f"write-class cases without expected.place_params: {missing_params} (ADR 0024 D6)")
         for warning in warnings:
             print(f"WARNING: {warning}")
     return errors

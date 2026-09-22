@@ -121,3 +121,45 @@ def test_empty_fixture_file_rejected(tmp_path: Path) -> None:
     categories.mkdir()
     (categories / "option.jsonl").write_text("", encoding="utf-8")
     assert any("empty file" in error for error in checker.validate(tmp_path))
+
+
+# ============================================================
+# ADR 0024 D6：写类 case 必须有 expected.place_params（先 WARNING，补齐后升 ERROR）
+# ============================================================
+
+
+def _warnings(root: Path, payloads: list[dict]) -> list[str]:
+    _write_unified(root, payloads)
+    assert _validate(root, [_valid_case()]) == []
+    return checker.collect_warnings(root)
+
+
+def test_positive_write_case_without_place_params_is_a_warning(tmp_path: Path) -> None:
+    case = _b_case(id="swap-w-1", category="swap/place_order",
+                   expected={"product_type": "swap", "intent": "place_order_request", "output": "卡"})
+    warnings = _warnings(tmp_path, [case])
+    assert any("swap-w-1" in w and "expected.place_params" in w for w in warnings), warnings
+
+
+def test_negative_or_read_case_does_not_require_place_params(tmp_path: Path) -> None:
+    negative = _b_case(id="swap-n-1", category="swap/place_order", type="negative",
+                       expected={"product_type": "swap", "intent": "place_order_request", "output": "缺参数"})
+    query = _b_case(id="swap-q-1", category="swap/query",
+                    expected={"product_type": "swap", "intent": "query_order", "output": "列表"})
+    assert not any("expected.place_params" in w for w in _warnings(tmp_path, [negative, query]))
+
+
+def test_place_params_must_be_an_object_with_order_list(tmp_path: Path) -> None:
+    bad = _b_case(id="swap-w-2", category="swap/place_order",
+                  expected={"product_type": "swap", "intent": "place_order_request", "output": "卡",
+                            "place_params": ["not-an-object"]})
+    _write_unified(tmp_path, [bad])
+    errors = _validate(tmp_path, [_valid_case()])
+    assert any("swap-w-2" in e and "place_params" in e for e in errors), errors
+
+
+def test_well_formed_place_params_passes_silently(tmp_path: Path) -> None:
+    good = _b_case(id="swap-w-3", category="swap/place_order",
+                   expected={"product_type": "swap", "intent": "place_order_request", "output": "卡",
+                             "place_params": {"orderList": [{"placeOrderWindCode": "600519.SH"}]}})
+    assert not any("swap-w-3" in w for w in _warnings(tmp_path, [good]))

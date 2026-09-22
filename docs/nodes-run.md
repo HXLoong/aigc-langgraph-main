@@ -255,9 +255,9 @@ Invoke-RestMethod `
 可选的真实 MySQL 持久化测试：
 
 ```powershell
-$env:RUN_NODE_MYSQL_TEST = '1'
+$env:RUN_LOCAL_MYSQL_TESTS = '1'
 .venv/Scripts/python.exe -m pytest tests/integration/test_nodes_persist_mysql.py -q
-Remove-Item Env:RUN_NODE_MYSQL_TEST
+Remove-Item Env:RUN_LOCAL_MYSQL_TESTS
 ```
 
 完整回归仍按仓库统一命令执行。2026-09-20 的一次性环境、结果和视觉模型限制已单独归档在[节点接口验收记录](testing/nodes-run-acceptance-20260920.md)，不要把该历史记录当作当前全量基线。
