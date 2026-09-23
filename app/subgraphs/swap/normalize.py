@@ -63,11 +63,14 @@ _DIRECTION_TOKEN = re.compile(
 )
 
 
-_HOLDING_DESCRIPTION = re.compile(r"(?:剩余|剩餘|当前|目前|现有|現有)?(?:全部|所有|一半|半仓|半倉)?(?:持仓|持倉)")
-_CLOSE_ACTION = re.compile(
-    r"买入\s*平仓|買入\s*平倉|卖出|賣出|全部卖掉|全卖|全賣|平仓|平倉|清仓|清倉|平掉|全平|减仓|平空|平多"
+_HOLDING_DESCRIPTION = re.compile(
+    r"(?:剩余|剩餘|当前|目前|现有|現有)?(?:全部|所有|一半|半仓|半倉)?(?:持仓|持倉)"
+    r"|(?:剩余|剩餘)?(?:全部|所有|一半|全)",
 )
-_OPEN_ACTION = re.compile(r"(?:买入|買入)(?!\s*(?:平仓|平倉))|买开|卖空|賣空|卖开")
+_CLOSE_ACTION = re.compile(
+    r"买入\s*平仓|買入\s*平倉|(?:卖出|賣出)(?!\s*(?:开仓|開倉))|全部卖掉|全卖|全賣|平仓|平倉|清仓|清倉|平掉|全平|减仓|平空|平多"
+)
+_OPEN_ACTION = re.compile(r"(?:买入|買入)(?!\s*(?:平仓|平倉))|(?:卖出|賣出)\s*(?:开仓|開倉)|买开|卖空|賣空|卖开")
 _NEGATION = re.compile(r"(?:不要|无需|不需要|不|别|勿|禁止|暂不)(?:\s*|(?:把|将)[^,，;；\n]*)$")
 _CONDITIONAL = re.compile(r"如果|假如|若|或者|或|达到.*再|等.*再")
 _ALGORITHM_SUFFIX = re.compile(
@@ -204,7 +207,7 @@ def currency(text: str) -> str | None:
 def close_ratio(value: str, evidence: str) -> float | None:
     if not any(word in evidence for word in ("平", "清仓", "清倉", "卖出", "賣出", "全卖", "全賣", "半仓", "一半")):
         return None
-    if any(word in value for word in ("全部", "所有", "全平", "全数", "全賣", "全卖", "清仓", "清倉")):
+    if value == "全" or any(word in value for word in ("全部", "所有", "全平", "全数", "全賣", "全卖", "清仓", "清倉")):
         result = Decimal(1)
     elif "一半" in value or "半仓" in value:
         result = Decimal("0.5")

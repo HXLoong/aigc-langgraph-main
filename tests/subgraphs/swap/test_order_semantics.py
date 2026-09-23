@@ -528,3 +528,56 @@ def test_account_name_is_not_misread_as_historical_trade_action():
         'placeOrderOrderDirection': cell('买入'), 'placeOrderShortname': cell('已買策略'),
     }])
     assert params.order_list[0].place_order_order_direction == 'BUY'
+
+
+@pytest.mark.parametrize('product', ['互换', '收益互换', '场外收益互换'])
+def test_derivative_product_description_is_not_a_market_selection(product):
+    params, _ = run(f'{product}买入甲证券100股', [{
+        'placeOrderWindCode': cell('甲证券'), 'placeOrderQuantity': cell('100股'),
+        'placeOrderOrderDirection': cell('买入'), 'placeOrderTransactionType': cell(product),
+    }])
+    assert params.order_list[0].place_order_transaction_type is None
+    assert params.order_list[0].place_order_order_direction == 'BUY'
+
+
+def test_exchange_suffix_inside_instrument_does_not_choose_a_market():
+    params, _ = run('甲证券1234.HK 买入100股', [{
+        'placeOrderWindCode': cell('甲证券1234.HK'), 'placeOrderQuantity': cell('100股'),
+        'placeOrderOrderDirection': cell('买入'), 'placeOrderTransactionType': cell('HK', '1234.HK'),
+    }])
+    assert params.order_list[0].place_order_transaction_type is None
+    assert params.order_list[0].place_order_wind_code == '甲证券1234.HK'
+
+
+def test_explicit_market_is_preserved_alongside_a_symbol_suffix():
+    params, _ = run('深港通买入甲证券1234.HK 100股', [{
+        'placeOrderWindCode': cell('甲证券1234.HK'), 'placeOrderQuantity': cell('100股'),
+        'placeOrderOrderDirection': cell('买入'), 'placeOrderTransactionType': cell('深港通'),
+    }])
+    assert params.order_list[0].place_order_transaction_type == 'SZ_HK_CONNECT'
+
+
+@pytest.mark.parametrize('scope', ['全部', '全', '一半'])
+def test_bare_position_range_requires_same_order_sell_action(scope):
+    params, _ = run(f'甲证券卖出100股（{scope}）', [{
+        'placeOrderWindCode': cell('甲证券'), 'placeOrderQuantity': cell('100股'),
+        'placeOrderOrderDirection': cell('卖出'), 'placeOrderCloseIntent': cell(scope),
+        'placeOrderEntrustRatio': cell(scope),
+    }])
+    assert params.order_list[0].place_order_close_intent is True
+    assert params.order_list[0].place_order_entrust_ratio == (.5 if scope == '一半' else 1)
+    params, _ = run(f'甲证券100股（{scope}）', [{
+        'placeOrderWindCode': cell('甲证券'), 'placeOrderQuantity': cell('100股'),
+        'placeOrderCloseIntent': cell(scope), 'placeOrderEntrustRatio': cell(scope),
+    }])
+    assert params.order_list[0].place_order_close_intent is None
+    assert params.order_list[0].place_order_entrust_ratio is None
+
+
+def test_short_open_with_full_size_is_not_misread_as_closing():
+    params, _ = run('卖出开仓甲证券100股（全部）', [{
+        'placeOrderWindCode': cell('甲证券'), 'placeOrderQuantity': cell('100股'),
+        'placeOrderOrderDirection': cell('卖出开仓'), 'placeOrderCloseIntent': cell('全部'),
+    }])
+    assert params.order_list[0].place_order_order_direction == 'SHORT_OPEN'
+    assert params.order_list[0].place_order_close_intent is None

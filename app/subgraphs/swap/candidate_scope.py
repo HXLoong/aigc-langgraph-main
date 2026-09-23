@@ -7,7 +7,12 @@ from pydantic import BaseModel
 
 from app.extraction.fields import EvidenceError
 from app.subgraphs.swap.errors import AmbiguousActionError, NonPositiveQuantityError
-from app.subgraphs.swap.normalize import holding_action, is_holding_description, negates_token
+from app.subgraphs.swap.normalize import (
+    holding_action,
+    is_holding_description,
+    negates_token,
+    normalize_field,
+)
 
 _ORDER_ID = re.compile(r"H-[0-9]{8}-[0-9]+")
 _TERMINATOR = re.compile(r"[,，]\s*全部清仓(?=$|\s|[,，。;；!?！？])")
@@ -182,6 +187,17 @@ def constrain_candidates(candidates: BaseModel, sources: Mapping[str, str]) -> B
     orders = data.get("orderList") or []
     shared_direction = _shared_direction_prefix(orders, sources.get("raw", ""))
     for row in orders:
+        market = row.get("placeOrderTransactionType")
+        instrument = row.get("placeOrderWindCode")
+        if market and market.get("origin", "raw") == "raw":
+            if market.get("value") in {"互换", "收益互换", "场外收益互换"}:
+                row["placeOrderTransactionType"] = None
+            elif instrument and _within(market, instrument.get("value") or ""):
+                try:
+                    normalize_field("placeOrderTransactionType", market.get("value") or "")
+                except ValueError:
+                    # 代码内的交易所后缀不是用户选择的交易品种，不推断市场。
+                    row["placeOrderTransactionType"] = None
         for field in _ACTION_FIELDS:
             candidate = row.get(field)
             if candidate and candidate.get("origin") in {"quote", "history"}:
