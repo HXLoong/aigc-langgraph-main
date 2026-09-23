@@ -2,6 +2,13 @@
 from __future__ import annotations
 
 
+class AmbiguousActionError(ValueError):
+    """暂定或历史成交描述不能自动解释为本轮新委托。"""
+
+    def __init__(self) -> None:
+        super().__init__("暂定或历史动作不能作为新的交易指令，请明确本轮动作。")
+
+
 class NonPositiveQuantityError(ValueError):
     """委托数量字段展开后不大于零。"""
 

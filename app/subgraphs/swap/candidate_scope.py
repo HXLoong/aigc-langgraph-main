@@ -6,7 +6,7 @@ from typing import Any
 from pydantic import BaseModel
 
 from app.extraction.fields import EvidenceError
-from app.subgraphs.swap.errors import NonPositiveQuantityError
+from app.subgraphs.swap.errors import AmbiguousActionError, NonPositiveQuantityError
 from app.subgraphs.swap.normalize import holding_action, is_holding_description, negates_token
 
 _ORDER_ID = re.compile(r"H-[0-9]{8}-[0-9]+")
@@ -58,6 +58,10 @@ _ACTION_PREFIX = re.compile(
     r"(?<![A-Za-z])(?:BUY|SELL|SHORT_OPEN|SHORT_CLOSE)(?![A-Za-z])", re.I,
 )
 _NATURAL_WINDOWS = {"全天", "开盘", "到收盘", "至收盘", "收盘"}
+_NON_CURRENT_ACTION = re.compile(
+    r"(?:已改|已|暂|暫){1,2}(?:买入|買入|卖出|賣出|买|買|卖|賣|沽出|沽|入)"
+    r"|(?:买入|買入|卖出|賣出|买|買|卖|賣|沽出|沽)了",
+)
 
 
 def _single_order_block(row: dict[str, Any], raw: str) -> str | None:
@@ -203,6 +207,11 @@ def constrain_candidates(candidates: BaseModel, sources: Mapping[str, str]) -> B
                     and re.search(r"(?<![A-Za-z0-9_.-])(?:[-−]\s*)+" + re.escape(token) + r"(?![0-9.])", window)):
                 raise NonPositiveQuantityError(field)
         direction = row.get("placeOrderOrderDirection")
+        if direction and direction.get("origin", "raw") == "raw":
+            value = direction.get("value") or ""
+            if value and any(value in match[0] or match[0] in value
+                             for match in _NON_CURRENT_ACTION.finditer(window)):
+                raise AmbiguousActionError()
         if direction and is_holding_description(direction.get("value") or ""):
             row["placeOrderOrderDirection"] = None
         elif direction and direction.get("value") and negates_token(

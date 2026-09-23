@@ -499,3 +499,16 @@ def test_shared_leading_action_accepts_longer_contiguous_evidence():
          'placeOrderOrderDirection': cell('沽出', raw)},
     ])
     assert [o.place_order_order_direction for o in params.order_list] == ['SELL', 'SELL']
+
+
+@pytest.mark.parametrize('raw,value', [
+    ('甲证券 暫買100股', '買'), ('甲证券 已買100股', '買'),
+    ('甲证券 買入了100股', '買入'), ('甲证券 已改暫買100股', '買'),
+])
+def test_extracting_core_direction_cannot_hide_provisional_or_completed_action(raw, value):
+    from app.subgraphs.swap.errors import AmbiguousActionError
+
+    with pytest.raises(AmbiguousActionError):
+        run(raw, [{'placeOrderWindCode': cell('甲证券'),
+                   'placeOrderQuantity': cell('100股'),
+                   'placeOrderOrderDirection': cell(value)}])
