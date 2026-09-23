@@ -207,10 +207,11 @@ def constrain_candidates(candidates: BaseModel, sources: Mapping[str, str]) -> B
                     and re.search(r"(?<![A-Za-z0-9_.-])(?:[-−]\s*)+" + re.escape(token) + r"(?![0-9.])", window)):
                 raise NonPositiveQuantityError(field)
         direction = row.get("placeOrderOrderDirection")
-        if direction and direction.get("origin", "raw") == "raw":
-            value = direction.get("value") or ""
-            if value and any(value in match[0] or match[0] in value
-                             for match in _NON_CURRENT_ACTION.finditer(window)):
+        names = [row.get(field) for field in ("placeOrderWindCode", "placeOrderShortname")]
+        name_spans = [match.span() for name in names if name and name.get("value")
+                      for match in re.finditer(re.escape(name["value"]), window)]
+        for match in _NON_CURRENT_ACTION.finditer(window):
+            if not any(start <= match.start() and match.end() <= end for start, end in name_spans):
                 raise AmbiguousActionError()
         if direction and is_holding_description(direction.get("value") or ""):
             row["placeOrderOrderDirection"] = None

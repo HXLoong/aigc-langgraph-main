@@ -512,3 +512,19 @@ def test_extracting_core_direction_cannot_hide_provisional_or_completed_action(r
         run(raw, [{'placeOrderWindCode': cell('甲证券'),
                    'placeOrderQuantity': cell('100股'),
                    'placeOrderOrderDirection': cell(value)}])
+
+
+def test_omitting_direction_does_not_turn_historical_trade_into_new_order():
+    from app.subgraphs.swap.errors import AmbiguousActionError
+
+    with pytest.raises(AmbiguousActionError):
+        run('甲证券已買100股', [{'placeOrderWindCode': cell('甲证券'),
+                                'placeOrderQuantity': cell('100股')}])
+
+
+def test_account_name_is_not_misread_as_historical_trade_action():
+    params, _ = run('买入甲证券100股 已買策略', [{
+        'placeOrderWindCode': cell('甲证券'), 'placeOrderQuantity': cell('100股'),
+        'placeOrderOrderDirection': cell('买入'), 'placeOrderShortname': cell('已買策略'),
+    }])
+    assert params.order_list[0].place_order_order_direction == 'BUY'
