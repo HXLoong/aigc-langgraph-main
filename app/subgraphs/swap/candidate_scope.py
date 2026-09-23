@@ -9,6 +9,7 @@ from app.extraction.fields import EvidenceError
 from app.subgraphs.swap.errors import AmbiguousActionError, NonPositiveQuantityError
 from app.subgraphs.swap.normalize import (
     PREMARKET_WORDS,
+    has_market_requirement,
     holding_action,
     is_holding_description,
     negates_token,
@@ -90,6 +91,8 @@ def _timing_roles(row: dict[str, Any], raw: str) -> list[str]:
         if (not candidate or candidate.get("origin", "raw") != "raw"
                 or candidate.get("value") not in PREMARKET_WORDS):
             continue
+        if field == "placeOrderTransactionType" and has_market_requirement(raw):
+            continue
         if not _outside_names(candidate["value"], row, raw):
             raise EvidenceError("盘前词只出现在标的或对手名称中")
         current = row.get("placeOrderPremarket")
@@ -101,9 +104,12 @@ def _timing_roles(row: dict[str, Any], raw: str) -> list[str]:
     return misplaced
 
 
-def _omit_duplicate_market_role(row: dict[str, Any], window: str) -> None:
+def _omit_duplicate_market_role(
+    row: dict[str, Any], window: str, *, market_explicit: bool,
+) -> None:
     market = row.get("placeOrderTransactionType")
-    if not market or market.get("origin", "raw") != "raw" or not market.get("value"):
+    if (market_explicit or not market or market.get("origin", "raw") != "raw"
+            or not market.get("value")):
         return
     value = market["value"]
     qualifiers = window.replace("不限价", "").replace("不限價", "")
@@ -239,15 +245,16 @@ def constrain_candidates(candidates: BaseModel, sources: Mapping[str, str]) -> B
     candidates = _constrain_references(candidates, sources)
     data = candidates.model_dump(by_alias=True)
     orders = data.get("orderList") or []
+    market_explicit = has_market_requirement(sources.get("raw", ""))
     timing_roles = [_timing_roles(row, sources.get("raw", "")) for row in orders]
     shared_direction = _shared_direction_prefix(orders, sources.get("raw", ""))
     for index, row in enumerate(orders):
         market = row.get("placeOrderTransactionType")
         instrument = row.get("placeOrderWindCode")
         if market and market.get("origin", "raw") == "raw":
-            if market.get("value") in {"互换", "收益互换", "场外收益互换"}:
+            if not market_explicit and market.get("value") in {"互换", "收益互换", "场外收益互换"}:
                 row["placeOrderTransactionType"] = None
-            elif (instrument and _within(market, instrument.get("value") or "")
+            elif (not market_explicit and instrument and _within(market, instrument.get("value") or "")
                   and any(market.get("value", "").lstrip(".").casefold() == suffix.casefold()
                           for suffix in re.findall(r"\.([A-Za-z]+)", instrument.get("value") or ""))):
                 try:
@@ -278,7 +285,7 @@ def constrain_candidates(candidates: BaseModel, sources: Mapping[str, str]) -> B
                 raise EvidenceError("盘前证据不属于当前订单")
             premarket["evidence"] = window
             row[field] = None
-        _omit_duplicate_market_role(row, window)
+        _omit_duplicate_market_role(row, window, market_explicit=market_explicit)
         for field in ("placeOrderQuantity", "placeOrderQuantityHand", "placeOrderQuantityTotal", "placeOrderDisplayQty"):
             candidate = row.get(field)
             value = candidate.get("value") if candidate else None

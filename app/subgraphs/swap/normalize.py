@@ -87,6 +87,15 @@ def is_holding_description(value: str) -> bool:
     return _HOLDING_DESCRIPTION.fullmatch(value.strip()) is not None
 
 
+def has_market_requirement(text: str) -> bool:
+    """纠错不能擦掉已有市场限制；未知但显式标注的市场也保持拒绝。"""
+    folded = text.casefold()
+    return any(alias.casefold() in folded
+               for aliases in _ENUMS["placeOrderTransactionType"].values() for alias in aliases) or bool(
+        re.search(r"(?:交易品种|市场|通道|market|venue|channel)\s*[:：]", text, re.I),
+    )
+
+
 def negates_token(value: str, context: str) -> bool:
     return any(_NEGATION.search(context[:match.start()]) for match in re.finditer(re.escape(value), context))
 
