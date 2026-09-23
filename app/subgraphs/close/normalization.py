@@ -95,6 +95,29 @@ def _amount(value: str, row: Mapping[str, Any] | None) -> str | None:
     return format(amount, "f").rstrip("0").rstrip(".") if "." in format(amount, "f") else str(amount)
 
 
+def _matching_record(
+    target: Mapping[str, Any], data: list[dict[str, Any]],
+) -> dict[str, Any] | None:
+    """订单记录按订单号匹配；纯合约查询优先使用未绑定订单的持仓记录。"""
+    if target.get("orderId"):
+        matches = [row for row in data if row.get("orderId") == target["orderId"]]
+    elif target.get("internalTradeId"):
+        matches = [row for row in data if row.get("contractCode") == target["internalTradeId"]]
+        unbound = [row for row in matches if not row.get("orderId")]
+        matches = unbound or matches
+    else:
+        return None
+    if len(matches) > 1:
+        raise EvidenceError("平仓目标对应多条查询记录")
+    if not matches:
+        return None
+    record = matches[0]
+    if (target.get("internalTradeId") and record.get("contractCode")
+            and target["internalTradeId"] != record["contractCode"]):
+        raise EvidenceError("平仓订单和合约身份冲突")
+    return record
+
+
 def _identity(selector: str, parsed: ReferenceParseResult, data: list[dict[str, Any]]) -> dict[str, Any]:
     oid = ORDER_ID_RE.fullmatch(selector)
     contract = CONTRACT_CODE_RE.fullmatch(selector)
@@ -103,6 +126,12 @@ def _identity(selector: str, parsed: ReferenceParseResult, data: list[dict[str, 
         target = {"orderId": oid[0]}
     elif contract:
         target = {"internalTradeId": contract[0]}
+        quoted_orders = {row["orderId"] for row in parsed["holdingMap"]
+                         if row.get("contractId") == contract[0] and row.get("orderId")}
+        if len(quoted_orders) > 1:
+            raise EvidenceError("合约对应多笔引用订单，请明确订单号或序号")
+        if quoted_orders:
+            target["orderId"] = quoted_orders.pop()
     elif match := _SEQ.fullmatch(selector):
         ordinal = _ordinal_value(match[1] or match[2]) or 0
         holdings = parsed["holdingMap"]
@@ -116,13 +145,8 @@ def _identity(selector: str, parsed: ReferenceParseResult, data: list[dict[str, 
             target = {"orderId": selected.get("orderId"), "internalTradeId": selected.get("contractCode")}
     if not any(target.values()):
         return {}
-    matches = [item for item in data if (
-        target.get("orderId") and item.get("orderId") == target["orderId"]
-    ) or (target.get("internalTradeId") and item.get("contractCode") == target["internalTradeId"])]
-    if len(matches) > 1:
-        raise EvidenceError("平仓目标对应多条查询记录")
-    if matches:
-        record = matches[0]
+    record = _matching_record(target, data)
+    if record is not None:
         target = {"orderId": target.get("orderId") or record.get("orderId"),
                   "internalTradeId": target.get("internalTradeId") or record.get("contractCode")}
     return target
@@ -214,8 +238,7 @@ def normalize_place_candidates(
                     target = {}
             if not target:
                 continue
-            matching = next((d for d in data if (target.get("orderId") and d.get("orderId") == target["orderId"])
-                             or (target.get("internalTradeId") and d.get("contractCode") == target["internalTradeId"])), None)
+            matching = _matching_record(target, data)
             row, ledger = dict(target), {}
             segments = _target_segments(raw, parsed, data, target) if explicit else [raw]
             for alias, candidate in values.items():
