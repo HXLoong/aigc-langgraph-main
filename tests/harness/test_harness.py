@@ -380,6 +380,14 @@ def test_text_assertions_tolerate_dry_run_marker_only_when_asked() -> None:
     assert not check_text_assertions("下单成功 DRY-RUN-place_order_request", spec, allow_dry_run=True)
 
 
+def test_text_assertions_reject_the_current_client_interception_receipt_in_real_mode() -> None:
+    from app.tools.receipts import DRY_RUN_REPLY
+
+    spec = GoldenCase(id="x", category="swap", turns=[{"send_text": "a"}]).turns[0]
+    assert any(diff.path == "runtime" for diff in check_text_assertions(DRY_RUN_REPLY, spec))
+    assert not check_text_assertions(DRY_RUN_REPLY, spec, allow_dry_run=True)
+
+
 def _result(case: GoldenCase, turns: list, failure: dict | None = None):
     from harness.multi_turn import MultiTurnResult
 

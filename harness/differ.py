@@ -91,7 +91,7 @@ def check_text_assertions(
     for forbidden in spec.response_not_contains:
         if forbidden in reply_text:
             failures.append(FieldDiff(path="response_not_contains", expected=forbidden, actual=reply_text))
-    if "DRY-RUN-" in reply_text and not allow_dry_run:
+    if ("DRY-RUN-" in reply_text or "【DRY-RUN】" in reply_text) and not allow_dry_run:
         failures.append(FieldDiff(path="runtime", expected="real backend result", actual="dry-run interception"))
     return failures
 
