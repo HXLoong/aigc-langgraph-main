@@ -7,7 +7,7 @@
 场外衍生品 AI 指令助手。**FastAPI + LangGraph + MySQL + LangFuse self-hosted**，从 Dify 工作流迁移而来。
 企微群客户消息 → 意图解析 → 后端业务/交易系统。
 
-> 当前阶段：**M1 / M2 / M3.1 / M3.2 已完成**（M2 PR #41 已合 main，主干 24 节点蓝图实际落地 20 节点：swap 6 + option 6 + option_close 7 + ticker 1；mock_api baseline PASS ≥ 92.5%，真 LLM baseline 84.6%）→ **M3.3 真后端 golden 回归 + 错例修 P0/P1 + 业务方现场 sign-off 进行中**（open issues #82–#87，参见 [ADR 0016](./docs/adr/0016-m3-scope-engineering-loop-not-shadow.md) 与 [docs/m3-m4-roadmap.md](./docs/m3-m4-roadmap.md)）；**M4 灰度工具链已就绪**（rollback_canary / drill_smoke / shadow_compare / deploy-customer / Grafana 模板 / Prompt 晋升 + on-call runbook，详见 README "M4 准备就绪的工具链"）
+> 目标（[ADR 0030](./docs/adr/0030-goal-restatement-native-langgraph-dataset-eval-harness.md)）：**原生 LangGraph 重构 + 数据集评测与评估 + Harness 工程**；里程碑与 GitHub issue 口径已退役，现状与待办见 [docs/work-plan.md](./docs/work-plan.md)。主干节点：swap 6 + option 6 + option_close 7，ticker 已于 2026-09-20 移交 Java（ADR 0025）；灰度与部署工具链（rollback_canary / drill_smoke / shadow_compare / deploy-customer / Grafana 模板 / Prompt 晋升 + on-call runbook）已就绪。
 
 ## 关键命令
 
@@ -31,16 +31,25 @@ USE_MYSQL_CHECKPOINTER=false REQUEST_IDEMPOTENCY=false ENABLE_LANGFUSE=false pyt
 python scripts/local_eval.py --base-url http://127.0.0.1:8201 --data tests/fixtures/categories --case case-025 --concurrency 1
 # 全量验收时去掉 --case；显式 categories 当前388条，不并入 unified。
 # 本地真实联调：ENVIRONMENT=staging uvicorn app.main:app --host 127.0.0.1 --port 8201
-# scripts/langfuse_eval.py 保留为 Judge 辅助入口，不替代 HTTP/Java 写回与幂等验收。
 
-# 真后端探针（M3 联调）
+# Langfuse Dataset Experiment（Judge + 自动 Evaluator；不替代 HTTP/Java 写回与幂等验收）
+python scripts/langfuse/langfuse_eval.py --dataset golden_option_inquiry_case --ids case-022 --concurrency 1
+# 意图集（只调 LLM + 仓库内 mock_api，不依赖 Java/GOATS；确定性评分本地算，--fail-under 给退出码；
+# CI：.github/workflows/intent-eval.yml；业务集 categories/ 依赖 Java 后端只在开发环境跑；workflow-guide §8）
+python scripts/langfuse/langfuse_eval.py --local tests/fixtures/intent --concurrency 3 --fail-under 0.95 --report .harness-runs/intent-eval.json
+
+# Harness CLI（备用 / 本地快速 smoke，无 Judge）
+python -m harness doctor
+python -m harness run --backend real|mock|dry-run
+
+# 真后端探针（联调用）
 python scripts/probe_real_backend_e2e.py
 python scripts/probe_swap_write_e2e.py
 python scripts/probe_option_write_e2e.py
 python scripts/probe_close_write_e2e.py
 ```
 
-## 项目结构（M2 完成、M3 进行中）
+## 项目结构
 
 ```
 app/
@@ -84,17 +93,18 @@ harness/                     # 评测台（经 HTTP 调本地 /v1/workflows/run�
 ├── case_generator/          # LLM 对抗式 paraphrase 生成 C 桶
 └── cli.py                   # python -m harness <doctor|run> + 报告渲染
 
-scripts/                     # langfuse_eval.py（Judge 评估，M3 主用） / probe_*.py
+scripts/                     # langfuse/langfuse_eval.py（Judge 评估） / probe_*.py
                              # upload_golden_to_langfuse.py / promote_langfuse_prompt.py / canary_status.py
                              # rollback_canary.sh / run_alerts.py / llm_cost_report.py / shadow_compare.py 等
 
 infra/langfuse/              # LangFuse self-hosted Docker Compose（PG + ClickHouse + Redis + MinIO + Web + Worker）
-docs/adr/                    # 架构决定 ADR 0000-0024（共 25 篇）+ README 索引
+docs/adr/                    # 架构决定 ADR 0000-0030（共 31 篇）+ README 索引
 docs/api-contracts/          # Java 后端真实业务 API 契约
-docs/m3-m4-roadmap.md        # M3/M4 端到端任务图（6 个交付面，2026-05-11 修订）
+docs/work-plan.md            # 三条主线的现状与待办（取代 m3-m4-roadmap）
 docs/on-call-runbook.md      # 上线 on-call SOP
-tests/                       # 1864 passed + 15 skipped
-tests/fixtures/              # categories/（A 方言，6 文件 / 389 条）+ unified_golden.jsonl（B 方言，921 条，harness 默认并入）+ old_typing/（归档）
+tests/                       # 2900+ passed（2026-09-22；按 graph / nodes / subgraphs / api_wire / harness / prompts / scripts 归位）
+tests/fixtures/              # categories/（A 方言业务集，6 文件 / 389 条）+ intent/（意图集：逐轮 product_type/intent，只调 LLM + mock 后端）
+                             # + unified_golden.jsonl（B 方言，921 条，历史参考集，显式 --include-unified 加载）+ 历史归档见 docs/archive/fixtures/old_typing/
 ```
 
 ## 团队工具链：Claude Code 与 Codex 共用一份纪律
@@ -118,6 +128,7 @@ tests/fixtures/              # categories/（A 方言，6 文件 / 389 条）+ u
 - 真实写入测试仅由主代理调度；先确认授权测试账号、群、对手及持仓。业务回归使用 scripts/local_eval.py 和显式 tests/fixtures/categories，不并入 unified。
 - 任务和证据记录在 tmp；区分实现完成、专项通过、待用户验收、外部阻塞。外部阻塞不可写成已完成；全量结果未经运行不得宣称通过。
 - 不 push、不创建 PR；保留用户原有未提交改动。新 worktree 显式准备依赖与所需本地配置，禁止输出或提交密钥。
+- 2026-09-22 issue 裁决：#218 不处理；#219 仅待部署环境核查；#220 categories 标注后续单列；#221 暂不改脱敏默认值与审计原文；#222 协议迁移暂缓，保持 Java 源码、配置、agentUrl、DTO 和现行 wire 契约；#224 的 shadow_compare 保留待 F4.1 裁决。
 
 ## 子目录陷阱页（按需加载）
 
@@ -138,14 +149,15 @@ tests/fixtures/              # categories/（A 方言，6 文件 / 389 条）+ u
    - 禁止先改代码再补测试，也禁止跳过 RED 验证
    - `.claude/skills/test-driven-development/SKILL.md` 流程 包含完整 workflow，修改代码前调用
 6. **git 里的提示词是唯一真源** —— 改提示词直接改 `app/prompts/**/*.md` + 普通 PR review，`prompt(<scope>)` commit；Dify 已退出上游地位（ADR 0024 D1），YAML 快照冻结在 tag `dify-assets-frozen-20260917（指向 commit fddd94e；tag 仅存本地，远端拒绝 tag 推送，维护者可从该 sha 重建）`，不再有同步 / 导出链路
-7. **标的原文交后端识别** —— LangGraph 只提取代码/名称原文和用户候选选择，不补代码、不计算近月、不查证券池；Java 业务接口负责调用标的工具及权威校验。原文及引用候选不标记为 `from_goats=True`；HTTP `tickers` 保留为空的兼容字段。详见 `docs/backend-instrument-boundary.md`。
-8. **节点失败必须 cascade 防御** —— 任一节点写入 `state['error']` 后，下游 conditional 路由必须检查并跳到 fallback render，禁止 cascade 失败。具体：主图 `_route_by_product` 与每子图首节点后的 conditional 都加 `if state.get('error'): return 'fallback'`。fallback 节点输出友好回复（"我没完全理解你的意思，能换种说法重新告诉我吗"）+ trace 记录原 fail 节点名。LLM 解析失败由 `with_structured_output` 自带 1 次重试 + `@safe_node` 兜底捕获 ValidationError 写入 error；不走 HITL（HITL 仅用于 ADR 0006 的业务参数二次确认场景）
+7. **单动作多订单** —— 每条消息按既有产品与意图优先级执行一个业务动作，多笔订单共用该动作；主图、节点执行接口和评测目录均不提供多动作编排。
+8. **标的原文交后端识别**（ADR 0025）—— LangGraph 只提取代码/名称原文和用户候选选择，不补代码、不计算近月、不查证券池；Java 业务接口负责调用标的工具及权威校验。原文及引用候选不标记为 `from_goats=True`；HTTP `tickers` 保留为空的兼容字段。详见 `docs/backend-instrument-boundary.md`。
+9. **节点失败必须 cascade 防御** —— 任一节点写入 `state['error']` 后，下游 conditional 路由必须检查并跳到 fallback render，禁止 cascade 失败。具体：主图 `_route_by_product` 与每子图首节点后的 conditional 都加 `if state.get('error'): return 'fallback'`。fallback / render 输出统一的未知指令引导文案（`Settings.default_reply`，对齐 Dify）+ trace 记录原 fail 节点名。LLM 解析失败由 `with_structured_output` 自带 1 次重试 + `@safe_node` 兜底捕获 ValidationError 写入 error；不走 HITL（HITL 仅用于 ADR 0006 的业务参数二次确认场景）
 
 ## 排查与修复流程（Bug Debug Workflow）
 
 ### 1. 从 Langfuse 富 output 定位根因（首选）
 
-`scripts/langfuse_eval.py` 每跑完一条 case 会把**结构化富集 JSON** 写到 Langfuse Cloud
+`scripts/langfuse/langfuse_eval.py` 每跑完一条 case 会把**结构化富集 JSON** 写到 Langfuse Cloud
 （https://us.cloud.langfuse.com），outer span output 包含：
 
 ```jsonc
@@ -221,7 +233,7 @@ tests/fixtures/              # categories/（A 方言，6 文件 / 389 条）+ u
 修完跑对应 case 确认：
 
 ```bash
-.venv/bin/python scripts/langfuse_eval.py --local tests/fixtures/categories --ids case-025,case-026 --concurrency 2
+.venv/bin/python scripts/langfuse/langfuse_eval.py --local tests/fixtures/categories --ids case-025,case-026 --concurrency 2
 ```
 
 ## 绝对禁止
@@ -244,39 +256,9 @@ tests/fixtures/              # categories/（A 方言，6 文件 / 389 条）+ u
 - 中文注释 OK，docstring 简洁清晰
 - 不加 emoji（生产代码）
 
-## 下一步：M3.3 真后端 golden 回归 + 业务方 sign-off（进行中）
+## 当前工作面（按 ADR 0030）
 
-ADR 0016 把"M3 = shadow 双跑"重新定义为"M3 = 工程联调闭环 + 评估迭代"，分 M3.1 / M3.2 / M3.3 三段：
-
-**已完成（六大交付面）**：
-
-1. **代码完整性** ✅：24 节点蓝图 → 主干 20 节点已落地；P2 辅助节点（place_order_image / place_order_excel / image_recognize）按线上流量增量补
-2. **数据集完整性** ✅：fixture 集已扩到 350+；fixture 职责矩阵 + 一致性 lint 已就位（PR #109）；按 B / C / D 桶分别维护
-3. **客户现场部署能力** ✅：infra/langfuse self-hosted、`scripts/deploy-customer.sh`（C1.13 / Issue #58）、`.env.customer.template`（C1.12 / Issue #52）、私有化部署文档（C1.11 / Issue #51）
-4. **联调与回归** ✅：真后端 e2e 探针（`scripts/probe_*_e2e.py`，D2.1–D2.6 + Dx.1–Dx.2 已 closed）+ DeepSeek Judge 评估（`scripts/langfuse_eval.py`）+ business 子图 → 真 client → mock_api 全链路（PR #110，27 测试）
-5. **可观测 + 运维** ✅：`/metrics` Prometheus 端点（C1.5 / Issue #50） + 5xx 计数闭环（PR #104） + P95 延迟告警（PR #103） + LLM 成本监控（C1.7 / Issue #56） + 阈值一致性 CI lint（PR #106） + on-call 应急回切剧本（PR #99） + `scripts/rollback_canary.sh`（PR #98）
-6. **上线策略** ✅工具链就绪：Shadow 双跑（M4 第二意见，含 `DRY_RUN_BACKEND` 模式 PR #112）+ 按群组金丝雀（`scripts/canary_status.py` PR #92 / `scripts/metrics_snapshot.py` PR #94）+ Grafana 灰度面板 JSON 模板（PR #97）+ LangFuse Prompt 晋升工具（F4.6 / PR #95）
-
-**进行中（M3.3）**：
-
-| Issue | 任务 | 退出门 |
-|---|---|---|
-| #82 E3.1 | 真后端跑 B 桶全集 → PASS rate | 总 PASS ≥ 92.5%（与 M2 mock baseline 同口径）|
-| #83 E3.2 | business_seed 全集按桶分别评估 | B 桶 ≥ 90% / C 桶 ≥ 80% |
-| #84 E3.3 | 真后端跑 D 桶（客户真实输入）| 依赖 B1.5 PM 收集 30+ 条 |
-| #85 E3.4 | 错例聚类 + 根因分析，**只修 P0/P1** | cascade fail / 5xx / 严重参数错 / 标的错全部修复 |
-| #86 E3.5 | 现场 smoke checklist + 客户 Java 后端真实联调 | ≥ 5 条真实业务流走通 |
-| #87 E3.6 | 业务方培训 + 现场 sign-off | 业务方盲测 ≥ 5 条 case PASS sign-off |
-| #59 C1.14 | 离线依赖包（pip wheel + docker save）| 离线环境完整跑通客户部署 |
-| #113 | fixture 数据集质量修复（执行价格缺失 / 反案例标错）| 业务方 review pass |
-
-**二期持续优化（全量上线后启动，不阻塞 M3/M4）**：
-
-- Issue #35 · 评估→优化→更新→再评估自动闭环
-- Issue #36 · 智能体异常干预 + 沉淀记忆机制（agentic memory）
-- Issue #37 · 回流集自动化打通（D 桶 · 生产真实流量 → golden）
-
-参见 [docs/m3-m4-roadmap.md](./docs/m3-m4-roadmap.md) 获取分阶段任务图与 owner 表。
+三条主线的已落地项与未完成项见 [docs/work-plan.md](./docs/work-plan.md)；评测门只有一套（ADR 0030 D3）：数据集 PASS 率不低于前值 → 节点 fixture 回归 → CI 全绿（ruff / mypy / 四项 lint / 全量 pytest）→ 上线观察指标（5xx / cascade / P95 / 严重错例，基线按当前模型重测）。未完成项摘要：`POST /v1/runs` 协议原生化与 Dify wire adapter 退役；上线观察基线重测；D 桶回流与标注运营；CI MySQL service；离线依赖包。
 
 ### 节点工作模板（不变）
 
@@ -290,18 +272,18 @@ ADR 0016 把"M3 = shadow 双跑"重新定义为"M3 = 工程联调闭环 + 评估
 |---|---|---|
 | **B · 业务方手写种子** | 主基线，意图均衡覆盖 | ≥ 90% |
 | **C · LLM 对抗式 paraphrase**（`harness/case_generator/`） | 边界 case / 同义改写 | ≥ 80%（容忍 LLM 同质化抖动）|
-| **D · 客户历史真实输入** | 反映真实分布；必须业务方人工标注 expected 后才能合入 | 无硬性阈值（M3 持续累积，作补充参考）|
+| **D · 客户历史真实输入** | 反映真实分布；必须业务方人工标注 expected 后才能合入 | 无硬性阈值（持续累积，作补充参考）|
 | ~~A · 历史企微日志抽样~~ | 暂搁，被 D 桶替代 | — |
 
-按桶 PASS 率与退出门口径见 `docs/m3-m4-roadmap.md`；`scripts/check_fixture_consistency.py` 守 fixture 一致性 lint（提交前本地跑）。
+按桶 PASS 率是数据集层评测门的一部分（ADR 0030 D3）；`scripts/check_fixture_consistency.py` 守 fixture 一致性 lint（CI fast job 已含）。
 
 详见：
 
 - 领域语言：`@CONTEXT.md`
-- 架构决定：`@docs/adr/`（ADR 0000-0024 共 25 篇，索引见 `docs/adr/README.md`）
+- 架构决定：`@docs/adr/`（ADR 0000-0030 共 31 篇，索引见 `docs/adr/README.md`）
 - LangGraph 原生重构评估与路线：`@docs/langgraph-architecture-assessment.md` + ADR 0024
 - Java 契约：`@docs/api-contracts/java-backend.md`
-- M3/M4 路线图：`@docs/m3-m4-roadmap.md`
+- 工作计划：`@docs/work-plan.md`
 - on-call SOP：`@docs/on-call-runbook.md` + `@docs/troubleshooting-sop.md`
 
 ## Agent skills
@@ -363,19 +345,19 @@ result = await model.with_structured_output(SwapIntentOutput).ainvoke(messages)
 - 节点默认只用 system 段 + 代码拼变量的 user；user 里若有**规则文本**，写进 `.md` 的 `[user]` 段用 `{{var}}` 占位，`user_builder` 里用 `load_prompt(...).render_user(**vars)` 渲染（先例 `swap/fresh_counterparty.md`）
 - **禁止**把提示词正文硬编码进 Python（含"后置追加一段格式指令"这种写法）；**禁止**在 `.md` 里维护 JSON 骨架 / 字段表——字段语义只写在 Pydantic `Field(description=)`
 - 共享拼装（历史、对手列表、JSON 列表）只在 `app/prompts/blocks.py` 定义一次，不在子图里复制
-- `injects` 登记的占位符必须在 `.md` system 段里真实存在，`build_messages` 构造期校验（`tests/test_prompt_spec.py`）
+- `injects` 登记的占位符必须在 `.md` system 段里真实存在，`build_messages` 构造期校验（`tests/prompts/test_prompt_spec.py`）
 - 灰度节点必须把 `build_messages` 返回的 `prompt_name` 写进 `TraceEntry.llm_output["prompt_name"]`（ADR 0003 硬前置：进 `_versions.yaml` 前必须先写 trace，否则版本对比失真）
-- 当前 15 个业务 PromptSpec；标的工具在后端执行。system 使用固定资产，历史和参考数据经 `blocks.source_payload` 放入 user。`fresh_counterparty` 的 `[user]` 模板继续经 `render_user` 渲染。
+- 当前 14 个业务 PromptSpec；标的工具在后端执行。system 使用固定资产，历史和参考数据经 `blocks.source_payload` 放入 user。`fresh_counterparty` 的 `[user]` 模板继续经 `render_user` 渲染。
 
 ## 来源优先级（ADR 0014 D3-2）
 
-生产真源永远是 git 里的 `app/prompts/**/*.md`；`USE_LANGFUSE_PROMPTS=true` 只允许开发/staging 演练，生产开启即 fail-fast。LangFuse 演练稿用 `scripts/promote_langfuse_prompt.py` 晋升为 `_v{N+1}.md`，再走 PR。
+生产真源永远是 git 里的 `app/prompts/**/*.md`；`USE_LANGFUSE_PROMPTS=true` 只允许开发/staging 演练，生产开启即 fail-fast。LangFuse 演练稿用 `scripts/langfuse/promote_langfuse_prompt.py` 晋升为 `_v{N+1}.md`，再走 PR。
 
 ## 改提示词的三条路
 
 | 场景 | 做法 | 门槛 |
 |---|---|---|
-| 瘦身 / 修规则 | 直接改 `app/prompts/**/*.md`；需要时先跑 `scripts/langfuse_eval.py` 对比 | 普通 PR review；`prompt(<scope>)` commit |
+| 瘦身 / 修规则 | 直接改 `app/prompts/**/*.md`；需要时先跑 `scripts/langfuse/langfuse_eval.py` 对比 | 普通 PR review；`prompt(<scope>)` commit |
 | 新 LLM 节点 | `.md` 放对目录 + Pydantic Output 模型（每字段 `Field(description=)`）+ `PromptSpec` 声明 + `@safe_node` 节点 + golden case | 普通 PR review |
 
 ## 字符数 / 延迟
@@ -429,7 +411,7 @@ for target in (
     "app.subgraphs.close.backend.OptionClientHttpx",
 ):
     monkeypatch.setattr(target, factory)
-# swap / ticker 同理：app.subgraphs.swap.backend.SwapClientHttpx、app/subgraphs/ticker 的 _make_client
+# swap 同理：app.subgraphs.swap.backend.SwapClientHttpx（标的识别已委托 Java，本地无 ticker 子图）
 ```
 
 ## E2E 测试
@@ -447,7 +429,7 @@ for target in (
 
 - 所有新增意图必须在 `tests/fixtures/categories/` 加至少 2 条用例（现役数据源，`scripts/check_fixture_consistency.py` 校验一致性）
 - case 格式沿用对应文件既有方言（详见 `scripts/ai_test_langgraph/README.md`）
-- 跑评估：`python scripts/langfuse_eval.py --local <fixture>`
+- 跑评估：`python scripts/langfuse/langfuse_eval.py --local <fixture>`
 
 ## 验证范围
 
@@ -467,7 +449,7 @@ mypy app/                                     # 类型无错
 - ✅ 新增 Pydantic 模型 → 加字段校验测试
 - ✅ 新增业务逻辑分支 → 加 E2E 覆盖
 - ✅ 修 bug → 先写复现测试，再修
-- ⚠️ 改活跃提示词 → 直接改 `.md` + 普通 PR review，`prompt(<scope>)` commit；需要时自行跑 `scripts/langfuse_eval.py` 验证
+- ⚠️ 改活跃提示词 → 直接改 `.md` + 普通 PR review，`prompt(<scope>)` commit；需要时自行跑 `scripts/langfuse/langfuse_eval.py` 验证
 
 ## 跑慢测试的技巧
 

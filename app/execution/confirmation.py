@@ -159,8 +159,12 @@ def parse_confirmation(
             r"\s*[（(]\s*", reference[previous.end() : marker.start()]
         )
         after = following[0] if following else None
+        # Java 平仓卡在序号和单号之间展示合约编号；只接受这一个明确的元数据行。
+        contract_line = (
+            rf"(?:合约编号\s*[:：]\s*{_CONTRACT.pattern}\s*)?" if product == "close" else ""
+        )
         pair_prefix = after is not None and re.fullmatch(
-            r"\s*(?:(?:订单号|单号)\s*[:：]\s*|[:：]\s*)?",
+            r"\s*" + contract_line + r"(?:(?:订单号|单号)\s*[:：]\s*|[:：]\s*)?",
             reference[marker.end() : after.start()],
         )
         target = previous if suffix else after if pair_prefix else None
@@ -222,14 +226,23 @@ def parse_confirmation(
         if set(mapping.values()) != set(ids):
             mapping.clear()
             return fail("ambiguous_quote")
-        seqs = [str(_number(m[1])) for m in markers]
-        if len(seqs) != len(set(seqs)):
+        marker_ids: list[str] = []
+        for marker in markers:
+            number = _number(marker[1])
+            if product == "option" and marker[0].lstrip().startswith("第"):
+                # 期权“第N笔”是引用顺序，“序号N”是显示标签；与补参解析一致。
+                if not 0 < number <= len(ids):
+                    return fail("unknown_sequence")
+                marker_ids.append(ids[number - 1])
+            else:
+                if str(number) not in mapping:
+                    return fail("unknown_sequence")
+                marker_ids.append(mapping[str(number)])
+        if len(marker_ids) != len(set(marker_ids)):
             return fail("duplicate_sequence")
-        if any(seq not in mapping for seq in seqs):
-            return fail("unknown_sequence")
         if not selection_order:
-            selection_order = [mapping[seq] for seq in seqs]
-        selected_groups.append({mapping[seq] for seq in seqs})
+            selection_order = marker_ids
+        selected_groups.append(set(marker_ids))
         remaining = _SEQUENCE.sub("", remaining)
     contracts = _CONTRACT.findall(remaining)
     if contracts:
@@ -240,6 +253,12 @@ def parse_confirmation(
             targets = set()
             for match in _CONTRACT.finditer(reference):
                 if match[0] != contract:
+                    continue
+                after = next((m for m in positions if m.start() >= match.end()), None)
+                if after is not None and re.fullmatch(
+                    r"\s*(?:订单号|单号)\s*[:：]\s*", reference[match.end() : after.start()]
+                ):
+                    targets.add(after[0].upper())
                     continue
                 before = [m for m in positions if m.start() < match.start()]
                 if before:

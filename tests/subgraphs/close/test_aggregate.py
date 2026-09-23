@@ -1,6 +1,6 @@
 """close 子图 · 参数聚合 + 前置清洗纯函数测试。
 
-对齐 Dify `期权平仓-参数聚合` + `期权平仓-前置清洗`（spec/code_nodes/两者）。
+平仓参数聚合 + 前置清洗规则（原 DSL v2 两个代码节点，现以本仓实现为准）。
 """
 from __future__ import annotations
 

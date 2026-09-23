@@ -30,7 +30,7 @@ def test_inputs_to_state_is_the_single_turn_entry() -> None:
 def test_eval_pipeline_uses_production_turn_state(monkeypatch) -> None:
     import asyncio
 
-    from scripts import langfuse_eval
+    from scripts.langfuse import langfuse_eval
 
     captured: dict = {}
 

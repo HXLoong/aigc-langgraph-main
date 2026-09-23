@@ -4,7 +4,6 @@ from __future__ import annotations
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
-from evidence_support import candidate_output
 from pydantic import ValidationError
 
 from app.subgraphs.option import extract_inquiry as ei_module
@@ -14,6 +13,7 @@ from app.subgraphs.option.models import (
     OptionInquiryRawParams,
     OptionOrderItem,
 )
+from tests.evidence_support import candidate_output
 
 
 def _patch_llm(
@@ -59,7 +59,7 @@ class TestOptionOrderItemForInquiry:
             OptionOrderItem(optionType="美式看涨")  # type: ignore[arg-type]
 
     def test_removed_option_types_rejected(self) -> None:
-        """Dify DSL v2 收窄：不再支持 欧式看跌/气囊。"""
+        """期权类型收窄为 3 值（DSL v2 迁移），不再支持 欧式看跌/气囊。"""
         for removed in ("欧式看跌", "气囊"):
             with pytest.raises(ValidationError):
                 OptionOrderItem(optionType=removed)  # type: ignore[arg-type]

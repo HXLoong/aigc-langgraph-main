@@ -157,7 +157,8 @@ async def test_multi_seq_legs_calculate_remainder_and_full_close_independently(m
     first, second = _sent(captured)
     assert first["orderId"] == "CO-20260506-AAAA0001"
     assert first["closeOrderNotionalDelta"] == "3000000"
-    assert first["closeOrderType"] == "POV" and first["closeOrderPovRatio"] == 25
+    assert first["hasFastExecutionIntent"] is True
+    assert first["closeOrderType"] is None and first["closeOrderPovRatio"] is None
     assert second["orderId"] == "CO-20260506-BBBB0002"
     assert second["confirmFullClose"] is True
     assert second["closeOrderType"] is None and second["closeOrderPovRatio"] is None

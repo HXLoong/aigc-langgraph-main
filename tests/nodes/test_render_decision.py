@@ -1,10 +1,17 @@
-"""render 每个分支必须在 trace 里留下 decision（ADR 0024 D3：18 分支决策树可观测）。"""
+"""render 每个分支必须在 trace 里留下 decision（ADR 0024 D3：决策树可观测）。
+
+现役决策集合（2026-09-20 标的识别委托后端后，本地不再有 hitl_card / zero_match 卡片）：
+passthrough / api_result / error:{option,swap}_backend_{missing_context,empty_result}
+/ error:backend_unreachable / error:cascade_fail / unknown_intent / backend_no_result / no_reply。
+"""
 from __future__ import annotations
 
 import pytest
 
-from app.graph.state import ErrorInfo, TickerCandidate
+from app.config import get_settings
+from app.graph.state import ErrorInfo
 from app.nodes.render import render
+from app.tools.receipts import SERVICE_UNAVAILABLE, UNCERTAIN_REPLY
 
 
 def _decision(update: dict) -> str | None:
@@ -13,53 +20,86 @@ def _decision(update: dict) -> str | None:
     return entries[0].decision
 
 
-@pytest.mark.asyncio
 async def test_passthrough_when_subgraph_already_replied() -> None:
     out = await render({"reply_text": "已有回复"})
     assert "reply_text" not in out
     assert _decision(out) == "passthrough"
 
 
-@pytest.mark.asyncio
-async def test_api_result_branch() -> None:
-    out = await render({"api_result": "后端卡片", "product_type": "swap"})
+async def test_api_result_branch_passes_backend_text_through() -> None:
+    out = await render({"api_result": "后端卡片", "api_code": 0, "product_type": "swap"})
     assert out["reply_text"] == "后端卡片"
     assert _decision(out) == "api_result"
 
 
-@pytest.mark.asyncio
-async def test_hitl_card_branch() -> None:
+async def test_api_result_branch_projects_code_500_to_service_unavailable() -> None:
+    out = await render({"api_result": "内部错误堆栈", "api_code": 500, "product_type": "option"})
+    assert out["reply_text"] == SERVICE_UNAVAILABLE
+    assert _decision(out) == "api_result"
+
+
+@pytest.mark.parametrize(
+    ("product_type", "err_type", "decision"),
+    [
+        ("option", "MissingBackendContextError", "error:option_backend_missing_context"),
+        ("option_close", "MissingBackendContextError", "error:option_backend_missing_context"),
+        ("option", "EmptyBackendResultError", "error:option_backend_empty_result"),
+        ("swap", "MissingBackendContextError", "error:swap_backend_missing_context"),
+        ("swap", "EmptyBackendResultError", "error:swap_backend_empty_result"),
+        ("swap", "BackendUnreachableError", "error:backend_unreachable"),
+        ("option", "RuntimeError", "error:cascade_fail"),
+    ],
+)
+async def test_error_branches_are_distinguished(
+    product_type: str, err_type: str, decision: str
+) -> None:
     out = await render({
-        "product_type": "swap",
+        "product_type": product_type,
+        "error": ErrorInfo(node="n", type=err_type, message="x"),
+    })
+    assert _decision(out) == decision
+    assert out["reply_text"]
+
+
+async def test_unknown_intent_uses_default_reply() -> None:
+    out = await render({"product_type": "option", "intent": "unknown_intent"})
+    assert out["reply_text"] == get_settings().default_reply
+    assert _decision(out) == "unknown_intent"
+
+
+@pytest.mark.asyncio
+async def test_business_intent_without_backend_result_is_labelled() -> None:
+    out = await render({"product_type": "option", "intent": "new_inquiry"})
+    assert _decision(out) == "backend_no_result"
+
+
+async def test_known_intent_without_receipt_is_uncertain_not_fabricated() -> None:
+    out = await render({"product_type": "option", "intent": "new_inquiry",
+                        "expected_action": "inquiry", "place_params": {"orderList": []}})
+    assert out["reply_text"] == UNCERTAIN_REPLY
+    assert _decision(out) == "backend_no_result"
+
+
+async def test_no_reply_fallthrough_is_labelled() -> None:
+    out = await render({"tickers": [], "place_params": {}})
+    assert out["reply_text"] == get_settings().default_reply
+    assert _decision(out) == "no_reply"
+
+
+@pytest.mark.asyncio
+async def test_local_candidates_without_receipt_use_uncertain_branch() -> None:
+    out = await render({
+        "product_type": "swap", "intent": "place_order_request",
         "ticker_hitl_candidates": [{"keyword": "茅台", "candidates": [{"windCode": "600519.SH"}]}],
     })
-    assert _decision(out) == "hitl_card"
+    assert _decision(out) == "backend_no_result"
+    assert "600519.SH" not in out["reply_text"]
 
 
 @pytest.mark.asyncio
-async def test_zero_match_branch() -> None:
+async def test_empty_tickers_do_not_select_zero_match_branch() -> None:
     out = await render({
         "product_type": "option", "tickers": [], "expected_action": "place", "place_params": {"orderList": [{}]},
-        "raw_text": "x",
+        "raw_text": "x", "intent": "place_order",
     })
-    assert _decision(out) == "zero_match"
-
-
-@pytest.mark.asyncio
-async def test_error_branches_are_distinguished() -> None:
-    unreachable = await render({
-        "product_type": "swap",
-        "error": ErrorInfo(node="n", type="BackendUnreachableError", message="down"),
-    })
-    cascade = await render({
-        "product_type": "swap", "error": ErrorInfo(node="n", type="RuntimeError", message="x"),
-    })
-    assert _decision(unreachable) == "error:backend_unreachable"
-    assert _decision(cascade) == "error:cascade_fail"
-
-
-@pytest.mark.asyncio
-async def test_no_reply_fallthrough_is_labelled() -> None:
-    out = await render({"product_type": "option", "intent": "new_inquiry",
-                        "tickers": [TickerCandidate(windCode="600519.SH", from_goats=True)]})
-    assert _decision(out) == "no_reply"
+    assert _decision(out) == "backend_no_result"

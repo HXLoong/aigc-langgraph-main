@@ -1,4 +1,6 @@
-"""Dify 20 boundary: extract instrument expressions; Java resolves securities."""
+"""Instrument boundary: extract instrument expressions; Java resolves securities."""
+import pathlib
+import re
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -24,12 +26,23 @@ def model(monkeypatch, module, factory, payload):
 def no_lookup(monkeypatch):
     lookup = AsyncMock(side_effect=AssertionError("instrument resolution belongs to Java"))
     monkeypatch.setattr(TickerClientHttpx, "search_securities_instrument", lookup)
-    # Cover the old pre-backend LLM boundary while it is being removed.
-    for module, name in ((place_order, "resolve_ticker_full"),
-                         (inquiry, "resolve_ticker_full"), (inquiry, "resolve_ticker")):
-        if hasattr(module, name):
-            monkeypatch.setattr(module, name, lookup)
     return lookup
+
+
+_LOCAL_RESOLUTION_RX = re.compile(r"resolve_ticker|TickerClient|ticker_client|from_goats=True")
+
+
+def test_business_graphs_do_not_import_local_instrument_resolution() -> None:
+    """标的识别委托后端（CLAUDE.md 原则 7）：业务子图与节点不得再引用本地证券解析。
+
+    旧守卫靠 monkeypatch 一个已不存在的 `resolve_ticker_full`，恒真无效；这里直接断言导入面。
+    """
+    roots = (pathlib.Path("app/subgraphs"), pathlib.Path("app/nodes"), pathlib.Path("app/graph"))
+    offenders = sorted(
+        str(path) for root in roots for path in root.rglob("*.py")
+        if _LOCAL_RESOLUTION_RX.search(path.read_text(encoding="utf-8"))
+    )
+    assert offenders == [], offenders
 
 
 @pytest.mark.parametrize("instrument", ["沪铜主力", "9月沪铜", "宁德时代", "2333长城汽车", "cu2609.shf", "00700"])

@@ -113,6 +113,12 @@ SECURITIES_DICT: list[dict[str, Any]] = [
 # ============================================================
 
 POSITIONS: list[dict[str, Any]] = [
+    # 显式 mock 前置：categories 的平仓生命周期种子使用 OPT-AAAA1，且引用序号 1。
+    # 仅此测试持仓有效；未列入 POSITIONS 的合约仍按未知合约拒绝。
+    {"orderId": "CO-20260506-AAAA0001", "contractCode": "OPT-AAAA1",
+     "notional": 10_000_000, "availableNotional": 10_000_000,
+     "underlyingCode": "600519.SH", "underlyingName": "贵州茅台",
+     "optionType": "欧式看涨", "createTime": "2026-05-06 15:00"},
     {"orderId": "CO-20260506-85AB8526", "contractCode": "OPT-LYAFT20260001",
      "notional": 10_000_000, "availableNotional": 10_000_000,
      "underlyingCode": "000155.SZ", "underlyingName": "川能动力",
@@ -148,6 +154,11 @@ COUNTERPARTIES: list[dict[str, Any]] = [
      "groupFlag": "N",
      "transactionTypeList": ["A_SHARE", "HK_STOCK", "US_STOCK", "SZ_HK_CONNECT",
                              "SH_HK_CONNECT", "CROSS_FUTURE"]},
+    # 现役互换 fixture 的显式 mock 授权上下文，非生产业务对手字典。
+    {"ctptyId": 19001, "shortName": "聚鸣价值精选", "longName": "聚鸣价值精选（mock 测试对手）",
+     "groupFlag": "N",
+     "transactionTypeList": ["A_SHARE", "HK_STOCK", "US_STOCK", "SZ_HK_CONNECT",
+                             "SH_HK_CONNECT", "CROSS_FUTURE", "CHN_FUTURE"]},
 ]
 
 

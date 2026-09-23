@@ -5,6 +5,10 @@ from typing import Any
 
 from pydantic import BaseModel
 
+from app.extraction.fields import EvidenceError
+from app.subgraphs.swap.errors import NonPositiveQuantityError
+from app.subgraphs.swap.normalize import holding_action, is_holding_description, negates_token
+
 _ORDER_ID = re.compile(r"H-[0-9]{8}-[0-9]+")
 _TERMINATOR = re.compile(r"[,，]\s*全部清仓(?=$|\s|[,，。;；!?！？])")
 
@@ -13,7 +17,7 @@ def _within(cell: Any, text: str) -> bool:
     return isinstance(cell, dict) and bool(cell.get("value")) and bool(cell.get("evidence")) and cell["evidence"] in text
 
 
-def constrain_candidates(candidates: BaseModel, sources: Mapping[str, str]) -> BaseModel:
+def _constrain_references(candidates: BaseModel, sources: Mapping[str, str]) -> BaseModel:
     data = candidates.model_dump(by_alias=True)
     orders = data.get("orderList") or []
     raw, quote = sources.get("raw", ""), sources.get("quote", "")
@@ -43,4 +47,146 @@ def constrain_candidates(candidates: BaseModel, sources: Mapping[str, str]) -> B
             if field != "placeOrderShortname" and cell and not _within(cell, prefix):
                 order[field] = None
     data["orderList"] = eligible
+    return type(candidates).model_validate(data)
+
+
+_ACTION_FIELDS = {"placeOrderOrderDirection", "placeOrderCloseIntent", "placeOrderEntrustRatio"}
+_SCOPED_FIELDS = _ACTION_FIELDS | {"placeOrderAlgorithmType", "placeOrderPovPercent", "placeOrderTotalPovPercent"}
+_NATURAL_WINDOWS = {"全天", "开盘", "到收盘", "至收盘", "收盘"}
+
+
+def _single_order_block(row: dict[str, Any], raw: str) -> str | None:
+    anchor = row.get("placeOrderWindCode") or row.get("orderId")
+    clauses = re.split(r"[;；]", raw)
+    if len(clauses) == 1:
+        block = raw
+    elif anchor and anchor.get("value"):
+        matches = [clause for clause in clauses if anchor["value"] in clause]
+        if len(matches) != 1:
+            return None
+        block = matches[0]
+    else:
+        return None
+    if "\n" not in block:
+        return block
+    literals = {cell["value"].strip() for field, cell in row.items()
+                if field not in _SCOPED_FIELDS and cell and cell.get("value")}
+    for line in block.splitlines():
+        text = line.strip()
+        if not text or text in literals or (anchor and anchor.get("value") and anchor["value"] in text):
+            continue
+        if re.match(r"(?:交易)?标的\s*[:：]", text):
+            raise EvidenceError("another instrument label occurs in a single order block")
+        if re.match(r"(?:(?:交易)?(?:方向|数量(?:/金额)?|金额|股数|价格|方式)|建仓方式|备注)\s*[:：]", text):
+            continue
+        if re.fullmatch(r"(?:新增|交易|下单)?指令[:：]?|买入|卖出|買入|賣出|市价|不限价|限价\s*[0-9.]+", text):
+            continue
+        raise EvidenceError("unattributed line in a single order block")
+    return block
+
+
+def _order_window(row: dict[str, Any], orders: list[dict[str, Any]], raw: str) -> str | None:
+    if len(orders) == 1:
+        return _single_order_block(row, raw)
+    positions = []
+    anchors = ("placeOrderWindCode", "placeOrderQuantity", "placeOrderNotional", "orderId")
+    for order in orders:
+        position = None
+        for field in anchors:
+            anchor = order.get(field)
+            if not anchor or anchor.get("origin", "raw") != "raw" or not anchor.get("value"):
+                continue
+            value = anchor["value"]
+            if sum(bool(other.get(field)) and other[field].get("value") == value for other in orders) != 1:
+                continue
+            matches = list(re.finditer(re.escape(value), raw))
+            if len(matches) == 1:
+                position = matches[0].start()
+                break
+        if position is None:
+            return None
+        positions.append((position, order, field))
+    positions.sort(key=lambda item: item[0])
+    starts = []
+    for index, (position, order, anchor_field) in enumerate(positions):
+        start = 0 if index == 0 else position
+        if index:
+            boundary = max(raw.rfind(char, 0, position) for char in ";；\n,，") + 1
+            hard_boundary = max(raw.rfind(char, 0, position) for char in ";；\n") + 1
+            prefix = raw[boundary:position].strip()
+            if hard_boundary > positions[index - 1][0]:
+                start = hard_boundary
+            elif re.search(r"不|别|勿|禁止|无需|如果|假如|若", prefix) or (
+                anchor_field != "placeOrderWindCode" and boundary > positions[index - 1][0]
+            ) or re.fullmatch(
+                r"(?:(?:新增指令[:：])?标的[:：]|(?:再|另|另外|其余|剩余)?(?:买入|卖出|卖空|平仓)?\s*)", prefix,
+            ):
+                start = boundary
+            else:
+                for match in re.finditer(r"其余|另外|剩余", raw[positions[index - 1][0]:position]):
+                    start = positions[index - 1][0] + match.start()
+        starts.append((start, order))
+    if len({start for start, _ in starts}) != len(starts):
+        return None
+    for index, (start, order) in enumerate(starts):
+        if order is row:
+            end = starts[index + 1][0] if index + 1 < len(starts) else len(raw)
+            return raw[start:end].strip(";；\n,， ")
+    return None
+
+
+def constrain_candidates(candidates: BaseModel, sources: Mapping[str, str]) -> BaseModel:
+    """Exclude descriptive claims; only unambiguous current-order evidence can bind actions."""
+    candidates = _constrain_references(candidates, sources)
+    data = candidates.model_dump(by_alias=True)
+    orders = data.get("orderList") or []
+    for row in orders:
+        for field in _ACTION_FIELDS:
+            candidate = row.get(field)
+            if candidate and candidate.get("origin") in {"quote", "history"}:
+                row[field] = None
+        window = _order_window(row, orders, sources.get("raw", ""))
+        if window is None:
+            if any(row.get(field) and row[field].get("origin", "raw") == "raw" for field in _SCOPED_FIELDS):
+                raise EvidenceError("cannot establish a unique source window for order actions")
+            continue
+        for field in _SCOPED_FIELDS:
+            candidate = row.get(field)
+            if (candidate and candidate.get("origin", "raw") == "raw"
+                    and candidate.get("value") and not _within(candidate, window)):
+                raise EvidenceError(f"{field}: action evidence does not belong to this order")
+        for field in ("placeOrderQuantity", "placeOrderQuantityHand", "placeOrderQuantityTotal", "placeOrderDisplayQty"):
+            candidate = row.get(field)
+            value = candidate.get("value") if candidate else None
+            token = value.lstrip() if isinstance(value, str) else ""
+            if (re.match(r"[+]?[0-9]", token)
+                    and re.search(r"(?<![A-Za-z0-9_.-])(?:[-−]\s*)+" + re.escape(token) + r"(?![0-9.])", window)):
+                raise NonPositiveQuantityError(field)
+        direction = row.get("placeOrderOrderDirection")
+        if direction and is_holding_description(direction.get("value") or ""):
+            row["placeOrderOrderDirection"] = None
+        elif direction and direction.get("value") and negates_token(direction["value"], window):
+            raise ValueError("交易方向被否定")
+        close = row.get("placeOrderCloseIntent")
+        if close and close.get("origin", "raw") == "raw":
+            if is_holding_description(close.get("value") or "") and holding_action(window) is None:
+                row["placeOrderCloseIntent"] = None
+            else:
+                close["evidence"] = window
+        ratio = row.get("placeOrderEntrustRatio")
+        if ratio and ratio.get("origin", "raw") == "raw" and is_holding_description(ratio.get("value") or ""):
+            action = holding_action(window)
+            if action is not True:
+                row["placeOrderEntrustRatio"] = None
+            else:
+                ratio["evidence"] = window
+        algorithm = row.get("placeOrderAlgorithmType")
+        if (algorithm and algorithm.get("origin", "raw") == "raw" and algorithm.get("value")
+                and negates_token(algorithm["value"], window)):
+            raise ValueError("算法表达被否定")
+        for field in ("placeOrderStartTime", "placeOrderEndTime", "placeOrderRelativeTimeMinutes"):
+            candidate = row.get(field)
+            if (candidate and candidate.get("origin", "raw") == "raw"
+                    and candidate.get("value") in _NATURAL_WINDOWS and _within(candidate, window)):
+                row[field] = None
     return type(candidates).model_validate(data)

@@ -6,7 +6,7 @@ from typing import Any
 
 from app.extraction.fields import FieldRecord
 from app.graph.business_params import validated_place_params
-from app.graph.safe_node import safe_node
+from app.graph.retry import io_node
 from app.graph.state import AgentState, TraceEntry
 from app.llm.clients import get_qwen_complex
 from app.prompts import load_prompt
@@ -38,7 +38,7 @@ SPEC = register(PromptSpec(
 ))
 
 
-@safe_node
+@io_node
 async def swap_recognize_fresh_counterparty(state: AgentState) -> dict[str, Any]:
     """只消费原话及后端候选；只更新 place_params 中的交易对手名称。"""
     raw_text = state.get("raw_text") or ""

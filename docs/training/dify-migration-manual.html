@@ -293,7 +293,7 @@ diff -r app/prompts/ /tmp/new-prompts/             <span class="cm"># 人工审�
 <tr><td>后端 Protocol</td><td class="mono">app/tools/{swap,option,ticker}_client.py</td></tr>
 <tr><td>LLM 工厂 / 提示词加载</td><td class="mono">app/llm/clients.py · app/prompts/__init__.py</td></tr>
 <tr><td>API 兼容层 / Checkpointer</td><td class="mono">app/api/routes.py · app/checkpointer/factory.py</td></tr>
-<tr><td>评测台 / golden</td><td class="mono">harness/ · tests/fixtures/golden.jsonl · scripts/langfuse_eval.py</td></tr>
+<tr><td>评测台 / golden</td><td class="mono">harness/ · tests/fixtures/golden.jsonl · scripts/langfuse/langfuse_eval.py</td></tr>
 <tr><td>培训资产</td><td class="mono">docs/training/course/（8 课 + 状态图 + 速查表）· langgraph-handbook.md</td></tr>
 </table></div>
 <h3>B. 本手册引用的 ADR</h3>
@@ -303,7 +303,7 @@ diff -r app/prompts/ /tmp/new-prompts/             <span class="cm"># 人工审�
 uvicorn app.main:app --reload                             <span class="cm"># 起服务</span>
 pytest tests/ -v && ruff check app/ tests/ && mypy app/   <span class="cm"># 提交前三件套</span>
 python -m harness run                                     <span class="cm"># golden 快速 smoke</span>
-python scripts/langfuse_eval.py --local tests/fixtures/golden.jsonl --ids swap-001  <span class="cm"># Judge 评估</span></code></pre>
+python scripts/langfuse/langfuse_eval.py --local tests/fixtures/golden.jsonl --ids swap-001  <span class="cm"># Judge 评估</span></code></pre>
 
 <footer>
 <p>本手册与主干同步维护：拓扑 / 纪律 / 差异清单有变时，随对应 PR 一并更新。发现描述与代码不符，以代码 + ADR 为准并提 issue。——图灵科技</p>

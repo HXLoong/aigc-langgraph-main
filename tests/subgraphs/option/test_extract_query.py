@@ -11,16 +11,14 @@ import pytest
 
 from app.subgraphs.option import extract_query as query_module
 from app.subgraphs.option.extract_query import option_extract_query
+from tests.llm_guard import forbid_llm
 
 
 def _patch(monkeypatch: pytest.MonkeyPatch) -> AsyncMock:
     backend = AsyncMock(return_value={"api_code": 0, "api_result": "backend reply"})
     monkeypatch.setattr(query_module, "call_option_backend", backend)
 
-    def _forbid(*_args: object, **_kwargs: object) -> None:
-        raise AssertionError("去 LLM 化节点不应调用 LLM")
-
-    monkeypatch.setattr(query_module, "get_qwen_thinking", _forbid, raising=False)
+    forbid_llm(monkeypatch, query_module)
     return backend
 
 

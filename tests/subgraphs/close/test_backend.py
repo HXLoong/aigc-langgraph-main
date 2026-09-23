@@ -1,6 +1,6 @@
 """close 子图后端调用测试（`call_close_backend`）。
 
-对齐 Dify `期权平仓`[code]（spec/code_nodes/期权平仓.py）：payload 固定
+平仓 operate payload 契约（docs/api-contracts/java-backend.md）：payload 固定
 `orderList: []` + `closeOrderReqVO: {...}`，不复用 option 域的 orderList 字段
 （P0 payload 对齐项）。
 """
@@ -58,7 +58,7 @@ class TestCallCloseBackend:
         )
         assert len(captured) == 1
         req = captured[0]
-        # payload 语义对齐 Dify 期权平仓[code]：orderList 恒为 []
+        # Java operate 契约：平仓请求 orderList 恒为 []，平仓明细走 closeOrderList
         assert req.order_list == []
         assert req.close_order_req_vo.model_dump()["confirmOrderNoList"] == ["CO-A"]
         assert req.type.value == "close_order_confirm"

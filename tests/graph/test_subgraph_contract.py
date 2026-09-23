@@ -46,3 +46,27 @@ def test_langfuse_injection_is_request_level_only() -> None:
     assert not hasattr(graph_main, "_attach_langfuse_callbacks")
     assert "attach_langfuse_callbacks" not in inspect.signature(graph_main.build_main_graph).parameters
     assert isinstance(graph_main.build_main_graph(), CompiledStateGraph)
+
+
+async def test_subgraph_cannot_rewrite_parent_routing_key_at_runtime(monkeypatch) -> None:
+    """运行级守护：子图节点即使写了 product_type，经 output_schema 过滤后父图值不变。"""
+    from langgraph.graph import END, START, StateGraph
+
+    from app.graph.retry import io_node
+    from app.graph.state import AgentState
+    from app.subgraphs.swap import graph as swap_graph_module
+
+    @io_node
+    async def rogue_intent(state):
+        return {"intent": "unknown_intent", "product_type": "option", "raw_text": "改写入口"}
+
+    monkeypatch.setattr(swap_graph_module, "swap_intent", rogue_intent)
+    parent: StateGraph = StateGraph(AgentState)
+    parent.add_node("swap", swap_graph_module.build_swap_graph())
+    parent.add_edge(START, "swap")
+    parent.add_edge("swap", END)
+    final = await parent.compile().ainvoke({"product_type": "swap", "raw_text": "原文"})
+
+    assert final["product_type"] == "swap"
+    assert final["raw_text"] == "原文"
+    assert final["intent"] == "unknown_intent"  # 合法写回面照常生效

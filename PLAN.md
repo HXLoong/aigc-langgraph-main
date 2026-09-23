@@ -1,31 +1,8 @@
-# 评估与迭代方案（M3 阶段）
+# 评估与迭代方案
 
 > Judge：DeepSeek V4（Anthropic 兼容端点，thinking=4096 tokens）
 > 范围：全链路（swap / option / option_close / ticker），fixture 现役数据源 `tests/fixtures/categories/`（350+ 条）
-> 状态：基础设施完成 ✅；M3.1 mock 跑通 ✅；M3.2 真后端联调 ✅；当前推进 **M3.3 真后端 golden 回归 + 错例修 P0/P1 + 业务方现场 sign-off**（issues #82–#87）
-
-## M3 阶段三段定义（来自 ADR 0016）
-
-| 阶段 | 状态 | 退出门 | 关联 |
-|---|---|---|---|
-| **M3.1 · Mock 跑通** | ✅ 完成 | harness anchor 全集 PASS ≥ 85%（达成 84.6%）| `docs/archive/m2/m2-real-llm-final-report.md` |
-| **M3.2 · 真后端联调** | ✅ 完成 | D2.1–D2.6 + Dx.1/Dx.2 全 closed；HTTP 5xx = 0 / 4xx = 0 | issues #72–#80 |
-| **M3.3 · 真后端 Golden 回归** | 🔄 进行中 | PASS ≥ M3.1 mock baseline + 错例 P0/P1 全修 + 现场 sign-off | issues #82–#87 |
-
-## M3.3 具体子任务（open）
-
-| Issue | 任务 | 退出门 |
-|---|---|---|
-| #82 E3.1 | 真后端跑 B 桶全集 → PASS rate 报告 | 总 PASS ≥ 92.5%（mock baseline 同口径）|
-| #83 E3.2 | business_seed 全集按桶分别评估 | B 桶 ≥ 90% / C 桶 ≥ 80% |
-| #84 E3.3 | 真后端跑 D 桶（客户真实输入）| 依赖 PM 收集 30+ 条 |
-| #85 E3.4 | 错例聚类 + 根因分析，**只修 P0/P1**（cascade fail / 5xx / 严重参数错 / 标的错），P2 延后到 F4.6 | 修完回归 PASS rate |
-| #86 E3.5 | 现场 smoke checklist + 客户 Java 后端真实联调 | ≥ 5 条真实业务流走通 |
-| #87 E3.6 | 业务方培训 + 现场 sign-off | 业务方盲测 ≥ 5 条 case PASS sign-off |
-| #59 C1.14 | 离线依赖包（pip wheel + docker save）| 离线环境完整跑通客户部署 |
-| #113 | fixture 数据集质量修复（执行价格缺失 / 反案例标错 / 重复指令）| 业务方 review pass |
-
----
+> 状态：基础设施完成；当前按 [ADR 0030](docs/adr/0030-goal-restatement-native-langgraph-dataset-eval-harness.md) D3 的统一评测门做真后端数据集回归与错例修复；现状与待办见 [docs/work-plan.md](docs/work-plan.md)
 
 ## 一、已完成
 
@@ -33,10 +10,10 @@
 
 | 组件 | 文件 | 状态 |
 |---|---|---|
-| 评估脚本（DeepSeek Judge + per-turn 富集 JSON）| `scripts/langfuse_eval.py` | ✅ 单轮 / 多轮 / Langfuse Cloud 写回 |
-| Dataset 上传 | `scripts/upload_golden_to_langfuse.py`（categories → Langfuse） | ✅ |
+| 评估脚本（DeepSeek Judge + per-turn 富集 JSON）| `scripts/langfuse/langfuse_eval.py` | ✅ 单轮 / 多轮 / Langfuse Cloud 写回 |
+| Dataset 上传 | `scripts/langfuse/upload_golden_to_langfuse.py`（categories → Langfuse） | ✅ |
 | 数据转换 | `scripts/convert_csv_to_excel.py` / `convert_jsonl_to_csv.py` | ✅ |
-| 本地 fixture | `tests/fixtures/categories/`（A 方言，6 文件 / 389 条）+ `unified_golden.jsonl`（B 方言，921 条，harness 默认并入，ADR 0024 D6）；`old_typing/` 归档 | ✅ |
+| 本地 fixture | `tests/fixtures/categories/`（A 方言，6 文件 / 389 条）+ `unified_golden.jsonl`（B 方言，921 条，历史参考集，显式 --include-unified 加载，ADR 0030）；`old_typing/` 归档 | ✅ |
 | 真后端 e2e 探针 | `scripts/probe_*_e2e.py`（swap / option / close / ticker / real_backend） | ✅ |
 | Token / 成本估算 | `harness/token_tracker.py` + `scripts/llm_cost_report.py` | ✅ |
 | 报告 | Langfuse per-turn 富集 JSON + `harness/cli.py` markdown 报告 | ✅ |
@@ -48,13 +25,13 @@
 ```
 本地 tests/fixtures/categories/（现役，350+ 条）
         │
-        ├──→ scripts/upload_golden_to_langfuse.py
+        ├──→ scripts/langfuse/upload_golden_to_langfuse.py
         │            │
         │            ▼
         │     Langfuse Dataset
         │            │
         ▼            ▼
-scripts/langfuse_eval.py
+scripts/langfuse/langfuse_eval.py
   ├── InMemorySaver（不依赖 MySQL checkpoint）
   ├── 真实 DeepSeek-V4-pro（测提示词效果，ADR 0020）
   ├── 真实后端 / 本地 mock（OTC_API_BASE_URL 切换）
@@ -70,16 +47,16 @@ scripts/langfuse_eval.py
 
 ---
 
-## 二、当前进行（M3 工程联调）
+## 二、当前进行（真后端数据集回归）
 
 ### 主线 · 持续评估迭代
 
 ```bash
 # 全量基线
-python scripts/langfuse_eval.py --local tests/fixtures/categories --concurrency 4
+python scripts/langfuse/langfuse_eval.py --local tests/fixtures/categories --concurrency 4
 
 # 按 case 子集复跑（修一处 bug 后验证）
-python scripts/langfuse_eval.py --local tests/fixtures/categories --ids case-025,case-026 --concurrency 2
+python scripts/langfuse/langfuse_eval.py --local tests/fixtures/categories --ids case-025,case-026 --concurrency 2
 
 # 按子链路批量（option 链路）
 .claude/skills/iterate-option/SKILL.md  # 跑→归因→TDD 修→重跑的自驱动循环
@@ -111,12 +88,12 @@ TDD 修复（先写 RED 测试 → 写最小修复 → GREEN + 全量回归）
 
 ```bash
 # 评估
-python scripts/langfuse_eval.py --local tests/fixtures/categories --concurrency 4
-python scripts/langfuse_eval.py --local tests/fixtures/categories --ids case-025
-python scripts/langfuse_eval.py --local tests/fixtures/categories --dry-run --limit 5
+python scripts/langfuse/langfuse_eval.py --local tests/fixtures/categories --concurrency 4
+python scripts/langfuse/langfuse_eval.py --local tests/fixtures/categories --ids case-025
+python scripts/langfuse/langfuse_eval.py --local tests/fixtures/categories --dry-run --limit 5
 
 # 数据集
-python scripts/upload_golden_to_langfuse.py        # categories → Langfuse Dataset
+python scripts/langfuse/upload_golden_to_langfuse.py        # categories → Langfuse Dataset
 
 # Harness CLI（无 Judge 快速 smoke）
 python -m harness doctor
@@ -134,16 +111,16 @@ python scripts/llm_cost_report.py                  # LLM 成本日报
 
 ## 四、不做（范围约束）
 
-- 不做 shadow 双跑作为 M3 退出门（ADR 0016：Dify 自身有"标的不准 / 参数 bug / 评估缺失"三大缺陷，不能作 ground truth；shadow 仅作 M4 切流前的第二意见）
+- 不做 shadow 双跑作为退出门（ADR 0030：Dify 自身有"标的不准 / 参数 bug / 评估缺失"三大缺陷，不能作 ground truth；shadow 仅作切流前的可选对照）
 - Judge 不用业务同源模型自评（会高估）；统一 DeepSeek Judge
 - 不做标的池 MySQL 直查（ADR 0012：恢复 securities-instrument HTTP，走 `TickerClient`）
 - 不为提高 PASS 率硬编码业务数据字典（CLAUDE.md "绝对禁止 · P0"）
-- M3.3 错例修复**只修 P0/P1**（cascade fail / 5xx / 严重参数错 / 标的错），P2 错例（个别意图识别错 / 低频边界 case）延后到 F4.6 金丝雀期再修
+- 错例修复**只修 P0/P1**（cascade fail / 5xx / 严重参数错 / 标的错），P2 错例（个别意图识别错 / 低频边界 case）延后到灰度期再修
 
 ## 五、二期持续优化（全量上线后启动）
 
-来自客户内部汇报方案（2026-05-11）的三件套，**不在 T+3~4 全量上线范围内**：
+来自客户内部汇报方案（2026-05-11）的三件套，不阻塞主线（详见 `docs/work-plan.md` §3）：
 
-- **Issue #35** · 评估→优化→更新→再评估自动闭环（错例聚类 / A/B 自动评估 / 自动 PR 生成 / 3-6 周）
-- **Issue #36** · 智能体异常干预 + 沉淀记忆机制（跨会话 agentic memory / 4-8 周）
-- **Issue #37** · 回流集自动化打通（生产真实流量 → D 桶 golden，含脱敏 + 业务方人工标注 / 6-10 周）
+- 评估→优化→更新→再评估自动闭环（错例聚类 / A/B 自动评估 / 自动 PR 生成）
+- 智能体异常干预 + 沉淀记忆机制（跨会话 agentic memory）
+- 回流集自动化打通（生产真实流量 → D 桶数据集，含脱敏 + 业务方人工标注）

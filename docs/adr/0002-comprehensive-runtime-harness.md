@@ -1,8 +1,8 @@
 # ADR 0002 · 建设综合运行时 Harness（开发期 + 运行期 + 提示词调优期三位一体）
 
-- 状态：已采纳（2026-05-13 由 proposed 转正，M1+M2 落地印证）
+- 状态：已采纳（2026-05-13 由 proposed 转正；三个能力面均已建成，线上标注回流未启动）
 - 日期：2026-05-10
-- 修订：2026-08-27 深度改写为现状口径（wayfinder map #138 / 核查 #139）
+- 修订：2026-09-22 按 [ADR 0030](./0030-goal-restatement-native-langgraph-dataset-eval-harness.md) 退役阶段编号（改为能力面）；2026-08-27 深度改写为现状口径（对照代码核查）
 - 作者：图灵科技 + Tony
 
 ## 上下文
@@ -13,9 +13,9 @@
 
 ## 三个阶段的覆盖面（现状）
 
-- **开发期**：节点 / 子图 / 模型层单元测试（`tests/` 977 项 collected）+ in-process 闭环 demo（~~`scripts/demo_closed_loop.py`~~，零外部依赖跑全量 golden；脚本已删除，2026-09-16 核查）+ 子图金字塔。
-- **运行期**：每个节点产出结构化 trace；`app/nodes/persist.py` 提供写入 MySQL `node_trace` 的代码，对接 **LangFuse**（[ADR 0014](./0014-langfuse-as-harness-backend.md)，取代早期 LangSmith 方案）+ OpenTelemetry（`app/observability/tracing.py`），基于 `/metrics` 做延迟、错误率告警（`app/observability/{metrics,alerts}.py`）。⚠️ 仓库尚无 `node_trace` 建表/迁移资产，未初始化业务库时写入会降级失败。
-- **提示词调优期**：提示词版本化（`app/prompts/_versions.yaml` + [ADR 0003](./0003-prompt-versioning-by-file-coexistence.md)）+ golden set 自动评分（~~`scripts/eval_golden.py`~~（已删除）/ `scripts/langfuse_eval.py` DeepSeek Judge）+ A/B 流量染色（conversation_id 稳定 hash 分流，`swap.intent` 95/5 灰度在跑）。
+- **开发期**：节点 / 子图 / 模型层单元测试（`tests/`，数量以 `pytest --collect-only` 为准）+ 节点级回归工作台（[ADR 0029](./0029-node-level-debug-api-and-regression-workbench.md)）+ in-process 闭环 demo（~~`scripts/demo_closed_loop.py`~~，零外部依赖跑全量 golden；脚本已删除，2026-09-16 核查）+ 子图金字塔。
+- **运行期**：每个节点产出结构化 trace；`app/nodes/persist.py` 提供写入 MySQL `node_trace` 的代码，对接 **LangFuse**（[ADR 0014](./0014-langfuse-as-harness-backend.md)，取代早期 LangSmith 方案）+ OpenTelemetry（`app/observability/tracing.py`），基于 `/metrics` 做延迟、错误率告警（`app/observability/{metrics,alerts}.py`）。建表资产：`sql/init.sql`（`langgraph_node_trace`，2026-09-18 共库调整，[ADR 0009](./0009-mysql-version-and-tdsql-compatibility.md)）；应用启动只读校验 schema。
+- **提示词调优期**：提示词版本化（`app/prompts/_versions.yaml` + [ADR 0003](./0003-prompt-versioning-by-file-coexistence.md)）+ golden set 自动评分（~~`scripts/eval_golden.py`~~（已删除）/ `scripts/langfuse/langfuse_eval.py` DeepSeek Judge）+ A/B 流量染色（conversation_id 稳定 hash 分流；机制在，2026-09-17 后 `_versions.yaml` 无在跑灰度）。
 
 ## 备选方案
 
@@ -23,26 +23,29 @@
 - **B. 测试 Harness（仅 CI 回归框架）**：解决"开发期"，但提示词调优要素和线上监测缺失。
 - **C. 综合运行时 Harness（已选）**：覆盖三个阶段，是四个痛点真正的对应解。代价是建设范围更大、分阶段落地。
 
-## 阶段进度（2026-08-27）
+## 能力面现状（2026-09-22，阶段编号已随 [ADR 0030](./0030-goal-restatement-native-langgraph-dataset-eval-harness.md) 退役）
 
-| Phase | 内容 | 状态 |
+| 能力面 | 内容 | 状态 |
 |---|---|---|
-| 1 | 闭环 demo + golden set + shadow_compare | ✅（golden 已从 30 条扩到 **535 条主集 + 34 条 ticker**，B/C/D 桶管理）|
-| 2 | 节点级 trace 落库 + trace 后台接入 | 🟡（LangFuse CallbackHandler 与 `node_trace` 写入代码已完成；`node_trace` 建表/迁移资产缺失，部署闭环未完成；后台由 LangSmith 换为 LangFuse，[ADR 0004](./0004-trace-granularity-node-level-with-langsmith.md) / 0014）|
-| 3 | 提示词版本化 + 评分自动化 + A/B 染色 | ✅（三件套均落地，见上；[ADR 0003](./0003-prompt-versioning-by-file-coexistence.md)）|
-| 4 | 线上 trace → 人工标注 → golden 反哺 | 🔄 平台已选定 LangFuse（trace/dataset/eval/annotation 四件套），`scripts/upload_golden_to_langfuse.py` / `harness sync-golden` 已就绪；标注运营与 D 桶回流待跑（[ADR 0005](./0005-annotation-roles-judge-plus-business-spotcheck.md)、二期 Issue #37）|
+| 闭环 demo + 数据集 + 对照工具 | 数据集：`tests/fixtures/categories/` + `unified_golden.jsonl`，按 B/C/D 桶管理；`scripts/shadow_compare.py` 为可选对照 | ✅ |
+| 节点级 trace 落库 + trace 后台 | LangFuse CallbackHandler 与 `node_trace` 写入代码完成；建表资产 `sql/init.sql`（2026-09-18）；后台由 LangSmith 换为 LangFuse（[ADR 0004](./0004-trace-granularity-node-level-with-langsmith.md) / 0014） | ✅ |
+| 提示词版本化 + 评分自动化 + A/B 染色 | 三件套均落地（[ADR 0003](./0003-prompt-versioning-by-file-coexistence.md)、Judge 见 ADR 0005） | ✅ |
+| 节点级回归 | 节点 fixture + `harness node-run` + HTTP 录放（[ADR 0029](./0029-node-level-debug-api-and-regression-workbench.md)） | ✅ |
+| 线上 trace → 人工标注 → 数据集反哺 | 平台已选定 LangFuse（trace/dataset/eval/annotation 四件套），`scripts/langfuse/upload_golden_to_langfuse.py` 就绪；标注运营与 D 桶回流待跑（[ADR 0005](./0005-annotation-roles-judge-plus-business-spotcheck.md)） | 🔄 |
+
+统一评测门见 ADR 0030 D3。
 
 ## Harness 工程落地
 
-`harness/` 顶层目录（与 `app/` 解耦）：`runner` / `differ` / `golden` / `reporter` / `cli` / `langfuse_client` / `token_tracker` / `case_generator/`（LLM 对抗式 paraphrase 造 C 桶）+ `__main__.py`。
+`harness/` 顶层目录（与 `app/` 解耦）：`cli` / `golden` / `multi_turn` / `differ` / `langfuse_client` / `token_tracker` / `case_generator/`（LLM 对抗式 paraphrase 造 C 桶）+ 节点层 `node_*` / `http_tape`（[ADR 0029](./0029-node-level-debug-api-and-regression-workbench.md)）+ `__main__.py`。
 
-注意两点现状（详见核查 [#139](https://github.com/GZTL-AI/aigc-langgraph/issues/139)、[#142](https://github.com/GZTL-AI/aigc-langgraph/issues/142)）：
+两点现状：
 
-- CLI 的 `eval` / `diff` / `sync-golden` 子命令仍是 stub（退出码 64）；**评估主入口是 `scripts/langfuse_eval.py`**（M3 主用）。
+- CLI 现为 `run` / `doctor` / `node-run`（早期 `eval` / `diff` / `sync-golden` stub 子命令已于 2026-09 删除）；**评估主入口是 `scripts/langfuse/langfuse_eval.py`**。
 - harness 运行成本已可度量：`harness/token_tracker.py` + `scripts/llm_cost_report.py`。
 
 ## 后果
 
-- 不把 shadow_compare 当作迁移成功的唯一指标——它只是 Phase 1 的产出（且已被 [ADR 0016](./0016-m3-scope-engineering-loop-not-shadow.md) 定位为 M4 第二意见），不能替代 Phase 3/4 的提示词评估能力。
-- 每加一个意图/子图，必须同步生产 golden case + trace schema 字段——已由 CI 的 `scripts/check_fixture_consistency.py` 与 `.claude/skills/add-intent` 技能工程化。
-- `app/prompts/` 不允许退化成无版本号的扁平目录——`_versions.yaml` 是 A/B 真源，见 ADR 0003；当前的治理债（>2 并存版本）见裁决 issue [#159](https://github.com/GZTL-AI/aigc-langgraph/issues/159)。
+- 不把 shadow_compare 当作迁移成功的指标——它只是可选的对照工具（[ADR 0030](./0030-goal-restatement-native-langgraph-dataset-eval-harness.md)），不能替代数据集评测与提示词调优能力。
+- 每加一个意图/子图，必须同步生产数据集 case + trace schema 字段——已由 CI 的 `scripts/check_fixture_consistency.py` 与 `.claude/skills/add-intent` 技能工程化。
+- `app/prompts/` 不允许退化成无版本号的扁平目录——`_versions.yaml` 是 A/B 真源，见 ADR 0003。

@@ -15,7 +15,7 @@ Excel，不恢复旧步骤。表头及所有非空内容按文本保留，不解
 数字或日期、不执行公式。空单元格在 Excel 中为空白。每张表冻结首行、开启
 筛选与自动换行；行高为估算值，最高 409 点，超长内容可在编辑栏中查看。
 
-输入支持 UTF-8（含 BOM）。列数不一致、无表头、重复表头、超出 Excel 限制
+输入支持 UTF-8（含 BOM）。末尾全空白列会被忽略；其他列数不一致、无表头、重复表头、超出 Excel 限制
 或含 XML 非法字符时整批终止。校验完成后才创建工作簿，并通过临时文件替换
 输出；文件被 Excel 占用时请关闭文件后重试。依赖项目已有的 openpyxl。
 """
@@ -108,16 +108,9 @@ def read_csv(path: Path, title: str) -> CsvTable:
                     raise ValueError(f"{location}: 超过 Excel 列数限制 {MAX_COLUMNS}")
                 if rows and len(row) != len(rows[0]):
                     raise ValueError(f"{location}: 字段数 {len(row)}，表头字段数 {len(rows[0])}")
-                seen: set[str] = set()
                 for column, value in enumerate(row, 1):
                     cell_location = f"{location}, 列 {column}"
                     validate_cell(value, cell_location)
-                    if not rows:
-                        if not value.strip():
-                            raise ValueError(f"{cell_location}: 表头不能为空")
-                        if value in seen:
-                            raise ValueError(f"{cell_location}: 重复表头 {value!r}")
-                        seen.add(value)
                 rows.append(row)
     except (csv.Error, UnicodeError) as exc:
         raise ValueError(f"{path}: 记录 {record_number + 1}: CSV 读取失败: {exc}") from exc
@@ -125,6 +118,23 @@ def read_csv(path: Path, title: str) -> CsvTable:
         csv.field_size_limit(previous_limit)
     if not rows:
         raise ValueError(f"{path}: CSV 为空，缺少表头")
+    # 旧版导出曾在行尾追加若干完全空白列。它们不是数据列，统一裁掉，避免 Excel
+    # 出现无意义空列；只要任一数据行有值，该空表头仍按非法输入拒绝。
+    column_count = len(rows[0])
+    while column_count > 0 and not rows[0][column_count - 1].strip() and all(
+        not row[column_count - 1].strip() for row in rows[1:]
+    ):
+        column_count -= 1
+    rows = [row[:column_count] for row in rows]
+    if not rows[0]:
+        raise ValueError(f"{path}: 记录 1, 列 1: 表头不能为空")
+    seen: set[str] = set()
+    for column, value in enumerate(rows[0], 1):
+        if not value.strip():
+            raise ValueError(f"{path}: 记录 1, 列 {column}: 表头不能为空")
+        if value in seen:
+            raise ValueError(f"{path}: 记录 1, 列 {column}: 重复表头 {value!r}")
+        seen.add(value)
     return CsvTable(path, title, rows)
 
 

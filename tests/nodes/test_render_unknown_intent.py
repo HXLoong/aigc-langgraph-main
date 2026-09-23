@@ -6,13 +6,15 @@ product_type=option 但 option_intent 返回 unknown_intent，option_unknown 节
 "(无回复)" 让用户困惑且 Judge 直接判 0。
 
 修复：render 增加分支 — product 已识别但 intent 是 unknown_intent → 输出
-友好引导："未能识别您的指令，请重新描述或..."。
+统一兜底文案（Settings.default_reply，现场可配）。
 """
 from __future__ import annotations
 
 import pytest
 
+from app.config import get_settings
 from app.nodes.render import render
+from app.tools.receipts import UNCERTAIN_REPLY
 
 
 @pytest.mark.asyncio
@@ -29,7 +31,7 @@ class TestRenderUnknownIntent:
         update = await render(state)  # type: ignore[arg-type]
         reply = update.get("reply_text") or ""
         assert reply, "unknown_intent 应有友好引导，不应留空"
-        assert "未能识别" in reply or "未识别" in reply or "请" in reply
+        assert reply == get_settings().default_reply
 
     async def test_swap_unknown_intent_gives_friendly_reply(self) -> None:
         """product_type=swap + intent=unknown_intent → 同样有引导。"""
@@ -40,7 +42,7 @@ class TestRenderUnknownIntent:
         }
         update = await render(state)  # type: ignore[arg-type]
         reply = update.get("reply_text") or ""
-        assert reply
+        assert reply == get_settings().default_reply
 
     async def test_unknown_with_quote_reuses_prompt(self) -> None:
         """unknown_intent + 引用前序询价卡 → 引导用户补充原模板要求的参数。"""
@@ -55,18 +57,17 @@ class TestRenderUnknownIntent:
         }
         update = await render(state)  # type: ignore[arg-type]
         reply = update.get("reply_text") or ""
-        assert reply
+        assert reply == get_settings().default_reply
 
     async def test_known_intent_unchanged(self) -> None:
-        """正常 intent → 不被这个新分支干扰。"""
+        """正常 intent 且无后端回执 → 走 backend_no_result 的"待核对"文案，不被 unknown 分支干扰。"""
         state: dict = {
             "product_type": "option",
             "intent": "new_inquiry",
             "expected_action": "inquiry",
-        "place_params": {"orderList": []},
+            "place_params": {"orderList": []},
             "tickers": [],
         }
         update = await render(state)  # type: ignore[arg-type]
-        reply = update.get("reply_text") or ""
-        # 期望走的是已有的 zero_match 分支，含"无法识别"提示
-        assert "无法识别" in reply
+        assert update.get("reply_text") == UNCERTAIN_REPLY
+        assert update["trace"][0].decision == "backend_no_result"

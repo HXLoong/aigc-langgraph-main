@@ -1,10 +1,10 @@
-"""swap.quote_hints · 互换-规整引用补参摘要 测试（Dify code 节点 1:1）。
+"""swap.quote_hints · 互换-规整引用补参摘要 测试（确定性规则，代码为真源）。
 
 覆盖 `app/subgraphs/swap/quote_hints.py`：
 - `refine_quote_hints`：把机器人上一条「订单详情 + 请补充参数」消息剥成
   「订单号(多单含序号) + 待补字段名列表」，剥掉订单正文 / 候选标的 / 候选对手
 - `_normalize_raw_content`：确定性数字标注（价格关键词/@ 后数字按限价，
-  其余英文逗号整数按委托数量），对应 Dify 变量 `raw_content_for_llm`
+  其余英文逗号整数按委托数量），对应提示词变量 `raw_content_for_llm`
 
 消费方：`app/subgraphs/swap/place_order.py:106`（`hints = refine_quote_hints(...)`）。
 测试方法：G1 纯函数确定性（无 mock / 无 IO）。

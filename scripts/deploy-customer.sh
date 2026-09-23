@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # ============================================================
-# otc-agent 客户现场一键部署脚本（C1.13 / Issue #58）
+# otc-agent 客户现场一键部署脚本
 #
 # 用法：
 #   bash scripts/deploy-customer.sh             # 顺序跑全部步骤
@@ -194,29 +194,29 @@ step2_env_check() {
 
     ok ".env 必填字段全部就绪"
 
-    # F4 灰度切流 advisory（非必填，仅提示状态）· §10 + §12
+    # 灰度切流 advisory（非必填，仅提示状态）· §10 + §12
     local canary_val eval_user_val
     canary_val=$(env_get "CANARY_ROOM_IDS")
     eval_user_val=$(env_get "EVAL_USER_ID")
     if [ -z "$canary_val" ]; then
-        info "F4 金丝雀未启用（CANARY_ROOM_IDS 空 → 任何 roomId 都视为非 canary）"
+        info "金丝雀未启用（CANARY_ROOM_IDS 空 → 任何 roomId 都视为非 canary）"
     elif [ "$canary_val" = "ALL" ]; then
-        info "F4 金丝雀=ALL（全量已切流，所有 roomId 都视为 canary）"
+        info "金丝雀=ALL（全量已切流，所有 roomId 都视为 canary）"
     else
         local n_rooms
         n_rooms=$(echo "$canary_val" | awk -F, '{print NF}')
-        info "F4 金丝雀启用，白名单群数 = $n_rooms"
+        info "金丝雀启用，白名单群数 = $n_rooms"
     fi
     if [ -z "$eval_user_val" ] || [[ "$eval_user_val" == *"<FILL"* ]]; then
         info "EVAL_USER_ID 未配置（如不跑 scripts/probe_*_e2e.py 或 harness 真后端模式可忽略）"
     fi
 
-    # F4.1 dry-run 模式 advisory（PR #112）
+    # dry-run 模式 advisory
     local dry_run_val
     dry_run_val=$(env_get "DRY_RUN_BACKEND")
     if [ "$dry_run_val" = "true" ] || [ "$dry_run_val" = "1" ]; then
-        warn "DRY_RUN_BACKEND=true（F4.1 shadow 期生效，写类调用被拦截）"
-        warn "  → F4.2 切流前**务必**改回 false，否则用户下单会被拦截！"
+        warn "DRY_RUN_BACKEND=true（shadow 期生效，写类调用被拦截）"
+        warn "  → 切流前**务必**改回 false，否则用户下单会被拦截！"
         warn "  → 详见 docs/on-call-runbook.md §5.7"
     elif [ -n "$dry_run_val" ] && [ "$dry_run_val" != "false" ] && [ "$dry_run_val" != "0" ]; then
         warn "DRY_RUN_BACKEND 值未识别 ($dry_run_val)，按 false 处理"
@@ -434,7 +434,7 @@ step7_python_deps() {
         # shellcheck disable=SC1091
         . venv/bin/activate
 
-        # 离线 wheel 优先（C1.14 #59 产出）
+        # 离线 wheel 优先
         if [ -d "wheelhouse" ]; then
             info "检测到 wheelhouse/，离线安装"
             pip install --no-index --find-links=wheelhouse -e ".[dev]" \
@@ -505,14 +505,14 @@ step9_health_check() {
     done
     [ "$waited" -ge 30 ] && abort "/health 30 秒未通" "docs/troubleshooting-sop.md#1"
 
-    # /metrics（C1.5 #65）
+    # /metrics
     if curl -sf -m 3 http://localhost:8000/metrics >/dev/null 2>&1; then
         ok "GET /metrics 200（监控埋点工作）"
     else
-        warn "/metrics 不可用（C1.5 可能未生效）"
+        warn "/metrics 不可用（metrics 中间件可能未生效）"
     fi
 
-    # /ready（D2.6 #72）· 4 个上游探测：mysql / langfuse / llm / java_backend
+    # /ready· 4 个上游探测：mysql / langfuse / llm / java_backend
     # 200 = 全绿；503 = 至少一个 fail（degraded）
     local ready_status ready_tmp
     ready_tmp=$(mktemp)
@@ -528,7 +528,7 @@ step9_health_check() {
             warn "  → 上线前请先排查失败的上游（python scripts/metrics_snapshot.py 查健康检查段）"
             ;;
         *)
-            warn "GET /ready HTTP $ready_status（D2.6 路由可能未注册）"
+            warn "GET /ready HTTP $ready_status（/ready 路由可能未注册）"
             ;;
     esac
     rm -f "$ready_tmp"
@@ -599,7 +599,7 @@ step10_smoke() {
 # Step 11 · 真后端 E2E probe（可选 · 仅 EVAL_USER_ID 配置时跑）
 # ============================================================
 step11_real_backend_probe() {
-    section "Step 11/11 · 真后端 E2E probe（PR #111）"
+    section "Step 11/11 · 真后端 E2E probe"
 
     [ "$DRY_RUN" = "1" ] && { warn "dry-run 跳过"; return; }
 

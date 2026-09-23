@@ -11,6 +11,7 @@ from typing import Any, Protocol
 import httpx
 from pydantic import ConfigDict, Field, field_validator
 
+from app.extraction.tenor import normalize_request_tenors
 from app.tools.http_pool import acquire_http_client
 from app.tools.models import (
     GoatsOrderDirection,
@@ -177,8 +178,8 @@ class OptionClient(Protocol):
 class OptionClientHttpx:
     """走 httpx 的 OptionClient 实现。"""
 
-    #: F4.1 shadow 期写类拦截白名单的"反向集合"——出现在此集合的 intent 视为 read，
-    #: 即使调 operate endpoint 也不拦截。详见 docs/archive/m3/m3-shadow-compare-dry-run-design.md
+    #: shadow / dry-run 期写类拦截白名单的"反向集合"——出现在此集合的 intent 视为 read，
+    #: 即使调 operate endpoint 也不拦截。详见 docs/deploy/SHADOW_COMPARE_GUIDE.md
     _READ_INTENTS: frozenset[str] = frozenset({
         "new_inquiry",           # 询价不下单
         "query_order_status",    # 查订单状态
@@ -245,7 +246,7 @@ class OptionClientHttpx:
 
         url = f"{self._base_url}/admin-api/financial-orders/operate"
         # 金额精度：向 Goats 发送前 truncate 至 2 位
-        payload = req.model_dump(mode="json", exclude_none=True)
+        payload = normalize_request_tenors(req.model_dump(mode="json", exclude_none=True))
         async with (
             translate_httpx_errors("option"),
             acquire_http_client(timeout=self._timeout, transport=self._transport) as client,

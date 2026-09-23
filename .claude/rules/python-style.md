@@ -54,7 +54,7 @@ async def my_node(state: AgentState) -> dict[str, Any]:
 
 # ✅ 正确：只读 IO 节点（LLM / 后端查询）用 @io_node + add_io_node 注册（ADR 0024 D3）
 #    可重试异常（BackendUnreachableError / LLM 限流超时）穿透给 LangGraph RetryPolicy，
-#    耗尽后由节点级 error_handler 落 state['error']；写类节点永远用 @safe_node，不重试
+#    最后一次失败由原节点落 state['error']，沿原图边收尾；写类节点永远用 @safe_node，不重试
 from app.graph.retry import add_io_node, io_node
 
 @io_node

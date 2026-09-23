@@ -28,21 +28,41 @@ async def test_two_failed_swap_selection_branches_merge_without_crashing(monkeyp
 
     @io_node
     async def extract(state):
-        return {"place_params": {"orderList": []}, "swap_counterparties": [{"sort": "A", "shortName": "测试对手"}],
-        "quote_ticker_candidates": [{"candidates": []}]}
+        return {
+            "place_params": {"orderList": [{"orderId": "H-20260922-0000000001"}]},
+            "swap_counterparties": [{"sort": "A", "shortName": "测试对手"}],
+            "quote_ticker_candidates": [{"orderId": "H-20260922-0000000001", "candidates": [
+                {"seq": 1, "code": "600519.SH", "name": "贵州茅台"},
+            ]}],
+        }
 
-    model = MagicMock()
-    model.with_structured_output.return_value.ainvoke = AsyncMock(side_effect=ValueError("bad output"))
+    counterparty_model, ticker_model = MagicMock(), MagicMock()
+    counterparty_call = AsyncMock(side_effect=ValueError("bad counterparty output"))
+    ticker_call = AsyncMock(side_effect=ValueError("bad ticker output"))
+    counterparty_model.with_structured_output.return_value.ainvoke = counterparty_call
+    ticker_model.with_structured_output.return_value.ainvoke = ticker_call
     monkeypatch.setattr(graph_module, "swap_intent", intent)
     monkeypatch.setattr(graph_module, "build_place_graph", lambda: extract)
-    monkeypatch.setattr(select_counterparty, "get_qwen_complex", lambda: model)
-    monkeypatch.setattr(select_ticker, "get_qwen_complex", lambda: model)
+    # 故障恢复测试显式命中 LLM 分支，不依赖选择规则是否提前完成匹配。
+    monkeypatch.setattr(select_counterparty, "counterparty_choice", lambda state: None)
+    monkeypatch.setattr(select_ticker, "ticker_choice", lambda state: None)
+    monkeypatch.setattr(select_counterparty, "get_qwen_complex", lambda: counterparty_model)
+    monkeypatch.setattr(select_ticker, "get_qwen_complex", lambda: ticker_model)
+    submit = AsyncMock(side_effect=AssertionError("failed selections must not submit"))
+    monkeypatch.setattr(graph_module, "swap_place_order_submit", submit)
     backend = AsyncMock()
     monkeypatch.setattr(SwapClientHttpx, "operate", backend)
-    result = await graph_module.build_swap_graph().ainvoke({"raw_text": "选第二个", "quote_content": "引用"})
+    result = await graph_module.build_swap_graph().ainvoke({
+        "raw_text": "另一个吧", "quote_content": "引用",
+        "conversation_id": "failure-recovery", "room_id": "test-room",
+        "user_id": "test-user", "message_id": 1,
+    })
     assert result.get("error")
     nodes = {result["error"].node, *(e.node for e in result["error"].causes)}
-    assert {"swap_select_counterparty", "swap_select_ticker"} <= nodes
+    assert nodes == {"swap_select_counterparty", "swap_select_ticker"}
+    counterparty_call.assert_awaited_once()
+    ticker_call.assert_awaited_once()
+    submit.assert_not_called()
     backend.assert_not_called()
 
 

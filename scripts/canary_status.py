@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""F4.2-F4.5 金丝雀切流状态查询（G5.1 配套运维工具）。
+"""金丝雀切流状态查询（运维工具）。
 
 业务方/Tony 在金丝雀阶段查"当前 LangGraph 收到了什么流量"+ "是否合规"。
 
@@ -11,11 +11,11 @@
 输出（人读模式）：
     === 金丝雀切流状态 · {timestamp} ===
     Allowlist (CANARY_ROOM_IDS):     2 roomId（r-test-1, r-test-2）
-    模式:                            F4.2 第一阶段（部分群）
+    模式:                            部分群阶段
     canary 流量累计:                  142
     非 canary 流量累计:                0  ✅
     退出门检查:
-      非 canary 流量 = 0              ✅ F4.2-F4.5 退出门要求
+      非 canary 流量 = 0              ✅ 退出门要求
       P0 误切告警:                    未触发
 
 如果非 canary 流量 > 0：
@@ -45,10 +45,10 @@ class CanaryStatus:
     timestamp: str
     metrics_url_host: str
     allowlist: list[str]
-    mode: str  # "未启用" / "F4.x 部分群" / "ALL 全量"
+    mode: str  # "未启用" / "部分群阶段" / "ALL 全量"
     canary_count: int
     non_canary_count: int
-    dry_run_intercept: int = 0  # otc_agent_dry_run_intercept_total 汇总（F4.1 shadow 护栏）
+    dry_run_intercept: int = 0  # otc_agent_dry_run_intercept_total 汇总（shadow 护栏）
 
     @property
     def total(self) -> int:
@@ -58,7 +58,7 @@ class CanaryStatus:
     def is_breach(self) -> bool:
         """部分灰度：non_canary>0 即违规；ALL 全量：dry_run 拦截>0 即违规。
 
-        #157 裁决：ALL（全量）+ DRY_RUN_BACKEND 仍在拦截写请求 = 配置错误
+        2026-08-27 裁决：ALL（全量）+ DRY_RUN_BACKEND 仍在拦截写请求 = 配置错误
         （业务写操作被悄悄丢弃），runbook §5 的 P0 护栏由此成真。
         """
         if "ALL" in self.allowlist:
@@ -108,7 +108,7 @@ def _parse_canary_counters(metrics_text: str) -> tuple[int, int]:
 
 
 def _parse_dry_run_intercept(metrics_text: str) -> int:
-    """汇总 otc_agent_dry_run_intercept_total 所有 label 组合的计数（#157）。"""
+    """汇总 otc_agent_dry_run_intercept_total 所有 label 组合的计数。"""
     total = 0
     for line in metrics_text.splitlines():
         line = line.strip()
@@ -128,11 +128,11 @@ def _describe_mode(allowlist: list[str]) -> str:
     if not allowlist:
         return "未启用（金丝雀关）"
     if "ALL" in allowlist:
-        return "ALL 全量上线（F4.4）"
+        return "ALL 全量上线"
     n = len(allowlist)
     if n <= 2:
-        return f"F4.2 第一阶段（{n} 个群）"
-    return f"F4.3+ 多群（{n} 个群）"
+        return f"部分群阶段（{n} 个群）"
+    return f"多群阶段（{n} 个群）"
 
 
 def build_status(metrics_url: str) -> CanaryStatus:
@@ -184,13 +184,13 @@ def render_human(s: CanaryStatus) -> str:
         )
         lines.append("  对应 P0 告警: non_canary_traffic（alerts.py）")
     else:
-        lines.append("  ✅ 非 canary 流量 = 0  F4.2-F4.5 退出门达标")
+        lines.append("  ✅ 非 canary 流量 = 0  退出门达标")
     return "\n".join(lines)
 
 
 def cli() -> int:
     parser = argparse.ArgumentParser(
-        description="金丝雀切流状态查询（G5.1 / F4.2-F4.5）"
+        description="金丝雀切流状态查询"
     )
     parser.add_argument(
         "--url",

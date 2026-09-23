@@ -3,7 +3,7 @@
 > **版本**：v1.0（2026-05-12）
 > **适用范围**：otc-agent 在客户内网完整部署（应用 + MySQL + LangFuse + 企微接入）
 > **预期时长**：首次部署 4-6 小时（含资源准备）；熟练后 30 分钟可重复
-> **关联**：C1.11 LangFuse 部署 / C1.13 一键脚本（推荐用脚本而非手工执行本文）
+> **关联**：LangFuse self-hosted 部署 / `scripts/deploy-customer.sh` 一键脚本（推荐用脚本而非手工执行本文）
 
 本文档面向**客户 IT 运维**。10 个步骤从零到 LangGraph 应用接入企微生产，每步都给验证命令。
 
@@ -14,7 +14,7 @@
 ### 0.1 谁要看本文档
 
 - 客户 IT 运维（执行者）
-- 图灵科技工程 #25（远程支持）
+- 图灵科技工程负责人（远程支持）
 - Tony（项目协调）
 
 ### 0.2 部署前提
@@ -28,7 +28,7 @@
 
 ### 0.3 自动化 vs 手工
 
-**推荐**：用 `scripts/deploy-customer.sh`（C1.13 一键脚本，PR #58 完成后启用）。本文档是脚本失败时的手工备份路径，以及理解每步在做什么的参考。
+**推荐**：用 `scripts/deploy-customer.sh`（一键脚本）。本文档是脚本失败时的手工备份路径，以及理解每步在做什么的参考。
 
 ---
 
@@ -96,7 +96,7 @@ SELECT @@system_time_zone, @@global.time_zone;
 
 ## 3. 部署 LangFuse Self-Hosted
 
-详见 [`docs/deploy/langfuse-self-hosted.md`](./langfuse-self-hosted.md)。
+详见 [`docs/langfuse/self-hosted-deployment.md`](../langfuse/self-hosted-deployment.md)。
 
 简版步骤：
 
@@ -167,7 +167,7 @@ pip install -e ".[dev]"
 
 ### 5.2 离线（无公网）
 
-参考 C1.14 离线包流程（PR #59 完成后启用）：
+参考离线包流程：
 
 ```bash
 # 从客户提供的离线包导入
@@ -221,7 +221,7 @@ journalctl -u otc-agent -f
 curl http://localhost:8000/health
 # 期望返回 200 + JSON
 
-# 健康检查 endpoint 在 D2.6 实现后会校验 4 个上游
+# 健康检查 endpoint 校验 4 个上游
 # 临时验证：
 curl http://localhost:8000/v1/workflows/run \
   -H "Content-Type: application/json" \
@@ -267,7 +267,7 @@ server {
 
 ### 8.3 验证
 
-测试群发 "@otc-agent 600519.SH 询价" → 应该看到询价回复（M2 baseline）。
+测试群发 "@otc-agent 600519.SH 询价" → 应该看到询价回复。
 
 ---
 
@@ -322,7 +322,7 @@ curl ... -d '{"inputs":{"raw_text":"完全不存在的标的xyz 询价"...}'
 | trace 不显示 | §5.5 LangFuse 不可达 |
 | 多轮对话失忆 | §5.6 MySQL Checkpointer 失败 |
 
-故障升级路径：客户 IT 自查（本文档 + on-call runbook）→ 图灵科技 #25 → Tony。
+故障升级路径：客户 IT 自查（本文档 + on-call runbook）→ 图灵科技工程负责人 → Tony。
 
 ---
 
@@ -330,11 +330,11 @@ curl ... -d '{"inputs":{"raw_text":"完全不存在的标的xyz 询价"...}'
 
 | 任务 | 频率 | 文档 |
 |---|---|---|
-| 备份 LangFuse 数据 | 周备份 | `docs/deploy/langfuse-self-hosted.md` §5 |
-| 监控告警检查 | 每日（自动化）| C1.6（#55）落地后 |
-| 应用日志归档 | 按客户合规要求 | C1.18 安全审计后再细化 |
-| API Key 轮转 | 按客户合规要求 | C1.18 安全审计后再细化 |
-| 版本升级 | minor 月度 / major 视客户需求 | `docs/deploy/langfuse-self-hosted.md` §7 |
+| 备份 LangFuse 数据 | 周备份 | `docs/langfuse/self-hosted-deployment.md` §5 |
+| 监控告警检查 | 每日（自动化）| 告警接线后 |
+| 应用日志归档 | 按客户合规要求 | 安全审计后再细化 |
+| API Key 轮转 | 按客户合规要求 | 安全审计后再细化 |
+| 版本升级 | minor 月度 / major 视客户需求 | `docs/langfuse/self-hosted-deployment.md` §7 |
 
 ---
 
@@ -342,11 +342,11 @@ curl ... -d '{"inputs":{"raw_text":"完全不存在的标的xyz 询价"...}'
 
 - `.env.customer.template`（本目录的 env 模板）
 - [`docs/customer/customer-env-assessment.md`](../customer/customer-env-assessment.md) · 部署前调研清单
-- [`docs/deploy/langfuse-self-hosted.md`](./langfuse-self-hosted.md) · LangFuse 部署详解
+- [`docs/langfuse/self-hosted-deployment.md`](../langfuse/self-hosted-deployment.md) · LangFuse 部署详解
 - [`docs/on-call-runbook.md`](../on-call-runbook.md) · 故障 playbook
 - [`docs/api-contracts/java-backend.md`](../api-contracts/java-backend.md) · Java 后端契约
 - ADR 0009 · MySQL 版本兼容性
 - ADR 0014 · LangFuse 后端
 - ADR 0018 · 双模型分立
-- `scripts/deploy-customer.sh`（C1.13，PR 完成后启用）
-- `scripts/build-offline-bundle.sh`（C1.14，PR 完成后启用）
+- `scripts/deploy-customer.sh`
+- `scripts/build-offline-bundle.sh`

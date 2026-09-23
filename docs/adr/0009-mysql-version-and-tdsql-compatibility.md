@@ -2,7 +2,7 @@
 
 - 状态：已采纳（checkpointer 已随 [ADR 0021](./0021-text-confirm-replaces-interrupt.md) 接线；TDSQL 现场兼容性仍待首次部署实测）
 - 日期：2026-05-10
-- 修订：2026-08-27 深度改写为现状口径（wayfinder map #138 / 核查 #141）
+- 修订：2026-08-27 深度改写为现状口径（对照代码核查）
 - 作者：图灵科技 + Tony
 
 ## 决策
@@ -20,7 +20,7 @@
 
 **生产 TDSQL 版本口径修正**：原文的 `8.0.24-v24-txsq1-22.1.4-20230224` **无法由 `aigc/api` 的 `application-prod.yaml` 印证**（该 yaml 只有 jdbc 地址 + `tdsql_test_2025` 密码默认值，全仓无版本号字样）——版本号来源应视为运维口头确认，落在上下界内的结论待现场 `SELECT VERSION()` 实测回填。⚠️ 顺带记录疑点：该 prod profile 连的库名是 `goats_ai_trading_dev`（prod 指向 dev 库，Java 侧配置问题，不属本 ADR 范围，建议单独反馈）。
 
-## 实现偏离（已随 [ADR 0021](./0021-text-confirm-replaces-interrupt.md) / #153 修复）
+## 实现偏离（已随 [ADR 0021](./0021-text-confirm-replaces-interrupt.md) 修复）
 
 ~~**AIOMySQLSaver checkpointer 从未接线（严重）**~~ ✅ 2026-08-27 已接线（`use_mysql_checkpointer` 配置，生产 fail-fast，`tests/test_checkpointer_wiring.py`）。原偏离记录：`app/checkpointer/factory.py` 实现完整但全仓无调用点；`app/main.py` 以 `checkpointer=None` 编译主图（注释停留在"M1 阶段不强制"）；测试只用 InMemorySaver。后果：
 
@@ -30,7 +30,7 @@
 
 "在 TDSQL 上跑通 `.setup()`"验收已列入现场部署 checklist（ADR 0021 §2）。
 
-## 2026-09-18 共库调整
+## 2026-09-18 共库调整（现行建表口径；取代 [ADR 0021](./0021-text-confirm-replaces-interrupt.md) §2 的"首启 `.setup()` 建表"）
 
 业务与 checkpoint 改为使用 Java 现有 MySQL 数据库，全部表使用 `langgraph_` 前缀。
 本地目标为 `otc_goats_ai_trading_dev`；新表及 LangGraph 连接使用 `utf8mb4_general_ci`，
@@ -49,7 +49,7 @@ checkpoint 的 JSON_TABLE 字符列也显式使用该规则，不改变 Java 现
 ## 后果（现状口径）
 
 - **TDSQL SQL 兼容性是隐藏风险**：协议兼容 ≠ 100% SQL 特性兼容；每次升级 `langgraph-checkpoint-mysql` 后需在 TDSQL 上回归（前提是 checkpointer 先接线）。
-- **CI 现状**：`.github/workflows/ci.yml` **无 MySQL service**，且 2026-05-12 起仅保留 `workflow_dispatch` 手动触发——原文"CI 用原生 MySQL"不成立。技术债的下一步应先恢复 CI 的 MySQL service，再谈 TDSQL 容器。
+- **CI 现状**：`.github/workflows/ci.yml` 于 2026-09-22 恢复 push / pull_request 触发，但仍**无 MySQL service**（`tests/integration` 的真实 MySQL 用例靠 `RUN_LOCAL_MYSQL_TESTS=1` 本地 opt-in）——原文"CI 用原生 MySQL"仍不成立。技术债的下一步是补 CI 的 MySQL service，再谈 TDSQL 容器。
 - **checkpoint URI**：`AIOMySQLSaver.parse_conn_string` 实际忽略 scheme（`mysql://` 与 `mysql+aiomysql://` 均可连），`app/config.py` 注释的格式约束比实际严，无功能风险。
 - **数据库版本升级前必须 review**：DBA 升级 TDSQL 前先在测试环境跑 checkpointer setup + 业务表迁移验证。
 - 早期文档曾误称 "GoldenDB"，统一理解为 TDSQL 旧称。

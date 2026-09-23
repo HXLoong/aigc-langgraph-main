@@ -47,12 +47,10 @@ class Settings(BaseSettings):
     node_retry_max_attempts: int = Field(default=2, ge=1, le=3)
     node_retry_initial_interval_seconds: float = Field(default=0.5, ge=0)
     backend_timeout_seconds: float = Field(default=5.0, gt=0)
-    backend_dedup_window_seconds: float = Field(default=10.0, ge=10, le=60)
     persist_timeout_seconds: float = 5.0     # node_trace 写库连接（app/nodes/persist.py）
     multimodal_fetch_timeout_seconds: float = Field(default=5.0, gt=0)  # 图片 / Excel 远端文件下载（swap/multimodal.py）
     goats_agent_rfq_timeout_seconds: float = Field(default=5.0, gt=0)        # GOATS agent：快速询价参数解析
     goats_agent_instruction_timeout_seconds: float = Field(default=5.0, gt=0)  # GOATS agent：存量兼容指令查询
-    goats_rfq_direct_timeout_seconds: float = Field(default=5.0, gt=0)       # GOATS 快速询价直连（app/tools/goats_rfq.py）
 
     # === goats ===
     goats_base_url: str = ""
@@ -62,22 +60,14 @@ class Settings(BaseSettings):
     #: 期权业务 GOATS agent 标识（option_rfq_instrument_parser 等内部 endpoint 需要）
     goats_opt_agent_id: str = ""
     goats_opt_agent_sub_id: str = ""
-
-    # === securities-instrument 标的查询 ===
-    securities_instrument_url: str = ""
-    securities_instrument_key: str = ""
+    #: 互换 / 通用业务 GOATS agent 标识（scripts/probe_goats 探针用；生产路径不读）
+    goats_com_agent_id: str = ""
+    goats_com_agent_sub_id: str = ""
 
     # === 真实环境测试账号（D2.* probe / 阶段 2 联调用，不进生产路径）===
     eval_room_id: str = ""
     eval_user_id: str = ""
     eval_guid: str = ""
-
-    # 标的池 MySQL（直连查询）—— 凭据走 .env，源码里只留空默认值
-    ticker_mysql_host: str = ""
-    ticker_mysql_port: int = 3306
-    ticker_mysql_user: str = ""
-    ticker_mysql_password: str = ""
-    ticker_mysql_db: str = ""
 
     # === 外部搜索 ===
     bocha_api_key: str = ""
@@ -119,10 +109,10 @@ class Settings(BaseSettings):
     langgraph_traffic_ratio: float = Field(default=1.0, ge=0.0, le=1.0)
     shadow_mode: bool = False
 
-    # F4.1 shadow 双跑用：拦截 *.operate / close_order_* 等"写类"客户端调用，
+    # shadow 对照用：拦截 *.operate / close_order_* 等"写类"客户端调用，
     # 返回 fake CommonResult，避免 LangGraph 替代客户真下单/真撤单。
     # read 类（query / get / list / search / get_inference_prompt）正常调真后端。
-    # 详见 docs/archive/m3/m3-shadow-compare-dry-run-design.md
+    # 详见 docs/deploy/SHADOW_COMPARE_GUIDE.md
     dry_run_backend: bool = False
 
     # === 兜底回复（DSL v2 env.default_reply,fallback/answer 节点统一文案）===

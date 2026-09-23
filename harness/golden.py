@@ -28,6 +28,7 @@ class TurnSpec(BaseModel):
     send_text: str
     at_bot: bool = False
     quote_previous: bool | None = None
+    wait_before_seconds: float = Field(default=0, ge=0, le=300)
     #: B 方言的引用说明原文（"用户引用上一条机器人消息"）；首轮标注了引用的上下文依赖 case
     #: 无上一轮回复可引，只能留在这里供概览与人工判读
     quote_desc: str = ""
@@ -86,6 +87,7 @@ def _turn_from_object(
         send_text=send_text,
         at_bot=obj.get("at_bot", default_at_bot),
         quote_previous=obj.get("quote_previous"),
+        wait_before_seconds=obj.get("wait_before_seconds", 0),
         expected=expected,
         response_contains=_assertion_lines(
             obj.get("response_contains"), origin=origin, field_name="response_contains"
@@ -231,19 +233,21 @@ def build_overview(case: GoldenCase) -> str:
     return "\n".join(lines)
 
 
-#: B 方言现役文件（ADR 0024 D6 并入默认发现）
+#: B 方言历史参考集；仅在显式选择时加载（ADR 0030）。
 UNIFIED_FIXTURE_NAME = "unified_golden.jsonl"
 
 
-def discover_fixtures(root: Path = Path("tests/fixtures")) -> list[Path]:
-    """现役数据源：categories/*.jsonl（A）+ 根目录 unified_golden.jsonl（B，存在即纳入）。"""
+def discover_fixtures(
+    root: Path = Path("tests/fixtures"), *, include_unified: bool = False,
+) -> list[Path]:
+    """默认只读 categories；include_unified 显式纳入同级历史参考集。"""
     if root.name == "categories":
         categories, fixtures_root = root, root.parent
     else:
         categories, fixtures_root = root / "categories", root
     paths = sorted(categories.glob("*.jsonl"))
     unified = fixtures_root / UNIFIED_FIXTURE_NAME
-    if unified.is_file():
+    if include_unified and unified.is_file():
         paths.append(unified)
     return paths
 
@@ -252,14 +256,24 @@ def load_golden(
     paths: Sequence[Path] | Path | None = None,
     *,
     root: Path = Path("tests/fixtures"),
+    include_unified: bool = False,
 ) -> list[GoldenCase]:
+    """加载所选文件；include_unified 追加 root 下的参考集，同一路径只追加一次。"""
+    fixture_paths: list[Path]
     if paths is None:
-        fixture_paths = discover_fixtures(root)
+        fixture_paths = discover_fixtures(root, include_unified=include_unified)
     else:
         raw_paths = [paths] if isinstance(paths, Path) else list(paths)
-        fixture_paths: list[Path] = []
+        fixture_paths = []
         for path in raw_paths:
             fixture_paths.extend(sorted(path.glob("*.jsonl")) if path.is_dir() else [path])
+        if include_unified:
+            fixtures_root = root.parent if root.name == "categories" else root
+            unified = fixtures_root / UNIFIED_FIXTURE_NAME
+            if unified.is_file() and unified.resolve() not in {
+                path.resolve() for path in fixture_paths
+            }:
+                fixture_paths.append(unified)
 
     cases: list[GoldenCase] = []
     for path in fixture_paths:
@@ -321,3 +335,39 @@ def filter_by_ids(cases: Iterable[GoldenCase], ids: list[str] | None) -> list[Go
         return list(cases)
     wanted = set(ids)
     return [case for case in cases if case.id in wanted]
+
+
+# ── Langfuse Dataset / 本地确定性评分共用的 categories 结构投影 ──
+
+
+def _dataset_turn_input(turn: TurnSpec) -> dict[str, Any]:
+    result: dict[str, Any] = {"send_text": turn.send_text, "at_bot": turn.at_bot}
+    if turn.quote_previous is not None:
+        result["quote_previous"] = turn.quote_previous
+    return result
+
+
+def _dataset_turn_expected(turn: TurnSpec) -> dict[str, Any]:
+    result: dict[str, Any] = {}
+    for field_name in (
+        "expected",
+        "response_contains",
+        "response_contains_any",
+        "response_not_contains",
+    ):
+        value = getattr(turn, field_name)
+        if value:
+            result[field_name] = value
+    return result
+
+
+def dataset_input(case: GoldenCase) -> dict[str, Any]:
+    """Dataset Item input：保持 categories 的首轮 + sub_scenes 输入结构。"""
+    first, *sub_scenes = case.turns
+    return {**_dataset_turn_input(first), "sub_scenes": [_dataset_turn_input(t) for t in sub_scenes]}
+
+
+def dataset_expected(case: GoldenCase) -> dict[str, Any]:
+    """Dataset Item expectedOutput：首轮 + sub_scenes 断言；Code Evaluator（云端与本地）都吃这一份。"""
+    first, *sub_scenes = case.turns
+    return {**_dataset_turn_expected(first), "sub_scenes": [_dataset_turn_expected(t) for t in sub_scenes]}

@@ -11,7 +11,6 @@ from unittest.mock import AsyncMock, MagicMock
 import httpx
 import openpyxl
 import pytest
-from evidence_support import candidate_output, swap_candidate_output
 
 from app.graph.state import AgentState
 from app.subgraphs.swap import (
@@ -31,6 +30,7 @@ from app.subgraphs.swap.models import (
     SwapSelectTickerOutput,
 )
 from app.tools.swap_client import SwapClientHttpx
+from tests.evidence_support import candidate_output, swap_candidate_output
 from tests.intent_fixtures import intent_reply, mock_ainvoke
 from tests.subgraphs.swap.test_fresh_counterparty import fresh_state, patch_recognition
 
@@ -178,10 +178,11 @@ async def test_fresh_recognition_failure_stops_submission_and_reaches_fallback(
     assert requests == []
     assert final["error"].node == "swap_recognize_fresh_counterparty"
     assert final["error"].type == ("RuntimeError" if failure == "request" else "ValidationError")
-    assert [entry.node for entry in final["trace"]][-2:] == [
-        "swap_recognize_fresh_counterparty", "swap_unknown",
-    ]
-    assert "swap_place_order_submit" not in [entry.node for entry in final["trace"]]
+    trace_nodes = [entry.node for entry in final["trace"]]
+    assert trace_nodes[-2:] == ["swap_recognize_fresh_counterparty", "swap_unknown"]
+    if failure == "structured":
+        assert final["trace"][-2].decision == "error:retry_exhausted"
+    assert "swap_place_order_submit" not in trace_nodes
 
 
 @pytest.mark.parametrize("mode", ["quote", "image", "excel"])

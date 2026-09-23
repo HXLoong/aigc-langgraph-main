@@ -6,6 +6,7 @@
 """
 from __future__ import annotations
 
+import re
 from collections.abc import Mapping
 from typing import Any
 
@@ -17,8 +18,12 @@ REQUIRED_FIELDS: tuple[str, ...] = ("conversation_id", "room_id", "user_id", "me
 
 def normalize_message_id(value: Any) -> int:
     """保留 Java Long 范围内的完整 ID；旧带前缀形式仍提取数字，但不截断。"""
+    if isinstance(value, bool):
+        return 0
     if isinstance(value, int):
         number = value
+    elif isinstance(value, str) and re.fullmatch(r"[+-]?\d+", value.strip()):
+        number = int(value)
     else:
         digits = "".join(ch for ch in str(value) if ch.isdigit()) if value is not None else ""
         number = int(digits) if digits else 0
@@ -57,6 +62,18 @@ class BotContext(BaseModel):
     def missing_required(self) -> list[str]:
         missing = [f for f in ("conversation_id", "room_id", "user_id") if not getattr(self, f)]
         if self.message_id <= 0:
+            missing.append("message_id")
+        return missing
+
+    @classmethod
+    def missing_required_from_state(cls, state: Mapping[str, Any]) -> list[str]:
+        """不要求 State 已完成类型校验，供准备接口聚合全部诊断。"""
+        missing = [
+            field
+            for field in ("conversation_id", "room_id", "user_id")
+            if not isinstance(state.get(field), str) or not state.get(field)
+        ]
+        if normalize_message_id(state.get("message_id")) <= 0:
             missing.append("message_id")
         return missing
 

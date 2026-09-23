@@ -9,8 +9,11 @@
 from __future__ import annotations
 
 import argparse
+import asyncio
 import html as html_lib
+import inspect
 import json
+import logging
 import mimetypes
 import os
 import re
@@ -22,16 +25,23 @@ import threading
 import time
 import uuid
 import webbrowser
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from contextlib import suppress
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
 
-from langgraph_direct_regression import (
+import httpx
+
+SCRIPT_DIR = Path(__file__).resolve().parent
+REPO_ROOT = SCRIPT_DIR.parents[1]
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
+
+from langgraph_direct_regression import (  # noqa: E402
     DEFAULT_BOT_NAME,
     DEFAULT_DATASET_DIR,
     DEFAULT_GUID,
@@ -44,18 +54,33 @@ from langgraph_direct_regression import (
     parse_dotenv_value,
     select_cases,
 )
-from langgraph_direct_regression import (
+from langgraph_direct_regression import (  # noqa: E402
     RunnerError as RegressionRunnerError,
 )
 
-SCRIPT_DIR = Path(__file__).resolve().parent
-REPO_ROOT = SCRIPT_DIR.parents[1]
+from harness.node_annotations import load_case_nodes_from_langfuse  # noqa: E402
+from harness.node_fixtures import NodeFixtureError, NodeFixtureStore  # noqa: E402
+from harness.node_registry import DEFAULT_NODE_REGISTRY  # noqa: E402
+from harness.node_runner import (  # noqa: E402
+    NodeFixtureSkipError,
+    NodeRunnerError,
+    load_node_fixtures,
+    run_node_fixture,
+    run_node_fixture_http,
+)
+from harness.report_history import (  # noqa: E402
+    HistoricalReportError,
+    HistoricalReportStore,
+)
+
 HTML_PATH = SCRIPT_DIR / "automation_runner.html"
 LANGGRAPH_SCRIPT = SCRIPT_DIR / "langgraph_direct_regression.py"
 WECOM_SCRIPT = SCRIPT_DIR / "wecom_dataset_push.py"
 DOTENV_PATH = REPO_ROOT / ".env"
 LANGGRAPH_DOTENV_PATH = REPO_ROOT / ".env"
 DATASET_ROOT = DEFAULT_DATASET_DIR
+NODE_FIXTURE_ROOT = REPO_ROOT / "tests" / "fixtures" / "nodes"
+HISTORICAL_REPORT_ROOT = REPO_ROOT / "docs" / "testing" / "test-reports"
 DEFAULT_LANGGRAPH_BASE = "http://127.0.0.1:8000"
 
 MAX_REQUEST_BYTES = 128 * 1024
@@ -64,16 +89,21 @@ MAX_COUNTERPARTY_JSON_BYTES = 24 * 1024
 MAX_COUNTERPARTIES = 200
 MAX_DATASETS_PER_JOB = 100
 MAX_JOBS = 100
+MAX_NODE_REGRESSION_JOBS = 50
+MAX_NODE_FIXTURE_FILES = 100
 MAX_TASK_NAME_CHARS = 100
 MAX_CHAT_QUERY_CHARS = 32 * 1024
 MAX_CHAT_QUOTE_CHARS = 128 * 1024
 MAX_CONVERSATION_ID_CHARS = 256
 ROOM_ID_RE = re.compile(r"^\d{10,32}$")
 JOB_ID_RE = r"([0-9a-f]{32})"
+HISTORY_ID_RE = r"([0-9a-f]{16})"
 REPORT_LINE_RE = re.compile(r"^(?:Markdown|JSON) report:\s*(.+)$")
 TERMINAL_STATUSES = {"success", "failed", "cancelled"}
 MOVABLE_STATUSES = {"ready", "queued"}
 CommandSpec = tuple[str, list[str], dict[str, str]]
+logger = logging.getLogger(__name__)
+_NODE_REGRESSION_EXECUTION_LOCK = threading.Lock()
 
 
 class RunnerServerError(ValueError):
@@ -101,6 +131,29 @@ class Job:
     current_case_index: int | None = None
     cancel_requested: bool = False
     process: subprocess.Popen[str] | None = field(default=None, repr=False)
+    created_at: float = field(default_factory=time.time)
+    started_at: float | None = None
+    finished_at: float | None = None
+
+
+@dataclass
+class NodeRegressionJob:
+    """页面发起的一次节点 fixture 回归。"""
+
+    job_id: str
+    fixture_paths: list[Path]
+    transport: str
+    base_url: str
+    mock_external: bool
+    timeout: float
+    api_key: str = field(default="", repr=False)
+    status: str = "queued"
+    summary: dict[str, int] = field(
+        default_factory=lambda: {"total": 0, "passed": 0, "failed": 0, "skipped": 0}
+    )
+    reports: list[dict[str, Any]] = field(default_factory=list)
+    error: str = ""
+    report_path: Path | None = field(default=None, repr=False)
     created_at: float = field(default_factory=time.time)
     started_at: float | None = None
     finished_at: float | None = None
@@ -155,6 +208,279 @@ def discover_datasets() -> list[dict[str, Any]]:
         relative = str(path.relative_to(REPO_ROOT))
         datasets.append({"path": relative, "name": path.name, "cases": count})
     return datasets
+
+
+def discover_node_fixture_files(root: Path = NODE_FIXTURE_ROOT) -> list[dict[str, Any]]:
+    """递归发现节点 fixture；节点和产品来自文件内容，不依赖固定清单。"""
+    fixtures: list[dict[str, Any]] = []
+    if not root.is_dir():
+        return fixtures
+    for path in sorted(root.rglob("*.jsonl")):
+        try:
+            records = load_node_fixtures([path])
+        except (OSError, UnicodeError, NodeRunnerError):
+            continue
+        replayable_cases = sum(
+            1
+            for item in records
+            if isinstance(item.get("replay"), dict)
+            and item["replay"].get("enabled") is True
+            and item["replay"].get("side_effect") != "write"
+        )
+        fixtures.append(
+            {
+                "path": path.relative_to(root).as_posix(),
+                "name": path.name,
+                "cases": len(records),
+                "nodes": sorted(
+                    {str(item.get("node_name") or "") for item in records if item.get("node_name")}
+                ),
+                "products": sorted(
+                    {
+                        str(item.get("product_type") or "")
+                        for item in records
+                        if item.get("product_type")
+                    }
+                ),
+                "mock_cases": sum(1 for item in records if isinstance(item.get("mocks"), dict)),
+                "replayable_cases": replayable_cases,
+                "annotation_only_cases": len(records) - replayable_cases,
+            }
+        )
+    return fixtures
+
+
+def _resolve_node_fixture_paths(values: Any, root: Path) -> list[Path]:
+    if not isinstance(values, list) or not values:
+        raise RunnerServerError("请至少选择一个节点 fixture")
+    if len(values) > MAX_NODE_FIXTURE_FILES:
+        raise RunnerServerError(f"单次最多选择 {MAX_NODE_FIXTURE_FILES} 个节点 fixture 文件")
+    resolved_root = root.resolve()
+    paths: list[Path] = []
+    for value in values:
+        relative = Path(str(value or ""))
+        if relative.is_absolute():
+            raise RunnerServerError("节点 fixture 必须使用工作台返回的相对路径")
+        candidate = (resolved_root / relative).resolve()
+        if candidate.parent != resolved_root and resolved_root not in candidate.parents:
+            raise RunnerServerError("节点 fixture 路径超出允许目录")
+        if not candidate.is_file() or candidate.suffix.lower() != ".jsonl":
+            raise RunnerServerError(f"节点 fixture 不存在：{value}")
+        if candidate not in paths:
+            paths.append(candidate)
+    return paths
+
+
+def build_node_regression_job(
+    payload: dict[str, Any],
+    *,
+    fixture_root: Path = NODE_FIXTURE_ROOT,
+    allow_non_dev: bool = False,
+) -> NodeRegressionJob:
+    transport = str(payload.get("transport") or "direct")
+    if transport not in {"direct", "http"}:
+        raise RunnerServerError("节点回归执行方式必须是 direct 或 http")
+    mock_external = bool(payload.get("mock_external"))
+    if transport == "http" and mock_external:
+        raise RunnerServerError("HTTP 节点回归不支持 fixture mock")
+    base_url = str(payload.get("base_url") or DEFAULT_LANGGRAPH_BASE).strip().rstrip("/")
+    if transport == "http":
+        try:
+            ensure_safe_target(base_url, allow_non_dev, "节点执行 API")
+        except RegressionRunnerError as exc:
+            raise RunnerServerError(str(exc)) from exc
+    try:
+        timeout = float(payload.get("timeout") or 60)
+    except (TypeError, ValueError) as exc:
+        raise RunnerServerError("节点回归超时必须是数字") from exc
+    if not 1 <= timeout <= 3600:
+        raise RunnerServerError("节点回归超时范围必须是 1-3600 秒")
+    config = load_runner_config_values()
+    api_key = first_config(config, "NODE_RUN_API_KEY") if transport == "http" else ""
+    if transport == "http" and not api_key:
+        raise RunnerServerError("HTTP 节点回归需要在服务端配置 NODE_RUN_API_KEY")
+    fixture_paths = _resolve_node_fixture_paths(payload.get("fixtures"), fixture_root)
+    fixtures = load_node_fixtures(fixture_paths)
+    if not fixtures:
+        raise RunnerServerError("选择的文件中没有节点 fixture")
+    return NodeRegressionJob(
+        job_id=uuid.uuid4().hex,
+        fixture_paths=fixture_paths,
+        transport=transport,
+        base_url=base_url,
+        mock_external=mock_external,
+        timeout=timeout,
+        api_key=api_key,
+        summary={"total": len(fixtures), "passed": 0, "failed": 0, "skipped": 0},
+    )
+
+
+async def _execute_node_regression_async(job: NodeRegressionJob) -> dict[str, Any]:
+    fixtures = load_node_fixtures(job.fixture_paths)
+    client = (
+        httpx.AsyncClient(base_url=job.base_url, timeout=job.timeout)
+        if job.transport == "http"
+        else None
+    )
+    reports: list[dict[str, Any]] = []
+    try:
+        for fixture in fixtures:
+            case_started_at = time.perf_counter()
+            try:
+                if client is not None:
+                    result = await run_node_fixture_http(
+                        fixture,
+                        registry=DEFAULT_NODE_REGISTRY,
+                        client=client,
+                        api_key=job.api_key,
+                    )
+                else:
+                    result = await run_node_fixture(
+                        fixture,
+                        registry=DEFAULT_NODE_REGISTRY,
+                        mock_external=(
+                            job.mock_external and isinstance(fixture.get("mocks"), dict)
+                        ),
+                    )
+            except NodeFixtureSkipError as exc:
+                report = {
+                    "fixture_id": str(fixture.get("id") or ""),
+                    "node_name": str(fixture.get("node_name") or ""),
+                    "passed": False,
+                    "skipped": True,
+                    "reason": str(exc),
+                }
+            except NodeRunnerError as exc:
+                report = {
+                    "fixture_id": str(fixture.get("id") or ""),
+                    "node_name": str(fixture.get("node_name") or ""),
+                    "passed": False,
+                    "error": str(exc),
+                }
+            else:
+                report = asdict(result)
+            report["duration"] = round(max(0.0, time.perf_counter() - case_started_at), 3)
+            reports.append(report)
+            job.reports = list(reports)
+            job.summary = _summarize_node_reports(reports, total=len(fixtures))
+    finally:
+        if client is not None:
+            await client.aclose()
+        if job.transport == "direct":
+            await _close_node_regression_llm_clients()
+    return {"summary": _summarize_node_reports(reports), "reports": reports}
+
+
+async def _close_node_regression_llm_clients() -> None:
+    """在当前 loop 关闭 Direct 回归用过的缓存客户端，避免下个 asyncio.run 复用。"""
+    from app.llm import clients as llm_clients
+
+    for factory_name in (
+        "get_qwen_standard",
+        "get_qwen_thinking",
+        "get_qwen_structured",
+        "get_qwen_complex",
+        "get_qwen_vl",
+    ):
+        factory = getattr(llm_clients, factory_name)
+        cache_info = getattr(factory, "cache_info", None)
+        cache_clear = getattr(factory, "cache_clear", None)
+        if not callable(cache_info) or not callable(cache_clear) or cache_info().currsize == 0:
+            continue
+        llm = factory()
+        try:
+            async_close = getattr(getattr(llm, "root_async_client", None), "close", None)
+            if callable(async_close):
+                closing = async_close()
+                if inspect.isawaitable(closing):
+                    await closing
+            sync_close = getattr(getattr(llm, "root_client", None), "close", None)
+            if callable(sync_close):
+                sync_close()
+        finally:
+            cache_clear()
+
+
+def _summarize_node_reports(
+    reports: Sequence[dict[str, Any]], *, total: int | None = None
+) -> dict[str, int]:
+    skipped = sum(1 for report in reports if report.get("skipped"))
+    passed = sum(1 for report in reports if report.get("passed"))
+    failed = sum(
+        1 for report in reports if not report.get("passed") and not report.get("skipped")
+    )
+    return {
+        "total": len(reports) if total is None else total,
+        "passed": passed,
+        "failed": failed,
+        "skipped": skipped,
+    }
+
+
+def execute_node_regression(job: NodeRegressionJob) -> dict[str, Any]:
+    if job.transport == "http":
+        return asyncio.run(_execute_node_regression_async(job))
+    # Direct 任务各自在后台线程里调用 asyncio.run()，事件循环随任务关闭；而 LLM
+    # 工厂是进程级 lru_cache。串行清缓存后再执行，避免复用绑定到旧 loop 的 httpx 客户端。
+    with _NODE_REGRESSION_EXECUTION_LOCK:
+        from app.llm import clients as llm_clients
+
+        for factory_name in (
+            "get_qwen_standard",
+            "get_qwen_thinking",
+            "get_qwen_structured",
+            "get_qwen_complex",
+            "get_qwen_vl",
+        ):
+            cache_clear = getattr(getattr(llm_clients, factory_name), "cache_clear", None)
+            if callable(cache_clear):
+                cache_clear()
+        return asyncio.run(_execute_node_regression_async(job))
+
+
+def serialize_node_regression_job(job: NodeRegressionJob) -> dict[str, Any]:
+    return {
+        "job_id": job.job_id,
+        "fixtures": [path.name for path in job.fixture_paths],
+        "transport": job.transport,
+        "base_url": job.base_url,
+        "mock_external": job.mock_external,
+        "status": job.status,
+        "summary": dict(job.summary),
+        "reports": list(job.reports),
+        "error": job.error,
+        "report_url": (
+            f"/api/node-regressions/jobs/{job.job_id}/report" if job.report_path else ""
+        ),
+        "created_at": job.created_at,
+        "started_at": job.started_at,
+        "finished_at": job.finished_at,
+    }
+
+
+def run_node_regression_job(
+    job: NodeRegressionJob,
+    executor: Callable[[NodeRegressionJob], dict[str, Any]],
+) -> None:
+    job.status = "running"
+    job.started_at = time.time()
+    try:
+        result = executor(job)
+        job.summary = dict(result.get("summary") or {})
+        job.reports = list(result.get("reports") or [])
+        report_root = REPO_ROOT / ".harness-runs" / "node-regression-ui"
+        report_root.mkdir(parents=True, exist_ok=True)
+        job.report_path = report_root / f"{job.job_id}.json"
+        job.report_path.write_text(
+            json.dumps(result, ensure_ascii=False, indent=2), encoding="utf-8"
+        )
+        job.status = "failed" if int(job.summary.get("failed") or 0) else "success"
+    except Exception as exc:  # noqa: BLE001 - 后台任务必须落为可查看状态
+        job.status = "failed"
+        job.error = f"{type(exc).__name__}: {exc}"
+    finally:
+        job.api_key = ""
+        job.finished_at = time.time()
 
 
 def build_public_config(values: dict[str, str]) -> dict[str, Any]:
@@ -1159,7 +1485,19 @@ def make_handler(
     runner_token: str,
     *,
     allow_non_dev: bool = False,
+    node_loader: Callable[[dict[str, Any]], Sequence[Any]] | None = None,
+    fixture_store: NodeFixtureStore | None = None,
+    history_store: HistoricalReportStore | None = None,
+    node_fixture_root: Path = NODE_FIXTURE_ROOT,
+    node_regression_executor: Callable[[NodeRegressionJob], dict[str, Any]] | None = None,
 ) -> type[BaseHTTPRequestHandler]:
+    node_store = fixture_store or NodeFixtureStore(
+        NODE_FIXTURE_ROOT, registry=DEFAULT_NODE_REGISTRY
+    )
+    history = history_store or HistoricalReportStore(HISTORICAL_REPORT_ROOT)
+    node_regression_jobs: dict[str, NodeRegressionJob] = {}
+    execute_regression = node_regression_executor or execute_node_regression
+
     class Handler(BaseHTTPRequestHandler):
         server_version = "LangGraphAutomationQueue/2.1"
 
@@ -1203,6 +1541,63 @@ def make_handler(
             self.send_json(HTTPStatus.FORBIDDEN, {"error": "页面已失效，请刷新"})
             return False
 
+        def save_node_fixture(
+            self,
+            detail: dict[str, Any],
+            *,
+            fallback_case_id: str,
+        ) -> Path:
+            """校验页面标注请求，并把当前或历史用例保存为节点 fixture。"""
+            payload = self.read_payload()
+            observation_id = str(payload.get("observation_id") or "").strip()
+            annotator = str(payload.get("annotator") or "").strip()
+            if not observation_id:
+                raise RunnerServerError("缺少 observation_id")
+            if not annotator or len(annotator) > 100:
+                raise RunnerServerError("请输入有效的标注人")
+
+            loader = node_loader or load_case_nodes_from_langfuse
+            try:
+                nodes = loader(detail)
+            except Exception as exc:  # noqa: BLE001
+                raise RunnerServerError(
+                    f"Langfuse 节点读取失败：{type(exc).__name__}"
+                ) from exc
+            observation = next(
+                (
+                    node
+                    for node in nodes
+                    if getattr(node, "observation_id", None) == observation_id
+                ),
+                None,
+            )
+            if observation is None:
+                raise RunnerServerError("节点 observation 不存在或已过期")
+
+            try:
+                return node_store.save(
+                    observation,
+                    case_id=str(
+                        detail.get("case_no")
+                        or detail.get("name")
+                        or fallback_case_id
+                    ),
+                    annotator=annotator,
+                    mode=str(payload.get("mode") or ""),
+                    expected_fields=(
+                        payload.get("expected_fields")
+                        if isinstance(payload.get("expected_fields"), dict)
+                        else None
+                    ),
+                    expected_object=(
+                        payload.get("expected_object")
+                        if isinstance(payload.get("expected_object"), dict)
+                        else None
+                    ),
+                )
+            except NodeFixtureError as exc:
+                raise RunnerServerError(str(exc)) from exc
+
         def do_GET(self) -> None:
             path = urlparse(self.path).path
             if path == "/":
@@ -1232,6 +1627,134 @@ def make_handler(
                 self.send_json(HTTPStatus.OK, payload)
                 return
 
+            if path == "/api/node-regressions/fixtures":
+                if not self.authorized():
+                    return
+                self.send_json(
+                    HTTPStatus.OK,
+                    {"fixtures": discover_node_fixture_files(node_fixture_root)},
+                )
+                return
+
+            if path == "/api/node-regressions/jobs":
+                if not self.authorized():
+                    return
+                jobs_payload = [
+                    serialize_node_regression_job(job)
+                    for job in sorted(
+                        node_regression_jobs.values(),
+                        key=lambda item: item.created_at,
+                        reverse=True,
+                    )
+                ]
+                self.send_json(HTTPStatus.OK, {"jobs": jobs_payload})
+                return
+
+            node_regression_report_match = re.fullmatch(
+                rf"/api/node-regressions/jobs/{JOB_ID_RE}/report", path
+            )
+            if node_regression_report_match:
+                if not self.authorized():
+                    return
+                job = node_regression_jobs.get(node_regression_report_match.group(1))
+                report = job.report_path if job else None
+                if report is None or not report.is_file():
+                    self.send_json(HTTPStatus.NOT_FOUND, {"error": "节点回归报告不存在"})
+                    return
+                body = report.read_bytes()
+                self.send_response(HTTPStatus.OK)
+                self.send_header("Content-Type", "application/json; charset=utf-8")
+                self.send_header("Content-Disposition", f'attachment; filename="{report.name}"')
+                self.send_header("Content-Length", str(len(body)))
+                self.add_security_headers()
+                self.end_headers()
+                self.wfile.write(body)
+                return
+
+            node_regression_match = re.fullmatch(
+                rf"/api/node-regressions/jobs/{JOB_ID_RE}", path
+            )
+            if node_regression_match:
+                if not self.authorized():
+                    return
+                job = node_regression_jobs.get(node_regression_match.group(1))
+                if job is None:
+                    self.send_json(HTTPStatus.NOT_FOUND, {"error": "节点回归任务不存在"})
+                else:
+                    self.send_json(HTTPStatus.OK, serialize_node_regression_job(job))
+                return
+
+            if path == "/api/history":
+                if not self.authorized():
+                    return
+                self.send_json(HTTPStatus.OK, {"reports": history.list_reports()})
+                return
+
+            history_nodes_match = re.fullmatch(
+                rf"/api/history/{HISTORY_ID_RE}/cases/(\d+)/nodes", path
+            )
+            if history_nodes_match:
+                if not self.authorized():
+                    return
+                try:
+                    detail = history.get_case(
+                        history_nodes_match.group(1), int(history_nodes_match.group(2))
+                    )
+                    loader = node_loader or load_case_nodes_from_langfuse
+                    nodes = loader(detail)
+                except HistoricalReportError as exc:
+                    self.send_json(HTTPStatus.NOT_FOUND, {"error": str(exc)})
+                    return
+                except ValueError as exc:
+                    self.send_json(HTTPStatus.UNPROCESSABLE_ENTITY, {"error": str(exc)})
+                    return
+                except Exception as exc:  # noqa: BLE001 - 读取失败不影响页面服务
+                    self.send_json(
+                        HTTPStatus.BAD_GATEWAY,
+                        {"error": f"Langfuse 节点读取失败：{type(exc).__name__}"},
+                    )
+                    return
+                self.send_json(
+                    HTTPStatus.OK,
+                    {
+                        "nodes": [
+                            asdict(node) if hasattr(node, "__dataclass_fields__") else node
+                            for node in nodes
+                        ]
+                    },
+                )
+                return
+
+            history_case_match = re.fullmatch(
+                rf"/api/history/{HISTORY_ID_RE}/cases/(\d+)", path
+            )
+            if history_case_match:
+                if not self.authorized():
+                    return
+                try:
+                    detail = history.get_case(
+                        history_case_match.group(1), int(history_case_match.group(2))
+                    )
+                except HistoricalReportError as exc:
+                    self.send_json(HTTPStatus.NOT_FOUND, {"error": str(exc)})
+                    return
+                self.send_json(HTTPStatus.OK, {"case": detail})
+                return
+
+            history_report_match = re.fullmatch(
+                rf"/api/history/{HISTORY_ID_RE}", path
+            )
+            if history_report_match:
+                if not self.authorized():
+                    return
+                try:
+                    report = history.load_report(history_report_match.group(1))
+                except HistoricalReportError as exc:
+                    self.send_json(HTTPStatus.NOT_FOUND, {"error": str(exc)})
+                    return
+                self.send_json(HTTPStatus.OK, {"report": report})
+                return
+
             status_match = re.fullmatch(rf"/api/jobs/{JOB_ID_RE}", path)
             if status_match:
                 with condition:
@@ -1256,6 +1779,43 @@ def make_handler(
                     self.send_json(HTTPStatus.NOT_FOUND, {"error": "用例日志尚未生成"})
                 else:
                     self.send_json(HTTPStatus.OK, {"case": detail})
+                return
+
+            nodes_match = re.fullmatch(
+                rf"/api/jobs/{JOB_ID_RE}/cases/(\d+)/nodes", path
+            )
+            if nodes_match:
+                if not self.authorized():
+                    return
+                with condition:
+                    job = jobs.get(nodes_match.group(1))
+                    detail = (
+                        job.case_details.get(int(nodes_match.group(2))) if job else None
+                    )
+                if detail is None:
+                    self.send_json(HTTPStatus.NOT_FOUND, {"error": "用例日志尚未生成"})
+                    return
+                try:
+                    loader = node_loader or load_case_nodes_from_langfuse
+                    nodes = loader(detail)
+                except ValueError as exc:
+                    self.send_json(HTTPStatus.UNPROCESSABLE_ENTITY, {"error": str(exc)})
+                    return
+                except Exception as exc:  # noqa: BLE001 - 节点观测失败不影响回归任务
+                    self.send_json(
+                        HTTPStatus.BAD_GATEWAY,
+                        {"error": f"Langfuse 节点读取失败：{type(exc).__name__}"},
+                    )
+                    return
+                self.send_json(
+                    HTTPStatus.OK,
+                    {
+                        "nodes": [
+                            asdict(node) if hasattr(node, "__dataclass_fields__") else node
+                            for node in nodes
+                        ]
+                    },
+                )
                 return
 
             report_match = re.fullmatch(
@@ -1304,12 +1864,91 @@ def make_handler(
                     self.send_json(HTTPStatus.ACCEPTED, payload)
                     return
 
+                if path == "/api/node-regressions/jobs":
+                    if len(node_regression_jobs) >= MAX_NODE_REGRESSION_JOBS:
+                        finished = sorted(
+                            (
+                                job
+                                for job in node_regression_jobs.values()
+                                if job.status in {"success", "failed"}
+                            ),
+                            key=lambda item: item.finished_at or item.created_at,
+                        )
+                        if finished:
+                            node_regression_jobs.pop(finished[0].job_id, None)
+                        else:
+                            raise RunnerServerError("节点回归任务已达上限，请等待当前任务完成")
+                    job = build_node_regression_job(
+                        self.read_payload(),
+                        fixture_root=node_fixture_root,
+                        allow_non_dev=allow_non_dev,
+                    )
+                    node_regression_jobs[job.job_id] = job
+                    worker = threading.Thread(
+                        target=run_node_regression_job,
+                        args=(job, execute_regression),
+                        name=f"node-regression-{job.job_id[:8]}",
+                        daemon=True,
+                    )
+                    worker.start()
+                    self.send_json(
+                        HTTPStatus.ACCEPTED,
+                        serialize_node_regression_job(job),
+                    )
+                    return
+
                 if path == "/api/queue/start":
                     with condition:
                         start_ready_jobs(jobs, queue)
                         payload = serialize_queue(jobs, queue)
                         condition.notify_all()
                     self.send_json(HTTPStatus.ACCEPTED, payload)
+                    return
+
+                fixture_match = re.fullmatch(
+                    rf"/api/jobs/{JOB_ID_RE}/cases/(\d+)/node-fixtures", path
+                )
+                if fixture_match:
+                    with condition:
+                        job = jobs.get(fixture_match.group(1))
+                        detail = (
+                            job.case_details.get(int(fixture_match.group(2)))
+                            if job
+                            else None
+                        )
+                    if detail is None:
+                        raise RunnerServerError("用例日志尚未生成")
+                    saved_path = self.save_node_fixture(
+                        detail,
+                        fallback_case_id=f"case-{fixture_match.group(2)}",
+                    )
+                    self.send_json(
+                        HTTPStatus.CREATED,
+                        {"saved": True, "saved_path": str(saved_path)},
+                    )
+                    return
+
+                history_fixture_match = re.fullmatch(
+                    rf"/api/history/{HISTORY_ID_RE}/cases/(\d+)/node-fixtures", path
+                )
+                if history_fixture_match:
+                    try:
+                        detail = history.get_case(
+                            history_fixture_match.group(1),
+                            int(history_fixture_match.group(2)),
+                        )
+                    except HistoricalReportError as exc:
+                        raise RunnerServerError(str(exc)) from exc
+                    saved_path = self.save_node_fixture(
+                        detail,
+                        fallback_case_id=(
+                            f"history-case-{history_fixture_match.group(2)}"
+                        ),
+                    )
+                    self.send_json(
+                        HTTPStatus.CREATED,
+                        {"saved": True, "saved_path": str(saved_path)},
+                    )
                     return
 
                 action_match = re.fullmatch(
@@ -1727,6 +2366,22 @@ def main(argv: Sequence[str] | None = None) -> int:
     )
     url = f"http://{args.host}:{args.port}"
     print(f"自动化测试任务队列：{url}")
+    logging.basicConfig(level=logging.INFO, format="%(message)s")
+    logger.info(
+        "GOATS 期权 Mock 服务（持仓、模拟平仓、模拟撤单），在仓库根目录另开终端启动：\n"
+        ".venv/bin/python scripts/goats_api_mock/server.py --port 20000\n"
+        "Java 管理页面配置以下接口：\n"
+        "GOATS_OPTION_CLOSING_OUT_CONTRACT_QUERY：\n"
+        "http://127.0.0.1:20000/api/internal/agent/option/position\n"
+        "GOATS_OPTION_CLOSING_OUT_PLACE_AN_ORDER：\n"
+        "http://127.0.0.1:20000/api/internal/agent/option/order/close\n"
+        "GOATS_OPTION_CLOSING_OUT_ORDER_QUERY：\n"
+        "http://127.0.0.1:20000/api/internal/agent/option/order/close/query\n"
+        "GOATS_OPTION_CLOSING_OUT_ORDER_CANCEL：\n"
+        "http://127.0.0.1:20000/api/internal/agent/option/order/close/withdraw\n"
+        "GOATS_OPTION_CLOSING_OUT_ORDER_CANCEL_QUERY：\n"
+        "http://127.0.0.1:20000/api/internal/agent/option/order/close/withdrawResult"
+    )
     print("按 Ctrl+C 停止服务。")
     if not args.no_open:
         webbrowser.open(url)

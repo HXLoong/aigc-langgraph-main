@@ -2,7 +2,7 @@
 
 - 状态：已采纳（元 ADR：项目存在的根本动机）
 - 日期：2026-05-10
-- 修订：2026-08-27 深度改写为现状口径（wayfinder map #138 / 核查 #139）
+- 修订：2026-08-27 深度改写为现状口径（对照代码核查）
 - 作者：图灵科技 + Tony
 - 说明：本 ADR 回答"为什么从 Dify 迁过来"；"如何重写 `app/`"由 [ADR 0001](./0001-rewrite-app-with-harness-first.md) 接管
 
@@ -19,14 +19,14 @@
 
 ## 决策与落地现状（2026-08-27）
 
-决定迁移到 **LangGraph + FastAPI**，把 Dify YAML 中的提示词导出为 `app/prompts/**/*.md`（现有 37 个业务提示词 .md）。
+决定迁移到 **LangGraph + FastAPI**，把 Dify YAML 中的提示词导出为 `app/prompts/**/*.md`（业务提示词数量随瘦身与去 LLM 化持续下降，以目录为准，不在本文写计数）。
 
 原决策的两条执行方式已按后续 ADR 演进：
 
-- **"提示词只做加载不改写"** → 已由 [ADR 0001 D5](./0001-rewrite-app-with-harness-first.md) 在重构期解禁：合并/拆分/瘦身类改写须在 D5 处置表登记，Dify 原版以非活跃快照保留并在 ~~`app/prompts/_manifest.yaml`~~ 登记（2026-09-16 已废弃）；M4 后改写走 eval 门 + PR review（[ADR 0022](./0022-prompt-governance-after-code-migration.md)）。
-- **"shadow 双跑校准到金丝雀切换"** → 已由 [ADR 0016](./0016-m3-scope-engineering-loop-not-shadow.md) 降级为 **F4.1（M4 阶段的第二意见）**，M3 的合格性判定改为 golden PASS 率退出门。
+- **"提示词只做加载不改写"** → 已由 [ADR 0001 D5](./0001-rewrite-app-with-harness-first.md) 在重构期解禁：合并/拆分/瘦身类改写须在 D5 处置表登记，Dify 原版以非活跃快照保留并在 ~~`app/prompts/_manifest.yaml`~~ 登记（2026-09-16 已废弃）；改写走 eval 门 + PR review（[ADR 0022](./0022-prompt-governance-after-code-migration.md)，现由 [ADR 0030](./0030-goal-restatement-native-langgraph-dataset-eval-harness.md) D3 统一评测门承接）。
+- **"shadow 双跑校准到金丝雀切换"** → 已降级为切流期的第二意见（历史 ADR 0016，现由 [ADR 0030](./0030-goal-restatement-native-langgraph-dataset-eval-harness.md) 承接），合格性判定改为数据集 PASS 率评测门。
 
-四个痛点的主要解药均已建成（详见 [ADR 0002](./0002-comprehensive-runtime-harness.md)）：`harness/` 评测台、`node_trace` 写入代码 + LangFuse trace、golden set 535 条（主）+ 34 条（ticker）按 B/C/D 桶管理、DeepSeek Judge 评估（`scripts/langfuse_eval.py`）。其中 `node_trace` 的建表/迁移资产尚未入库，部署不能仅凭当前仓库完成落库初始化。
+四个痛点的主要解药均已建成（详见 [ADR 0002](./0002-comprehensive-runtime-harness.md)）：`harness/` 评测台、`node_trace` 写入代码 + LangFuse trace、golden set（2026-09-22：`tests/fixtures/categories/` 389 条 + `tests/fixtures/unified_golden.jsonl` 921 条，按 B/C/D 桶管理）、DeepSeek Judge 评估（`scripts/langfuse/langfuse_eval.py`）。`node_trace` 建表资产已随 2026-09-18 共库调整入库（`sql/init.sql` 的 `langgraph_node_trace`，见 [ADR 0009](./0009-mysql-version-and-tdsql-compatibility.md) 09-18 段）。
 
 ## 备选方案
 
@@ -36,7 +36,7 @@
 
 ## 后果（现状口径）
 
-- ~~需要长期维护 Dify YAML 同步工具（`dify/sync.py` + `scripts/export_dify_prompts.py`），让业务方继续用 Dify UI 调整提示词，再批量同步进代码~~ —— **已被 [ADR 0024](./0024-langgraph-native-rearchitecture.md) D1 取代（2026-09-17）**：代码即真源，Dify YAML 冻结为历史参照、不再同步。同步脚本的覆盖写风险见裁决 issue [#159](https://github.com/GZTL-AI/aigc-langgraph/issues/159)。
-- 新增意图/子图必须同步更新 `app/graph/state.py` 的 TypedDict（M1 兼容 shim 已于 2026-09-17 随 ADR 0024 删除，入口唯一路径为 `app/api/turn_state.py`）与 `tests/fixtures/old_typing/golden.jsonl`——后者已由 CI 的 `scripts/check_fixture_consistency.py` 强制。
+- ~~需要长期维护 Dify YAML 同步工具（`dify/sync.py` + `scripts/export_dify_prompts.py`），让业务方继续用 Dify UI 调整提示词，再批量同步进代码~~ —— **已被 [ADR 0024](./0024-langgraph-native-rearchitecture.md) D1 取代（2026-09-17）**：代码即真源，Dify YAML 冻结为历史参照、不再同步。同步脚本已随之退役。
+- 新增意图/子图必须同步更新 `app/graph/state.py` 的 TypedDict（早期状态兼容 shim 已于 2026-09-17 随 ADR 0024 删除，入口唯一路径为 `app/api/turn_state.py`）与 `tests/fixtures/categories/` golden case——后者由 `scripts/check_fixture_consistency.py` 守护（`old_typing/` 已归档）。
 - "业务逻辑下沉到代码 vs. 业务方继续在 Dify UI 改提示词"的双轨期治理边界：提示词归 Dify / 节点编排归代码；重构期内的改写例外由 ADR 0001 D5 处置表管理。
 - 原文提到的"统一 APM 体系"最终由 **LangFuse** 承载（[ADR 0014](./0014-langfuse-as-harness-backend.md) 取代早期 LangSmith 方案）。

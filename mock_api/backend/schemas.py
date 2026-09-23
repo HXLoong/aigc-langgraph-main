@@ -226,10 +226,17 @@ class CloseOrderItem(BaseModel):
     model_config = ConfigDict(extra="allow")
 
     orderId: str | None = None
-    contractCode: str | None = None
-    closeNotionalAmount: Decimal | None = None
-    orderType: str | None = None
-    limitPrice: Decimal | None = None
+    internalTradeId: str | None = None
+    closeOrderNotionalDelta: Decimal | None = None
+    closeOrderType: str | None = None
+    closeOrderPrice: Decimal | None = None
+    closeOrderPovRatio: Decimal | None = None
+    closeOrderAlgoStartTime: str | None = None
+    closeOrderAlgoEndTime: str | None = None
+    hasFastExecutionIntent: bool | None = None
+    confirmFullClose: bool | None = None
+    stockCode: str | None = None
+    stockName: str | None = None
 
 
 class ContractQueryReqVO(BaseModel):

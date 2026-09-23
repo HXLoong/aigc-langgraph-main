@@ -22,24 +22,17 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Any
 
-from app.execution.confirmation import only_execution_parameters
+from app.execution.confirmation import ALIASES
+from app.extraction.fast_execution import resolve_fast_execution
 from app.extraction.fields import FieldRecord
+from app.extraction.tenor import TenorError, monthly_tenor
 from app.subgraphs.option.normalize import normalize_notional
 from app.subgraphs.option.order_id import ORDER_ID_RE, extract_order_ids
+from app.subgraphs.option.order_scope import OrderScopeError, selectors
 
 # ============================================================
 # A 类：raw 只读
 # ============================================================
-
-_FAST_EXEC_KEYWORDS = (
-    "最大跟量",
-    "积极跟量",
-    "尽快成交",
-    "快点成交",
-    "要快",
-    "积极成交",
-    "全力成交",
-)
 
 _LIMIT_PROBE_RE = re.compile(r"限价")
 _LEAD_NUMBER_RE = re.compile(r"(\d+(?:\.\d+)?)")
@@ -64,59 +57,15 @@ _LETTER_ITEM_RE = re.compile(
 )
 
 # ============================================================
-# 多单分段（"第一个单 … 第二个单 …" 批量补参）
-# ============================================================
-
-#: 分段标记：第一个单 / 第2笔 / 第一单 …
-_ORDINAL_SEGMENT_RE = re.compile(r"(?:第\s*([一二两三四五六七八九十\d]+)\s*(?:个)?\s*(?:单|笔)|序号\s*[:：]?\s*(\d+))")
-_ORDINAL_VALUES = {
-    "一": 1,
-    "二": 2,
-    "两": 2,
-    "三": 3,
-    "四": 4,
-    "五": 5,
-    "六": 6,
-    "七": 7,
-    "八": 8,
-    "九": 9,
-    "十": 10,
-}
-
-
-class OrderScopeError(ValueError):
-    """User-provided order scope cannot be resolved without guessing."""
-
-
-def _ordinal_number(token: str) -> int | None:
-    return int(token) if token.isdigit() else _ORDINAL_VALUES.get(token)
-
-
-def _split_ordinal_segments(raw: str) -> list[tuple[int, str]]:
-    """保留用户指定序号及顺序；重复和无效序号必须纠错。"""
-    matches = list(_ORDINAL_SEGMENT_RE.finditer(raw))
-    if not matches:
-        return []
-    if raw[:matches[0].start()].strip(" \t\r\n，,、；;。."):
-        raise OrderScopeError("序号前存在无法归属的指令，请分别发送。")
-    numbered: list[tuple[int, str]] = []
-    for index, match in enumerate(matches):
-        number = _ordinal_number(match.group(1) or match.group(2))
-        if number is None or number < 1:
-            raise OrderScopeError("订单序号无效，请按引用中的序号补充参数。")
-        start = match.end()
-        end = matches[index + 1].start() if index + 1 < len(matches) else len(raw)
-        numbered.append((number, raw[start:end].strip(" \t\r\n，,、；;。.")))
-    if len({number for number, _ in numbered}) != len(numbered):
-        raise OrderScopeError("订单序号重复，请按引用中的序号补充参数。")
-    return numbered
-
-# ============================================================
 # B 类：raw 优先 → 引用回执兜底
 # ============================================================
 
 _RAW_CODE_RE = re.compile(r"(?<![0-9A-Za-z.-])(\d{4,6}\.[A-Za-z]{2,3}|\d{6})(?![0-9A-Za-z.-])")
-_RAW_TENOR_RE = re.compile(r"(?<![0-9A-Za-z.])(\d+(?:\.\d+)?)\s*([MY])(?![A-Za-z])")
+_RAW_TENOR_RE = re.compile(
+    r"(?<![0-9A-Za-z.])(?:[+-]?\d+(?:\.\d+)?\s*(?:[MYmy]|个?月|年)|"
+    r"[零〇一二两三四五六七八九十]+(?:个?月|年)|半年)(?![A-Za-z])"
+)
+_TENOR_LABEL_RE = re.compile(r"期限\s*(?:(?:修改|改成|改为|调整为|换成|为|是|[:：])\s*)*")
 _PARTICIPATION_RE = re.compile(r"参与(?:率|比例)[^\d\r\n%]{0,4}\d+(?:\.\d+)?\s*%?")
 _RAW_STRIKE_RE = re.compile(r"(?<![\d.])(\d+(?:\.\d+)?)\s*%")
 
@@ -147,6 +96,7 @@ def _extract_order_type(raw: str) -> str | None:
 
 def _extract_limit_price(raw: str) -> float | None:
     """"限价" 后紧跟的纯数字才是价格；金额表达（100万 / 6.3%）直接跳过。"""
+    prices = set()
     for probe in _LIMIT_PROBE_RE.finditer(raw):
         rest = raw[probe.end():].lstrip(" \t:：,，、")
         number = _LEAD_NUMBER_RE.match(rest)
@@ -154,13 +104,17 @@ def _extract_limit_price(raw: str) -> float | None:
             continue
         if _UNIT_TAIL_RE.match(rest[number.end():]):
             continue
-        return float(number.group(1))
-    return None
+        prices.add(float(number.group(1)))
+    if len(prices) > 1:
+        raise OrderScopeError("同一订单出现多个限价，请明确每笔订单的价格。")
+    return next(iter(prices), None)
 
 
 def _extract_pov_ratio(raw: str) -> float | None:
-    match = _POV_RATIO_RE.search(raw)
-    return float(match.group(1)) if match else None
+    ratios = {float(match.group(1)) for match in _POV_RATIO_RE.finditer(raw)}
+    if len(ratios) > 1:
+        raise OrderScopeError("同一订单出现多个跟量比例，请明确每笔订单的比例。")
+    return next(iter(ratios), None)
 
 
 def _extract_twap_times(raw: str) -> tuple[str | None, str | None]:
@@ -176,11 +130,6 @@ def _extract_twap_times(raw: str) -> tuple[str | None, str | None]:
     if len(times) == 1:
         return None, times[0]
     return times[0], times[1]
-
-
-def _extract_fast_execution(raw: str) -> bool:
-    """仅快速执行关键词为 true；普通跟量 / 跟量+比例 → false。"""
-    return any(keyword in raw for keyword in _FAST_EXEC_KEYWORDS)
 
 
 def _clean_short_name(value: str) -> str | None:
@@ -257,8 +206,12 @@ def _a_class_params(
     short_name, name_source, letter = _short_name_source(
         text, contexts if contexts is not None else [SourceText(context, "context")],
     )
+    try:
+        notional = normalize_notional(text, require_unique=True)
+    except ValueError as exc:
+        raise OrderScopeError(str(exc)) from exc
     params = {
-        "notional_amount": normalize_notional(text), "order_type": order_type,
+        "notional_amount": notional, "order_type": order_type,
         "limit_price": _extract_limit_price(text),
         "pov_ratio": _extract_pov_ratio(text) if order_type == "POV" else None,
         "twap_start_time": twap_start, "twap_end_time": twap_end,
@@ -296,9 +249,26 @@ def _raw_stock_code(raw: str) -> str | None:
 
 
 def _raw_tenor(raw: str) -> str | None:
-    """raw 侧期限仅认 M / Y（W 与"XXW=XX万"金额冲突，交引用回执的期限标签）。"""
-    match = _RAW_TENOR_RE.search(raw or "")
-    return f"{match.group(1)}{match.group(2).upper()}" if match else None
+    """明确期限必须成功解析；未提供才允许读取引用中的旧值。"""
+    text = raw or ""
+    values = {monthly_tenor(match[0]) for match in _RAW_TENOR_RE.finditer(text)}
+    for match in _TENOR_LABEL_RE.finditer(text):
+        clause = re.split(r"[，,；;。]", text[match.end():], maxsplit=1)[0].strip()
+        # 标签后允许紧邻其它建仓参数，但不能跳过无法解析的期限。
+        token = _RAW_TENOR_RE.match(clause)
+        suffix = clause[token.end():].strip() if token else clause
+        if not token or (suffix and not re.match(r"市价|限价|POV|TWAP|下单|确认", suffix, re.I)):
+            raise TenorError("期限无法唯一识别，请明确一个正整数月份期限后重新提交。")
+    if len(values) > 1:
+        raise TenorError("同一订单存在多个期限，请明确每笔订单的期限后重新提交。")
+    return next(iter(values), None)
+
+
+def _card_tenor(quote: str) -> str | None:
+    value = _labeled(quote, "期限")
+    if value is None or value.strip().lower() in {"null", "待补充", "【待补充】"}:
+        return None
+    return monthly_tenor(value)
 
 
 def _raw_strike(raw: str) -> float | None:
@@ -325,6 +295,7 @@ def _card_strike(text: str) -> float | None:
 
 def _reference_fields(
     raw: str, quote: str, *, lineage: dict[str, FieldRecord] | None = None,
+    read_tenor: bool = True,
 ) -> dict[str, Any]:
     """B 类字段：记录实际分支选择，raw 优先、引用回执兜底。"""
     raw_source, quote_source = SourceText(raw, "raw"), SourceText(quote, "quote")
@@ -352,10 +323,11 @@ def _reference_fields(
         (_token_option_type(card_type) if card_type else None, quote_source),
         (_token_option_type(quote), quote_source),
     ])
-    value = _labeled(quote, "期限")
-    match = re.match(r"(\d+(?:\.\d+)?)\s*([MYWmyw])", value) if value else None
-    tenor = select("tenor", [(_raw_tenor(raw), raw_source),
-        (f"{match.group(1)}{match.group(2).upper()}" if match else None, quote_source)])
+    tenor = None
+    if read_tenor:
+        raw_tenor = _raw_tenor(raw)
+        tenor = select("tenor", [(raw_tenor, raw_source),
+            (_card_tenor(quote) if raw_tenor is None else None, quote_source)])
     strike = select("strike_percentage", [(_raw_strike(raw), raw_source), (_card_strike(quote), quote_source)])
     return {"order_ids": ids, "stock_code": stock_code, "option_type": option_type,
             "tenor": tenor, "strike_percentage": strike}
@@ -393,20 +365,68 @@ def quote_blocks_for_order(quote: str, order_id: str | None) -> list[str]:
     ]
 
 
-def is_quoted_batch_supplement(raw: str, quote: str) -> bool:
-    """Only an explicit same-product, same-action numbered supplement bypasses planning."""
-    if (not extract_order_ids(quote) or re.search(r"(?:H-|CO-)\d{8}-|OPTG?-", quote)
-            or re.search(r"确认|确定|询价|撤单|撤销|取消|互换|买入|卖出|然后|如果|成交后", raw)):
-        return False
-    segments = _split_ordinal_segments(raw)
-    if len(segments) < 2:
-        return False
-    for _, segment in segments:
-        params = _a_class_params(segment, quote)
-        if not any(value is not None for value in params.values()) or not only_execution_parameters(segment, allow_choice=True):
-            return False
-    parse_place_params_with_lineage(raw, quote)  # reject duplicate/out-of-range before any submission
-    return True
+def _bound_order_inputs(
+    raw: str, quote: str, *, confirm: bool, selected_order_ids: Sequence[str] | None,
+) -> list[tuple[str | None, str, str | None, str]]:
+    """将动作授权、范围与逐单参数分开；不得将整段多订单原文广播。"""
+    matches = selectors(raw, quote)
+    ids: list[str | None] = []
+    if selected_order_ids is not None:
+        ids.extend(selected_order_ids)
+    else:
+        ids.extend(extract_order_ids(raw) or extract_order_ids(quote))
+        if not ids:
+            ids.append(None)
+
+    def parameters(text: str) -> str:
+        separators = " \t\r\n，,、；;。."
+        text = text.strip(separators)
+        if confirm:
+            for alias in ALIASES["place"]:
+                if text.startswith(alias):
+                    text = text[len(alias):].strip(separators)
+                if text.endswith(alias):
+                    text = text[:-len(alias)].strip(separators)
+        return text
+
+    if not matches:
+        return [(oid, parameters(raw), None, "") for oid in ids]
+    prefix = parameters(raw[:matches[0].start])
+    shared = prefix if re.match(r"^(?:全部|所有|统一|都|均)", prefix) else ""
+    if prefix and not shared and len(matches) == 1:
+        match = matches[0]
+        if selected_order_ids is not None and tuple(selected_order_ids) != (match.order_id,):
+            raise OrderScopeError("参数订单超出本次确认范围，请重新引用订单消息。")
+        return [(match.order_id, parameters(raw), match.text, "")]
+    if prefix and not shared:
+        raise OrderScopeError("序号或单号前存在无法归属的参数，请明确每笔订单的参数。")
+    bound: dict[str, tuple[str, str]] = {}
+    group: list[tuple[str, str]] = []
+    for index, match in enumerate(matches):
+        if selected_order_ids is not None and match.order_id not in selected_order_ids:
+            raise OrderScopeError("参数订单超出本次确认范围，请重新引用订单消息。")
+        if match.order_id in bound or any(oid == match.order_id for oid, _ in group):
+            raise OrderScopeError("订单序号或单号重复，请分别提供每笔订单的参数。")
+        group.append((match.order_id, match.text))
+        end = matches[index + 1].start if index + 1 < len(matches) else len(raw)
+        fragment = parameters(raw[match.end:end])
+        if re.fullmatch(r"[\s、,，和及与]*", fragment) and index + 1 < len(matches):
+            continue
+        # 显式的共享尾句从本笔片段分离，避免污染相邻订单。
+        shared_match = re.search(r"(?:^|[，,；;])\s*((?:全部|所有|统一|都|均).*)", fragment)
+        if shared_match:
+            if shared:
+                raise OrderScopeError("共享参数重复，请统一说明后再提交。")
+            shared = shared_match[1]
+            fragment = parameters(fragment[:shared_match.start()])
+        for oid, selector in group:
+            bound[oid] = (fragment, selector)
+        group = []
+    if selected_order_ids is None and not shared:
+        ids = list(bound)
+    elif selected_order_ids is None:
+        ids = list(dict.fromkeys([*ids, *bound]))
+    return [(oid, *bound.get(oid or "", ("", None)), shared) for oid in ids]
 
 
 def parse_place_params_with_lineage(
@@ -415,16 +435,25 @@ def parse_place_params_with_lineage(
 ) -> ParsedPlaceParams:
     raw_text, quote_text = raw or "", quote or ""
     contexts = [SourceText(quote_text, "quote"), *history_sources(history)]
-    reference = _reference_fields(raw_text, quote_text)
     output = ParsedPlaceParams([], [])
 
-    def append(order_id: str | None, text: str, selector: str | None = None) -> None:
+    def append(
+        order_id: str | None, text: str, selector: str | None = None, shared: str = "",
+    ) -> None:
         order_blocks = quote_blocks_for_order(quote_text, order_id)
         records: dict[str, FieldRecord] = {}
         order_reference = _reference_fields(text, "", lineage=records)
+        if shared:
+            shared_records: dict[str, FieldRecord] = {}
+            shared_reference = _reference_fields(shared, "", lineage=shared_records)
+            for key, value in shared_reference.items():
+                if key != "order_ids" and order_reference[key] is None and value is not None:
+                    order_reference[key] = value
+                    records[key] = shared_records[key]
         for block in order_blocks:
             block_records: dict[str, FieldRecord] = {}
-            fields = _reference_fields(text, block, lineage=block_records)
+            fields = _reference_fields(text, block, lineage=block_records,
+                                       read_tenor=order_reference["tenor"] is None)
             for key, value in fields.items():
                 if key == "order_ids":
                     if "order_id" not in records and "order_id" in block_records:
@@ -435,31 +464,45 @@ def parse_place_params_with_lineage(
         if "order_id" in records:
             records["order_id"] = records["order_id"].model_copy(update={"value": order_id})
         if selector:
+            if order_id and order_id in selector:
+                records["order_id"] = _field(order_id, SourceText(selector, "raw"))
             records["order_id.selection"] = _field(selector, SourceText(selector, "raw"))
-        params = _a_class_params(text, "", lineage=records, contexts=[*[SourceText(block, "quote") for block in order_blocks], *[SourceText(line, "quote") for line in quote_text.splitlines() if "本群可选交易对手列表" in line], *contexts[1:]])
+        order_contexts = [
+            *[SourceText(block, "quote") for block in order_blocks],
+            *[SourceText(line, "quote") for line in quote_text.splitlines()
+              if "本群可选交易对手列表" in line], *contexts[1:],
+        ]
+        params = _a_class_params(text, "", lineage=records, contexts=order_contexts)
+        if shared:
+            shared_records = {}
+            shared_params = _a_class_params(shared, "", lineage=shared_records, contexts=order_contexts)
+            for key, value in shared_params.items():
+                if params[key] is None and value is not None:
+                    if key in {"pov_ratio", "twap_start_time", "twap_end_time"} and (
+                        params["order_type"] != shared_params["order_type"]
+                    ):
+                        continue
+                    params[key] = value
+                    records[key] = shared_records[key]
         item = {"order_id": order_id, "stock_code": order_reference["stock_code"],
                 "option_type": order_reference["option_type"], "tenor": order_reference["tenor"],
                 "strike_percentage": order_reference["strike_percentage"], **params}
         if not confirm:
-            fast = _extract_fast_execution(text)
+            fast_text = text if _extract_order_type(text) is not None else (shared or text)
+            fast = resolve_fast_execution(
+                fast_text, has_explicit_pov_ratio=params["pov_ratio"] is not None,
+            )
             item["has_fast_execution_intent"] = fast
-            records["has_fast_execution_intent"] = _field(True, SourceText(text, "raw")) if fast else FieldRecord(
+            records["has_fast_execution_intent"] = _field(True, SourceText(fast_text, "raw")) if fast else FieldRecord(
                 value=False, source="default", origin="rule:option.fast_execution", locked=True,
             )
         output.orders.append(item)
         output.fields.append(records)
 
-    segments = [] if selected_order_ids is not None else _split_ordinal_segments(raw_text)
-    if segments:
-        ids = reference["order_ids"]
-        if any(number > len(ids) or ids[number - 1] is None for number, _ in segments):
-            raise OrderScopeError("订单序号超出引用范围，请重新引用订单消息。")
-        selectors = list(_ORDINAL_SEGMENT_RE.finditer(raw_text))
-        for (number, segment), selector in zip(segments, selectors, strict=True):
-            append(ids[number - 1], segment, selector[0])
-    else:
-        for order_id in selected_order_ids if selected_order_ids is not None else reference["order_ids"]:
-            append(order_id, raw_text)
+    for order_id, text, selector, shared in _bound_order_inputs(
+        raw_text, quote_text, confirm=confirm, selected_order_ids=selected_order_ids,
+    ):
+        append(order_id, text, selector, shared)
     return output
 
 
@@ -476,4 +519,4 @@ def parse_confirm_place_params(
     return parse_place_params_with_lineage(raw, quote, history_texts, confirm=True).orders
 
 
-__all__ = ["history_texts", "parse_confirm_place_params", "parse_place_params", "parse_place_params_with_lineage"]
+__all__ = ["OrderScopeError", "history_texts", "parse_confirm_place_params", "parse_place_params", "parse_place_params_with_lineage"]

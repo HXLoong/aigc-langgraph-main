@@ -16,6 +16,8 @@ def failure_diagnostic(state: Mapping[str, Any]) -> dict[str, Any] | None:
     summary = _LABELS[error.code]
     if error.type == "BackendUnreachableError" and "timeout" in error.message.lower():
         summary = "后端调用超时，执行结果待核对"
+    elif error.type == "CloseOrderTypeNormalizationError":
+        summary = "平仓执行方式无法识别或存在冲突"
     elapsed = None
     for entry in reversed(state.get("trace") or []):
         value = entry.model_dump() if isinstance(entry, TraceEntry) else entry

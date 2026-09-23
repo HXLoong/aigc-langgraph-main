@@ -21,6 +21,26 @@ from langgraph_direct_regression import (
 from regression_support import AssertionResult
 
 
+def test_lifecycle_resolves_order_and_waits_before_query():
+    from unittest.mock import Mock
+
+    client = Mock(last_outputs={}, last_response={})
+    client.send.side_effect = [
+        ("期权订单Q-20260922-ABCDEF12：已收到撤单请求", "one", {}, 0.1),
+        ("已撤单", "two", {}, 0.1),
+    ]
+    scenario = {"name": "生命周期", "send_text": "确认撤单", "sub_scenes": [{
+        "send_text": "查询 {{previous_order_id}} 状态", "quote_previous": True,
+        "wait_before_seconds": 65, "response_contains": ["已撤单"],
+    }]}
+    with patch("langgraph_direct_regression.time.sleep") as sleep:
+        result = run_case(client, scenario, ignore_leading_mentions=False)
+    assert result.passed
+    assert client.send.call_args.args[0] == "查询 Q-20260922-ABCDEF12 状态"
+    assert result.turns[-1].query == "查询 Q-20260922-ABCDEF12 状态"
+    sleep.assert_called_once_with(65)
+
+
 def test_failed_http_turn_remains_in_report_and_clears_previous_outputs():
     from contextlib import nullcontext
     from unittest.mock import Mock

@@ -132,7 +132,7 @@
 
 按 `.claude/rules/prompt-management.md` 场景 B(ADR 0003 A/B 共存):
 
-1. **P0 批(零风险档)**:新建 `swap/v2/` 系列(或 `_versions.yaml` 灰度位),先落零风险删除;跑 `python scripts/langfuse_eval.py --local tests/fixtures/golden.jsonl`(swap 子集),PASS 率不得低于 v1 基线;
+1. **P0 批(零风险档)**:新建 `swap/v2/` 系列(或 `_versions.yaml` 灰度位),先落零风险删除;跑 `python scripts/langfuse/langfuse_eval.py --local tests/fixtures/golden.jsonl`(swap 子集),PASS 率不得低于 v1 基线;
 2. **P1 批(低风险合并 + 去 LLM 化 5 节点)**:每步全量回归 + 新增错例 golden;
 3. **P2 批(结构性改造 + 需业务确认项)**:业务方逐条确认硬编码词表处置与低频输入形态取舍;
 4. **门槛**:每批 v2 相对 v1 的 eval PASS 率差 ≥0 才推进;显著优于 v1 且业务认可后 v2→v1(ADR 0003);全程在 ADR 0001 D5 处置表登记。

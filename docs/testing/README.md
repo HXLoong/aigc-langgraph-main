@@ -24,6 +24,23 @@
 原则：**低层绿了才上高层**。层 1-2 零外部依赖，是 CI 与日常开发的守卫；层 3-4 验证 LLM
 真实效果；层 5-6 验证真实环境契约。
 
+## 一a、黄金集依赖矩阵：哪些能进 CI
+
+| 数据集 | 目录 | 外部依赖 | 在哪跑 | 评分 |
+|---|---|---|---|---|
+| **意图集**（路由 + 意图 + 标的原文提取） | `tests/fixtures/intent/` | 只有 LLM 网关；后端由仓库内 `mock_api/` 顶替，**不碰 Java / GOATS** | GitHub Actions `intent-eval`（PR 触碰提示词 / 路由意图节点 / 评估器 / 意图集时自动跑；也可手动 Run workflow）+ 本地 | `det_intent_match_pass` / `det_instrument_match_pass` 确定性评估器，本地算，不需要 Langfuse；`--fail-under` 给退出码 |
+| **业务集**（询价 / 下单 / 平仓卡片与后端联动） | `tests/fixtures/categories/`；`unified_golden.jsonl` 为显式选择的历史参考集 | Java 后端 + GOATS + 授权测试账号 / 群 / 对手 / 持仓 | **只在开发 / staging 环境**手动跑（`scripts/local_eval.py` / `langfuse_eval.py --dataset business-*`），绝不进 CI | 三个文本断言 + `otc-option-judge` Judge |
+
+```bash
+# 意图集本地（与 CI 同一条命令；终端 1 起 mock_api）
+uvicorn mock_api.server:app --port 8099
+OTC_API_BASE_URL=http://127.0.0.1:8099 GOATS_BASE_URL=http://127.0.0.1:8099 \
+  python scripts/langfuse/langfuse_eval.py --local tests/fixtures/intent --fail-under 0.95 --report .harness-runs/intent-eval.json
+```
+
+CI 用到的环境变量（全部指向 mock、只有 `QWEN_API_BASE` / `QWEN_API_KEY` 是 secrets）见 `.github/workflows/intent-eval.yml`。
+未配置这两个 secrets 时，PR 触发只跑 fixture lint 并告警跳过评估（不算通过），手动触发则失败；配好后自动生效。
+
 ## 二、命令速查
 
 ### 本地联合回归验收（Windows）
@@ -43,7 +60,7 @@ $env:ENABLE_LANGFUSE = 'false'
 当前是 6 份、389 条顶层用例；可重复传入 `--data` 显式选择多个文件，兼容既有格式。
 详见 [工作台使用文档](../../scripts/ai_test_langgraph/README.md)。
 
-联合 pytest 保留 `tests/api` 的原有排除及 15 项条件跳过，不新增 skip/xfail，
+联合 pytest 不再排除任何目录（GOATS 探针已迁至 `scripts/probe_goats/`），保留本地 MySQL 等条件跳过，不新增 skip/xfail，
 以零失败、零警告及 Ruff 零告警为通过条件。默认 dry-run 只验证数据加载与筛选；
 两项自检不执行真实交易。检查记录分别报告本地自动化和真实业务验收状态，
 真实模型准确率、客户 GOATS 业务闭环须另行取得证据。
@@ -66,8 +83,11 @@ curl -X POST http://localhost:8000/v1/workflows/run \
        "response_mode": "blocking", "user": "t-1"}'
 
 # 层 4 · fixture 批量评估（DeepSeek Judge 打分）
-.venv/bin/python scripts/langfuse_eval.py --local tests/fixtures/categories --limit 20 --concurrency 5
-.venv/bin/python scripts/langfuse_eval.py --local tests/fixtures/categories --ids case-025 --no-judge  # 单 case 冒烟
+.venv/bin/python scripts/langfuse/langfuse_eval.py --local tests/fixtures/categories --limit 20 --concurrency 5
+.venv/bin/python scripts/langfuse/langfuse_eval.py --local tests/fixtures/categories --ids case-025 --no-judge  # 单 case 冒烟
+
+# 层 4a · 意图集（只调 LLM + mock 后端，确定性 product_type/intent 比对，不跑 Judge；见 docs/langfuse/workflow-guide.md §8）
+.venv/bin/python scripts/langfuse/langfuse_eval.py --local tests/fixtures/intent --concurrency 3
 
 # 层 5 · 真后端探针（需 VPN）
 .venv/bin/python scripts/probe_real_backend_e2e.py     # 通用连通性
@@ -87,7 +107,6 @@ curl -X POST http://localhost:8000/v1/workflows/run \
 # .env 指向 mock（LLM 仍走真实 DeepSeek，只有后端是假的）
 OTC_API_BASE_URL=http://127.0.0.1:8099
 GOATS_BASE_URL=http://127.0.0.1:8099
-SECURITIES_INSTRUMENT_URL=http://127.0.0.1:8099/admin-api/integration/securities-instrument/select
 ```
 
 - mock 返回**固定 stub**，验证的是"链路通 + 契约对 + 参数提取对"，不验证业务数值正确性
@@ -100,18 +119,18 @@ SECURITIES_INSTRUMENT_URL=http://127.0.0.1:8099/admin-api/integration/securities
 1. **改 .env**：三个 URL 换成真实地址（内网格式参考 `.env.example` 注释），需 VPN 可达
 2. **跑探针**（层 5）：五个 `probe_*_e2e.py` 逐条过，确认契约与连通性；任何 4xx/5xx
    先解决再往下走
-3. **真后端 golden 回归**（层 6）：`langfuse_eval.py` 跑 B 桶全集，退出门见
-   `docs/m3-m4-roadmap.md`（E3.1 总 PASS ≥ 92.5%；B 桶 ≥ 90% / C 桶 ≥ 80%）
-4. **现场 smoke**：≥ 5 条真实业务流走通（E3.5 / #86），部署用
+3. **真后端数据集回归**（层 6）：`langfuse_eval.py` 跑 B 桶全集，退出门见
+   ADR 0030 D3（总 PASS 率不低于上一基线；B 桶 ≥ 90% / C 桶 ≥ 80%）
+4. **现场 smoke**：≥ 5 条真实业务流走通，部署用
    `scripts/deploy-customer.sh`（自带预检 + smoke 自检）
 
 已知坑（真后端联调前必读）：
-- **#178（2026-09-18 定案）** · GOATS agent 路径统一为 `GOATS_BASE_URL`（主机根，或带
+- **GOATS agent 路径（2026-09-18 定案）** · 路径统一为 `GOATS_BASE_URL`（主机根，或带
   `/api` 尾缀，客户端归一）+ 客户端补全 `/api/internal/agent/*`。此前 `goats_agent_client`
   漏前缀，在 tstgoats 被 APISIX 网关以 405 / 静态页拒绝（快速询价恒报"参数解析服务异常"）；
   两个客户端已统一，单测锁定两种基址写法，实调（tstgoats）验证通过
 - 后端 dedup：多轮 case 间隔太短会撞"正在处理，请勿重复提交"；workaround 只允许放在
-  `scripts/langfuse_eval.py`（turn 间 sleep），**严禁进业务代码**（根 CLAUDE.md P0 红线）
+  `scripts/langfuse/langfuse_eval.py`（turn 间 sleep），**严禁进业务代码**（根 CLAUDE.md P0 红线）
 
 ## 五、失败了怎么排查
 

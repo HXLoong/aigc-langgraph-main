@@ -9,11 +9,12 @@
 - 变体覆盖：缩写 / 错别字 / 口语化 / 引用同义词 / 边界场景
 
 注：生成的 case **不直接合入** golden.jsonl —— 必须经业务方 review pass。
-本工具只产生 docs/archive/m2/m2-llm-generated-cases.md 候选清单。
+本工具只产生 review 候选清单 markdown（默认 tmp/case_generator/paraphrase-candidates.md）。
 """
 from __future__ import annotations
 
 import json
+from typing import Any, cast
 
 from langchain_core.messages import HumanMessage, SystemMessage
 from pydantic import BaseModel, ConfigDict, Field
@@ -106,9 +107,9 @@ async def paraphrase_case(
         expected=json.dumps(seed.expected, ensure_ascii=False),
         quote_content="(首轮无引用)",
     )
-    result = await llm.ainvoke(
+    result = cast(ParaphraseBatch, await llm.ainvoke(
         [SystemMessage(content=_SYSTEM_PROMPT), HumanMessage(content=user_msg)]
-    )
+    ))
     return list(result.variants)
 
 
@@ -116,7 +117,7 @@ def to_golden_dict(
     seed: GoldenCase,
     paraphrased: ParaphrasedCase,
     new_id: str,
-) -> dict:
+) -> dict[str, Any]:
     """把 LLM 生成的变体转为 golden.jsonl 格式（不直接合入，等 review）。"""
     return {
         "id": new_id,

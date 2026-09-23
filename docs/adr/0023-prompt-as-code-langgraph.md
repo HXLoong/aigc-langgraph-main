@@ -1,10 +1,18 @@
 # ADR 0023 · 提示词即代码：按 LangGraph 高代码范式管理提示词（PromptSpec）
 
-- 状态：**已采纳**（2026-09-15；2026-09-17 第二 / 三批迁移完成共 28 个 LLM 节点，同日 D 批去 LLM 化再移除 option 4 + close 4 个——现役注册 20 个，迁移路径见 D5）
+- 状态：**已采纳**（2026-09-22 加载主图核实注册 14 个 PromptSpec；历史 28 → 20 的迁移过程见 D5）
 - 日期：2026-09-15
 - 起源：ADR 0022 落地后，用户要求"提示词管理需要考虑 LangGraph 高代码实现、使用 AgentState 等内容，按 LangGraph 高代码范式重新评估"；评估过程与证据见 [docs/prompt-maintainability-assessment.md 第十节](../prompt-maintainability-assessment.md)
 - 修订：[ADR 0022](./0022-prompt-governance-after-code-migration.md) D5（`.md` 契约从"system 段 + 手拼 user"收敛为 PromptSpec 声明）、[ADR 0001 D5](./0001-rewrite-app-with-harness-first.md)（改写决定登记）；2026-09-17：第二 / 三批迁移完成（ADR 0022 ticker 未决项同步关闭）
 - 作者：图灵科技 + Tony
+
+
+## 当前落地口径（2026-09-20）
+
+PromptSpec、结构化输出和 git 提示词真源的决策继续有效；现役业务注册为 14 个。
+标的识别已迁至 Java，ticker 的 4 个 PromptSpec 退出业务链路；
+普通期权询价保留原文提取，不再运行本地标的推断与证券池预检。
+详见[标的识别后端边界](../backend-instrument-boundary.md)。D5 的 28 → 20 为当时迁移记录，不能作为现役数量。
 
 ## 上下文
 
@@ -41,11 +49,11 @@ result = await llm.with_structured_output(SPEC.output_model).ainvoke(messages)
 
 - `inputs ⊆ get_type_hints(AgentState)`：构造时校验，改 State 字段名立刻在 import 阶段报错
 - `render_system` 对 `injects` 中登记但 `.md` 里不存在的占位符抛错：manifest / spec / `.md` 三者不可能悄悄不一致
-- 注册表 `all_specs()` 与 `_manifest.yaml` 交叉核对（`tests/test_prompt_spec.py`）：`output_model` / `injects` 必须相等；`scripts/prompt_inventory.py --check` 把 `PromptSpec(category=, name=)` 视为与 `load_prompt` 等价的加载点（2026-09-16：manifest 与 `prompt_inventory` 已随 ADR 0022 废弃移除，交叉核对以注册表测试为准）
+- 注册表 `all_specs()` 与 `_manifest.yaml` 交叉核对（`tests/prompts/test_prompt_spec.py`）：`output_model` / `injects` 必须相等；`scripts/prompt_inventory.py --check` 把 `PromptSpec(category=, name=)` 视为与 `load_prompt` 等价的加载点（2026-09-16：manifest 与 `prompt_inventory` 已随 ADR 0022 废弃移除，交叉核对以注册表测试为准）
 
 ### D2 · 输出契约只有一份：Pydantic `Field(description=)`
 
-- 输出模型每个字段必须有 `description`（`tests/test_prompt_spec.py::test_output_model_fields_have_description` 守护已注册的 spec），语义经 function calling schema 下发
+- 输出模型每个字段必须有 `description`（`tests/prompts/test_prompt_spec.py::test_output_model_fields_have_description` 守护已注册的 spec），语义经 function calling schema 下发
 - 提示词正文**不再**维护 JSON 骨架 / 字段表 / "必须输出如下 JSON 结构"；保留的是业务规则（何时填、如何换算）。本次删除 option 7 个 extract 的 JSON 骨架与 close intent 的代码内追加指令
 - 字段级取值规则（枚举、格式）优先写进 `description`，跨字段规则留在 `.md` system 段
 
@@ -60,13 +68,17 @@ result = await llm.with_structured_output(SPEC.output_model).ainvoke(messages)
 
 ### D5 · 迁移路径（不一次性全迁）
 
+以下批次为历史记录。2026-09-20 标的识别委托后端后，ticker 提示词及其输出模型已删除；
+现役注册以主图加载后的 `all_specs()` 为准（2026-09-22：14 个；多动作编排及其拆分提示词已退役）。
+职责见[标的识别边界](../backend-instrument-boundary.md)，不恢复已退役的本地推断节点。
+
 | 批次 | 节点 | 说明 |
 |---|---|---|
 | 试点（本 ADR 已落地） | option intent + 7 extract、option_close intent / holding_query、swap intent / place_order | 12 个，覆盖三种形态：纯变量 user、带注入、带灰度与 `[user]` 模板 |
 | 第二批 | close 5 个（place_close / cancel_close / confirm_close / confirm_cancel / query_status）、swap select_counterparty / select_ticker | user 拼装同构，机械迁移；同时给 `close/models.py` 剩余模型补 description。**已完成（2026-09-17），含 swap/fresh_counterparty** |
-| 第三批 | swap multimodal（image / excel / ocr，含 v2 灰度位）、ticker 4 个（tools.py helper 形态）、router unknown_intent | multimodal 输入含图片 / 文件，`user_builder` 需扩展为多模态消息；ticker 先完成 ADR 0022 未决项"转 structured output"再迁。**已完成（2026-09-17）**：multimodal 3 个（image_ocr 为 system 渲染 + 运行期 user 拼接）、ticker 4 个输出契约见 `app/subgraphs/ticker/models.py`、router unknown_intent |
+| 第三批 | swap multimodal（image / excel / ocr，含 v2 灰度位）、ticker 4 个（tools.py helper 形态）、router unknown_intent | multimodal 输入含图片 / 文件，`user_builder` 需扩展为多模态消息；ticker 先完成 ADR 0022 未决项"转 structured output"再迁。**已完成（2026-09-17）**：multimodal 3 个（image_ocr 为 system 渲染 + 运行期 user 拼接）、ticker 4 个输出契约见 ~~`app/subgraphs/ticker/models.py`~~、router unknown_intent |
 
-**2026-09-17 D 批（去 LLM 化，非 PromptSpec 迁移）**：close 4 个 CO- 节点（cancel_close / confirm_close / confirm_cancel / query_status → `close/order_id.py`）与 option 4 个 Q- 节点（extract_cancel / extract_cancel_place / extract_confirm_cancel / extract_query → `option/order_id.py`）已转确定性提取，8 个对应提示词文件同批删除；注册表 28 → 20。
+**2026-09-17 D 批（去 LLM 化，非 PromptSpec 迁移）**：close 4 个 CO- 节点（cancel_close / confirm_close / confirm_cancel / query_status → `close/order_id.py`）与 option 4 个 Q- 节点（extract_cancel / extract_cancel_place / extract_confirm_cancel / extract_query → `option/order_id.py`）已转确定性提取，8 个对应提示词文件同批删除；注册表 28 → 20（2026-09-20 ticker 4 个注销后 → 15）。
 
 每批的门：对应子图测试 GREEN + eval PASS ≥ 迁移前（迁移本身不改 LLM 输入文本，eval 应零变化；原 `prompt_inventory --strict` 门槛已随 ADR 0022 废弃移除，2026-09-16）。
 

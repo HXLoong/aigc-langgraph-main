@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import pytest
 
+from app.extraction.fields import EvidenceError
 from app.subgraphs.option.models import OptionInquiryRawItem
 from app.subgraphs.option.normalize import (
     expand_inquiry_items,
@@ -99,6 +100,13 @@ class TestNormalizeStrike:
     def test_normalize(self, raw: str | None, expected: float | None) -> None:
         assert normalize_strike(raw) == expected
 
+    @pytest.mark.parametrize(
+        ("fragment", "expected"),
+        [("80call", 80.0), ("103.5% CALL", 103.5), ("100put", None), ("callback", None)],
+    )
+    def test_call_shorthand(self, fragment: str, expected: float | None) -> None:
+        assert normalize_strike(fragment) == expected
+
 
 class TestSplitStrikes:
     def test_single_value(self) -> None:
@@ -171,6 +179,19 @@ class TestNormalizeParticipation:
 
 
 class TestExpandInquiryItems:
+    @pytest.mark.parametrize("fragment", ["100call", "100 CALL", "100%Call", "100 % call"])
+    def test_call_shorthand_preserves_type_and_strike(self, fragment: str) -> None:
+        item = OptionInquiryRawItem(stockCode="宁德时代", optionType=fragment, tenor="1M")
+        result = expand_inquiry_items([item])[0]
+        assert result["option_type"] == "欧式看涨"
+        assert result["strike_percentage"] == 100.0
+
+    def test_call_shorthand_rejects_conflicting_explicit_strike(self) -> None:
+        item = OptionInquiryRawItem(optionType="100call", strikePercentage="80%")
+        # 保留本地已验收的冲突保护，不让两个相互矛盾的执行价静默通过。
+        with pytest.raises(EvidenceError, match="执行价冲突"):
+            expand_inquiry_items([item])
+
     def test_normalizes_all_fields(self) -> None:
         items = [OptionInquiryRawItem(
             stockCode="贵州茅台", optionType="欧式看涨", tenor="1个月",

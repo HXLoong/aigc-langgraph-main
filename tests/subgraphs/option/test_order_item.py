@@ -1,4 +1,4 @@
-"""OptionOrderItem / OptionOrderItemWithFastExec 共享 schema 测试（Dify DSL v2）。
+"""OptionOrderItem / OptionOrderItemWithFastExec 共享 schema 测试。
 
 7 个 extract 节点共用 13 字段 orderList item schema；`place_order_from_quote`
 （下单）额外多 hasFastExecutionIntent 字段。
@@ -42,7 +42,7 @@ class TestOptionOrderItem:
         assert item.short_name == "11125测试短名（张天琪专用）"
 
     def test_option_type_restricted_to_three_values(self) -> None:
-        """Dify DSL v2 收窄：optionType 只接受 3 个值，不再支持 欧式看跌/气囊。"""
+        """optionType 只接受 3 个值（DSL v2 迁移收窄），不再支持 欧式看跌/气囊。"""
         for valid in ("欧式看涨", "参与型看涨", "雪球"):
             assert OptionOrderItem(optionType=valid).option_type == valid  # type: ignore[arg-type]
         for removed in ("欧式看跌", "气囊"):
