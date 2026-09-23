@@ -95,13 +95,51 @@ app/                        # LangGraph 应用层
 └── prompts/                # 提示词资产（git 唯一真源；router / swap / option / option_close / judge）
 
 harness/                    # 评测台（python -m harness <doctor|run|node-run>，经 HTTP 调本地服务）+ 节点 fixture / HTTP 录放
-scripts/                    # langfuse/（Judge 评估、数据集上传、提示词晋升）/ local_eval.py / probe_*.py / canary_* / 一致性 lint
+scripts/                    # langfuse/（Judge 评估、数据集上传、提示词上传）/ local_eval.py / probe_*.py / canary_* / 一致性 lint
 infra/langfuse/             # LangFuse self-hosted Docker Compose（PG + ClickHouse + Redis + MinIO + Web + Worker）
 docs/adr/                   # 架构决定 ADR 0000-0030（共 31 篇）+ README 索引
 docs/api-contracts/         # Java 后端真实业务 API 契约
 tests/                      # 单测 / 子图 / 节点 / 集成（真实 MySQL 用例 RUN_LOCAL_MYSQL_TESTS=1 opt-in）
 tests/fixtures/             # categories/（显式验收集）+ unified_golden.jsonl + nodes/（节点级 fixture）
 ```
+
+## Langfuse Evaluator
+
+评分**代码**与**清单**分开：代码是评分逻辑，清单说明「用哪个文件、产出什么分数、挂给谁」。
+
+```text
+harness/evaluators/                 # 评分逻辑，一个文件一个 Evaluator
+├── response_contains.py            # 必含文本
+├── response_contains_any.py        # 至少含其一
+├── response_not_contains.py        # 禁止文本
+├── intent_match.py                 # 意图集：逐轮比对 product_type / intent
+└── instrument_match.py             # 标的识别比对
+
+scripts/langfuse/definitions/
+├── evaluators.json                 # 清单：name / source / score_name / suite / rule
+└── score-configs.json              # 人工标注用的 Score Config
+```
+
+```json
+// evaluators.json 里的一条
+{
+  "name": "response-contains",
+  "source": "harness/evaluators/response_contains.py",
+  "score_name": "det_required_text_pass",
+  "suite": "business",
+  "rule": { "target": "experiment_item_root" }
+}
+```
+
+上传（`--dry-run` / `--apply` 二选一必填）：
+
+```bash
+python scripts/langfuse/upload_evaluators.py --dry-run    # 先看会推什么
+python scripts/langfuse/upload_evaluators.py --apply      # 真推（含 Online Evaluation Rule）
+python scripts/langfuse/upload_score_configs.py --apply   # Score Config 同理
+```
+
+`source` 必须是仓库内存在的文件；`rule.target` 目前只支持 `experiment_item_root`。
 
 ## 关键文档
 
