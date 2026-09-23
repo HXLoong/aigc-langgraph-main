@@ -149,6 +149,36 @@ python scripts\langfuse\upload_golden_to_langfuse.py --source tests\fixtures\cat
 `append` 通过稳定的 Item ID 执行新增或更新，不会删除远端已有但本次文件中不存在的 Item；需要让远端 Item 集合
 与本地文件完全一致时，显式使用 `--mode overwrite`。
 
+### 4.1a 上传 Prompt 到 staging
+
+`.github/workflows/langfuse-prompt-sync.yml` 在目标为 `main` 的 PR 合并且
+`app/prompts/option/*.md`、`option_close/*.md`、`swap/*.md` 或上传脚本变更时运行。
+Actions 页选择 **langfuse-prompt-sync → Run workflow** 可手动触发。workflow 检出运行时最新
+`main`，使用 Langfuse Python SDK `4.15.0` 串行上传。它需要仓库变量 `LANGFUSE_BASE_URL`
+及 Secrets `LANGFUSE_PUBLIC_KEY`、`LANGFUSE_SECRET_KEY`，缺一即失败。
+
+```bash
+python scripts/langfuse/upload_prompt_to_langfuse.py --sync-all --dry-run
+python scripts/langfuse/upload_prompt_to_langfuse.py --sync-all
+python scripts/langfuse/upload_prompt_to_langfuse.py --sync-all --base-url https://us.cloud.langfuse.com
+
+# 单文件手动上传仍可使用
+python scripts/langfuse/upload_prompt_to_langfuse.py option_close.intent --dry-run
+python scripts/langfuse/upload_prompt_to_langfuse.py option_close.intent
+```
+
+批量模式只扫描三个业务目录的顶层 `.md`（目前 13 个）。名称按目录和文件 stem 用下划线连接：
+`option_close/intent.md` → `option_close_intent`；`swap/intent_v2.md` →
+`swap_intent_v2`，`_vN.md` 是独立 Prompt 名称。上传前会解析并校验全部文件及名称冲突。
+`[system]` 内容原样保留；有 `[user]` 时使用文件中的模板；否则加入含
+`{{send_text}}` 的首轮实验用 chat user 模板。批量模式固定只上传 `staging`，不接受 `--plain`
+或其他标签。
+
+脚本无缓存读取每个 Prompt 的 `staging` 版本。内容和类型相同则跳过；不同则创建同名新版本，
+`staging` 标签随新版本移动。若 UI 中存在不同的 staging 草稿，本次 Git 内容会覆盖其标签指向；
+历史版本仍保留。远端同名 text/chat 类型冲突、鉴权或网络失败会使任务失败。删除本地文件不会
+自动删除 Langfuse 中的 Prompt。生产继续从 Git 加载提示词，提示词修改仍需 PR 评审。
+
 ### 4.2 配置 Online 自动评分
 
 对所有 Dataset 生效：
