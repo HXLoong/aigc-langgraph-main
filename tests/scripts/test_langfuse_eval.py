@@ -265,3 +265,24 @@ def test_judge_rejects_unknown_provider_without_network(monkeypatch):
     monkeypatch.setattr(anthropic, 'Anthropic', lambda: pytest.fail('invalid provider must fail before IO'))
     with pytest.raises(ValueError, match='EVAL_JUDGE_PROVIDER'):
         judge_by_deepseek(output={'reply_text': 'x'}, expected_output='x')
+
+
+def test_judge_cannot_score_unfinished_business_flow_as_success(monkeypatch):
+    monkeypatch.setattr(anthropic, 'Anthropic', lambda: pytest.fail('unfinished flow must fail before Judge IO'))
+    evaluation = judge_by_deepseek(
+        output={'reply_text': '获取群信息失败', 'failure': {'kind': 'business_reject', 'turn': 1}},
+        expected_output='完整订单卡',
+    )
+    assert evaluation.value == 0
+    assert evaluation.metadata['pass'] is False
+    assert 'business_reject' in evaluation.comment
+
+
+def test_dataset_selection_supports_namespaced_ids_and_excludes_archived():
+    from scripts.langfuse import langfuse_eval
+
+    active = SimpleNamespace(id='uuid-active', metadata={'id': 'case-025'}, status='ACTIVE')
+    archived = SimpleNamespace(id='uuid-old', metadata={'id': 'case-025'}, status='ARCHIVED')
+    assert langfuse_eval.select_dataset_items([archived, active], ['case-025']) == [active]
+    assert langfuse_eval.select_dataset_items([archived, active], ['uuid-active']) == [active]
+    assert langfuse_eval.select_dataset_items([archived, active], None) == [active]

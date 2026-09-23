@@ -455,6 +455,16 @@ def judge_by_deepseek(*, output, expected_output, metadata=None, **kwargs):
     provider = os.environ.get("EVAL_JUDGE_PROVIDER", "anthropic")
     if provider not in {"anthropic", "standard"}:
         raise ValueError("EVAL_JUDGE_PROVIDER 必须是 anthropic 或 standard")
+    if output.get("failure"):
+        from langfuse.experiment import Evaluation
+
+        failure = output["failure"]
+        kind = failure.get("kind", "unknown") if isinstance(failure, dict) else "unknown"
+        return Evaluation(
+            name="otc-option-judge", value=0.0,
+            comment=f"业务流程未完成（{kind}），不能由宽松 Judge 计为业务成功",
+            metadata={"pass": False, "failure": failure, "provider": "deterministic_precheck"},
+        )
 
     actual = output.get("reply_text", "")
     overview = (metadata or {}).get("overview", "")
@@ -965,6 +975,19 @@ async def run_local(
 
 
 # ── 主流程（LangFuse 云端） ──
+def select_dataset_items(items: list, ids: list[str] | None) -> list:
+    selected = []
+    wanted = set(ids or [])
+    for item in items:
+        status = getattr(item, "status", "ACTIVE")
+        if getattr(status, "value", status) != "ACTIVE":
+            continue
+        metadata = item.metadata if isinstance(item.metadata, dict) else {}
+        if not wanted or item.id in wanted or metadata.get("id") in wanted:
+            selected.append(item)
+    return selected
+
+
 async def run_eval(
     dataset_name,
     filter_func,
@@ -981,10 +1004,10 @@ async def run_eval(
 
     no_judge = not judge_enabled(suite, no_judge=no_judge)
     lf = Langfuse()
-    items = list(lf.get_dataset(dataset_name).items)
+    items = select_dataset_items(list(lf.get_dataset(dataset_name).items), None)
     print(f"加载 {len(items)} 条 (suite={suite})")
     if ids:
-        items = [i for i in items if i.id in ids]
+        items = select_dataset_items(items, ids)
         print(f"按 id 过滤: {len(items)} 条")
     if filter_func:
         items = [i for i in items if filter_func in (i.metadata or {}).get("test_function", "")]
