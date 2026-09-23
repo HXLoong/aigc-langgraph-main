@@ -33,7 +33,8 @@ def test_accepts_only_declared_business_rejection(kind):
     {'trace': ''}, {'reply_text': ''}, {'error': None},
 ])
 def test_does_not_accept_runtime_failure_or_backend_submission(change):
-    output = rejected(); output.update(change)
+    output = rejected()
+    output.update(change)
     assert evaluate({'rejection': 'ambiguous_action'}, output).value is False
 
 
