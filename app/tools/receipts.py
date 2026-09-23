@@ -12,6 +12,7 @@ from app.tools.exceptions import BackendUnreachableError, EmptyBackendResultErro
 
 SERVICE_UNAVAILABLE = "交易指令服务暂不可用"
 UNCERTAIN_REPLY = "交易指令执行结果待核对，请勿重复提交，请联系交易员或运营核查。"
+DRY_RUN_REPLY = "【DRY-RUN】写入已拦截，未发送交易请求。"
 
 
 @asynccontextmanager
