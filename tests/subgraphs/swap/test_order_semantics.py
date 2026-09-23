@@ -345,3 +345,61 @@ def test_matching_currency_suffix_can_follow_yuan_unit():
     assert normalize_field("placeOrderNotional", "1500万元 CNY") == 15000000
     with pytest.raises(ValueError, match="币种"):
         normalize_field("placeOrderNotional", "1500万元 USD")
+
+
+@pytest.mark.parametrize("text", ["不要买入平仓 甲期货", "不要買入平倉 甲期货"])
+def test_negated_buy_to_close_never_becomes_a_positive_close(text):
+    from app.subgraphs.swap.normalize import holding_action
+
+    assert holding_action(text) is False
+
+
+def test_buy_to_close_does_not_hide_a_separate_opening_action():
+    from app.subgraphs.swap.normalize import holding_action
+
+    with pytest.raises(ValueError, match="开仓方向冲突"):
+        holding_action("买入平仓甲期货，同时买入开仓甲期货")
+
+
+def test_execution_markers_cannot_lend_the_first_orders_price_to_the_second():
+    with pytest.raises(EvidenceError):
+        run("甲证券，集合竞价88.25元卖出4万股，开盘尽快卖出4万股", [
+            {"placeOrderWindCode": cell("甲证券"), "placeOrderOrderDirection": cell("卖出"),
+             "placeOrderQuantity": cell("4万股"), "placeOrderPrice": cell("88.25"),
+             "placeOrderPremarket": cell("集合竞价")},
+            {"placeOrderWindCode": cell("甲证券"), "placeOrderOrderDirection": cell("卖出"),
+             "placeOrderQuantity": cell("4万股"), "placeOrderPrice": cell("88.25"),
+             "hasFastExecutionIntent": cell("尽快")},
+        ])
+
+
+@pytest.mark.parametrize("algorithm", ["pov跟量", "POV 跟量"])
+def test_algorithm_label_without_ratio_does_not_invent_participation(algorithm):
+    params, _ = run("甲证券 " + algorithm, [{"placeOrderWindCode": cell("甲证券"),
+                                            "placeOrderAlgorithmType": cell(algorithm)}])
+    order = params.order_list[0]
+    assert order.place_order_algorithm_type == "POV"
+    assert order.place_order_pov_percent is None
+    assert order.place_order_total_pov_percent is None
+
+
+@pytest.mark.parametrize("algorithm", ["ASAP", "随便跟量", "POVXYZ"])
+def test_unknown_algorithm_is_not_replaced_by_pov(algorithm):
+    with pytest.raises(ValueError):
+        normalize_field("placeOrderAlgorithmType", algorithm)
+
+
+@pytest.mark.parametrize(("raw", "amount", "code"), [
+    ("1500万元 CNY", 15000000, "CNY"), ("2万港元 HKD", 20000, "HKD"),
+    ("3万美元 USD", 30000, "USD"), ("￥1500万元 CNY", 15000000, "CNY"),
+])
+def test_matching_currency_labels_preserve_amount_and_currency(raw, amount, code):
+    assert normalize_field("placeOrderNotional", raw) == amount
+    assert normalize_field("placeOrderNotionalCurrency", raw) == code
+
+
+@pytest.mark.parametrize("raw", ["1500万元 USD", "2万港元 CNY", "￥100 USD"])
+def test_conflicting_currency_labels_are_rejected_for_both_fields(raw):
+    for field in ("placeOrderNotional", "placeOrderNotionalCurrency"):
+        with pytest.raises(ValueError, match="币种"):
+            normalize_field(field, raw)

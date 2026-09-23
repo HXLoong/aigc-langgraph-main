@@ -52,6 +52,7 @@ def _constrain_references(candidates: BaseModel, sources: Mapping[str, str]) -> 
 
 _ACTION_FIELDS = {"placeOrderOrderDirection", "placeOrderCloseIntent", "placeOrderEntrustRatio"}
 _SCOPED_FIELDS = _ACTION_FIELDS | {"placeOrderAlgorithmType", "placeOrderPovPercent", "placeOrderTotalPovPercent"}
+_EXECUTION_ANCHORS = ("placeOrderPremarket", "hasFastExecutionIntent", "placeOrderPrice")
 _NATURAL_WINDOWS = {"全天", "开盘", "到收盘", "至收盘", "收盘"}
 
 
@@ -89,7 +90,7 @@ def _order_window(row: dict[str, Any], orders: list[dict[str, Any]], raw: str) -
     if len(orders) == 1:
         return _single_order_block(row, raw)
     positions = []
-    anchors = ("placeOrderWindCode", "placeOrderQuantity", "placeOrderNotional", "orderId")
+    anchors = ("placeOrderWindCode", "placeOrderQuantity", "placeOrderNotional", "orderId", *_EXECUTION_ANCHORS)
     for order in orders:
         position = None
         for field in anchors:
@@ -150,7 +151,8 @@ def constrain_candidates(candidates: BaseModel, sources: Mapping[str, str]) -> B
             if any(row.get(field) and row[field].get("origin", "raw") == "raw" for field in _SCOPED_FIELDS):
                 raise EvidenceError("cannot establish a unique source window for order actions")
             continue
-        for field in _SCOPED_FIELDS:
+        scoped_fields = _SCOPED_FIELDS | set(_EXECUTION_ANCHORS) if len(orders) > 1 else _SCOPED_FIELDS
+        for field in scoped_fields:
             candidate = row.get(field)
             if (candidate and candidate.get("origin", "raw") == "raw"
                     and candidate.get("value") and not _within(candidate, window)):

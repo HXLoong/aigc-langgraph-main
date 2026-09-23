@@ -64,7 +64,10 @@ _DIRECTION_TOKEN = re.compile(
 
 
 _HOLDING_DESCRIPTION = re.compile(r"(?:剩余|剩餘|当前|目前|现有|現有)?(?:全部|所有|一半|半仓|半倉)?(?:持仓|持倉)")
-_CLOSE_ACTION = re.compile(r"卖出|賣出|全部卖掉|全卖|全賣|平仓|平倉|清仓|清倉|平掉|全平|减仓|平空|平多")
+_CLOSE_ACTION = re.compile(
+    r"买入\s*平仓|買入\s*平倉|卖出|賣出|全部卖掉|全卖|全賣|平仓|平倉|清仓|清倉|平掉|全平|减仓|平空|平多"
+)
+_OPEN_ACTION = re.compile(r"(?:买入|買入)(?!\s*(?:平仓|平倉))|买开|卖空|賣空|卖开")
 _NEGATION = re.compile(r"(?:不要|无需|不需要|不|别|勿|禁止|暂不)(?:\s*|(?:把|将)[^,，;；\n]*)$")
 _CONDITIONAL = re.compile(r"如果|假如|若|或者|或|达到.*再|等.*再")
 _ALGORITHM_SUFFIX = re.compile(
@@ -93,12 +96,14 @@ def holding_action(context: str) -> bool | None:
         return False
     if not positive:
         return None
-    if re.search(r"买入|買入|买开|卖空|賣空|卖开", context):
+    if _OPEN_ACTION.search(context):
         raise ValueError("平仓动作与开仓方向冲突")
     return True
 
 
 def _algorithm_suffix(value: str) -> tuple[str, float | int | None] | None:
+    if re.fullmatch(r"POV\s*跟量", value.strip(), re.I):
+        return "POV", None
     match = _ALGORITHM_SUFFIX.fullmatch(value.strip())
     if not match:
         return None
@@ -129,12 +134,34 @@ def _direction_context(candidate: FieldCandidate, sources: Mapping[str, str]) ->
     return contexts[0]
 
 
+def _currency_parts(text: str) -> tuple[str, str | None]:
+    """Remove matching currency declarations; contradictory units remain errors."""
+    value = text.strip()
+    codes: set[str] = set()
+    if value.startswith(("￥", "¥")):
+        codes.add("CNY")
+        value = value[1:].lstrip()
+    aliases = sorted(((alias, code) for code, names in _CURRENCIES.items() for alias in names),
+                     key=lambda pair: len(pair[0]), reverse=True)
+    while value:
+        match = next(((alias, code) for alias, code in aliases
+                      if value.upper().endswith(alias.upper())), None)
+        if match is None:
+            break
+        alias, code = match
+        codes.add(code)
+        value = value[:-len(alias)].rstrip()
+    if len(codes) > 1:
+        raise ValueError("金额包含相互冲突的币种，请明确币种。")
+    return value, next(iter(codes), None)
+
+
 def _number(text: str) -> Decimal:
     if re.search(r"[0-9]\s+[0-9]", text):
         raise ValueError("数值不能含多个数字片段")
-    value = re.sub(r"\s", "", text)
-    suffixes = [alias for aliases in _CURRENCIES.values() for alias in aliases]
-    suffixes += ["标准手", "标准股", "标手", "整手", "单合约", "LOTS", "LOT", "股", "手", "张", "%"]
+    value, _ = _currency_parts(text)
+    value = re.sub(r"\s", "", value)
+    suffixes = ["标准手", "标准股", "标手", "整手", "单合约", "LOTS", "LOT", "股", "手", "张", "%"]
     for suffix in sorted(suffixes, key=len, reverse=True):
         if value.upper().endswith(suffix.upper()):
             value = value[:-len(suffix)]
@@ -171,12 +198,7 @@ def quantity_unit(text: str) -> str | None:
 
 
 def currency(text: str) -> str | None:
-    candidates = sorted(((alias, code) for code, aliases in _CURRENCIES.items() for alias in aliases),
-                        key=lambda pair: len(pair[0]), reverse=True)
-    for alias, code in candidates:
-        if text.upper().endswith(alias.upper()) or (alias in {"￥", "¥"} and text.startswith(alias)):
-            return code
-    return None
+    return _currency_parts(text)[1]
 
 
 def close_ratio(value: str, evidence: str) -> float | None:
