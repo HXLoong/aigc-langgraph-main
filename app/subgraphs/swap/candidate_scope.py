@@ -163,7 +163,9 @@ def _shared_direction_prefix(orders: list[dict[str, Any]], raw: str) -> str | No
         positions.append(raw.index(anchor["value"]))
     boundary = min(positions)
     prefix = raw[:boundary]
-    if (not _within(directions[0], prefix) or _ACTION_PREFIX.search(raw[boundary:])
+    direction = directions[0]
+    if (not direction or direction.get("value") not in prefix
+            or _ACTION_PREFIX.search(raw[boundary:])
             or re.search(r"如果|假如|若|或者|否则", prefix)):
         return None
     return prefix

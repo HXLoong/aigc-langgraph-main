@@ -231,6 +231,15 @@ def normalize_field(field: str, value: str, evidence: str | None = None) -> Any:
     """Values are verified raw fragments; this function performs no security-data lookup."""
     text = value.strip()
     evidence = evidence or text
+    if field == "placeOrderOrderDirection":
+        # 核心动作片段不能丢掉其紧邻的开平仓语义。
+        compounds = {match[0] for match in re.finditer(
+            re.escape(text) + r"(?:开仓|開倉|平仓|平倉)", evidence,
+        )}
+        if len(compounds) > 1:
+            raise ValueError("同一方向证据包含冲突的开平仓动作")
+        if compounds:
+            text = next(iter(compounds))
     if field == "placeOrderOrderDirection" and text.upper() in {"B", "S", "L"}:
         return _direction_shorthand(text, evidence)
     if field == "placeOrderAlgorithmType":
@@ -281,6 +290,16 @@ def normalize_field(field: str, value: str, evidence: str | None = None) -> Any:
         return float(match[1]) * (60 if match[2] in {"小时", "小時"} else 1)
     if field == "hasFastExecutionIntent":
         return resolve_fast_execution(evidence or text)
+    if field == "placeOrderCloseIntent" and text in {"开仓", "開倉"}:
+        if negates_token(text, evidence) or _CONDITIONAL.search(evidence):
+            raise ValueError("开仓动作存在否定或条件")
+        return False
+    if field == "placeOrderCloseIntent" and re.fullmatch(
+        r"(?:剩余|剩餘)?(?:部分|全部|全)(?:卖出|賣出|减|減)", text,
+    ):
+        if _CONDITIONAL.search(evidence):
+            raise ValueError("平仓动作存在条件")
+        return not negates_token(text, evidence)
     if field == "placeOrderCloseIntent" and (
         is_holding_description(text) or (re.search(r"持仓|持倉", evidence) and _CLOSE_ACTION.search(text))
     ):
@@ -331,6 +350,18 @@ def normalize_candidates(
 
     converters = {info.alias or name: converter(info.alias or name) for name, info in SwapOrderItem.model_fields.items()}
     raw_orders = candidates.model_dump(by_alias=True).get("orderList") or []
+    for index, raw_order in enumerate(raw_orders):
+        quantity = raw_order.get("placeOrderQuantity") or raw_order.get("placeOrderQuantityHand")
+        notional = raw_order.get("placeOrderNotional")
+        if not quantity or not notional:
+            continue
+        quantity_value = FieldCandidate.model_validate(quantity).verify(sources)
+        notional_value = FieldCandidate.model_validate(notional).verify(sources)
+        if (quantity_value and quantity_unit(quantity_value) in {"SHARE", "HAND"}
+                and notional_value and re.match(r"约|約|大概|大约|大約", notional_value)
+                and normalize_field("placeOrderQuantity", quantity_value) > 0):
+            # 明确股数旁的约数估值不构成第二种委托规模；仍保留原证据审计。
+            converters[f"{scope}.orderList.{index}.placeOrderNotional"] = lambda value, candidate: None
     split_units: dict[int, tuple[str, FieldCandidate, FieldCandidate]] = {}
     for index, raw_order in enumerate(raw_orders):
         raw_quantity, raw_unit = raw_order.get("placeOrderQuantity"), raw_order.get("placeOrderQuantityUnit")
@@ -414,6 +445,8 @@ def normalize_candidates(
         for source_field in ("placeOrderQuantity", "placeOrderNotional"):
             raw_field = original.get(source_field)
             if not raw_field or raw_field.get("value") is None:
+                continue
+            if source_field == "placeOrderNotional" and records[prefix + source_field].value is None:
                 continue
             raw = raw_field["value"]
             if source_field == "placeOrderQuantity" and index in split_units:

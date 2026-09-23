@@ -445,3 +445,57 @@ def test_shared_negative_direction_is_never_promoted_to_an_order():
             {"placeOrderWindCode": cell("乙证券"), "placeOrderOrderDirection": cell("卖出"),
              "placeOrderQuantity": cell("200股")},
         ])
+
+
+@pytest.mark.parametrize('text', ['不要暫買', '暂不买入', '若已買則再買', '没有已沽'])
+def test_direction_modifiers_cannot_erase_negation_or_conditions(text):
+    with pytest.raises(ValueError):
+        normalize_field('placeOrderOrderDirection', text)
+
+
+@pytest.mark.parametrize('value,context,expected', [
+    ('卖出', '卖出开仓 甲期货 1张', 'SHORT_OPEN'),
+    ('买入', '买入平仓 甲期货 1张', 'SHORT_CLOSE'),
+])
+def test_direction_fragment_retains_compound_open_close_meaning(value, context, expected):
+    assert normalize_field('placeOrderOrderDirection', value, context) == expected
+
+
+@pytest.mark.parametrize('text,expected', [('部分卖出', True), ('剩余全部卖出', True),
+                                         ('全减', True), ('开仓', False), ('開倉', False)])
+def test_explicit_close_and_open_candidate_semantics(text, expected):
+    assert normalize_field('placeOrderCloseIntent', text) is expected
+
+
+def test_approximate_valuation_with_precise_share_quantity_is_audited_not_ordered():
+    raw = '甲证券 买入47.5万股 约2.1个亿'
+    params, records = run(raw, [{
+        'placeOrderWindCode': cell('甲证券'), 'placeOrderQuantity': cell('47.5万股'),
+        'placeOrderOrderDirection': cell('买入'), 'placeOrderNotional': cell('约2.1个亿'),
+    }])
+    assert params.order_list[0].place_order_quantity == 475000
+    assert params.order_list[0].place_order_notional is None
+    audit = records['swap/place_order.orderList.0.placeOrderNotional']
+    assert audit.value is None and audit.evidence == '约2.1个亿'
+
+
+@pytest.mark.parametrize('quantity', [None, '约100股', '-100股', '100万'])
+def test_approximate_order_amount_is_not_silently_made_precise(quantity):
+    raw = f'甲证券 买入 {quantity or ""} 约2.1个亿'
+    with pytest.raises(ValueError):
+        run(raw, [{
+            'placeOrderWindCode': cell('甲证券'),
+            'placeOrderQuantity': cell(quantity) if quantity else None,
+            'placeOrderNotional': cell('约2.1个亿'),
+        }])
+
+
+def test_shared_leading_action_accepts_longer_contiguous_evidence():
+    raw = '沽出 甲证券100股@20 乙证券200股@30'
+    params, _ = run(raw, [
+        {'placeOrderWindCode': cell('甲证券'), 'placeOrderQuantity': cell('100股'),
+         'placeOrderOrderDirection': cell('沽出', '沽出 甲证券100股@20')},
+        {'placeOrderWindCode': cell('乙证券'), 'placeOrderQuantity': cell('200股'),
+         'placeOrderOrderDirection': cell('沽出', raw)},
+    ])
+    assert [o.place_order_order_direction for o in params.order_list] == ['SELL', 'SELL']
