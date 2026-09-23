@@ -1,7 +1,7 @@
 """测试输入的显式订单引用；禁止猜测或借用其它轮次的订单。"""
 import re
 
-_ORDER_ID = re.compile(r"(?<![A-Za-z0-9-])(?:CO|Q)-\d{8}-[A-Za-z0-9]+(?![A-Za-z0-9-])")
+_ORDER_ID = re.compile(r"(?<![A-Za-z0-9-])(?:CO|Q|H)-\d{8}-[A-Za-z0-9]+(?![A-Za-z0-9-])")
 PREVIOUS_ORDER_ID = "{{previous_order_id}}"
 
 
