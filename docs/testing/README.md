@@ -29,7 +29,7 @@
 | 数据集 | 目录 | 外部依赖 | 在哪跑 | 评分 |
 |---|---|---|---|---|
 | **意图集**（路由 + 意图 + 标的原文提取） | `tests/fixtures/intent/` | 只有 LLM 网关；后端由仓库内 `mock_api/` 顶替，**不碰 Java / GOATS** | GitHub Actions `intent-eval`（PR 触碰提示词 / 路由意图节点 / 评估器 / 意图集时自动跑；也可手动 Run workflow）+ 本地 | `det_intent_match_pass` / `det_instrument_match_pass` 确定性评估器，本地算，不需要 Langfuse；`--fail-under` 给退出码 |
-| **业务集**（询价 / 下单 / 平仓卡片与后端联动） | `tests/fixtures/categories/` + `unified_golden.jsonl` | Java 后端 + GOATS + 授权测试账号 / 群 / 对手 / 持仓 | **只在开发 / staging 环境**手动跑（`scripts/local_eval.py` / `langfuse_eval.py --dataset business-*`），绝不进 CI | 三个文本断言 + `otc-option-judge` Judge |
+| **业务集**（询价 / 下单 / 平仓卡片与后端联动） | `tests/fixtures/categories/`；`unified_golden.jsonl` 为显式选择的历史参考集 | Java 后端 + GOATS + 授权测试账号 / 群 / 对手 / 持仓 | **只在开发 / staging 环境**手动跑（`scripts/local_eval.py` / `langfuse_eval.py --dataset business-*`），绝不进 CI | 三个文本断言 + `otc-option-judge` Judge |
 
 ```bash
 # 意图集本地（与 CI 同一条命令；终端 1 起 mock_api）

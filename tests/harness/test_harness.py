@@ -44,8 +44,12 @@ def test_load_categories_total(tmp_path: Path) -> None:
     assert all(case.dialect == "a" for case in cases)
 
 
-def test_default_discovery_includes_unified_b_dialect(tmp_path: Path) -> None:
-    """默认发现同时加载两种方言；空轮仍加载计数，但不能执行。"""
+@pytest.mark.parametrize("include_unified", [False, True])
+@pytest.mark.parametrize("categories_root", [False, True])
+def test_discovery_requires_opt_in_for_unified(
+    tmp_path: Path, include_unified: bool, categories_root: bool,
+) -> None:
+    """统一验收默认只读 categories；历史空轮仅在显式加载后统计。"""
     categories = tmp_path / "categories"
     categories.mkdir()
     _write(categories, {"caseNo": "a", "send_text": "询价", "category": "option"})
@@ -55,7 +59,11 @@ def test_default_discovery_includes_unified_b_dialect(tmp_path: Path) -> None:
            {"id": "empty", "category": "swap", "conversation": [
                {"raw_content": "下单"}, {"raw_content": "", "quote_desc": "引用上一轮"}]},
            ).rename(tmp_path / "unified_golden.jsonl")
-    cases = load_golden(root=tmp_path)
+    root = categories if categories_root else tmp_path
+    cases = load_golden(root=root, **({"include_unified": True} if include_unified else {}))
+    if not include_unified:
+        assert [case.id for case in cases] == ["a"]
+        return
     assert {case.id for case in cases} == {"a", "b", "empty"}
     assert len(cases) == 3
     assert sum(1 for case in cases if len(case.turns) > 1) == 2
@@ -64,6 +72,23 @@ def test_default_discovery_includes_unified_b_dialect(tmp_path: Path) -> None:
     assert [case.id for case in skipped] == ["empty"]
     assert skipped[0].dialect == "b"
     assert {case.id for case in runnable} == {"a", "b"}
+
+
+def test_explicit_fixture_paths_do_not_implicitly_expand(tmp_path: Path) -> None:
+    categories = tmp_path / "categories"
+    categories.mkdir()
+    selected = _write(categories, {"caseNo": "a", "send_text": "询价"})
+    unified = _write(tmp_path, {"id": "b", "conversation": [{"raw_content": "下单"}]}).rename(
+        tmp_path / "unified_golden.jsonl"
+    )
+    assert [case.id for case in load_golden(selected, root=tmp_path)] == ["a"]
+    assert [case.id for case in load_golden(unified, root=tmp_path)] == ["b"]
+    assert [case.id for case in load_golden(
+        selected, root=tmp_path, include_unified=True,
+    )] == ["a", "b"]
+    assert [case.id for case in load_golden(
+        [selected, unified], root=tmp_path, include_unified=True,
+    )] == ["a", "b"]
 
 
 def test_b_dialect_empty_raw_content_marks_case_unrunnable(tmp_path: Path) -> None:
@@ -516,3 +541,44 @@ def test_cli_parser_uses_http_contract() -> None:
     assert args.base_url == "http://127.0.0.1:8000"
     assert args.backend == "real"
     assert args.checkpoint == "none"
+
+
+@pytest.mark.parametrize("include_unified", [False, True])
+async def test_cli_runs_only_explicitly_selected_suites(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, include_unified: bool,
+) -> None:
+    import json
+
+    from harness import multi_turn
+
+    fixtures = tmp_path / "tests/fixtures"
+    categories = fixtures / "categories"
+    categories.mkdir(parents=True)
+    _write(categories, {"caseNo": "a", "send_text": "现役询价"})
+    _write(fixtures, {"id": "b", "conversation": [{"raw_content": "历史下单"}]}).rename(
+        fixtures / "unified_golden.jsonl"
+    )
+    monkeypatch.chdir(tmp_path)
+    requests = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path != "/v1/workflows/run":
+            return _health_handler("real")(request)
+        requests.append(json.loads(request.content))
+        return httpx.Response(200, json={"data": {"status": "succeeded", "outputs": {
+            "reply_text": "测试回执", "api_code": 0,
+        }}})
+
+    _stub_cli_httpx(monkeypatch, handler)
+    monkeypatch.setattr(multi_turn, "httpx", cli_module.httpx)
+    args = build_parser().parse_args([
+        "run", "--base-url", "http://test", "--backend", "mock",
+        "--user-id", "u", "--room-id", "r", "--out", str(tmp_path / "reports"),
+        *(["--include-unified"] if include_unified else []),
+    ])
+    assert await cli_module._run(args) == 0
+    summary = json.loads(next((tmp_path / "reports").glob("*/summary.json")).read_text())
+    assert [report["case_id"] for report in summary["reports"]] == (
+        ["a", "b"] if include_unified else ["a"]
+    )
+    assert len(requests) == (2 if include_unified else 1)

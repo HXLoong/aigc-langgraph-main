@@ -16,7 +16,7 @@
 ### D1 · 目标三主线
 
 1. **原生 LangGraph 重构场外 AI 指令链路**：图即架构（子图原生嵌入、单动作多订单、RetryPolicy、State 分层与 output schema，[ADR 0024](./0024-langgraph-native-rearchitecture.md) D2 / D3、[ADR 0028](./0028-session-entry-and-multi-instruction-send-orchestration.md)）；持久化与可观测契约（0024 D4 / D5、[ADR 0026](./0026-request-idempotency-uncertain-receipts-reconciliation.md)）；提示词即代码与字段证据契约（[ADR 0023](./0023-prompt-as-code-langgraph.md)、[ADR 0027](./0027-field-evidence-contract.md)）；Dify 只作历史参照，标的识别与业务默认值归 Java 后端（[ADR 0025](./0025-instrument-resolution-delegated-to-backend.md)）。
-2. **通过数据集进行评测和评估**：ground truth 是数据集的 `expected`，不是 Dify 输出（沿用 ADR 0016 的核心论点）。数据集 = `tests/fixtures/categories/`（显式验收集）+ `tests/fixtures/unified_golden.jsonl` + `tests/fixtures/nodes/`（节点级 fixture，[ADR 0029](./0029-node-level-debug-api-and-regression-workbench.md)）；评测入口 = harness HTTP 回归（[ADR 0002](./0002-comprehensive-runtime-harness.md) / 0024 D6）+ LLM Judge（[ADR 0005](./0005-annotation-roles-judge-plus-business-spotcheck.md) / [ADR 0014](./0014-langfuse-as-harness-backend.md)）；错例先补 fixture 再修代码。
+2. **通过数据集进行评测和评估**：ground truth 是数据集的 `expected`，不是 Dify 输出（沿用 ADR 0016 的核心论点）。数据集 = `tests/fixtures/categories/`（显式验收集）+ `tests/fixtures/unified_golden.jsonl`（历史参考集，显式选择）+ `tests/fixtures/nodes/`（节点级 fixture，[ADR 0029](./0029-node-level-debug-api-and-regression-workbench.md)）；评测入口 = harness HTTP 回归（[ADR 0002](./0002-comprehensive-runtime-harness.md) / 0024 D6）+ LLM Judge（[ADR 0005](./0005-annotation-roles-judge-plus-business-spotcheck.md) / [ADR 0014](./0014-langfuse-as-harness-backend.md)）；错例先补 fixture 再修代码。
 3. **按 Harness 工程的要求重构**：任何提示词 / 节点 / 契约改动都经同一条门（D3）——TDD RED → GREEN、pytest、四项一致性 lint、ruff / mypy、数据集 PASS 率不低于前值、trace 可归因（[ADR 0004](./0004-trace-granularity-node-level-with-langsmith.md) / 0024 D5）。harness 与 `app/` 解耦，只经 HTTP 入口驱动。
 
 ### D2 · 退役口径
@@ -50,7 +50,8 @@
 
 - 正面：ADR 只承载决策与契约；评测门只有一套，且与 CI、harness、Judge 的实际入口一一对应。
 - 负面：上线观察阈值的基线数值在重测前为空；`docs/archive/m2/`、`docs/archive/m3/` 的里程碑过程文档已于 2026-09-22 删除（可从 git 历史找回）；`docs/archive/` 只保留日期型报告、历史叙事与业务用例原始资料。根 `README.md`、`docs/on-call-runbook.md`、`CLAUDE.md` 已于 2026-09-22 同步清理，~~`docs/m3-m4-roadmap.md`~~ 已删除、由 `docs/work-plan.md` 取代。
-- 未决：`unified_golden.jsonl` 是否并入统一验收（当前只用显式 `categories`）；节点 fixture 与代码演进的漂移守护；上线观察窗口的正式起点由部署决定。
+- **2026-09-23 裁决**：统一验收和 `harness run` 默认仅加载 `categories`。保留 `unified_golden.jsonl` 作为历史参考集，通过 `--include-unified` 追加或 `--data` 显式选择；加载器继续支持 B 方言，历史数据继续参加一致性 lint。
+- 未决：节点 fixture 与代码演进的漂移守护；上线观察窗口的正式起点由部署决定。
 
 ## 关联
 

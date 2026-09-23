@@ -13,7 +13,7 @@
 | 评估脚本（DeepSeek Judge + per-turn 富集 JSON）| `scripts/langfuse/langfuse_eval.py` | ✅ 单轮 / 多轮 / Langfuse Cloud 写回 |
 | Dataset 上传 | `scripts/langfuse/upload_golden_to_langfuse.py`（categories → Langfuse） | ✅ |
 | 数据转换 | `scripts/convert_csv_to_excel.py` / `convert_jsonl_to_csv.py` | ✅ |
-| 本地 fixture | `tests/fixtures/categories/`（A 方言，6 文件 / 389 条）+ `unified_golden.jsonl`（B 方言，921 条，harness 默认并入，ADR 0024 D6）；`old_typing/` 归档 | ✅ |
+| 本地 fixture | `tests/fixtures/categories/`（A 方言，6 文件 / 389 条）+ `unified_golden.jsonl`（B 方言，921 条，历史参考集，显式 --include-unified 加载，ADR 0030）；`old_typing/` 归档 | ✅ |
 | 真后端 e2e 探针 | `scripts/probe_*_e2e.py`（swap / option / close / ticker / real_backend） | ✅ |
 | Token / 成本估算 | `harness/token_tracker.py` + `scripts/llm_cost_report.py` | ✅ |
 | 报告 | Langfuse per-turn 富集 JSON + `harness/cli.py` markdown 报告 | ✅ |

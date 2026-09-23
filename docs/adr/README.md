@@ -67,13 +67,12 @@
 | 项 | 出处 | 动作 | issue |
 |---|---|---|---|
 | CI slow job 已包含 MySQL service；本地真实数据库用例仍需 opt-in | 0009 / 0024 D4 | 保持 CI 与本地数据库回归 | — |
-| `app/tools/ticker_client.py` 在 `app/` 内无调用方 | 0025 | 删除或写明保留理由 | #231 |
 | VL 接线后 `llm_failure_high` 未按 `model` 拆分；`.env.customer.template` 视觉模型留空 | 0019 / 0020 | 阈值重估 + 部署 checklist | #232 |
 | 上线观察层基线（5xx / cascade / P95）待当前模型口径重测 | 0030 D3 / 0020 | 跑 `scripts/langfuse/langfuse_eval.py` + P95 重测后回填 | #233 |
-| Dify 明文 key 的 revoke 无记录 | 0024 附录 | 运维确认后打勾 | #218 |
 | ADR 0001 / 0024 的落地记录仍在正文内 | 0030 D4 | 迁到 `docs/` 实施日志 | — |
-| `unified_golden.jsonl` 是否并入统一验收 | 0030 后果 | 三选一裁决后统一 `harness run` 默认行为 | #235 |
-| `POST /v1/runs` 原生协议与 Dify wire adapter 退役 | 0024 D7 | 与 Java 侧排期 | #222 |
+| `POST /v1/runs` 协议迁移暂缓 | 0024 D7 | 保持现行 Java wire 契约，不安排切换 | #222（已关闭） |
+
+已裁决：TickerClient 保留供本地验收获取授权交易对手（0025）；历史 unified 仅显式加载（0030）；历史 GOATS 凭据按用户决定不处理（#218），关闭不表示已执行 revoke。
 
 ## ADR 写作与卫生约定
 

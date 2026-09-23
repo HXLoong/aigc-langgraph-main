@@ -28,8 +28,10 @@
 ## 3. 现役加载器：`harness/golden.py`（ADR 0024 D6）
 
 `harness.golden.load_golden()` 是唯一现役加载器（`python -m harness run` 与
-`scripts/langfuse/langfuse_eval.py --local` 共用），默认发现 `categories/*.jsonl` + 本目录
-`unified_golden.jsonl`，共 1310 条（多轮 260 条），三种方言归一化为同一 `GoldenCase`：
+`scripts/langfuse/langfuse_eval.py --local` 共用），默认只发现 `categories/*.jsonl`。
+历史参考集 `unified_golden.jsonl` 保留，通过 `python -m harness run --include-unified` 追加，
+或用 `--data` 显式选择。Python 调用对应 `load_golden(include_unified=True)`；与显式 paths
+组合时追加 root 下的历史文件，同一路径不重复追加。三种方言仍归一化为同一 `GoldenCase`：
 
 | 方言 | 文件 | 形状 | case 级 `expected` 落点 |
 | --- | --- | --- | --- |
@@ -65,7 +67,7 @@ deprecated），新增校验只进 `harness/`。
 ## 5. 更新与检查
 
 ```bash
-python scripts/check_fixture_consistency.py --verbose   # A + B 两份现役文件；WARNING 为业务方待修数据
+python scripts/check_fixture_consistency.py --verbose   # 现役 categories / intent + 历史 unified；WARNING 为业务方待修数据
 python -m harness run --data tests/fixtures/unified_golden.jsonl --limit 5   # 只跑 B 方言
 ```
 
@@ -99,3 +101,9 @@ python -m harness run --data tests/fixtures/unified_golden.jsonl --limit 5   # �
   本地 `langfuse_eval.py --local tests/fixtures/intent --fail-under 0.95`。`categories/` 业务集依赖 Java 后端，只在开发环境跑
 - 标的识别子集 `intent/swap_instrument.jsonl`（375 条，来自三份 `swap*.jsonl`）：`expected.instruments[]` 断言 LLM 提取的
   标的原文任一候选与交易品种候选，评估器 `det_instrument_match_pass`；见 `intent/README.md`
+
+## 8. Excel 导出
+
+`python scripts/convert_jsonl_to_excel.py` 默认读取 `categories/` 直属 JSONL，每个文件一张表。
+`--dry-run` 只校验和统计，`--output` 可指定工作簿位置。
+旧 `categories/tr-data/` 镜像已移除，业务数据只在现役 categories 维护，导出前不再复制。
