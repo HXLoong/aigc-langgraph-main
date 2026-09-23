@@ -25,18 +25,28 @@
   "panels": [
     {
       "collapsed": false,
-      "gridPos": {"h": 1, "w": 24, "x": 0, "y": 0},
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 0
+      },
       "id": 100,
       "panels": [],
       "title": "节点级 · otc_agent_node_total",
       "type": "row"
     },
     {
-      "datasource": {"type": "prometheus", "uid": "${DS_PROMETHEUS}"},
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
       "description": "按节点统计 5 分钟错误率。≥5% 红色；≥1% 黄色。覆盖 24 个 LangGraph 节点（M2 swap/option/option_close/ticker）。",
       "fieldConfig": {
         "defaults": {
-          "color": {"mode": "thresholds"},
+          "color": {
+            "mode": "thresholds"
+          },
           "custom": {
             "axisBorderShow": false,
             "axisCenteredZero": false,
@@ -47,38 +57,77 @@
             "drawStyle": "line",
             "fillOpacity": 10,
             "gradientMode": "none",
-            "hideFrom": {"legend": false, "tooltip": false, "viz": false},
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
             "lineInterpolation": "linear",
             "lineWidth": 1,
             "pointSize": 5,
-            "scaleDistribution": {"type": "linear"},
+            "scaleDistribution": {
+              "type": "linear"
+            },
             "showPoints": "never",
             "spanNulls": false,
-            "stacking": {"group": "A", "mode": "none"},
-            "thresholdsStyle": {"mode": "line"}
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "line"
+            }
           },
           "mappings": [],
           "thresholds": {
             "mode": "absolute",
             "steps": [
-              {"color": "green", "value": null},
-              {"color": "yellow", "value": 0.01},
-              {"color": "red", "value": 0.05}
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 0.01
+              },
+              {
+                "color": "red",
+                "value": 0.05
+              }
             ]
           },
           "unit": "percentunit"
         },
         "overrides": []
       },
-      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 1},
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 1
+      },
       "id": 101,
       "options": {
-        "legend": {"calcs": ["mean", "max"], "displayMode": "table", "placement": "right", "showLegend": true},
-        "tooltip": {"mode": "multi", "sort": "desc"}
+        "legend": {
+          "calcs": [
+            "mean",
+            "max"
+          ],
+          "displayMode": "table",
+          "placement": "right",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
       },
       "targets": [
         {
-          "datasource": {"type": "prometheus", "uid": "${DS_PROMETHEUS}"},
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
           "expr": "sum by (node) (rate(otc_agent_node_total{status=\"error\"}[5m])) / clamp_min(sum by (node) (rate(otc_agent_node_total[5m])), 0.001)",
           "legendFormat": "{{node}}",
           "refId": "A"
@@ -88,11 +137,16 @@
       "type": "timeseries"
     },
     {
-      "datasource": {"type": "prometheus", "uid": "${DS_PROMETHEUS}"},
-      "description": "节点 P95 延迟（来自 otc_agent_intent_latency_ms histogram）。intent_route 节点的延迟最值得盯。",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "description": "仅含 node 非空标签的节点级延迟；端到端延迟见退出门分组。",
       "fieldConfig": {
         "defaults": {
-          "color": {"mode": "palette-classic"},
+          "color": {
+            "mode": "palette-classic"
+          },
           "custom": {
             "drawStyle": "line",
             "fillOpacity": 10,
@@ -104,25 +158,53 @@
           "thresholds": {
             "mode": "absolute",
             "steps": [
-              {"color": "green", "value": null},
-              {"color": "yellow", "value": 2000},
-              {"color": "red", "value": 5000}
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 2000
+              },
+              {
+                "color": "red",
+                "value": 5000
+              }
             ]
           },
           "unit": "ms"
         },
         "overrides": []
       },
-      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 1},
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 1
+      },
       "id": 102,
       "options": {
-        "legend": {"calcs": ["mean", "max"], "displayMode": "table", "placement": "right", "showLegend": true},
-        "tooltip": {"mode": "multi", "sort": "desc"}
+        "legend": {
+          "calcs": [
+            "mean",
+            "max"
+          ],
+          "displayMode": "table",
+          "placement": "right",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
       },
       "targets": [
         {
-          "datasource": {"type": "prometheus", "uid": "${DS_PROMETHEUS}"},
-          "expr": "histogram_quantile(0.95, sum by (le, node) (rate(otc_agent_intent_latency_ms_bucket[5m])))",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "expr": "histogram_quantile(0.95, sum by (le, node) (rate(otc_agent_intent_latency_ms_bucket{node!=\"\"}[5m])))",
           "legendFormat": "{{node}} P95",
           "refId": "A"
         }
@@ -131,39 +213,75 @@
       "type": "timeseries"
     },
     {
-      "datasource": {"type": "prometheus", "uid": "${DS_PROMETHEUS}"},
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
       "description": "近 1 小时累计错误次数 TOP 节点。",
       "fieldConfig": {
         "defaults": {
-          "color": {"mode": "thresholds"},
+          "color": {
+            "mode": "thresholds"
+          },
           "custom": {
             "align": "auto",
-            "cellOptions": {"type": "auto"},
+            "cellOptions": {
+              "type": "auto"
+            },
             "inspect": false
           },
           "mappings": [],
           "thresholds": {
             "mode": "absolute",
             "steps": [
-              {"color": "green", "value": null},
-              {"color": "yellow", "value": 5},
-              {"color": "red", "value": 20}
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 5
+              },
+              {
+                "color": "red",
+                "value": 20
+              }
             ]
           }
         },
         "overrides": []
       },
-      "gridPos": {"h": 8, "w": 24, "x": 0, "y": 9},
+      "gridPos": {
+        "h": 8,
+        "w": 24,
+        "x": 0,
+        "y": 9
+      },
       "id": 103,
       "options": {
         "cellHeight": "sm",
-        "footer": {"countRows": false, "fields": "", "reducer": ["sum"], "show": false},
+        "footer": {
+          "countRows": false,
+          "fields": "",
+          "reducer": [
+            "sum"
+          ],
+          "show": false
+        },
         "showHeader": true,
-        "sortBy": [{"desc": true, "displayName": "errors_1h"}]
+        "sortBy": [
+          {
+            "desc": true,
+            "displayName": "errors_1h"
+          }
+        ]
       },
       "targets": [
         {
-          "datasource": {"type": "prometheus", "uid": "${DS_PROMETHEUS}"},
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
           "expr": "sum by (node) (increase(otc_agent_node_total{status=\"error\"}[1h]))",
           "format": "table",
           "instant": true,
@@ -176,9 +294,18 @@
         {
           "id": "organize",
           "options": {
-            "excludeByName": {"Time": true, "__name__": true},
-            "indexByName": {"node": 0, "Value": 1},
-            "renameByName": {"Value": "errors_1h", "node": "节点"}
+            "excludeByName": {
+              "Time": true,
+              "__name__": true
+            },
+            "indexByName": {
+              "node": 0,
+              "Value": 1
+            },
+            "renameByName": {
+              "Value": "errors_1h",
+              "node": "节点"
+            }
           }
         }
       ],
@@ -186,44 +313,77 @@
     },
     {
       "collapsed": false,
-      "gridPos": {"h": 1, "w": 24, "x": 0, "y": 17},
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 17
+      },
       "id": 200,
       "panels": [],
       "title": "业务指标 · Fallback / HITL / LLM",
       "type": "row"
     },
     {
-      "datasource": {"type": "prometheus", "uid": "${DS_PROMETHEUS}"},
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
       "description": "Fallback 触发次数（1h）。reason 维度：cascade_fail / zero_match / hitl_card 等。",
       "fieldConfig": {
         "defaults": {
-          "color": {"mode": "thresholds"},
+          "color": {
+            "mode": "thresholds"
+          },
           "mappings": [],
           "thresholds": {
             "mode": "absolute",
             "steps": [
-              {"color": "green", "value": null},
-              {"color": "yellow", "value": 10},
-              {"color": "red", "value": 50}
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 10
+              },
+              {
+                "color": "red",
+                "value": 50
+              }
             ]
           },
           "unit": "short"
         },
         "overrides": []
       },
-      "gridPos": {"h": 6, "w": 6, "x": 0, "y": 18},
+      "gridPos": {
+        "h": 6,
+        "w": 6,
+        "x": 0,
+        "y": 18
+      },
       "id": 201,
       "options": {
         "colorMode": "background",
         "graphMode": "area",
         "justifyMode": "auto",
         "orientation": "horizontal",
-        "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false},
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
         "textMode": "auto"
       },
       "targets": [
         {
-          "datasource": {"type": "prometheus", "uid": "${DS_PROMETHEUS}"},
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
           "expr": "sum(increase(otc_agent_fallback_total[1h]))",
           "refId": "A"
         }
@@ -232,36 +392,61 @@
       "type": "stat"
     },
     {
-      "datasource": {"type": "prometheus", "uid": "${DS_PROMETHEUS}"},
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
       "description": "HITL 二次确认触发次数（1h）。ADR 0006 场景才计数。",
       "fieldConfig": {
         "defaults": {
-          "color": {"mode": "thresholds"},
+          "color": {
+            "mode": "thresholds"
+          },
           "mappings": [],
           "thresholds": {
             "mode": "absolute",
             "steps": [
-              {"color": "green", "value": null},
-              {"color": "blue", "value": 1}
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "blue",
+                "value": 1
+              }
             ]
           },
           "unit": "short"
         },
         "overrides": []
       },
-      "gridPos": {"h": 6, "w": 6, "x": 6, "y": 18},
+      "gridPos": {
+        "h": 6,
+        "w": 6,
+        "x": 6,
+        "y": 18
+      },
       "id": 202,
       "options": {
         "colorMode": "background",
         "graphMode": "area",
         "justifyMode": "auto",
         "orientation": "horizontal",
-        "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false},
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
         "textMode": "auto"
       },
       "targets": [
         {
-          "datasource": {"type": "prometheus", "uid": "${DS_PROMETHEUS}"},
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
           "expr": "sum(increase(otc_agent_hitl_total[1h]))",
           "refId": "A"
         }
@@ -270,37 +455,65 @@
       "type": "stat"
     },
     {
-      "datasource": {"type": "prometheus", "uid": "${DS_PROMETHEUS}"},
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
       "description": "LLM 错误率（error + timeout / total，1h）。≥10% 红线（alerts.py 阈值一致）。",
       "fieldConfig": {
         "defaults": {
-          "color": {"mode": "thresholds"},
+          "color": {
+            "mode": "thresholds"
+          },
           "mappings": [],
           "thresholds": {
             "mode": "absolute",
             "steps": [
-              {"color": "green", "value": null},
-              {"color": "yellow", "value": 0.05},
-              {"color": "red", "value": 0.10}
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 0.05
+              },
+              {
+                "color": "red",
+                "value": 0.1
+              }
             ]
           },
           "unit": "percentunit"
         },
         "overrides": []
       },
-      "gridPos": {"h": 6, "w": 6, "x": 12, "y": 18},
+      "gridPos": {
+        "h": 6,
+        "w": 6,
+        "x": 12,
+        "y": 18
+      },
       "id": 203,
       "options": {
         "colorMode": "background",
         "graphMode": "area",
         "justifyMode": "auto",
         "orientation": "horizontal",
-        "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false},
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
         "textMode": "auto"
       },
       "targets": [
         {
-          "datasource": {"type": "prometheus", "uid": "${DS_PROMETHEUS}"},
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
           "expr": "sum(increase(otc_agent_llm_total{status=~\"error|timeout\"}[1h])) / clamp_min(sum(increase(otc_agent_llm_total[1h])), 1)",
           "refId": "A"
         }
@@ -309,37 +522,65 @@
       "type": "stat"
     },
     {
-      "datasource": {"type": "prometheus", "uid": "${DS_PROMETHEUS}"},
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
       "description": "动态 prompt 缓存命中率（ADR 0013 / D2.5）。≥80% 健康。",
       "fieldConfig": {
         "defaults": {
-          "color": {"mode": "thresholds"},
+          "color": {
+            "mode": "thresholds"
+          },
           "mappings": [],
           "thresholds": {
             "mode": "absolute",
             "steps": [
-              {"color": "red", "value": null},
-              {"color": "yellow", "value": 0.50},
-              {"color": "green", "value": 0.80}
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 0.5
+              },
+              {
+                "color": "green",
+                "value": 0.8
+              }
             ]
           },
           "unit": "percentunit"
         },
         "overrides": []
       },
-      "gridPos": {"h": 6, "w": 6, "x": 18, "y": 18},
+      "gridPos": {
+        "h": 6,
+        "w": 6,
+        "x": 18,
+        "y": 18
+      },
       "id": 204,
       "options": {
         "colorMode": "background",
         "graphMode": "area",
         "justifyMode": "auto",
         "orientation": "horizontal",
-        "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false},
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
         "textMode": "auto"
       },
       "targets": [
         {
-          "datasource": {"type": "prometheus", "uid": "${DS_PROMETHEUS}"},
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
           "expr": "sum(increase(otc_agent_dynamic_prompt_total{status=\"cache_hit\"}[1h])) / clamp_min(sum(increase(otc_agent_dynamic_prompt_total[1h])), 1)",
           "refId": "A"
         }
@@ -348,31 +589,58 @@
       "type": "stat"
     },
     {
-      "datasource": {"type": "prometheus", "uid": "${DS_PROMETHEUS}"},
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
       "description": "LLM token 消耗速率（按模型 + direction prompt/completion）。F4.6 灰度期成本观测。",
       "fieldConfig": {
         "defaults": {
-          "color": {"mode": "palette-classic"},
+          "color": {
+            "mode": "palette-classic"
+          },
           "custom": {
             "drawStyle": "line",
             "fillOpacity": 20,
             "lineWidth": 1,
             "showPoints": "never",
-            "stacking": {"group": "A", "mode": "normal"}
+            "stacking": {
+              "group": "A",
+              "mode": "normal"
+            }
           },
           "unit": "short"
         },
         "overrides": []
       },
-      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 24},
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 24
+      },
       "id": 205,
       "options": {
-        "legend": {"calcs": ["mean", "sum"], "displayMode": "table", "placement": "right", "showLegend": true},
-        "tooltip": {"mode": "multi", "sort": "desc"}
+        "legend": {
+          "calcs": [
+            "mean",
+            "sum"
+          ],
+          "displayMode": "table",
+          "placement": "right",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
       },
       "targets": [
         {
-          "datasource": {"type": "prometheus", "uid": "${DS_PROMETHEUS}"},
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
           "expr": "sum by (model, direction) (rate(otc_agent_llm_tokens_total[5m]))",
           "legendFormat": "{{model}} / {{direction}}",
           "refId": "A"
@@ -382,11 +650,16 @@
       "type": "timeseries"
     },
     {
-      "datasource": {"type": "prometheus", "uid": "${DS_PROMETHEUS}"},
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
       "description": "Fallback 触发原因分布（5min rate）。cascade_fail 突增 → 上游节点崩；zero_match 突增 → ticker/intent 召回降级。",
       "fieldConfig": {
         "defaults": {
-          "color": {"mode": "palette-classic"},
+          "color": {
+            "mode": "palette-classic"
+          },
           "custom": {
             "drawStyle": "line",
             "fillOpacity": 15,
@@ -397,15 +670,34 @@
         },
         "overrides": []
       },
-      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 24},
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 24
+      },
       "id": 206,
       "options": {
-        "legend": {"calcs": ["mean", "max"], "displayMode": "table", "placement": "right", "showLegend": true},
-        "tooltip": {"mode": "multi", "sort": "desc"}
+        "legend": {
+          "calcs": [
+            "mean",
+            "max"
+          ],
+          "displayMode": "table",
+          "placement": "right",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
       },
       "targets": [
         {
-          "datasource": {"type": "prometheus", "uid": "${DS_PROMETHEUS}"},
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
           "expr": "sum by (reason) (rate(otc_agent_fallback_total[5m]))",
           "legendFormat": "{{reason}}",
           "refId": "A"
@@ -416,42 +708,69 @@
     },
     {
       "collapsed": false,
-      "gridPos": {"h": 1, "w": 24, "x": 0, "y": 32},
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 32
+      },
       "id": 300,
       "panels": [],
       "title": "金丝雀 · otc_agent_canary_traffic_total (G5.1 · F4.2-F4.5)",
       "type": "row"
     },
     {
-      "datasource": {"type": "prometheus", "uid": "${DS_PROMETHEUS}"},
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
       "description": "is_canary=true · 合规进入金丝雀的请求数（1h）。",
       "fieldConfig": {
         "defaults": {
-          "color": {"mode": "thresholds"},
+          "color": {
+            "mode": "thresholds"
+          },
           "mappings": [],
           "thresholds": {
             "mode": "absolute",
             "steps": [
-              {"color": "green", "value": null}
+              {
+                "color": "green",
+                "value": null
+              }
             ]
           },
           "unit": "short"
         },
         "overrides": []
       },
-      "gridPos": {"h": 6, "w": 8, "x": 0, "y": 33},
+      "gridPos": {
+        "h": 6,
+        "w": 8,
+        "x": 0,
+        "y": 33
+      },
       "id": 301,
       "options": {
         "colorMode": "background",
         "graphMode": "area",
         "justifyMode": "auto",
         "orientation": "horizontal",
-        "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false},
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
         "textMode": "auto"
       },
       "targets": [
         {
-          "datasource": {"type": "prometheus", "uid": "${DS_PROMETHEUS}"},
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
           "expr": "sum(increase(otc_agent_canary_traffic_total{is_canary=\"true\"}[1h]))",
           "refId": "A"
         }
@@ -460,36 +779,61 @@
       "type": "stat"
     },
     {
-      "datasource": {"type": "prometheus", "uid": "${DS_PROMETHEUS}"},
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
       "description": "is_canary=false · 误切告警！P0 即时触发（alerts.py: non_canary_traffic sustain=0）。CANARY_ROOM_IDS=ALL 时此值会自然 = 0。",
       "fieldConfig": {
         "defaults": {
-          "color": {"mode": "thresholds"},
+          "color": {
+            "mode": "thresholds"
+          },
           "mappings": [],
           "thresholds": {
             "mode": "absolute",
             "steps": [
-              {"color": "green", "value": null},
-              {"color": "red", "value": 1}
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 1
+              }
             ]
           },
           "unit": "short"
         },
         "overrides": []
       },
-      "gridPos": {"h": 6, "w": 8, "x": 8, "y": 33},
+      "gridPos": {
+        "h": 6,
+        "w": 8,
+        "x": 8,
+        "y": 33
+      },
       "id": 302,
       "options": {
         "colorMode": "background",
         "graphMode": "area",
         "justifyMode": "auto",
         "orientation": "horizontal",
-        "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false},
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
         "textMode": "auto"
       },
       "targets": [
         {
-          "datasource": {"type": "prometheus", "uid": "${DS_PROMETHEUS}"},
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
           "expr": "sum(increase(otc_agent_canary_traffic_total{is_canary=\"false\"}[1h]))",
           "refId": "A"
         }
@@ -498,35 +842,57 @@
       "type": "stat"
     },
     {
-      "datasource": {"type": "prometheus", "uid": "${DS_PROMETHEUS}"},
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
       "description": "金丝雀流量占比 = canary / (canary + non_canary)。F4.2 单群 → 极低；F4.3 30% → ~0.3；F4.4 ALL → 1.0。",
       "fieldConfig": {
         "defaults": {
-          "color": {"mode": "thresholds"},
+          "color": {
+            "mode": "thresholds"
+          },
           "mappings": [],
           "thresholds": {
             "mode": "absolute",
             "steps": [
-              {"color": "green", "value": null}
+              {
+                "color": "green",
+                "value": null
+              }
             ]
           },
           "unit": "percentunit"
         },
         "overrides": []
       },
-      "gridPos": {"h": 6, "w": 8, "x": 16, "y": 33},
+      "gridPos": {
+        "h": 6,
+        "w": 8,
+        "x": 16,
+        "y": 33
+      },
       "id": 303,
       "options": {
         "colorMode": "value",
         "graphMode": "area",
         "justifyMode": "auto",
         "orientation": "horizontal",
-        "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false},
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
         "textMode": "auto"
       },
       "targets": [
         {
-          "datasource": {"type": "prometheus", "uid": "${DS_PROMETHEUS}"},
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
           "expr": "sum(increase(otc_agent_canary_traffic_total{is_canary=\"true\"}[1h])) / clamp_min(sum(increase(otc_agent_canary_traffic_total[1h])), 1)",
           "refId": "A"
         }
@@ -536,56 +902,86 @@
     },
     {
       "collapsed": false,
-      "gridPos": {"h": 1, "w": 24, "x": 0, "y": 39},
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 39
+      },
       "id": 400,
       "panels": [],
       "title": "健康检查 · otc_agent_health_check_total (D2.6)",
       "type": "row"
     },
     {
-      "datasource": {"type": "prometheus", "uid": "${DS_PROMETHEUS}"},
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
       "description": "4 个上游（mysql / langfuse / llm / java_backend）的探测结果按 status 分组（1h 内 fail / ok / disabled 次数）。fail 列任一 > 0 → 红色。",
       "fieldConfig": {
         "defaults": {
-          "color": {"mode": "thresholds"},
+          "color": {
+            "mode": "thresholds"
+          },
           "custom": {
             "align": "center",
-            "cellOptions": {"type": "color-background"},
+            "cellOptions": {
+              "type": "color-background"
+            },
             "inspect": false
           },
           "mappings": [],
           "thresholds": {
             "mode": "absolute",
             "steps": [
-              {"color": "green", "value": null}
+              {
+                "color": "green",
+                "value": null
+              }
             ]
           }
         },
         "overrides": [
           {
-            "matcher": {"id": "byName", "options": "fail"},
+            "matcher": {
+              "id": "byName",
+              "options": "fail"
+            },
             "properties": [
               {
                 "id": "thresholds",
                 "value": {
                   "mode": "absolute",
                   "steps": [
-                    {"color": "green", "value": null},
-                    {"color": "red", "value": 1}
+                    {
+                      "color": "green",
+                      "value": null
+                    },
+                    {
+                      "color": "red",
+                      "value": 1
+                    }
                   ]
                 }
               }
             ]
           },
           {
-            "matcher": {"id": "byName", "options": "disabled"},
+            "matcher": {
+              "id": "byName",
+              "options": "disabled"
+            },
             "properties": [
               {
                 "id": "thresholds",
                 "value": {
                   "mode": "absolute",
                   "steps": [
-                    {"color": "blue", "value": null}
+                    {
+                      "color": "blue",
+                      "value": null
+                    }
                   ]
                 }
               }
@@ -593,16 +989,31 @@
           }
         ]
       },
-      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 40},
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 40
+      },
       "id": 401,
       "options": {
         "cellHeight": "sm",
-        "footer": {"countRows": false, "fields": "", "reducer": ["sum"], "show": false},
+        "footer": {
+          "countRows": false,
+          "fields": "",
+          "reducer": [
+            "sum"
+          ],
+          "show": false
+        },
         "showHeader": true
       },
       "targets": [
         {
-          "datasource": {"type": "prometheus", "uid": "${DS_PROMETHEUS}"},
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
           "expr": "sum by (target, status) (increase(otc_agent_health_check_total[1h]))",
           "format": "table",
           "instant": true,
@@ -613,17 +1024,26 @@
       "transformations": [
         {
           "id": "groupingToMatrix",
-          "options": {"columnField": "status", "rowField": "target", "valueField": "Value"}
+          "options": {
+            "columnField": "status",
+            "rowField": "target",
+            "valueField": "Value"
+          }
         }
       ],
       "type": "table"
     },
     {
-      "datasource": {"type": "prometheus", "uid": "${DS_PROMETHEUS}"},
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
       "description": "上游探测失败趋势（5min rate）。任一 target 出现非零序列 → 立即排查。",
       "fieldConfig": {
         "defaults": {
-          "color": {"mode": "palette-classic"},
+          "color": {
+            "mode": "palette-classic"
+          },
           "custom": {
             "drawStyle": "line",
             "fillOpacity": 30,
@@ -635,15 +1055,34 @@
         },
         "overrides": []
       },
-      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 40},
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 40
+      },
       "id": 402,
       "options": {
-        "legend": {"calcs": ["mean", "max"], "displayMode": "table", "placement": "right", "showLegend": true},
-        "tooltip": {"mode": "multi", "sort": "desc"}
+        "legend": {
+          "calcs": [
+            "mean",
+            "max"
+          ],
+          "displayMode": "table",
+          "placement": "right",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
       },
       "targets": [
         {
-          "datasource": {"type": "prometheus", "uid": "${DS_PROMETHEUS}"},
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
           "expr": "sum by (target) (rate(otc_agent_health_check_total{status=\"fail\"}[5m]))",
           "legendFormat": "{{target}} fail",
           "refId": "A"
@@ -651,15 +1090,622 @@
       ],
       "title": "上游探测 fail 趋势",
       "type": "timeseries"
+    },
+    {
+      "id": 500,
+      "title": "上线观察退出门 · 请求级指标",
+      "type": "row",
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 49
+      },
+      "panels": []
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "description": "分母为HTTP请求数，不能用节点调用数。无请求样本时不判为通过。7d面板对应ADR0030滚动退出门，短窗口用于趋势观察。",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "drawStyle": "line",
+            "fillOpacity": 10,
+            "gradientMode": "none",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "pointSize": 5,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "line"
+            }
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 0.001
+              }
+            ]
+          },
+          "unit": "percentunit"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 0,
+        "y": 50
+      },
+      "id": 501,
+      "options": {
+        "legend": {
+          "calcs": [
+            "mean",
+            "max"
+          ],
+          "displayMode": "table",
+          "placement": "right",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "expr": "(sum(rate(otc_agent_http_response_total{status_class=\"5xx\"}[5m])) or vector(0)) / sum(rate(otc_agent_http_response_total[5m]))",
+          "legendFormat": "HTTP 5xx",
+          "refId": "A"
+        }
+      ],
+      "title": "HTTP 5xx 5m",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "description": "分母为HTTP请求数，不能用节点调用数。无请求样本时不判为通过。7d面板对应ADR0030滚动退出门，短窗口用于趋势观察。",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "drawStyle": "line",
+            "fillOpacity": 10,
+            "gradientMode": "none",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "pointSize": 5,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "line"
+            }
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 0.01
+              }
+            ]
+          },
+          "unit": "percentunit"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 8,
+        "y": 50
+      },
+      "id": 502,
+      "options": {
+        "legend": {
+          "calcs": [
+            "mean",
+            "max"
+          ],
+          "displayMode": "table",
+          "placement": "right",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "expr": "(sum(rate(otc_agent_fallback_total{reason=\"cascade_fail\"}[5m])) or vector(0)) / sum(rate(otc_agent_http_response_total[5m]))",
+          "legendFormat": "Cascade fail",
+          "refId": "A"
+        }
+      ],
+      "title": "Cascade fail 5m",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "description": "仅使用无节点标签的端到端请求样本。退出门为实测 baseline_p95_ms ×1.5；基线为0时不绘制阈值，不以历史4200ms充当新基线。",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "drawStyle": "line",
+            "fillOpacity": 10,
+            "gradientMode": "none",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "pointSize": 5,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "line"
+            }
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "unit": "ms"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 16,
+        "y": 50
+      },
+      "id": 503,
+      "options": {
+        "legend": {
+          "calcs": [
+            "mean",
+            "max"
+          ],
+          "displayMode": "table",
+          "placement": "right",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(otc_agent_intent_latency_ms_bucket{node=\"\"}[5m])))",
+          "legendFormat": "端到端 P95",
+          "refId": "A"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "expr": "vector(${baseline_p95_ms} * 1.5) > 0",
+          "legendFormat": "实测基线 × 1.5",
+          "refId": "B"
+        }
+      ],
+      "title": "端到端 P95 5m",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "description": "分母为HTTP请求数，不能用节点调用数。无请求样本时不判为通过。7d面板对应ADR0030滚动退出门，短窗口用于趋势观察。",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "drawStyle": "line",
+            "fillOpacity": 10,
+            "gradientMode": "none",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "pointSize": 5,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "line"
+            }
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 0.001
+              }
+            ]
+          },
+          "unit": "percentunit"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 0,
+        "y": 58
+      },
+      "id": 504,
+      "options": {
+        "legend": {
+          "calcs": [
+            "mean",
+            "max"
+          ],
+          "displayMode": "table",
+          "placement": "right",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "expr": "(sum(rate(otc_agent_http_response_total{status_class=\"5xx\"}[7d])) or vector(0)) / sum(rate(otc_agent_http_response_total[7d]))",
+          "legendFormat": "HTTP 5xx",
+          "refId": "A"
+        }
+      ],
+      "title": "HTTP 5xx 7d",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "description": "分母为HTTP请求数，不能用节点调用数。无请求样本时不判为通过。7d面板对应ADR0030滚动退出门，短窗口用于趋势观察。",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "drawStyle": "line",
+            "fillOpacity": 10,
+            "gradientMode": "none",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "pointSize": 5,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "line"
+            }
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 0.01
+              }
+            ]
+          },
+          "unit": "percentunit"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 8,
+        "y": 58
+      },
+      "id": 505,
+      "options": {
+        "legend": {
+          "calcs": [
+            "mean",
+            "max"
+          ],
+          "displayMode": "table",
+          "placement": "right",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "expr": "(sum(rate(otc_agent_fallback_total{reason=\"cascade_fail\"}[7d])) or vector(0)) / sum(rate(otc_agent_http_response_total[7d]))",
+          "legendFormat": "Cascade fail",
+          "refId": "A"
+        }
+      ],
+      "title": "Cascade fail 7d",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "description": "仅使用无节点标签的端到端请求样本。退出门为实测 baseline_p95_ms ×1.5；基线为0时不绘制阈值，不以历史4200ms充当新基线。",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "drawStyle": "line",
+            "fillOpacity": 10,
+            "gradientMode": "none",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "pointSize": 5,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "line"
+            }
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "unit": "ms"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 16,
+        "y": 58
+      },
+      "id": 506,
+      "options": {
+        "legend": {
+          "calcs": [
+            "mean",
+            "max"
+          ],
+          "displayMode": "table",
+          "placement": "right",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(otc_agent_intent_latency_ms_bucket{node=\"\"}[7d])))",
+          "legendFormat": "端到端 P95",
+          "refId": "A"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "expr": "vector(${baseline_p95_ms} * 1.5) > 0",
+          "legendFormat": "实测基线 × 1.5",
+          "refId": "B"
+        }
+      ],
+      "title": "端到端 P95 7d",
+      "type": "timeseries"
     }
   ],
   "refresh": "30s",
   "schemaVersion": 39,
-  "tags": ["otc-agent", "langgraph", "f4-canary"],
+  "tags": [
+    "otc-agent",
+    "langgraph",
+    "f4-canary"
+  ],
   "templating": {
     "list": [
       {
-        "current": {"selected": false, "text": "Prometheus", "value": "Prometheus"},
+        "current": {
+          "selected": false,
+          "text": "Prometheus",
+          "value": "Prometheus"
+        },
         "hide": 0,
         "includeAll": false,
         "label": "Datasource",
@@ -672,14 +1718,29 @@
         "regex": "",
         "skipUrlSync": false,
         "type": "datasource"
+      },
+      {
+        "name": "baseline_p95_ms",
+        "label": "当前实测P95基线(ms，0=未配置)",
+        "type": "textbox",
+        "query": "0",
+        "current": {
+          "text": "0",
+          "value": "0"
+        },
+        "hide": 0,
+        "skipUrlSync": false
       }
     ]
   },
-  "time": {"from": "now-6h", "to": "now"},
+  "time": {
+    "from": "now-6h",
+    "to": "now"
+  },
   "timepicker": {},
   "timezone": "browser",
   "title": "otc-agent · LangGraph 灰度观测面板",
   "uid": "otc-agent-langgraph-overview",
-  "version": 1,
+  "version": 2,
   "weekStart": ""
 }
