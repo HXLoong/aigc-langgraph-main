@@ -1,4 +1,4 @@
-"""主图组装：会话保护 → 三类业务入口 → 编排及产品路由。"""
+"""主图组装：会话保护 → 三类业务入口 → 单业务动作的产品路由。"""
 from __future__ import annotations
 
 from collections.abc import Callable
@@ -9,8 +9,6 @@ from langgraph.checkpoint.base import BaseCheckpointSaver
 from langgraph.graph import END, START, StateGraph
 from langgraph.graph.state import CompiledStateGraph
 
-from app.config import get_settings
-from app.graph.instructions import build_instructions_graph, plan_instructions
 from app.graph.retry import add_io_node
 from app.graph.state import AgentState
 from app.nodes.entry_route import entry_route
@@ -61,12 +59,6 @@ def _route_after_intent(state: AgentState) -> str:
     return pt
 
 
-def _route_after_plan(state: AgentState) -> str:
-    if state.get("error") is not None:
-        return "fallback"
-    return "instructions" if len(state.get("sub_instructions") or []) > 1 else "pre_route"
-
-
 # ============================================================
 # 主图组装
 # ============================================================
@@ -75,7 +67,6 @@ def _route_after_plan(state: AgentState) -> str:
 def build_main_graph(
     checkpointer: BaseCheckpointSaver[Any] | None = None,
     message_client_factory: Callable[[], MessageClient] | None = None,
-    *, _instruction_worker: bool = False,
 ) -> CompiledStateGraph[AgentState, None, AgentState, AgentState]:
     """组装并编译主图，会话保护独立于 DSL v2 的三类业务入口。
 
@@ -83,11 +74,12 @@ def build_main_graph(
         START → ingest（一轮边界：清状态 + 检查会话，ADR 0024 D2）→ [route_after_ingest]
           - 过期或入口异常 → render
           - 有效会话 → entry_route → [三类业务入口]
-              quick_inquiry | existing_command_query
-            | plan_instructions → pre_route → intent_route → [route_after_intent] →
-                swap | option | option_close | fallback
-        多指令走 instructions；worker 的普通入口直达 pre_route，不递归编排。
-        → persist_intent → render → remember_confirmed_params → record_history → persist → END
+              - quick_inquiry | existing_command_query → render
+              - pre_route → intent_route → [route_after_intent] →
+                  swap | option | option_close | fallback → persist_intent → render
+        render → remember_confirmed_params → record_history → persist → END
+
+    普通消息沿既有产品与意图优先级进入一个业务分支；该动作可携带多笔订单。
 
     cascade 防御：
     - ingest 写 state['error'] 或会话过期 → 跳 render
@@ -109,16 +101,10 @@ def build_main_graph(
     g.add_node("option_close", build_close_graph())
     g.add_node("fallback", fallback)
     g.add_node("render", render)
-    if not _instruction_worker:
-        add_io_node(g, "plan_instructions", plan_instructions)
-        g.add_node("instructions", build_instructions_graph(
-            build_main_graph(_instruction_worker=True),
-            dedup_window_seconds=get_settings().backend_dedup_window_seconds,
-        ))
-        g.add_node("persist_intent", RunnableLambda(make_persist_intent(message_client_factory)))
-        g.add_node("persist", persist)
-        g.add_node("remember_confirmed_params", remember_confirmed_params)
-        g.add_node("record_history", record_history)
+    g.add_node("persist_intent", RunnableLambda(make_persist_intent(message_client_factory)))
+    g.add_node("persist", persist)
+    g.add_node("remember_confirmed_params", remember_confirmed_params)
+    g.add_node("record_history", record_history)
 
     g.add_edge(START, "ingest")
     g.add_conditional_edges(
@@ -132,14 +118,9 @@ def build_main_graph(
         {
             "quick_inquiry": "quick_inquiry",
             "existing_command_query": "existing_command_query",
-            "pre_route": "pre_route" if _instruction_worker else "plan_instructions",
+            "pre_route": "pre_route",
         },
     )
-    if not _instruction_worker:
-        g.add_conditional_edges("plan_instructions", _route_after_plan,
-                                ["pre_route", "instructions", "fallback"])
-        # 混合指令不能写成一个 Java productType/intent；每条真实结果保留在 instruction_results。
-        g.add_edge("instructions", "render")
     g.add_edge("pre_route", "intent_route")
     g.add_conditional_edges(
         "intent_route",
@@ -152,12 +133,9 @@ def build_main_graph(
         },
     )
     for sub in ("swap", "option", "option_close", "fallback"):
-        g.add_edge(sub, END if _instruction_worker else "persist_intent")
+        g.add_edge(sub, "persist_intent")
     for sub in ("quick_inquiry", "existing_command_query"):
-        g.add_edge(sub, END if _instruction_worker else "render")
-    if _instruction_worker:
-        g.add_edge("render", END)
-        return g.compile(checkpointer=False)
+        g.add_edge(sub, "render")
     g.add_edge("persist_intent", "render")
     g.add_edge("render", "remember_confirmed_params")
     g.add_edge("remember_confirmed_params", "record_history")

@@ -78,7 +78,7 @@ def test_active_requests_depend_on_business_input_not_wall_clock(monkeypatch):
     from app.prompts.spec import all_specs
 
     specs = all_specs()
-    assert len(specs) == 15
+    assert len(specs) == 14
     assert not any(key.startswith("ticker/") for key in specs)
     state = {"raw_text": "2026年9月沪铜 买入100股", "quote_content": "引用原文",
              "bot_name": "UNUSED_BOT_UNIQUE"}

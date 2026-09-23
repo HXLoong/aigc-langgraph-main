@@ -220,7 +220,7 @@ class AgentState(TypedDict, total=False):
     # -------- 入口（contracts §2.1 §3.1 的 9 个机器人上下文字段）--------
     raw_text: str  # rawContent
     conversation_id: str  # conversationId
-    message_id: int  # messageId
+    message_id: int | None  # messageId；缺失必须覆盖旧 checkpoint，禁止补用上一轮编号
     user_id: str  # userId
     room_id: str  # roomId
     guid: str | None  # guid
@@ -265,9 +265,7 @@ class AgentState(TypedDict, total=False):
     #: 单次 graph 调用的关联 ID（ADR 0004/#156：node_trace ↔ LangFuse 关联键）
     trace_id: str
     product_type: ProductType
-    intent: str  # 小写下划线 type 字符串，对齐 Java SwapIntentionType / stockOptionIntentionType
-    sub_instructions: list[dict[str, Any]]  # 当前消息的原文指令片段与依赖；只由规划节点写入
-    instruction_results: list[dict[str, Any]]  # 按原文顺序的独立执行结果/真实批次回执
+    intent: str  # 本轮意图，ingest 清空；对齐 Java SwapIntentionType / stockOptionIntentionType
 
     # -------- 业务对象（#160/ADR 0001 D6：运行时为 dict，写入必须经
     # app/graph/business_params.py 的 validated_* 校验——形状的唯一权威）--------

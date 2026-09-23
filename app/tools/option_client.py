@@ -11,6 +11,7 @@ from typing import Any, Protocol
 import httpx
 from pydantic import ConfigDict, Field, field_validator
 
+from app.extraction.tenor import normalize_request_tenors
 from app.tools.http_pool import acquire_http_client
 from app.tools.models import (
     GoatsOrderDirection,
@@ -245,7 +246,7 @@ class OptionClientHttpx:
 
         url = f"{self._base_url}/admin-api/financial-orders/operate"
         # 金额精度：向 Goats 发送前 truncate 至 2 位
-        payload = req.model_dump(mode="json", exclude_none=True)
+        payload = normalize_request_tenors(req.model_dump(mode="json", exclude_none=True))
         async with (
             translate_httpx_errors("option"),
             acquire_http_client(timeout=self._timeout, transport=self._transport) as client,

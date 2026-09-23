@@ -42,7 +42,7 @@ class TestRenderUnknownIntent:
         }
         update = await render(state)  # type: ignore[arg-type]
         reply = update.get("reply_text") or ""
-        assert reply
+        assert reply == get_settings().default_reply
 
     async def test_unknown_with_quote_reuses_prompt(self) -> None:
         """unknown_intent + 引用前序询价卡 → 引导用户补充原模板要求的参数。"""
@@ -57,7 +57,7 @@ class TestRenderUnknownIntent:
         }
         update = await render(state)  # type: ignore[arg-type]
         reply = update.get("reply_text") or ""
-        assert reply
+        assert reply == get_settings().default_reply
 
     async def test_known_intent_unchanged(self) -> None:
         """正常 intent 且无后端回执 → 走 backend_no_result 的"待核对"文案，不被 unknown 分支干扰。"""

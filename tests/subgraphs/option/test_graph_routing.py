@@ -143,7 +143,7 @@ async def test_request_cancel_order_routes_to_extract_cancel(
     _patch_intent(monkeypatch, "request_cancel_order")
     _patch_backend(monkeypatch, cancel_module)
     graph = build_option_graph()
-    final = await graph.ainvoke({**_BASE_STATE, "raw_text": "撤单 Q-1"})
+    final = await graph.ainvoke({**_BASE_STATE, "raw_text": "撤单 Q-20260922-0000000001"})
     trace_nodes = [e.node for e in final.get("trace", [])]
     assert "option_extract_cancel" in trace_nodes
     assert final.get("expected_action") == "cancel"

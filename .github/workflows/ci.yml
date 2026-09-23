@@ -23,6 +23,14 @@ jobs:
     name: lint + 一致性 + 快速测试
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    env:
+      USE_MYSQL_CHECKPOINTER: "false"
+      REQUEST_IDEMPOTENCY: "false"
+      MYSQL_URI: "mysql+aiomysql://ci:ci@127.0.0.1:1/ci"
+      QWEN_API_BASE: "http://127.0.0.1:1/v1"
+      QWEN_API_KEY: "ci-placeholder"
+      OTC_API_BASE_URL: "http://127.0.0.1:1"
+      OTC_API_SECRET: "ci-placeholder"
     steps:
       - uses: actions/checkout@v4
 
@@ -41,8 +49,7 @@ jobs:
         run: ruff check app/ tests/ harness/ scripts/probe_goats/
 
       - name: Type check (mypy)
-        # 尚未清零；先以 warning 形式可见，清零后改为硬失败
-        run: python -m mypy app/ harness/ || echo "::warning::mypy issues (tracked, not yet gating)"
+        run: python -m mypy app/ harness/
 
       - name: ADR 0019 阈值一致性 (alerts.py ↔ ADR 0019 ↔ runbook)
         run: python scripts/check_alert_threshold_consistency.py
@@ -61,14 +68,6 @@ jobs:
         run: pytest tests/test_import_without_env.py -q -p no:cacheprovider
 
       - name: Fast tests (pytest -k "not e2e")
-        env:
-          USE_MYSQL_CHECKPOINTER: "false"
-          REQUEST_IDEMPOTENCY: "false"
-          MYSQL_URI: mysql+aiomysql://ci:ci@127.0.0.1:3306/otc_goats_ai_trading_dev
-          QWEN_API_BASE: http://llm.invalid/v1
-          QWEN_API_KEY: ci-only
-          OTC_API_BASE_URL: http://otc.invalid
-          OTC_API_SECRET: ci-only
         run: pytest tests/ -q -p no:cacheprovider -k "not e2e"
 
   slow:

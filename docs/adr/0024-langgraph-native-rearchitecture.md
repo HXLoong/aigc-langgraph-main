@@ -5,7 +5,19 @@
 - 起源：用户要求"拉取最新 main，评估代码是否按 LangGraph 特性（checkpoint、共享 state、golden、LangFuse）开发，目的是彻底改造以前 Dify 的实现，用全新 LangGraph 架构做彻底重构"。评估报告：[docs/langgraph-architecture-assessment.md](../langgraph-architecture-assessment.md)
 - 修订：[ADR 0000](./0000-migrate-from-dify-to-langgraph.md) 后果段"需要长期维护 Dify YAML 同步工具、让业务方继续用 Dify UI 调整提示词"（**被取代**：Dify 不再是上游）；[ADR 0001 D3](./0001-rewrite-app-with-harness-first.md)"完全模拟 Dify Workflow Run API……跑稳后如需干净协议另开 ADR"（**本 ADR 即该 ADR**）；[ADR 0001 D6](./0001-rewrite-app-with-harness-first.md)（AgentState 分层）；[ADR 0009](./0009-mysql-version-and-tdsql-compatibility.md)（saver 连接与 CI 覆盖）；[ADR 0014](./0014-langfuse-as-harness-backend.md) D7（trace 关联键在生产必须生效）；沿用 [ADR 0021](./0021-text-confirm-replaces-interrupt.md)（文本二阶段确认）与 [ADR 0023](./0023-prompt-as-code-langgraph.md)（PromptSpec）
 - 作者：图灵科技 + Tony
-- **冻结（2026-09-22）**：本 ADR 不再追加落地记录，后续决策一律开新编号——已拆出：[ADR 0025](./0025-instrument-resolution-delegated-to-backend.md)（标的移交 Java，撤销 D3 ticker 真子图）、[ADR 0026](./0026-request-idempotency-uncertain-receipts-reconciliation.md)（D4 留白的幂等 / 回执 / 对账裁决）、[ADR 0027](./0027-field-evidence-contract.md)（字段证据契约）、[ADR 0028](./0028-session-entry-and-multi-instruction-send-orchestration.md)（入口分流与多指令 `Send` 编排）、[ADR 0029](./0029-node-level-debug-api-and-regression-workbench.md)（D6 之下的节点层）。D8 的分阶段门槛已统一为 [ADR 0030](./0030-goal-restatement-native-langgraph-dataset-eval-harness.md) D3 的评测门；"CI 在 PR 上跑"于 2026-09-22 补齐（`ci.yml` fast + full 两个 job），CI MySQL service 仍是待办。
+- **冻结（2026-09-22）**：本 ADR 不再追加落地记录，后续决策一律开新编号——已拆出：[ADR 0025](./0025-instrument-resolution-delegated-to-backend.md)（标的移交 Java，撤销 D3 ticker 真子图）、[ADR 0026](./0026-request-idempotency-uncertain-receipts-reconciliation.md)（D4 留白的幂等 / 回执 / 对账裁决）、[ADR 0027](./0027-field-evidence-contract.md)（字段证据契约）、[ADR 0028](./0028-session-entry-and-multi-instruction-send-orchestration.md)（入口分流与单动作多订单，多指令编排已退役）、[ADR 0029](./0029-node-level-debug-api-and-regression-workbench.md)（D6 之下的节点层）。D8 的分阶段门槛已统一为 [ADR 0030](./0030-goal-restatement-native-langgraph-dataset-eval-harness.md) D3 的评测门；"CI 在 PR 上跑"于 2026-09-22 补齐（`ci.yml` fast + full 两个 job），CI slow job 已包含 MySQL service；本地真实数据库用例仍按环境 opt-in。
+
+
+## 当前边界修订（2026-09-22）
+
+本 ADR 的 State、并行、RetryPolicy、回执及可观测性决策继续有效。现役边界如下：
+
+- 标的识别迁至 Java，删除本地 ticker 子图。LangGraph 保留证券原文与引用选择，`tickers` 仅作空列表兼容字段；不据此判断零命中或生成消歧卡。见[标的识别后端边界](../backend-instrument-boundary.md)。
+- 业务卡片由 Java 生成。render 透传有效回执；业务码 500 仅投影展示文案，原始码和结果保留。无回执时不得根据本地参数推断交易成功。
+- 七条最终确认路径要求当前订单引用及明确动作；跨轮记忆只作上下文，不再为裸确认隐式绑定单号，也不拼接确认请求。
+- 每条消息按产品与意图优先级执行一个业务动作，可携带多笔订单；多动作拆分、依赖编排与批次调度已删除，节点执行接口和评测目录同步移除对应注册。历史幂等回执仍可原样重放，不重新执行业务。
+
+下文日期化落地记录保留历史事实；其中 ticker 子图、节点计数和确认记忆回退均需按上述修订理解。
 
 ## 上下文
 
@@ -37,7 +49,7 @@ DSL v2 迁移（2026-08）后，代码在 LangGraph 上跑通了全部业务链�
 | BusinessObjects | tickers / place_params / cancel_params / confirm / query_filter / close_params；`expected_action` 提升为顶层 `Literal["place","modify","cancel","inquiry","close"]` | **per-turn**：ingest 统一重置，render 不得读上一轮残留 |
 | Engineering | trace（per-turn）、error、trace_id | 每轮重置 |
 
-- 三个业务子图声明 `output_schema`：只允许写回 BusinessObjects + reply / api_* + trace / error；父图路由键（`product_type` / `intent` / `swap_input_mode`）对子图只读。ticker 子图已于 2026-09-20 退役；HTTP tickers 保持空列表，不作为识别结果。
+- 三个业务子图声明 `output_schema`：只允许写回 BusinessObjects + intent + reply / api_* + trace / error；父图路由键（`product_type` / `swap_input_mode`）对子图只读。ticker 子图已于 2026-09-20 退役；HTTP tickers 保持空列表，不作为识别结果。
 - 一轮的边界只在一个位置维护（`ingest`），删除 `_reset_turn_trace` 与 API 层 `setdefault` 清理。
 
 ### D3 · 图即架构：原生子图、Send 并行、RetryPolicy
@@ -102,7 +114,7 @@ DSL v2 迁移（2026-08）后，代码在 LangGraph 上跑通了全部业务链�
 - 负面：约 8-10 周工程量；协议原生化需 Java 侧联调发版；State 分层与子图 output schema 会让一批"子图顺手改父图字段"的隐式行为在类型层暴露，需要逐个显式化。
 - 未决：写路径提交前的 durability 裁决（已由 ADR 0026 记录）；`history_messages` 窗口 N 的取值需 eval 校准（机制已落地，默认 40）；`option_close` / `close` 命名统一方向；Store 是否引入。
 
-## 落地记录
+## 落地记录（按日期保留历史；当前边界见文首）
 
 2026-09-17 条目保留为当时记录；其中 ticker、本地卡片、记忆补单号及独立 error handler 的现役状态以本篇 2026-09-22 修订为准。
 
@@ -126,13 +138,13 @@ DSL v2 迁移（2026-08）后，代码在 LangGraph 上跑通了全部业务链�
 - 2026-09-17 RetryPolicy + 客户端单例 + 协议层解耦（D3，TDD）：`app/graph/retry.py`——`@io_node`（`@safe_node(retryable=IO_RETRYABLE)`：后端不可达 / LLM 限流超时 5xx 穿透，其余异常仍就地落 error）+ `add_io_node`（挂 `RetryPolicy(max_attempts=NODE_RETRY_MAX_ATTEMPTS)` + 节点级 `error_handler`，耗尽后 `retry_exhausted_handler` 写 ErrorInfo 与 `error:retry_exhausted` trace，cascade 照常）；每次穿透打 `otc_agent_node_total{status="retry"}`。**读写分界**：16 个只读 IO 节点（意图识别 / 抽取 / 选择 / 查询 / ticker 三路 LLM 与 GOATS）挂重试，下单 / 撤单 / 确认 / 平仓 / 询价 14 个写类节点保持 `@safe_node` 不重试——超时后重试可能重复下单，`tests/graph/test_retry_policy.py` 以清单守护；`add_io_node` 拒绝非 `@io_node` 函数（否则 safe_node 吞异常、RetryPolicy 静默失效）。`app/tools/http_pool.py`：lifespan 打开一个 `httpx.AsyncClient` 连接池（`trust_env=False`，limits 100/20），option / swap / ticker / GOATS agent 四个 Client 经 `acquire_http_client` 复用，超时逐请求按各自设置传入；测试 `transport=` 注入与未开池的脚本 / 探针走独占临时 client，既有 30 个 monkeypatch 边界不变。`app/tools/bot_context.py`：`BotContext.from_state` / `missing_required` / `to_wire` 取代三份重复的 `_context` / `_message_id`，协议层只吃上下文模型；`call_*_backend(state, ...)` 签名不变，边界处转换。未做：`@safe_node` 的 `(state, config)` / `Runtime` 注入（当前无节点需要）。
 - 2026-09-17 `extract_inquiry` 拆子图 + `last_confirmed_params`（D3 / D4，TDD）：期权询价三条管线（快速询价 GOATS 直传 / 代码型标的预检 / LLM 抽取）做成图边——`inquiry_fast_parse` → `inquiry_fast_submit`、`inquiry_precheck` → `inquiry_reject`、`inquiry_extract` → `inquiry_resolve` → `inquiry_submit`，四个只读阶段 `@io_node` 挂 RetryPolicy，两个提交阶段不重试；私有 `InquiryState`（`iq_*`）+ `InquiryOutput`；LLM 失败归因到 `inquiry_extract`（此前整节点一个名）；汇总条目沿用 `option_extract_inquiry` 名与 decision 口径，测试 monkeypatch 边界不变，option 图原生嵌入。ConversationMemory：`AgentState.last_confirmed_params`（跨轮持久化，ingest 不重置，不在 SubgraphOutput）由主图新节点 `remember_confirmed_params`（render 之后、record_history 之前）写入——本轮无 error、`api_code == 0`、`expected_action ∈ {place, modify, inquiry, close}` 且从业务对象 / 后端回复（按产品线 `H-` / `Q-` / `CO-` 正则）拿到订单号时覆盖，撤单 / 确认回合不改写；读取点 `app/graph/memory.py::memory_order_ids(state, product_type)`：swap 三确认、option 确认下单 / 确认撤单、close 确认平仓 / 确认撤销在**文本抽不到单号**时回退到记忆。**优先级决定**：显式单号 > 引用消息 > 记忆——记忆只补裸确认，不扩大操作范围（close 点名序号 / 合约但对不上仍回请求补充）。
 - 2026-09-17 节点延迟直方图 + 结构化日志（D5，TDD）：`otc_agent_node_latency_ms{node}` 独立直方图，`emit_node_completed` 不再往 intent 直方图写 `product_type=unknown` + `node` label 的寄生样本，`alerts.py` P95 解析器删除 `node=` 字符串过滤 hack；`@safe_node` 单一计时——节点自写的本节点 TraceEntry 缺 `elapsed_ms` 时补上（`node_trace.duration_ms` 不再恒 NULL），已有值与其它节点条目不动。`app/observability/logs.py`：structlog 接管 stdlib logging（业务代码不改写），`LOG_FORMAT=auto|json|console`（auto = development 控制台、其余 JSON），`LOG_LEVEL` 终于被消费；`bound_request_context` 在 routes 里包住整次图调用，`trace_id` / `conversation_id` / `message_id` 经 contextvars 进每条日志，退出时只解绑自己绑的键；lifespan 起点 `configure_logging_from_settings`（幂等，不动 uvicorn 自己的 handler）。
-- 2026-09-17 Dify 残留 B / C 级清理（D1）：**C 级删除**——打 tag `dify-assets-frozen-20260917（指向 commit fddd94e；tag 仅存本地，远端拒绝 tag 推送，维护者可从该 sha 重建）` 后移除 dify/（sync.py + README + 1.7MB YAML）、scripts/export_dify_prompts.py、sync-dify-prompts / migrate-prompt 技能、dify-reviewer / prompt-migrator agent 及 `.agents` 镜像、mock_api rerank 桩、tests/api/test_20_dify_rerank.py（连同 `tests/api/_utils.py` 里的明文 Dify key）、3 个零流量 *_v2.md、docs/archive/dify-originals/（1.1MB）；日期型对比报告移入 `docs/archive/reports/`。**B 级**——19 份业务 `.md` 删除零消费的 node_id / model 元数据行；12 份只作 Dify 输入形态参照的死 `[user]` 段删除（现役 `[user]` 只剩 `swap/place_order.md`、`swap/fresh_counterparty.md`）；system 占位符改原生名 `{{counterparty_list}}` / `{{current_date}}`，`fresh_counterparty` 不再用 Dify 原文当 `render_user` 键；`app/main.py` description 与加载器 / 规则 / 根文档口径同步。**未做**：`scripts/shadow_compare.py` 是 M4 灰度工具链的一部分（CLAUDE.md 列为就绪能力），是否退役待 F4.1 决策；ADR 0022 保留原位（已标废弃，移动会打断 ADR 互引）；一级路由中文标签改原生 Literal 会改 LLM 输出词汇表，需 eval 门；~110 处"与 Dify 对齐"注释与 ~30 处测试口径未逐条改写。
+- 2026-09-17 Dify 残留 B / C 级清理（D1）：**C 级删除**——打 tag `dify-assets-frozen-20260917（指向 commit fddd94e；tag 仅存本地，远端拒绝 tag 推送，维护者可从该 sha 重建）` 后移除 dify/（sync.py + README + 1.7MB YAML）、scripts/export_dify_prompts.py、sync-dify-prompts / migrate-prompt 技能、dify-reviewer / prompt-migrator agent 及 `.agents` 镜像、mock_api rerank 桩、tests/api/test_20_dify_rerank.py（连同 ~~`tests/api/_utils.py`~~ 里的明文 Dify key）、3 个零流量 *_v2.md、docs/archive/dify-originals/（1.1MB）；日期型对比报告移入 `docs/archive/reports/`。**B 级**——19 份业务 `.md` 删除零消费的 node_id / model 元数据行；12 份只作 Dify 输入形态参照的死 `[user]` 段删除（现役 `[user]` 只剩 `swap/place_order.md`、`swap/fresh_counterparty.md`）；system 占位符改原生名 `{{counterparty_list}}` / `{{current_date}}`，`fresh_counterparty` 不再用 Dify 原文当 `render_user` 键；`app/main.py` description 与加载器 / 规则 / 根文档口径同步。**未做**：`scripts/shadow_compare.py` 是 M4 灰度工具链的一部分（CLAUDE.md 列为就绪能力），是否退役待 F4.1 决策；ADR 0022 保留原位（已标废弃，移动会打断 ADR 互引）；一级路由中文标签改原生 Literal 会改 LLM 输出词汇表，需 eval 门；~110 处"与 Dify 对齐"注释与 ~30 处测试口径未逐条改写。
 
 ## 附录 · Dify 残留分级清单（摘要）
 
 以下工作量与分类为原方案快照；原生 endpoint / adapter 迁移按 D7 暂缓，shadow 工具保留。
 
-- **A 保留**：`app/api/routes.py` wire schema + 502 语义 + `_INPUT_FIELD_ALIASES`；`app/tools/{swap,option}_client.py` 意图枚举；`app/tools/goats_rfq.py` 签名；`docs/on-call-runbook.md` 回切预案（G5.2b 后失效）。
+- **A 保留**：`app/api/routes.py` wire schema + 502 语义 + `_INPUT_FIELD_ALIASES`；`app/tools/{swap,option}_client.py` 意图枚举；~~`app/tools/goats_rfq.py` 签名~~（2026-09-22 普通询价快捷分支退役，主图快速询价使用 `app/tools/goats_agent_client.py`）；`docs/on-call-runbook.md` 回切预案（G5.2b 后失效）。
 - **B 替换**（19-26 人日）：原生 endpoint + adapter；`DifyWorkflowRun*` 重命名；提示词 `node_id` / `model` 行；31 处死 `[user]` 段与占位符；`fresh_counterparty.py:24-28` hack；4 处 system 占位符命名；`intent_route.py:36-51` 中文标签；两条纪律；~110 处注释；~30 处测试；`option_close`/`close`；`app/main.py:68` description；活跃文档。
 - **C 删除**（4-6 人日）：dify/、scripts/export_dify_prompts.py、sync-dify-prompts / migrate-prompt 技能与 dify-reviewer / prompt-migrator agent（含 `.agents` 镜像）、`mock_api` rerank 桩、tests/api/test_20_dify_rerank.py、3 个 0 流量 *_v2.md、docs/archive/dify-originals/、日期型对比报告、ADR 0022 移 archive。（2026-09-17 除 shadow_compare 与 ADR 0022 外已全部执行，见落地记录）
 - **安全（历史提案）**：曾提出对 ~~`tests/api/_utils.py:12`~~ 中的历史凭据执行 revoke；本轮历史 GOATS 测试凭据按 #218 用户裁决不处理。
@@ -144,6 +156,7 @@ DSL v2 迁移（2026-08）后，代码在 LangGraph 上跑通了全部业务链�
 
 ## 2026-09-22 巡检裁决与本地实现
 
+- 用户确认按当前 Dify 的入口边界收敛询价：普通 `new_inquiry` 仅保留 `inquiry_extract → inquiry_normalize → inquiry_submit`，产品关键词不再触发 GOATS 解析。`inquiry_fast_parse / inquiry_fast_submit` 及旧直连客户端退役；GOATS 快速询价保留在主图 `fast_query=1` 的 `quick_inquiry`。上文 2026-09-17 三管线记录作为历史保留。本次仅对齐入口与链路，询价字段契约差异另行处理。
 - #218：用户决定不处理历史 GOATS 测试凭据，不纳入本轮验收。
 - #219：Python 依赖已限制 PyMySQL < 1.2；已部署环境与离线包核查仍待执行，不宣称现场已修复。
 - #223：7dfed2a 在原 IO 节点最后一次失败时返回错误，恢复正常图边与并行收尾；专项 RED 8 条失败，GREEN 85 条通过。

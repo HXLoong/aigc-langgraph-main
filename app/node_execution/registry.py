@@ -16,18 +16,6 @@ from app.tools.bot_context import REQUIRED_FIELDS
 from app.tools.message_client import MessageClient
 
 
-def _build_instructions_composite() -> Any:
-    """多指令编排复合项：与主图同款 worker 图与去重窗口。"""
-    from app.config import get_settings
-    from app.graph.instructions import build_instructions_graph
-    from app.graph.main import build_main_graph
-
-    return build_instructions_graph(
-        build_main_graph(_instruction_worker=True),
-        dedup_window_seconds=get_settings().backend_dedup_window_seconds,
-    )
-
-
 @dataclass(frozen=True)
 class NodeRegistration:
     product: str
@@ -84,12 +72,10 @@ def _schema_required_fields(schema: Any) -> set[str]:
 _EXECUTION_OPTIONS: dict[str, dict[str, Any]] = {
     "quick_inquiry": {"backend_context": True},
     "existing_command_query": {"io": True},
-    "plan_instructions": {"io": True},
     "intent_route": {"io": True},
     "swap": {"backend_context": True, "factory": True},
     "option": {"backend_context": True, "factory": True},
     "option_close": {"backend_context": True, "factory": True},
-    "instructions": {"backend_context": True, "factory": True},
     "option_intent": {"io": True},
     "option_extract_inquiry": {"backend_context": True, "factory": True},
     "option_extract_place": {"backend_context": True},
@@ -98,16 +84,6 @@ _EXECUTION_OPTIONS: dict[str, dict[str, Any]] = {
     "option_extract_cancel": {"backend_context": True},
     "option_extract_confirm_cancel": {"backend_context": True},
     "option_extract_query": {"backend_context": True, "io": True},
-    "inquiry_fast_parse": {
-        "io": True,
-        "input_schema": "app.subgraphs.option.extract_inquiry:InquiryState",
-        "state_schema": "app.subgraphs.option.extract_inquiry:InquiryState",
-    },
-    "inquiry_fast_submit": {
-        "backend_context": True,
-        "input_schema": "app.subgraphs.option.extract_inquiry:InquiryState",
-        "state_schema": "app.subgraphs.option.extract_inquiry:InquiryState",
-    },
     "inquiry_extract": {
         "io": True,
         "input_schema": "app.subgraphs.option.extract_inquiry:InquiryState",

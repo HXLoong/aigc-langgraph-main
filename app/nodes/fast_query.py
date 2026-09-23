@@ -13,9 +13,12 @@ import json
 import logging
 from typing import Any
 
+from app.extraction.tenor import TenorError, normalize_request_tenors
 from app.graph.retry import io_node
 from app.graph.safe_node import safe_node
 from app.graph.state import AgentState, TraceEntry
+from app.tools.bot_context import BotContext
+from app.tools.exceptions import MissingBackendContextError
 from app.tools.goats_agent_client import GoatsAgentClient, make_goats_agent_client
 from app.tools.option_client import FinancialOrderOpenApiSaveReqVO, OptionClient
 from app.tools.receipts import receipt_guard, receipt_text, receipt_update
@@ -79,6 +82,15 @@ async def quick_inquiry(state: AgentState) -> dict[str, Any]:
         }
 
     option_rfq = rfq.get("api_data_result_obj") or {}
+    missing = BotContext.from_state(state).missing_required()
+    if missing:
+        raise MissingBackendContextError("option", missing)
+    try:
+        option_rfq = normalize_request_tenors({"optionRfq": option_rfq})["optionRfq"]
+    except TenorError as exc:
+        return {"reply_text": str(exc), "trace": [TraceEntry(
+            node="quick_inquiry", decision="invalid_tenor",
+        )]}
     req = FinancialOrderOpenApiSaveReqVO.model_validate(
         {
             "conversationId": state.get("conversation_id") or "",

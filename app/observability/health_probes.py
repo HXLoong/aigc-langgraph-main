@@ -174,7 +174,7 @@ async def run_all_probes() -> list[ProbeResult]:
         )
     except TimeoutError:
         return [
-            ProbeResult(target=t, status="fail", error="total_timeout")
+            ProbeResult(target=t, status="fail", error="total_timeout")  # type: ignore[arg-type]
             for t in ("mysql", "langfuse", "llm", "java_backend")
         ]
     return list(results)

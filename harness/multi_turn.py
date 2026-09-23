@@ -12,6 +12,7 @@ from typing import Any
 import httpx
 
 from harness.golden import GoldenCase, TurnSpec
+from harness.scenario_inputs import resolve_order_reference
 
 _BACKEND_ERROR_MARKERS = ("正在处理", "请勿重复", "未授权", "失败：未补充")
 
@@ -123,14 +124,18 @@ async def run_case_multi(
     result = MultiTurnResult(case_id=case.id, conversation_id=conversation_id)
     try:
         for index, spec in enumerate(case.turns):
-            if index and turn_interval:
-                await asyncio.sleep(turn_interval)
+            resolved_text = resolve_order_reference(
+                spec.send_text, result.turns[-1].reply_text if result.turns else ""
+            )
+            delay = max(turn_interval if index else 0, spec.wait_before_seconds)
+            if delay:
+                await asyncio.sleep(delay)
             quote = quote_for_turn(
                 index, spec.quote_previous, [turn.reply_text for turn in result.turns]
             )
             inputs = {
-                "raw_text": spec.send_text,
-                "message_content": spec.send_text,
+                "raw_text": resolved_text,
+                "message_content": resolved_text,
                 "message_id": secrets.randbelow(900_000_000_000_000) + 100_000_000_000_000,
                 "user_id": user_id,
                 "room_id": room_id,
@@ -157,7 +162,8 @@ async def run_case_multi(
             outputs = dict(data.get("outputs") or {})
             if data.get("status") != "succeeded" and not outputs.get("error"):
                 outputs["error"] = data.get("error") or data.get("status")
-            outcome = _extract_turn(index + 1, spec, quote, outputs)
+            resolved_spec = spec.model_copy(update={"send_text": resolved_text})
+            outcome = _extract_turn(index + 1, resolved_spec, quote, outputs)
             outcome.elapsed_ms = int((time.perf_counter() - started) * 1000)
             result.turns.append(outcome)
             result.final_outputs = outputs

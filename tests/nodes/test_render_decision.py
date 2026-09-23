@@ -84,3 +84,22 @@ async def test_no_reply_fallthrough_is_labelled() -> None:
     out = await render({"tickers": [], "place_params": {}})
     assert out["reply_text"] == get_settings().default_reply
     assert _decision(out) == "no_reply"
+
+
+@pytest.mark.asyncio
+async def test_local_candidates_without_receipt_use_uncertain_branch() -> None:
+    out = await render({
+        "product_type": "swap", "intent": "place_order_request",
+        "ticker_hitl_candidates": [{"keyword": "茅台", "candidates": [{"windCode": "600519.SH"}]}],
+    })
+    assert _decision(out) == "backend_no_result"
+    assert "600519.SH" not in out["reply_text"]
+
+
+@pytest.mark.asyncio
+async def test_empty_tickers_do_not_select_zero_match_branch() -> None:
+    out = await render({
+        "product_type": "option", "tickers": [], "expected_action": "place", "place_params": {"orderList": [{}]},
+        "raw_text": "x", "intent": "place_order",
+    })
+    assert _decision(out) == "backend_no_result"

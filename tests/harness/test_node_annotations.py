@@ -168,15 +168,15 @@ def test_unregistered_future_node_is_auto_discovered_without_replay() -> None:
     observations = [
         {
             "id": "obs-future",
-            "name": "finish_instructions",
+            "name": "future_summary",
             "start_time": "2026-09-21T06:00:00Z",
             "input": {"_results": {}},
             "output": {
-                "instruction_results": [{"status": "response_received"}],
+                "summary_results": [{"status": "response_received"}],
                 "reply_text": "执行完成",
-                "trace": [{"node": "finish_instructions"}],
+                "trace": [{"node": "future_summary"}],
             },
-            "metadata": {"langgraph_node": "finish_instructions"},
+            "metadata": {"langgraph_node": "future_summary"},
         }
     ]
 
@@ -187,10 +187,10 @@ def test_unregistered_future_node_is_auto_discovered_without_replay() -> None:
         registry={},
     )
 
-    assert [node.name for node in nodes] == ["finish_instructions"]
+    assert [node.name for node in nodes] == ["future_summary"]
     assert nodes[0].product_type == "common"
     assert nodes[0].category == "自动发现"
-    assert nodes[0].output_fields == ("instruction_results", "reply_text")
+    assert nodes[0].output_fields == ("summary_results", "reply_text")
     assert nodes[0].annotatable is True
     assert nodes[0].replayable is False
     assert nodes[0].side_effect == "unknown"
@@ -334,7 +334,6 @@ def test_write_nodes_declare_stable_outputs_for_annotation() -> None:
             "api_result",
             "reply_text",
         },
-        "inquiry_fast_submit": {"api_code", "api_result", "reply_text"},
         "inquiry_submit": {
             "expected_action",
             "place_params",
@@ -376,13 +375,6 @@ def test_write_nodes_declare_stable_outputs_for_annotation() -> None:
             "api_code",
             "api_result",
             "reply_text",
-        },
-        "instructions": {
-            "instruction_results",
-            "reply_text",
-            "error",
-            "product_type",
-            "intent",
         },
     }
 
@@ -462,7 +454,7 @@ def test_node_discovery_does_not_require_registry_count_to_match_graph_count() -
         "schedule_instructions",
         "prepare_instruction",
         "submit_instruction_batches",
-        "finish_instructions",
+        "future_summary",
     }
     observations = [
         {

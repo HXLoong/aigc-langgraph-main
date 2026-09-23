@@ -1,5 +1,5 @@
 """Recovery invariants across real LangGraph merges and checkpoint serialization."""
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
@@ -18,8 +18,8 @@ def test_checkpoint_preserves_reducer_identity(item):
 
 
 async def test_two_failed_swap_selection_branches_merge_without_crashing(monkeypatch):
-    """选对手 ‖ 选标的并行分支同时失败：error 通道按 merge_errors 汇合，不互相覆盖也不崩图。"""
     from app.subgraphs.swap import graph as graph_module
+    from app.subgraphs.swap import select_counterparty, select_ticker
     from app.tools.swap_client import SwapClientHttpx
 
     @io_node
@@ -28,27 +28,41 @@ async def test_two_failed_swap_selection_branches_merge_without_crashing(monkeyp
 
     @io_node
     async def extract(state):
-        # 单笔订单 + 代码选择规则无法匹配的原文（"另一个吧"：无序号 / 动词 / 名称 / 代码），让对手与标的两条分支都落到 LLM 路径
-        return {"place_params": {"orderList": [{"orderId": "H-20260921-0000000001"}]},
-                "swap_counterparties": [{"sort": "A", "shortName": "测试对手"}],
-                "quote_ticker_candidates": [{"orderId": "H-20260921-0000000001", "candidates": [{"windCode": "600519.SH"}]}]}
+        return {
+            "place_params": {"orderList": [{"orderId": "H-20260922-0000000001"}]},
+            "swap_counterparties": [{"sort": "A", "shortName": "测试对手"}],
+            "quote_ticker_candidates": [{"orderId": "H-20260922-0000000001", "candidates": [
+                {"seq": 1, "code": "600519.SH", "name": "贵州茅台"},
+            ]}],
+        }
 
-    def failing(name):
-        async def node(state):
-            raise ValueError(f"{name} bad output")
-        node.__name__ = name  # safe_node 以函数名归因 error.node，必须先改名再装饰
-        return io_node(node)
-
+    counterparty_model, ticker_model = MagicMock(), MagicMock()
+    counterparty_call = AsyncMock(side_effect=ValueError("bad counterparty output"))
+    ticker_call = AsyncMock(side_effect=ValueError("bad ticker output"))
+    counterparty_model.with_structured_output.return_value.ainvoke = counterparty_call
+    ticker_model.with_structured_output.return_value.ainvoke = ticker_call
     monkeypatch.setattr(graph_module, "swap_intent", intent)
     monkeypatch.setattr(graph_module, "build_place_graph", lambda: extract)
-    monkeypatch.setattr(graph_module, "swap_select_counterparty", failing("swap_select_counterparty"))
-    monkeypatch.setattr(graph_module, "swap_select_ticker", failing("swap_select_ticker"))
+    # 故障恢复测试显式命中 LLM 分支，不依赖选择规则是否提前完成匹配。
+    monkeypatch.setattr(select_counterparty, "counterparty_choice", lambda state: None)
+    monkeypatch.setattr(select_ticker, "ticker_choice", lambda state: None)
+    monkeypatch.setattr(select_counterparty, "get_qwen_complex", lambda: counterparty_model)
+    monkeypatch.setattr(select_ticker, "get_qwen_complex", lambda: ticker_model)
+    submit = AsyncMock(side_effect=AssertionError("failed selections must not submit"))
+    monkeypatch.setattr(graph_module, "swap_place_order_submit", submit)
     backend = AsyncMock()
     monkeypatch.setattr(SwapClientHttpx, "operate", backend)
-    result = await graph_module.build_swap_graph().ainvoke({"raw_text": "另一个吧", "quote_content": "引用"})
+    result = await graph_module.build_swap_graph().ainvoke({
+        "raw_text": "另一个吧", "quote_content": "引用",
+        "conversation_id": "failure-recovery", "room_id": "test-room",
+        "user_id": "test-user", "message_id": 1,
+    })
     assert result.get("error")
     nodes = {result["error"].node, *(e.node for e in result["error"].causes)}
-    assert {"swap_select_counterparty", "swap_select_ticker"} <= nodes
+    assert nodes == {"swap_select_counterparty", "swap_select_ticker"}
+    counterparty_call.assert_awaited_once()
+    ticker_call.assert_awaited_once()
+    submit.assert_not_called()
     backend.assert_not_called()
 
 

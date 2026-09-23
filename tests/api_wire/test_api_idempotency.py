@@ -91,6 +91,32 @@ def test_successful_replay_keeps_all_business_outputs(client: TestClient) -> Non
     assert second["message_id"] == first["message_id"]
 
 
+def test_legacy_multi_instruction_response_replays_without_execution(client: TestClient) -> None:
+    import asyncio
+
+    snapshot = {
+        "answer": "历史多指令回执",
+        "data": {"outputs": {
+            "product_type": "unknown", "intent": "multi_instruction",
+            "instruction_results": [{"instruction_id": "instruction-1", "api_result": "旧回执"}],
+        }},
+    }
+    store = client.app.state.idempotency_store
+    asyncio.run(store.begin("87", conversation_id="conv-1", user_id="u", room_id="r",
+                            raw_text="旧请求"))
+    asyncio.run(store.complete(
+        "87", reply_text=snapshot["answer"], product_type="unknown", intent="multi_instruction",
+        api_code=None, api_result=None, error=None, latency_ms=1, response=snapshot, http_status=200,
+    ))
+
+    replay = client.post("/v1/workflows/run", json=_body(87, "旧请求"))
+    assert replay.status_code == 200
+    assert replay.json()["answer"] == snapshot["answer"]
+    for key, value in snapshot["data"]["outputs"].items():
+        assert replay.json()["data"]["outputs"][key] == value
+    assert client.app.state.main_graph.calls == 0
+
+
 @pytest.mark.parametrize("error_type", ["BackendUnreachableError", "EmptyBackendResultError"])
 def test_unverifiable_receipt_is_uncertain_in_first_response_and_replay(client: TestClient, error_type: str) -> None:
     graph = client.app.state.main_graph

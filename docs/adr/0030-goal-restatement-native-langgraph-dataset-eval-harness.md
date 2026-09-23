@@ -9,13 +9,13 @@
 
 ## 上下文
 
-迁移期的 ADR 用 M1–M4 / F4.x / E3.x / D2.x / C1.x 任务码和 GitHub issue 编号记录进度与裁决。到 2026-09-22，代码已经完成 Dify 形态退出（ADR 0024 D1）、标的移交后端（0025）、幂等与回执契约（0026）、字段证据契约（0027）、多指令编排（0028）、节点级工作台（0029）。这些任务码与 issue 不再反映工作的组织方式；留在 ADR 里只会让读者误以为它们仍是当前门槛，也让每篇 ADR 的状态行被"某个 issue 是否关闭"绑架。
+迁移期的 ADR 用 M1–M4 / F4.x / E3.x / D2.x / C1.x 任务码和 GitHub issue 编号记录进度与裁决。到 2026-09-22，代码已经完成 Dify 形态退出（ADR 0024 D1）、标的移交后端（0025）、幂等与回执契约（0026）、字段证据契约（0027）、会话保护与单动作多订单（0028）、节点级工作台（0029）。这些任务码与 issue 不再反映工作的组织方式；留在 ADR 里只会让读者误以为它们仍是当前门槛，也让每篇 ADR 的状态行被"某个 issue 是否关闭"绑架。
 
 ## 决策
 
 ### D1 · 目标三主线
 
-1. **原生 LangGraph 重构场外 AI 指令链路**：图即架构（子图原生嵌入、`Send` 并行、RetryPolicy、State 分层与 output schema，[ADR 0024](./0024-langgraph-native-rearchitecture.md) D2 / D3、[ADR 0028](./0028-session-entry-and-multi-instruction-send-orchestration.md)）；持久化与可观测契约（0024 D4 / D5、[ADR 0026](./0026-request-idempotency-uncertain-receipts-reconciliation.md)）；提示词即代码与字段证据契约（[ADR 0023](./0023-prompt-as-code-langgraph.md)、[ADR 0027](./0027-field-evidence-contract.md)）；Dify 只作历史参照，标的识别与业务默认值归 Java 后端（[ADR 0025](./0025-instrument-resolution-delegated-to-backend.md)）。
+1. **原生 LangGraph 重构场外 AI 指令链路**：图即架构（子图原生嵌入、单动作多订单、RetryPolicy、State 分层与 output schema，[ADR 0024](./0024-langgraph-native-rearchitecture.md) D2 / D3、[ADR 0028](./0028-session-entry-and-multi-instruction-send-orchestration.md)）；持久化与可观测契约（0024 D4 / D5、[ADR 0026](./0026-request-idempotency-uncertain-receipts-reconciliation.md)）；提示词即代码与字段证据契约（[ADR 0023](./0023-prompt-as-code-langgraph.md)、[ADR 0027](./0027-field-evidence-contract.md)）；Dify 只作历史参照，标的识别与业务默认值归 Java 后端（[ADR 0025](./0025-instrument-resolution-delegated-to-backend.md)）。
 2. **通过数据集进行评测和评估**：ground truth 是数据集的 `expected`，不是 Dify 输出（沿用 ADR 0016 的核心论点）。数据集 = `tests/fixtures/categories/`（显式验收集）+ `tests/fixtures/unified_golden.jsonl` + `tests/fixtures/nodes/`（节点级 fixture，[ADR 0029](./0029-node-level-debug-api-and-regression-workbench.md)）；评测入口 = harness HTTP 回归（[ADR 0002](./0002-comprehensive-runtime-harness.md) / 0024 D6）+ LLM Judge（[ADR 0005](./0005-annotation-roles-judge-plus-business-spotcheck.md) / [ADR 0014](./0014-langfuse-as-harness-backend.md)）；错例先补 fixture 再修代码。
 3. **按 Harness 工程的要求重构**：任何提示词 / 节点 / 契约改动都经同一条门（D3）——TDD RED → GREEN、pytest、四项一致性 lint、ruff / mypy、数据集 PASS 率不低于前值、trace 可归因（[ADR 0004](./0004-trace-granularity-node-level-with-langsmith.md) / 0024 D5）。harness 与 `app/` 解耦，只经 HTTP 入口驱动。
 

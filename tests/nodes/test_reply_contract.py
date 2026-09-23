@@ -122,37 +122,27 @@ def test_retry_900_scope_excludes_quick_inquiry():
     )
 
 
-async def test_batch_500_with_no_message_uses_service_unavailable_reply(monkeypatch):
-    from unittest.mock import MagicMock
-
-    from app.execution import operations
-    from app.graph.instructions import build_instructions_graph
+async def test_backend_500_with_no_message_uses_dify_reply(monkeypatch):
     from app.subgraphs.swap.backend import call_swap_backend
 
-    class Worker:
-        async def ainvoke(self, state, config=None, **kwargs):
-            await call_swap_backend(state, intent="place_order_request", order_list=[{}])
-            return state
-
     monkeypatch.setattr(
-        operations,
-        "SwapClientHttpx",
-        lambda: MagicMock(operate=AsyncMock(return_value={"code": 500})),
+        "app.subgraphs.swap.backend.SwapClientHttpx.operate",
+        AsyncMock(return_value={"code": 500}),
     )
-    result = await build_instructions_graph(Worker()).ainvoke(
+    result = await call_swap_backend(
         {
             "raw_text": "买甲",
             "conversation_id": "c",
             "user_id": "u",
             "room_id": "r",
             "message_id": 123,
-            "sub_instructions": [
-                {"text": "买甲", "evidence": "买甲", "start": 0, "end": 2, "confidence": 1}
-            ],
-        }
+        },
+        intent="place_order_request",
+        order_list=[{}],
     )
-    assert "交易指令服务暂不可用" in result["reply_text"]
-    assert result["instruction_results"][0]["api_code"] == 500
+    rendered, _ = _render_branch({"product_type": "swap", **result})
+    assert rendered["reply_text"] == "交易指令服务暂不可用"
+    assert result["api_code"] == 500 and result["api_result"] is None
 
 
 async def test_quick_parser_invalid_response_uses_business_copy_without_losing_reason():

@@ -19,6 +19,7 @@ from __future__ import annotations
 from typing import Any
 
 from app.execution.confirmation import parse_confirmation
+from app.extraction.tenor import TenorError
 from app.graph.business_params import validated_confirm
 from app.graph.safe_node import safe_node
 from app.graph.state import AgentState, TraceEntry
@@ -47,7 +48,7 @@ async def option_extract_confirm_place(state: AgentState) -> dict[str, Any]:
             state.get("history_messages") or [],
             confirm=True, selected_order_ids=confirmation.order_ids,
         )
-    except OrderScopeError as exc:
+    except (OrderScopeError, TenorError) as exc:
         return {"reply_text": str(exc), "trace": [TraceEntry(
             node="option_extract_confirm_place", decision="order_scope_unresolved",
         )]}

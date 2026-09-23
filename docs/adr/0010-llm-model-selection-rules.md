@@ -26,7 +26,7 @@
 
 ## 实现偏离（历史事实，必须记录；2026-08-27 已裁决）
 
-**本 ADR 的强制规则从未在代码中被执行**：`get_qwen_standard` 业务侧零调用（2026-09-18 起仅 `app/graph/instructions.py` 多指令拆分调用它）；20 个 `with_structured_output` 调用点实际分布为 **thinking 15 / structured 2 / complex 1 / standard 0**（`swap/intent.py` 的 docstring 甚至自称遵守本规则，实际调 thinking 工厂）。
+**本 ADR 的强制规则从未在代码中被执行**：`get_qwen_standard` 业务侧零调用（2026-09-18 起曾由 ~~`app/graph/instructions.py`~~ 多指令拆分调用它；本分支已退役该编排）；20 个 `with_structured_output` 调用点实际分布为 **thinking 15 / structured 2 / complex 1 / standard 0**（`swap/intent.py` 的 docstring 甚至自称遵守本规则，实际调 thinking 工厂）。
 
 **裁决（2026-08-27）**：选 (b) 追认——thinking 工厂为 structured output 的**事实默认**，本规则正式废止。**分化前置纪律**：未来按工厂分化模型前，必须先做一个'调用点统一 PR'把 20 处 structured output 调用点归位到语义正确的工厂，否则 15 个节点会静默跟随 thinking 工厂拿到错误模型。
 

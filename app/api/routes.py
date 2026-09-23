@@ -38,6 +38,7 @@ from app.observability.llm_metrics import LLMMetricsCallback
 from app.observability.logs import bound_request_context
 from app.observability.metrics import emit_intent_latency
 from app.observability.tracing import HandledErrorCallback, attach_request_trace
+from app.tools.bot_context import normalize_message_id
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -172,6 +173,7 @@ async def _execute_workflow(
             inputs["files"] = req.files
         initial_state = inputs_to_state(inputs)
         conversation_id = _resolve_conversation_id(req)
+        message_number = normalize_message_id(initial_state.get("message_id"))
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
@@ -198,7 +200,7 @@ async def _execute_workflow(
     # ADR 0024 D4：请求级幂等——同一企微 message_id 重投不重跑整图（重跑 = 重复下单）
     store: IdempotencyStore | None = getattr(request.app.state, "idempotency_store", None)
     message_id = initial_state.get("message_id")
-    idem_key = str(message_id) if message_id is not None else None
+    idem_key = str(message_id) if message_number > 0 else None
     if store is not None and idem_key is not None:
         existing = await _idempotency_begin(store, idem_key, initial_state)
         if existing is not None:
@@ -492,7 +494,6 @@ def _state_to_outputs(state: AgentState) -> dict[str, Any]:
         "api_code",
         "api_result",
         "session_status",
-        "instruction_results",
     ):
         v = state.get(key)
         if v is None:

@@ -86,10 +86,11 @@ async def _cmd_paraphrase_async(
 ) -> int:
     """LLM 对抗式 paraphrase 子命令。"""
     from harness.case_generator.llm_paraphrase import (
+        ParaphrasedCase,
         paraphrase_case,
         render_review_markdown,
     )
-    from harness.golden import load_golden
+    from harness.golden import GoldenCase, load_golden
 
     seeds = load_golden(golden_path)
     if not seeds:
@@ -102,7 +103,7 @@ async def _cmd_paraphrase_async(
     ]
     print(f"paraphrasing {len(business_seeds)} business seeds, {num_variants} variants each ...")
 
-    pairs: list[tuple] = []
+    pairs: list[tuple[GoldenCase, list[ParaphrasedCase]]] = []
     for i, seed in enumerate(business_seeds, 1):
         print(f"  [{i}/{len(business_seeds)}] {seed.id} ({seed.category}) ...", flush=True)
         try:

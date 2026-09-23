@@ -15,7 +15,6 @@ from __future__ import annotations
 
 from typing import Any
 
-from app.execution.operations import capture_operation
 from app.extraction.identity import protect_identity_lists
 from app.extraction.locks import protect_orders
 from app.graph.state import AgentState
@@ -74,8 +73,6 @@ async def call_close_backend(
         optionRfq=None,
         **_context(state),
     )
-    if capture_operation("close", req):
-        return {"field_records": rejected} if rejected else {}
     async with receipt_guard("close"):
         result = await OptionClientHttpx().operate(req)
     return {

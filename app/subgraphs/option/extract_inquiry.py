@@ -1,4 +1,7 @@
-"""期权询价：原文证据提取 → 参数归一化 → Java 解析标的并处理询价。"""
+"""普通期权询价：原文证据提取 → 参数归一化 → Java 处理 orderList。
+
+快速询价仅由主图 fast_query 标志选择 quick_inquiry，不根据产品关键词改换链路。
+"""
 from __future__ import annotations
 
 from functools import lru_cache
@@ -33,15 +36,6 @@ from app.subgraphs.option.normalize import expand_inquiry_items
 from app.subgraphs.option.prompting import EXTRACT_INPUTS
 from app.subgraphs.option.sanitize import sanitize_order_list
 
-#: 快速询价 / 雪球 / 参与型识别关键词（命中则先走 GOATS instrument parser，不走 LLM）
-_FAST_INQUIRY_MARKERS = ("快速询价", "雪球", "参与型", "敲入", "敲出")
-
-
-def _is_fast_inquiry(text: str) -> bool:
-    """检测 raw_text 是否是快速询价 / 雪球类强信号场景。"""
-    return bool(text) and any(m in text for m in _FAST_INQUIRY_MARKERS)
-
-
 CANDIDATE_MODEL = candidate_model(OptionInquiryRawParams)
 SPEC = register(PromptSpec(
     category="option",
@@ -55,7 +49,6 @@ SPEC = register(PromptSpec(
 class InquiryState(AgentState, total=False):
     """询价子图私有 State：AgentState + `iq_*` 中间态。"""
 
-    iq_rfq_data: dict[str, Any] | None
     iq_raw_params: dict[str, Any]
     iq_field_records: dict[str, FieldRecord]
     iq_order_list: list[dict[str, Any]]
@@ -81,52 +74,6 @@ class InquiryOutput(TypedDict, total=False):
 
 
 @io_node
-async def inquiry_fast_parse(state: InquiryState) -> dict[str, Any]:
-    """快速询价 / 雪球：原文直传 GOATS instrument parser 拿 parsed 字段（只读）。"""
-    from app.tools.goats_rfq import parse_rfq_instrument
-
-    raw_text = state.get("raw_text", "") or ""
-    rfq_data = await parse_rfq_instrument(raw_text)
-    return {
-        "iq_rfq_data": rfq_data or None,
-        "trace": [TraceEntry(node="inquiry_fast_parse", decision="parsed" if rfq_data else "empty")],
-    }
-
-
-@safe_node
-async def inquiry_fast_submit(state: InquiryState) -> dict[str, Any]:
-    """把 GOATS parser 字段透传给 option/operate 拿正式询价回复（建单，不重试）。"""
-    raw_text = state.get("raw_text", "") or ""
-    rfq_data = state.get("iq_rfq_data") or {}
-    option_rfq = {
-        "chatType": rfq_data.get("chatType"),
-        "chatInstrument": rfq_data.get("chatInstrument") or raw_text,
-        "productType": rfq_data.get("productType"),
-        "tenor": rfq_data.get("tenor"),
-        "strike": [str(s) for s in (rfq_data.get("strike") or [])],
-        "knockInPrice": [str(p) for p in (rfq_data.get("knockInPrice") or [])],
-        "knockOutPrice": [str(p) for p in (rfq_data.get("knockOutPrice") or [])],
-        "estimateMargin": [str(m) for m in (rfq_data.get("estimateMargin") or [])],
-        "fuzzyCodeList": rfq_data.get("fuzzyCodeList") or [],
-        "productSubtypeList": rfq_data.get("productSubtypeList") or [],
-        "participateRate": [str(p) for p in (rfq_data.get("participateRate") or [])],
-    }
-    backend = await call_option_backend(state, intent="new_inquiry", option_rfq=option_rfq)
-    # 不写 place_params / tickers，让 render 直接透传 backend api_result
-    return {
-        **backend,
-        "trace": [
-            TraceEntry(node="inquiry_fast_submit", decision=f"api_code={backend.get('api_code')}"),
-            TraceEntry(
-                node="option_extract_inquiry",
-                decision=f"fast_inquiry product={rfq_data.get('productType')}",
-                llm_output={"rfq_data": rfq_data},
-            ),
-        ],
-    }
-
-
-@io_node
 async def inquiry_extract(state: InquiryState) -> dict[str, Any]:
     """LLM 只产出候选与证据；未验证的输出不能进入归一化或后端。"""
     messages, _prompt_name = SPEC.build_messages(state)
@@ -149,6 +96,9 @@ async def inquiry_normalize(state: InquiryState) -> dict[str, Any]:
     records: dict[str, FieldRecord] = {}
     for index, raw_item in enumerate(raw_params.order_list):
         items = expand_inquiry_items([raw_item])
+        if raw_item.tenor and any(item["tenor"] is None for item in items):
+            return {"reply_text": "期限无法转换为正整数月份，请明确所有期限后重新提交。",
+                    "trace": [TraceEntry(node="inquiry_normalize", decision="invalid_tenor")]}
         prefix = f"option/inquiry.orderList.{index}."
         for item in items:
             canonical_item = OptionOrderItem.model_validate(item).model_dump()
@@ -215,37 +165,22 @@ async def inquiry_submit(state: InquiryState) -> dict[str, Any]:
 # ============================================================
 
 
-def _route_start(state: InquiryState) -> str:
-    return "inquiry_fast_parse" if _is_fast_inquiry(state.get("raw_text", "") or "") else "inquiry_extract"
-
-
-def _route_after_fast_parse(state: InquiryState) -> str:
-    if has_error(state):
-        return END
-    return "inquiry_fast_submit" if state.get("iq_rfq_data") else "inquiry_extract"
-
-
 def _route_or_end(next_node: str):  # type: ignore[no-untyped-def]
     def _router(state: InquiryState) -> str:
-        return END if has_error(state) else next_node
+        return END if has_error(state) or state.get("reply_text") else next_node
 
     return _router
 
 
 def build_inquiry_graph() -> CompiledStateGraph[InquiryState, None, AgentState, InquiryOutput]:
     g: StateGraph[InquiryState, None, AgentState, InquiryOutput] = StateGraph(InquiryState, input_schema=AgentState, output_schema=InquiryOutput)
-    add_io_node(g, "inquiry_fast_parse", inquiry_fast_parse)
-    g.add_node("inquiry_fast_submit", inquiry_fast_submit)
     add_io_node(g, "inquiry_extract", inquiry_extract)
     g.add_node("inquiry_normalize", inquiry_normalize)
     g.add_node("inquiry_submit", inquiry_submit)
 
-    g.add_conditional_edges(START, _route_start, ["inquiry_fast_parse", "inquiry_extract"])
-    g.add_conditional_edges("inquiry_fast_parse", _route_after_fast_parse,
-                            ["inquiry_fast_submit", "inquiry_extract", END])
+    g.add_edge(START, "inquiry_extract")
     g.add_conditional_edges("inquiry_extract", _route_or_end("inquiry_normalize"), ["inquiry_normalize", END])
     g.add_conditional_edges("inquiry_normalize", _route_or_end("inquiry_submit"), ["inquiry_submit", END])
-    g.add_edge("inquiry_fast_submit", END)
     g.add_edge("inquiry_submit", END)
     return g.compile(name="option_extract_inquiry")
 

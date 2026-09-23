@@ -32,7 +32,7 @@ def failing_node(name: str, calls: list[str]) -> Any:
     return io_node(fail)
 
 
-@pytest.mark.parametrize("node_name", ["plan_instructions", "intent_route", "existing_command_query"])
+@pytest.mark.parametrize("node_name", ["intent_route", "existing_command_query"])
 async def test_main_retry_exhaustion_reaches_reply_history_and_audit(
     monkeypatch: pytest.MonkeyPatch, fast_retries: None, node_name: str,
 ) -> None:
@@ -42,15 +42,10 @@ async def test_main_retry_exhaustion_reaches_reply_history_and_audit(
     async def ingest(state: AgentState) -> dict[str, Any]:
         return {}
 
-    @io_node
-    async def plan(state: AgentState) -> dict[str, Any]:
-        return {"sub_instructions": []}
-
     calls: list[str] = []
     audit = AsyncMock(return_value={"trace": [TraceEntry(node="persist")]})
     monkeypatch.setattr(main, "ingest", ingest)
     monkeypatch.setattr(main, "pre_route", AsyncMock(return_value={}))
-    monkeypatch.setattr(main, "plan_instructions", plan)
     monkeypatch.setattr(main, node_name, failing_node(node_name, calls))
     monkeypatch.setattr(main, "persist", audit)
     monkeypatch.setattr(main, "_route_entry", lambda _: (

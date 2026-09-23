@@ -5,13 +5,11 @@ from __future__ import annotations
 import copy
 import json
 from typing import Any, TypedDict
-from typing import Any, TypedDict
 from unittest.mock import AsyncMock, MagicMock
 
 import httpx
 import pytest
 
-from app.extraction.intent_evidence import IntentEvidence
 from app.main import app
 from app.node_execution.executor import NodeExecutor
 from app.node_execution.registry import NodeRegistration, build_registry
@@ -25,16 +23,6 @@ CONTEXT = {
     "user_id": "user-1",
     "message_id": 123,
 }
-
-
-def _stable(output: dict[str, Any]) -> dict[str, Any]:
-    """trace 条目的 id / elapsed_ms 每次运行都不同，比较业务输出时剔除。"""
-    stable = copy.deepcopy(output)
-    stable["trace"] = [
-        {key: value for key, value in entry.items() if key not in {"id", "elapsed_ms"}}
-        for entry in stable.get("trace") or []
-    ]
-    return stable
 
 
 @pytest.fixture(autouse=True)
@@ -232,7 +220,7 @@ async def test_union_string_is_not_parsed_when_already_accepted() -> None:
     [
         ("12x", "int_type"),
         (1.2, "int_type"),
-        (None, "int_type"),
+        (None, "missing"),  # State 允许显式清空，业务节点仍按缺失上下文拒绝执行。
     ],
 )
 async def test_unsafe_integer_values_are_retained_for_correction(
@@ -337,7 +325,6 @@ def _all_schema_inputs() -> dict[str, dict[str, Any]]:
         "candidates": [],
     }
     inquiry = agent | {
-        "iq_rfq_data": {},
         "iq_raw_params": {},
         "iq_field_records": {},
         "iq_order_list": [],
@@ -364,7 +351,7 @@ def test_every_registration_prepares_to_an_executor_valid_request() -> None:
 
     executor = NodeExecutor(build_registry())
     schema_inputs = _all_schema_inputs()
-    assert len(executor.registrations) == 59
+    assert len(executor.registrations) == 55
 
     for key, registration in executor.registrations.items():
         original = copy.deepcopy(schema_inputs[registration.input_schema.__name__])
@@ -377,7 +364,7 @@ def test_every_registration_prepares_to_an_executor_valid_request() -> None:
 
 def test_registry_declarations_are_explicit_valid_and_cover_known_dependencies() -> None:
     registrations = {(item.product, item.name): item for item in build_registry()}
-    assert len(registrations) == 59
+    assert len(registrations) == 55
     for key, item in registrations.items():
         assert isinstance(item.input_fields, tuple), key
         assert len(item.input_fields) == len(set(item.input_fields)), key
@@ -414,12 +401,6 @@ def test_registry_declarations_are_explicit_valid_and_cover_known_dependencies()
             "quote_content",
             "conversation_orders",
         },
-        ("main", "instructions"): {
-            "sub_instructions",
-            "history_messages",
-            "conversation_id",
-            "message_id",
-        },
     }
     for key, expected in expected_subsets.items():
         assert expected <= set(registrations[key].effective_input_fields), key
@@ -450,10 +431,6 @@ def test_registration_rejects_invalid_field_contracts() -> None:
             target,
             input_fields=("does_not_exist",),
         )
-    class _RequiredSchema(TypedDict):
-        index: int
-        org_str: str
-
     with pytest.raises(ValueError, match="Required fields not declared"):
         NodeRegistration(
             "main",

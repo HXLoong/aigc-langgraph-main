@@ -66,8 +66,6 @@ def generate(java_root: Path, output: Path) -> None:
             evidence = "原文名称核验 + 授权名单绑定"
         elif key == "swap/image_ocr":
             evidence = "结构化转写，后续候选核验；非像素事实证明"
-        elif key == "router/split_instructions":
-            evidence = "连续原文覆盖/边界/依赖核验"
         elif key.startswith("ticker/"):
             evidence = "检索/排序候选；最终身份由 GOATS 校验"
         else:

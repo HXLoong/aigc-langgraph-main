@@ -19,17 +19,24 @@ from app.graph.safe_node import safe_node
 from app.graph.state import AgentState, TraceEntry
 from app.subgraphs.option.backend import call_option_backend
 from app.subgraphs.option.order_id import extract_for_request_cancel, extract_order_ids
+from app.subgraphs.option.order_scope import OrderScopeError
 
 
 @safe_node
 async def option_extract_cancel(state: AgentState) -> dict[str, Any]:
     """option.extract_cancel 节点（request_cancel_order，确定性提取）。"""
-    order_ids = extract_for_request_cancel(
-        raw=state.get("raw_text"), quote=state.get("quote_content")
-    )
+    try:
+        order_ids = extract_for_request_cancel(
+            raw=state.get("raw_text"), quote=state.get("quote_content")
+        )
+    except OrderScopeError as exc:
+        return {"reply_text": str(exc), "trace": [TraceEntry(
+            node="option_extract_cancel", decision="order_scope_unresolved",
+        )]}
     prepared_state, order_ids, records = prepare_identity_scope(
         state, order_ids, scope="option/cancel", origin="raw" if extract_order_ids(state.get("raw_text")) else "quote",
         evidence=(state.get("raw_text") if extract_order_ids(state.get("raw_text")) else state.get("quote_content")) or "",
+        explicit_raw_ids=extract_order_ids(state.get("raw_text")), selection=True,
     )
     order_list = [{"orderId": order_id} for order_id in order_ids]
     order_count = sum(1 for item in order_list if item["orderId"])

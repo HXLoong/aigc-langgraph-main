@@ -344,14 +344,14 @@ def test_store_saves_auto_discovered_node_without_registry_entry(tmp_path) -> No
         observation_id="obs-future",
         trace_id="trace-future",
         turn=1,
-        name="finish_instructions",
+        name="future_summary",
         product_type="common",
         category="自动发现",
         replayable=False,
         side_effect="unknown",
-        output_fields=("instruction_results", "reply_text"),
+        output_fields=("summary_results", "reply_text"),
         input={"_results": {}},
-        output={"instruction_results": [], "reply_text": "执行完成", "trace": []},
+        output={"summary_results": [], "reply_text": "执行完成", "trace": []},
     )
     store = NodeFixtureStore(tmp_path, registry={})
 
@@ -364,7 +364,7 @@ def test_store_saves_auto_discovered_node_without_registry_entry(tmp_path) -> No
     )
 
     record = json.loads(path.read_text(encoding="utf-8").strip())
-    assert record["node_name"] == "finish_instructions"
+    assert record["node_name"] == "future_summary"
     assert record["replay"] == {"enabled": False, "side_effect": "unknown"}
 
 

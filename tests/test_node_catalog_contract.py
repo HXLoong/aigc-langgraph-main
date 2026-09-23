@@ -30,7 +30,7 @@ async def test_render_preparation_retains_business_code_and_matches_direct_execu
 
 
 @pytest.mark.parametrize("name", [
-    "render", "plan_instructions", "swap_select_counterparty", "swap_select_ticker",
+    "render", "intent_route", "swap_select_counterparty", "swap_select_ticker",
     "inquiry_extract", "place_close_extract",
 ])
 def test_shared_nodes_have_one_input_contract(name: str) -> None:
@@ -80,3 +80,19 @@ def test_catalogue_defines_all_shared_fields_and_exposure() -> None:
             assert view.output_fields == node.output_fields, name
             assert view.callable_path == node.callable_path, name
             assert view.side_effect == node.side_effect, name
+
+
+def test_retired_multi_action_nodes_are_not_exposed() -> None:
+    from app.node_execution.catalog import NODE_CATALOG
+
+    retired = {"plan_instructions", "instructions"}
+    assert not retired.intersection(NODE_CATALOG)
+    assert not retired.intersection(DEFAULT_NODE_REGISTRY)
+    assert not retired.intersection(node.name for node in build_registry())
+
+
+def test_main_registry_matches_current_graph() -> None:
+    from app.graph.main import build_main_graph
+
+    registered = {node.name for node in build_registry() if node.product == "main"}
+    assert registered == set(build_main_graph().nodes) - {"__start__"}

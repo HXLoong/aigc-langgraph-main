@@ -8,7 +8,7 @@
 
 | 主线 | 内容 | 主要 ADR |
 |---|---|---|
-| **原生 LangGraph 重构** | 子图原生嵌入、`Send` 多指令并行、RetryPolicy、State 分层与 output schema；幂等 / 回执 / 对账；字段证据契约；标的识别移交 Java 后端；Dify 只作历史参照 | 0024 · 0025 · 0026 · 0027 · 0028 |
+| **原生 LangGraph 重构** | 子图原生嵌入、单动作多订单、RetryPolicy、State 分层与 output schema；幂等 / 回执 / 对账；字段证据契约；标的识别移交 Java 后端；Dify 只作历史参照 | 0024 · 0025 · 0026 · 0027 · 0028 |
 | **数据集评测与评估** | ground truth 是数据集 `expected`：显式验收集 `tests/fixtures/categories/` + 节点级 fixture；harness HTTP 回归 + LLM Judge；错例先补 fixture 再修代码 | 0002 · 0005 · 0014 · 0029 · 0030 D3 |
 | **Harness 工程** | 任何提示词 / 节点 / 契约改动走同一条门：TDD、pytest、四项一致性 lint、ruff / mypy、数据集 PASS 率不低于前值、trace 可归因；CI 在 push / PR 上跑 | 0003 · 0004 · 0023 · 0030 |
 
@@ -49,21 +49,30 @@ python -m harness node-run --data tests/fixtures/nodes
 
 标的名称 / 代码由 LangGraph 按原文提取，Java 业务接口调用标的识别、分词和排序工具；本地不运行 ticker 子图（[ADR 0025](./docs/adr/0025-instrument-resolution-delegated-to-backend.md)，边界见 [docs/backend-instrument-boundary.md](docs/backend-instrument-boundary.md)）。
 
+询价入口由请求标志决定：`fast_query=1` 走主图 `quick_inquiry`，调用 GOATS 解析并以 `optionRfq` 提交；普通入口的 `new_inquiry` 只走模型提取、归一化和 `orderList` 提交。文本中出现雪球、参与型或“快速询价”等词不改变入口。
+
+每条消息按既有产品与意图优先级进入一个业务分支，同一动作允许多笔订单。
+混合输入沿用原路由，不做多动作拆分、依赖调度或新增识别门禁。
+选定本轮动作后，该业务分支识别出的订单统一使用这个动作，不再按分句分配不同动作。
+例如“撤单 A；查询 B”：若本轮选中撤单申请且识别到 A、B，则统一申请撤单 A、B，不另行查询 B。
+每笔订单仍须通过原有的身份、归属、状态和确认校验，识别到订单不等于已经完成交易。
+
 ```text
-企微回调 → Java Worker → POST /v1/workflows/run（Dify-兼容 wire）→ FastAPI → LangGraph
-                                                                        ↓
-   ingest（会话保护）→ entry_route → plan_instructions → pre_route → intent_route
-                                          ↓（多指令走 instructions 子图，Send 并行）
-                                swap / option / option_close 子图（原生嵌入）
-                                                                        ↓
-              persist_intent → render → remember_confirmed_params → record_history → persist
-                                                                        ↓
-                 LangFuse（trace + dataset + eval + annotation；self-hosted 或 Cloud）
-                                                                        ↓
-                 Java Backend（option / swap operate、set-intent、标的工具；契约见 docs/api-contracts/）
+企微回调 → Java Worker → POST /v1/workflows/run（Dify-兼容）→ FastAPI
+  → ingest（会话保护）→ entry_route
+      ├─ 快速询价 → quick_inquiry ──────────────────────────┐
+      ├─ 存量指令 → existing_command_query ────────────────┤
+      └─ 普通指令 → pre_route → intent_route                │
+          → swap / option / option_close / fallback        │
+          → persist_intent（Java 消息会话与意图写回）────────┤
+                                                           ↓
+  render → remember_confirmed_params → record_history → persist → outputs
+
+会话过期或入口异常：ingest → render。
+业务子图通过 Client Protocol 调用 Java；请求级 callback 记录 Langfuse trace。
 ```
 
-详见 [ADR 0024](./docs/adr/0024-langgraph-native-rearchitecture.md)（目标架构）+ [ADR 0028](./docs/adr/0028-session-entry-and-multi-instruction-send-orchestration.md)（入口与多指令）+ [ADR 0014](./docs/adr/0014-langfuse-as-harness-backend.md)（LangFuse 后台）。
+详见 [ADR 0024](./docs/adr/0024-langgraph-native-rearchitecture.md)（目标架构）+ [ADR 0028](./docs/adr/0028-session-entry-and-multi-instruction-send-orchestration.md)（入口与单动作多订单）+ [ADR 0014](./docs/adr/0014-langfuse-as-harness-backend.md)（LangFuse 后台）。
 
 ## 项目结构
 
@@ -71,7 +80,7 @@ python -m harness node-run --data tests/fixtures/nodes
 app/                        # LangGraph 应用层
 ├── main.py                 # FastAPI 入口 + lifespan + HTTPMetricsMiddleware + /metrics
 ├── api/                    # routes.py（/v1/workflows/run）+ nodes.py（/v1/nodes/*）+ idempotency / reconciliation / health
-├── graph/                  # state + safe_node / retry + cascade + instructions（多指令编排）+ memory
+├── graph/                  # state + safe_node / retry + cascade + memory
 ├── nodes/                  # ingest / entry_route / pre_route / intent_route（+route_rules）/ fast_query / persist / render / fallback
 ├── subgraphs/
 │   ├── swap/               # intent / place_order / select_counterparty / select_ticker / confirm / cancel / query_order / multimodal

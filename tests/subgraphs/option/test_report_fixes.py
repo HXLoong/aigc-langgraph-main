@@ -2,7 +2,6 @@ from unittest.mock import AsyncMock, MagicMock, Mock
 
 import pytest
 
-from app.graph import instructions
 from app.subgraphs.option import extract_inquiry
 from app.subgraphs.option.place_params import parse_place_params_with_lineage
 
@@ -15,12 +14,25 @@ QUOTE = (
 RAW = "第一个单 最大跟量，200万，A，限价10\n第二个单 限价6，100万，B"
 
 
-async def test_case026_batch_supplement_does_not_use_planner_llm(monkeypatch):
-    model = Mock(side_effect=AssertionError("same action batch must not split"))
-    monkeypatch.setattr(instructions, "get_qwen_standard", model)
-    result = await instructions.plan_instructions({"raw_text": RAW, "quote_content": QUOTE})
+async def test_case026_batch_supplement_submits_both_orders_without_llm(monkeypatch):
+    from app.llm.clients import _ChatLLM
+    from app.subgraphs.option.extract_place import option_extract_place
+
+    model = Mock(side_effect=AssertionError("batch supplement must use deterministic extraction"))
+    monkeypatch.setattr(_ChatLLM, "with_structured_output", model)
+    client = Mock(operate=AsyncMock(return_value={"code": 0, "data": "Java 批量补参回执"}))
+    monkeypatch.setattr("app.subgraphs.option.backend.OptionClientHttpx", lambda: client)
+    result = await option_extract_place({
+        "raw_text": RAW, "quote_content": QUOTE, "conversation_id": "batch",
+        "user_id": "user", "room_id": "room", "message_id": 123,
+    })
     assert not result.get("error"), result
-    assert result["sub_instructions"] == []
+    client.operate.assert_awaited_once()
+    request = client.operate.await_args.args[0].model_dump(mode="json", by_alias=True)
+    assert request["type"] == "place_order_from_quote"
+    assert [row["orderId"] for row in request["orderList"]] == [Q1, Q2]
+    assert [row["tenor"] for row in request["orderList"]] == ["1M", "2M"]
+    assert result["api_result"] == "Java 批量补参回执"
     model.assert_not_called()
 
 
@@ -77,31 +89,3 @@ async def test_case027_raw_alias_survives_extraction_then_normalizes(monkeypatch
     assert normalized["iq_order_list"][0]["strikePercentage"] == 100
     record = normalized["field_records"]["option/inquiry.orderList.0.optionType"]
     assert record.value == "欧式看涨" and record.evidence == token
-
-
-async def test_planner_uses_text_evidence_and_code_computes_offsets(monkeypatch):
-    raw = "买甲；然后卖乙"
-    model = MagicMock()
-    model.with_structured_output.return_value.ainvoke = AsyncMock(
-        return_value={
-            "instructions": [
-                {"text": "买甲", "evidence": "买甲", "confidence": 0.99},
-                {"text": "卖乙", "evidence": "卖乙", "confidence": 0.99, "depends_on": [0]},
-            ]
-        }
-    )
-    monkeypatch.setattr(instructions, "get_qwen_standard", lambda: model)
-    result = await instructions.plan_instructions({"raw_text": raw})
-    assert not result.get("error"), result
-    assert [(i["start"], i["end"]) for i in result["sub_instructions"]] == [(0, 2), (5, 7)]
-    schema = model.with_structured_output.call_args.args[0].model_json_schema()
-    assert all("start" not in d.get("properties", {}) for d in schema.get("$defs", {}).values())
-
-
-@pytest.mark.parametrize(
-    "suffix", ["先不下单", "如果成交后再查询", "再平仓", "操作H-20260920-1234567890"]
-)
-def test_batch_shortcut_does_not_discard_unknown_or_negated_instructions(suffix):
-    from app.subgraphs.option.place_params import is_quoted_batch_supplement
-
-    assert not is_quoted_batch_supplement(RAW + "，" + suffix, QUOTE)

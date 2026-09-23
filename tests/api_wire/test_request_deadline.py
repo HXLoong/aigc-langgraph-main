@@ -95,7 +95,7 @@ async def test_llm_budget_is_wall_clock_and_cancels_provider(monkeypatch):
     assert cancelled == [True]
 
 
-@pytest.mark.parametrize("field", ["multimodal_fetch_timeout_seconds", "goats_agent_rfq_timeout_seconds", "goats_agent_instruction_timeout_seconds", "goats_rfq_direct_timeout_seconds"])
+@pytest.mark.parametrize("field", ["multimodal_fetch_timeout_seconds", "goats_agent_rfq_timeout_seconds", "goats_agent_instruction_timeout_seconds"])
 def test_all_tool_default_budgets_are_five_seconds(field):
     from app.config import Settings
     assert Settings.model_fields[field].default == 5

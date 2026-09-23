@@ -30,24 +30,40 @@ from harness.multi_turn import run_case_multi
 ROOT = Path(__file__).resolve().parents[2]
 
 
-def test_load_categories_total() -> None:
-    cases = load_golden(ROOT / "tests" / "fixtures" / "categories")
-    assert len(cases) == 389
+def test_load_categories_total(tmp_path: Path) -> None:
+    categories = tmp_path / "categories"
+    categories.mkdir()
+    _write(categories, {"caseNo": "a", "send_text": "询价", "category": "option"},
+           {"caseNo": "b", "send_text": "下单", "category": "swap"})
+    _write(tmp_path, {"caseNo": "outside", "send_text": "不应加载"})
+    nested = categories / "archive"
+    nested.mkdir()
+    _write(nested, {"caseNo": "archived", "send_text": "不应加载"})
+    cases = load_golden(categories)
+    assert [case.id for case in cases] == ["a", "b"]
     assert all(case.dialect == "a" for case in cases)
 
 
-def test_default_discovery_includes_unified_b_dialect() -> None:
-    """ADR 0024 D6：B 方言（unified_golden.jsonl，921 条 / 251 多轮）并入 harness 默认发现，
-    可执行样本 389 → 1310、多轮 10 → 261。"""
-    cases = load_golden()
-    assert len(cases) == 1310
-    assert sum(1 for case in cases if len(case.turns) > 1) == 261
-    assert sum(1 for case in cases if case.dialect == "b") == 921
-    assert len({case.id for case in cases}) == 1310, "两方言 id 不得冲突"
+def test_default_discovery_includes_unified_b_dialect(tmp_path: Path) -> None:
+    """默认发现同时加载两种方言；空轮仍加载计数，但不能执行。"""
+    categories = tmp_path / "categories"
+    categories.mkdir()
+    _write(categories, {"caseNo": "a", "send_text": "询价", "category": "option"})
+    _write(tmp_path,
+           {"id": "b", "category": "swap", "conversation": [
+               {"raw_content": "下单"}, {"raw_content": "确认下单"}]},
+           {"id": "empty", "category": "swap", "conversation": [
+               {"raw_content": "下单"}, {"raw_content": "", "quote_desc": "引用上一轮"}]},
+           ).rename(tmp_path / "unified_golden.jsonl")
+    cases = load_golden(root=tmp_path)
+    assert {case.id for case in cases} == {"a", "b", "empty"}
+    assert len(cases) == 3
+    assert sum(1 for case in cases if len(case.turns) > 1) == 2
+    assert sum(1 for case in cases if case.dialect == "b") == 2
     runnable, skipped = select_runnable(cases)
-    # 48 条 B case 某轮 raw_content 为空（用户文本写进了 quote_desc，Issue #113）：加载计数、不执行
-    assert len(skipped) == 48 and all(case.dialect == "b" for case in skipped)
-    assert len(runnable) == 1262
+    assert [case.id for case in skipped] == ["empty"]
+    assert skipped[0].dialect == "b"
+    assert {case.id for case in runnable} == {"a", "b"}
 
 
 def test_b_dialect_empty_raw_content_marks_case_unrunnable(tmp_path: Path) -> None:
@@ -76,9 +92,14 @@ def test_swap_case_normalizes_multiline_assertions() -> None:
 
 
 def test_index_and_filter() -> None:
-    cases = load_golden(ROOT / "tests" / "fixtures" / "categories")
-    assert len(filter_by_category(cases, "option")) == 14
-    assert set(index_by_category(cases)) >= {"swap_prod_data", "option_inquiry_case"}
+    inquiry = GoldenCase(id="inquiry", category="option_inquiry_case")
+    close = GoldenCase(id="close", category="option_close_case")
+    swap = GoldenCase(id="swap", category="swap_prod_data")
+    cases = [inquiry, close, swap]
+    assert filter_by_category(cases, "option") == [inquiry, close]
+    assert index_by_category(cases) == {
+        "option_inquiry_case": [inquiry], "option_close_case": [close], "swap_prod_data": [swap],
+    }
 
 
 def _write(tmp_path: Path, *rows: dict) -> Path:

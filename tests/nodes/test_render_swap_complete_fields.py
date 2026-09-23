@@ -15,7 +15,6 @@ import pytest
 from app.graph.state import AgentState, TickerCandidate
 from app.nodes.render import render
 from app.tools.receipts import UNCERTAIN_REPLY
-from app.tools.receipts import UNCERTAIN_REPLY
 
 
 @pytest.mark.parametrize(

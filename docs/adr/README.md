@@ -38,13 +38,13 @@
 | [0025](./0025-instrument-resolution-delegated-to-backend.md) | 标的识别职责移交 Java 后端：LangGraph 只提取原文候选 | 已采纳（2026-09-20 落地，追认） | 取代 **0008**；修订 **0001** D4/D6、**0012**、**0023** D5、**0024** D2/D3 |
 | [0026](./0026-request-idempotency-uncertain-receipts-reconciliation.md) | 请求级幂等、不确定回执与运维对账 | 已采纳（2026-09-18 落地，追认） | 修订 **0024** D4；补 **0021** |
 | [0027](./0027-field-evidence-contract.md) | 字段证据契约：模型只产原文候选，Code 归一化并记录来源与锁定 | 已采纳（2026-09-18 落地，接入进度见 migration 清单） | 修订 **0023** D2、**0024** D2 |
-| [0028](./0028-session-entry-and-multi-instruction-send-orchestration.md) | 会话保护入口分流与多指令 Send 编排 | 已采纳（2026-09-18 / 09-21 落地，追认） | 修订 **0015**、**0024** D3 |
+| [0028](./0028-session-entry-and-multi-instruction-send-orchestration.md) | 会话保护入口分流与单动作多订单 | 入口沿用，多指令编排已退役 | 修订 **0015**、**0024** D3 |
 | [0029](./0029-node-level-debug-api-and-regression-workbench.md) | 节点级调试接口与节点回归工作台（含 HTTP 录放） | 已采纳（2026-09-22 落地，追认） | 修订 **0024** D6；沿用 **0002** |
 | [0030](./0030-goal-restatement-native-langgraph-dataset-eval-harness.md) | 目标重述：原生 LangGraph 重构 + 数据集评测 + Harness 工程 | 已采纳（2026-09-22） | 取代 **0016**、**0017**；修订 **0001** D8/D9、**0002**、**0005**、**0019**、**0024** D8 |
 
 ## 按目标主线分组
 
-- **原生 LangGraph 重构**：0000（为什么迁）→ 0001（怎么重写）→ 0007（子图扩张规则）→ 0024（目标架构，已冻结）→ 0025（标的移交后端）· 0026（幂等 / 回执 / 对账）· 0027（字段证据契约）· 0028（入口分流与多指令编排）· 0021（文本二阶段确认）· 0015（一级路由）· 0011（option 拆分）· 0009（MySQL / TDSQL 共库）
+- **原生 LangGraph 重构**：0000（为什么迁）→ 0001（怎么重写）→ 0007（子图扩张规则）→ 0024（目标架构，已冻结）→ 0025（标的移交后端）· 0026（幂等 / 回执 / 对账）· 0027（字段证据契约）· 0028（入口分流与单动作多订单）· 0021（文本二阶段确认）· 0015（一级路由）· 0011（option 拆分）· 0009（MySQL / TDSQL 共库）
 - **数据集评测与评估**：0002（Harness 三位一体）· 0005（Judge + 业务方抽检）· 0014（LangFuse 后台）· 0004（trace 颗粒度）· 0029（节点级回归工作台）· **0030 D3（统一评测门）**
 - **Harness 工程纪律**：0003（提示词版本化）· 0023（PromptSpec）· 0020（模型统一）· 0019（故障升级阈值）· 0030 D1-3 / D4
 - **历史存根**：0006（HITL interrupt）· 0008（ticker ReAct）· 0010（Qwen 分工）· 0013（动态片段）· 0016（M3 范围）· 0017（M4 退出门）· 0018（双模型）· 0022（manifest 治理）
@@ -66,7 +66,7 @@
 
 | 项 | 出处 | 动作 | issue |
 |---|---|---|---|
-| CI 无 MySQL service，`tests/integration` 真实 MySQL 用例只能本地 opt-in | 0009 / 0024 D4 | 补 CI MySQL service | — |
+| CI slow job 已包含 MySQL service；本地真实数据库用例仍需 opt-in | 0009 / 0024 D4 | 保持 CI 与本地数据库回归 | — |
 | `app/tools/ticker_client.py` 在 `app/` 内无调用方 | 0025 | 删除或写明保留理由 | #231 |
 | VL 接线后 `llm_failure_high` 未按 `model` 拆分；`.env.customer.template` 视觉模型留空 | 0019 / 0020 | 阈值重估 + 部署 checklist | #232 |
 | 上线观察层基线（5xx / cascade / P95）待当前模型口径重测 | 0030 D3 / 0020 | 跑 `scripts/langfuse/langfuse_eval.py` + P95 重测后回填 | #233 |

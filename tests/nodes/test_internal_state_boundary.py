@@ -1,15 +1,5 @@
-"""多指令计划由 Code 生成；每轮清空，不接受外部覆盖内部执行状态。"""
+"""外部请求不能注入已废弃执行计划或覆盖内部会话活动时间。"""
 from app.api.turn_state import inputs_to_state
-from app.nodes.ingest import ingest
-
-
-async def test_instruction_plan_and_results_do_not_leak_across_turns():
-    output = await ingest({
-        "sub_instructions": [{"text": "旧指令"}],
-        "instruction_results": [{"status": "response_received"}],
-    })
-    assert output["sub_instructions"] == []
-    assert output["instruction_results"] == []
 
 
 def test_caller_cannot_inject_internal_instruction_execution():

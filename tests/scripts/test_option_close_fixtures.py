@@ -14,7 +14,7 @@ def _cases() -> dict[str, dict]:
 
 def test_close_cases_have_per_turn_assertions_and_explicit_quotes() -> None:
     cases = _cases()
-    assert set(cases) == {f"case-{n:03d}" for n in range(30, 35)}
+    assert set(cases) == {f"case-{n:03d}" for n in range(30, 35)} | {"case-034-lifecycle"}
     for case in cases.values():
         for index, turn in enumerate([case, *case["sub_scenes"]]):
             assert turn["expected"]["product_type"] == "option_close"

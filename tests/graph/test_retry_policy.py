@@ -141,7 +141,7 @@ def test_add_io_node_rejects_function_without_io_node_decorator() -> None:
 
 #: 只读 IO 节点：必须带 RetryPolicy；耗尽收尾由 test_retry_recovery.py 验证
 READ_NODES: dict[str, set[str]] = {
-    "main": {"intent_route", "existing_command_query", "plan_instructions"},
+    "main": {"intent_route", "existing_command_query"},
     "swap": {
         "swap_intent", "swap_select_counterparty", "swap_select_ticker",
         "swap_recognize_fresh_counterparty",
@@ -149,7 +149,7 @@ READ_NODES: dict[str, set[str]] = {
     },
     "swap_place": {"swap_extract_candidates"},
     "option": {"option_intent", "option_extract_query"},
-    "inquiry": {"inquiry_fast_parse", "inquiry_extract"},
+    "inquiry": {"inquiry_extract"},
     "close": {"close_intent", "close_holding_query", "close_query_status"},
     "place_close": {"place_close_fetch_orders", "place_close_extract"},
 }
@@ -161,7 +161,7 @@ WRITE_NODES: dict[str, set[str]] = {
         "option_extract_inquiry", "option_extract_place", "option_extract_confirm_place",
         "option_extract_cancel", "option_extract_cancel_place", "option_extract_confirm_cancel",
     },
-    "inquiry": {"inquiry_fast_submit", "inquiry_submit"},
+    "inquiry": {"inquiry_submit"},
     "close": {"close_confirm_close", "close_cancel_close", "close_confirm_cancel"},
     "place_close": {"place_close_submit"},
 }
@@ -170,7 +170,7 @@ PURE_NODES: dict[str, set[str]] = {
     "main": {
         "ingest", "entry_route", "pre_route", "fallback", "render",
         "remember_confirmed_params", "record_history",
-        "swap", "option", "option_close", "instructions",
+        "swap", "option", "option_close",
     },
     "swap": {"swap_place_order", "swap_apply_picks", "swap_unknown"},
     "swap_place": {"swap_normalize", "swap_place_result"},

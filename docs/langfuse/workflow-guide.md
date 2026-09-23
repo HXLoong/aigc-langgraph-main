@@ -391,4 +391,3 @@ python scripts/langfuse/langfuse_eval.py --dataset business-swap_prod_data --con
   `reply-check` 名写回（此前误用 `otc-option-judge`）
 - 业务集（`categories/`）依赖 Java 后端与授权账号，只在开发 / staging 环境用 `--dataset business-*` 或
   `scripts/local_eval.py` 跑，不进 CI；依赖矩阵见 `docs/testing/README.md` §一a
-

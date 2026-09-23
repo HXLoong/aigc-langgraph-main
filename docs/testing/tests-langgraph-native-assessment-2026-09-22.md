@@ -1,5 +1,7 @@
 # tests/ 测试脚本评估 · 按 LangGraph 原生架构口径
 
+> 本文初评及分批记录保留当时事实。2026-09-22 合并后已删除多动作编排，注册表与 RetryPolicy 清单不再包含 `plan_instructions` / `instructions`；以下涉及它们的初评与修复记录属于历史。
+
 - 日期：2026-09-22
 - 基线：`main` @ `f1e205f`（PR #214 合入后；本地分支与 origin/main 同 sha）
 - 口径：[ADR 0024](../adr/0024-langgraph-native-rearchitecture.md) D2–D7 + `.claude/rules/{langgraph-patterns,testing}.md` + `tests/CLAUDE.md` + 根 `CLAUDE.md` 核心原则 7（标的原文交后端）

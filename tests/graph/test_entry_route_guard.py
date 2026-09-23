@@ -14,13 +14,12 @@ from app.graph.safe_node import safe_node
 from app.graph.state import Message, TraceEntry
 
 
-@pytest.mark.parametrize("worker", [False, True])
-def test_compiled_entry_has_exactly_three_business_edges(worker):
-    graph = main.build_main_graph(_instruction_worker=worker).get_graph()
+def test_compiled_entry_has_exactly_three_business_edges():
+    graph = main.build_main_graph().get_graph()
     outgoing = [edge for edge in graph.edges if edge.source == "entry_route"]
     assert len(outgoing) == 3
     assert {edge.target for edge in outgoing} == {
-        "quick_inquiry", "existing_command_query", "pre_route" if worker else "plan_instructions",
+        "quick_inquiry", "existing_command_query", "pre_route",
     }
     assert {edge.target for edge in graph.edges if edge.source == "ingest"} == {
         "entry_route", "render",
@@ -37,11 +36,10 @@ def test_business_selector_has_no_session_exit(flags, expected):
     assert main._route_entry({**flags, "session_status": "expired"}) == expected
 
 
-@pytest.mark.parametrize("worker", [False, True])
 @pytest.mark.parametrize("flags", [
     {"fast_query": "1"}, {"existing_command": "1", "at_bot": "0"}, {},
 ])
-async def test_expired_session_stops_before_every_business_branch(monkeypatch, worker, flags):
+async def test_expired_session_stops_before_every_business_branch(monkeypatch, flags):
     ingest = importlib.import_module("app.nodes.ingest")
     monkeypatch.setattr(ingest, "time", lambda: 2000)
     monkeypatch.setattr(ingest, "get_settings", lambda: SimpleNamespace(
@@ -54,11 +52,11 @@ async def test_expired_session_stops_before_every_business_branch(monkeypatch, w
         called.append("business")
         raise AssertionError("expired session entered business processing")
 
-    for name in ("entry_route", "quick_inquiry", "existing_command_query", "plan_instructions",
+    for name in ("entry_route", "quick_inquiry", "existing_command_query",
                  "pre_route", "intent_route"):
         monkeypatch.setattr(main, name, forbidden, raising=False)
     monkeypatch.setattr(main, "persist", AsyncMock(return_value={}))
-    result = await main.build_main_graph(_instruction_worker=worker).ainvoke({
+    result = await main.build_main_graph().ainvoke({
         **flags, "raw_text": "确认下单", "last_activity_at": 100,
         "history_messages": [Message(role="assistant", content="旧订单")],
         "last_confirmed_params": {"order_ids": ["Q-old"]},
@@ -88,7 +86,7 @@ async def test_ingest_failure_does_not_continue_to_business(monkeypatch):
         return {"reply_text": "不应进入业务分支"}
 
     monkeypatch.setattr(main, "ingest", broken_ingest)
-    for name in ("entry_route", "quick_inquiry", "existing_command_query", "plan_instructions"):
+    for name in ("entry_route", "quick_inquiry", "existing_command_query", "pre_route"):
         monkeypatch.setattr(main, name, forbidden, raising=False)
     monkeypatch.setattr(main, "persist", AsyncMock(return_value={}))
     result = await main.build_main_graph().ainvoke({"raw_text": "x", "fast_query": "1"})
@@ -102,8 +100,7 @@ async def test_ingest_failure_does_not_continue_to_business(monkeypatch):
     ({"existing_command": "1", "at_bot": "0"}, "existing_command_query"),
     ({"existing_command": "1", "at_bot": "1"}, "pre_route"),
 ])
-@pytest.mark.parametrize("worker", [False, True])
-async def test_valid_session_records_choice_and_keeps_worker_boundary(monkeypatch, flags, chosen, worker):
+async def test_valid_session_records_choice(monkeypatch, flags, chosen):
     calls = []
 
     @safe_node
@@ -117,30 +114,22 @@ async def test_valid_session_records_choice_and_keeps_worker_boundary(monkeypatc
         return {"reply_text": "IGNORE_REQUEST_NOT_REPLY_USER"}
 
     @io_node
-    async def plan(state):
-        calls.append("plan_instructions")
-        return {"sub_instructions": []}
-
-    @io_node
     async def intent(state):
         calls.append("intent_route")
         return {"product_type": "unknown"}
 
     monkeypatch.setattr(main, "quick_inquiry", quick)
     monkeypatch.setattr(main, "existing_command_query", existing)
-    monkeypatch.setattr(main, "plan_instructions", plan)
     monkeypatch.setattr(main, "intent_route", intent)
     monkeypatch.setattr(main, "pre_route", AsyncMock(return_value={}))
     monkeypatch.setattr(main, "persist", AsyncMock(return_value={}))
-    result = await main.build_main_graph(_instruction_worker=worker).ainvoke({**flags, "raw_text": "业务输入"})
+    result = await main.build_main_graph().ainvoke({**flags, "raw_text": "业务输入"})
     route = [e for e in result["trace"] if e.node == "entry_route"]
     assert len(route) == 1 and route[0].decision == chosen
     assert result["trace"][0].node == "ingest"
     assert route[0].elapsed_ms is not None
-    expected = (["intent_route"] if worker else ["plan_instructions", "intent_route"]) if chosen == "pre_route" else [chosen]
+    expected = ["intent_route"] if chosen == "pre_route" else [chosen]
     assert calls == expected
-    if worker:
-        assert not result.get("history_messages")
 
 
 async def test_router_trace_resets_between_turns_without_erasing_ingest(monkeypatch):

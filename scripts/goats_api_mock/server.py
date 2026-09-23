@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""独立运行的 GOATS 期权持仓与平仓交易 mock，不连接业务服务或数据库。"""
+"""独立运行的 GOATS 期权持仓、开仓和平仓 mock，不连接业务服务或数据库。"""
 
 from __future__ import annotations
 
@@ -124,6 +124,7 @@ class OrderFilter(BaseModel):
     trade_date: str | None = Field(default=None, alias="tradeDate")
     contract_code: str | None = Field(default=None, alias="contractCode")
     key_stock_order_id: int | None = Field(default=None, alias="keyStockOrderId")
+    contract_type: str | None = Field(default=None, alias="contractType")
 
 
 class OrderQuery(BaseModel):
@@ -136,6 +137,25 @@ class WithdrawRequest(BaseModel):
     key_stock_order_id: int = Field(alias="keyStockOrderId", gt=0)
 
 
+class OpenRequest(BaseModel):
+    id: int = Field(gt=0)
+    contract_type: str = Field(alias="contractType", min_length=1)
+    direction: Literal["CALL", "PUT"]
+    trade_direction: Literal["BUY", "SELL"] = Field(alias="tradeDirection")
+    quotation_order_type: str = Field(alias="quotationOrderType", min_length=1)
+    open_position_type: Literal["MARKET_PRICE", "LIMIT_PRICE", "POV", "TWAP"] = Field(
+        alias="openPositionType"
+    )
+    collateral_notional: Decimal = Field(alias="collateralNotional", gt=0)
+    short_name: str = Field(alias="shortName", min_length=1)
+    initial_underlying_price_order: Decimal | None = Field(
+        default=None, alias="initialUnderlyingPriceOrder", gt=0
+    )
+    algorithm_order_vol: Decimal | None = Field(default=None, alias="algorithmOrderVol", gt=0)
+    algorithm_order_start_time: str | None = Field(default=None, alias="algorithmOrderStartTime")
+    algorithm_order_end_time: str | None = Field(default=None, alias="algorithmOrderEndTime")
+
+
 def goats_response(data: Any = None, *, error: str | None = None) -> dict[str, Any]:
     return {
         "errMsg": error,
@@ -146,6 +166,98 @@ def goats_response(data: Any = None, *, error: str | None = None) -> dict[str, A
         },
         "data": jsonable_encoder(data),
     }
+
+
+class MockOpening:
+    """模拟审核及异步撤单；只生成模拟编号，不连接真实询价或成交系统。"""
+
+    def __init__(self) -> None:
+        self.orders: dict[int, dict[str, Any]] = {}
+        self.owners: dict[int, tuple[str, str | None]] = {}
+        self.applications: dict[str, int] = {}
+        self.withdrawals: dict[str, int] = {}
+        # Java 的审核订单号字段是 Integer，不能复用平仓的微秒级 Long 编号。
+        self.identifiers = count(1_000_000_000 + int(time.time()) % 1_000_000_000)
+
+    def visible(self, identifier: int | None, agent: str, user: str | None) -> bool:
+        owner = self.owners.get(identifier) if identifier is not None else None
+        return owner is not None and owner[0] == agent and (user is None or owner[1] == user)
+
+    def place(self, request: OpenRequest, agent: str, user: str | None) -> dict[str, Any]:
+        if request.open_position_type == "LIMIT_PRICE" and request.initial_underlying_price_order is None:
+            return goats_response(error="限价单缺少价格")
+        if request.open_position_type == "POV" and request.algorithm_order_vol is None:
+            return goats_response(error="POV 缺少跟量比例")
+        if request.open_position_type == "TWAP" and not (
+            request.algorithm_order_start_time and request.algorithm_order_end_time
+        ):
+            return goats_response(error="TWAP 缺少起止时间")
+        identifier = next(self.identifiers)
+        application_id = f"MOCK-OPEN-{identifier}"
+        now = datetime.now()
+        self.orders[identifier] = {
+            "trdGoatsOptionOrder": {
+                "keyStockOrderId": identifier, "keyGoatsOptionOrderId": identifier,
+                "keyRfqId": request.id, "orderStatus": "TOTRADE_PENDING",
+                "tradeDate": now.strftime("%Y-%m-%d"),
+                "tradeTime": now.strftime("%Y-%m-%d %H:%M:%S"),
+                "tradeDirection": request.trade_direction, "ctptyName": request.short_name,
+                "quotationOrderType": request.quotation_order_type,
+                "dealNotional": 0, "dealPrice": 0,
+            },
+            "trdGoatsOptionStructure": {
+                "contractType": request.contract_type, "direction": request.direction,
+                "initialNotional": request.collateral_notional,
+                "openPositionType": request.open_position_type,
+                "initialUnderlyingPrice": request.initial_underlying_price_order,
+                "algorithmOrderVol": request.algorithm_order_vol,
+                "algorithmOrderStartTime": request.algorithm_order_start_time,
+                "algorithmOrderEndTime": request.algorithm_order_end_time,
+            },
+        }
+        self.owners[identifier] = (agent, user)
+        self.applications[application_id] = identifier
+        logger.info("模拟开仓下单成功：申请编号=%s，模拟订单=%s", application_id, identifier)
+        return goats_response(application_id)
+
+    def status(self, application_id: str, agent: str, user: str | None) -> dict[str, Any]:
+        identifier = self.applications.get(application_id)
+        if not self.visible(identifier, agent, user):
+            return goats_response(error="模拟开仓申请不存在或不属于当前身份")
+        return goats_response({"completed": True, "success": True, "failureMsg": None,
+                               "keyStockOrderId": identifier})
+
+    def query(self, request: OrderQuery, agent: str, user: str | None) -> dict[str, Any]:
+        filters = (request.filter or OrderFilter()).model_dump(by_alias=True, exclude_none=True)
+        rows = [row for identifier, row in self.orders.items()
+                if self.visible(identifier, agent, user) and all(
+                    not value or {
+                        **row["trdGoatsOptionOrder"], **row["trdGoatsOptionStructure"],
+                    }.get(key) == value for key, value in filters.items())]
+        total = len(rows)
+        if request.page_size:
+            start = (request.page_num - 1) * request.page_size
+            rows = rows[start:start + request.page_size]
+        return goats_response({"pageNum": request.page_num, "pageSize": len(rows),
+                               "total": total, "queryResults": deepcopy(rows)})
+
+    def withdraw(self, identifier: int, agent: str, user: str | None) -> dict[str, Any]:
+        if not self.visible(identifier, agent, user):
+            return goats_response(error="模拟开仓订单不存在或不属于当前身份")
+        code = f"MOCK-OPEN-CANCEL-{identifier}"
+        if code not in self.withdrawals:
+            self.withdrawals[code] = identifier
+            self.orders[identifier]["trdGoatsOptionOrder"]["orderStatus"] = "PENDING_CANCEL"
+            logger.info("模拟开仓撤单已受理：模拟订单=%s，撤单编号=%s", identifier, code)
+        return goats_response({"completed": False, "stockOrderCode": code})
+
+    def withdrawal_result(self, code: str, agent: str, user: str | None) -> dict[str, Any]:
+        identifier = self.withdrawals.get(code)
+        if identifier is None or not self.visible(identifier, agent, user):
+            return goats_response(error="模拟开仓撤单回执不存在或不属于当前身份")
+        self.orders[identifier]["trdGoatsOptionOrder"]["orderStatus"] = "CANCELLED"
+        return goats_response({"completed": True, "stockOrderCode": code,
+                               "withdrawResult": "SUCCESS", "failureMsg": None})
 
 
 class MockTrading:
@@ -273,15 +385,53 @@ def create_app(data_file: Path = DEFAULT_DATA_FILE) -> FastAPI:
     async def lifespan(application: FastAPI) -> AsyncIterator[None]:
         application.state.snapshot = load_snapshot(data_file)
         application.state.trading = MockTrading(application.state.snapshot["data"]["queryResults"])
+        application.state.opening = MockOpening()
         logger.info(
             "持仓数据加载完成：文件=%s，数量=%s 条",
             data_file,
             len(application.state.snapshot["data"]["queryResults"]),
         )
-        logger.info("模拟交易已启用：平仓、订单查询、撤单及撤单结果；订单仅保存在内存，重启清空")
+        logger.info("模拟交易已启用：开仓、平仓、订单查询、撤单及撤单结果；订单仅保存在内存，重启清空")
         yield
 
-    application = FastAPI(title="GOATS 期权 Mock（持仓、平仓、撤单）", lifespan=lifespan)
+    application = FastAPI(title="GOATS 期权 Mock（持仓、开仓、平仓、撤单）", lifespan=lifespan)
+
+    @application.post("/api/internal/agent/option/order")
+    async def place_open(
+        request: OpenRequest, agentid: Annotated[str, Header(min_length=1)],
+        agentsubid: Annotated[str | None, Header()] = None,
+    ) -> dict[str, Any]:
+        return application.state.opening.place(request, agentid, agentsubid)
+
+    @application.get("/api/internal/agent/option/order/status")
+    async def query_open_status(
+        order_id: Annotated[str, Query(alias="orderId", min_length=1)],
+        agentid: Annotated[str, Header(min_length=1)],
+        agentsubid: Annotated[str | None, Header()] = None,
+    ) -> dict[str, Any]:
+        return application.state.opening.status(order_id, agentid, agentsubid)
+
+    @application.post("/api/internal/agent/option/order/query")
+    async def query_open(
+        request: OrderQuery, agentid: Annotated[str, Header(min_length=1)],
+        agentsubid: Annotated[str | None, Header()] = None,
+    ) -> dict[str, Any]:
+        return application.state.opening.query(request, agentid, agentsubid)
+
+    @application.post("/api/internal/agent/option/order/withdraw")
+    async def withdraw_open(
+        request: WithdrawRequest, agentid: Annotated[str, Header(min_length=1)],
+        agentsubid: Annotated[str | None, Header()] = None,
+    ) -> dict[str, Any]:
+        return application.state.opening.withdraw(request.key_stock_order_id, agentid, agentsubid)
+
+    @application.get("/api/internal/agent/option/order/withdrawResult")
+    async def query_open_withdrawal(
+        stock_order_code: Annotated[str, Query(alias="stockOrderCode", min_length=1)],
+        agentid: Annotated[str, Header(min_length=1)],
+        agentsubid: Annotated[str | None, Header()] = None,
+    ) -> dict[str, Any]:
+        return application.state.opening.withdrawal_result(stock_order_code, agentid, agentsubid)
 
     @application.post("/api/internal/agent/option/order/close")
     async def place_close(
@@ -339,7 +489,7 @@ def create_app(data_file: Path = DEFAULT_DATA_FILE) -> FastAPI:
 
 
 def main(argv: Sequence[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="启动 GOATS 期权 Mock 服务（持仓、平仓、撤单）")
+    parser = argparse.ArgumentParser(description="启动 GOATS 期权 Mock 服务（持仓、开仓、平仓、撤单）")
     parser.add_argument("--host", default="127.0.0.1", help="监听地址")
     parser.add_argument("--port", type=int, default=20000, help="监听端口（默认 20000）")
     args = parser.parse_args(argv)

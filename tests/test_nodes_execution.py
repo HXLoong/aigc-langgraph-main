@@ -254,7 +254,6 @@ async def test_option_real_client_to_http_mock_and_composite_output(
     composite: bool,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    from app.extraction.intent_evidence import IntentEvidence
     from app.subgraphs.option.models import OptionIntentOutput
     from app.tools.option_client import OptionClientHttpx
 
@@ -357,8 +356,6 @@ async def test_multimodal_stages_use_http_and_llm_boundaries_only(
 
     from app.extraction.candidates import candidate_model
     from app.subgraphs.swap.models import SwapPlaceOrderParams
-    from app.subgraphs.swap.multimodal_evidence import ImageTranscription
-    from app.subgraphs.swap.place_order import CANDIDATE_MODEL
 
     workbook = Workbook()
     workbook.active.append(["标的代码", "数量"])
@@ -384,23 +381,6 @@ async def test_multimodal_stages_use_http_and_llm_boundaries_only(
             "value": value, "evidence": value, "confidence": 0.9,
             "origin": "attachment", "reference": reference,
         }
-
-    async def extract(messages: list[tuple[str, str]]) -> object:
-        # 模型只回原文候选（ADR 0027）：证据必须落在本附件来源文本内。
-        sources = json.loads(messages[1][1])["sources"]
-        key, text = next(
-            (key, text) for key, text in sources.items()
-            if key.startswith("attachment:") and "600519.SH" in text and "100" in text
-        )
-        reference = key.removeprefix("attachment:")
-
-        def cell(value: str) -> dict[str, object]:
-            return {"value": value, "evidence": text, "confidence": 0.9,
-                    "origin": "attachment", "reference": reference}
-
-        return CANDIDATE_MODEL.model_validate(
-            {"orderList": [{"placeOrderWindCode": cell("600519.SH"), "placeOrderQuantity": cell("100")}]}
-        )
 
     model = MagicMock()
     model.with_structured_output.return_value.ainvoke = AsyncMock(

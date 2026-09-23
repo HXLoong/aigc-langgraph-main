@@ -37,7 +37,7 @@ result = await model.with_structured_output(SwapIntentOutput).ainvoke(messages)
 - 共享拼装（历史、对手列表、JSON 列表）只在 `app/prompts/blocks.py` 定义一次，不在子图里复制
 - `injects` 登记的占位符必须在 `.md` system 段里真实存在，`build_messages` 构造期校验（`tests/prompts/test_prompt_spec.py`）
 - 灰度节点必须把 `build_messages` 返回的 `prompt_name` 写进 `TraceEntry.llm_output["prompt_name"]`（ADR 0003 硬前置：进 `_versions.yaml` 前必须先写 trace，否则版本对比失真）
-- 当前 15 个业务 PromptSpec；标的工具在后端执行。system 使用固定资产，历史和参考数据经 `blocks.source_payload` 放入 user。`fresh_counterparty` 的 `[user]` 模板继续经 `render_user` 渲染。
+- 当前 14 个业务 PromptSpec；标的工具在后端执行。system 使用固定资产，历史和参考数据经 `blocks.source_payload` 放入 user。`fresh_counterparty` 的 `[user]` 模板继续经 `render_user` 渲染。
 
 ## 来源优先级（ADR 0014 D3-2）
 

@@ -62,4 +62,3 @@ Langfuse 侧：Dataset `intent-<product>`，评估器 `det_intent_match_pass`（
 - **本地**：起 `uvicorn mock_api.server:app --port 8099`，`OTC_API_BASE_URL` / `GOATS_BASE_URL` 指向它，
   `python scripts/langfuse/langfuse_eval.py --local tests/fixtures/intent --fail-under 0.95 --report .harness-runs/intent-eval.json`
 - 依赖 Java 后端的业务集在 `../categories/`，只在开发 / staging 环境跑（`docs/testing/README.md` §一a）
-

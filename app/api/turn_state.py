@@ -52,14 +52,15 @@ def inputs_to_state(inputs: dict[str, Any]) -> AgentState:
 
     if "raw_text" not in state and "message_content" in state:
         state["raw_text"] = state["message_content"]
-    # checkpoint 会合并输入：缺省的当轮字段也要显式写入，避免继承上轮路由/附件。
-    # 业务对象和历史消息仍由 checkpoint 保留，不能在此补空值。
-    for key in ("fast_query", "existing_command", "at_bot", "quote_content", "quote_appinfo",
-                "retry_origin", "retry_attempt"):
-        state.setdefault(key, None)
-    state.setdefault("input_files", [])
-    state.setdefault("raw_text", "")
-    state.setdefault("message_content", "")
+    # checkpoint 会合并输入：所有当轮字段必须覆盖，尤其不能借用上轮消息身份。
+    # 会话 ID 在路由层解析，ConversationMemory 不在此重置。
+    for key in INPUT_FIELD_ALIASES:
+        default: Any = None
+        if key in {"raw_text", "message_content", "room_id", "user_id"}:
+            default = ""
+        elif key == "input_files":
+            default = []
+        state.setdefault(key, default)
     return state  # type: ignore[return-value]
 
 

@@ -17,7 +17,6 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from app.execution.operations import capture_operation
 from app.extraction.locks import protect_orders
 from app.graph.state import AgentState
 from app.subgraphs.swap.prewash import sanitize_order_list
@@ -96,8 +95,6 @@ async def call_swap_backend(
         ],
         **_context(state),
     )
-    if capture_operation("swap", req):
-        return {"field_records": rejected} if rejected else {}
     async with receipt_guard("swap"):
         result = await SwapClientHttpx().operate(req)
     return {
