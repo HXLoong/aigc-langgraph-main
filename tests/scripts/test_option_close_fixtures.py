@@ -4,6 +4,8 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+from harness.scenario_inputs import resolve_order_reference
+
 DATASET = Path(__file__).resolve().parents[1] / "fixtures/categories/golden_option_close_case.jsonl"
 
 
@@ -50,6 +52,19 @@ def test_sequence_selection_and_small_position_have_required_context() -> None:
 def test_twap_uses_explicit_times_then_confirmation_and_cancel() -> None:
     turns = _cases()["case-034"]["sub_scenes"]
     assert [turn["send_text"] for turn in turns] == [
+        "我想平掉 {{previous_holding_contract_id:1}}",
         "200万，TWAP14:30-14:50，限价10", "确认平仓", "撤单", "确认撤单",
     ]
-    assert {"起始时间：14:30", "结束时间：14:50"} <= set(turns[0]["response_contains"])
+    assert {"起始时间：14:30", "结束时间：14:50"} <= set(turns[1]["response_contains"])
+
+
+def test_named_contract_cases_query_then_bind_the_actual_holding() -> None:
+    for case_id in ("case-031", "case-034", "case-034-lifecycle"):
+        case = _cases()[case_id]
+        assert case["expected"]["intent"] == "close_order_query"
+        request = case["sub_scenes"][0]
+        assert request["quote_previous"] is True
+        assert resolve_order_reference(
+            request["send_text"], "以下是您的期权持仓\n合约编号：OPT-LIVE24001",
+        ) == "我想平掉 OPT-LIVE24001"
+        assert "OPT-AAAA1" not in json.dumps(case, ensure_ascii=False)
