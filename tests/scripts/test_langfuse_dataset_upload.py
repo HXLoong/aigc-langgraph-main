@@ -112,7 +112,7 @@ def _write(path: Path, *rows: dict) -> None:
     path.write_text("".join(json.dumps(row, ensure_ascii=False) + "\n" for row in rows), encoding="utf-8")
 
 
-def test_sync_all_discovers_and_projects_three_fixture_kinds(tmp_path: Path) -> None:
+def test_sync_all_discovers_only_intent_and_categories(tmp_path: Path) -> None:
     from scripts.langfuse.upload_golden_to_langfuse import prepare_sync_files
 
     root = tmp_path / "tests" / "fixtures"
@@ -126,21 +126,18 @@ def test_sync_all_discovers_and_projects_three_fixture_kinds(tmp_path: Path) -> 
         "caseNo": "business-1", "send_text": "询价", "expected": {"product_type": "option"},
         "reference": "业务来源", "description": "业务说明",
     })
-    _write(root / "nodes" / "option_close" / "close_intent.jsonl", {
-        "id": "node-1", "input": {"raw_text": "平仓"},
-        "expected": {"mode": "fields", "fields": {"/intent": "place_close"}},
-        "source": {"case_id": "business-1"}, "annotation": {"status": "completed"},
-    })
+    node_path = root / "nodes" / "option_close" / "close_intent.jsonl"
+    node_path.parent.mkdir(parents=True)
+    node_path.write_text("invalid node JSONL\n", encoding="utf-8")
     _write(root / "categories" / "tr-data" / "ignored.jsonl", {"id": "ignored"})
 
     files = prepare_sync_files(root)
     assert [file.dataset_name for file in files] == [
-        "golden_option_close_case", "intent_option_close", "option_close_close_intent",
+        "golden_option_close_case", "intent_option_close",
     ]
-    business, intent, node = [file.items[0] for file in files]
+    business, intent = [file.items[0] for file in files]
     assert business["id"] == "golden_option_close_case:business-1"
     assert intent["id"] == "intent_option_close:intent-1"
-    assert node["id"] == "option_close_close_intent:node-1"
     assert business["input"] == {"send_text": "询价", "at_bot": True, "sub_scenes": []}
     assert business["expected_output"]["expected"] == {"product_type": "option"}
     assert business["metadata"]["reference"] == "业务来源"
@@ -148,11 +145,6 @@ def test_sync_all_discovers_and_projects_three_fixture_kinds(tmp_path: Path) -> 
     assert intent["input"]["sub_scenes"][0]["wait_before_seconds"] == 2.5
     assert intent["expected_output"]["sub_scenes"][0]["expected"] == {"intent": "confirm_close"}
     assert intent["metadata"]["reference"] == {"ticket": "Q-1"}
-    assert node["input"] == {"raw_text": "平仓"}
-    assert node["expected_output"] == {"mode": "fields", "fields": {"/intent": "place_close"}}
-    assert node["metadata"]["source"] == {"case_id": "business-1"}
-    assert node["metadata"]["id"] == "node-1"
-    assert node["metadata"]["annotation"] == {"status": "completed"}
 
 
 @pytest.mark.parametrize("duplicate_kind", ["name", "id"])

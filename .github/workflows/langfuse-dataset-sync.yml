@@ -8,7 +8,6 @@ on:
     paths:
       - "tests/fixtures/intent/*.jsonl"
       - "tests/fixtures/categories/*.jsonl"
-      - "tests/fixtures/nodes/*/*.jsonl"
       - "scripts/langfuse/upload_golden_to_langfuse.py"
       - "harness/golden.py"
       - ".github/workflows/langfuse-dataset-sync.yml"
@@ -26,6 +25,7 @@ jobs:
       LANGFUSE_BASE_URL: ${{ vars.LANGFUSE_BASE_URL }}
       LANGFUSE_PUBLIC_KEY: ${{ secrets.LANGFUSE_PUBLIC_KEY }}
       LANGFUSE_SECRET_KEY: ${{ secrets.LANGFUSE_SECRET_KEY }}
+      LANGFUSE_TIMEOUT: ${{ vars.LANGFUSE_TIMEOUT }}
     steps:
       - uses: actions/checkout@v4
         with:

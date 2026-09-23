@@ -43,7 +43,7 @@ Dataset Item 的三个字段全部由 `scripts/langfuse/upload_golden_to_langfus
 
 - `input`：首轮输入与 `sub_scenes` 多轮输入，键为 `send_text`、`at_bot`、`quote_previous`；非零的 `wait_before_seconds` 也逐轮保留。
 - `expectedOutput`：首轮断言与 `sub_scenes` 多轮断言。**只写非空字段**，所以各用例的键不完全一致：`expected`、`response_contains`、`response_contains_any`、`response_not_contains` 中保留有值的那些，另外总有 `sub_scenes`。
-- `metadata`：用例标签、来源和说明，见 3.1。节点用例另按原始字段投影。
+- `metadata`：用例标签、来源和说明，见 3.1。
 
 ### 3.1 metadata 字段
 
@@ -102,7 +102,7 @@ Dataset Item 的三个字段全部由 `scripts/langfuse/upload_golden_to_langfus
 
 上传结果的字段值取决于 `--source` 指向的方言：`tests/fixtures/categories/*.jsonl`（A 方言）的 `category` 形如 `option_inquiry_case`；`tests/fixtures/unified_golden.jsonl`（B 方言）的 `category` 形如 `option/inquiry`，并会带上 `type` 与 `source`。
 
-`tests/fixtures/nodes/<subgraph>/*.jsonl` 的 `input` 和 `expected` 原样进入 Dataset Item 的 `input` 和 `expectedOutput`，其余字段（含 `id`、`source`、`annotation`）进入 `metadata`。节点 Dataset 不经 GoldenCase 业务投影。
+`tests/fixtures/nodes/` 是本地节点测试数据，不参与 Langfuse Dataset 批量同步。
 
 ## 4. 首次配置
 
@@ -119,7 +119,7 @@ python scripts/langfuse/upload_golden_to_langfuse.py --sync-all
 python scripts/langfuse/upload_golden_to_langfuse.py --sync-all --base-url https://us.cloud.langfuse.com
 ```
 
-`--sync-all` 只扫描 `intent/*.jsonl`、`categories/*.jsonl` 和 `nodes/*/*.jsonl`。每个文件独立成 Dataset：`intent/option_close.jsonl` → `intent_option_close`，`categories/golden_option_close_case.jsonl` → `golden_option_close_case`，`nodes/option_close/close_intent.jsonl` → `option_close_close_intent`。上传前检查 Dataset 名称冲突和全局用例 ID 重复；Item ID 固定为 `<dataset_name>:<case_id>`（Langfuse 要求项目内唯一），原始 ID 保存在 metadata。每次 upsert 设为 `ACTIVE`。所有文件上传成功后，才归档各 Dataset 中已经从对应文件移除的 Item；空文件或上传失败时不归档。历史 `intent-` Dataset 不自动删除。
+`--sync-all` 只扫描 `intent/*.jsonl` 和 `categories/*.jsonl`。每个文件独立成 Dataset：`intent/option_close.jsonl` → `intent_option_close`，`categories/golden_option_close_case.jsonl` → `golden_option_close_case`。`nodes/` 下的文件不会扫描，也不会因其变更触发自动同步。上传前检查 Dataset 名称冲突和全局用例 ID 重复；Item ID 固定为 `<dataset_name>:<case_id>`（Langfuse 要求项目内唯一），原始 ID 保存在 metadata。每次 upsert 设为 `ACTIVE`。所有文件上传成功后，才归档各 Dataset 中已经从对应文件移除的 Item；空文件或上传失败时不归档。此前上传的节点 Dataset 不会自动删除或归档。历史 `intent-` Dataset 不自动删除。
 
 手动指定来源和 Dataset 的旧用法仍可使用：
 
@@ -344,7 +344,7 @@ Online Evaluator 异步执行，Experiment 完成后 Score 可能稍后显示。
 
 | 文件 | 用途 |
 |---|---|
-| `upload_golden_to_langfuse.py` | `--sync-all` 自动同步 intent / categories / nodes；也支持手动指定来源和 Dataset |
+| `upload_golden_to_langfuse.py` | `--sync-all` 自动同步 intent / categories；也支持手动指定来源和 Dataset |
 | `upload_evaluators.py` | 读取集中定义，按套件（`--suite` 或 dataset 前缀 `intent_` / `intent-`）同步 Code Evaluators 和全局或指定 Dataset 的 Online Rules |
 | `upload_score_configs.py` | 读取集中定义，全量同步人工 Score Configs |
 | `langfuse_eval.py` | 执行 Dataset Experiment 或本地评测（`--suite intent` 不跑 Judge，trace tags 带套件名）|

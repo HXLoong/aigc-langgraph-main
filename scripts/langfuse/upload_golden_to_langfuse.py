@@ -109,12 +109,11 @@ class PreparedFile:
 
 
 def _sync_paths(root: Path) -> list[Path]:
-    """Only active top-level fixture files and one level of node directories."""
+    """Only top-level intent and categories fixtures are synced."""
     return sorted(
         [
             *root.joinpath("intent").glob("*.jsonl"),
             *root.joinpath("categories").glob("*.jsonl"),
-            *root.joinpath("nodes").glob("*/*.jsonl"),
         ]
     )
 
@@ -125,8 +124,6 @@ def _sync_dataset_name(path: Path, root: Path) -> str:
         return f"intent_{path.stem}"
     if parts[0] == "categories" and len(parts) == 2:
         return path.stem
-    if parts[0] == "nodes" and len(parts) == 3:
-        return f"{parts[1]}_{path.stem}"
     raise ValueError(f"Unsupported sync fixture path: {path}")
 
 
@@ -164,37 +161,21 @@ def prepare_sync_files(root: Path = FIXTURE_ROOT) -> list[PreparedFile]:
         items: list[dict[str, Any]] = []
         for line_number, payload in _read_rows(path):
             origin = f"{path}:{line_number}"
-            if path.relative_to(root).parts[0] == "nodes":
-                case_id = payload.get("id")
-                if not isinstance(case_id, str) or not case_id.strip():
-                    raise ValueError(f"{origin}: node item requires non-empty id")
-                if "input" not in payload or "expected" not in payload:
-                    raise ValueError(f"{origin}: node item requires input and expected")
-                item = {
-                    "id": f"{dataset_name}:{case_id}",
-                    "input": payload["input"],
-                    "expected_output": payload["expected"],
-                    "metadata": {
-                        key: value for key, value in payload.items()
-                        if key not in {"input", "expected"}
-                    },
-                }
-            else:
-                case = normalize_case(payload, origin=origin)
-                case_id = case.id
-                suite = detect_suite(path)
-                metadata = _metadata(case, suite=suite, backend=DEFAULT_BACKEND[suite])
-                for key in ("reference", "description"):
-                    if key in payload:
-                        metadata[key] = payload[key]
-                metadata["fixture_path"] = str(path.relative_to(root)).replace("\\", "/")
-                metadata["source_line"] = line_number
-                item = {
-                    "id": f"{dataset_name}:{case_id}",
-                    "input": build_input(case),
-                    "expected_output": build_expected(case),
-                    "metadata": metadata,
-                }
+            case = normalize_case(payload, origin=origin)
+            case_id = case.id
+            suite = detect_suite(path)
+            metadata = _metadata(case, suite=suite, backend=DEFAULT_BACKEND[suite])
+            for key in ("reference", "description"):
+                if key in payload:
+                    metadata[key] = payload[key]
+            metadata["fixture_path"] = str(path.relative_to(root)).replace("\\", "/")
+            metadata["source_line"] = line_number
+            item = {
+                "id": f"{dataset_name}:{case_id}",
+                "input": build_input(case),
+                "expected_output": build_expected(case),
+                "metadata": metadata,
+            }
             if case_id in ids:
                 raise ValueError(f"Duplicate case ID: {case_id}: {ids[case_id]} and {path}")
             ids[case_id] = path
