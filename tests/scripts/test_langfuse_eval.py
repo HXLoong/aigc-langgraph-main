@@ -238,3 +238,30 @@ async def test_dataset_dry_run_previews_categories_input_shape(
     await run_eval("golden_option_inquiry_case", None, None, 1, None, True)
 
     assert "case-022: 快速询价; 补充名义本金" in capsys.readouterr().out
+
+
+def test_judge_explicit_standard_provider_uses_configured_structured_model(monkeypatch):
+    from app.llm import clients
+
+    monkeypatch.setenv('EVAL_JUDGE_PROVIDER', 'standard')
+    monkeypatch.setattr(anthropic, 'Anthropic', lambda: pytest.fail('explicit provider must not use Anthropic'))
+    captured = []
+
+    def structured(schema):
+        def invoke(messages):
+            captured.extend(messages)
+            return schema.model_validate({'pass': False, 'score': .2, 'reason': '缺少订单参数'})
+        return SimpleNamespace(invoke=invoke)
+
+    monkeypatch.setattr(clients, 'get_qwen_standard', lambda: SimpleNamespace(with_structured_output=structured))
+    result = judge_by_deepseek(output={'reply_text': '服务失败'}, expected_output='完整订单卡')
+    assert result.name == 'otc-option-judge' and result.value == .2
+    assert result.comment == '缺少订单参数'
+    assert captured[0][0] == 'system' and '完整订单卡' in captured[1][1]
+
+
+def test_judge_rejects_unknown_provider_without_network(monkeypatch):
+    monkeypatch.setenv('EVAL_JUDGE_PROVIDER', 'unknown')
+    monkeypatch.setattr(anthropic, 'Anthropic', lambda: pytest.fail('invalid provider must fail before IO'))
+    with pytest.raises(ValueError, match='EVAL_JUDGE_PROVIDER'):
+        judge_by_deepseek(output={'reply_text': 'x'}, expected_output='x')

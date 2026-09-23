@@ -22,6 +22,8 @@ from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
 
+from pydantic import BaseModel, Field
+
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 _DOTENV = PROJECT_ROOT / ".env"
 if _DOTENV.exists():
@@ -441,12 +443,34 @@ def _parse_judge_json(text: str) -> dict | None:
     return None
 
 
+class JudgeScore(BaseModel):
+    passed: bool = Field(alias="pass", description="实际回复是否满足该测试的业务预期")
+    score: float = Field(ge=0, le=1, description="业务预期满足程度，0 表示失败，1 表示完全满足")
+    reason: str = Field(description="评分依据与实际回复的具体差异")
+
+
 def judge_by_deepseek(*, output, expected_output, metadata=None, **kwargs):
     from anthropic import Anthropic
+
+    provider = os.environ.get("EVAL_JUDGE_PROVIDER", "anthropic")
+    if provider not in {"anthropic", "standard"}:
+        raise ValueError("EVAL_JUDGE_PROVIDER 必须是 anthropic 或 standard")
 
     actual = output.get("reply_text", "")
     overview = (metadata or {}).get("overview", "")
     user = f"## 测试用例\n{overview}\n\n## 实际回复\n{actual}\n\n## 期望回复\n{expected_output}\n\n请评分："
+    if provider == "standard":
+        from langfuse.experiment import Evaluation
+
+        from app.llm.clients import get_qwen_standard
+
+        result = JudgeScore.model_validate(
+            get_qwen_standard().with_structured_output(JudgeScore).invoke(
+                [("system", JUDGE), ("user", user)],
+            ),
+        )
+        return Evaluation(name="otc-option-judge", value=result.score, comment=result.reason,
+                          metadata={"pass": result.passed, "provider": provider})
     client = Anthropic()
     request = {
         "model": os.environ.get("ANTHROPIC_MODEL", "deepseek-v4-flash"),
