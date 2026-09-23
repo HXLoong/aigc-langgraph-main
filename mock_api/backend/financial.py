@@ -65,14 +65,16 @@ def _next_id(prefix: str) -> str:
 
 def _resolve_stock(item: FinancialOrderItem) -> tuple[str, str]:
     code, name = item.stockCode or "", item.stockName or ""
-    for stock in SECURITIES_DICT:
-        if code.upper() == stock["windCode"].upper() or name == stock["insShtDesc"]:
-            return stock["windCode"], stock["insShtDesc"]
-        for keyword in item.stockCodeList or []:
-            if keyword.keyword.upper() == stock["windCode"].upper() or (
-                keyword.keyword and keyword.keyword in stock["insShtDesc"]
-            ):
-                return stock["windCode"], stock["insShtDesc"]
+    expressions = [code, name, *(keyword.keyword for keyword in item.stockCodeList or [])]
+    exact = [stock for stock in SECURITIES_DICT if any(
+        text and (text.upper() == stock["windCode"].upper() or text == stock["insShtDesc"])
+        for text in expressions
+    )]
+    matches = exact or [stock for stock in SECURITIES_DICT if any(
+        text and text in stock["insShtDesc"] for text in expressions
+    )]
+    if len(matches) == 1:
+        return matches[0]["windCode"], matches[0]["insShtDesc"]
     return code or _MISSING, name or _MISSING
 
 
@@ -330,7 +332,7 @@ async def financial_operate(req: FinancialOperateReqVO, request: Request) -> dic
     orders = _orders(request, req)
     if req.type == StockOptionIntentionType.NEW_INQUIRY:
         for item in req.orderList:
-            if item.stockCode and item.stockCode not in {s["windCode"] for s in SECURITIES_DICT}:
+            if item.stockCode and _resolve_stock(item)[1] == _MISSING:
                 return {
                     "code": 400,
                     "data": None,

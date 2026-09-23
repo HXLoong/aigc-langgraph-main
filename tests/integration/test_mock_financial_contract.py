@@ -446,3 +446,16 @@ async def test_contract_lookup_does_not_bind_existing_close_orders(
     assert combined["data"] == [{**expected_contract, "orderId": order_id}, expected_contract]
     empty = await client.query_close_orders(room_id=context["roomId"], message_id=1)
     assert empty["data"] == []
+
+
+@pytest.mark.parametrize('expression,code', [('宁德时代', '300750.SZ'), ('茅台', '600519.SH')])
+async def test_mock_inquiry_accepts_raw_instrument_name_in_stock_code(client, context, expression, code):
+    card = await operate(client, context, 'new_inquiry', orderList=[{'stockCode': expression}])
+    assert code in card and 'mock' in card
+
+
+async def test_mock_inquiry_does_not_guess_unknown_instrument(client, context):
+    response = await client.operate(FinancialOrderOpenApiSaveReqVO.model_validate({
+        **context, 'type': 'new_inquiry', 'orderList': [{'stockCode': '未知标的测试表达'}],
+    }))
+    assert response['code'] == 400
