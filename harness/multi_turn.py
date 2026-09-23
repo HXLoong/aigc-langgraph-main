@@ -35,6 +35,7 @@ class TurnOutcome:
     trace: str
     outputs: dict[str, Any] = field(default_factory=dict)
     elapsed_ms: int = 0
+    quote_content: str = ""
 
 
 @dataclass
@@ -94,6 +95,7 @@ def _extract_turn(index: int, spec: TurnSpec, quote: str, outputs: dict[str, Any
         send_text=spec.send_text,
         at_bot=spec.at_bot,
         quote_passed=quote[:120],
+        quote_content=quote,
         reply_text=reply,
         product_type=outputs.get("product_type"),
         intent=outputs.get("intent"),

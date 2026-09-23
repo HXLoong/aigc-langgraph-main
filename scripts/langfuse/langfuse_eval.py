@@ -61,6 +61,8 @@ from harness.golden import (
     select_runnable,
 )
 from harness.multi_turn import early_stop_kind, quote_for_turn
+from harness.scenario_inputs import resolve_order_reference
+from app.tools.ticker_client import TickerClientHttpx
 
 DATASET_NAME = "otc-option-golden"
 
@@ -130,9 +132,12 @@ def _fmt_trace(trace_entries) -> str:
 
 
 # ── Task ──
-async def _run_graph_once(graph, config, raw_content, has_mention=True, turn=1, quote_content=None):
+async def _run_graph_once(
+    graph, config, raw_content, has_mention=True, turn=1, quote_content=None,
+    suite: str = DEFAULT_SUITE,
+):
     # 与生产 routes 同一条入口（ADR 0024 D2）：Dify 形态 inputs → inputs_to_state
-    state = inputs_to_state({
+    inputs = {
         "rawContent": raw_content,
         "quoteContent": quote_content,
         "messageId": secrets.randbelow(900_000_000_000_000) + 100_000_000_000_000,
@@ -140,7 +145,17 @@ async def _run_graph_once(graph, config, raw_content, has_mention=True, turn=1, 
         "userId": os.environ.get("EVAL_USER_ID", "eval-user"),
         "guid": "",
         "at_bot": has_mention,
-    })
+    }
+    if suite == "intent":
+        # CI 的 mock backend 提供与生产 Java 输入同形的授权参考上下文。
+        client = TickerClientHttpx()
+        for product, field in (("OPTION", "option_counterparties"), ("TRS", "swap_counterparties")):
+            rows = await client.list_counterparty(
+                inputs["roomId"], user_id=inputs["userId"], business_type=product,
+                message_id=inputs["messageId"],
+            )
+            inputs[field] = json.dumps(rows, ensure_ascii=False)
+    state = inputs_to_state(inputs)
     state["conversation_id"] = config["configurable"]["thread_id"]
     result = await graph.ainvoke(state, config=config)
     return result
@@ -225,14 +240,19 @@ async def run_langgraph_pipeline(*, item, suite: str = DEFAULT_SUITE, **kwargs):
             )
             or None
         )
+        raw_content = t.get("send_text", "")
         try:
+            raw_content = resolve_order_reference(
+                raw_content, results[-1].get("reply_text", "") if results else "",
+            )
             rs = await _run_graph_once(
                 graph,
                 config,
-                raw_content=t.get("send_text", ""),
+                raw_content=raw_content,
                 has_mention=bool(t.get("at_bot", not results)),
                 turn=len(results) + 1,
                 quote_content=quote,
+                suite=suite,
             )
             # tickers 简化（保留 windCode + 中文名 + from_goats）
             tickers_raw = rs.get("tickers") or []
@@ -324,7 +344,7 @@ async def run_langgraph_pipeline(*, item, suite: str = DEFAULT_SUITE, **kwargs):
                 "quote_passed": (quote or "")[:120],
             }
         tr["turn"] = len(results) + 1
-        tr["raw_content"] = t.get("send_text", "")
+        tr["raw_content"] = raw_content
         results.append(tr)
 
         api_code = tr.get("api_code")

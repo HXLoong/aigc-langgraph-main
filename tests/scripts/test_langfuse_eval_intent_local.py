@@ -6,6 +6,7 @@ import json
 import sys
 from pathlib import Path
 from types import SimpleNamespace
+from unittest.mock import AsyncMock
 
 import langfuse
 import pytest
@@ -159,6 +160,9 @@ async def test_run_local_intent_suite_scores_without_langfuse_and_writes_report(
     fixture = tmp_path / "swap.jsonl"
     _write_intent_fixture(fixture)
     monkeypatch.setattr(langfuse_eval, "build_main_graph", lambda _cp: _IntentGraph())
+    monkeypatch.setattr(langfuse_eval, "TickerClientHttpx", lambda: SimpleNamespace(
+        list_counterparty=AsyncMock(return_value=[]),
+    ))
     monkeypatch.setattr(langfuse_eval, "_TURN_INTERVAL_SECONDS", 0)
     monkeypatch.setattr(langfuse_eval, "_graph_callbacks", lambda: [])
     monkeypatch.setattr(langfuse, "Langfuse", _NoLangfuse)

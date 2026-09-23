@@ -8,6 +8,7 @@ from typing import Any
 from pydantic import BaseModel, ConfigDict
 
 from harness.golden import TurnSpec
+from harness.references import ReferenceResolutionError, resolve_expected_references
 
 
 class FieldDiff(BaseModel):
@@ -96,14 +97,19 @@ def check_text_assertions(
 
 
 def check_structured_assertions(
-    outputs: dict[str, Any], expected: dict[str, Any]
+    outputs: dict[str, Any], expected: dict[str, Any], *, quote_content: str = "",
 ) -> list[FieldDiff]:
     """逐键比对 expected；`winners` 映射到 outputs.tickers[].windCode 做集合比较。
 
     HTTP outputs 的 tickers 由 TickerCandidate.model_dump()（WireModel 默认 by_alias）产出，
     键是协议 alias `windCode`，不是 Python 字段名 `wind_code`（ADR 0024 阶段 0 修正）。
     """
-    remaining = dict(expected)
+    try:
+        remaining = resolve_expected_references(expected, quote_content)
+    except ReferenceResolutionError as exc:
+        return [FieldDiff(path=exc.path, expected="resolvable quoted reference", actual=str(exc))]
+    if not isinstance(remaining, dict):
+        return [FieldDiff(path="expected", expected="object", actual=remaining)]
     winners = remaining.pop("winners", None)
     diffs = diff_fields(remaining, outputs)
     if winners is not None:
@@ -114,7 +120,8 @@ def check_structured_assertions(
 
 
 def check_case_assertions(
-    turn_outputs: list[dict[str, Any]], expected: dict[str, Any]
+    turn_outputs: list[dict[str, Any]], expected: dict[str, Any], *,
+    quote_contents: list[str] | None = None,
 ) -> list[FieldDiff]:
     """case 级 any_turn 断言（多轮 B 方言）：任一已执行轮同时命中 expected 的全部结构化键即通过。
 
@@ -123,8 +130,9 @@ def check_case_assertions(
     wanted = {k: v for k, v in expected.items() if k not in ASSERT_EXCLUDED_KEYS}
     if not wanted:
         return []
-    for outputs in turn_outputs:
-        if not check_structured_assertions(outputs, wanted):
+    quotes = quote_contents if quote_contents is not None else [""] * len(turn_outputs)
+    for outputs, quote in zip(turn_outputs, quotes, strict=True):
+        if not check_structured_assertions(outputs, wanted, quote_content=quote):
             return []
     actual = [{key: outputs.get(key) for key in wanted} for outputs in turn_outputs]
     return [FieldDiff(path="case.expected", expected=wanted, actual=actual)]

@@ -53,11 +53,14 @@ def _turn_diffs(
         turn_diffs = check_text_assertions(
             outcome.reply_text, spec, allow_dry_run=backend == "dry-run"
         )
-        turn_diffs.extend(check_structured_assertions(outcome.outputs, spec.expected))
+        turn_diffs.extend(check_structured_assertions(
+            outcome.outputs, spec.expected, quote_content=outcome.quote_content,
+        ))
         diffs[outcome.index] = turn_diffs
     if case.expected_scope == "any_turn":
         case_diffs = check_case_assertions(
-            [outcome.outputs for outcome in result.turns], case.expected
+            [outcome.outputs for outcome in result.turns], case.expected,
+            quote_contents=[outcome.quote_content for outcome in result.turns],
         )
         if case_diffs:
             diffs["case"] = case_diffs

@@ -12,6 +12,7 @@ from app.extraction.candidates import unpack_candidates
 from app.extraction.fast_execution import resolve_fast_execution
 from app.extraction.fields import FieldCandidate, FieldRecord
 from app.subgraphs.option.normalize import _cn_number
+from app.subgraphs.swap.errors import NonPositiveQuantityError
 from app.subgraphs.swap.models import SwapOrderItem, SwapPlaceOrderParams
 
 _SCALES = {"": 1, "k": 1000, "千": 1000, "w": 10000, "万": 10000,
@@ -24,14 +25,20 @@ _CURRENCIES = {
 }
 _ENUMS: dict[str, dict[str, tuple[str, ...]]] = {
     "placeOrderOrderDirection": {
-        "BUY": ("买入", "買入", "买", "買", "做多", "多头开仓", "BUY"),
-        "SELL": ("卖出", "賣出", "卖", "賣", "平多", "卖出平仓", "SELL"),
-        "SHORT_OPEN": ("卖空", "賣空", "做空", "空头开仓", "SHORT_OPEN"),
-        "SHORT_CLOSE": ("平空", "买入平仓", "買入平倉", "SHORT_CLOSE"),
+        "BUY": ("买入", "買入", "买", "買", "做多", "买入开仓", "多头开仓", "买开",
+                "買入開倉", "买入全部", "BUY"),
+        "SELL": ("卖出", "賣出", "卖", "賣", "平多", "卖出平仓", "沽", "沽出", "全卖出",
+                 "卖出全部", "全部卖掉", "全部卖出", "全部賣出", "清仓卖出", "賣出平倉",
+                 "卖平", "多头平仓", "SELL"),
+        "SHORT_OPEN": ("卖空", "賣空", "做空", "空头开仓", "卖开", "卖出开仓", "賣出開倉",
+                       "沽空", "SHORT_OPEN"),
+        "SHORT_CLOSE": ("平空", "买入平仓", "買入平倉", "买平", "買平", "空头平仓", "SHORT_CLOSE"),
     },
     "placeOrderPriceType": {
-        "MarketOrder": ("市价", "市價", "不限价", "不限價", "MKT", "MARKET", "MarketOrder"),
-        "LimitOrder": ("限价", "限價", "限价委托", "限價委託", "LMT", "LIMIT", "LimitOrder"),
+        "MarketOrder": ("市价", "市價", "市价单", "市價單", "市价委托",
+                        "不限价", "不限價", "MKT", "MARKET", "MarketOrder"),
+        "LimitOrder": ("限价", "限價", "限价单", "限價單", "限价委托", "限價委託",
+                       "LMT", "LIMIT", "LimitOrder"),
     },
     "placeOrderAlgorithmType": {
         "POV": ("POV", "跟量", "占比"), "TWAP": ("TWAP", "全天均价", "全天均價", "时间均价", "均价"),
@@ -52,8 +59,55 @@ _TIMES = {"placeOrderStartTime", "placeOrderEndTime"}
 _BOOLEAN_FIELDS = {"placeOrderCloseIntent", "placeOrderPremarket"}
 _DIRECTION_TOKEN = re.compile(
     r"(?<![A-Za-z0-9_.-])(?:BUY|SELL|SHORT_OPEN|SHORT_CLOSE|[BSL])(?![A-Za-z0-9_.-])"
-    r"|买入|卖出|買入|賣出|平空|平多|做多|做空|卖空|买|卖", re.I,
+    r"|买入|卖出|買入|賣出|平空|平多|做多|做空|卖空|买|卖|買|賣|沽|[多空][头頭]平[仓倉]", re.I,
 )
+
+
+_HOLDING_DESCRIPTION = re.compile(r"(?:剩余|剩餘|当前|目前|现有|現有)?(?:全部|所有|一半|半仓|半倉)?(?:持仓|持倉)")
+_CLOSE_ACTION = re.compile(r"卖出|賣出|全部卖掉|全卖|全賣|平仓|平倉|清仓|清倉|平掉|全平|减仓|平空|平多")
+_NEGATION = re.compile(r"(?:不要|无需|不需要|不|别|勿|禁止|暂不)(?:\s*|(?:把|将)[^,，;；\n]*)$")
+_CONDITIONAL = re.compile(r"如果|假如|若|或者|或|达到.*再|等.*再")
+_ALGORITHM_SUFFIX = re.compile(
+    r"(?:(POV(?:\s*跟量)?|跟量|占比)\s*([0-9]+(?:\.[0-9]+)?%)|((?:VWAP|TWAP))\s*(?:全天|到收盘|至收盘))", re.I,
+)
+
+
+def is_holding_description(value: str) -> bool:
+    return _HOLDING_DESCRIPTION.fullmatch(value.strip()) is not None
+
+
+def negates_token(value: str, context: str) -> bool:
+    return any(_NEGATION.search(context[:match.start()]) for match in re.finditer(re.escape(value), context))
+
+
+def holding_action(context: str) -> bool | None:
+    """Only a caller-verified order window can relate a position range to an action."""
+    if _CONDITIONAL.search(context):
+        raise ValueError("平仓动作存在条件或备选范围")
+    actions = list(_CLOSE_ACTION.finditer(context))
+    negative = [match for match in actions if _NEGATION.search(context[:match.start()])]
+    positive = [match for match in actions if match not in negative]
+    if negative and positive:
+        raise ValueError("平仓动作的肯定与否定冲突")
+    if negative:
+        return False
+    if not positive:
+        return None
+    if re.search(r"买入|買入|买开|卖空|賣空|卖开", context):
+        raise ValueError("平仓动作与开仓方向冲突")
+    return True
+
+
+def _algorithm_suffix(value: str) -> tuple[str, float | int | None] | None:
+    match = _ALGORITHM_SUFFIX.fullmatch(value.strip())
+    if not match:
+        return None
+    if match[1]:
+        ratio = _number(match[2])
+        if not 0 < ratio <= 100:
+            raise ValueError("跟量比例必须在 (0, 100%] 范围内")
+        return "POV", int(ratio) if ratio == ratio.to_integral_value() else float(ratio)
+    return match[3].upper(), None
 
 
 def _direction_shorthand(value: str, context: str) -> str:
@@ -76,7 +130,9 @@ def _direction_context(candidate: FieldCandidate, sources: Mapping[str, str]) ->
 
 
 def _number(text: str) -> Decimal:
-    value = re.sub(r"[,，\s]", "", text).strip()
+    if re.search(r"[0-9]\s+[0-9]", text):
+        raise ValueError("数值不能含多个数字片段")
+    value = re.sub(r"\s", "", text)
     suffixes = [alias for aliases in _CURRENCIES.values() for alias in aliases]
     suffixes += ["标准手", "标准股", "标手", "整手", "单合约", "LOTS", "LOT", "股", "手", "张", "%"]
     for suffix in sorted(suffixes, key=len, reverse=True):
@@ -84,9 +140,13 @@ def _number(text: str) -> Decimal:
             value = value[:-len(suffix)]
             break
     value = value.lstrip("￥¥")
-    match = re.fullmatch(r"([+-]?[0-9]+(?:\.[0-9]+)?)(千万|百万|亿|万|千|[kKwW])?", value)
+    value = re.sub(r"(?<=[0-9])(?:个亿|個億)$", "亿", value)
+    match = re.fullmatch(
+        r"([+-]?(?:[0-9]+|[0-9]{1,3}(?:[,，][0-9]{3})+)(?:\.[0-9]+)?)"
+        r"(千万|百万|亿|万|千|[kKwW])?", value,
+    )
     if match:
-        number = Decimal(match[1]) * _SCALES[(match[2] or "").lower()]
+        number = Decimal(re.sub(r"[,，]", "", match[1])) * _SCALES[(match[2] or "").lower()]
     else:
         chinese = re.fullmatch(r"([零〇一二两三四五六七八九十百千]+)(万|亿)?", value)
         if not chinese:
@@ -105,7 +165,7 @@ def quantity_unit(text: str) -> str | None:
         return "HAND"
     if text.strip().endswith("股"):
         return "SHARE"
-    if currency(text) or re.search(r"(?:千万|百万|亿|万|千|[kKwW])$", text.strip()):
+    if currency(text) or re.search(r"(?:千万|百万|亿|個億|万|千|[kKwW])$", text.strip()):
         return "AMOUNT"
     return None
 
@@ -120,9 +180,9 @@ def currency(text: str) -> str | None:
 
 
 def close_ratio(value: str, evidence: str) -> float | None:
-    if not any(word in evidence for word in ("平", "清仓", "清倉", "全卖", "全賣", "半仓", "一半")):
+    if not any(word in evidence for word in ("平", "清仓", "清倉", "卖出", "賣出", "全卖", "全賣", "半仓", "一半")):
         return None
-    if any(word in value for word in ("全部", "全平", "全数", "全賣", "全卖", "清仓", "清倉")):
+    if any(word in value for word in ("全部", "所有", "全平", "全数", "全賣", "全卖", "清仓", "清倉")):
         result = Decimal(1)
     elif "一半" in value or "半仓" in value:
         result = Decimal("0.5")
@@ -151,6 +211,12 @@ def normalize_field(field: str, value: str, evidence: str | None = None) -> Any:
     evidence = evidence or text
     if field == "placeOrderOrderDirection" and text.upper() in {"B", "S", "L"}:
         return _direction_shorthand(text, evidence)
+    if field == "placeOrderAlgorithmType":
+        composite = _algorithm_suffix(text)
+        if composite is not None:
+            if re.search(r"(?:不要|不用|不|别|勿)\s*(?:POV|VWAP|TWAP)", evidence, re.I):
+                raise ValueError("算法表达被否定")
+            return composite[0]
     if field in _ENUMS:
         for normalized, aliases in _ENUMS[field].items():
             if any(text.upper() == alias.upper() for alias in aliases):
@@ -166,8 +232,13 @@ def normalize_field(field: str, value: str, evidence: str | None = None) -> Any:
         except (InvalidOperation, ZeroDivisionError) as exc:
             raise ValueError("平仓比例无法解析") from exc
     if field in _QUANTITIES | _NUMBERS | _PERCENTAGES:
+        if field in _PERCENTAGES:
+            text = re.sub(r"^(?:POV\s*(?:跟量)?|跟量|跟|占比|占)\s*[:：]?\s*", "", text,
+                          flags=re.IGNORECASE)
         number = _number(text)
         if number <= 0:
+            if field in _QUANTITIES:
+                raise NonPositiveQuantityError(field)
             raise ValueError(f"{field} 必须大于零")
         if field in _QUANTITIES and number != number.to_integral_value():
             raise ValueError("委托数量展开后必须是整数")
@@ -188,9 +259,24 @@ def normalize_field(field: str, value: str, evidence: str | None = None) -> Any:
         return float(match[1]) * (60 if match[2] in {"小时", "小時"} else 1)
     if field == "hasFastExecutionIntent":
         return resolve_fast_execution(evidence or text)
+    if field == "placeOrderCloseIntent" and (
+        is_holding_description(text) or (re.search(r"持仓|持倉", evidence) and _CLOSE_ACTION.search(text))
+    ):
+        action = holding_action(evidence)
+        if action is None:
+            raise ValueError("placeOrderCloseIntent 缺少明确语义")
+        return action
+    if field == "placeOrderCloseIntent" and _CLOSE_ACTION.search(text):
+        action = holding_action(evidence)
+        if action is False:
+            return False
     if field in _BOOLEAN_FIELDS:
         if text.lower() in {"false", "否", "不"} or re.search(r"不要|无需|不需要|不平|非盘前", evidence):
             return False
+        if field == "placeOrderCloseIntent" and text in {
+            "全部卖掉", "全部卖出", "全部賣出", "卖出全部", "全卖出",
+        }:
+            return True
         signals = {
             "placeOrderPremarket": ("盘前", "盤前", "集合竞价", "集合競價"),
             "placeOrderCloseIntent": ("平仓", "平倉", "清仓", "清倉", "平空", "平多", "平掉", "全平", "减仓"),
@@ -213,7 +299,12 @@ def normalize_candidates(
             context = candidate.evidence
             if alias == "placeOrderOrderDirection" and value.upper() in {"B", "S", "L"}:
                 context = _direction_context(candidate, sources)
-            return normalize_field(alias, value, context)
+            try:
+                return normalize_field(alias, value, context)
+            except NonPositiveQuantityError:
+                raise
+            except ValueError as exc:
+                raise ValueError(f"{alias}: {exc}") from exc
         return convert
 
     converters = {info.alias or name: converter(info.alias or name) for name, info in SwapOrderItem.model_fields.items()}
@@ -245,6 +336,29 @@ def normalize_candidates(
         row = item.model_dump()
         original = raw_orders[index]
         prefix = f"{scope}.orderList.{index}."
+        algorithm = original.get("placeOrderAlgorithmType")
+        composite = _algorithm_suffix(algorithm["value"]) if algorithm and algorithm.get("value") else None
+        if composite is not None and composite[1] is not None:
+            ratio = composite[1]
+            if row.get("placeOrderPovPercent") not in {None, ratio}:
+                raise ValueError("算法中的跟量比例与显式比例冲突")
+            if row.get("placeOrderPovPercent") is None:
+                row["placeOrderPovPercent"] = ratio
+                records[prefix + "placeOrderPovPercent"] = records[prefix + "placeOrderAlgorithmType"].model_copy(
+                    update={"value": ratio, "source": "inferred", "derived_from": [prefix + "placeOrderAlgorithmType"]},
+                )
+        close = original.get("placeOrderCloseIntent")
+        if (row.get("placeOrderCloseIntent") is True and close and close.get("value")
+                and is_holding_description(close["value"])
+                and re.search(r"全部|所有|一半|半仓|半倉", close["value"])):
+            close_fraction = close_ratio(close["value"], close["evidence"])
+            if row.get("placeOrderEntrustRatio") not in {None, close_fraction}:
+                raise ValueError("平仓动作中的范围与显式比例冲突")
+            if row.get("placeOrderEntrustRatio") is None:
+                row["placeOrderEntrustRatio"] = close_fraction
+                records[prefix + "placeOrderEntrustRatio"] = records[prefix + "placeOrderCloseIntent"].model_copy(
+                    update={"value": close_fraction, "source": "inferred", "derived_from": [prefix + "placeOrderCloseIntent"]},
+                )
         fast = original.get("hasFastExecutionIntent")
         if fast and fast.get("value") is not None and row.get("hasFastExecutionIntent") is not None:
             candidate = FieldCandidate.model_validate(fast)
