@@ -227,8 +227,8 @@ def test_render_fallback_breakdown() -> None:
 
 def test_http_section_uses_http_denominator_not_node_calls() -> None:
     snap = _make_snap(_parse_metrics('''
-otc_agent_http_response_total{path="/v1/workflows/run",status_class="2xx"} 95
-otc_agent_http_response_total{path="/v1/workflows/run",status_class="5xx"} 5
+otc_agent_http_total{path="/v1/workflows/run",status_class="2xx"} 95
+otc_agent_http_total{path="/v1/workflows/run",status_class="5xx"} 5
 otc_agent_node_total{node="render",status="ok"} 1000
 otc_agent_fallback_total{reason="cascade_fail"} 3
 '''))
@@ -258,3 +258,15 @@ otc_agent_intent_latency_ms_count{node="ingest"} 9
 
 def test_absent_http_is_not_a_zero_error_rate() -> None:
     assert "无 HTTP 请求样本" in render_human(_make_snap({}))
+
+
+def test_http_snapshot_consumes_the_actual_runtime_export(monkeypatch):
+    from app.observability import metrics
+
+    collector = metrics.MetricsCollector()
+    monkeypatch.setattr(metrics, 'get_collector', lambda: collector)
+    metrics.emit_http_response('/v1/workflows/run', '2xx')
+    metrics.emit_http_response('/v1/workflows/run', '5xx')
+    rendered = render_human(_make_snap(_parse_metrics(collector.render_prometheus())))
+    assert 'HTTP 请求累计: 2' in rendered
+    assert '5xx: 1 (50.00%)' in rendered

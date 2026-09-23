@@ -255,7 +255,7 @@ def _render_health_section(counters: dict[str, dict[tuple, float]]) -> list[str]
 
 def _render_http_section(counters: dict[str, dict[tuple, float]]) -> list[str]:
     lines = ["## HTTP 请求累计（单次快照，不代表滚动窗口通过率）"]
-    requests = counters.get("otc_agent_http_response_total", {})
+    requests = counters.get("otc_agent_http_total", {})
     total = sum(requests.values())
     if total <= 0:
         return [*lines, "  （无 HTTP 请求样本，错误率不可计算）"]

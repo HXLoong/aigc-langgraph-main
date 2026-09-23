@@ -2,6 +2,8 @@
 import json
 from pathlib import Path
 
+from app.observability.metrics import METRIC_HTTP_RESPONSE_TOTAL
+
 
 def test_rollout_panels_have_http_and_cascade_with_http_denominators():
     dashboard = json.loads(Path("infra/grafana/dashboards/otc-agent-overview.json").read_text())
@@ -10,7 +12,7 @@ def test_rollout_panels_have_http_and_cascade_with_http_denominators():
         for title in ("HTTP 5xx", "Cascade fail"):
             panel = next(p for p in panels if title in p["title"] and window in p["title"])
             query = panel["targets"][0]["expr"]
-            assert "otc_agent_http_response_total" in query.split("/")[-1]
+            assert METRIC_HTTP_RESPONSE_TOTAL in query.split("/")[-1]
             assert "otc_agent_node_total" not in query
             assert f"[{window}]" in query
             steps = panel["fieldConfig"]["defaults"]["thresholds"]["steps"]

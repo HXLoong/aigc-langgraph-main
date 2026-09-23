@@ -1192,7 +1192,7 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "(sum(rate(otc_agent_http_response_total{status_class=\"5xx\"}[5m])) or vector(0)) / sum(rate(otc_agent_http_response_total[5m]))",
+          "expr": "(sum(rate(otc_agent_http_total{status_class=\"5xx\"}[5m])) or vector(0)) / sum(rate(otc_agent_http_total[5m]))",
           "legendFormat": "HTTP 5xx",
           "refId": "A"
         }
@@ -1288,7 +1288,7 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "(sum(rate(otc_agent_fallback_total{reason=\"cascade_fail\"}[5m])) or vector(0)) / sum(rate(otc_agent_http_response_total[5m]))",
+          "expr": "(sum(rate(otc_agent_fallback_total{reason=\"cascade_fail\"}[5m])) or vector(0)) / sum(rate(otc_agent_http_total[5m]))",
           "legendFormat": "Cascade fail",
           "refId": "A"
         }
@@ -1485,7 +1485,7 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "(sum(rate(otc_agent_http_response_total{status_class=\"5xx\"}[7d])) or vector(0)) / sum(rate(otc_agent_http_response_total[7d]))",
+          "expr": "(sum(rate(otc_agent_http_total{status_class=\"5xx\"}[7d])) or vector(0)) / sum(rate(otc_agent_http_total[7d]))",
           "legendFormat": "HTTP 5xx",
           "refId": "A"
         }
@@ -1581,7 +1581,7 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "(sum(rate(otc_agent_fallback_total{reason=\"cascade_fail\"}[7d])) or vector(0)) / sum(rate(otc_agent_http_response_total[7d]))",
+          "expr": "(sum(rate(otc_agent_fallback_total{reason=\"cascade_fail\"}[7d])) or vector(0)) / sum(rate(otc_agent_http_total[7d]))",
           "legendFormat": "Cascade fail",
           "refId": "A"
         }
