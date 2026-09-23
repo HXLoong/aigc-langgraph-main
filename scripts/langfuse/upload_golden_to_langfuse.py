@@ -60,6 +60,8 @@ def build_dataset_metadata(cases: list[GoldenCase], *, suite: str) -> dict[str, 
         names = ["intent-match"]
         if any(turn.expected.get("instruments") for case in cases for turn in case.turns):
             names.append("instrument-match")
+        if any(turn.expected.get("rejection") for case in cases for turn in case.turns):
+            names.append("rejection-match")
     return {"suite": suite, "evaluator_names": names}
 
 

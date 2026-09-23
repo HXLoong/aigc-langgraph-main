@@ -49,6 +49,16 @@
       "rule": {
         "target": "experiment_item_root"
       }
+    },
+    {
+      "name": "rejection-match",
+      "description": "明确业务拒绝原因匹配，且没有后端提交或伪成功。",
+      "source": "harness/evaluators/rejection_match.py",
+      "score_name": "det_rejection_match_pass",
+      "suite": "intent",
+      "rule": {
+        "target": "experiment_item_root"
+      }
     }
   ]
 }

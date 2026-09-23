@@ -203,3 +203,29 @@ def test_main_fail_under_turns_pass_rate_into_exit_code(monkeypatch: pytest.Monk
     assert langfuse_eval.main() == 0
     monkeypatch.setattr(sys, "argv", ["langfuse_eval.py", "--local", str(fixture)])
     assert langfuse_eval.main() == 0
+
+
+def test_labeled_rejection_requires_rejection_score_in_addition_to_intent():
+    case = GoldenCase(id='reject', category='intent/swap', type='negative', turns=[
+        TurnSpec(send_text='甲证券已买100股', expected={
+            'product_type': 'swap', 'intent': 'place_order_request', 'rejection': 'ambiguous_action',
+        }),
+    ])
+    item = _LocalItem(case, suite='intent')
+    output = {'turns': [{'product_type': 'swap', 'intent': 'place_order_request',
+                        'error': None, 'reply_text': '错误地接受委托'}]}
+    evaluations = code_evaluations(item, output)
+    assert [e.name for e in evaluations] == ['det_intent_match_pass', 'det_rejection_match_pass']
+    assert not case_passed('intent', evaluations)
+
+
+def test_quality_gate_does_not_hide_unsafe_rejection_failure_in_high_total():
+    summary = {'suite': 'intent', 'pass_rate': .99, 'acceptance_buckets': {
+        'executable': {'total': 100, 'passed': 99, 'pass_rate': .99},
+        'expected_rejection': {'total': 27, 'passed': 26, 'pass_rate': 26/27},
+    }}
+    assert not langfuse_eval.passes_quality_gate(summary, .95)
+    summary['acceptance_buckets']['expected_rejection'].update(passed=27, pass_rate=1.0)
+    assert langfuse_eval.passes_quality_gate(summary, .95)
+    summary['acceptance_buckets']['executable']['pass_rate'] = .94
+    assert not langfuse_eval.passes_quality_gate(summary, .95)

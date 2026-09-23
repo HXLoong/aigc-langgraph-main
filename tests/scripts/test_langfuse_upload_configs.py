@@ -450,6 +450,7 @@ def test_real_definitions_declare_suites() -> None:
         "response-not-contains": "business",
         "intent-match": "intent",
         "instrument-match": "intent",
+        "rejection-match": "intent",
     }
 
 
@@ -510,7 +511,7 @@ def test_upload_evaluator_cli_binds_only_intent_evaluator_for_intent_dataset(
     assert upload_evaluators.main() == 0
 
     lines = capsys.readouterr().out.splitlines()
-    assert "Configured Evaluators: 2" in lines
+    assert "Configured Evaluators: 3" in lines
     assert "Suite: intent" in lines
     assert "  Name: intent-match" in lines
     assert "  Name: instrument-match" in lines

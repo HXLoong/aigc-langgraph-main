@@ -29,3 +29,43 @@
 动态单号、对手字母和持仓合约使用现有$ref协议，只读取本轮完整quote，不从本轮模型输出或未引用历史取值。不固化真实单号、后端默认比例、可用余额。原卡片文本断言全部保留。
 
 这是已应用的首批标注；真实HTTP/Java与模型验收仍分别记录，不因标注提交而宣称业务流程通过。
+
+## 拒绝验收单列（#227）
+
+逐条复核原始输入与既有 `test_direction_remains_ambiguous_or_conflicting`、非正数量契约后，将 26 条暂定/历史动作和 1 条负数量样本从 `intent/swap_instrument.jsonl` 移至 `intent/swap_rejection.jsonl`。用户本轮明确授权自主方案、默认评审通过，因此按现有安全契约完成本次标注决策。
+
+原始输入、案例 ID、来源与历史标的候选完整保留，历史候选移入 `reference.original_instrument_assertions`；categories 原文和断言没有因此改动。拒绝输入不应向 Java 提交标的订单，所以它们不再用“成功提交的标的列表”作为正确性标准。
+
+新增 `expected.rejection` 只允许特定业务原因；拒绝评分必须同时满足对应节点与异常类型、非空用户回复、错误节点 trace、没有下单提交节点、没有 api_code/api_result/place_params。网络错误、LLM 错误、泛化 ValueError、后端拒绝和伪成功都不能冒充正确拒绝。
+
+总数仍为 391：正向/普通意图 364，明确拒绝 27。质量门同时要求总体与正向组达到 95%，拒绝组达到 100%；不靠加入负例抬高正向通过率。旧的 347/391（88.75%）属于变更前标注，必须与新标注结果分别记录，不能将标注变化全算作代码提升。
+
+| 原案例 ID（前缀 intent-swap-instrument- 保留） | 标注原因 |
+|---|---|
+| ai_trade_assist_prod_accept_order_case_77 | 非正数量 |
+| ai_trade_assist_prod_swap_order_case_13 | 暂定或历史动作 |
+| ai_trade_assist_prod_swap_order_case_14 | 暂定或历史动作 |
+| ai_trade_assist_prod_swap_order_case_18 | 暂定或历史动作 |
+| ai_trade_assist_prod_swap_order_case_19 | 暂定或历史动作 |
+| ai_trade_assist_prod_swap_order_case_36 | 暂定或历史动作 |
+| ai_trade_assist_prod_swap_order_case_42 | 暂定或历史动作 |
+| ai_trade_assist_prod_swap_order_case_44 | 暂定或历史动作 |
+| ai_trade_assist_prod_swap_order_case_50 | 暂定或历史动作 |
+| ai_trade_assist_prod_swap_order_case_72 | 暂定或历史动作 |
+| ai_trade_assist_prod_swap_order_case_74 | 暂定或历史动作 |
+| ai_trade_assist_prod_swap_order_case_77 | 暂定或历史动作 |
+| ai_trade_assist_prod_swap_order_case_81 | 暂定或历史动作 |
+| ai_trade_assist_prod_swap_order_case_84 | 暂定或历史动作 |
+| ai_trade_assist_prod_swap_order_case_85 | 暂定或历史动作 |
+| ai_trade_assist_prod_swap_order_case_86 | 暂定或历史动作 |
+| ai_trade_assist_prod_swap_order_case_87 | 暂定或历史动作 |
+| ai_trade_assist_prod_swap_order_case_92 | 暂定或历史动作 |
+| ai_trade_assist_prod_swap_order_case_93 | 暂定或历史动作 |
+| ai_trade_assist_prod_swap_order_case_94 | 暂定或历史动作 |
+| ai_trade_assist_prod_swap_order_case_96 | 暂定或历史动作 |
+| ai_trade_assist_prod_swap_order_case_103 | 暂定或历史动作 |
+| ai_trade_assist_prod_swap_order_case_104 | 暂定或历史动作 |
+| ai_trade_assist_prod_swap_order_case_107 | 暂定或历史动作 |
+| ai_trade_assist_prod_swap_order_case_111 | 暂定或历史动作 |
+| ai_trade_assist_prod_swap_order_case_117 | 暂定或历史动作 |
+| ai_trade_assist_prod_swap_order_case_125 | 暂定或历史动作 |

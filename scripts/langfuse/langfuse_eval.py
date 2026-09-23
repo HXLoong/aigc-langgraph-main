@@ -50,7 +50,7 @@ from langgraph.checkpoint.memory import InMemorySaver
 from app.graph.main import build_main_graph
 from app.prompts import load_prompt
 from app.api.turn_state import inputs_to_state
-from harness.evaluators import instrument_match, intent_match
+from harness.evaluators import instrument_match, intent_match, rejection_match
 from harness.golden import (
     GoldenCase,
     build_overview,
@@ -503,6 +503,8 @@ def code_evaluations(item, output: dict[str, Any]) -> list:
     evaluators = [intent_match.evaluate]
     if getattr(item, "has_instruments", False):
         evaluators.append(instrument_match.evaluate)
+    if getattr(item, "has_rejections", False):
+        evaluators.append(rejection_match.evaluate)
     evaluations = []
     for evaluate in evaluators:
         for score in evaluate(ctx).scores:
@@ -524,6 +526,19 @@ def case_passed(suite: str, evaluations: list) -> bool:
     if suite == "intent":
         return all(float(ev.value) >= 1.0 for ev in evaluations)
     return float(evaluations[0].value) >= _PASS_THRESHOLD
+
+
+def passes_quality_gate(summary: dict[str, Any], threshold: float) -> bool:
+    """正向质量不因加入拒绝样本抬高；已标注的安全拒绝必须全部通过。"""
+    if summary["pass_rate"] < threshold:
+        return False
+    buckets = summary.get("acceptance_buckets", {})
+    executable = buckets.get("executable", {})
+    rejection = buckets.get("expected_rejection", {})
+    return not (
+        executable.get("total", 0) and executable["pass_rate"] < threshold
+        or rejection.get("total", 0) and rejection["passed"] != rejection["total"]
+    )
 
 
 # ── 报告 ──
@@ -678,6 +693,7 @@ class _LocalItem:
         # Dataset 同款 expectedOutput：本地确定性评估器（intent_match / instrument_match）读这份
         self.expected_structured = dataset_expected(case)
         self.has_instruments = any(bool(turn.expected.get("instruments")) for turn in case.turns)
+        self.has_rejections = any(bool(turn.expected.get("rejection")) for turn in case.turns)
 
 
 async def run_local(
@@ -825,6 +841,7 @@ async def run_local(
                 "score": float(evaluations[0].value),
                 "comment": evaluations[0].comment,
                 "passed": case_passed(suite, evaluations),
+                "expected_rejection": r["item"].has_rejections,
                 "evaluations": _evaluation_dicts(evaluations),
                 "reply": r["output"].get("reply_text", ""),
                 "expected": r["item"].expected_output,
@@ -897,6 +914,7 @@ async def run_local(
             {
                 "id": s["id"],
                 "passed": s["passed"],
+                "expected_rejection": s["expected_rejection"],
                 "score": s["score"],
                 "evaluations": s["evaluations"],
                 "turns": s["turns"],
@@ -904,6 +922,15 @@ async def run_local(
             for s in scores
         ],
     }
+    if suite == "intent":
+        buckets = {}
+        for name, is_rejection in (("executable", False), ("expected_rejection", True)):
+            selected = [score for score in scores if score["expected_rejection"] == is_rejection]
+            count = sum(score["passed"] for score in selected)
+            buckets[name] = {"total": len(selected), "passed": count,
+                             "pass_rate": count / len(selected) if selected else None}
+            print(f"验收分桶 {name}: {count}/{len(selected)}")
+        summary["acceptance_buckets"] = buckets
     if report is not None:
         report.parent.mkdir(parents=True, exist_ok=True)
         report.write_text(
@@ -1021,9 +1048,9 @@ def main() -> int:
         if (
             args.fail_under is not None
             and summary is not None
-            and summary["pass_rate"] < args.fail_under
+            and not passes_quality_gate(summary, args.fail_under)
         ):
-            print(f"通过率 {summary['pass_rate']:.1%} 低于门槛 {args.fail_under:.1%}")
+            print(f"质量门未通过：总体/正向通过率要求 {args.fail_under:.1%}，明确拒绝要求 100%")
             return 1
         return 0
     asyncio.run(
