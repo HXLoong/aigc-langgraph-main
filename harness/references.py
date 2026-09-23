@@ -56,6 +56,7 @@ def _card_text(quote: str) -> str:
 
 def _resolve(reference: QuoteReference, quote: str) -> str | list[str]:
     text = _card_text(quote)
+    values: list[str]
     if reference.source == "quote.counterparty":
         values = list(dict.fromkeys(value.strip() for option, value in _OPTIONS.findall(text)
                                     if option == reference.option))
