@@ -203,6 +203,7 @@ def test_resolve_suite_from_local_paths_dataset_name_or_override() -> None:
     assert resolve_suite(None, [Path("tests/fixtures/intent/swap.jsonl")], None) == "intent"
     assert resolve_suite(None, [Path("tests/fixtures/categories")], None) == "business"
     assert resolve_suite(None, None, "intent-swap") == "intent"
+    assert resolve_suite(None, None, "intent_swap") == "intent"
     assert resolve_suite(None, None, "golden_option_inquiry_case") == "business"
     assert resolve_suite("intent", [Path("tests/fixtures/categories")], None) == "intent"
 

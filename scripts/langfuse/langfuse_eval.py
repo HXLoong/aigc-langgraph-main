@@ -74,12 +74,12 @@ INTENT_DIR_NAME = "intent"
 def resolve_suite(
     suite: str | None, local_paths: list[Path] | None, dataset_name: str | None
 ) -> str:
-    """显式 --suite 优先；--local 路径含 intent/ 或 dataset 名以 intent- 开头 → intent。"""
+    """显式 --suite 优先；--local 路径或 intent_ / intent- Dataset 名判断套件。"""
     if suite:
         return suite
     if local_paths and any(INTENT_DIR_NAME in path.parts for path in local_paths):
         return "intent"
-    if dataset_name and dataset_name.startswith("intent-"):
+    if dataset_name and dataset_name.startswith(("intent_", "intent-")):
         return "intent"
     return DEFAULT_SUITE
 
@@ -966,7 +966,7 @@ def main() -> int:
     p.add_argument(
         "--suite",
         choices=SUITES,
-        help="套件；默认按 --local 路径（intent/）或 --dataset 前缀（intent-）判定。intent 不跑 Judge",
+        help="套件；默认按 --local 路径（intent/）或 --dataset 前缀（intent_ / intent-）判定。intent 不跑 Judge",
     )
     p.add_argument(
         "--fail-under",
