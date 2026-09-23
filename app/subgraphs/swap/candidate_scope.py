@@ -8,6 +8,7 @@ from pydantic import BaseModel
 from app.extraction.fields import EvidenceError
 from app.subgraphs.swap.errors import AmbiguousActionError, NonPositiveQuantityError
 from app.subgraphs.swap.normalize import (
+    PREMARKET_WORDS,
     holding_action,
     is_holding_description,
     negates_token,
@@ -67,6 +68,59 @@ _NON_CURRENT_ACTION = re.compile(
     r"(?:已改|已|暂|暫){1,2}(?:买入|買入|卖出|賣出|买|買|卖|賣|沽出|沽|入)"
     r"|(?:买入|買入|卖出|賣出|买|買|卖|賣|沽出|沽)了",
 )
+
+
+def _name_spans(row: dict[str, Any], text: str) -> list[tuple[int, int]]:
+    names = [row.get(field) for field in ("placeOrderWindCode", "placeOrderShortname")]
+    return [match.span() for name in names if name and name.get("value")
+            for match in re.finditer(re.escape(name["value"]), text)]
+
+
+def _outside_names(value: str, row: dict[str, Any], text: str) -> bool:
+    spans = _name_spans(row, text)
+    return any(not any(start <= match.start() and match.end() <= end for start, end in spans)
+               for match in re.finditer(re.escape(value), text))
+
+
+def _timing_roles(row: dict[str, Any], raw: str) -> list[str]:
+    """明确盘前词可以纠正字段归属；随后仍校验同笔证据、否定与条件。"""
+    misplaced = []
+    for field in ("placeOrderPriceType", "placeOrderTransactionType"):
+        candidate = row.get(field)
+        if (not candidate or candidate.get("origin", "raw") != "raw"
+                or candidate.get("value") not in PREMARKET_WORDS):
+            continue
+        if not _outside_names(candidate["value"], row, raw):
+            raise EvidenceError("盘前词只出现在标的或对手名称中")
+        current = row.get("placeOrderPremarket")
+        if not current or current.get("origin", "raw") != "raw":
+            row["placeOrderPremarket"] = dict(candidate)
+        elif current.get("value") not in PREMARKET_WORDS:
+            raise ValueError("盘前候选存在冲突，不能自动合并")
+        misplaced.append(field)
+    return misplaced
+
+
+def _omit_duplicate_market_role(row: dict[str, Any], window: str) -> None:
+    market = row.get("placeOrderTransactionType")
+    if not market or market.get("origin", "raw") != "raw" or not market.get("value"):
+        return
+    value = market["value"]
+    qualifiers = window.replace("不限价", "").replace("不限價", "")
+    if not _outside_names(value, row, window) or re.search(
+        r"[不未没勿别]|禁止|无需|無需|如果|假如|若|或者|或|达到.*再|等.*再|已|完成"
+        r"|\b(?:not|no|never)\b", qualifiers, re.I,
+    ):
+        return
+    for field in ("placeOrderOrderDirection", "placeOrderPriceType", "placeOrderAlgorithmType"):
+        candidate = row.get(field)
+        if (candidate and candidate.get("origin", "raw") == "raw"
+                and (candidate.get("value") or "").casefold() == value.casefold()
+                and _within(candidate, window)):
+            # 只去掉已有合法字段的重复误填，不从市场字段创造新买卖动作或算法。
+            normalize_field(field, candidate["value"], candidate["evidence"])
+            row["placeOrderTransactionType"] = None
+            return
 
 
 def _single_order_block(row: dict[str, Any], raw: str) -> str | None:
@@ -185,14 +239,17 @@ def constrain_candidates(candidates: BaseModel, sources: Mapping[str, str]) -> B
     candidates = _constrain_references(candidates, sources)
     data = candidates.model_dump(by_alias=True)
     orders = data.get("orderList") or []
+    timing_roles = [_timing_roles(row, sources.get("raw", "")) for row in orders]
     shared_direction = _shared_direction_prefix(orders, sources.get("raw", ""))
-    for row in orders:
+    for index, row in enumerate(orders):
         market = row.get("placeOrderTransactionType")
         instrument = row.get("placeOrderWindCode")
         if market and market.get("origin", "raw") == "raw":
             if market.get("value") in {"互换", "收益互换", "场外收益互换"}:
                 row["placeOrderTransactionType"] = None
-            elif instrument and _within(market, instrument.get("value") or ""):
+            elif (instrument and _within(market, instrument.get("value") or "")
+                  and any(market.get("value", "").lstrip(".").casefold() == suffix.casefold()
+                          for suffix in re.findall(r"\.([A-Za-z]+)", instrument.get("value") or ""))):
                 try:
                     normalize_field("placeOrderTransactionType", market.get("value") or "")
                 except ValueError:
@@ -215,6 +272,13 @@ def constrain_candidates(candidates: BaseModel, sources: Mapping[str, str]) -> B
                 if field == "placeOrderOrderDirection" and shared_direction is not None:
                     continue
                 raise EvidenceError(f"{field}: action evidence does not belong to this order")
+        for field in timing_roles[index]:
+            premarket = row["placeOrderPremarket"]
+            if not _within(premarket, window):
+                raise EvidenceError("盘前证据不属于当前订单")
+            premarket["evidence"] = window
+            row[field] = None
+        _omit_duplicate_market_role(row, window)
         for field in ("placeOrderQuantity", "placeOrderQuantityHand", "placeOrderQuantityTotal", "placeOrderDisplayQty"):
             candidate = row.get(field)
             value = candidate.get("value") if candidate else None
@@ -223,9 +287,10 @@ def constrain_candidates(candidates: BaseModel, sources: Mapping[str, str]) -> B
                     and re.search(r"(?<![A-Za-z0-9_.-])(?:[-−]\s*)+" + re.escape(token) + r"(?![0-9.])", window)):
                 raise NonPositiveQuantityError(field)
         direction = row.get("placeOrderOrderDirection")
-        names = [row.get(field) for field in ("placeOrderWindCode", "placeOrderShortname")]
-        name_spans = [match.span() for name in names if name and name.get("value")
-                      for match in re.finditer(re.escape(name["value"]), window)]
+        if (direction and direction.get("value") and not is_holding_description(direction["value"])
+                and not _outside_names(direction["value"], row, shared_direction or window)):
+            raise EvidenceError("买卖动作只出现在标的或对手名称中")
+        name_spans = _name_spans(row, window)
         for match in _NON_CURRENT_ACTION.finditer(window):
             if not any(start <= match.start() and match.end() <= end for start, end in name_spans):
                 raise AmbiguousActionError()

@@ -581,3 +581,74 @@ def test_short_open_with_full_size_is_not_misread_as_closing():
     }])
     assert params.order_list[0].place_order_order_direction == 'SHORT_OPEN'
     assert params.order_list[0].place_order_close_intent is None
+
+
+@pytest.mark.parametrize('field,value', [('placeOrderOrderDirection', '买入'), ('placeOrderPriceType', '市价')])
+def test_duplicate_non_market_role_does_not_become_transaction_type(field, value):
+    raw = f'甲证券 {value}100股'
+    params, _ = run(raw, [{'placeOrderWindCode': cell('甲证券'), 'placeOrderQuantity': cell('100股'),
+                           field: cell(value), 'placeOrderTransactionType': cell(value)}])
+    assert params.order_list[0].place_order_transaction_type is None
+    assert getattr(params.order_list[0], 'place_order_order_direction' if field.endswith('Direction') else 'place_order_price_type') == ('BUY' if field.endswith('Direction') else 'MarketOrder')
+
+
+@pytest.mark.parametrize('wrong_field', ['placeOrderTransactionType', 'placeOrderPriceType'])
+def test_auction_evidence_belongs_to_premarket_requirement(wrong_field):
+    raw = '甲证券 集合竞价27.69元卖出100股'
+    params, records = run(raw, [{'placeOrderWindCode': cell('甲证券'),
+                                'placeOrderQuantity': cell('100股'),
+                                'placeOrderOrderDirection': cell('卖出'),
+                                'placeOrderPrice': cell('27.69元'),
+                                wrong_field: cell('集合竞价', raw)}])
+    order = params.order_list[0]
+    assert order.place_order_premarket is True
+    assert order.place_order_price_type == 'LimitOrder'
+    assert order.place_order_transaction_type is None
+    assert records['swap/place_order.orderList.0.placeOrderPremarket'].evidence == raw
+
+
+def test_market_role_correction_does_not_invent_direction():
+    with pytest.raises(ValueError):
+        run('甲证券买入100股', [{'placeOrderWindCode': cell('甲证券'),
+                            'placeOrderQuantity': cell('100股'), 'placeOrderTransactionType': cell('买入')}])
+
+
+def test_action_word_inside_instrument_name_is_not_a_trade_direction():
+    with pytest.raises(ValueError):
+        run('买入科技100股', [{'placeOrderWindCode': cell('买入科技'),
+                            'placeOrderQuantity': cell('100股'), 'placeOrderOrderDirection': cell('买入'),
+                            'placeOrderTransactionType': cell('买入')}])
+
+
+def test_conflicting_direction_cannot_be_hidden_as_duplicate_market():
+    with pytest.raises(ValueError):
+        run('甲证券买入或卖出100股', [{'placeOrderWindCode': cell('甲证券'),
+                             'placeOrderQuantity': cell('100股'), 'placeOrderOrderDirection': cell('卖出'),
+                             'placeOrderTransactionType': cell('买入')}])
+
+
+@pytest.mark.parametrize('raw,expected', [('不要集合竞价', False), ('不要在盘前下单', False),
+                                         ('不要市价，集合竞价卖出', True)])
+def test_premarket_negation_stays_attached_to_its_own_requirement(raw, expected):
+    value = '集合竞价' if '集合竞价' in raw else '盘前'
+    assert normalize_field('placeOrderPremarket', value, raw) is expected
+
+
+@pytest.mark.parametrize('raw', ['如果盘前就执行', '盘前或盘中', '不要盘前，改集合竞价'])
+def test_premarket_conditions_and_conflicts_are_not_assumed(raw):
+    with pytest.raises(ValueError):
+        normalize_field('placeOrderPremarket', '盘前', raw)
+
+
+def test_duplicate_market_correction_does_not_erase_negated_price_type():
+    with pytest.raises(ValueError):
+        run('甲证券不要按市价买入100股', [{'placeOrderWindCode': cell('甲证券'),
+            'placeOrderQuantity': cell('100股'), 'placeOrderOrderDirection': cell('买入'),
+            'placeOrderPriceType': cell('市价'), 'placeOrderTransactionType': cell('市价')}])
+
+
+def test_duplicate_market_correction_does_not_erase_wait_condition():
+    with pytest.raises(ValueError):
+        run('甲证券买入100股，等通知再执行', [{'placeOrderWindCode': cell('甲证券'),
+            'placeOrderQuantity': cell('100股'), 'placeOrderOrderDirection': cell('买入'),
+            'placeOrderTransactionType': cell('买入')}])

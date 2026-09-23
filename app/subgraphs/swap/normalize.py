@@ -73,6 +73,11 @@ _CLOSE_ACTION = re.compile(
 _OPEN_ACTION = re.compile(r"(?:买入|買入)(?!\s*(?:平仓|平倉))|(?:卖出|賣出)\s*(?:开仓|開倉)|买开|卖空|賣空|卖开")
 _NEGATION = re.compile(r"(?:不要|无需|不需要|不|别|勿|禁止|暂不)(?:\s*|(?:把|将)[^,，;；\n]*)$")
 _CONDITIONAL = re.compile(r"如果|假如|若|或者|或|达到.*再|等.*再")
+PREMARKET_WORDS = ("盘前", "盤前", "集合竞价", "集合競價")
+_PREMARKET_PATTERN = re.compile("|".join(PREMARKET_WORDS))
+_PREMARKET_NEGATION = re.compile(
+    r"(?:不要|无需|无须|不需要|不|别|勿|禁止|暂不|非)(?:\s*|(?:在|于|把|将)[^,，;；。\n]*)$",
+)
 _ALGORITHM_SUFFIX = re.compile(
     r"(?:(POV(?:\s*跟量)?|跟量|占比)\s*([0-9]+(?:\.[0-9]+)?%)|((?:VWAP|TWAP))\s*(?:全天|到收盘|至收盘))", re.I,
 )
@@ -293,6 +298,16 @@ def normalize_field(field: str, value: str, evidence: str | None = None) -> Any:
         return float(match[1]) * (60 if match[2] in {"小时", "小時"} else 1)
     if field == "hasFastExecutionIntent":
         return resolve_fast_execution(evidence or text)
+    if field == "placeOrderPremarket" and _PREMARKET_PATTERN.search(text):
+        if _CONDITIONAL.search(evidence):
+            raise ValueError("盘前要求存在条件或备选时段")
+        signs = {bool(_PREMARKET_NEGATION.search(evidence[:match.start()]))
+                 for match in _PREMARKET_PATTERN.finditer(evidence)}
+        if not signs:
+            raise ValueError("盘前要求缺少对应原文证据")
+        if len(signs) > 1:
+            raise ValueError("盘前要求的肯定与否定冲突")
+        return not next(iter(signs))
     if field == "placeOrderCloseIntent" and text in {"开仓", "開倉"}:
         if negates_token(text, evidence) or _CONDITIONAL.search(evidence):
             raise ValueError("开仓动作存在否定或条件")
@@ -322,7 +337,7 @@ def normalize_field(field: str, value: str, evidence: str | None = None) -> Any:
         }:
             return True
         signals = {
-            "placeOrderPremarket": ("盘前", "盤前", "集合竞价", "集合競價"),
+            "placeOrderPremarket": PREMARKET_WORDS,
             "placeOrderCloseIntent": ("平仓", "平倉", "清仓", "清倉", "平空", "平多", "平掉", "全平", "减仓"),
         }
         if text.lower() in {"true", "是"} or any(signal in text for signal in signals[field]):
