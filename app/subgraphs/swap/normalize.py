@@ -255,7 +255,7 @@ def normalize_field(field: str, value: str, evidence: str | None = None) -> Any:
         for normalized, aliases in _ENUMS[field].items():
             if any(text.upper() == alias.upper() for alias in aliases):
                 return normalized
-        raise ValueError(f"无法识别枚举字段 {field}")
+        raise ValueError(f"无法识别枚举字段 {field}：候选值={text[:80]!r}")
     if field == "placeOrderQuantityUnit":
         return text.upper() if text.upper() in {"HAND", "SHARE", "AMOUNT"} else quantity_unit(text)
     if field == "placeOrderNotionalCurrency":
