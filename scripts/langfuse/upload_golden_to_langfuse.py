@@ -7,6 +7,7 @@ from __future__ import annotations
 import argparse
 import os
 import sys
+import uuid
 from pathlib import Path
 from typing import Any
 
@@ -43,6 +44,23 @@ def detect_suite(source: Path) -> str:
 #: 与本地确定性评分（langfuse_eval.py --local）共用同一份投影，避免云端 / 本地口径漂移
 build_input = dataset_input
 build_expected = dataset_expected
+
+
+def dataset_item_id(dataset_name: str, case_id: str) -> str:
+    """Langfuse Item ID 在项目内唯一；不同套件不得相互搬移或覆盖同名案例。"""
+    return str(uuid.uuid5(
+        uuid.NAMESPACE_URL,
+        f"https://github.com/GZTL-AI/aigc-langgraph/datasets/{dataset_name}/{case_id}",
+    ))
+
+
+def build_dataset_metadata(cases: list[GoldenCase], *, suite: str) -> dict[str, Any]:
+    names = ["response-contains", "response-contains-any", "response-not-contains"]
+    if suite == "intent":
+        names = ["intent-match"]
+        if any(turn.expected.get("instruments") for case in cases for turn in case.turns):
+            names.append("instrument-match")
+    return {"suite": suite, "evaluator_names": names}
 
 
 def _clear_dataset(dataset_name: str) -> None:
@@ -152,7 +170,9 @@ def main() -> int:
     from langfuse import Langfuse
 
     langfuse = Langfuse()
-    dataset = langfuse.create_dataset(name=args.dataset_name)
+    dataset = langfuse.create_dataset(
+        name=args.dataset_name, metadata=build_dataset_metadata(cases, suite=suite),
+    )
     print(f"创建或复用 Dataset：{dataset.name}")
 
     success = 0
@@ -160,7 +180,7 @@ def main() -> int:
     for case in cases:
         try:
             langfuse.create_dataset_item(
-                id=case.id,
+                id=dataset_item_id(args.dataset_name, case.id),
                 dataset_name=args.dataset_name,
                 input=build_input(case),
                 expected_output=build_expected(case),
