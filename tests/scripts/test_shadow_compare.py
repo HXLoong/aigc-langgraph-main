@@ -1,4 +1,4 @@
-"""F4.1 shadow_compare 字段级 diff 测试。"""
+"""shadow_compare 字段级 diff 测试。"""
 from __future__ import annotations
 
 from scripts.shadow_compare import (
@@ -103,7 +103,7 @@ def test_normalize_missing_outputs_returns_defaults() -> None:
 
 
 # ============================================================
-# compare · F4.1 字段级 diff
+# compare · 字段级 diff
 # ============================================================
 
 
@@ -130,7 +130,7 @@ def test_compare_diff_on_intent() -> None:
 
 
 def test_compare_diff_on_business_object() -> None:
-    """F4.1 关键能力：业务对象字段路径 diff。"""
+    """关键能力：业务对象字段路径 diff。"""
     lg = _wrap({
         "product_type": "swap",
         "place_params": {"orderList": [{"placeOrderQuantity": 100}]},

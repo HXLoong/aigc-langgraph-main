@@ -67,6 +67,12 @@ async def test_unknown_intent_uses_default_reply() -> None:
     assert _decision(out) == "unknown_intent"
 
 
+@pytest.mark.asyncio
+async def test_business_intent_without_backend_result_is_labelled() -> None:
+    out = await render({"product_type": "option", "intent": "new_inquiry"})
+    assert _decision(out) == "backend_no_result"
+
+
 async def test_known_intent_without_receipt_is_uncertain_not_fabricated() -> None:
     out = await render({"product_type": "option", "intent": "new_inquiry",
                         "expected_action": "inquiry", "place_params": {"orderList": []}})

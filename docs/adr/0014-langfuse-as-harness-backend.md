@@ -1,8 +1,8 @@
 # ADR 0014 · LangFuse 作为 Harness 工程的后台服务
 
-- 状态：已采纳（trace/dataset/eval 四件套有效；#155 已将开发期 Cloud 明确为例外，并落地生产 self-hosted/prompt 硬闸门）
+- 状态：已采纳（trace/dataset/eval 四件套有效；2026-08-27 已将开发期 Cloud 明确为例外，并落地生产 self-hosted/prompt 硬闸门）
 - 日期：2026-05-10
-- 修订：2026-08-27 深度改写为现状口径（wayfinder map #138 / 核查 #142）
+- 修订：2026-08-27 深度改写为现状口径（对照代码核查）
 - 作者：图灵科技 + Tony
 
 ## 上下文
@@ -19,9 +19,9 @@ LangSmith 是海外 SaaS，所有 prompt + LLM 输出（含客户企微原话、
 
 **落地资产**：`infra/langfuse/docker-compose.yml` —— 实际 **6 服务**：PostgreSQL + ClickHouse + MinIO + Redis + Worker + Web（原文写 3 组件，本次更正），约 6GB RAM。
 
-**例外决策（#155 裁决，Tony 2026-08-27）**：
+**例外决策（2026-08-27 裁决）**：
 
-- **开发/评测期允许使用 LangFuse Cloud（us.cloud.langfuse.com）**——出境数据限定为 **golden 测试数据**（业务方手写种子 + LLM paraphrase，非生产客户流量）与提示词全文；此风险显式接受，M3.3 现场 sign-off 材料中须向业务方说明。
+- **开发/评测期允许使用 LangFuse Cloud（us.cloud.langfuse.com）**——出境数据限定为 **golden 测试数据**（业务方手写种子 + LLM paraphrase，非生产客户流量）与提示词全文；此风险显式接受，须向业务方说明。
 - **客户现场部署强制 self-hosted**——`.env.customer.template` 指向 `infra/langfuse/` 自托管栈，现场严禁配置 Cloud host。
 - 附带闸门（同批落地）：生产环境 `USE_LANGFUSE_PROMPTS=true` 时 `load_prompt` 直接 raise（D3-2 硬闸门）；Langfuse 拉取/注入失败从静默降级升为 warning。
 
@@ -36,8 +36,8 @@ LangSmith 是海外 SaaS，所有 prompt + LLM 输出（含客户企微原话、
 **落地现状**：
 
 - ✅ 晋升脚本 `scripts/langfuse/promote_langfuse_prompt.py <category.name>`：按 [ADR 0003](./0003-prompt-versioning-by-file-coexistence.md) 扫描现有版本写 `_v{N+1}.md`，行为与设计一致。
-- **双源开关追认现状**（#155 裁决）：开发/评测环境使用 `enable_langfuse && use_langfuse_prompts` 全局布尔；开关打开时 Langfuse 优先、本地 `.md` 为 fallback。该机制不进入生产，故不改变“生产以 Git 为真理来源”的决策。
-- ✅ **生产硬闸门已补齐**（#155 裁决落地，2026-08-27）：`load_prompt` 在 `environment=production` 且 `use_langfuse_prompts=true` 时直接 raise（`tests/prompts/test_langfuse_prompt_gate.py` 覆盖）；拉取失败从 debug 静默升为 warning。
+- **双源开关追认现状**（2026-08-27 裁决）：开发/评测环境使用 `enable_langfuse && use_langfuse_prompts` 全局布尔；开关打开时 Langfuse 优先、本地 `.md` 为 fallback。该机制不进入生产，故不改变“生产以 Git 为真理来源”的决策。
+- ✅ **生产硬闸门已补齐**（2026-08-27 裁决落地）：`load_prompt` 在 `environment=production` 且 `use_langfuse_prompts=true` 时直接 raise（`tests/test_langfuse_prompt_gate.py` 覆盖）；拉取失败从 debug 静默升为 warning。
 - D3-4"晋升后 7 天删 LangFuse 实验版"无自动化承载，降级为 checklist 纪律。
 
 不走 LangFuse 作为生产提示词真理来源的理由不变：金融审计要求提示词改动走 git PR review；提示词与加载逻辑/Pydantic schema/节点函数耦合演进须同 commit；文件 diff 是最自然的 review 形式。
@@ -49,12 +49,12 @@ LangSmith 是海外 SaaS，所有 prompt + LLM 输出（含客户企微原话、
 | Trace | LangGraph CallbackHandler 自动写 | LangFuse UI / API |
 | Dataset | `tests/fixtures/*.jsonl` 同步脚本（`upload_golden_to_langfuse.py` 等）| harness runner |
 | Score | `scripts/langfuse/langfuse_eval.py`（DeepSeek Judge）| LangFuse UI / 报告 |
-| Annotation | 业务方 LangFuse Annotation Queue（Phase 4 运营待启动）| 回流脚本（待建）|
+| Annotation | 业务方 LangFuse Annotation Queue（线上标注运营待启动）| 回流脚本（待建）|
 
 ### D5 · Harness CLI 接入点（现状订正）
 
-- `harness run` ✅、`harness promote-prompt` ✅（委托脚本）
-- **`eval` / `diff` / `sync-golden` 仍是 stub（退出码 64）**——评估主入口现为 `scripts/langfuse/langfuse_eval.py`（M3 主用）
+- `harness run` ✅、`harness node-run` ✅（[ADR 0029](./0029-node-level-debug-api-and-regression-workbench.md)）；提示词晋升直接跑 `scripts/langfuse/promote_langfuse_prompt.py`
+- 早期 `eval` / `diff` / `sync-golden` stub 子命令已删除（2026-09）——评估主入口为 `scripts/langfuse/langfuse_eval.py`
 - `harness/langfuse_client.py` 实为 **LangChain CallbackHandler 单例封装**（非 SDK client 封装；未启用返回 None 走 no-op）
 
 ### D6 · 数据保留策略（运维约定，仓库内无可验证载体）
@@ -82,7 +82,7 @@ Trace 90 天（LangFuse retention policy）/ Dataset、Score、Annotation 永久
 ## 后果（现状口径）
 
 - 四件套统一、业务方独立操作、AI 工具可拉 REST API——均成立。
-- 合规口径按 D1 例外决策执行：开发期 Cloud 仅承载 golden 测试数据（风险显式接受并向业务方披露），现场强制 self-hosted（#155 已裁决）。
+- 合规口径按 D1 例外决策执行：开发期 Cloud 仅承载 golden 测试数据（风险显式接受并向业务方披露），现场强制 self-hosted（已裁决）。
 - 文档残留（LangSmith 字样 5 处）随外部引用修正票清理。
 
 ## Related

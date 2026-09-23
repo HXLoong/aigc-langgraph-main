@@ -5,11 +5,13 @@ from __future__ import annotations
 import copy
 import json
 from typing import Any, TypedDict
+from typing import Any, TypedDict
 from unittest.mock import AsyncMock, MagicMock
 
 import httpx
 import pytest
 
+from app.extraction.intent_evidence import IntentEvidence
 from app.main import app
 from app.node_execution.executor import NodeExecutor
 from app.node_execution.registry import NodeRegistration, build_registry
@@ -23,6 +25,16 @@ CONTEXT = {
     "user_id": "user-1",
     "message_id": 123,
 }
+
+
+def _stable(output: dict[str, Any]) -> dict[str, Any]:
+    """trace 条目的 id / elapsed_ms 每次运行都不同，比较业务输出时剔除。"""
+    stable = copy.deepcopy(output)
+    stable["trace"] = [
+        {key: value for key, value in entry.items() if key not in {"id", "elapsed_ms"}}
+        for entry in stable.get("trace") or []
+    ]
+    return stable
 
 
 @pytest.fixture(autouse=True)
@@ -402,6 +414,12 @@ def test_registry_declarations_are_explicit_valid_and_cover_known_dependencies()
             "quote_content",
             "conversation_orders",
         },
+        ("main", "instructions"): {
+            "sub_instructions",
+            "history_messages",
+            "conversation_id",
+            "message_id",
+        },
     }
     for key, expected in expected_subsets.items():
         assert expected <= set(registrations[key].effective_input_fields), key
@@ -432,6 +450,10 @@ def test_registration_rejects_invalid_field_contracts() -> None:
             target,
             input_fields=("does_not_exist",),
         )
+    class _RequiredSchema(TypedDict):
+        index: int
+        org_str: str
+
     with pytest.raises(ValueError, match="Required fields not declared"):
         NodeRegistration(
             "main",
@@ -605,7 +627,7 @@ async def test_backend_request_is_identical_before_and_after_prepare(
         "quote_appinfo": "app",
         "guid": "guid",
         "operator_user_id": "operator",
-        "history_messages": [{"role": "user", "content": "unrelated"}],
+        "history_messages": [{"id": "h-2", "role": "user", "content": "unrelated"}],
     }
     prepared = prepare_state(registration, original)
 

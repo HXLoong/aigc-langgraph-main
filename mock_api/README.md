@@ -19,7 +19,6 @@ GOATS_BASE_URL=http://127.0.0.1:8099
 GOATS_CLIENT_ID=mock-client-id
 GOATS_CLIENT_SECRET=mock-client-secret
 GOATS_EXTAPP_SALT=mock-salt
-SECURITIES_INSTRUMENT_URL=http://127.0.0.1:8099/admin-api/integration/securities-instrument/select
 ```
 
 LLM 仍走真实 DeepSeek（mock 只替后端）；不想产生任何真实副作用时叠加 `DRY_RUN_BACKEND=true`。

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""真后端 E2E probe runner · F4 切流前最后一道真后端保障。
+"""真后端 E2E probe runner · 切流前最后一道真后端保障。
 
 整合原 4 个手动 probe（probe_swap_write_e2e / probe_option_write_e2e /
 probe_close_write_e2e / probe_ticker_e2e）：
@@ -426,7 +426,7 @@ async def _amain(args: argparse.Namespace) -> int:
 
 def main() -> int:
     parser = argparse.ArgumentParser(
-        description="真后端 E2E probe runner（F4 切流前真后端保障）"
+        description="真后端 E2E probe runner（切流前真后端保障）"
     )
     parser.add_argument(
         "--target",

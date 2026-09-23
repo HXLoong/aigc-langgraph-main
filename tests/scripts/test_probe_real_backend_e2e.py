@@ -1,4 +1,4 @@
-"""scripts/probe_real_backend_e2e.py · F4 真后端 probe runner 测试。
+"""scripts/probe_real_backend_e2e.py · 真后端 probe runner 测试。
 
 不实跑真后端（CI 没 EVAL credential），仅测：
 - 前置校验（EVAL_* 缺失 → exit 2）

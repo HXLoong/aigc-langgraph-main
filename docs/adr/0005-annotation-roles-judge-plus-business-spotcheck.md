@@ -1,30 +1,30 @@
-# ADR 0005 · Phase 4 标注闭环：LLM judge 全量 + 业务方每周抽检关键 case
+# ADR 0005 · 标注闭环：LLM judge 全量 + 业务方每周抽检关键 case
 
-- 状态：已采纳（标注平台随 [ADR 0014](./0014-langfuse-as-harness-backend.md) 定为 LangFuse Annotation Queue；Phase 4 运营尚未立项）
+- 状态：已采纳（标注平台随 [ADR 0014](./0014-langfuse-as-harness-backend.md) 定为 LangFuse Annotation Queue；离线 Judge 在用，线上标注运营尚未启动）
 - 日期：2026-05-10
-- 修订：2026-08-27 深度改写为现状口径（wayfinder map #138 / 核查 #140）
+- 修订：2026-08-27 深度改写为现状口径（对照代码核查）
 - 作者：图灵科技 + Tony
 
 ## 决策（角色分工，保持不变）
 
-[ADR 0002](./0002-comprehensive-runtime-harness.md) Phase 4 需要"线上 trace → 标注 → golden set 反哺"。采用 **LLM judge 自动评分 + 业务方关键 case 复核**双层分工：
+[ADR 0002](./0002-comprehensive-runtime-harness.md) 需要"线上 trace → 标注 → 数据集反哺"。采用 **LLM judge 自动评分 + 业务方关键 case 复核**双层分工：
 
-1. **LLM judge 做日常自动评分**，覆盖全量流量（Phase 4 目标态）。
+1. **LLM judge 做日常自动评分**，覆盖全量流量（目标态）。
 2. **业务方做关键 case 标注**：每周约 30 分钟，看 judge 低置信 case 做最终定性（对/错/业务等价），回流 golden。
 3. **工程师不充当业务正确性裁判**：只负责 trace 抓取、judge 提示词调优、回流脚本。
 
 **业务方标注权重 > judge**：业务方定性为"错"的 case 无条件进 golden 作反例。
 
-## judge 层落地现状（2026-08-27，先于 Phase 4 以离线形态落地）
+## judge 层落地现状（2026-08-27，以离线形态先行落地）
 
-- 载体：`scripts/langfuse/langfuse_eval.py`（M3 主用评估入口）——**覆盖面是离线 golden 批跑，不是线上流量**；"100% 线上流量"仍是 Phase 4 目标而非现状。
+- 载体：`scripts/langfuse/langfuse_eval.py`（主用评估入口）——**覆盖面是离线数据集批跑，不是线上流量**；"100% 线上流量"仍是目标态而非现状。
 - judge 模型：经 DeepSeek 的 Anthropic 兼容端点调用，默认 **`deepseek-v4-flash`**（`ANTHROPIC_MODEL` 可覆盖；与 [ADR 0020](./0020-unify-all-llm-on-deepseek-v4-pro.md) 业务侧的 v4-pro 不同型号，flash 为评估成本考量）。
-- 输出契约：**`{pass: bool, score: 0.0-1.0, reason: str}`**（原设计的 `confidence ∈ {high, medium, low}` 三档未采用；Phase 4 若要驱动"业务方只看低置信"队列，需定义 score→confidence 映射阈值）。
-- ⚠️ 存在双实现：`langfuse_eval_clean.py` 亦含 judge 逻辑，有提示词漂移风险。
+- 输出契约：**`{pass: bool, score: 0.0-1.0, reason: str}`**（原设计的 `confidence ∈ {high, medium, low}` 三档未采用；若要驱动"业务方只看低置信"队列，需定义 score→confidence 映射阈值）。
+- 曾存在双实现（`langfuse_eval_clean.py` 亦含 judge 逻辑），已删除；judge 逻辑单一入口（2026-09-22 复核）。
 
 ## 标注平台选型（已定）
 
-**LangFuse Annotation Queue**（ADR 0014 四件套之一：trace / dataset / eval / annotation），零额外开发量、与 trace 数据天然关联。自建 UI 仅当业务方界面需求（中文/专属字段/SSO）不满足时再评估。标注队列的创建/拉取/回流脚本尚无——属 Phase 4 立项范围（二期 Issue #37 D 桶回流自动化）。
+**LangFuse Annotation Queue**（ADR 0014 四件套之一：trace / dataset / eval / annotation），零额外开发量、与 trace 数据天然关联。自建 UI 仅当业务方界面需求（中文/专属字段/SSO）不满足时再评估。标注队列的创建/拉取/回流脚本尚无——属线上标注回流范围（未启动）。
 
 ## 备选方案
 
@@ -33,7 +33,7 @@
 - **仅 LLM judge**：领域常识不足，偏差累积污染基线。
 - **业务方 + judge 混合（已选）**：业务方时间花在 judge 最不确定的 case 上，平衡规模和权威性。
 
-## 实现偏离与裁决（[#159](https://github.com/GZTL-AI/aigc-langgraph/issues/159)）
+## 实现偏离与裁决（2026-08-27）
 
 | 偏离 | 现状 |
 |---|---|
@@ -42,5 +42,5 @@
 
 ## 后果
 
-- 业务方每周 30 分钟是 Phase 4 硬依赖，立项前须与业务方明确承诺。
+- 业务方每周 30 分钟是线上标注回流的硬依赖，启动前须与业务方明确承诺。
 - judge 模型是软依赖可替换；提示词已纳入文件版本治理，评分批次仍须记录实际 prompt 版本以保持可比。

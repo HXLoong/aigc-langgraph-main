@@ -60,7 +60,7 @@ class TestRenderUnknownIntent:
         assert reply
 
     async def test_known_intent_unchanged(self) -> None:
-        """正常 intent 且无后端回执 → 不被 unknown 分支干扰，输出待核对提示。"""
+        """正常 intent 且无后端回执 → 走 backend_no_result 的"待核对"文案，不被 unknown 分支干扰。"""
         state: dict = {
             "product_type": "option",
             "intent": "new_inquiry",

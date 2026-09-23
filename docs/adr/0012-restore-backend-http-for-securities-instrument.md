@@ -2,7 +2,7 @@
 
 - 状态：已采纳（不直连标的数据库的边界继续有效；Python 标的查询编排已于 2026-09-20 退役）
 - 日期：2026-05-10
-- 修订：2026-08-27 深度改写为现状口径（wayfinder map #138 / 核查 #141）
+- 修订：2026-08-27 深度改写为现状口径（对照代码核查）
 - 作者：图灵科技 + Tony
 
 ## 当前职责（2026-09-22 修订）
@@ -53,4 +53,4 @@ V1 闭环为脱离 VPN 依赖，曾把标的查询从 Dify 的后端 HTTP 接口
 - [ADR 0009](./0009-mysql-version-and-tdsql-compatibility.md) 的"标的池 MySQL 兼容性"风险解除——由后端代理。
 - 性能：1 次 HTTP 额外 ~10-30ms，整体 P95 由 LLM 决定，可接受。
 - "迁移完整度审计"机制持续有效：任何把后端逻辑搬进 LangGraph 的"性能优化"必须先在 ADR 评估丢失的业务规则。
-- 待办：GET-with-body 契约测试；死配置与 rot 脚本清理；`.env.example` 双前缀修正。
+- ✅ 2026-09-22 已清理：`app/config.py` 死配置 `ticker_mysql_*`（5 项）与 `securities_instrument_url/key`，及 `.env.example` / `.env.customer.template` / `infra/nodes-run.env.example` 对应段（`tests/test_database_config.py` 守护不复活）。GET-with-body 契约测试随 LangGraph 侧调用方退役而不再需要。

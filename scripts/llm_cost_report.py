@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""LLM 成本报表（C1.7 / Issue #56）。
+"""LLM 成本报表。
 
 每天跑一次，输出最近 24 小时 token 消耗 + 估算成本：
     0 8 * * * cd /opt/otc-agent && python scripts/llm_cost_report.py >> /var/log/cost.log 2>&1
@@ -273,12 +273,12 @@ def maybe_alert_growth(report: dict, growth_pct: float, threshold: float = 30.0)
     )
     webhook = os.environ.get("WECHAT_ALERT_WEBHOOK_URL", "")
     if webhook:
-        # 延迟导入：alerts 模块在 C1.6 (#69) merge 后可用；本期不可用则只打印
+        # 延迟导入：alerts 模块可用时；本期不可用则只打印
         try:
             from app.observability.alerts import send_wechat_webhook
             send_wechat_webhook(msg, webhook)
         except ImportError:
-            logger.warning("app.observability.alerts 不可用（C1.6 #69 未 merge），仅打印")
+            logger.warning("app.observability.alerts 不可用，仅打印")
     logger.warning("成本异常增长告警:\n%s", msg)
 
 

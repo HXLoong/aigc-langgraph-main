@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""D2.1 follow-up · swap.operate 真后端 write 端到端验证（Issue #79）。
+"""swap.operate 真后端 write 端到端验证。
 
 按风险从低到高跑：
 1. query_order_status（read 类语义，无副作用）
@@ -120,7 +120,7 @@ async def main(case_filter: int | None) -> int:
 
     selected = CASES if case_filter is None else [CASES[case_filter]]
 
-    print(f"=== Issue #79 swap.operate write 端到端 · {len(selected)} 条 case ===\n")
+    print(f"=== swap.operate write 端到端 · {len(selected)} 条 case ===\n")
     results: list[dict[str, Any]] = []
     for case in selected:
         print(f"--- {case['id']} · {case['raw_text']!r} ---")
