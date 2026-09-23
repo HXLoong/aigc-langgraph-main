@@ -2,40 +2,17 @@
 
 基于 **FastAPI + LangGraph + MySQL + LangFuse** 的企微场外衍生品指令解析平台，从 Dify 工作流迁移而来。
 
-> 当前阶段：**M1 / M2 完成 → M3 工程联调 + 评估迭代进行中**（参见 [ADR 0001](./docs/adr/0001-rewrite-app-with-harness-first.md) 和 [ADR 0016](./docs/adr/0016-m3-scope-engineering-loop-not-shadow.md)）
+> 目标（[ADR 0030](./docs/adr/0030-goal-restatement-native-langgraph-dataset-eval-harness.md)）：**用原生 LangGraph 重构场外 AI 指令链路，通过数据集进行评测和评估，按 Harness 工程的要求推进每一次改动。** 现状与待办见 [docs/work-plan.md](./docs/work-plan.md)。
 
-## 当前进度
+## 三条主线
 
-| 里程碑 | 状态 | 内容 | 退出门 |
-|--------|------|------|--------|
-| **M1 · 骨架** | ✅ 完成 | LangFuse 部署 + 主图骨架 + 公共节点 + Client Protocol + Harness MVP | smoke + tools + api + harness 测试 PASS |
-| **M2 · 子图实现** | ✅ 完成（PR #41 已合入 main） | 20 个 LangGraph 节点：swap 6 + option 6 + option_close 7 + ticker 1；golden 扩到 350+ | mock_api baseline PASS ≥ 92.5%；真 LLM baseline 84.6%（`docs/archive/m2/m2-real-llm-final-report.md`）|
-| **M3.1 · Mock 跑通** | ✅ 完成 | LangGraph 全链路 → mock_api 8099 → 业务流端到端 | harness anchor 全集 PASS ≥ 85% |
-| **M3.2 · 真后端联调** | ✅ 完成 | D2.1–D2.6（三 client 切真后端 + 字段对齐 + ticker GOATS 联调 + 不可达降级 + InferCode 动态片段 + 健康检查）；Dx.1/Dx.2 swap/close 真 write 接入 | HTTP 5xx = 0 / 4xx = 0 |
-| **M3.3 · 真后端 Golden 回归** | 🔄 进行中 | E3.1 B 桶真后端 PASS（小样本完成）+ E3.2 桶分别评估 + E3.3 D 桶（依赖 PM）+ E3.4 错例聚类只修 P0/P1 + E3.5 现场 smoke + E3.6 业务方 sign-off | PASS ≥ M3.1 mock baseline，无链路回归 |
-| **M4 · 金丝雀切流** | ⏸ 工具链就绪，待启动 | 测试群 → ~30% 群组 → 全量；shadow 双跑作 M4 第二意见（ADR 0016）| 100% 切流 + 7 天无重大事故 |
+| 主线 | 内容 | 主要 ADR |
+|---|---|---|
+| **原生 LangGraph 重构** | 子图原生嵌入、单动作多订单、RetryPolicy、State 分层与 output schema；幂等 / 回执 / 对账；字段证据契约；标的识别移交 Java 后端；Dify 只作历史参照 | 0024 · 0025 · 0026 · 0027 · 0028 |
+| **数据集评测与评估** | ground truth 是数据集 `expected`：显式验收集 `tests/fixtures/categories/` + 节点级 fixture；harness HTTP 回归 + LLM Judge；错例先补 fixture 再修代码 | 0002 · 0005 · 0014 · 0029 · 0030 D3 |
+| **Harness 工程** | 任何提示词 / 节点 / 契约改动走同一条门：TDD、pytest、四项一致性 lint、ruff / mypy、数据集 PASS 率不低于前值、trace 可归因；CI 在 push / PR 上跑 | 0003 · 0004 · 0023 · 0030 |
 
-**M4 准备就绪的工具链**（可直接复用）：
-
-- `scripts/deploy-customer.sh` · 客户现场一键部署 + smoke 自检（C1.13）
-- `scripts/rollback_canary.sh` · F4 灰度应急回切（PR #98）
-- `scripts/drill_smoke.sh` · 演练 smoke（PR #100）
-- `scripts/shadow_compare.py` · LangGraph vs Dify 字段级 diff（PR #90 / #112，含 `DRY_RUN_BACKEND` 模式）
-- `scripts/canary_status.py` / `scripts/metrics_snapshot.py` · 灰度状态 + F4 全指标快照（PR #92 / #94）
-- `scripts/langfuse/promote_langfuse_prompt.py` · LangFuse Prompt 晋升（F4.6 / PR #95）
-- `scripts/run_alerts.py` · 阈值告警干跑（5xx / cascade / P95 延迟 / LLM 失败率）
-- Grafana 灰度观测面板 JSON 模板（`infra/`，F4.2-F4.5 / PR #97）
-- `docs/on-call-runbook.md` · on-call 应急回切剧本（F4.0 / PR #99）
-
-参见 [docs/m3-m4-roadmap.md](./docs/m3-m4-roadmap.md) 获取分阶段任务图与分工，[ADR 0016](./docs/adr/0016-m3-scope-engineering-loop-not-shadow.md) 获取 M3 范围重定义，[ADR 0017](./docs/adr/0017-m4-canary-quantitative-exit-gate.md) 获取 M4 量化退出门。
-
-## 二期持续优化（全量上线后）
-
-来自客户内部汇报方案（2026-05-11）的三件套，**不在 T+3~4 全量上线范围内**，全量上线后启动：
-
-- **Issue #35** · 评估→优化→更新→再评估自动闭环（错例聚类 / A/B 自动评估 / 自动 PR 生成）
-- **Issue #36** · 智能体异常干预 + 沉淀记忆机制（agentic memory，跨会话经验记忆）
-- **Issue #37** · 回流集自动化打通（D 桶 · 生产真实流量 → golden，需脱敏 + 业务方人工标注）
+**已就绪的部署与运维工具链**：`scripts/deploy-customer.sh`（一键部署 + smoke）、`scripts/rollback_canary.sh`（应急回切）、`scripts/drill_smoke.sh`（演练）、`scripts/canary_status.py` / `scripts/metrics_snapshot.py`（灰度状态与指标快照）、`scripts/run_alerts.py`（阈值告警干跑）、`scripts/shadow_compare.py`（可选对照，不进任何门）、Grafana 面板模板（`infra/`）、[on-call 值班手册](./docs/on-call-runbook.md)。
 
 ## 快速开始
 
@@ -59,16 +36,18 @@ USE_MYSQL_CHECKPOINTER=false REQUEST_IDEMPOTENCY=false ENABLE_LANGFUSE=false pyt
 # 5. 本地 HTTP 业务回归：先准备真实授权测试账号、群及业务数据
 # 联调服务可使用 ENVIRONMENT=staging uvicorn app.main:app --host 127.0.0.1 --port 8201
 python scripts/local_eval.py --base-url http://127.0.0.1:8201 --data tests/fixtures/categories --case case-025 --concurrency 1
-# 统一验收去掉 --case，明确只跑388条 categories；不默认并入 unified。
+# 统一验收去掉 --case，只跑显式 categories；不默认并入 unified。
 
 # 6. Langfuse Dataset Experiment
 python scripts/langfuse/langfuse_eval.py --dataset golden_option_inquiry_case --ids case-022 --concurrency 1
+
+# 7. 节点级回归
+python -m harness node-run --data tests/fixtures/nodes
 ```
 
 ## 架构
 
-标的名称/代码由 LangGraph 按原文提取，Java 业务接口调用标的识别、分词和排序工具。
-本地不再运行 ticker 子图；职责和兼容约定见 [后端标的边界](docs/backend-instrument-boundary.md)。
+标的名称 / 代码由 LangGraph 按原文提取，Java 业务接口调用标的识别、分词和排序工具；本地不运行 ticker 子图（[ADR 0025](./docs/adr/0025-instrument-resolution-delegated-to-backend.md)，边界见 [docs/backend-instrument-boundary.md](docs/backend-instrument-boundary.md)）。
 
 询价入口由请求标志决定：`fast_query=1` 走主图 `quick_inquiry`，调用 GOATS 解析并以 `optionRfq` 提交；普通入口的 `new_inquiry` 只走模型提取、归一化和 `orderList` 提交。文本中出现雪球、参与型或“快速询价”等词不改变入口。
 
@@ -93,48 +72,50 @@ python scripts/langfuse/langfuse_eval.py --dataset golden_option_inquiry_case --
 业务子图通过 Client Protocol 调用 Java；请求级 callback 记录 Langfuse trace。
 ```
 
-详见 [ADR 0001](./docs/adr/0001-rewrite-app-with-harness-first.md)（推倒重写决定）+ [ADR 0014](./docs/adr/0014-langfuse-as-harness-backend.md)（LangFuse 后台）+ [ADR 0016](./docs/adr/0016-m3-scope-engineering-loop-not-shadow.md)（M3 范围重定义）。
+详见 [ADR 0024](./docs/adr/0024-langgraph-native-rearchitecture.md)（目标架构）+ [ADR 0028](./docs/adr/0028-session-entry-and-multi-instruction-send-orchestration.md)（入口与单动作多订单）+ [ADR 0014](./docs/adr/0014-langfuse-as-harness-backend.md)（LangFuse 后台）。
 
 ## 项目结构
 
 ```text
 app/                        # LangGraph 应用层
 ├── main.py                 # FastAPI 入口 + lifespan + HTTPMetricsMiddleware + /metrics
-├── api/                    # routes.py（POST /v1/workflows/run）+ health.py（/health, /ready）
-├── graph/                  # state + safe_node + cascade fallback
-├── nodes/                  # ingest / pre_route / intent_route（+route_rules）/ fast_query / persist / render / fallback
+├── api/                    # routes.py（/v1/workflows/run）+ nodes.py（/v1/nodes/*）+ idempotency / reconciliation / health
+├── graph/                  # state + safe_node / retry + cascade + memory
+├── nodes/                  # ingest / entry_route / pre_route / intent_route（+route_rules）/ fast_query / persist / render / fallback
 ├── subgraphs/
 │   ├── swap/               # intent / place_order / select_counterparty / select_ticker / confirm / cancel / query_order / multimodal
-│   ├── option/             # intent + 7 extract（inquiry / place / confirm_place / cancel_place / confirm_cancel / cancel / query）+ sanitize
-│   ├── close/              # intent / place_close / cancel_close / confirm_close / confirm_cancel / holding_query / query_status
-│   └── ticker/             # resolver 确定性管线（候选格式化 → 3 路 LLM → merge_and_validate → GOATS+rank）
-├── tools/                  # OptionClient / SwapClient / TickerClient + models + auth
+│   ├── option/             # intent + extract_inquiry（子图）+ 6 个确定性 / LLM extract 节点
+│   └── close/              # intent / place_close（子图）/ cancel_close / confirm_close / confirm_cancel / holding_query / query_status
+├── extraction/ execution/  # 字段证据契约（FieldCandidate / FieldRecord / 锁定）与确认协议、批量提交
+├── node_execution/         # 单节点调试执行（注册表 / prepare / executor）
+├── tools/                  # OptionClient / SwapClient / MessageClient / GOATS + receipts + bot_context + http_pool
 ├── llm/clients.py          # LLM 统一工厂：全量 DeepSeek-V4-pro（ADR 0020；函数名沿用 get_qwen_*）
-├── checkpointer/factory.py # AIOMySQLSaver
-├── observability/          # tracing + metrics（Prometheus 兼容 /metrics）
-└── prompts/                # 提示词资产（git 唯一真源；router / swap / option / option_close / ticker）
+├── checkpointer/factory.py # AIOMySQLSaver（连接池）
+├── observability/          # tracing / metrics / alerts / llm_metrics / logs / privacy
+└── prompts/                # 提示词资产（git 唯一真源；router / swap / option / option_close / judge）
 
-harness/                    # 评测台 CLI（python -m harness <doctor|run>，经 HTTP 调本地 /v1/workflows/run）
-scripts/                    # langfuse_eval.py / probe_*.py / promote_*.py / canary_*.sh ...
+harness/                    # 评测台（python -m harness <doctor|run|node-run>，经 HTTP 调本地服务）+ 节点 fixture / HTTP 录放
+scripts/                    # langfuse/（Judge 评估、数据集上传、提示词晋升）/ local_eval.py / probe_*.py / canary_* / 一致性 lint
 infra/langfuse/             # LangFuse self-hosted Docker Compose（PG + ClickHouse + Redis + MinIO + Web + Worker）
-docs/adr/                   # 架构决定 ADR 0000-0024（共 25 篇）+ README 索引
+docs/adr/                   # 架构决定 ADR 0000-0030（共 31 篇）+ README 索引
 docs/api-contracts/         # Java 后端真实业务 API 契约
-tests/                      # 1864 passed + 15 skipped
-tests/fixtures/             # golden.jsonl（350+ 条）+ golden_ticker_2026-05.jsonl
+tests/                      # 单测 / 子图 / 节点 / 集成（真实 MySQL 用例 RUN_LOCAL_MYSQL_TESTS=1 opt-in）
+tests/fixtures/             # categories/（显式验收集）+ unified_golden.jsonl + nodes/（节点级 fixture）
 ```
 
 ## 关键文档
 
 | 文档 | 用途 |
 |------|------|
-| [节点执行接口](docs/nodes-run.md) | `/v1/nodes/run`：65 个节点目录、State 契约、本地启动与真实后端切换 |
+| [docs/work-plan.md](./docs/work-plan.md) | 三条主线的现状与待办 |
+| [docs/adr/](./docs/adr/) | 架构决定 ADR 0000-0030（共 31 篇），入口见 [索引](./docs/adr/README.md) |
+| [节点执行接口](docs/nodes-run.md) | `/v1/nodes/run`：节点目录、State 契约、本地启动与真实后端切换 |
 | [CLAUDE.md](./CLAUDE.md) | AI 工具加载的项目 memory |
 | [CONTEXT.md](./CONTEXT.md) | 领域术语 + 概念边界 |
 | [HOW_TO_RUN.md](./HOW_TO_RUN.md) | 完整启动流程 |
 | [PLAN.md](./PLAN.md) | 期权链路评估与提示词迭代方案 |
 | [QUICKSTART_CLAUDE_CODE.md](./QUICKSTART_CLAUDE_CODE.md) | Claude Code 实操指南 |
-| [docs/adr/](./docs/adr/) | 架构决定 ADR 0000-0021（共 22 篇），入口见 [索引](./docs/adr/README.md) |
-| [docs/m3-m4-roadmap.md](./docs/m3-m4-roadmap.md) | M3/M4 端到端任务图（2026-05-11） |
+| [docs/testing/README.md](./docs/testing/README.md) | 测试分层与真后端切换 |
 | [docs/on-call-runbook.md](./docs/on-call-runbook.md) | 上线 on-call SOP |
 | [docs/api-contracts/java-backend.md](./docs/api-contracts/java-backend.md) | Java 后端真实契约 |
 | [infra/langfuse/README.md](./infra/langfuse/README.md) | LangFuse self-hosted 启动 |
@@ -145,8 +126,8 @@ tests/fixtures/             # golden.jsonl（350+ 条）+ golden_ticker_2026-05.
 - ruff lint（行宽 100）
 - pytest + `asyncio_mode = "auto"`，提交前跑 `pytest tests/ -v`
 - 任何 bug fix / 新功能走 TDD（先写失败测试，再改代码；详见 `.claude/skills/test-driven-development/`）
-- 走 feature 分支 + PR，main 受保护
-- 严禁硬编码业务数据字典（命名指数 → ETF 代码等）；走 LLM 推断 + 后端权威源校验
+- 走 feature 分支 + PR，main 受保护，CI 在 PR 上跑
+- 严禁硬编码业务数据字典（命名指数 → ETF 代码等）；原文提取 + 后端权威识别
 
 详见 [.claude/rules/](./.claude/rules/) + [docs/adr/](./docs/adr/) + [CLAUDE.md](./CLAUDE.md) 的"绝对禁止"小节。
 

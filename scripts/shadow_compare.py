@@ -114,11 +114,11 @@ async def call_endpoint(
 
 
 def _normalize_dify(dify_resp: dict) -> dict:
-    """从 Dify 工作流响应中提取完整 outputs（F4.1 字段级 diff）。
+    """从 Dify 工作流响应中提取完整 outputs（字段级 diff）。
 
     Dify 标准响应：{data: {outputs: {...}, status: "succeeded"}}
 
-    F4.1 增强：除 product_type / intent / api_code 外，也提取业务对象字段：
+    增强：除 product_type / intent / api_code 外，也提取业务对象字段：
     - tickers（标的解析结果）
     - place_params / cancel_params / confirm / query_filter / close_params
     - ticker_hitl_candidates（HITL 卡片）
@@ -153,7 +153,7 @@ def _normalize_langgraph(lg_resp: dict) -> dict:
     return _normalize_dify(lg_resp)
 
 
-# F4.1 字段级 diff 配置：随机字段默认忽略（订单号 / UUID / 时间戳 / 延迟敏感字段）
+# 字段级 diff 配置：随机字段默认忽略（订单号 / UUID / 时间戳 / 延迟敏感字段）
 DEFAULT_IGNORED_PATHS = frozenset(
     {
         # 订单号在两侧独立生成（H-/OPT-/CO- prefix 后是 timestamp + random）
@@ -304,7 +304,7 @@ def write_to_file(path: Path, results: list[CompareResult], summary: Summary) ->
 def write_markdown_report(
     path: Path, results: list[CompareResult], summary: Summary
 ) -> None:
-    """生成 F4.1 每日 diff 报告（业务方 review 用）。
+    """生成 每日 diff 报告（业务方 review 用）。
 
     格式：摘要 + 按字段 diff Top-K + 失败 case 列表（含 raw_content）。
     """
@@ -473,7 +473,7 @@ async def main(args: argparse.Namespace) -> int:
         write_to_file(args.output, results, summary)
         print(f"\n详细结果已写入 {args.output}")
 
-    # F4.1 markdown 每日报告
+    # markdown 每日报告
     if args.markdown_report and not args.dry_run:
         write_markdown_report(args.markdown_report, results, summary)
         print(f"Markdown 报告已写入 {args.markdown_report}")
@@ -504,7 +504,7 @@ if __name__ == "__main__":
     parser.add_argument("--sample", required=True, type=Path, help="JSONL 样本文件路径")
     parser.add_argument("--output", type=Path, default=None, help="JSON 输出路径（明细 + 汇总）")
     parser.add_argument("--markdown-report", type=Path, default=None,
-                        help="F4.1 每日 diff 报告 markdown 路径（业务方 review 用）")
+                        help="每日 diff 报告 markdown 路径（业务方 review 用）")
     parser.add_argument("--ignore-field", action="append", default=[],
                         help="忽略字段 path（可多次指定，支持 *.foo 通配）")
     parser.add_argument("--max-cases", type=int, default=0, help="只跑前 N 条（0 = 全跑）")

@@ -5,7 +5,7 @@ name: CI
 # slow job（PR + main）跑全量 pytest 与真实 MySQL 用例（ADR 0024 D4）。
 on:
   push:
-    branches: [main, develop]
+    branches: [main]
   pull_request:
   workflow_dispatch:
 

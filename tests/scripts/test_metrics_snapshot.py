@@ -52,7 +52,7 @@ otc_agent_node_total{node="ingest",status="error"} 0
 
 
 def test_parse_skips_histogram_derived_metrics() -> None:
-    """_bucket / _sum / _count 不进 snapshot（直方图衍生指标不在 F4 决策范围）。"""
+    """_bucket / _sum / _count 不进 snapshot（直方图衍生指标不在 切流决策范围）。"""
     text = """
 otc_agent_intent_latency_ms_bucket{le="100"} 50
 otc_agent_intent_latency_ms_sum 12345
@@ -107,7 +107,7 @@ def test_sum_by_label_missing_label() -> None:
 
 
 # ============================================================
-# render_human · F4 关键场景断言
+# render_human · 关键场景断言
 # ============================================================
 
 

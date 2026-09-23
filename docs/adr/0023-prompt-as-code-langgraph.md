@@ -78,7 +78,7 @@ result = await llm.with_structured_output(SPEC.output_model).ainvoke(messages)
 | 第二批 | close 5 个（place_close / cancel_close / confirm_close / confirm_cancel / query_status）、swap select_counterparty / select_ticker | user 拼装同构，机械迁移；同时给 `close/models.py` 剩余模型补 description。**已完成（2026-09-17），含 swap/fresh_counterparty** |
 | 第三批 | swap multimodal（image / excel / ocr，含 v2 灰度位）、ticker 4 个（tools.py helper 形态）、router unknown_intent | multimodal 输入含图片 / 文件，`user_builder` 需扩展为多模态消息；ticker 先完成 ADR 0022 未决项"转 structured output"再迁。**已完成（2026-09-17）**：multimodal 3 个（image_ocr 为 system 渲染 + 运行期 user 拼接）、ticker 4 个输出契约见 ~~`app/subgraphs/ticker/models.py`~~、router unknown_intent |
 
-**2026-09-17 D 批（去 LLM 化，非 PromptSpec 迁移）**：close 4 个 CO- 节点（cancel_close / confirm_close / confirm_cancel / query_status → `close/order_id.py`）与 option 4 个 Q- 节点（extract_cancel / extract_cancel_place / extract_confirm_cancel / extract_query → `option/order_id.py`）已转确定性提取，8 个对应提示词文件同批删除；注册表 28 → 20。
+**2026-09-17 D 批（去 LLM 化，非 PromptSpec 迁移）**：close 4 个 CO- 节点（cancel_close / confirm_close / confirm_cancel / query_status → `close/order_id.py`）与 option 4 个 Q- 节点（extract_cancel / extract_cancel_place / extract_confirm_cancel / extract_query → `option/order_id.py`）已转确定性提取，8 个对应提示词文件同批删除；注册表 28 → 20（2026-09-20 ticker 4 个注销后 → 15）。
 
 每批的门：对应子图测试 GREEN + eval PASS ≥ 迁移前（迁移本身不改 LLM 输入文本，eval 应零变化；原 `prompt_inventory --strict` 门槛已随 ADR 0022 废弃移除，2026-09-16）。
 

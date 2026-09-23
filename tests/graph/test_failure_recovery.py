@@ -53,7 +53,7 @@ async def test_two_failed_swap_selection_branches_merge_without_crashing(monkeyp
     backend = AsyncMock()
     monkeypatch.setattr(SwapClientHttpx, "operate", backend)
     result = await graph_module.build_swap_graph().ainvoke({
-        "raw_text": "选第二个", "quote_content": "引用",
+        "raw_text": "另一个吧", "quote_content": "引用",
         "conversation_id": "failure-recovery", "room_id": "test-room",
         "user_id": "test-user", "message_id": 1,
     })

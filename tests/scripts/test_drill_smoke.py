@@ -1,4 +1,4 @@
-"""scripts/drill_smoke.sh · F4.0 演练 smoke 脚本测试。
+"""scripts/drill_smoke.sh · 回切演练 smoke 脚本测试。
 
 测试范围：
 - 参数解析（--help / 未知参数）
@@ -74,7 +74,7 @@ def _extract_json(stdout: str) -> dict:
 def test_help_prints_usage() -> None:
     r = _run("--help")
     assert r.returncode == 0
-    assert "F4.0 演练" in r.stdout
+    assert "回切演练" in r.stdout
     assert "--metrics-url" in r.stdout
     assert "--skip-deploy-check" in r.stdout
 

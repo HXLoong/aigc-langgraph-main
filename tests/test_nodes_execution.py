@@ -275,7 +275,7 @@ async def test_option_real_client_to_http_mock_and_composite_output(
         NodeExecutor(build_registry()),
         "main" if composite else "option",
         "option" if composite else "option_extract_query",
-        CONTEXT | {"raw_text": "查询订单 Q-12345678"},
+        CONTEXT | {"raw_text": "查询订单 Q-20260921-1234567890"},
     )
     assert response.status_code == 200, response.text
     output = response.json()["output"]

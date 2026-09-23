@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""D2.1 + D2.2 真后端 write endpoint 端到端验证（option 询价，最低风险 write）。
+"""真后端 write endpoint 端到端验证（option 询价，最低风险 write）。
 
 按 ADR 0016 灰度顺序，option.operate type=new_inquiry 在客户后端**生成询价记录**，
 不是真订单——但仍是 write endpoint，会留下数据库行。
@@ -149,7 +149,7 @@ async def main(case_filter: int | None) -> int:
 
     selected = CASES if case_filter is None else [CASES[case_filter]]
 
-    print(f"=== D2.1 + D2.2 option write 端到端 · {len(selected)} 条 case ===\n")
+    print(f"=== option write 端到端 · {len(selected)} 条 case ===\n")
     results: list[dict[str, Any]] = []
     for case in selected:
         print(f"--- {case['id']} · {case['raw_text']!r} ---")
@@ -178,7 +178,7 @@ async def main(case_filter: int | None) -> int:
         print()
 
     # 退出门统计
-    n_5xx = 0  # 真 5xx 会被 D2.3 翻译成 BackendUnreachableError，error.type 检查
+    n_5xx = 0  # 真 5xx 会被不可达降级翻译成 BackendUnreachableError，error.type 检查
     n_4xx = 0
     n_business_reject = sum(
         1
@@ -199,7 +199,7 @@ async def main(case_filter: int | None) -> int:
     print(f"  api_code!=0       : {n_business_reject}")
     print(f"  BackendUnreachable: {n_unreachable}")
     print(f"  uncaught exception: {n_exception}")
-    print(f"  D2.* 退出门要求：5xx=0 / 4xx=0 / 业务拒绝有 fallback / unreachable=0")
+    print(f"  退出门要求：5xx=0 / 4xx=0 / 业务拒绝有 fallback / unreachable=0")
     print()
 
     return 0 if n_exception == 0 else 1

@@ -40,7 +40,7 @@
 - `tests/prompts/test_prompt_governance.py` 的逐字相等断言退役，改为「每个镜像条目都声明了 dify 映射且节点存在」+「本地修改不阻断」
 - 零风险瘦身直接落 v1（`manifest.changelog` 登记）；`swap/intent_v2` / `place_order_v2` 因已与 v1 产生业务规则代差且失去用途而删除，多模态三个 v2 保留待 eval
 - Dify 侧同步方向仍是单向（sync → export → 人工 diff）；dify/sync.py 对主干 app 的导出文件名改为 场外交易-test.yml（治理读取的那份），主干工作流.yml 冻结为 2026-08 拓扑参照（**2026-09-17：整条链路随 ADR 0024 D1 移除**）
-- M4 全量切换后业务方书面同意 Dify 下线（roadmap 既有门），Dify 停止更新，上游告警自然归零
+- Dify 退出上游后停止更新，上游告警自然归零（2026-09-17 已发生，ADR 0024 D1）
 
 ### D2 · ~~`app/prompts/_manifest.yaml`~~ 是活跃/灰度/非活跃的机器可读真源（已落地，2026-09-16 移除）
 
@@ -55,7 +55,7 @@
 
 ### D3 · 版本化形态收敛为一种：同目录并存 + `_versions.yaml`（已落地）
 
-- 删除 `compose_prompt()` 与 `Settings.swap_prompt_version`（#159 遗留裁决），~~`tests/test_prompt_inventory.py`~~ 防复活
+- 删除 `compose_prompt()` 与 `Settings.swap_prompt_version`，~~`tests/test_prompt_inventory.py`~~ 防复活
 - `promote_langfuse_prompt.py` 产出的 `_v{N+1}.md` 同样按 D2 登记为 `gray`
 - ">2 并存版本视为治理债"由 manifest 的 `gray` 条目数可见化；转正时 v2→v1 并注销条目
 
@@ -79,7 +79,7 @@
 
 ### D6 · 非活跃资产处置（已落地）
 
-8 个 `inactive` 条目的保留理由与可删条件写在 manifest `reason` 字段。M4 全量上线稳定 7 天后按 reason 逐条清理；Dify 原始快照类归档到 `docs/archive/dify-originals/`（已有先例）而非留在 `app/prompts/`。
+8 个 `inactive` 条目的保留理由与可删条件写在 manifest `reason` 字段。全量上线稳定 7 天后按 reason 逐条清理；Dify 原始快照类归档到 `docs/archive/dify-originals/`（已有先例）而非留在 `app/prompts/`。
 
 ## 备选方案
 

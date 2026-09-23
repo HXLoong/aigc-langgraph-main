@@ -2,7 +2,7 @@
 
 - 状态：**已撤销**（2026-08-28 停止动态片段拉取；2026-09-20 本地标的推断与静态 prompt 一并退役）。遗留客户端不代表主链仍使用该能力。
 - 日期：2026-05-10
-- 修订：2026-08-27 深度改写为现状口径（wayfinder map #138 / 核查 #141）
+- 修订：2026-08-27 深度改写为现状口径（对照代码核查）
 - 作者：图灵科技 + Tony
 
 ## 当前职责（2026-09-22 修订）
@@ -26,12 +26,12 @@ Dify 工作流通过后端接口拉取一段**运维可热改的 prompt 片段**
 4. 净化：`_sanitize_dynamic_prompt`（**实现于调用侧** `tools.py`，非原文说的 client 侧；行为等价）——strip + 控制字符剔除 + 4096 字符截断。⚠️ 超限当前是**静默截断**，非原文的"落警并降级"。
 5. 降级：后端不可达 → warning + 空片段（仅静态文件），metrics 计数 `otc_agent_dynamic_prompt_total{status=cache_hit|cache_miss_ok|fallback}`，不让 ticker 崩。
 
-## 实现偏离（#156 裁决：追认 metrics 方案 + 轻修）
+## 实现偏离（2026-08-27 裁决：追认 metrics 方案 + 轻修）
 
 | 偏离 | 现状 |
 |---|---|
-| 拼接后完整 prompt 摘要未落 trace | #156 裁决：**降级为结构化日志**——`_get_dynamic_prompt_cached` 命中/拉取时以 warning/info 记录片段长度（现有 logger 已含），完整还原依赖后端 config 的变更审计；不再作为 trace 硬要求 |
-| 降级标记落 metrics 不落 trace | #156 裁决：**追认 metrics 方案**（`otc_agent_dynamic_prompt_total{status=fallback}` 为正式载体）；会话级定位可用 #156 落地的 trace_id 关联 LangFuse warning 日志 |
+| 拼接后完整 prompt 摘要未落 trace | 裁决：**降级为结构化日志**——`_get_dynamic_prompt_cached` 命中/拉取时以 warning/info 记录片段长度（现有 logger 已含），完整还原依赖后端 config 的变更审计；不再作为 trace 硬要求 |
+| 降级标记落 metrics 不落 trace | 裁决：**追认 metrics 方案**（`otc_agent_dynamic_prompt_total{status=fallback}` 为正式载体）；会话级定位可用 trace_id 关联 LangFuse warning 日志 |
 
 ## 备选方案
 

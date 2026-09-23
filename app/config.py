@@ -64,21 +64,10 @@ class Settings(BaseSettings):
     goats_com_agent_id: str = ""
     goats_com_agent_sub_id: str = ""
 
-    # === securities-instrument 标的查询 ===
-    securities_instrument_url: str = ""
-    securities_instrument_key: str = ""
-
     # === 真实环境测试账号（D2.* probe / 阶段 2 联调用，不进生产路径）===
     eval_room_id: str = ""
     eval_user_id: str = ""
     eval_guid: str = ""
-
-    # 标的池 MySQL（直连查询）—— 凭据走 .env，源码里只留空默认值
-    ticker_mysql_host: str = ""
-    ticker_mysql_port: int = 3306
-    ticker_mysql_user: str = ""
-    ticker_mysql_password: str = ""
-    ticker_mysql_db: str = ""
 
     # === 外部搜索 ===
     bocha_api_key: str = ""
@@ -120,10 +109,10 @@ class Settings(BaseSettings):
     langgraph_traffic_ratio: float = Field(default=1.0, ge=0.0, le=1.0)
     shadow_mode: bool = False
 
-    # F4.1 shadow 双跑用：拦截 *.operate / close_order_* 等"写类"客户端调用，
+    # shadow 对照用：拦截 *.operate / close_order_* 等"写类"客户端调用，
     # 返回 fake CommonResult，避免 LangGraph 替代客户真下单/真撤单。
     # read 类（query / get / list / search / get_inference_prompt）正常调真后端。
-    # 详见 docs/archive/m3/m3-shadow-compare-dry-run-design.md
+    # 详见 docs/deploy/SHADOW_COMPARE_GUIDE.md
     dry_run_backend: bool = False
 
     # === 兜底回复（DSL v2 env.default_reply,fallback/answer 节点统一文案）===

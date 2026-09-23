@@ -604,7 +604,7 @@ async def test_backend_request_is_identical_before_and_after_prepare(
         "quote_appinfo": "app",
         "guid": "guid",
         "operator_user_id": "operator",
-        "history_messages": [{"role": "user", "content": "unrelated"}],
+        "history_messages": [{"id": "h-2", "role": "user", "content": "unrelated"}],
     }
     prepared = prepare_state(registration, original)
 

@@ -1,9 +1,9 @@
 """case_generator CLI：批量生成业务方种子收集模板 + LLM 对抗式 paraphrase。
 
 用法：
-    python -m harness.case_generator generate-seeds [--out-dir docs/archive/m2/m2-golden-seeds]
+    python -m harness.case_generator generate-seeds [--out-dir tmp/case_generator/seeds]
     python -m harness.case_generator list-nodes
-    python -m harness.case_generator paraphrase [--num 3] [--out docs/archive/m2/m2-llm-generated-cases.md]
+    python -m harness.case_generator paraphrase [--num 3] [--out tmp/case_generator/paraphrase-candidates.md]
 """
 from __future__ import annotations
 
@@ -131,9 +131,9 @@ def main(argv: list[str] | None = None) -> int:
     )
     p_gen.add_argument(
         "--out-dir",
-        default="docs/archive/m2/m2-golden-seeds",
+        default="tmp/case_generator/seeds",
         type=Path,
-        help="输出目录（默认 docs/archive/m2/m2-golden-seeds）",
+        help="输出目录（默认 tmp/case_generator/seeds，tmp 不入库）",
     )
     p_gen.add_argument(
         "--num-slots",
@@ -150,9 +150,9 @@ def main(argv: list[str] | None = None) -> int:
     )
     p_para.add_argument(
         "--out",
-        default="docs/archive/m2/m2-llm-generated-cases.md",
+        default="tmp/case_generator/paraphrase-candidates.md",
         type=Path,
-        help="输出 review 候选清单 markdown（默认 docs/archive/m2/m2-llm-generated-cases.md）",
+        help="输出 review 候选清单 markdown（默认 tmp/case_generator/paraphrase-candidates.md）",
     )
     p_para.add_argument(
         "--num",

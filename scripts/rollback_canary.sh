@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# F4 灰度上线 P0 应急回切脚本
+# 灰度上线 P0 应急回切脚本
 #
 # 触发场景：alerts.py 任一 P0 条件命中（is_canary=false 误切 / java_backend fail /
 # 节点错误率失控 / LLM 失败率失控）→ on-call 决定回切到 Dify。
@@ -15,7 +15,7 @@
 # 跑法：
 #   bash scripts/rollback_canary.sh --reason "java_backend fail at 22:14"
 #   bash scripts/rollback_canary.sh --reason "..." --auto-restart -y
-#   bash scripts/rollback_canary.sh --dry-run --reason "演练 F4.0"
+#   bash scripts/rollback_canary.sh --dry-run --reason "回切演练"
 #
 # 退出码：
 #   0 成功
@@ -77,7 +77,7 @@ abort() {
 # ============================================================
 print_help() {
     cat <<'EOF'
-F4 灰度上线 P0 应急回切脚本
+灰度上线 P0 应急回切脚本
 
 用法：
   bash scripts/rollback_canary.sh --reason "<原因>" [选项]
@@ -195,7 +195,7 @@ step1_preflight() {
     info "回切原因: $REASON"
     [ "$DRY_RUN" = "1" ] && warn "DRY-RUN 模式：不会改 .env / audit log"
 
-    if ! confirm "确认要执行 F4 应急回切吗？"; then
+    if ! confirm "确认要执行 应急回切吗？"; then
         warn "用户取消"
         exit 3
     fi
@@ -334,7 +334,7 @@ step5_disable_canary() {
     local tmp="${ENV_FILE}.tmp.$$"
     awk -v orig="$original_val" -v ts="$ts" -v reason="$REASON" '
         /^CANARY_ROOM_IDS=/ {
-            print "# F4 应急回切 " ts " · 原值=" orig " · 原因=" reason
+            print "# 应急回切 " ts " · 原值=" orig " · 原因=" reason
             print "# " $0
             print "CANARY_ROOM_IDS="
             next
@@ -430,7 +430,7 @@ print_summary() {
     1. metrics_snapshot.py 拍快照保留事故现场（保留 7 天）
     2. 在 docs/incidents/ 写 postmortem
     3. 如果是上游故障：联系 java_backend 团队 / Qwen API 厂商
-    4. 修复后重新走 F4.2 流程，CANARY_ROOM_IDS 从 .env 注释中恢复（核对回切原值）
+    4. 修复后重新走切流流程，CANARY_ROOM_IDS 从 .env 注释中恢复（核对回切原值）
 
 EOF
 }
@@ -439,7 +439,7 @@ EOF
 # 主流程
 # ============================================================
 main() {
-    section "F4 灰度上线应急回切"
+    section "灰度上线应急回切"
     info "时间: $(date '+%Y-%m-%d %H:%M:%S')"
     info "脚本: $0"
     info "原因: $REASON"

@@ -2,12 +2,12 @@
 
 - 状态：已采纳
 - 日期：2026-05-10
-- 修订：2026-08-27 深度改写为现状口径（wayfinder map #138 / 核查 #140）
+- 修订：2026-08-27 深度改写为现状口径（对照代码核查）
 - 作者：图灵科技 + Tony
 
 ## 决策
 
-[ADR 0002](./0002-comprehensive-runtime-harness.md) Phase 3 需要提示词 A/B 与版本化能力。在文件层面采用**同目录并存**：`swap/intent.md` 是当前生产版本，新版叫 `swap/intent_v2.md`。A/B 期间两版同时存活，金丝雀流量按代码逻辑切分，不依赖双部署/双镜像。
+[ADR 0002](./0002-comprehensive-runtime-harness.md) 的提示词调优期需要 A/B 与版本化能力。在文件层面采用**同目录并存**：`swap/intent.md` 是当前生产版本，新版叫 `swap/intent_v2.md`。A/B 期间两版同时存活，金丝雀流量按代码逻辑切分，不依赖双部署/双镜像。
 
 ## 落地现状（2026-08-27）
 
@@ -23,7 +23,7 @@ _versions.yaml（灰度配置，如 swap.intent = 95% intent / 5% intent_v2）
 
 节点侧示例：`app/subgraphs/swap/intent.py` 先 `resolve_prompt_version` 再 `load_prompt`。原文"代码写死 `load_prompt("swap", "intent_v2")`"仅是临时调试用法。
 
-**第二种版本化形态（已删除，2026-09-15）**：`compose_prompt(category, name, version)` + `swap/v2/` 子目录拼装曾作为备选形态存在，但在 `app/` 内零调用点、`swap_prompt_version` 为死配置（[#159](https://github.com/GZTL-AI/aigc-langgraph/issues/159) 待裁决项）。[ADR 0022](./0022-prompt-governance-after-code-migration.md) 裁决删除，同目录并存成为唯一版本化形态（当时的防复活守卫测试已随 ADR 0022 废弃移除，2026-09-16）。
+**第二种版本化形态（已删除，2026-09-15）**：`compose_prompt(category, name, version)` + `swap/v2/` 子目录拼装曾作为备选形态存在，但在 `app/` 内零调用点、`swap_prompt_version` 为死配置。[ADR 0022](./0022-prompt-governance-after-code-migration.md) 裁决删除，同目录并存成为唯一版本化形态（当时的防复活守卫测试已随 ADR 0022 废弃移除，2026-09-16）。
 
 ## 备选方案
 
@@ -33,9 +33,9 @@ _versions.yaml（灰度配置，如 swap.intent = 95% intent / 5% intent_v2）
 
 ## 后果与纪律（现状口径）
 
-- 加载器支持任意文件名 ✅；trace / 评估报告须记录实际加载的文件名——~~`harness/reporter.py`~~ 曾按 `prompt_name` 分桶统计（模块已移除，2026-09-16 核查）。**A/B 前置纪律（#156 裁决）**：现仅 swap_intent 写 `prompt_name`（1/21），不批量回改；但**对任何提示词开启 A/B（进 `_versions.yaml`）前，其节点必须先在 trace 写入 `prompt_name`**，否则版本对比失真——此为 `_versions.yaml` 加条目的硬前置。
+- 加载器支持任意文件名 ✅；trace / 评估报告须记录实际加载的文件名——~~`harness/reporter.py`~~ 曾按 `prompt_name` 分桶统计（模块已移除，2026-09-16 核查）。**A/B 前置纪律（2026-08-27 裁决）**：`PromptSpec.build_messages` 统一返回 `prompt_name`（ADR 0023），灰度节点须写入 trace；但**对任何提示词开启 A/B（进 `_versions.yaml`）前，其节点必须先在 trace 写入 `prompt_name`**，否则版本对比失真——此为 `_versions.yaml` 加条目的硬前置。
 - **文件分两类，清理规则不同**（本次改写澄清原文与 `app/prompts/CLAUDE.md` "禁止直接删"的冲突）：
-  - **A/B 实验位**（`*_v2.md` 等）：新版满一个金丝雀周期 + 稳定 7 天后清理、去后缀；
+  - **A/B 实验位**（`*_v2.md` 等）：新版满一个灰度周期 + 稳定 7 天后清理、去后缀；
   - **Dify 原始快照 / 回滚资产**（冻结的 `intent_extract.md` 等；`*.dify_original.md` 已于 DSL v2 迁移删除）：曾按 ADR 0022 D6 在 ~~`app/prompts/_manifest.yaml`~~ 登记为 `inactive` 并写保留理由与可删条件；manifest 机制已于 2026-09-16 废弃移除，清理时以 git 历史与文件内注释为准。
-- ">2 个并存版本视为治理债"目前**无执行机制且已被突破**（`swap/place_order` 3 变体；`ticker/tokenize*.md` 双死文件）——裁决见 [#159](https://github.com/GZTL-AI/aigc-langgraph/issues/159)。
-- Dify 同步策略：原决策要求"拉下来的新版放 `_v{N+1}.md`、不覆盖原文件"。#159 曾补保护（export_dify_prompts.py 默认跳过已存在文件）；2026-09-17 同步 / 导出链路随 ADR 0024 D1 整体退役，本条不再适用。
+- ">2 个并存版本视为治理债"曾被突破（`swap/place_order` 3 变体、ticker 双死文件），2026-08-27 已裁决；**2026-09-22 现状**：所有 `*_v2.md` 已随 ADR 0024 D1 删除、ticker 提示词随 ADR 0025 删除，`_versions.yaml` 为 `overrides: {}`，当前无并存版本、无在跑灰度。
+- Dify 同步策略：原决策要求"拉下来的新版放 `_v{N+1}.md`、不覆盖原文件"。曾补保护（export_dify_prompts.py 默认跳过已存在文件）；2026-09-17 同步 / 导出链路随 ADR 0024 D1 整体退役，本条不再适用。

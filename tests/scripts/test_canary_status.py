@@ -72,15 +72,15 @@ def test_mode_all_marker() -> None:
     assert "全量" in _describe_mode(["ALL"])
 
 
-def test_mode_f42_first_phase() -> None:
-    """1-2 个群 → F4.2 描述。"""
-    assert "F4.2" in _describe_mode(["r-test-1"])
-    assert "F4.2" in _describe_mode(["r-test-1", "r-test-2"])
+def test_mode_partial_rooms() -> None:
+    """1-2 个群 → 部分群描述。"""
+    assert "部分群" in _describe_mode(["r-test-1"])
+    assert "部分群" in _describe_mode(["r-test-1", "r-test-2"])
 
 
-def test_mode_f43_multi_room() -> None:
-    """> 2 个群 → F4.3+ 描述。"""
-    assert "F4.3" in _describe_mode([f"r-{i}" for i in range(10)])
+def test_mode_multi_rooms() -> None:
+    """> 2 个群 → 多群描述。"""
+    assert "多群" in _describe_mode([f"r-{i}" for i in range(10)])
 
 
 # ============================================================

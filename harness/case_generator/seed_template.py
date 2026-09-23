@@ -10,7 +10,7 @@
 生成方式：
     from harness.case_generator import render_seed_template
     md = render_seed_template("swap.place_order")
-    # 写到 docs/archive/m2/m2-golden-seeds/swap-place-order.md
+    # 写到 <out-dir>/swap-place-order.md（默认 tmp/case_generator/seeds/）
 """
 from __future__ import annotations
 

@@ -165,7 +165,7 @@ def validate_unified(path: Path, ids: list[str]) -> tuple[list[str], list[str]]:
                 elif not turn["raw_content"].strip():
                     warnings.append(
                         f"{origin}: {obj.get('id')!r} conversation[{index}] raw_content is empty"
-                        " (unrunnable, harness skips it; Issue #113 业务方 review)"
+                        " (unrunnable, harness skips it; 业务方 review)"
                     )
         expected = obj.get("expected")
         if not isinstance(expected, dict):
@@ -179,7 +179,7 @@ def validate_unified(path: Path, ids: list[str]) -> tuple[list[str], list[str]]:
         if isinstance(product_type, str) and product_type not in KNOWN_PRODUCT_TYPES:
             warnings.append(
                 f"{origin}: {case_id!r} expected.product_type={product_type!r} is not a runtime ProductType"
-                f" {KNOWN_PRODUCT_TYPES} (Issue #113 业务方 review)"
+                f" {KNOWN_PRODUCT_TYPES} (业务方 review)"
             )
     return errors, warnings
 
