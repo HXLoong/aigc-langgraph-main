@@ -36,6 +36,8 @@
 
 阈值取值理由沿用 ADR 0017 原论证（服务器崩溃近零、用户可感知的临界、尾部延迟决定体验、给业务方留可签字的容差）；基线由当前模型口径重测回填。
 
+2026-09-24：已完成 DeepSeek 本地 dry-run 参考采样并回填告警默认值，详见 [ADR 0019](./0019-incident-severity-thresholds.md) baseline 注记；报告位于 `tmp/goal-issues/`。业务交易验收和生产同拓扑 7 天观察仍未通过，两者不由 dry-run 结果替代。
+
 ### D4 · ADR 写法
 
 状态行只写日期与一句现状；正文不写会腐烂的计数与任务码；实施记录进 `docs/`（如 `docs/langgraph-reconstruction-20260918.md`），ADR 只链接；先有实现后补 ADR 时标"已采纳（追认）"并注明 commit。
@@ -49,7 +51,7 @@
 ## 后果
 
 - 正面：ADR 只承载决策与契约；评测门只有一套，且与 CI、harness、Judge 的实际入口一一对应。
-- 负面：上线观察阈值的基线数值在重测前为空；`docs/archive/m2/`、`docs/archive/m3/` 的里程碑过程文档已于 2026-09-22 删除（可从 git 历史找回）；`docs/archive/` 只保留日期型报告、历史叙事与业务用例原始资料。根 `README.md`、`docs/on-call-runbook.md`、`CLAUDE.md` 已于 2026-09-22 同步清理，~~`docs/m3-m4-roadmap.md`~~ 已删除、由 `docs/work-plan.md` 取代。
+- 负面：本地 dry-run 参考基线已回填，生产同拓扑基线及观察窗口仍待部署验证；`docs/archive/m2/`、`docs/archive/m3/` 的里程碑过程文档已于 2026-09-22 删除（可从 git 历史找回）；`docs/archive/` 只保留日期型报告、历史叙事与业务用例原始资料。根 `README.md`、`docs/on-call-runbook.md`、`CLAUDE.md` 已于 2026-09-22 同步清理，~~`docs/m3-m4-roadmap.md`~~ 已删除、由 `docs/work-plan.md` 取代。
 - **2026-09-23 裁决**：统一验收和 `harness run` 默认仅加载 `categories`。保留 `unified_golden.jsonl` 作为历史参考集，通过 `--include-unified` 追加或 `--data` 显式选择；加载器继续支持 B 方言，历史数据继续参加一致性 lint。
 - 未决：节点 fixture 与代码演进的漂移守护；上线观察窗口的正式起点由部署决定。
 

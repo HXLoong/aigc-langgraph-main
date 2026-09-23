@@ -150,9 +150,9 @@ def test_p95_threshold_present_and_p1() -> None:
 
 
 def test_p95_threshold_value_matches_baseline_times_3() -> None:
-    """默认 baseline 4200ms × 3 = 12600ms。"""
+    """当前模型 dry-run baseline 8554ms × 3 = 25662ms。"""
     t = THRESHOLDS["p95_latency_degraded"]
-    assert t.threshold_value == 12600.0
+    assert t.threshold_value == 25662.0
 
 
 def test_threshold_pct_property_aliases_threshold_value() -> None:
@@ -178,7 +178,7 @@ def test_p95_below_threshold_does_not_fire() -> None:
     states: dict[str, AlertState] = {}
     # 首次评估只记 snapshot
     evaluate(_make_ctx(1000.0, p95=4000.0), states)
-    # 第二次评估，P95 4500ms < 12600ms 阈值 → 不 fire
+    # 第二次评估，P95 4500ms 低于阈值 → 不 fire
     out = evaluate(_make_ctx(1060.0, p95=4500.0), states)
     p95_fires = [o for o in out if o[0].name == "p95_latency_degraded"]
     assert p95_fires == []
@@ -187,14 +187,14 @@ def test_p95_below_threshold_does_not_fire() -> None:
 def test_p95_above_threshold_fires_after_sustain() -> None:
     states: dict[str, AlertState] = {}
     # 首次评估（不触发，只记 snapshot）
-    evaluate(_make_ctx(1000.0, p95=15000.0), states)
-    # 第二次：P95 15000ms ≥ 12600ms，但持续才 60s < 600s sustain → 不 fire
-    out = evaluate(_make_ctx(1060.0, p95=15000.0), states)
+    evaluate(_make_ctx(1000.0, p95=THRESHOLDS["p95_latency_degraded"].threshold_value * 1.2), states)
+    # 第二次：P95 超过阈值，但持续才 60s < 600s sustain → 不 fire
+    out = evaluate(_make_ctx(1060.0, p95=THRESHOLDS["p95_latency_degraded"].threshold_value * 1.2), states)
     p95_fires = [o for o in out if o[0].name == "p95_latency_degraded" and o[2] == "fire"]
     assert p95_fires == []
 
     # 推进到 10 分钟后，持续越线 → fire
-    out = evaluate(_make_ctx(1660.0, p95=15000.0), states)
+    out = evaluate(_make_ctx(1660.0, p95=THRESHOLDS["p95_latency_degraded"].threshold_value * 1.2), states)
     p95_fires = [o for o in out if o[0].name == "p95_latency_degraded" and o[2] == "fire"]
     assert len(p95_fires) == 1
 
@@ -202,11 +202,11 @@ def test_p95_above_threshold_fires_after_sustain() -> None:
 def test_p95_recovery_when_drops_below_threshold() -> None:
     states: dict[str, AlertState] = {}
     # t=1000 snapshot only（last_ts=0）
-    evaluate(_make_ctx(1000.0, p95=15000.0), states)
+    evaluate(_make_ctx(1000.0, p95=THRESHOLDS["p95_latency_degraded"].threshold_value * 1.2), states)
     # t=1700 first breach → first_breach_at=1700, sustain=0 不 fire
-    evaluate(_make_ctx(1700.0, p95=15000.0), states)
+    evaluate(_make_ctx(1700.0, p95=THRESHOLDS["p95_latency_degraded"].threshold_value * 1.2), states)
     # t=2400 sustain=700 ≥ 600 → fire
-    evaluate(_make_ctx(2400.0, p95=15000.0), states)
+    evaluate(_make_ctx(2400.0, p95=THRESHOLDS["p95_latency_degraded"].threshold_value * 1.2), states)
     state = states["p95_latency_degraded"]
     assert state.is_firing, "前置条件：P95 已 firing"
 
@@ -225,14 +225,14 @@ def test_p95_does_not_interfere_with_ratio_alerts() -> None:
     """
     states: dict[str, AlertState] = {}
     # t=1000 snapshot only
-    evaluate(_make_ctx(1000.0, p95=15000.0, llm_total=100, llm_error=20), states)
+    evaluate(_make_ctx(1000.0, p95=THRESHOLDS["p95_latency_degraded"].threshold_value * 1.2, llm_total=100, llm_error=20), states)
     # t=1400 first breach for both（first_breach_at=1400）, sustain=0
-    evaluate(_make_ctx(1400.0, p95=15000.0,
+    evaluate(_make_ctx(1400.0, p95=THRESHOLDS["p95_latency_degraded"].threshold_value * 1.2,
                        llm_total=200, llm_error=40), states)
     # t=2100：
     #   - P95 sustain = 2100-1400 = 700 ≥ 600 → fire
     #   - LLM sustain = 700 ≥ 300 → fire；delta rate = (60-40)/(300-200)=20% > 10%
-    out = evaluate(_make_ctx(2100.0, p95=15000.0,
+    out = evaluate(_make_ctx(2100.0, p95=THRESHOLDS["p95_latency_degraded"].threshold_value * 1.2,
                               llm_total=300, llm_error=60), states)
     fires = {o[0].name for o in out if o[2] == "fire"}
     assert "p95_latency_degraded" in fires

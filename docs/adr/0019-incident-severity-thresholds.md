@@ -20,9 +20,9 @@
 | `cascade_fail_high` | P1 | fallback{cascade_fail} 率 ≥ 5% | 10 分钟 | 15 分钟介入 | ✅ 分母 = `http_total`（总请求数，2026-08-27 修复，与 0030 D3 口径统一） |
 | `llm_failure_high` | P1 | llm_total{status≠ok} 率 ≥ 10% | 5 分钟 | 15 分钟介入 | ✅ |
 | `non_canary_traffic` | P0 | is_canary=false 计数 ≥ 1 | 即时 | 立即回切 Webhook | ✅ runbook §3 已补条目，lint 校验 5/5/5 |
-| `p95_latency_degraded` | P1 | P95 端到端 ≥ 12600ms（4200 × 3，`M2_BASELINE_P95_MS` 可调） | 10 分钟 | 15 分钟介入 | ✅ 端到端埋点已接线且 P95 剔除节点级样本；12600ms 基准仍待 DeepSeek 口径重测 |
+| `p95_latency_degraded` | P1 | P95 端到端 ≥ 25662ms（8554 × 3，`M2_BASELINE_P95_MS` 可调） | 10 分钟 | 15 分钟介入 | ✅ 端到端埋点已接线且 P95 剔除节点级样本；2026-09-24 已按 DeepSeek dry-run 参考值回填，生产需覆盖 |
 
-⚠️ **baseline 注记**：4200ms 为早期 Qwen + mock 口径，已随 [ADR 0020](./0020-unify-all-llm-on-deepseek-v4-pro.md) 失效；DeepSeek 真后端重测前 12600ms 仅为占位（本 ADR 原"后续行动"第 3 条，仍未执行）。
+**baseline 注记（2026-09-24）**：旧 Qwen + mock 的 4200ms 占位已替换为 DeepSeek-V4-pro 本地 dry-run 实测 P95 **8554ms**。冻结版本、显式 categories、并发 1、MySQL 持久化，实际 417 次 HTTP；5xx 0/417，cascade 原始计数 41/417（9.83%，包含明确拒绝）。写入被拦截，业务断言 2/391 PASS；这不是交易成功或生产 7 天观察通过。详细报告在 `tmp/goal-issues/current-model-dryrun-baseline.json` 及同目录报告。生产启用前须用同部署拓扑测量并通过 `M2_BASELINE_P95_MS` 覆盖，不能直接照搬本地参考值。
 
 ### 2. 人工升级判定（runbook 侧，与 `docs/on-call-runbook.md` §3 对应 ✅）
 
@@ -74,7 +74,7 @@ CI lint ✅：`scripts/check_alert_threshold_consistency.py`（25 测试 + CI fa
 ## 后果（现状口径）
 
 - alerts.py + runbook + drill SOP 有共同 ADR 锚点；业务方培训时可拿本 ADR 解释回切标准 ✅
-- 后续行动状态更新：alerts.py 注释引用本 ADR **已完成**（原文标 FUTURE，实测 `alerts.py:4,19-27` 已含）；runbook 引用修正范围订正为 **§3 / §4 / 文末"关联资源"**（原文写 §9 是节号错误——§9 是变更记录表，本无 ADR 引用）；baseline 重测（DeepSeek 口径）仍未执行。
+- 后续行动状态更新：alerts.py 注释引用本 ADR **已完成**（原文标 FUTURE，实测 `alerts.py:4,19-27` 已含）；runbook 引用修正范围订正为 **§3 / §4 / 文末"关联资源"**（原文写 §9 是节号错误——§9 是变更记录表，本无 ADR 引用）；DeepSeek 本地 dry-run 参考基线已于 2026-09-24 回填，生产同拓扑测量与 7 天观察仍待执行。
 
 ## 关联
 

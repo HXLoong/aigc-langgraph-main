@@ -68,7 +68,7 @@
 |---|---|---|---|
 | CI slow job 已包含 MySQL service；本地真实数据库用例仍需 opt-in | 0009 / 0024 D4 | 保持 CI 与本地数据库回归 | — |
 | VL 接线后 `llm_failure_high` 未按 `model` 拆分；`.env.customer.template` 视觉模型留空 | 0019 / 0020 | 阈值重估 + 部署 checklist | #232 |
-| 上线观察层基线（5xx / cascade / P95）待当前模型口径重测 | 0030 D3 / 0020 | 跑 `scripts/langfuse/langfuse_eval.py` + P95 重测后回填 | #233 |
+| ~~当前模型参考基线重测~~；生产同拓扑及 7 天观察待验收 | 0030 D3 / 0020 | 2026-09-24 本地 dry-run 采样完成并回填；生产不得直接照搬 | #233（参考采样完成） |
 | ADR 0001 / 0024 的落地记录仍在正文内 | 0030 D4 | 迁到 `docs/` 实施日志 | — |
 | `POST /v1/runs` 协议迁移暂缓 | 0024 D7 | 保持现行 Java wire 契约，不安排切换 | #222（已关闭） |
 
