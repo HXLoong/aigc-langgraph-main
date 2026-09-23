@@ -403,3 +403,45 @@ def test_conflicting_currency_labels_are_rejected_for_both_fields(raw):
     for field in ("placeOrderNotional", "placeOrderNotionalCurrency"):
         with pytest.raises(ValueError, match="币种"):
             normalize_field(field, raw)
+
+
+def test_single_leading_direction_applies_to_all_listed_orders():
+    params, _ = run("卖出 甲证券100股@10 乙证券200股@20", [
+        {"placeOrderWindCode": cell("甲证券"), "placeOrderOrderDirection": cell("卖出"),
+         "placeOrderQuantity": cell("100股"), "placeOrderPrice": cell("10", "@10")},
+        {"placeOrderWindCode": cell("乙证券"), "placeOrderOrderDirection": cell("卖出"),
+         "placeOrderQuantity": cell("200股"), "placeOrderPrice": cell("20", "@20")},
+    ])
+    assert [o.place_order_order_direction for o in params.order_list] == ["SELL", "SELL"]
+    assert [o.place_order_price for o in params.order_list] == [10, 20]
+
+
+def test_compact_orders_include_the_action_before_quantity_and_instrument():
+    params, _ = run("买入100股甲证券卖出200股乙证券", [
+        {"placeOrderWindCode": cell("甲证券"), "placeOrderOrderDirection": cell("买入"),
+         "placeOrderQuantity": cell("100股")},
+        {"placeOrderWindCode": cell("乙证券"), "placeOrderOrderDirection": cell("卖出"),
+         "placeOrderQuantity": cell("200股")},
+    ])
+    assert [o.place_order_order_direction for o in params.order_list] == ["BUY", "SELL"]
+    assert [o.place_order_quantity for o in params.order_list] == [100, 200]
+
+
+def test_leading_direction_does_not_override_later_explicit_direction():
+    with pytest.raises(EvidenceError):
+        run("卖出甲证券100股，买入乙证券200股", [
+            {"placeOrderWindCode": cell("甲证券"), "placeOrderOrderDirection": cell("卖出"),
+             "placeOrderQuantity": cell("100股")},
+            {"placeOrderWindCode": cell("乙证券"), "placeOrderOrderDirection": cell("卖出"),
+             "placeOrderQuantity": cell("200股")},
+        ])
+
+
+def test_shared_negative_direction_is_never_promoted_to_an_order():
+    with pytest.raises(ValueError):
+        run("不要卖出甲证券100股乙证券200股", [
+            {"placeOrderWindCode": cell("甲证券"), "placeOrderOrderDirection": cell("卖出"),
+             "placeOrderQuantity": cell("100股")},
+            {"placeOrderWindCode": cell("乙证券"), "placeOrderOrderDirection": cell("卖出"),
+             "placeOrderQuantity": cell("200股")},
+        ])

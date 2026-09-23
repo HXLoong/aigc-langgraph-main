@@ -53,6 +53,10 @@ def _constrain_references(candidates: BaseModel, sources: Mapping[str, str]) -> 
 _ACTION_FIELDS = {"placeOrderOrderDirection", "placeOrderCloseIntent", "placeOrderEntrustRatio"}
 _SCOPED_FIELDS = _ACTION_FIELDS | {"placeOrderAlgorithmType", "placeOrderPovPercent", "placeOrderTotalPovPercent"}
 _EXECUTION_ANCHORS = ("placeOrderPremarket", "hasFastExecutionIntent", "placeOrderPrice")
+_ACTION_PREFIX = re.compile(
+    r"买入|卖出|買入|賣出|卖空|賣空|沽出|沽|做多|做空|平多|平空|买|卖|買|賣|"
+    r"(?<![A-Za-z])(?:BUY|SELL|SHORT_OPEN|SHORT_CLOSE)(?![A-Za-z])", re.I,
+)
 _NATURAL_WINDOWS = {"全天", "开盘", "到收盘", "至收盘", "收盘"}
 
 
@@ -92,7 +96,7 @@ def _order_window(row: dict[str, Any], orders: list[dict[str, Any]], raw: str) -
     positions = []
     anchors = ("placeOrderWindCode", "placeOrderQuantity", "placeOrderNotional", "orderId", *_EXECUTION_ANCHORS)
     for order in orders:
-        position = None
+        candidates = []
         for field in anchors:
             anchor = order.get(field)
             if not anchor or anchor.get("origin", "raw") != "raw" or not anchor.get("value"):
@@ -102,10 +106,10 @@ def _order_window(row: dict[str, Any], orders: list[dict[str, Any]], raw: str) -
                 continue
             matches = list(re.finditer(re.escape(value), raw))
             if len(matches) == 1:
-                position = matches[0].start()
-                break
-        if position is None:
+                candidates.append((matches[0].start(), field))
+        if not candidates:
             return None
+        position, field = min(candidates)
         positions.append((position, order, field))
     positions.sort(key=lambda item: item[0])
     starts = []
@@ -126,6 +130,12 @@ def _order_window(row: dict[str, Any], orders: list[dict[str, Any]], raw: str) -
             else:
                 for match in re.finditer(r"其余|另外|剩余", raw[positions[index - 1][0]:position]):
                     start = positions[index - 1][0] + match.start()
+            # 紧凑订单可先写动作和数量、再写标的；保留本笔紧邻锚点的动作。
+            actions = list(_ACTION_PREFIX.finditer(raw[:position]))
+            if actions and not raw[actions[-1].end():position].strip():
+                action_start = actions[-1].start()
+                if positions[index - 1][0] < action_start < start:
+                    start = action_start
         starts.append((start, order))
     if len({start for start, _ in starts}) != len(starts):
         return None
@@ -136,11 +146,35 @@ def _order_window(row: dict[str, Any], orders: list[dict[str, Any]], raw: str) -
     return None
 
 
+def _shared_direction_prefix(orders: list[dict[str, Any]], raw: str) -> str | None:
+    """A single leading action can govern a list; later actions end that inference."""
+    if len(orders) < 2:
+        return None
+    directions = [row.get("placeOrderOrderDirection") for row in orders]
+    if any(not cell or cell.get("origin", "raw") != "raw" for cell in directions):
+        return None
+    if len({cell.get("value") for cell in directions if cell is not None}) != 1:
+        return None
+    positions = []
+    for row in orders:
+        anchor = row.get("placeOrderWindCode") or row.get("orderId")
+        if not anchor or not anchor.get("value") or anchor["value"] not in raw:
+            return None
+        positions.append(raw.index(anchor["value"]))
+    boundary = min(positions)
+    prefix = raw[:boundary]
+    if (not _within(directions[0], prefix) or _ACTION_PREFIX.search(raw[boundary:])
+            or re.search(r"如果|假如|若|或者|否则", prefix)):
+        return None
+    return prefix
+
+
 def constrain_candidates(candidates: BaseModel, sources: Mapping[str, str]) -> BaseModel:
     """Exclude descriptive claims; only unambiguous current-order evidence can bind actions."""
     candidates = _constrain_references(candidates, sources)
     data = candidates.model_dump(by_alias=True)
     orders = data.get("orderList") or []
+    shared_direction = _shared_direction_prefix(orders, sources.get("raw", ""))
     for row in orders:
         for field in _ACTION_FIELDS:
             candidate = row.get(field)
@@ -156,6 +190,8 @@ def constrain_candidates(candidates: BaseModel, sources: Mapping[str, str]) -> B
             candidate = row.get(field)
             if (candidate and candidate.get("origin", "raw") == "raw"
                     and candidate.get("value") and not _within(candidate, window)):
+                if field == "placeOrderOrderDirection" and shared_direction is not None:
+                    continue
                 raise EvidenceError(f"{field}: action evidence does not belong to this order")
         for field in ("placeOrderQuantity", "placeOrderQuantityHand", "placeOrderQuantityTotal", "placeOrderDisplayQty"):
             candidate = row.get(field)
@@ -167,7 +203,9 @@ def constrain_candidates(candidates: BaseModel, sources: Mapping[str, str]) -> B
         direction = row.get("placeOrderOrderDirection")
         if direction and is_holding_description(direction.get("value") or ""):
             row["placeOrderOrderDirection"] = None
-        elif direction and direction.get("value") and negates_token(direction["value"], window):
+        elif direction and direction.get("value") and negates_token(
+            direction["value"], shared_direction or window,
+        ):
             raise ValueError("交易方向被否定")
         close = row.get("placeOrderCloseIntent")
         if close and close.get("origin", "raw") == "raw":
