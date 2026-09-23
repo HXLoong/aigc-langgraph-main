@@ -110,7 +110,7 @@ Dataset Item 的三个字段全部由 `scripts/langfuse/upload_golden_to_langfus
 
 ### 4.1 上传 Dataset
 
-合并到 `main` 后，`.github/workflows/langfuse-dataset-sync.yml` 在相关 JSONL、上传脚本或投影变更时自动执行；Actions 页也可手动触发。它检出运行时最新 `main`，在 `ubuntu-latest` 上用 Langfuse Python SDK `4.15.0` 串行同步。仓库变量 `LANGFUSE_BASE_URL`（当前为 `https://us.cloud.langfuse.com`）和 Secrets `LANGFUSE_PUBLIC_KEY` / `LANGFUSE_SECRET_KEY` 都是必需的；缺失时 workflow 失败。
+`.github/workflows/langfuse-dataset-sync.yml` 在 `main` 收到相关 JSONL、上传脚本或投影变更的推送时自动执行（包括 PR 合并）；Actions 页也可手动触发。它检出运行时最新 `main`，在 `ubuntu-latest` 上用 Langfuse Python SDK `4.15.0` 串行同步。仓库变量 `LANGFUSE_BASE_URL`（当前为 `https://us.cloud.langfuse.com`）和 Secrets `LANGFUSE_PUBLIC_KEY` / `LANGFUSE_SECRET_KEY` 都是必需的；缺失时 workflow 失败。
 
 ```bash
 python scripts/langfuse/upload_golden_to_langfuse.py --sync-all --dry-run
@@ -151,7 +151,7 @@ python scripts\langfuse\upload_golden_to_langfuse.py --source tests\fixtures\cat
 
 ### 4.1a 上传 Prompt 到 staging
 
-`.github/workflows/langfuse-prompt-sync.yml` 在目标为 `main` 的 PR 合并且
+`.github/workflows/langfuse-prompt-sync.yml` 在 `main` 收到推送（包括 PR 合并）且
 `app/prompts/option/*.md`、`option_close/*.md`、`swap/*.md` 或上传脚本变更时运行。
 Actions 页选择 **langfuse-prompt-sync → Run workflow** 可手动触发。workflow 检出运行时最新
 `main`，使用 Langfuse Python SDK `4.15.0` 串行上传。它需要仓库变量 `LANGFUSE_BASE_URL`
