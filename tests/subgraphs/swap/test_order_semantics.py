@@ -656,7 +656,7 @@ def test_duplicate_market_correction_does_not_erase_wait_condition():
 
 @pytest.mark.parametrize('wrong', ['买入', '互换', 'HK', '集合竞价'])
 def test_role_correction_cannot_erase_explicit_market_restriction(wrong):
-    raw = f'港股 互换 买入甲证券1234.HK 100股 集合竞价'
+    raw = '港股 互换 买入甲证券1234.HK 100股 集合竞价'
     with pytest.raises(ValueError):
         run(raw, [{'placeOrderWindCode': cell('甲证券1234.HK'),
                    'placeOrderQuantity': cell('100股'), 'placeOrderOrderDirection': cell('买入'),
