@@ -69,3 +69,9 @@
 | ai_trade_assist_prod_swap_order_case_111 | 暂定或历史动作 |
 | ai_trade_assist_prod_swap_order_case_117 | 暂定或历史动作 |
 | ai_trade_assist_prod_swap_order_case_125 | 暂定或历史动作 |
+
+## 候选输入名称与 Java 字段分离
+
+CI 原生 `deepseek-v4-pro` 持续把买卖动作填入旧字段名 `placeOrderTransactionType`，而本地网关别名的表现不同。除保持现有证据、否定与市场限制校验外，候选模型现在使用语义明确的 `market_selection` 输入名。`CandidateInputName` 元数据和统一候选工厂承担转换：模型输入名可以独立命名，候选及规范化输出的序列化仍为原 Java 字段名，既有字段记录路径保持不变。旧候选输入可恢复；不同别名同时给出矛盾值时拒绝，不能静默选一项。
+
+这不是 Java DTO 或 HTTP 协议迁移，没有修改 Java。此项技术修复不修改数据标签或质量门槛；需要分别验证本地网关和 CI 原生模型，单侧通过不能替另一侧宣称通过。

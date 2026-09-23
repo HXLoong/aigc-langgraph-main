@@ -22,6 +22,13 @@ class CandidateDescription:
     text: str
 
 
+@dataclass(frozen=True)
+class CandidateInputName:
+    """模型使用语义明确的输入名；序列化仍保持 canonical wire 字段。"""
+
+    name: str
+
+
 class EvidenceError(ValueError):
     """A model candidate cannot be traced to the supplied input."""
 

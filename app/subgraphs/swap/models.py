@@ -9,7 +9,7 @@ from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from app.extraction.fields import CandidateDescription
+from app.extraction.fields import CandidateDescription, CandidateInputName
 from app.extraction.intent_evidence import IntentEvidenceOutput
 from app.wire_model import WireModel
 
@@ -107,7 +107,7 @@ class SwapOrderItem(WireModel):
     order_id: Annotated[str | None, CandidateDescription('只提取H-开头的互换订单号，或存在引用订单卡时的序号定位原文；裸证券数字代码、期货合约代码不是订单号；不生成单号')] = Field(default=None, alias="orderId", description="互换订单号 H-YYYYMMDD-XXXXXXXXXX；改单 / 补参时来自引用消息，全新下单 → null")
     place_order_ultra_contract_code: Annotated[str | None, CandidateDescription('用户明确给出的合约代码原文')] = Field(default=None, alias="placeOrderUltraContractCode", description="合约代码（用户明确给出时）")
     place_order_wind_code: Annotated[str | None, CandidateDescription('证券表达原文；名称加代码可取完整表达、单独名称或单独代码。数字@价格前的数量不是标的；只给代码和数量也要保留代码。排除相邻数量、交易对手、执行修饰语以及独立的港股/A股等市场限定词，证券识别由后端完成')] = Field(default=None, alias="placeOrderWindCode", description="标的原文（代码或名称片段，逐字保留；最终证券识别由后端负责）")
-    place_order_transaction_type: Annotated[SwapTransactionType | None, CandidateDescription('仅本轮明确的市场或交易通道限定，如港股、美股、深港通；不是买卖方向、价格类型、算法、金额、数量单位或对手。未明确市场时为 null；证券代码里的交易所后缀不算用户选市场。港股不等于深港通或沪港通，不推断通道，不根据证券名称推断；保留原词，不转枚举')] = Field(default=None, alias="placeOrderTransactionType", description="交易品种：A_SHARE / HK_STOCK / US_STOCK / SZ_HK_CONNECT / SH_HK_CONNECT / CHN_FUTURE / CROSS_FUTURE")
+    place_order_transaction_type: Annotated[SwapTransactionType | None, CandidateInputName("market_selection"), CandidateDescription('仅本轮明确的市场或交易通道限定，如港股、美股、深港通；不是买卖方向、价格类型、算法、金额、数量单位或对手。未明确市场时为 null；证券代码里的交易所后缀不算用户选市场。港股不等于深港通或沪港通，不推断通道，不根据证券名称推断；保留原词，不转枚举')] = Field(default=None, alias="placeOrderTransactionType", description="交易品种：A_SHARE / HK_STOCK / US_STOCK / SZ_HK_CONNECT / SH_HK_CONNECT / CHN_FUTURE / CROSS_FUTURE")
     place_order_quantity: Annotated[int | None, CandidateDescription('委托数量原文，保留正负号及股、手、万等单位，负数不取绝对值，不展开数量；数量正负不能代替明确买卖方向')] = Field(default=None, alias="placeOrderQuantity", description="委托数量（股 / 手系单位展开后的整数）")
     place_order_quantity_hand: Annotated[int | None, CandidateDescription('旧兼容字段，本次抽取留空；手数原文使用 placeOrderQuantity')] = Field(default=None, alias="placeOrderQuantityHand", description="旧字段：按手表达的数量（新提示词不再要求填写）")  # 旧字段，见 docstring
     place_order_quantity_unit: Annotated[SwapQuantityUnit | None, CandidateDescription('用户或表头明确提供的数量单位原文，不转枚举')] = Field(default=None, alias="placeOrderQuantityUnit", description="数量单位：HAND 手系 / SHARE 股系 / AMOUNT 金额（落 placeOrderNotional）")

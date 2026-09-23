@@ -28,7 +28,7 @@ def _tool_order_properties():
 
 @pytest.mark.parametrize("alias,required_semantics", [
     ("placeOrderWindCode", ("单独名称", "单独代码", "数量", "交易对手")),
-    ("placeOrderTransactionType", ("港股", "深港通", "不推断")),
+    ("market_selection", ("港股", "深港通", "不推断")),
     ("placeOrderOrderDirection", ("持仓范围", "数量正负", "null")),
     ("placeOrderPriceType", ("限价", "市价", "均价", "算法")),
     ("placeOrderAlgorithmType", ("POV", "TWAP", "VWAP", "风格", "不附带")),
@@ -49,7 +49,8 @@ def test_candidate_descriptions_preserve_canonical_fields_aliases_and_types():
     canonical = SwapOrderItem.model_json_schema(by_alias=True)["properties"]
     candidate = _tool_order_properties()
     assert tuple(canonical) == ORDER_ALIASES
-    assert tuple(candidate) == ORDER_ALIASES
+    assert tuple(candidate) == tuple("market_selection" if key == "placeOrderTransactionType" else key
+                                     for key in ORDER_ALIASES)
     assert tuple(SwapPlaceOrderParams.model_fields) == ("order_list",)
     assert SwapPlaceOrderParams.model_fields["order_list"].alias == "orderList"
     assert canonical["placeOrderQuantity"]["anyOf"] == [
@@ -65,7 +66,8 @@ def test_candidate_descriptions_preserve_canonical_fields_aliases_and_types():
         "POV", "TWAP", "VWAP", "ICEBERG", "SNIPER",
     ]
     for alias in ORDER_ALIASES:
-        value_schema = candidate[alias]["anyOf"][0]["properties"]["value"]
+        input_alias = "market_selection" if alias == "placeOrderTransactionType" else alias
+        value_schema = candidate[input_alias]["anyOf"][0]["properties"]["value"]
         assert value_schema["anyOf"] == [{"type": "string"}, {"type": "null"}]
     assert "单位展开后的整数" not in json.dumps(candidate, ensure_ascii=False)
 
@@ -102,3 +104,31 @@ async def test_live_extraction_path_sends_schema_and_separate_reference_context(
         "items"
     ]["properties"]["placeOrderShortname"]["description"]
     assert "context.counterparties" in description
+
+
+def test_model_market_selection_name_serializes_to_unchanged_java_field():
+    from app.subgraphs.swap.normalize import normalize_candidates
+
+    properties = _tool_order_properties()
+    assert 'market_selection' in properties
+    assert 'placeOrderTransactionType' not in properties
+    cell = {'value': '港股', 'evidence': '港股', 'confidence': .95}
+    candidate = place_order.CANDIDATE_MODEL.model_validate({'orderList': [{'market_selection': cell}]})
+    dumped = candidate.model_dump(by_alias=True)
+    assert dumped['orderList'][0]['placeOrderTransactionType']['value'] == '港股'
+    assert 'market_selection' not in dumped['orderList'][0]
+    # 节点保存/恢复仍使用既有候选及 Java wire 名称。
+    restored = place_order.CANDIDATE_MODEL.model_validate(dumped)
+    params, records = normalize_candidates(restored, {'raw': '港股'})
+    assert params.model_dump()['orderList'][0]['placeOrderTransactionType'] == 'HK_STOCK'
+    assert 'swap/place_order.orderList.0.placeOrderTransactionType' in records
+
+
+def test_conflicting_model_and_wire_input_aliases_are_not_silently_selected():
+    from pydantic import ValidationError
+
+    with pytest.raises(ValidationError, match='conflicting extraction aliases'):
+        place_order.CANDIDATE_MODEL.model_validate({'orderList': [{
+            'market_selection': {'value': '港股', 'evidence': '港股', 'confidence': .95},
+            'placeOrderTransactionType': {'value': '美股', 'evidence': '美股', 'confidence': .95},
+        }]})
