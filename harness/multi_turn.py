@@ -12,7 +12,7 @@ from typing import Any
 import httpx
 
 from harness.golden import GoldenCase, TurnSpec
-from harness.scenario_inputs import resolve_order_reference
+from harness.scenario_inputs import ScenarioInputError, resolve_order_reference
 
 _BACKEND_ERROR_MARKERS = ("正在处理", "请勿重复", "未授权", "失败：未补充")
 
@@ -185,7 +185,7 @@ async def run_case_multi(
     except (httpx.HTTPError, ValueError) as exc:
         result.failure = {
             "turn": len(result.turns) + 1,
-            "kind": "technical_error",
+            "kind": "fixture_precondition" if isinstance(exc, ScenarioInputError) else "technical_error",
             "error": {"type": type(exc).__name__, "message": str(exc)[:200]},
         }
         result.remaining_turns = len(case.turns) - len(result.turns)

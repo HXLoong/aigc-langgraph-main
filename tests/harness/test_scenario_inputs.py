@@ -1,6 +1,9 @@
 """跨产品动态单号只绑定上一轮实际回复中的唯一业务订单。"""
+import httpx
 import pytest
 
+from harness.golden import GoldenCase
+from harness.multi_turn import run_case_multi
 from harness.scenario_inputs import resolve_order_reference
 
 
@@ -40,3 +43,25 @@ def test_holding_reference_uses_explicit_position_in_previous_card():
 def test_holding_reference_cannot_guess_or_send_unresolved_placeholder(placeholder, reply):
     with pytest.raises(ValueError):
         resolve_order_reference('我想平掉 ' + placeholder, reply)
+
+
+async def test_missing_live_holding_stops_before_write_as_fixture_precondition():
+    requests = []
+
+    def respond(request):
+        requests.append(request)
+        return httpx.Response(200, json={"data": {"status": "succeeded", "outputs": {
+            "reply_text": "暂无符合平仓条件的期权合约。", "product_type": "option_close",
+            "intent": "close_order_query", "api_code": 0,
+        }}})
+
+    case = GoldenCase(id="live-holding", category="option_close", turns=[
+        {"send_text": "查可平持仓"},
+        {"send_text": "我想平掉 {{previous_holding_contract_id:1}}", "quote_previous": True},
+    ])
+    async with httpx.AsyncClient(transport=httpx.MockTransport(respond)) as client:
+        result = await run_case_multi(case, base_url="http://test", user_id="u", room_id="r",
+                                     client=client)
+    assert len(requests) == 1
+    assert result.failure["kind"] == "fixture_precondition"
+    assert result.remaining_turns == 1
