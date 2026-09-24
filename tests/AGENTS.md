@@ -19,7 +19,7 @@ tests/
 ├── api_wire/              # /v1/workflows/run 对 Java 的现行 wire 契约；原生协议迁移暂缓，保持兼容 + 幂等 + 输入映射
 ├── tools/                 # backend client / auth / exception / http_pool
 ├── observability/         # tracing / metrics / logs / health
-├── integration/           # mock_api ASGI 内存集成 + 本地 MySQL opt-in（RUN_LOCAL_MYSQL_TESTS=1，CI slow job 打开）
+├── integration/           # mock_api ASGI 内存集成 + 本地 MySQL opt-in（RUN_LOCAL_MYSQL_TESTS=1，仅本地 / 联调环境；CI 不跑）
 ├── harness/               # 评测台（harness/）：golden 加载、判定口径、节点 fixture 运行器、HTTP tape
 ├── prompts/               # 提示词治理：PromptSpec / loader / 灰度 / LangFuse 演练稿门槛
 ├── scripts/               # scripts/ 下运维与评估脚本的测试（导入靠 pyproject pythonpath=["."]，禁止 sys.path.insert）

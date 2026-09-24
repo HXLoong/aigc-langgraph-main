@@ -110,7 +110,7 @@ Dataset Item 的三个字段全部由 `scripts/langfuse/upload_golden_to_langfus
 
 ### 4.1 上传 Dataset
 
-`.github/workflows/langfuse-dataset-sync.yml` 在 `main` 收到相关 JSONL、上传脚本或投影变更的推送时自动执行（包括 PR 合并）；Actions 页也可手动触发。它检出运行时最新 `main`，在 `ubuntu-latest` 上用 Langfuse Python SDK `4.15.0` 串行同步。仓库变量 `LANGFUSE_BASE_URL`（当前为 `https://us.cloud.langfuse.com`）和 Secrets `LANGFUSE_PUBLIC_KEY` / `LANGFUSE_SECRET_KEY` 都是必需的；缺失时 workflow 失败。
+`.github/workflows/langfuse-dataset-sync.yml` **仅手动触发**（Actions 页 Run workflow），push 与 PR 合并不会自动执行。它检出运行时最新 `main`，在 `ubuntu-latest` 上用 Langfuse Python SDK `4.15.0` 串行同步。仓库变量 `LANGFUSE_BASE_URL`（当前为 `https://us.cloud.langfuse.com`）和 Secrets `LANGFUSE_PUBLIC_KEY` / `LANGFUSE_SECRET_KEY` 都是必需的；缺失时 workflow 失败。
 
 ```bash
 python scripts/langfuse/upload_golden_to_langfuse.py --sync-all --dry-run
@@ -119,7 +119,7 @@ python scripts/langfuse/upload_golden_to_langfuse.py --sync-all
 python scripts/langfuse/upload_golden_to_langfuse.py --sync-all --base-url https://us.cloud.langfuse.com
 ```
 
-`--sync-all` 只扫描 `intent/*.jsonl` 和 `categories/*.jsonl`。每个文件独立成 Dataset：`intent/option_close.jsonl` → `intent_option_close`，`categories/golden_option_close_case.jsonl` → `golden_option_close_case`。`nodes/` 下的文件不会扫描，也不会因其变更触发自动同步。上传前检查 Dataset 名称冲突和全局用例 ID 重复；Item ID 固定为 `<dataset_name>:<case_id>`（Langfuse 要求项目内唯一），原始 ID 保存在 metadata。每次 upsert 设为 `ACTIVE`。所有文件上传成功后，才归档各 Dataset 中已经从对应文件移除的 Item；空文件或上传失败时不归档。此前上传的节点 Dataset 不会自动删除或归档。历史 `intent-` Dataset 不自动删除。
+`--sync-all` 只扫描 `intent/*.jsonl` 和 `categories/*.jsonl`。每个文件独立成 Dataset：`intent/option_close.jsonl` → `intent_option_close`，`categories/golden_option_close_case.jsonl` → `golden_option_close_case`。`nodes/` 下的文件不会扫描。上传前检查 Dataset 名称冲突和全局用例 ID 重复；Item ID 固定为 `<dataset_name>:<case_id>`（Langfuse 要求项目内唯一），原始 ID 保存在 metadata。每次 upsert 设为 `ACTIVE`。所有文件上传成功后，才归档各 Dataset 中已经从对应文件移除的 Item；空文件或上传失败时不归档。此前上传的节点 Dataset 不会自动删除或归档。历史 `intent-` Dataset 不自动删除。
 
 手动指定来源和 Dataset 的旧用法仍可使用：
 
@@ -151,9 +151,8 @@ python scripts\langfuse\upload_golden_to_langfuse.py --source tests\fixtures\cat
 
 ### 4.1a 上传 Prompt 到 staging
 
-`.github/workflows/langfuse-prompt-sync.yml` 在 `main` 收到推送（包括 PR 合并）且
-`app/prompts/option/*.md`、`option_close/*.md`、`swap/*.md` 或上传脚本变更时运行。
-Actions 页选择 **langfuse-prompt-sync → Run workflow** 可手动触发。workflow 检出运行时最新
+`.github/workflows/langfuse-prompt-sync.yml` **仅手动触发**：Actions 页选择 **langfuse-prompt-sync → Run workflow**，
+push 与 PR 合并不会自动执行。同步范围为 `app/prompts/option/*.md`、`option_close/*.md`、`swap/*.md`。workflow 检出运行时最新
 `main`，使用 Langfuse Python SDK `4.15.0` 串行上传。它需要仓库变量 `LANGFUSE_BASE_URL`
 及 Secrets `LANGFUSE_PUBLIC_KEY`、`LANGFUSE_SECRET_KEY`，缺一即失败。
 
@@ -430,11 +429,10 @@ python scripts/langfuse/langfuse_eval.py --dataset swap_prod_data --concurrency 
   对 `suite=intent` 直接在本地执行 `intent_match` / `instrument_match`，不需要 Langfuse、Java、GOATS；
   `--fail-under 0.95` 低于门槛退出码 1，`--report` 写 JSON 摘要
 - `.github/workflows/intent-eval.yml`：runner 上起仓库内 `mock_api`（GOATS 22 + Java 10 端点假实现）顶替后端，
-  LLM 网关走 secrets `QWEN_API_BASE` / `QWEN_API_KEY`。PR 触碰 `app/prompts/**`、路由/意图节点、评估器、
-  `tests/fixtures/intent/**` 时自动跑；Actions 页可手动 Run workflow 并改 `fixture` / `limit` / `fail_under`
+  LLM 网关走 secrets `QWEN_API_BASE` / `QWEN_API_KEY`。**仅手动触发**（不随 PR 自动跑，全量约 14 分钟并消耗 LLM 额度）：
+  改提示词 / 路由意图节点 / 评估器 / 意图集后，在 Actions 页 Run workflow，可改 `fixture` / `limit` / `fail_under`
   （首次可用 `fail_under=0` 只出基线报告，再定门槛）
-- 未配置 secrets 时：PR 触发只做 fixture lint，评估步骤跳过并打 warning（Step Summary 注明"已跳过"，不算通过）；
-  手动触发直接失败。配好 secrets 后无需改 workflow，门槛自动生效
+- 未配置 secrets 时手动触发直接失败，避免误以为跑过
 - 启用 Langfuse 时 `--local` 也会把每个评估器的 score（`det_*`）写回 trace；`--no-judge` 的兜底评分现在按
   `reply-check` 名写回（此前误用 `otc-option-judge`）
 - 业务集（`categories/`）依赖 Java 后端与授权账号，只在开发 / staging 环境用 `--dataset business-*` 或

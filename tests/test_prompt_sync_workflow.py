@@ -1,4 +1,4 @@
-"""Langfuse 同步在 main 更新后运行，支持手动触发。"""
+"""Langfuse 同步只手动触发（Actions → Run workflow），不随 push / PR 自动写远端。"""
 
 from pathlib import Path
 
@@ -6,39 +6,13 @@ import pytest
 import yaml
 
 
-@pytest.mark.parametrize(
-    ("filename", "expected_paths"),
-    [
-        (
-            "langfuse-prompt-sync.yml",
-            {
-                "app/prompts/option/*.md",
-                "app/prompts/option_close/*.md",
-                "app/prompts/swap/*.md",
-                "scripts/langfuse/upload_prompt_to_langfuse.py",
-            },
-        ),
-        (
-            "langfuse-dataset-sync.yml",
-            {
-                "tests/fixtures/intent/*.jsonl",
-                "tests/fixtures/categories/*.jsonl",
-                "scripts/langfuse/upload_golden_to_langfuse.py",
-            },
-        ),
-    ],
-)
-def test_sync_workflows_run_after_main_push(
-    filename: str, expected_paths: set[str]
-) -> None:
+@pytest.mark.parametrize("filename", ["langfuse-prompt-sync.yml", "langfuse-dataset-sync.yml"])
+def test_sync_workflows_are_manual_only(filename: str) -> None:
     path = Path(".github/workflows") / filename
     workflow = yaml.load(path.read_text(encoding="utf-8"), Loader=yaml.BaseLoader)
     trigger = workflow["on"]
 
-    assert "workflow_dispatch" in trigger
-    assert "pull_request" not in trigger
-    assert trigger["push"]["branches"] == ["main"]
-    assert expected_paths <= set(trigger["push"]["paths"])
+    assert set(trigger) == {"workflow_dispatch"}
     assert "if" not in workflow["jobs"]["sync"]
 
 
@@ -46,16 +20,7 @@ def test_prompt_sync_workflow_trigger_and_runtime() -> None:
     path = Path(".github/workflows/langfuse-prompt-sync.yml")
     workflow = yaml.load(path.read_text(encoding="utf-8"), Loader=yaml.BaseLoader)
 
-    trigger = workflow["on"]
-    assert "workflow_dispatch" in trigger
-    push = trigger["push"]
-    assert push["branches"] == ["main"]
-    assert {
-        "app/prompts/option/*.md",
-        "app/prompts/option_close/*.md",
-        "app/prompts/swap/*.md",
-        "scripts/langfuse/upload_prompt_to_langfuse.py",
-    } <= set(push["paths"])
+    assert set(workflow["on"]) == {"workflow_dispatch"}
 
     job = workflow["jobs"]["sync"]
     assert "if" not in job

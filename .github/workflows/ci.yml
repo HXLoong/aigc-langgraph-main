@@ -2,7 +2,8 @@ name: CI
 
 # 2026-05-12 曾暂停自动触发；2026-09-22 按 ADR 0024 D6 / D8 阶段 0 门槛恢复：
 # fast job（每次 push / PR，< 2 min）守 lint + 一致性检查 + 快速测试，
-# slow job（PR + main）跑全量 pytest 与真实 MySQL 用例（ADR 0024 D4）。
+# slow job（PR + main）跑全量 pytest（含 e2e）。真实 MySQL 用例（RUN_LOCAL_MYSQL_TESTS=1）
+# 2026-09-24 起不再进 CI，只在本地 / 联调环境 opt-in 运行（docs/nodes-run.md）。
 on:
   push:
     branches: [main]
@@ -71,34 +72,20 @@ jobs:
         run: pytest tests/ -q -p no:cacheprovider -k "not e2e"
 
   slow:
-    name: 全量测试 + 真实 MySQL
+    name: 全量测试（含 e2e）
     runs-on: ubuntu-latest
     timeout-minutes: 40
     needs: fast
     if: github.event_name != 'push' || github.ref == 'refs/heads/main'
-    services:
-      mysql:
-        image: mysql:8.0
-        env:
-          MYSQL_ROOT_PASSWORD: root
-          MYSQL_DATABASE: otc_goats_ai_trading_dev
-        ports:
-          - 3306:3306
-        options: >-
-          --health-cmd "mysqladmin ping -h 127.0.0.1 -uroot -proot"
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 10
     env:
       USE_MYSQL_CHECKPOINTER: "false"
       REQUEST_IDEMPOTENCY: "false"
-      # 集成用例只接受本机地址 + 该库名（tests/integration/*_mysql.py）；shared 用例会自建临时库，需 root
-      MYSQL_URI: mysql+aiomysql://root:root@127.0.0.1:3306/otc_goats_ai_trading_dev
-      RUN_LOCAL_MYSQL_TESTS: "1"
-      QWEN_API_BASE: http://llm.invalid/v1
-      QWEN_API_KEY: ci-only
-      OTC_API_BASE_URL: http://otc.invalid
-      OTC_API_SECRET: ci-only
+      # 不连数据库：*_mysql.py 集成用例未设 RUN_LOCAL_MYSQL_TESTS 时自动 skip
+      MYSQL_URI: "mysql+aiomysql://ci:ci@127.0.0.1:1/ci"
+      QWEN_API_BASE: "http://127.0.0.1:1/v1"
+      QWEN_API_KEY: "ci-placeholder"
+      OTC_API_BASE_URL: "http://127.0.0.1:1"
+      OTC_API_SECRET: "ci-placeholder"
     steps:
       - uses: actions/checkout@v4
 
@@ -113,23 +100,5 @@ jobs:
           python -m pip install --upgrade pip
           pip install -e ".[dev]"
 
-      - name: 初始化业务库（sql/init.sql，与现场部署同一份）
-        run: |
-          python - <<'PY'
-          import re
-          import pymysql
-
-          sql = open("sql/init.sql", encoding="utf-8").read()
-          clean = re.sub(r"(?m)^\s*--.*$", "", sql)
-          conn = pymysql.connect(host="127.0.0.1", port=3306, user="root", password="root",
-                                 database="otc_goats_ai_trading_dev", autocommit=True, charset="utf8mb4")
-          with conn.cursor() as cur:
-              for statement in clean.split(";"):
-                  if statement.strip():
-                      cur.execute(statement)
-              cur.execute("SHOW TABLES")
-              print(sorted(row[0] for row in cur.fetchall()))
-          PY
-
-      - name: Full tests (含 RUN_LOCAL_MYSQL_TESTS=1 的真实 MySQL 用例)
+      - name: Full tests（含 e2e；真实 MySQL 用例自动 skip）
         run: pytest tests/ -q -p no:cacheprovider

@@ -1,15 +1,8 @@
 name: langfuse-prompt-sync
 
+# 仅手动触发：Actions → langfuse-prompt-sync → Run workflow（选 main）。不随 push 自动写 Langfuse。
 on:
   workflow_dispatch:
-  push:
-    branches: [main]
-    paths:
-      - "app/prompts/option/*.md"
-      - "app/prompts/option_close/*.md"
-      - "app/prompts/swap/*.md"
-      - "scripts/langfuse/upload_prompt_to_langfuse.py"
-      - ".github/workflows/langfuse-prompt-sync.yml"
 
 concurrency:
   group: langfuse-prompt-sync

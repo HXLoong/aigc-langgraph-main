@@ -5,12 +5,11 @@ name: intent-eval
 # 评分用 harness/evaluators 的确定性评估器在本地算，不需要 Langfuse。
 # 业务集（tests/fixtures/categories/）依赖真实后端与授权账号，只在开发环境跑，绝不进这里。
 #
-# 手动：Actions → intent-eval → Run workflow（可改 fixture / limit / fail_under）
-# 自动：PR 触碰提示词、路由/意图节点、评估器、意图集时运行
+# 仅手动触发：Actions → intent-eval → Run workflow（可改 fixture / limit / fail_under）。
+# 不随 PR 自动运行——全量约 14 分钟且消耗 LLM 额度；改提示词 / 路由 / 意图节点后按需手动跑。
 # 前置：仓库 secrets 配置 QWEN_API_BASE / QWEN_API_KEY（LLM 网关）；可选 variables
 #       QWEN_MODEL_STANDARD / QWEN_MODEL_THINKING / QWEN_MODEL_COMPLEX 覆盖默认模型
-# 未配置 secrets：PR 触发只做 fixture lint，评估步骤跳过并打 warning（不算通过）；
-#                 手动触发则直接失败，避免误以为跑过
+# 未配置 secrets：直接失败，避免误以为跑过
 
 on:
   workflow_dispatch:
@@ -31,21 +30,6 @@ on:
         description: "通过率门槛，低于则失败（0 = 只出报告不拦截）"
         default: "0.95"
         required: false
-  pull_request:
-    paths:
-      - "app/prompts/**"
-      - "app/nodes/intent_route.py"
-      - "app/nodes/route_rules.py"
-      - "app/subgraphs/*/intent.py"
-      - "app/subgraphs/swap/place_order.py"
-      - "app/subgraphs/swap/normalize.py"
-      - "app/subgraphs/swap/quote_hints.py"
-      - "app/extraction/**"
-      - "harness/evaluators/**"
-      - "harness/golden.py"
-      - "scripts/langfuse/langfuse_eval.py"
-      - "tests/fixtures/intent/**"
-      - ".github/workflows/intent-eval.yml"
 
 concurrency:
   group: intent-eval-${{ github.ref }}
@@ -53,8 +37,6 @@ concurrency:
 
 jobs:
   intent-eval:
-    # fork PR 拿不到 secrets，自动跳过；同仓库 PR 与手动触发正常跑
-    if: github.event_name == 'workflow_dispatch' || github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
     timeout-minutes: 60
 
@@ -88,16 +70,8 @@ jobs:
             echo "LLM secrets 已配置，执行完整评估"
             exit 0
           fi
-          if [ "$GITHUB_EVENT_NAME" = "workflow_dispatch" ]; then
-            echo "::error::缺少 QWEN_API_BASE / QWEN_API_KEY secrets：意图集只依赖 LLM（不依赖 Java/GOATS），但必须配置模型网关"
-            exit 1
-          fi
-          echo "::warning::未配置 QWEN_API_BASE / QWEN_API_KEY secrets，本次 PR 只做 fixture lint，意图集评估跳过（不算通过）；管理员在 Settings → Secrets and variables → Actions 配置后自动启用"
-          {
-            echo "## intent-eval：已跳过"
-            echo ""
-            echo "仓库未配置 \`QWEN_API_BASE\` / \`QWEN_API_KEY\` secrets，意图集评估未执行（不算通过）。"
-          } >> "$GITHUB_STEP_SUMMARY"
+          echo "::error::缺少 QWEN_API_BASE / QWEN_API_KEY secrets：意图集只依赖 LLM（不依赖 Java/GOATS），但必须配置模型网关"
+          exit 1
 
       - name: Set up Python 3.11
         uses: actions/setup-python@v5

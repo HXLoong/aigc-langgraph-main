@@ -1,15 +1,8 @@
 name: langfuse-dataset-sync
 
+# 仅手动触发：Actions → langfuse-dataset-sync → Run workflow（选 main）。不随 push 自动写 Langfuse。
 on:
   workflow_dispatch:
-  push:
-    branches: [main]
-    paths:
-      - "tests/fixtures/intent/*.jsonl"
-      - "tests/fixtures/categories/*.jsonl"
-      - "scripts/langfuse/upload_golden_to_langfuse.py"
-      - "harness/golden.py"
-      - ".github/workflows/langfuse-dataset-sync.yml"
 
 concurrency:
   group: langfuse-dataset-sync
