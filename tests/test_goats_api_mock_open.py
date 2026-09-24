@@ -68,6 +68,9 @@ def test_open_unknown_and_other_owners_cannot_succeed():
                                json={"keyStockOrderId": identifier}).json()["errCode"]["code"] != 200
         assert client.post(BASE + "/query", headers={"agentid": HEADERS["agentid"]},
                            json={}).json()["data"]["total"] == 1
+        # 撤单是写操作：缺 agentsubid 的群级请求不能撤掉下单用户的订单
+        assert client.post(BASE + "/withdraw", headers={"agentid": HEADERS["agentid"]},
+                           json={"keyStockOrderId": identifier}).json()["errCode"]["code"] != 200
         assert client.get(BASE + "/withdrawResult", headers=HEADERS,
                           params={"stockOrderCode": "missing"}).json()["errCode"]["code"] != 200
         assert client.post(BASE, headers=HEADERS,

@@ -134,7 +134,7 @@ check_tools_exist() {
 }
 
 # ============================================================
-# Check 2 · 工具语法 OK（bash -n / python -c import）
+# Check 2 · 工具语法 OK（bash -n / python --help 可加载）
 # ============================================================
 check_tools_syntax() {
     section "Check 2/6 · 工具语法可加载"
@@ -158,10 +158,9 @@ check_tools_syntax() {
     for s in "${pyscripts[@]}"; do
         local f="${PROJECT_DIR}/$s"
         [ ! -f "$f" ] && continue
-        if ! "$PYTHON_BIN" -c \
-            "import ast, pathlib, sys; ast.parse(pathlib.Path(sys.argv[1]).read_text(encoding='utf-8'))" \
-            "$f" 2>/dev/null; then
-            errs+=("$s [py syntax]")
+        # 真正执行 --help：ast.parse 会放过导入即 NameError 的合并遗留
+        if ! "$PYTHON_BIN" "$f" --help >/dev/null 2>&1; then
+            errs+=("$s [py load]")
         fi
     done
 
