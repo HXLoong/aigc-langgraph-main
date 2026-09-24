@@ -55,7 +55,7 @@ jobs:
       - name: ADR 0019 阈值一致性 (alerts.py ↔ ADR 0019 ↔ runbook)
         run: python scripts/check_alert_threshold_consistency.py
 
-      - name: tests/fixtures 一致性（unified ⊇ golden + ADR 0015 锚点）
+      - name: tests/fixtures 一致性（验收集与意图枚举）
         run: python scripts/check_fixture_consistency.py
 
       - name: ADR 引用一致性（互引虚悬 + 代码路径存在性）

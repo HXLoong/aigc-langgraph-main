@@ -19,14 +19,14 @@
 
 **归入现有子图（新意图）**：
 
-- 在 `app/subgraphs/<product>/models.py` 的 `<Product>IntentType` 加枚举值，更新该产品的意图提示词；
+- 在 `app/subgraphs/<product>/models.py` 的 `<Product>IntentType` 加枚举值，更新本轮联合解析契约与提示词；遵循 [ADR 0031](./0031-single-model-request-per-message.md)，不得新增独立的第二次参数模型请求；
 - 新增意图节点，并在子图 `graph.py` 的 `_INTENT_TO_NODE` 路由表登记（条件边由 `app/subgraphs/common.py` 的 `add_intent_dispatch` 从该表生成；未登记的意图落 `<product>_unknown` 兜底）；
 - 在 `tests/fixtures/categories/` 至少补 2 条用例（`scripts/check_fixture_consistency.py` 守护）。
 
 **新建独立子图（额外）**：
 
 - 新建 `app/subgraphs/<name>/` 包目录（`graph.py` / `models.py` / `intent.py` / 每意图一个节点文件）；
-- 在 `app/graph/state.py` 的 `ProductType` 加值，并更新一级路由（`app/nodes/route_rules.py` / `app/nodes/intent_route.py`，见 [ADR 0015](./0015-intent-route-rules-first-llm-fallback.md)）与主图注册；
+- 在 `app/graph/state.py` 的 `ProductType` 加值，并更新一级路由（`app/nodes/route_rules.py` / `app/nodes/intent_route.py`，见 [ADR 0031](./0031-single-model-request-per-message.md)）与主图注册；
 - 注意既有命名不对称：提示词目录 `app/prompts/option_close/` 对应子图目录 `app/subgraphs/close/`。
 
 PR 模板（`.github/pull_request_template.md`）含"是否触发独立子图条件"的判定项。

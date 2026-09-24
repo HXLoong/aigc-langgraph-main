@@ -1,4 +1,4 @@
-"""一级路由节点(DSL v2 版,ADR 0015 修订)。
+"""当前一级路由节点（单次联合解析的重构目标见 ADR 0031）。
 
 两层处理(对照 Dify 主干工作流（Dify 资产已冻结于 tag dify-assets-frozen-20260917，ADR 0024 D1）):
 1. 规则层:「脚本判断期权、互换、其他查询指令」1:1 移植(app/nodes/route_rules.py)
@@ -108,7 +108,7 @@ async def intent_route(state: AgentState) -> dict[str, Any]:
 
     pt, mode = _LABEL_MAP.get(label, ("unknown", None))
 
-    # 第 3 层:多轮粘性(ADR 0015 工程增强)——规则与 LLM 双 unknown 且
+    # 第 3 层:多轮粘性（当前实现）——规则与 LLM 双 unknown 且
     # checkpoint 携带上一轮 product_type 时继承之,避免"确认下单"裸发落 fallback
     if pt == "unknown" and not files:
         prev = state.get("product_type")

@@ -2,7 +2,7 @@
 
 - 状态：已采纳（重写已完成）
 - 日期：2026-05-10
-- 关系：标的职责见 [ADR 0025](./0025-instrument-resolution-delegated-to-backend.md)；协议演进见 [ADR 0024](./0024-langgraph-native-rearchitecture.md) D7；评测门见 [ADR 0030](./0030-goal-restatement-native-langgraph-dataset-eval-harness.md) D3
+- 关系：D5 由 [ADR 0031](./0031-single-model-request-per-message.md) 修订；标的职责见 [ADR 0025](./0025-instrument-resolution-delegated-to-backend.md)；协议演进见 [ADR 0024](./0024-langgraph-native-rearchitecture.md) D7；评测门见 [ADR 0030](./0030-goal-restatement-native-langgraph-dataset-eval-harness.md) D3
 - 作者：图灵科技 + Tony
 
 ## 背景
@@ -33,11 +33,11 @@
 
 LangGraph 只提取证券表达原文，识别与校验由 Java 调标的工具完成（[ADR 0025](./0025-instrument-resolution-delegated-to-backend.md)）。
 
-### D5 · 节点策略：保守路线 A+
+### D5 · 节点策略：一次解析，确定性处理分层
 
-逻辑层与原 Dify 工作流基本 1:1，仅做定向重构：互换 3 个"确认 X"节点合并为 1 个统一确认；期权巨型意图 + 抽取节点拆分为"1 意图 + 分意图抽取"（[ADR 0011](./0011-split-option-intent-and-extraction.md)）；只做订单号提取的节点改为确定性代码（去 LLM 化）。
+每条消息全链路最多一次模型请求，产品、意图与必要候选共用一次解析结果（[ADR 0031](./0031-single-model-request-per-message.md)，目标规范已采纳，代码待重构）。产品子图、字段证据校验、归一化、确认及后端执行保持独立职责，只做订单号提取的步骤继续由代码处理。
 
-不走激进合并的理由：用户最痛的问题（标的不准、参数错、缺少评估）分别靠后端权威识别、Pydantic 契约和 harness 解决，不靠节点合并；激进合并会让提示词信息密度过载、diff 颗粒度变粗。
+用 PromptSpec、按产品与意图组织的输出契约和数据集回归控制联合解析复杂度；业务节点数量不作为模型请求次数的替代指标。
 
 ### D6 · 目录结构与 AgentState
 

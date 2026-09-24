@@ -52,7 +52,7 @@ def test_removed_modify_intents_rejected(removed_intent: str) -> None:
     ],
 )
 def test_close_intents_rejected_by_option_schema(close_intent: str) -> None:
-    """ADR 0011 二次修订：close_order_* 归 close 子图，option schema 必须拒绝。"""
+    """产品边界（ADR 0007 / 0031）：close_order_* 归 close 子图，option schema 必须拒绝。"""
     with pytest.raises(ValidationError):
         OptionIntentOutput(type=close_intent, confidence=0.91, evidence=[{"text": "本轮意图模型测试输入", "origin": "raw"}])  # type: ignore[arg-type]
 

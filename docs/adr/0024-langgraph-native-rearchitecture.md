@@ -2,7 +2,7 @@
 
 - 状态：已采纳（已冻结：后续决策开新编号）
 - 日期：2026-09-17
-- 关系：后续拆出 [0025](./0025-instrument-resolution-delegated-to-backend.md) 标的移交后端、[0026](./0026-request-idempotency-uncertain-receipts-reconciliation.md) 幂等与回执、[0027](./0027-field-evidence-contract.md) 字段证据、[0028](./0028-session-entry-and-multi-instruction-send-orchestration.md) 入口分流、[0029](./0029-node-level-debug-api-and-regression-workbench.md) 节点层；D8 门槛统一到 [0030](./0030-goal-restatement-native-langgraph-dataset-eval-harness.md) D3
+- 关系：D3 的模型调用与重试边界由 [0031](./0031-single-model-request-per-message.md) 修订；后续拆出 [0025](./0025-instrument-resolution-delegated-to-backend.md) 标的移交后端、[0026](./0026-request-idempotency-uncertain-receipts-reconciliation.md) 幂等与回执、[0027](./0027-field-evidence-contract.md) 字段证据、[0028](./0028-session-entry-and-multi-instruction-send-orchestration.md) 入口分流、[0029](./0029-node-level-debug-api-and-regression-workbench.md) 节点层；D8 门槛统一到 [0030](./0030-goal-restatement-native-langgraph-dataset-eval-harness.md) D3
 - 作者：图灵科技 + Tony
 
 ## 背景
@@ -38,8 +38,8 @@
 ### D3 · 图即架构
 
 - 子图以 `add_node(name, compiled_subgraph)` 原生嵌入；厚节点（如平仓、期权询价、render 决策树）拆为小节点或子图，每个分支写 `TraceEntry(decision=)`，错误可归因到具体阶段。
-- 互换"选对手 ‖ 选标的"并行执行，在汇合节点合并。
-- **读写分界**：只读 IO 节点（LLM / 后端查询）用 `@io_node` 挂 `RetryPolicy`，最后一次失败沿原图边收尾；**写类节点永不自动重试**（超时后重试可能重复下单）。HTTP 客户端为进程级连接池单例。
+- 互换候选选择共用本轮唯一模型结果，确定性处理可并行，在汇合节点合并。
+- **重试边界**：仅独立的后端只读查询用 `@io_node` 挂 `RetryPolicy`，最后一次失败沿原图边收尾；LLM 与写类节点不自动重试，查询重试不得重跑模型。全链路最多一次模型请求的目标约束见 [ADR 0031](./0031-single-model-request-per-message.md)，现有链路待重构。HTTP 客户端为进程级连接池单例。
 - 不使用 `interrupt`（[ADR 0021](./0021-text-confirm-replaces-interrupt.md)）。
 
 ### D4 · 持久化契约

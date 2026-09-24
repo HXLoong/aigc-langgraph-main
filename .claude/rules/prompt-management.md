@@ -48,7 +48,7 @@ result = await model.with_structured_output(SwapIntentOutput).ainvoke(messages)
 | 场景 | 做法 | 门槛 |
 |---|---|---|
 | 瘦身 / 修规则 | 直接改 `app/prompts/**/*.md`；需要时先跑 `scripts/langfuse/langfuse_eval.py` 对比 | 普通 PR review；`prompt(<scope>)` commit |
-| 新 LLM 节点 | `.md` 放对目录 + Pydantic Output 模型（每字段 `Field(description=)`）+ `PromptSpec` 声明 + `@io_node` 节点（`add_io_node` 注册）+ golden case | 普通 PR review |
+| 新增 / 重构 LLM 节点 | 先守 ADR 0031 的全链路一次请求额度；`.md` + Pydantic Output（字段描述）+ `PromptSpec` + `@safe_node`（零重试）+ golden case | 普通 PR review + 请求次数验证 |
 
 ## 字符数 / 延迟
 

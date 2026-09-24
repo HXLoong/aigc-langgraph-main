@@ -2,7 +2,7 @@
 
 - 状态：已采纳（入口分流生效；多指令拆分编排已退役）
 - 日期：2026-09-21
-- 关系：修订 [ADR 0015](./0015-intent-route-rules-first-llm-fallback.md)（一级路由之前新增入口层）
+- 关系：入口分流先于产品解析；全链路模型请求约束见 [ADR 0031](./0031-single-model-request-per-message.md)
 - 作者：图灵科技 + Tony
 
 ## 背景

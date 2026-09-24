@@ -1,6 +1,6 @@
 """smoke test: 主图编译 + 端到端 stub run。
 
-ADR 0001 D1 + ADR 0015：含 intent_route 的端到端验证：
+ADR 0001 D1；当前链路（ADR 0031 重构待实施）：含 intent_route 的端到端验证：
 - ingest → intent_route（规则层）→ swap/option/option_close stub → persist → render
 - unknown / cascade 路径走 fallback
 """
@@ -25,7 +25,7 @@ async def test_main_graph_compiles() -> None:
 async def test_main_graph_e2e_swap_keyword(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """ADR 0015 第 2 层：'互换' 关键词 → swap 子图 → place_order_request →
+    """当前路由规则：'互换' 关键词 → swap 子图 → place_order_request →
     swap_place_order + swap_place_order_submit 真节点链。"""
     from unittest.mock import MagicMock
 
@@ -122,7 +122,7 @@ async def test_main_graph_e2e_swap_keyword(
 async def test_main_graph_e2e_unknown_routes_to_fallback(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """ADR 0015 第 3 层 + cascade：无关键词 + LLM 判 unknown → fallback。"""
+    """当前 unknown 路由 + cascade：无关键词 + LLM 判 unknown → fallback。"""
     from app.nodes import intent_route as intent_route_module
 
     async def fake_classify(text: str, quote_content: str | None = None, history_messages: object = None) -> str:
@@ -199,7 +199,7 @@ async def test_main_graph_trace_is_isolated_per_turn(
 async def test_main_graph_e2e_option_close_order_no(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """ADR 0015 第 1 层：CO- 订单号 → close 子图 → close_order_request → place_close 真节点。"""
+    """订单号优先规则：CO- 订单号 → close 子图 → close_order_request → place_close 真节点。"""
     from unittest.mock import MagicMock
 
     from app.subgraphs.close import intent as close_intent_module

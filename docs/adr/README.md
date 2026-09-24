@@ -1,6 +1,6 @@
 # 架构决策记录（ADR）
 
-本目录记录场外衍生品 AI 指令助手（otc-agent）现行有效的架构决策，共 **22 篇**。只保留现行结论，被取代的决策已删除，编号不复用。
+本目录记录场外衍生品 AI 指令助手（otc-agent）现行有效的架构决策。只保留现行结论，被取代的决策已删除，编号不复用。
 
 **项目目标**（[ADR 0030](./0030-goal-restatement-native-langgraph-dataset-eval-harness.md)）：用原生 LangGraph 重构场外衍生品 AI 指令链路，通过数据集进行评测和评估，按 Harness 工程的要求推进每一次改动。
 
@@ -9,8 +9,8 @@
 | 主题 | 决策 | 带来的价值 | ADR |
 |---|---|---|---|
 | 为什么迁移 | 从 Dify 迁到 LangGraph + FastAPI，Dify 已完全退出上游 | 业务逻辑回到代码，可 review、可测试、可监测、可评估 | [0000](./0000-migrate-from-dify-to-langgraph.md) · [0024](./0024-langgraph-native-rearchitecture.md) |
-| 图架构 | 原生子图、State 分层、只读节点自动重试、写节点永不重试 | 结构清晰，失败可归因到具体节点，杜绝"重试导致重复下单" | [0024](./0024-langgraph-native-rearchitecture.md) · [0007](./0007-subgraph-vs-intent-scope-rule.md) |
-| 路由 | 规则优先、LLM 兜底；入口先做会话保护再分流 | 强信号消息零 LLM 调用，硬约定 100% 一致 | [0015](./0015-intent-route-rules-first-llm-fallback.md) · [0028](./0028-session-entry-and-multi-instruction-send-orchestration.md) |
+| 图架构 | 原生子图、State 分层；后端只读查询可重试，LLM 与写节点不重试 | 结构清晰，失败可归因到具体节点，杜绝"重试导致重复下单" | [0024](./0024-langgraph-native-rearchitecture.md) · [0007](./0007-subgraph-vs-intent-scope-rule.md) |
+| 解析与路由 | 每条消息全链路最多一次模型请求；规则优先，歧义一次联合解析，零 LLM 重试 | 产品、意图与候选共用解析结果；覆盖文本与附件（代码待重构） | [0031](./0031-single-model-request-per-message.md) · [0028](./0028-session-entry-and-multi-instruction-send-orchestration.md) |
 | 交易确认 | 文本二阶段确认：明确动作 + 引用当前订单才执行写操作 | 写操作都有客户显式二次表达，不误触发 | [0021](./0021-text-confirm-replaces-interrupt.md) |
 | 写路径正确性 | 消息级幂等、完整响应回放、不确定回执不重跑、只读对账 | 重投不重复下单；结果不确定时如实告知、人工核对 | [0026](./0026-request-idempotency-uncertain-receipts-reconciliation.md) |
 | 参数可信度 | 模型只输出原文候选 + 证据，代码校验、归一化并锁定 | 模型幻觉值在提交前可机械检出，每个最终值可审计 | [0027](./0027-field-evidence-contract.md) |
@@ -25,7 +25,7 @@
 **一、原生 LangGraph 重构**
 
 - [0000](./0000-migrate-from-dify-to-langgraph.md) 迁移动机 → [0001](./0001-rewrite-app-with-harness-first.md) 重写方式 → [0024](./0024-langgraph-native-rearchitecture.md) 目标架构（已冻结）
-- 业务结构：[0007](./0007-subgraph-vs-intent-scope-rule.md) 子图扩张规则 · [0011](./0011-split-option-intent-and-extraction.md) 期权意图与抽取拆分 · [0015](./0015-intent-route-rules-first-llm-fallback.md) 一级路由 · [0028](./0028-session-entry-and-multi-instruction-send-orchestration.md) 入口分流与单动作多订单
+- 业务结构：[0007](./0007-subgraph-vs-intent-scope-rule.md) 子图扩张规则 · [0031](./0031-single-model-request-per-message.md) 单条消息最多一次模型请求 · [0028](./0028-session-entry-and-multi-instruction-send-orchestration.md) 入口分流与单动作多订单
 - 交易正确性：[0021](./0021-text-confirm-replaces-interrupt.md) 文本二阶段确认 · [0026](./0026-request-idempotency-uncertain-receipts-reconciliation.md) 幂等与回执 · [0027](./0027-field-evidence-contract.md) 字段证据契约
 - 职责边界：[0025](./0025-instrument-resolution-delegated-to-backend.md) 标的识别归后端
 - 基础设施：[0009](./0009-mysql-version-and-tdsql-compatibility.md) MySQL / TDSQL
@@ -51,20 +51,19 @@
 | [0005](./0005-annotation-roles-judge-plus-business-spotcheck.md) | 标注闭环：LLM Judge + 业务方抽检 | 已采纳（线上标注待启动） | 平台由 0014 确定 |
 | [0007](./0007-subgraph-vs-intent-scope-rule.md) | 独立子图 vs 新意图：四条触发规则 | 已采纳 | — |
 | [0009](./0009-mysql-version-and-tdsql-compatibility.md) | MySQL 协议 + TDSQL 生产环境 | 已采纳（TDSQL 待现场实测） | — |
-| [0011](./0011-split-option-intent-and-extraction.md) | 期权拆分意图识别与参数提取 | 已采纳 | 输出契约随 0027 收敛 |
 | [0014](./0014-langfuse-as-harness-backend.md) | LangFuse 作为 Harness 后台 | 已采纳 | 修订 0004 / 0005 |
-| [0015](./0015-intent-route-rules-first-llm-fallback.md) | 一级路由：规则前置 + LLM 兜底 | 已采纳 | 入口层由 0028 前置 |
 | [0019](./0019-incident-severity-thresholds.md) | 故障升级阈值 P0 / P1 / P2 | 已采纳 | 与 0030 D3 互补 |
 | [0020](./0020-unify-all-llm-on-deepseek-v4-pro.md) | 全量统一 DeepSeek-V4-pro | 已采纳 | — |
 | [0021](./0021-text-confirm-replaces-interrupt.md) | 文本二阶段确认 + checkpointer 接线 | 已采纳 | 确认范围校验见 0027 D5 |
 | [0023](./0023-prompt-as-code-langgraph.md) | 提示词即代码：PromptSpec | 已采纳 | 输出契约由 0027 收敛 |
-| [0024](./0024-langgraph-native-rearchitecture.md) | LangGraph 原生重构目标架构 | 已采纳（已冻结） | 拆出 0025-0029 |
+| [0024](./0024-langgraph-native-rearchitecture.md) | LangGraph 原生重构目标架构 | 已采纳（已冻结） | 拆出 0025-0029；D3 由 0031 修订 |
 | [0025](./0025-instrument-resolution-delegated-to-backend.md) | 标的识别移交 Java 后端 | 已采纳（追认） | 修订 0001 D4 / 0023 / 0024 |
-| [0026](./0026-request-idempotency-uncertain-receipts-reconciliation.md) | 请求级幂等、不确定回执与对账 | 已采纳（追认） | 细化 0024 D4 |
-| [0027](./0027-field-evidence-contract.md) | 字段证据契约 | 已采纳（追认） | 修订 0023 D2 |
-| [0028](./0028-session-entry-and-multi-instruction-send-orchestration.md) | 会话保护入口分流与单动作多订单 | 已采纳 | 修订 0015 |
+| [0026](./0026-request-idempotency-uncertain-receipts-reconciliation.md) | 请求级幂等、不确定回执与对账 | 已采纳（追认） | 细化 0024 D4；D2 由 0031 修订 |
+| [0027](./0027-field-evidence-contract.md) | 字段证据契约 | 已采纳（追认） | 修订 0023 D2；模型重试见 0031 |
+| [0028](./0028-session-entry-and-multi-instruction-send-orchestration.md) | 会话保护入口分流与单动作多订单 | 已采纳 | 解析约束见 0031 |
 | [0029](./0029-node-level-debug-api-and-regression-workbench.md) | 节点级调试接口与回归工作台 | 已采纳（追认） | 细化 0024 D6 |
 | [0030](./0030-goal-restatement-native-langgraph-dataset-eval-harness.md) | 目标重述与统一评测门 | 已采纳 | 修订 0001 / 0002 / 0005 / 0019 / 0024 D8 |
+| [0031](./0031-single-model-request-per-message.md) | 单条消息全链路最多一次模型请求 | 已采纳（目标约束，代码待重构） | 修订 0001 D5 / 0024 D3 / 0026 D2 / 0027 D2 |
 
 现状与待办不在 ADR 中维护，统一见 [docs/work-plan.md](../work-plan.md)。
 
