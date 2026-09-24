@@ -19,13 +19,13 @@
       P0 误切告警:                    未触发
 
 如果非 canary 流量 > 0：
-- 立刻告诉 Tony，让企微管理员把该 roomId 的 Webhook 切回 Dify
+- 立刻告诉 Tony，协调 Java 配置管理员把该 roomId 的 `agentUrl` 切回 Dify
 - 触发 P0 告警（alerts.py non_canary_traffic）
 - 误切样本数 = 输出里 "非 canary 流量累计"
 
 退出码：
     0  正常（非 canary 流量 == 0 或 ALL 模式）
-    1  发现非 canary 流量（说明有 webhook 误切）
+    1  发现非 canary 流量（说明有 agentUrl 误切）
     2  无法访问 /metrics endpoint
 """
 from __future__ import annotations
@@ -180,7 +180,7 @@ def render_human(s: CanaryStatus) -> str:
     elif s.is_breach:
         lines.append(
             f"  ⚠️  非 canary 流量 = {s.non_canary_count} > 0 → "
-            "有 Webhook 误切！请立即让企微管理员回切非 canary 群的 Webhook 到 Dify"
+            "有 agentUrl 误切！请立即协调 Java 配置管理员把非 canary 群的 agentUrl 切回 Dify"
         )
         lines.append("  对应 P0 告警: non_canary_traffic（alerts.py）")
     else:

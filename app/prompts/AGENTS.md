@@ -1,23 +1,23 @@
 <!-- 自动生成：python scripts/sync_agents_md.py —— 禁止手改。
      真源是 app/prompts/CLAUDE.md；改那里再重新生成，提交前跑 python scripts/sync_agents_md.py --check 校验同步。 -->
 
-# app/prompts · 局部约定
+# app/prompts · 局部陷阱
 
-> 提示词管理规则见 `.claude/rules/prompt-management.md`（来源优先级 / 改写纪律 / 占位符）。
-> 子目录布局见根 `CLAUDE.md` 的「项目结构」段。本文件只补**易错点 + 文件格式 + 字符数提示**。
+> 提示词纪律（PromptSpec、占位符、加载方式、来源优先级）只在 `.claude/rules/prompt-management.md` 维护。
+> 本文件只补该目录的**易错点 + `.md` 文件格式**。
 
 ## 易错点
 
 - **目录名是 `option_close/`，不是 `close/`**（历史命名）；子图代码侧是 `app/subgraphs/close/`，两边不对称
-- **`_versions.yaml`** 才是 ADR 0003 A/B 灰度的真源；不要在 Python 里写死版本。当前无灰度位，需要时新建 `<name>_v{N}.md` 并登记
-- **git `.md` 是唯一生产真源**（ADR 0024 D1）：Dify 已退出上游地位，没有同步 / 导出链路；YAML 快照冻结在 tag `dify-assets-frozen-20260917（指向 commit fddd94e；tag 仅存本地，远端拒绝 tag 推送，维护者可从该 sha 重建）`
-- **一个 LLM 节点 = 一个 `PromptSpec`**（`app/prompts/spec.py`，ADR 0023）：`inputs` 必须是 AgentState 字段（构造期校验）、
-  `output_model` 每个字段写 `Field(description=)`（输出语义唯一真源，`.md` 不再放 JSON 骨架）、`injects` 登记 `.md` 里由代码渲染的占位符、
-  `user_builder` 只拼变量。共享积木在 `blocks.py`，不要在子图复制 `_format_history`
-- `[user]` 段**只有**当 user 含规则文本时才存在（`swap/fresh_counterparty.md`），用 `{{var}}` 占位并经
-  `render_user()` 渲染，是运行时契约；其它节点没有 `[user]` 段，user 消息由 `user_builder` 拼变量
+- **`judge/` 与 `system/` 不是 PromptSpec**：`judge/option_judge.md` 由 `scripts/langfuse/langfuse_eval.py`、
+  `system/capability_probe.md` 由 `scripts/local_eval.py` 直接 `load_prompt`；14 个 PromptSpec 只覆盖业务节点
+- **`_versions.yaml`** 是 ADR 0003 灰度的真源，loader 只读其中 `overrides:` 段；不要在 Python 里写死版本。
+  当前无灰度位，需要时新建 `<name>_v{N}.md` 并登记
+- **候选抽取的字段描述**用字段上的 `CandidateDescription` 元数据（`app/extraction/fields.py`），与最终 DTO 语义分离，
+  不要写进 `.md`
+- Dify YAML 快照只作历史证据（commit `fddd94e`，ADR 0024 D1），不再同步
 
-## .md 文件格式约定（4-backtick 外层 fence 才不会被内层 ``` 提前闭合）
+## .md 文件格式（4-backtick 外层 fence 才不会被内层 ``` 提前闭合）
 
 ````markdown
 # 提示词标题
@@ -27,17 +27,8 @@
 <system 提示词内容；由代码渲染的 {{var}} 须在 PromptSpec.injects 登记>
 ```
 
-## [user]        ← 仅当 user 含规则文本时才有
+## [user]        ← 仅当 user 含规则文本时才有（现仅 swap/fresh_counterparty.md）
 ```
 <user 模板，{{var}} 经 render_user() 渲染>
 ```
 ````
-
-现役 system 保持固定；当前时间不注入提示词，交易对手列表放在 user 的 context 中。
-原文使用 `blocks.source_payload`，每个来源只展示一次，角色另存 `source_roles`。
-候选抽取专用描述通过字段上的 `CandidateDescription` 元数据提供，与最终 DTO 语义分离。
-
-## 字符数提示（影响延迟）
-
-- 统计实际消息的 system、user 和工具 schema；旧版字符/token 基线不代表当前结构。
-- 长提示词显著影响 P95 延迟，评估时关注延迟指标

@@ -12,7 +12,7 @@
 
 ## pytest 约定
 
-- 所有测试必须 import 时能成功（不联网、不依赖真实 MySQL）
+- 所有测试在 CI 占位环境变量下必须 import 成功（不联网、不依赖真实 MySQL；占位 env 见 `.github/workflows/ci.yml` fast job）
 - 异步测试用 `@pytest.mark.asyncio`（`asyncio_mode = "auto"` 已在 pyproject.toml 配置）
 - Mock 必须 patch "where it's looked up"，不是定义处
 
@@ -42,24 +42,30 @@ for target in (
   mock_intent_llm.ainvoke = AsyncMock(return_value=CloseIntentOutput(type="..."))
   mock_std.return_value.with_structured_output.return_value = mock_intent_llm
   ```
-- **后端调用通过真实后端或集成测试环境**：E2E 测试直接对接真实后端（需真实后端 + VPN），单元测试 Mock 掉 Client Protocol
+- **后端调用**：单元测试 mock Client Protocol 的使用点；集成测试走 `mock_api`（`tests/integration/`，ASGITransport 内存直连）；真后端联调只用 `scripts/probe_*.py`，不进 pytest
 
 ## Golden Set
 
-- 所有新增意图必须在 `tests/fixtures/categories/` 加至少 2 条用例（现役数据源，`scripts/check_fixture_consistency.py` 校验一致性）
+- 所有新增意图必须在 `tests/fixtures/categories/` 加至少 2 条用例，并在 `tests/fixtures/intent/` 补逐轮意图标签（`scripts/check_fixture_consistency.py` 校验一致性）
 - case 格式沿用对应文件既有方言（详见 `tests/fixtures/README.md`）
-- 跑评估：`python scripts/langfuse/langfuse_eval.py --local <fixture>`
+- 跑评估：意图集 `python scripts/langfuse/langfuse_eval.py --local tests/fixtures/intent`；依赖 Java 的业务集按 `run-eval` skill 由主代理调度
 
 ## 验证范围
 
 用户指定轻量验证时，只执行最小复现、受影响的关键测试和相关静态检查。全量 pytest、真实黄金集及性能测试留到统一验收，不循环重复；交付中明确未运行的检查。该范围调整不取消业务改动的 RED → GREEN。
 
-## 提交前自检
+## 提交前自检（CI fast job 同款）
 
 ```bash
-pytest tests/ -v                              # 全部通过
-ruff check app/ tests/                        # lint 零警告
-mypy app/                                     # 类型无错
+T="USE_MYSQL_CHECKPOINTER=false REQUEST_IDEMPOTENCY=false ENABLE_LANGFUSE=false"
+env $T pytest <受影响的测试路径> -q               # 全量 pytest 由 CI / 统一验收跑
+ruff check app/ tests/ harness/ scripts/probe_goats/
+python -m mypy app/ harness/
+python scripts/check_alert_threshold_consistency.py
+python scripts/check_fixture_consistency.py
+python scripts/check_adr_refs.py
+python scripts/check_docs_layout.py
+python scripts/sync_agents_md.py --check
 ```
 
 ## 何时写测试
@@ -70,12 +76,11 @@ mypy app/                                     # 类型无错
 - ✅ 修 bug → 先写复现测试，再修
 - ⚠️ 改活跃提示词 → 直接改 `.md` + 普通 PR review，`prompt(<scope>)` commit；需要时自行跑 `scripts/langfuse/langfuse_eval.py` 验证
 
-## 跑慢测试的技巧
+## 选择性运行
 
 ```bash
-pytest -v -k "not e2e"          # 跳过 E2E（只跑快速测试）
-pytest -v -k "swap"             # 只跑互换相关
-pytest -v --lf                  # last-failed（只跑上次失败的）
-pytest -v -x                    # 遇到第一个失败就停
-pytest --cov=app.nodes.route    # 覆盖率
+pytest -k "not e2e"             # 跳过 E2E
+pytest -k "swap"                # 只跑互换相关
+pytest --lf -x                  # 只跑上次失败的，遇错即停
+pytest --cov=app.nodes          # 覆盖率
 ```

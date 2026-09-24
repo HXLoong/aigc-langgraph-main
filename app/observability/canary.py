@@ -1,13 +1,13 @@
 """金丝雀切流监控基础设施。
 
-按 CONTEXT.md 定义，金丝雀切流是**按群组**：企微管理员把指定群的 Webhook
-从 Dify 改到 LangGraph。LangGraph 服务侧不做流量分配 —— 只观察哪些 roomId
+按 CONTEXT.md 定义，金丝雀切流是**按群组**：客户侧 Java 配置管理员把指定群的
+`agentUrl` 从 Dify 改到 LangGraph。LangGraph 服务侧不做流量分配 —— 只观察哪些 roomId
 实际进了进程，对照 allowlist 检查是否有误切。
 
 核心场景：
 - 灰度第一阶段：1-2 个测试群进 LangGraph，其余继续 Dify
-- 若企微管理员误切非测试群 Webhook 到 LangGraph，**生产流量会泄漏过来**
-- 此时应立即告警让 Tony 回切（修改 Webhook 地址 ≈ 1 分钟生效）
+- 若误把非测试群的 `agentUrl` 切到 LangGraph，**生产流量会泄漏过来**
+- 此时应立即告警并回切 `agentUrl`（步骤见 on-call runbook §7）
 
 配置加载顺序：
 1. 环境变量 `CANARY_ROOM_IDS`（逗号分隔的 roomId 列表）
@@ -41,7 +41,7 @@ def _load_canary_room_ids() -> frozenset[str]:
     return frozenset(token.strip() for token in raw.split(",") if token.strip())
 
 
-# 进程启动时加载一次（金丝雀切换不需要热更，企微管理员改 Webhook 时同步重启服务）
+# 进程启动时加载一次（金丝雀切换不需要热更，调整切流群时同步更新 .env 并重启服务）
 _CANARY_ROOM_IDS: frozenset[str] = _load_canary_room_ids()
 
 

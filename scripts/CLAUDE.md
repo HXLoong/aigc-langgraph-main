@@ -1,6 +1,7 @@
 # scripts · 运维与评估脚本
 
 > 局部约定。所有脚本应是**幂等 + 可独立运行**的入口，业务逻辑在 `app/` 里实现。
+> Langfuse 相关脚本的完整参数见 `docs/langfuse/workflow-guide.md` §7；子目录另有 `langfuse/README.md`、`goats_api_mock/README.md`、`probe_goats/README.md`。
 
 ## 脚本分类
 
@@ -16,7 +17,7 @@
 
 | 脚本 | 用途 |
 |---|---|
-| `probe_real_backend_e2e.py` | 通用真后端连通性 |
+| `probe_real_backend_e2e.py` | 真后端写路径探针 runner（`--target swap\|option\|close\|ticker\|all`，输出 `.harness-runs/probe-*`）|
 | `probe_swap_write_e2e.py` | 互换下单写后端 |
 | `probe_option_write_e2e.py` | 期权下单写后端 |
 | `probe_close_write_e2e.py` | 平仓下单写后端 |
@@ -29,7 +30,8 @@
 
 | 脚本 | 用途 |
 |---|---|
-| `canary_status.py` / `metrics_snapshot.py` | 金丝雀状态查询 |
+| `canary_status.py` | 金丝雀切流合规检查（带退出码）|
+| `metrics_snapshot.py` | 全指标文本快照（告警 / 成本 / 金丝雀 / 健康检查）|
 | `rollback_canary.sh` | 一键回切 |
 | `drill_smoke.sh` | 上线 smoke checklist |
 | `shadow_compare.py` | 可选的 shadow 对照工具（`DRY_RUN_BACKEND` 模式可用，不进评测门）|
@@ -42,7 +44,8 @@
 | 脚本 | 用途 |
 |---|---|
 | `deploy-customer.sh` | 客户私有化部署一键脚本 |
-| `local_backend_seed.py` | 本地 Java 后端测试数据准备（见 `docs/testing/local-backend-seed.md`）|
+| `local_backend_seed.py` | 导入本地 GOATS 失败边界验收用的合成身份与证券种子（见 `docs/testing/local-backend-seed.md`）|
+| `goats_api_mock/` | 本地 GOATS 期权 mock（端口 20000，期权生命周期验收用；见其 README）|
 
 ### 一致性 lint（提交前本地跑）
 
@@ -63,7 +66,7 @@
 | `convert_jsonl_to_excel.py` | categories JSONL → 黄金 Excel，便于人工查看和维护 |
 | `derive_intent_fixtures.py` | categories 业务集 → 意图集草稿（只搬 product_type/intent 标签，未标注轮标 review.pending；`--only-labeled` 写入 `tests/fixtures/intent/`）|
 | `derive_instrument_fixtures.py` | swap 业务集 → 标的识别意图集草稿（订单数以卡片 `标的代码` 行为准，原文表达任一候选 + 市场限定 → `expected.instruments`；`--dry-run` 出复核表，`--only-reviewed` 写入）|
-| `langfuse/upload_golden_to_langfuse.py` | 本地 categories / intent fixture → Langfuse Dataset（`--suite` 按路径自动判定）|
+| `langfuse/upload_golden_to_langfuse.py` | 本地 categories / intent fixture → Langfuse Dataset（`--sync-all` 全量同步；`--suite` 默认按路径判定）|
 | `langfuse/upload_prompt_to_langfuse.py` | git 提示词单向推送到 Langfuse 演练区（不拉回，ADR 0014）|
 | `langfuse/upload_evaluators.py` / `langfuse/upload_score_configs.py` | 同步 Langfuse Code Evaluators 与人工标注 Score Configs |
 | `cleanup_checkpoints.py` | checkpoint 三表按线程清理（客户现场运维）|
@@ -71,9 +74,9 @@
 
 ## 写新脚本的约定
 
-1. **入口必须 `if __name__ == "__main__":`**，便于独立调用
-2. **用 `argparse`**，禁止 `sys.argv` 手工解析
-3. **结构化日志**：`logging.getLogger(__name__) + logger.info("k=%s ...", v)`，禁止 print
-4. **配置走 `app.config.get_settings()`**，不读环境变量到模块全局
-5. **业务逻辑必须在 `app/`**，scripts 只是入口胶水
-6. **shell 脚本头**：`#!/usr/bin/env bash` + `set -euo pipefail`
+1. **入口必须 `if __name__ == "__main__":`**，参数用 `argparse`
+2. **配置走 `app.config.get_settings()`**，凭据只从 `.env` 读，代码里不出现明文地址与密钥
+3. **业务逻辑必须在 `app/`**，scripts 只是入口胶水
+4. **面向人的 CLI 输出可以用 `print`**；被 `app/` 复用的模块按 `.claude/rules/python-style.md` 用 logging
+5. **shell 脚本头**：`#!/usr/bin/env bash` + `set -euo pipefail`
+6. **新增脚本同时登记到本页对应分类**

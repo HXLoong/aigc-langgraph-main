@@ -15,11 +15,12 @@ tests/fixtures/nodes/<product_type>/<node_name>.jsonl
 ```bash
 python -m harness node-run --data tests/fixtures/nodes
 
-# 离线试跑：仅 mock LLM / Ticker 等外部依赖，仍执行真实节点逻辑
-python -m harness node-run \
-  --data tests/fixtures/nodes/swap/swap_place_order.jsonl \
-  --mock
+# 单个文件
+python -m harness node-run --data tests/fixtures/nodes/option/option_intent.jsonl
 ```
+
+`--mock`（仅 mock LLM 等外部依赖，仍执行真实节点逻辑）目前只支持 `swap_place_order`（`harness/node_mocks.py`），
+而仓库里还没有 swap 节点 fixture，需先录制该节点的 fixture 才能使用。
 
 带后端写副作用的节点可以保存人工标注，但不会被 `node-run` 执行；批量运行时会显示
 `SKIP`，不计入失败。

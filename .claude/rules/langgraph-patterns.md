@@ -13,8 +13,8 @@
 - 纯计算及写类节点用 @safe_node；只读 IO 用 @io_node，并通过 add_io_node 注册 RetryPolicy。默认最多2次尝试，LLM SDK max_retries=0；写接口不自动重试。
 - add_io_node 在最后一次可重试失败时由原节点返回 ErrorInfo，沿原图边完成汇合、回复和审计；with_error_handler=False 才在耗尽后继续抛出。主图与并行错误收尾由 tests/graph/test_retry_recovery.py 守护。
 - 错误由 ErrorInfo 和 cascade 路由处理；后端查询失败不能伪装成空记录继续交易。
-- 条件路由为纯函数，错误优先转 fallback；副作用只在节点里执行。
-- 业务请求通过 OptionClient/SwapClient/TickerClient Protocol。子图 backend.py 负责 DTO 构造、BotContext 身份、字段锁定和真实回复透传。
+- 条件路由为纯函数，错误优先转兜底：主图 `_route_after_intent` 等转 `fallback` / `render`，子图内 `_route_after_<p>_intent` 转 `<p>_unknown`（先查 `has_error`）；副作用只在节点里执行。
+- 外部请求只经 `app/tools/*_client.py` 的 Protocol（OptionClient / SwapClient / MessageClient / GoatsAgentClient）+ `app.tools.http_pool` 单例池，不在节点里 new `httpx.AsyncClient`；TickerClient 只供本地验收脚本。子图 backend.py 负责 DTO 构造、BotContext 身份、字段锁定和真实回复透传。
 - 每条消息按既有产品与意图优先级进入一个业务分支，该分支识别出的多笔订单统一使用本轮动作；混合措辞不按分句拆成不同动作，也不新增多动作识别门禁。例如识别为撤单申请后，A、B 两笔订单都按撤单申请处理。原有身份、归属、状态和确认校验继续执行；提交保留原 messageId，遵守 Java 幂等与批量契约。
 
 ## 提示词
@@ -33,7 +33,3 @@
 - 不引入 interrupt 确认；递归上限通过 API 的统一 config 设置。
 - Langfuse callbacks 由请求入口统一注入，子图自然继承；本地审计写 langgraph_node_trace。
 - 节点公共契约只维护在 app/node_execution/catalog.py；执行平台负责 schema 与客户端注入，harness 负责展示和回放策略。暴露范围可不同，写节点保持禁止回放。
-
-## 并行开发
-
-依根 CLAUDE 中工作树分工执行。主代理统一管理共享字段、Settings、主图、API输出、数据库和服务；子代理先提出共享契约需求再集成。轻量验证遵循用户范围。

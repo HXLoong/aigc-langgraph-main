@@ -33,7 +33,7 @@
 
 | 数据集 | 目录 | 外部依赖 | 在哪跑 | 评分 |
 |---|---|---|---|---|
-| **意图集**（路由 + 意图 + 标的原文提取） | `tests/fixtures/intent/` | 只有 LLM 网关；后端由仓库内 `mock_api/` 顶替，**不碰 Java / GOATS** | GitHub Actions `intent-eval`（PR 触碰提示词 / 路由意图节点 / 评估器 / 意图集时自动跑；也可手动 Run workflow）+ 本地 | `det_intent_match_pass` / `det_instrument_match_pass` 确定性评估器，本地算，不需要 Langfuse；`--fail-under` 给退出码 |
+| **意图集**（路由 + 意图 + 标的原文提取） | `tests/fixtures/intent/` | 只有 LLM 网关；后端由仓库内 `mock_api/` 顶替，**不碰 Java / GOATS** | GitHub Actions `intent-eval`（仅手动 Run workflow）+ 本地 | `det_intent_match_pass` / `det_instrument_match_pass` 确定性评估器，本地算，不需要 Langfuse；`--fail-under` 给退出码 |
 | **业务集**（询价 / 下单 / 平仓卡片与后端联动） | `tests/fixtures/categories/`；`unified_golden.jsonl` 为显式选择的历史参考集 | Java 后端 + GOATS + 授权测试账号 / 群 / 对手 / 持仓 | **只在开发 / staging 环境**手动跑（`scripts/local_eval.py` / `langfuse_eval.py --dataset business-*`），绝不进 CI | 三个文本断言 + `otc-option-judge` Judge |
 
 ```bash
@@ -44,7 +44,7 @@ OTC_API_BASE_URL=http://127.0.0.1:8099 GOATS_BASE_URL=http://127.0.0.1:8099 \
 ```
 
 CI 用到的环境变量（全部指向 mock、只有 `QWEN_API_BASE` / `QWEN_API_KEY` 是 secrets）见 `.github/workflows/intent-eval.yml`。
-未配置这两个 secrets 时，PR 触发只跑 fixture lint 并告警跳过评估（不算通过），手动触发则失败；配好后自动生效。
+未配置这两个 secrets 时手动触发会失败。
 
 ## 二、命令速查
 
@@ -67,10 +67,10 @@ pytest tests/ -q -k "not e2e"
 
 ```bash
 # 层 1 · 快速回归（提交前必跑）
-.venv/bin/python -m pytest tests/ -q -k "not e2e" --tb=line 2>&1 | tail -3
+python -m pytest tests/ -q -k "not e2e" --tb=line 2>&1 | tail -3
 
 # 层 2 · mock_api 集成测试（含契约校验）
-.venv/bin/python -m pytest tests/integration/ mock_api/ -q
+python -m pytest tests/integration/ mock_api/ -q
 
 # 层 3 · 全链路手测（终端 1 起 mock，终端 2 起应用，终端 3 发指令）
 uvicorn mock_api.server:app --reload --port 8099
@@ -81,22 +81,22 @@ curl -X POST http://localhost:8000/v1/workflows/run \
        "response_mode": "blocking", "user": "t-1"}'
 
 # 层 4 · fixture 批量评估（DeepSeek Judge 打分）
-.venv/bin/python scripts/langfuse/langfuse_eval.py --local tests/fixtures/categories --limit 20 --concurrency 5
-.venv/bin/python scripts/langfuse/langfuse_eval.py --local tests/fixtures/categories --ids case-025 --no-judge  # 单 case 冒烟
+python scripts/langfuse/langfuse_eval.py --local tests/fixtures/categories --limit 20 --concurrency 5
+python scripts/langfuse/langfuse_eval.py --local tests/fixtures/categories --ids case-025 --no-judge  # 单 case 冒烟
 
 # 层 4a · 意图集（只调 LLM + mock 后端，确定性 product_type/intent 比对，不跑 Judge；见 docs/langfuse/workflow-guide.md §8）
-.venv/bin/python scripts/langfuse/langfuse_eval.py --local tests/fixtures/intent --concurrency 3
+python scripts/langfuse/langfuse_eval.py --local tests/fixtures/intent --concurrency 3
 
 # 层 5 · 真后端探针（需 VPN）
-.venv/bin/python scripts/probe_real_backend_e2e.py     # 通用连通性
-.venv/bin/python scripts/probe_swap_write_e2e.py       # 互换写
-.venv/bin/python scripts/probe_option_write_e2e.py     # 期权写
-.venv/bin/python scripts/probe_close_write_e2e.py      # 平仓写
+python scripts/probe_real_backend_e2e.py     # 写路径探针 runner（--target）
+python scripts/probe_swap_write_e2e.py       # 互换写
+python scripts/probe_option_write_e2e.py     # 期权写
+python scripts/probe_close_write_e2e.py      # 平仓写
 ```
 
 ## 三、本地 Mock 测试环境
 
-`mock_api/` 是本地假后端（GOATS 22 端点 + Java 后端 10 端点，按真实 DTO 校验入参），
+`mock_api/` 是本地假后端（GOATS 21 端点 + Java 后端 10 端点，按真实 DTO 校验入参），
 让全链路测试**不需要 VPN 和真实后端**。用法与 .env 配置详见
 [`mock_api/README.md`](../../mock_api/README.md)，要点：
 

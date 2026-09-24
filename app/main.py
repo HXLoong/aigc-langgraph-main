@@ -1,4 +1,4 @@
-"""FastAPI 入口（ADR 0001 D6 + ADR 0014 D8）。
+"""FastAPI 入口（ADR 0001 D6 + ADR 0014 D5）。
 
 启动时编译主图并挂载到 app.state。**LangFuse 回调不在本层注入**：所有环境统一由
 `app/api/routes.py` 走请求级 trace（ADR 0024 D5），`config.metadata` 携带

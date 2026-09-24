@@ -3,9 +3,9 @@
 ## 版本与工具链
 - Python 3.11+（严格要求，因为用了 `TypedDict` with `total=False` + `Annotated` reducer 语法）
 - 依赖管理：`pyproject.toml`，不用 requirements.txt
-- lint：ruff（行宽 100）
-- type check：mypy strict
-- 格式化：ruff format（黑体风格）
+- lint：ruff（目标行宽 100，E501 未强制）；CI 范围 `app/ tests/ harness/ scripts/probe_goats/`
+- type check：mypy strict（CI 范围 `app/ harness/`）
+- 格式化：`ruff format` 未在 CI 强制，只对自己新写 / 大改的文件使用，不做全仓格式化
 
 ## 类型提示
 
@@ -21,7 +21,7 @@ async def classify_intent(state):
     ...
 ```
 
-- 用 `from __future__ import annotations` 作为每个文件第一行
+- 新建模块用 `from __future__ import annotations` 作为第一行（ruff 未强制，存量个别模块没有）
 - 用内建泛型 `list[int]` / `dict[str, Any]`，不用 `typing.List` / `typing.Dict`
 - `X | None` 代替 `Optional[X]`
 - `Literal["a", "b"]` 用于枚举字符串
@@ -29,8 +29,8 @@ async def classify_intent(state):
 ## 异步优先
 
 ```python
-# ✅ 正确：异步
-async def load_data(client: httpx.AsyncClient) -> dict:
+# ✅ 正确：异步 + 复用 lifespan 单例池（app.tools.http_pool.acquire_http_client）
+async def load_data(client: httpx.AsyncClient) -> dict[str, Any]:
     r = await client.get(url)
     return r.json()
 
@@ -38,33 +38,16 @@ async def load_data(client: httpx.AsyncClient) -> dict:
 import requests   # 绝对禁止
 ```
 
-- httpx.AsyncClient 是标准选择
+- HTTP 用 httpx 异步客户端，经 `app.tools.http_pool` 获取，不自己 new
 - 并发请求用 `asyncio.gather(...)`，不要串行 await
 - 阻塞 IO（如 openpyxl）用 `asyncio.to_thread` 包一下（如果可能卡住事件循环）
 
 ## 错误处理
 
+节点装饰器（`@safe_node` / `@io_node` + `add_io_node`）与重试策略见 `.claude/rules/langgraph-patterns.md`「IO 与错误」。
+重试只由 LangGraph RetryPolicy 负责，不在 Client 里自写 tenacity 重试（对图不可见，写接口会重复下单）。
+
 ```python
-# ✅ 正确：节点用 @safe_node
-@safe_node
-async def my_node(state: AgentState) -> dict[str, Any]:
-    # 这里的异常会被装饰器捕获，转成 state['error']
-    result = await risky_operation()
-    return {"result": result}
-
-# ✅ 正确：只读 IO 节点（LLM / 后端查询）用 @io_node + add_io_node 注册（ADR 0024 D3）
-#    可重试异常（BackendUnreachableError / LLM 限流超时）穿透给 LangGraph RetryPolicy，
-#    最后一次失败由原节点落 state['error']，沿原图边收尾；写类节点永远用 @safe_node，不重试
-from app.graph.retry import add_io_node, io_node
-
-@io_node
-async def swap_query_order(state: AgentState) -> dict[str, Any]:
-    ...
-add_io_node(g, "swap_query_order", swap_query_order)
-
-# ❌ 错误：在 Client 里自己写 tenacity 重试——重试对图不可见，且写类接口重试会重复下单
-# ❌ 错误：每次请求 new httpx.AsyncClient()——走 app.tools.http_pool.acquire_http_client（lifespan 单例池）
-
 # ❌ 错误：裸 try/except Exception
 try:
     do_something()
@@ -88,7 +71,7 @@ from pydantic import BaseModel
 
 # 本项目（绝对导入）
 from app.config import get_settings
-from app.state import AgentState
+from app.graph.state import AgentState
 ```
 
 **禁止**：
@@ -104,7 +87,7 @@ logger = logging.getLogger(__name__)
 logger.info("msg=%s latency=%dms", msg_id, latency)   # 用 % 格式化
 
 # ❌ 错误
-print(...)                  # 生产代码不要 print
+print(...)                  # app/ 生产代码不要 print（scripts/ 的 CLI 输出例外，见 scripts/CLAUDE.md）
 logger.info(f"msg={msg_id}")  # 不要 f-string（丢失结构化日志能力）
 ```
 

@@ -96,7 +96,7 @@ THRESHOLDS: dict[str, AlertThreshold] = {
     "non_canary_traffic": AlertThreshold(
         name="non_canary_traffic",
         severity="P0",
-        description="非 canary 流量进入 LangGraph（企微管理员误切非测试群 Webhook），"
+        description="非 canary 流量进入 LangGraph（非测试群的 agentUrl 被误切），"
         "≥ 1 即触发即时回切",
         threshold_value=0.0,  # 任何 non-canary 流量都告警
         sustain_seconds=0,  # 即时触发，不等持续

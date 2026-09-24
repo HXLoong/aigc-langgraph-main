@@ -1,4 +1,4 @@
-"""LangFuse SDK 单例封装（ADR 0014 D8）。
+"""LangFuse SDK 单例封装（ADR 0014 D5）。
 
 读 app.config.Settings：enable_langfuse / langfuse_base_url / langfuse_public_key / langfuse_secret_key。
 - enable_langfuse=False 时：返回 None，所有调用走 no-op

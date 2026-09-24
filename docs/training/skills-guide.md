@@ -25,14 +25,14 @@
 |---|---|---|---|
 | `test-driven-development` | TDD 红绿循环（修 bug / 新功能前必走） | `/test-driven-development` | `$test-driven-development 修复 xxx` |
 | `add-intent` | 在某子图新增意图（枚举 + 路由 + 提取节点 + 提示词 + 测试） | `/add-intent swap adjust_hedge` | `$add-intent 在 swap 新增 adjust_hedge` |
-| `run-eval` | 通过本地 HTTP 入口评估 categories 用例 | `/run-eval --category swap` | `$run-eval 只跑 swap` |
+| `run-eval` | 通过本地 HTTP 入口评估显式 categories 用例（依赖 Java 与授权测试数据） | `/run-eval --case case-025` | `$run-eval 只跑 case-025` |
 | `shadow-test` | shadow 对照工具（可选，不进任何评测门） | `/shadow-test --max-cases 20` | `$shadow-test 抽 20 条` |
 | `langfuse` | 查询 / 操作 LangFuse、查文档（上游 langfuse/skills，勿手改） | `/langfuse` | `$langfuse ...` |
-| `iterate-option` | 期权链路批量评估 → 归因 → TDD 修 → 重跑 | `/iterate-option --filter 期权询价` | `$iterate-option 只看期权询价` |
+| `iterate-option` | 期权链路按失败根因迭代：最小复现 → TDD 修 → 相关用例复验 | `/iterate-option --case case-022` | `$iterate-option 只看 case-022` |
 | `subgraph-builder` | 新增 / 重构业务子图（原 subagent） | 作为 subagent 自动派发 | `$subgraph-builder ...` |
 | `test-generator` | 为节点 / 子图 / 模型生成 pytest（原 subagent） | 同上 | `$test-generator 给 holding_query 补测试` |
 
-后两个在 Claude Code 里是 `.claude/agents/` 下的 **subagent**（独立上下文、指定工具集）；Codex 没有 subagent 机制，生成器把它们转成同名 skill，调用时 Codex 以该角色执行。
+后两个在 Claude Code 里是 `.claude/agents/` 下的 **subagent**（独立上下文、指定工具集）；生成器同时把它们转成 Codex 同名 skill，调用时 Codex 以该角色执行。两边使用子代理都须用户明确授权（根 `CLAUDE.md`「并行实施与验证范围」）。
 
 ## 3. 怎么调用
 
@@ -111,7 +111,7 @@ argument-hint: "<必填参数> [可选参数]"     # 可选；值含 [ ] 或 : �
 Claude Code 解析很宽松，Codex 侧生成器做了兜底，但新写时请把含 `[`、`]`、`:` 的值加引号，例如 `argument-hint: "[--limit N]"`。
 
 **Q：Claude 的 subagent 和 skill 有什么区别？**
-subagent 在独立上下文里跑、有自己的工具白名单，适合"派出去做一件事再回来"；skill 是在当前会话里加载的流程说明。Codex 只有后者，所以本仓库把 subagent 也生成成 skill。
+subagent 在独立上下文里跑、有自己的工具白名单，适合"派出去做一件事再回来"；skill 是在当前会话里加载的流程说明。Codex 侧由生成器把 subagent 也转成同名 skill，两边共用同一份角色说明。
 
 **Q：个人技能放哪？**
 Claude Code：`~/.claude/skills/<name>/SKILL.md`；Codex：`~/.agents/skills/<name>/SKILL.md`。个人技能不进仓库，也不受生成脚本管理。

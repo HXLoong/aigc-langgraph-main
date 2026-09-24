@@ -18,84 +18,53 @@ model: sonnet
 - 读 `@.claude/rules/testing.md`
 - 读被测对象的代码（节点函数 / 模型 / 子图）
 - 读现有类似测试（找模板）：
-  - 路由测试：`tests/test_intent_route.py`
+  - 路由测试：`tests/test_intent_route.py`、`tests/nodes/test_route_rules.py`
   - 模型测试：`tests/subgraphs/swap/test_models.py`（或对应子图目录）
   - 集成 / E2E：`tests/integration/` + `tests/test_cascade_e2e.py`
   - 提示词加载 / spec：`tests/prompts/test_prompt_loader.py` / `tests/prompts/test_prompt_spec.py`
 
-### Step 2：选择测试层次
+### Step 2：选择测试层次与位置
 
-| 被测对象 | 测试文件 | 测试重点 |
+| 被测对象 | 放在 | 测试重点 |
 |---|---|---|
-| Pydantic 模型 | `test_models.py` | 字段约束、枚举值、无效输入拒绝 |
-| 纯函数节点（规则路由） | `test_route.py` 或新文件 | 决策分支全覆盖 |
-| 有 LLM 的节点 | `test_e2e.py` | Mock LLM，验证 state 更新 |
-| 子图路由函数 | `test_models.py` 末尾 | 各意图映射正确 |
-| 端到端流程 | `test_e2e.py` | 用 InMemorySaver + Mock 跑主图 |
+| Pydantic 模型 | `tests/subgraphs/<p>/test_models.py` | 字段约束、枚举值、无效输入拒绝 |
+| 规则路由（纯函数） | `tests/nodes/test_route_rules*.py` | 决策分支全覆盖 |
+| 子图路由函数 | `tests/subgraphs/<p>/test_graph_routing.py` | 各意图映射、错误优先转兜底 |
+| 主图路由 | `tests/graph/test_main_routing.py` | 入口分流、产品路由 |
+| 有 LLM 的节点 | `tests/subgraphs/<p>/test_<node>.py` | mock `with_structured_output` 返回对象，验证 partial update |
+| 端到端流程 | `tests/test_cascade_e2e.py` / `tests/integration/` | InMemorySaver + mock LLM / mock_api 跑主图 |
 
 ### Step 3：编写
 
-#### 模型测试模板
+- Mock 的落点、`with_structured_output` 的 mock 写法、E2E 用 `InMemorySaver`：按 `.claude/rules/testing.md`，先例
+  `tests/test_cascade_e2e.py`（`from app.graph.main import build_main_graph`）
+- LLM 工厂要 patch **节点模块里的使用点**，例如 `app.subgraphs.close.intent.get_qwen_thinking`，不 patch `app.llm.clients`
+- 节点输入 State：直接构造 `AgentState` 字典，或用 `app.api.turn_state.inputs_to_state(...)` 走真实入口映射
+- 断言节点返回的 partial update 与 `trace` 条目，不断言 mock 被调用（见 `test-driven-development` skill 的反模式）
+
 ```python
-def test_<model>_valid():
-    o = MyModel(field="valid_value")
-    assert o.field == "valid_value"
-
-def test_<model>_invalid_enum():
-    with pytest.raises(ValidationError):
-        MyModel(field="not_in_enum")
-
-def test_<model>_boundary():
-    with pytest.raises(ValidationError):
-        MyModel(field=999)  # 超过上限
-```
-
-#### 节点测试模板
-```python
-@pytest.mark.asyncio
-async def test_<node_name>_<scenario>():
-    state = make_initial_state({...})
+async def test_<node>_<scenario>() -> None:
+    state: AgentState = {"raw_text": "...", "conversation_id": "c-1"}
     result = await my_node(state)
     assert result["expected_key"] == expected_value
-    assert any(t["node"] == "my_node" for t in result.get("trace", []))
+    assert any(t.node == "my_node" for t in result.get("trace", []))
 ```
 
-#### E2E 测试模板（抄 test_e2e.py 的 fixture）
-```python
-@pytest.mark.asyncio
-async def test_e2e_<scenario>(mock_settings):
-    with patch("app.llm.clients.get_qwen_standard") as mock_std:
-        mock_std.return_value.with_structured_output.return_value.ainvoke = \
-            AsyncMock(return_value=ExpectedPydanticOutput(...))
+### Step 4：跑通验证（轻量）
 
-        # 跑图
-        from langgraph.checkpoint.memory import InMemorySaver
-        from app.graphs.main_graph import build_main_graph
-        graph = build_main_graph(InMemorySaver())
-        result = await graph.ainvoke(state, config=...)
-
-        assert result["product_type"] == ...
-```
-
-### Step 4：避坑
-
-- **Mock 要 patch 使用点**：如 option 与 close 的 backend.py 都引了 `OptionClientHttpx`，必须分别 patch `app.subgraphs.option.backend.OptionClientHttpx` / `app.subgraphs.close.backend.OptionClientHttpx`，而不是定义处（先例：`tests/test_inquiry_continuation.py`）
-- **async 测试加 `@pytest.mark.asyncio`**（尽管 auto 模式下不加也能跑）
-- **Dify 原始提示词测试**：不要验证字符数精确值（会随 Dify 更新变化），只验证关键词存在
-
-### Step 5：跑通验证
 ```bash
-# 只跑新加的测试
-pytest tests/test_<file>.py::test_<new_name> -v
-
-# 确保现有测试没被破坏
-pytest tests/ -v
+USE_MYSQL_CHECKPOINTER=false REQUEST_IDEMPOTENCY=false ENABLE_LANGFUSE=false \
+  pytest tests/<path>/test_<file>.py -q
 ```
 
-### Step 6：fixture 补充（若改了业务逻辑）
-- 在 `tests/fixtures/categories/` 对应文件末尾加 2-3 条 case（现役数据源）
-- 字段沿用该文件既有方言（结构化方言含 `expected.product_type/intent`；任务队列方言用 `response_contains` 文本断言；格式见 `tests/fixtures/README.md`）
-- 运行 `python scripts/langfuse/langfuse_eval.py --local tests/fixtures/categories` 验证
+只跑新增与受影响的测试；全量 pytest 与真实业务回归按根 `CLAUDE.md`「并行实施与验证范围」留到统一验收。
+
+### Step 5：数据集用例（若改了业务逻辑）
+
+- `tests/fixtures/categories/` 对应文件补 2-3 条，沿用该文件既有方言（格式见 `tests/fixtures/README.md`），
+  跑 `python scripts/check_fixture_consistency.py`
+- 意图变化同步 `tests/fixtures/intent/`
+- 依赖 Java 的业务回归不自行执行，交主代理按 `run-eval` skill 调度
 
 ## 测试命名
 

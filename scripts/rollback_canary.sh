@@ -4,9 +4,9 @@
 # 触发场景：alerts.py 任一 P0 条件命中（is_canary=false 误切 / java_backend fail /
 # 节点错误率失控 / LLM 失败率失控）→ on-call 决定回切到 Dify。
 #
-# 本脚本不切 Webhook（那是企微管理员人工操作）——它只负责服务侧的善后：
+# 本脚本不改 agentUrl（那是客户侧 Java 配置管理员的人工操作）——它只负责服务侧的善后：
 #   1. 备份 .env（带时间戳）
-#   2. 提示并等待 Webhook 切回
+#   2. 提示并等待 Java 侧 agentUrl 切回 Dify
 #   3. 验证服务侧 canary_traffic 不再增长（30s 间隔取 2 次 baseline）
 #   4. 注释掉 .env::CANARY_ROOM_IDS（避免重启后又认为该群是金丝雀）
 #   5. 写 audit log → .rollback-audit.log（追加模式，留事故复盘证据）
@@ -87,10 +87,10 @@ print_help() {
 
 可选参数：
   --metrics-url URL        /metrics endpoint（默认 http://localhost:8000/metrics）
-  --wait-seconds N         Webhook 切换后等待验证时长（默认 30）
+  --wait-seconds N         agentUrl 切换后等待验证时长（默认 30）
   --tolerance N            canary 流量增量容忍阈值（默认 5）
   --auto-restart           回切完成后自动 systemctl restart otc-agent
-  --skip-wait              跳过 30s 等待验证（已手工确认 Webhook 切干净）
+  --skip-wait              跳过 30s 等待验证（已手工确认 agentUrl 切干净）
   -y / --yes               所有交互问询都默认 yes（非交互模式）
   --dry-run                只显示，不改 .env / audit log
   -h / --help              本帮助
@@ -235,7 +235,7 @@ step3_baseline_metrics() {
     local rc=$?
     if [ $rc -ne 0 ]; then
         warn "metrics endpoint 不可达 ($METRICS_URL): $result"
-        warn "  → 跳过 baseline 校验。服务可能已挂——优先关注 Webhook 切回完成度"
+        warn "  → 跳过 baseline 校验。服务可能已挂——优先关注 agentUrl 切回完成度"
         BASELINE_CANARY=-1
         BASELINE_NON_CANARY=-1
         return
@@ -251,17 +251,17 @@ step3_baseline_metrics() {
 }
 
 # ============================================================
-# Step 4 · 提示 Webhook 切回 + 等待验证
+# Step 4 · 提示 agentUrl 切回 + 等待验证
 # ============================================================
-step4_wait_webhook() {
-    section "Step 4/6 · 等待企微 Webhook 切回 Dify"
+step4_wait_agent_url() {
+    section "Step 4/6 · 等待 Java 侧 agentUrl 切回 Dify"
 
     cat <<EOF
 
   ┌─────────────────────────────────────────────────────────────┐
-  │ 请企微管理员现在执行：                                       │
+  │ 请客户侧 Java 配置管理员现在执行：                           │
   │                                                              │
-  │   把白名单群的群机器人 Webhook 从 LangGraph 切回 Dify。      │
+  │   把白名单群的 agentUrl 从 LangGraph 改回 Dify。             │
   │   涉及群（来自 CANARY_ROOM_IDS）：                           │
   │     $(env_get CANARY_ROOM_IDS)
   │                                                              │
@@ -271,7 +271,7 @@ step4_wait_webhook() {
 EOF
 
     if [ "$ASSUME_YES" = "0" ]; then
-        read -r -p "Webhook 已切回？回车继续验证..." _ans
+        read -r -p "agentUrl 已切回？回车继续验证..." _ans
     fi
 
     if [ "$SKIP_WAIT" = "1" ]; then
@@ -303,7 +303,7 @@ EOF
 
     if [ "$delta_canary" -gt "$TOLERANCE" ]; then
         warn "canary 流量在 ${WAIT_SECONDS}s 内增长 ${delta_canary}（> 容忍 ${TOLERANCE}）"
-        warn "  → Webhook 可能没切干净！请企微管理员复查白名单群的 Webhook 配置"
+        warn "  → agentUrl 可能没切干净！请 Java 配置管理员复查白名单群的 agentUrl 配置"
         if ! confirm "已知风险，继续清空 .env CANARY_ROOM_IDS？"; then
             warn "用户中止 —— .env 未改动，audit log 未写"
             exit 3
@@ -447,7 +447,7 @@ main() {
     step1_preflight
     step2_backup_env
     step3_baseline_metrics
-    step4_wait_webhook
+    step4_wait_agent_url
     step5_disable_canary
     step6_audit_log
     maybe_restart

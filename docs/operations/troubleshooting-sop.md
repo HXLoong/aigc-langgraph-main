@@ -279,7 +279,7 @@ mysql -e "SELECT VERSION();"  # 必须 8.0.19 ≤ v < 9.6.0
 |---|---|
 | 连接池打满 | 短期重启应用清理；长期扩 pool_size 或 MySQL max_connections |
 | 写锁竞争 | 看长事务是哪个业务的；客户 DBA 协调 |
-| 磁盘满 | 客户 IT 扩容 / 清理旧 checkpoint（参考 ADR 0014 D6 保留策略） |
+| 磁盘满 | 客户 IT 扩容 / 清理旧 checkpoint（参考 ADR 0014 D5 保留策略） |
 | 版本不兼容 | 阻塞项 — 必须客户 IT 降级 MySQL 或我方换 Checkpointer 实现 |
 | 权限不足 | 客户 DBA 补 GRANT；重启应用让 setup 重跑 |
 | 字符集错 | ALTER DATABASE 改 utf8mb4 + 重新 setup checkpoint 表 |

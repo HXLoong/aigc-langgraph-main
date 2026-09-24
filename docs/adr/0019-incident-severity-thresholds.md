@@ -18,7 +18,7 @@ ADR 0030 D3 的上线观察层回答"是否已经稳定"；本 ADR 回答"正在
 | `http_5xx_spike` | P0 | 5xx 率 ≥ 1% | 5 分钟 | 立即介入 + 评估回切 | ✅ |
 | `cascade_fail_high` | P1 | fallback{cascade_fail} 率 ≥ 5% | 10 分钟 | 15 分钟介入 | ✅ 分母 = `http_total`（总请求数，与 0030 D3 口径统一） |
 | `llm_failure_high` | P1 | llm_total{status≠ok} 率 ≥ 10% | 5 分钟 | 15 分钟介入 | ✅ |
-| `non_canary_traffic` | P0 | is_canary=false 计数 ≥ 1 | 即时 | 立即回切 Webhook | ✅ runbook §3 已补条目，lint 校验 5/5/5 |
+| `non_canary_traffic` | P0 | is_canary=false 计数 ≥ 1 | 即时 | 立即回切 `agentUrl` | ✅ runbook §3 已补条目，lint 校验 5/5/5 |
 | `p95_latency_degraded` | P1 | P95 端到端 ≥ 25662ms（8554 × 3，`M2_BASELINE_P95_MS` 可调） | 10 分钟 | 15 分钟介入 | ✅ 端到端埋点已接线且 P95 剔除节点级样本；默认值取 DeepSeek dry-run 参考值，生产需覆盖 |
 
 P95 基准：当前模型（[ADR 0020](./0020-unify-all-llm-on-deepseek-v4-pro.md)）本地 dry-run 实测 P95 8554ms（截至 2026-09-24），作为参考基线。生产启用前须按相同部署拓扑测量，并通过 `M2_BASELINE_P95_MS` 覆盖；采样口径与边界见 `docs/operations/on-call-runbook.md` §3。
@@ -34,7 +34,7 @@ P95 基准：当前模型（[ADR 0020](./0020-unify-all-llm-on-deepseek-v4-pro.m
 - 5xx 1% / 5 分钟，与退出门 0.1% 拉开十倍：故障升级关心突发，退出门关心稳态。
 - cascade 5% / 10 分钟定为 P1：降级路径给用户友好回复，不是服务崩溃。
 - LLM 失败 ≥ 10% / 5 分钟：大模型是外部依赖，失败冲高通常是上游故障；10% 约为重试后仍不通的水位。图片 / Excel 链路已接入独立视觉模型，形成第二个模型依赖，按模型拆分阈值为待办，重估前沿用本阈值。
-- 非白名单流量 ≥ 1 即时 P0：切流白名单外的任何流量意味着企微 Webhook 配错，单条即可造成损失。
+- 非白名单流量 ≥ 1 即时 P0：切流白名单外的任何流量意味着 Java 侧 `agentUrl` 配错，单条即可造成损失。
 - P95 × 3 / 10 分钟定为 P1：慢但未崩，10 分钟窗口区分抖动与卡死。
 - 单条错例定为 P2：不阻塞其他流量，避免值班被告警淹没。
 

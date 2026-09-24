@@ -142,7 +142,7 @@ chmod 600 .env  # 限制读权限
 - `MYSQL_URI`（§2）
 - `QWEN_API_BASE` / `QWEN_API_KEY` / `QWEN_MODEL_STANDARD`（DeepSeek）
 - `OTC_API_BASE_URL` / `OTC_API_SECRET`
-- `LANGFUSE_HOST` / `LANGFUSE_PUBLIC_KEY` / `LANGFUSE_SECRET_KEY`（§3）
+- `LANGFUSE_BASE_URL` / `LANGFUSE_PUBLIC_KEY` / `LANGFUSE_SECRET_KEY`（§3）
 
 ### 4.3 验证
 
@@ -235,15 +235,15 @@ curl http://localhost:8000/v1/workflows/run \
 
 ## 8. 接入企微
 
-### 8.1 配置企微机器人 Webhook
+### 8.1 配置 Java 侧 `agentUrl`
 
-企微管理员后台：
+企微回调由客户现有的 Java Worker 接收，LangGraph 不直接对接企微。接入与切换只改 Java 侧 `agentUrl`（ADR 0001）：
 
-1. 应用管理 → 自建应用 → 创建（或编辑）otc-agent 机器人
-2. Webhook URL：`https://<reverse-proxy>/v1/workflows/run`
-   - **必须 HTTPS**（企微强制）
-   - 反向代理（nginx）把 LangGraph 8000 端口经 443 SSL 暴露
-3. 验证：在测试群发"测试"，应用日志看到接收请求
+1. Java 配置管理员把 `agentUrl` 设为 `https://<reverse-proxy>/v1/workflows/run`（反向代理把 LangGraph 8000 端口经 443 暴露，见 §8.2）
+2. 金丝雀阶段只让白名单群指向 LangGraph，并在 LangGraph `.env` 的 `CANARY_ROOM_IDS` 登记这些群；
+   `agentUrl` 的配置粒度（按群 / 全局）与生效方式在环境调研时核实（`docs/deploy/customer-env-assessment.md` §8）
+3. 验证：在测试群发"测试"，LangGraph 应用日志看到 `/v1/workflows/run` 请求
+4. 紧急回切：把 `agentUrl` 改回 Dify 地址，步骤见 `docs/operations/on-call-runbook.md` §7
 
 ### 8.2 反向代理示例（nginx）
 

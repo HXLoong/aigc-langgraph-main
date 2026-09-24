@@ -3,7 +3,7 @@ name: intent-eval
 # 意图集（tests/fixtures/intent/）评估：只依赖 LLM，不依赖 Java / GOATS 后端。两种模式并存（harness/intent_context.py）：
 # - 冻结用例（每轮上下文写在 fixture）：只跑意图子链（harness/intent_runner.py），不调任何后端
 # - 回放用例（quote_previous / {{previous_*}} 引用上一轮真实回复）：主图 + 仓库内 mock_api
-#   （GOATS 22 + Java 10 端点的假实现）在 runner 上顶替后端；回放用例全部冻结后可删 mock_api 步骤
+#   （GOATS 21 + Java 10 端点的假实现）在 runner 上顶替后端；多轮用例已全部冻结，拒绝验收用例仍需 mock_api
 # 评分用 harness/evaluators 的确定性评估器在本地算，不需要 Langfuse。
 # 业务集（tests/fixtures/categories/）依赖真实后端与授权账号，只在开发环境跑，绝不进这里。
 #

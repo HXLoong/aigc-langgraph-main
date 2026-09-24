@@ -1,9 +1,8 @@
 """GOATS Mock API Server.
 
 挂载两套接口：
-- **GOATS 外部接口**（`/api/internal/agent/*` + `/api/uniweb/...`）— 模拟 GOATS 对客机器人 20 个端点
-- **Java 后端接口**（`/admin-api/...`）— 模拟 yudao 后端 9 个端点（按真实 DTO 校验）
-- **Dify 工作流回调**（`/v1/workflows/run`）— 模拟 Dify rerank
+- **GOATS 外部接口**（`/api/internal/agent/*` + `/api/uniweb/...`）— 模拟 GOATS 对客机器人 21 个端点
+- **Java 后端接口**（`/admin-api/...`）— 模拟 yudao 后端 10 个端点（按真实 DTO 校验）
 
 Run:
     uvicorn mock_api.server:app --reload --port 8099

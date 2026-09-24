@@ -5,7 +5,7 @@
 
 ## 占位符纪律
 
-`.md` 里的 `{{var}}` 没有独立渲染层，只有两种合法形态（Dify 时代的 `{{#node_id.var#}}` 已全部改为原生名，ADR 0024 D1）：
+`.md` 里的 `{{var}}` 没有独立渲染层，只有两种合法形态：
 
 - system 段占位符 → 在 `PromptSpec.injects` 登记渲染器（当前业务 system 无动态占位符），`build_messages` 构造期校验存在性
 - `[user]` 段占位符 → 只在 user 含规则文本的节点存在（`swap/fresh_counterparty.md`），经 `render_user()` 渲染；其它节点没有 `[user]` 段，user 消息由 `user_builder` 拼变量
@@ -39,28 +39,21 @@ result = await model.with_structured_output(SwapIntentOutput).ainvoke(messages)
 - 灰度节点必须把 `build_messages` 返回的 `prompt_name` 写进 `TraceEntry.llm_output["prompt_name"]`（ADR 0003 硬前置：进 `_versions.yaml` 前必须先写 trace，否则版本对比失真）
 - 当前 14 个业务 PromptSpec；标的工具在后端执行。system 使用固定资产，历史和参考数据经 `blocks.source_payload` 放入 user。`fresh_counterparty` 的 `[user]` 模板继续经 `render_user` 渲染。
 
-## 来源优先级（ADR 0014 D3-2）
+## 来源优先级（ADR 0014 D3）
 
-生产真源永远是 git 里的 `app/prompts/**/*.md`；`USE_LANGFUSE_PROMPTS=true` 只允许开发/staging 演练，生产开启即 fail-fast。提示词改动直接在 git 里改、走 PR；**不从远程 Langfuse 拉取**。
+生产真源永远是 git 里的 `app/prompts/**/*.md`，生产环境不从 Langfuse 拉取提示词；`USE_LANGFUSE_PROMPTS=true` 只允许开发 / staging 演练（生产开启即 fail-fast）。提示词改动直接在 git 里改、走 PR，演练结果不回写 git。
 
-## 改提示词的三条路
+## 改提示词的两条路
 
 | 场景 | 做法 | 门槛 |
 |---|---|---|
 | 瘦身 / 修规则 | 直接改 `app/prompts/**/*.md`；需要时先跑 `scripts/langfuse/langfuse_eval.py` 对比 | 普通 PR review；`prompt(<scope>)` commit |
-| 新 LLM 节点 | `.md` 放对目录 + Pydantic Output 模型（每字段 `Field(description=)`）+ `PromptSpec` 声明 + `@safe_node` 节点 + golden case | 普通 PR review |
+| 新 LLM 节点 | `.md` 放对目录 + Pydantic Output 模型（每字段 `Field(description=)`）+ `PromptSpec` 声明 + `@io_node` 节点（`add_io_node` 注册）+ golden case | 普通 PR review |
 
 ## 字符数 / 延迟
 
-输入预算统计 system、user 与 function-calling schema；实际 token 和缓存收益以模型 usage 为准。历史瘦身前基线仅作存档。
+输入预算统计 system、user 与 function-calling schema；实际 token 和缓存收益以模型 usage 为准。长提示词显著影响 P95 延迟，评估时关注延迟指标。
 
 ## Loader 缓存
 
 `load_prompt()` 有 `@lru_cache`；测试里要重载用 `from app.prompts import clear_cache; clear_cache()`。
-
-## 相关 ADR
-
-- ADR 0001 D5：节点策略（保守路线 A+）
-- ADR 0003：同目录并存 + `_versions.yaml` 灰度（唯一版本化形态）
-- ADR 0014：LangFuse 作为演练区，git 为真源
-- ADR 0023：提示词即代码（PromptSpec / AgentState inputs / Pydantic description 输出契约；D5 瘦身原则）

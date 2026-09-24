@@ -2,9 +2,10 @@
 
 模拟两套接口供本地开发与集成测试，无需 VPN / 真实后端：
 
-1. **GOATS 外部接口**（22 个）— 模拟 GOATS 对客机器人 `/api/internal/agent/*` + `/api/uniweb/...` + `/v1/workflows/run`；
-   含 DSL v2 fast_query 前置分支的 2 个新端点（`option_rfq_instrument_parser` / `instruction/query`，
-   双前缀挂载，带不带 `/api` 都可达）
+1. **GOATS 外部接口**（21 个）— 模拟 GOATS 对客机器人 `/api/internal/agent/*` + `/api/uniweb/...`。
+   LangGraph 实际只调用 DSL v2 fast_query 前置分支的 2 个端点（`option_rfq_instrument_parser` /
+   `instruction/query`，双前缀挂载，带不带 `/api` 都可达）；其余下划线路径（如 `trs_order`）是历史示意，
+   与真实 GOATS 路径（`trs/order`）不同，当前没有调用方
 2. **OTC Java 后端接口**（10 个）— 模拟 yudao 后端 `/admin-api/*`，按真实 Java DTO 校验入参 + 按 type 分发业务行为
 
 > 定位：**本地开发与集成测试工具**（`tests/integration/` 与 CI 意图集评估使用它），
@@ -55,7 +56,7 @@ python mock_api/test_all_endpoints.py            # 默认 127.0.0.1:8099
 python mock_api/test_all_endpoints.py --port 8080 --host 192.168.1.100
 ```
 
-24 条 GOATS 端到端用例，含错误模拟（`?_error=1`）。
+24 条端到端用例（GOATS / admin-api 接口 + 错误模拟 `?_error=1`），不在 pytest `testpaths` 内，CI 不跑。
 
 ## 后端接口清单
 
@@ -129,7 +130,8 @@ curl -X POST http://127.0.0.1:8099/admin-api/swap-order/operate \
 
 ## 持仓数据
 
-`POSITIONS` 4 条（与 `tests/fixtures/categories/` 常用 `OPT-LYAFT…` `OPT-SZZSCF…` case 对齐），覆盖：
+`POSITIONS` 5 条（与 `tests/fixtures/categories/` 常用 `OPT-LYAFT…` `OPT-SZZSCF…` case 对齐），以 `mock_api/backend/fixtures.py` 为准，覆盖：
+- 贵州茅台欧式看涨 × 1（`OPT-AAAA1`）
 - 川能动力欧式看涨 × 3
 - 蓝帆医疗雪球 × 1
 
@@ -146,7 +148,7 @@ curl http://127.0.0.1:8099/api/internal/agent/trs_order?_error=1
 
 ```
 mock_api/
-├── server.py              # FastAPI app + GOATS 接口（20 个）+ 挂载 backend router
+├── server.py              # FastAPI app + GOATS 接口（21 个）+ 挂载 backend router
 ├── backend/
 │   ├── __init__.py        # 暴露 router
 │   ├── schemas.py         # Pydantic ReqVO/RespVO + 共用枚举
@@ -156,17 +158,18 @@ mock_api/
 │   ├── ticker.py          # /admin-api/integration/* + /admin-api/counterparty/* 路由
 │   └── misc.py            # bot/name/list + set-intent
 ├── test_backend_api.py    # pytest 后端 mock 完整测试（45 条，ASGITransport）
-├── test_all_endpoints.py  # 端到端脚本（24 条 GOATS 接口，需启 server）
-├── api_spec.md            # 接口完整字段说明
-├── openapi.json           # OpenAPI 3.0 schema
+├── test_all_endpoints.py  # 端到端脚本（24 条，需启 server）
 └── README.md              # 本文件
 ```
 
 ## 与 LangGraph 的对接
 
-`app/tools/swap_client.py` / `option_client.py` / `ticker_client.py` 默认 `base_url=http://localhost:8099`，启动 mock 后即可端到端跑：
+客户端读 `OTC_API_BASE_URL`（必填，无默认值）与 `GOATS_BASE_URL`，按上文「.env 配置」指向 8099 后即可跑意图集：
 
 ```bash
 uvicorn mock_api.server:app --port 8099 &
-python -m harness run                  # 跑 golden set 验证
+OTC_API_BASE_URL=http://127.0.0.1:8099 GOATS_BASE_URL=http://127.0.0.1:8099 \
+  python scripts/langfuse/langfuse_eval.py --local tests/fixtures/intent --fail-under 0.95
 ```
+
+业务验收集 `tests/fixtures/categories/` 依赖真 Java 后端，不用 mock 跑。接口 OpenAPI 可用 `app.openapi()` 现场生成。

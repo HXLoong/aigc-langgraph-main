@@ -70,9 +70,16 @@ LangGraph 只把用户原文里的标的表达逐字送给后端（`docs/archite
 - 禁止 `response_contains` / `response_contains_any` / `response_not_contains`
 - `caseNo` 以 `intent-` 开头，`category` 为 `intent/<product>`，`type` 为 `positive | negative`
 - `expected.instruments` 只允许 `product_type=swap`；`expression` 非空 str/list，`transaction_type` 取 `SwapTransactionType`
-- 文件按产品命名：`swap.jsonl` / `option.jsonl` / `option_close.jsonl`；子集加后缀：`swap_instrument.jsonl`
 - 冻结上下文：不得与回放混用；`quote_content` 非空字符串；`history[i]` 为 `{role, content}` 且
   role ∈ user/assistant/system、content 非空；`prev_product_type` ∈ swap/option/option_close
+
+文件（按产品命名，子集加后缀；命名是约定，lint 不检查）：
+
+| 文件 | 条数 | 内容 |
+|---|---|---|
+| `option.jsonl` / `option_close.jsonl` | 10 / 6 | 期权 / 期权平仓意图 |
+| `swap_instrument.jsonl` | 348 | 互换意图 + 标的识别子集（`expected.instruments`） |
+| `swap_rejection.jsonl` | 27 | 互换拒绝验收（`expected.rejection`，始终走主图）；caseNo 沿用 `intent-swap-instrument-*` 前缀 |
 
 生成与运行：
 

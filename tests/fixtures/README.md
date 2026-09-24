@@ -18,13 +18,13 @@
 `scripts/langfuse/langfuse_eval.py --local` 共用），默认只发现 `categories/*.jsonl`。
 历史参考集 `unified_golden.jsonl` 保留，通过 `python -m harness run --include-unified` 追加，
 或用 `--data` 显式选择。Python 调用对应 `load_golden(include_unified=True)`；与显式 paths
-组合时追加 root 下的历史文件，同一路径不重复追加。三种方言仍归一化为同一 `GoldenCase`：
+组合时追加 root 下的历史文件，同一路径不重复追加。各方言归一化为同一 `GoldenCase`：
 
 | 方言 | 文件 | 形状 | case 级 `expected` 落点 |
 | --- | --- | --- | --- |
 | A | `categories/*.jsonl` | `name/caseNo + send_text + sub_scenes[]`，每轮可带独立断言 | 首轮 |
 | B | `unified_golden.jsonl` | `id + conversation[{raw_content, quote_desc}]` + `expected{product_type, intent, output}` | 单轮：首轮；多轮：`any_turn`（任一已执行轮同时命中 product_type + intent 即通过，因为 B 的 expected 描述的是焦点轮，可能是末轮或中间轮） |
-| raw | 标的回归集 | `id + raw_content` 单轮 | 首轮 |
+| raw | loader 兼容保留，当前无数据文件 | `id + raw_content` 单轮 | 首轮 |
 
 B 方言约定：后续轮 `quote_desc` 非空 → 引用上一轮实际回复；首轮的 `quote_desc`（198 条上下文
 依赖 case）无回复可引，只保留在 `TurnSpec.quote_desc` 供概览与人工判读。某轮 `raw_content`
@@ -62,23 +62,12 @@ python -m harness run --data tests/fixtures/unified_golden.jsonl --limit 5   # �
 
 这组数据验证固定模型响应后的节点行为，不计入真实 LLM 准确率，也不代表真实后端验收。
 
-## 5. 意图集：`intent/<product>.jsonl`
+## 5. 意图集：`intent/*.jsonl`
 
-与 `categories/` 业务集分离（`docs/langfuse/workflow-guide.md` §8）。只评一级路由 `product_type`
-与子图 `intent`，不依赖 Java / GOATS：冻结用例只跑意图子链（`harness/intent_runner.py`），回放用例配 `mock_api`；不写任何 `response_*` 卡片断言。
-
-- A 方言子集：`caseNo`（`intent-` 前缀）+ `category=intent/<product>` + `type=positive|negative`
-  + `send_text/at_bot` + 逐轮 `expected.{product_type, intent}`；多轮用 `sub_scenes[]`；冻结用例每轮上下文写在
-  `quote_content` / `history` / `prev_product_type`，回放用例用 `quote_previous`（两种模式见 `intent/README.md`）
-- `expected.intent` 取各子图 `models.py` 的枚举；`product_type=unknown` 的反案例不标 intent
-- id 与 `categories/` / `unified_golden.jsonl` 共用唯一性约束（`scripts/check_fixture_consistency.py`）
-- `harness.golden.discover_fixtures()` 默认**不**纳入该目录；显式 `load_golden(Path("tests/fixtures/intent"))`
-  或 `langfuse_eval.py --local tests/fixtures/intent`
-- 来源：`scripts/derive_intent_fixtures.py` 从业务集派生草稿，业务方补齐 intent 后 `--only-labeled` 写入
-- 运行环境：冻结用例只依赖 LLM 网关，回放用例由仓库内 `mock_api/` 顶替后端；GitHub Actions `intent-eval` 仅手动触发，
-  本地 `langfuse_eval.py --local tests/fixtures/intent --fail-under 0.95`。`categories/` 业务集依赖 Java 后端，只在开发环境跑
-- 标的识别子集 `intent/swap_instrument.jsonl`（375 条，来自三份 `swap*.jsonl`）：`expected.instruments[]` 断言 LLM 提取的
-  标的原文任一候选与交易品种候选，评估器 `det_instrument_match_pass`；见 `intent/README.md`
+与 `categories/` 业务集分离：只评一级路由 `product_type` 与子图 `intent`（标的子集另评标的原文），不依赖 Java / GOATS，
+不写任何 `response_*` 卡片断言。`discover_fixtures()` 默认**不**纳入该目录，需显式
+`langfuse_eval.py --local tests/fixtures/intent`。文件清单、冻结 / 回放两种模式、字段规则与运行方式见
+[`intent/README.md`](./intent/README.md)。
 
 ## 6. Excel 导出
 

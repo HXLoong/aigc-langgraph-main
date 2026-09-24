@@ -15,7 +15,7 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  # ADR 0014 D8: CI 中默认关闭 LangFuse（不跑 server，避免成本与脆弱性）
+  # ADR 0014 D5: CI 中默认关闭 LangFuse（不跑 server，避免成本与脆弱性）
   ENABLE_LANGFUSE: "false"
   PYTHONUTF8: "1"
 

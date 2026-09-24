@@ -133,7 +133,7 @@ def _truncate_trace_value(value: Any) -> Any:
 
 
 class TraceEntry(_Identified):
-    """每节点决策痕迹（供 harness 失败定位 + ADR 0014 D7 失败报告）。
+    """每节点决策痕迹（供 harness 失败定位）。
 
     llm_output / llm_input_excerpt 在写入时统一截断(TRACE_TEXT_LIMIT),
     防止累积 trace 撑大 checkpoint;完整 LLM I/O 由 LangFuse 侧保留。

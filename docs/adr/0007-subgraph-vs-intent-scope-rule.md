@@ -20,7 +20,7 @@
 **归入现有子图（新意图）**：
 
 - 在 `app/subgraphs/<product>/models.py` 的 `<Product>IntentType` 加枚举值，更新该产品的意图提示词；
-- 新增 `@safe_node` 节点，并**同时**更新子图 `graph.py` 的 `_INTENT_TO_NODE` 路由表与条件边映射（漏一处会静默走兜底）；
+- 新增意图节点，并在子图 `graph.py` 的 `_INTENT_TO_NODE` 路由表登记（条件边由 `app/subgraphs/common.py` 的 `add_intent_dispatch` 从该表生成；未登记的意图落 `<product>_unknown` 兜底）；
 - 在 `tests/fixtures/categories/` 至少补 2 条用例（`scripts/check_fixture_consistency.py` 守护）。
 
 **新建独立子图（额外）**：

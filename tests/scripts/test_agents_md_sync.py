@@ -21,6 +21,7 @@ def _mk(tmp_path: Path) -> Path:
     (rules / "prompt-management.md").write_text("# 提示词管理规则\n\n- 规则丙\n", encoding="utf-8")
     (rules / "python-style.md").write_text("# Python 编码规范\n\n- 规则乙\n", encoding="utf-8")
     (rules / "docs.md").write_text("# 文档存放规则\n\n- 规则丁\n", encoding="utf-8")
+    (rules / "langgraph-patterns.md").write_text("# LangGraph 模式\n\n- 规则戊\n", encoding="utf-8")
     sub = tmp_path / "app" / "prompts"
     sub.mkdir(parents=True)
     (sub / "CLAUDE.md").write_text("# app/prompts · 局部约定\n\n> 规则见 `.claude/rules/prompt-management.md`\n", encoding="utf-8")
@@ -49,6 +50,10 @@ class TestRenderRoot:
     def test_merges_docs_rule_so_codex_sees_doc_placement(self, tmp_path):
         out = sync.render_root(_mk(tmp_path))
         assert "规则丁" in out
+
+    def test_merges_langgraph_patterns_so_codex_sees_graph_rules(self, tmp_path):
+        out = sync.render_root(_mk(tmp_path))
+        assert "规则戊" in out
 
     def test_claude_only_phrases_are_generalized(self, tmp_path):
         out = sync.render_root(_mk(tmp_path))
