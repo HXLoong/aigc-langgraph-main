@@ -1,4 +1,4 @@
-"""#160 裁决落地：AgentState 业务参数写入边界校验（ADR 0001 D6）。"""
+"""AgentState 业务参数写入边界校验（ADR 0001 D6）。"""
 from __future__ import annotations
 
 import pytest

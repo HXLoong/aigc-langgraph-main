@@ -1,7 +1,7 @@
 """GOATS /api/internal/agent/* 客户端(DSL v2 签名方案)。
 
 对照源:主干工作流 code 节点「参与型看涨、雪球调询价参数解析」「存量兼容-交易查询指令」。
-路径前缀口径（#178 定案，2026-09-18 tstgoats 实测）：`GOATS_BASE_URL` 为主机根（不含
+路径前缀口径：`GOATS_BASE_URL` 为主机根（不含
 `/api`），客户端补全 `/api/internal/agent/*`；缺该前缀会被 APISIX 网关以 405 / 静态页拒掉。
 签名与鉴权头与 app/tools/auth.py 的 x-goats-* HMAC 方案**不同**:
 本客户端用 md5(clientid + timestamp + extapp_salt).upper()[:16] + agent 系列头,
@@ -62,7 +62,7 @@ def build_agent_headers(
 
 
 def normalize_agent_base(base_url: str) -> str:
-    """GOATS agent 基址归一（#178）：允许主机根或带 `/api` 尾缀两种历史写法。
+    """GOATS agent 基址归一：允许主机根或带 `/api` 尾缀两种历史写法。
 
     返回去掉尾斜杠、且不含尾部 `/api` 的基址；调用方统一拼接
     `/api/internal/agent/*`，保证最终路径只出现一次 `/api` 前缀。

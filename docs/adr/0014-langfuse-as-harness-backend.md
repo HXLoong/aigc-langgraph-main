@@ -2,7 +2,7 @@
 
 - 状态：已采纳
 - 日期：2026-05-10
-- 关系：修订 [ADR 0004](./0004-trace-granularity-node-level-with-langsmith.md)（trace 后台）与 [ADR 0005](./0005-annotation-roles-judge-plus-business-spotcheck.md)（标注平台）
+- 关系：修订 [ADR 0004](./0004-trace-granularity-node-level.md)（trace 后台）与 [ADR 0005](./0005-annotation-roles-judge-plus-business-spotcheck.md)（标注平台）
 - 作者：图灵科技 + Tony
 
 ## 背景
@@ -15,14 +15,14 @@ Harness 需要一个后台承载四件套：**Trace**（节点级 LLM 调用）�
 
 - **客户现场强制自托管**：`infra/langfuse/docker-compose.yml`（PostgreSQL + ClickHouse + Redis + MinIO + Web + Worker），trace、数据集、标注数据均留在内网；现场配置严禁指向 LangFuse Cloud。
 
-### D2 · 取代 LangSmith，不双跑
+### D2 · 单一 trace 通道
 
 trace 只走 LangFuse 一条通道，由请求入口统一注入 CallbackHandler，子图自然继承。
 
 ### D3 · 提示词真源永远是 git
 
 - 生产提示词只从 `app/prompts/**/*.md` 加载；提示词改动走 git PR review（金融审计要求可追溯；提示词须与加载逻辑、Pydantic 输出模型同 commit 演进）。
-- LangFuse Prompts 仅作开发演练区：`scripts/langfuse/upload_prompt_to_langfuse.py` 单向把 git 提示词推送到 LangFuse 用于实验，**不从 LangFuse 拉回**（原"LangFuse → git 晋升脚本"已于 2026-09-23 下线）。
+- LangFuse Prompts 仅作开发演练区：`scripts/langfuse/upload_prompt_to_langfuse.py` 单向把 git 提示词推送到 LangFuse 用于实验，**不从 LangFuse 拉回**。
 - 硬闸门：`environment=production` 且 `USE_LANGFUSE_PROMPTS=true` 时 `load_prompt` 直接报错。
 
 ### D4 · 数据流向

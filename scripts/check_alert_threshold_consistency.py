@@ -6,8 +6,7 @@
   2. `docs/adr/0019-incident-severity-thresholds.md` §1 表（ADR 决策）
   3. `docs/on-call-runbook.md` §3 严重等级表（on-call 操作）
 
-任一不一致 → exit 1 + 输出差异位置，避免"代码改了文档没跟上"
-事故重演（ADR 0017 ↔ 0019 错位）。
+任一不一致 → exit 1 + 输出差异位置，避免"代码改了文档没跟上"。
 
 跑法：
     python scripts/check_alert_threshold_consistency.py           # 全部检查

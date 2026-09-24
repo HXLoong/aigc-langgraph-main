@@ -18,11 +18,7 @@ from app.tools.option_client import (
     OptionClientHttpx,
     OptionIntentionType,
 )
-from app.tools.ticker_client import (
-    KeywordItem,
-    SecuritiesInstrumentReqVO,
-    TickerClientHttpx,
-)
+from app.tools.ticker_client import TickerClientHttpx
 
 
 def _option_request() -> FinancialOrderOpenApiSaveReqVO:
@@ -61,24 +57,6 @@ async def test_option_operate_odd_types_pass_through() -> None:
     client = _option_client(lambda request: httpx.Response(200, json=envelope))
     result = await client.operate(_option_request())
     assert result == envelope
-
-
-async def test_ticker_search_passes_missing_and_unknown_fields_through() -> None:
-    """候选行缺 windCode / transactionTypeLists 为 null / 含未知字段 → 原样透传。"""
-    rows = [
-        {"insShtDesc": "无代码条目", "unknownField": {"x": 1}},
-        {"windCode": "600519.SH", "transactionTypeLists": None},
-    ]
-    client = TickerClientHttpx(
-        base_url="https://java.invalid", token="",
-        transport=httpx.MockTransport(
-            lambda request: httpx.Response(200, json={"code": 0, "data": rows})
-        ),
-    )
-    result = await client.search_securities_instrument(
-        SecuritiesInstrumentReqVO(keywordItems=[KeywordItem(keyword="x")])
-    )
-    assert result == rows
 
 
 async def test_ticker_list_counterparty_passthrough() -> None:

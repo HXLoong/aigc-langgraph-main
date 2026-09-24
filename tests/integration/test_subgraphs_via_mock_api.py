@@ -1,6 +1,6 @@
-"""业务子图 backend → mock_api 真路径集成测试（PR #110 / Tony 问题 2 彻底解答）。
+"""业务子图 backend → mock_api 真路径集成测试。
 
-PR #109 补了 client 层 → mock_api 集成（tests/integration/test_clients_via_mock_api.py），
+client 层 → mock_api 集成见 tests/integration/test_clients_via_mock_api.py；
 本文件补 **业务 backend 层 → 真 client → mock_api** 全链路：
 
   state(business) → call_*_backend → real *ClientHttpx → ASGITransport → mock_api

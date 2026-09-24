@@ -1,4 +1,4 @@
-"""Swap 子图后端调用（Issue #79，类比 option/backend.py）。
+"""Swap 子图后端调用（类比 option/backend.py）。
 
 集成 swap_place_order / swap_confirm / swap_cancel / swap_query_order 4 个节点
 到真后端 POST /admin-api/swap-order/operate。

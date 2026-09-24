@@ -1,4 +1,4 @@
-"""Harness LLM token 追踪（F4.1 灰度成本观测）。
+"""Harness LLM token 追踪（灰度成本观测）。
 
 通过 LangChain BaseCallbackHandler 拦截每次 LLM 响应，把 usage_metadata
 累计到 TokenUsage（按模型分组），不侵入业务节点代码。

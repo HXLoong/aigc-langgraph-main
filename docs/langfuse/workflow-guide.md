@@ -110,13 +110,13 @@ Dataset Item 的三个字段全部由 `scripts/langfuse/upload_golden_to_langfus
 
 ### 4.1 上传 Dataset
 
-`.github/workflows/langfuse-dataset-sync.yml` **仅手动触发**（Actions 页 Run workflow），push 与 PR 合并不会自动执行。它检出运行时最新 `main`，在 `ubuntu-latest` 上用 Langfuse Python SDK `4.15.0` 串行同步。仓库变量 `LANGFUSE_BASE_URL`（当前为 `https://us.cloud.langfuse.com`）和 Secrets `LANGFUSE_PUBLIC_KEY` / `LANGFUSE_SECRET_KEY` 都是必需的；缺失时 workflow 失败。
+`.github/workflows/langfuse-dataset-sync.yml` **仅手动触发**（Actions 页 Run workflow），push 与 PR 合并不会自动执行。它检出运行时最新 `main`，在 `ubuntu-latest` 上用 Langfuse Python SDK `4.15.0` 串行同步。仓库变量 `LANGFUSE_BASE_URL`（自托管实例地址）和 Secrets `LANGFUSE_PUBLIC_KEY` / `LANGFUSE_SECRET_KEY` 都是必需的；缺失时 workflow 失败。
 
 ```bash
 python scripts/langfuse/upload_golden_to_langfuse.py --sync-all --dry-run
 python scripts/langfuse/upload_golden_to_langfuse.py --sync-all
 # 临时覆盖服务地址
-python scripts/langfuse/upload_golden_to_langfuse.py --sync-all --base-url https://us.cloud.langfuse.com
+python scripts/langfuse/upload_golden_to_langfuse.py --sync-all --base-url http://127.0.0.1:3000
 ```
 
 `--sync-all` 只扫描 `intent/*.jsonl` 和 `categories/*.jsonl`。每个文件独立成 Dataset：`intent/option_close.jsonl` → `intent_option_close`，`categories/golden_option_close_case.jsonl` → `golden_option_close_case`。`nodes/` 下的文件不会扫描。上传前检查 Dataset 名称冲突和全局用例 ID 重复；Item ID 固定为 `<dataset_name>:<case_id>`（Langfuse 要求项目内唯一），原始 ID 保存在 metadata。每次 upsert 设为 `ACTIVE`。所有文件上传成功后，才归档各 Dataset 中已经从对应文件移除的 Item；空文件或上传失败时不归档。此前上传的节点 Dataset 不会自动删除或归档。历史 `intent-` Dataset 不自动删除。
@@ -159,7 +159,7 @@ push 与 PR 合并不会自动执行。同步范围为 `app/prompts/option/*.md`
 ```bash
 python scripts/langfuse/upload_prompt_to_langfuse.py --sync-all --dry-run
 python scripts/langfuse/upload_prompt_to_langfuse.py --sync-all
-python scripts/langfuse/upload_prompt_to_langfuse.py --sync-all --base-url https://us.cloud.langfuse.com
+python scripts/langfuse/upload_prompt_to_langfuse.py --sync-all --base-url http://127.0.0.1:3000
 
 # 单文件手动上传仍可使用
 python scripts/langfuse/upload_prompt_to_langfuse.py option_close.intent --dry-run

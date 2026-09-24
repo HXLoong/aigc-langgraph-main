@@ -1,9 +1,9 @@
 # ADR 0029 · 节点级调试接口与节点回归工作台（含私有工具 HTTP 录放）
 
-- 状态：已采纳（追认：`/v1/nodes/run` commit `e1f373e`、`/v1/nodes/prepare` `4f6173a`、HTTP 录放 `b7915e8`，2026-09-18 ~ 09-22 落地）
+- 状态：已采纳（追认，落地 commit `e1f373e` / `4f6173a` / `b7915e8`）
 - 日期：2026-09-22
 - 关系：在 [ADR 0024](./0024-langgraph-native-rearchitecture.md) D6 全链路评测门之下增加节点层；沿用 [ADR 0002](./0002-comprehensive-runtime-harness.md)
-- 需求与使用：[产品需求文档](../节点级测试用例维护与回归平台产品需求文档.md) · [使用指南](../nodes-run.md)
+- 使用指南：[docs/nodes-run.md](../nodes-run.md)
 - 作者：图灵科技 + Tony
 
 ## 背景

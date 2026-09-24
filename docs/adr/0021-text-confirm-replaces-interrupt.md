@@ -2,7 +2,7 @@
 
 - 状态：已采纳
 - 日期：2026-08-27
-- 关系：取代早期 interrupt 拦截方案（原 0006 号，已删除，其风险规则并入本篇 §1）；确认范围校验见 [ADR 0027](./0027-field-evidence-contract.md) D5；建表口径见 [ADR 0009](./0009-mysql-version-and-tdsql-compatibility.md)
+- 关系：确认范围校验见 [ADR 0027](./0027-field-evidence-contract.md) D5；建表口径见 [ADR 0009](./0009-mysql-version-and-tdsql-compatibility.md)
 - 作者：图灵科技 + Tony
 
 ## 背景

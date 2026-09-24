@@ -48,7 +48,7 @@ class LangfusePublicApi:
             raise RuntimeError("缺少 LANGFUSE_PUBLIC_KEY 或 LANGFUSE_SECRET_KEY")
         base_url = os.environ.get(
             "LANGFUSE_BASE_URL",
-            os.environ.get("LANGFUSE_HOST", "https://cloud.langfuse.com"),
+            os.environ.get("LANGFUSE_HOST", "http://127.0.0.1:3000"),
         )
         return cls(
             base_url=base_url,

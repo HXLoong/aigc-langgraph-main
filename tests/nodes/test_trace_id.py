@@ -1,4 +1,4 @@
-"""#156 裁决落地：trace_id 贯穿（ADR 0004 关联键补实现）。
+"""trace_id 贯穿（ADR 0004 关联键）。
 
 - routes/ingest 生成 trace_id 入 state（ingest 兜底，非 API 入口如 eval 也有）
 - persist 落 node_trace.trace_id 列 → SQL 与 LangFuse 可按单次调用关联

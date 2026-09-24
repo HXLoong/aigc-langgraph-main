@@ -28,7 +28,7 @@
 ## 在 GitHub 网页上运行
 
 1. 先确保两个 workflow 文件已随 PR 合并到目标仓库的 `main`：`.github/workflows/langfuse-dataset-sync.yml` 和 `.github/workflows/langfuse-prompt-sync.yml`（Run workflow 按钮只对默认分支上的 workflow 显示）。
-2. 在目标仓库的 **Settings → Secrets and variables → Actions** 配置：变量 `LANGFUSE_BASE_URL`（例如 `https://us.cloud.langfuse.com`）；Secrets `LANGFUSE_PUBLIC_KEY`、`LANGFUSE_SECRET_KEY`。再设置变量 `LANGFUSE_TIMEOUT=60`（秒），供数据集任务使用。
+2. 在目标仓库的 **Settings → Secrets and variables → Actions** 配置：变量 `LANGFUSE_BASE_URL`（自托管实例地址，须为 GitHub Actions 可达的内网或专线地址）；Secrets `LANGFUSE_PUBLIC_KEY`、`LANGFUSE_SECRET_KEY`。再设置变量 `LANGFUSE_TIMEOUT=60`（秒），供数据集任务使用。
 3. 在 **Actions → langfuse-dataset-sync / langfuse-prompt-sync → Run workflow** 选择 `main` 手动运行。改了数据集、提示词或上传脚本并合入 `main` 后，需要同步时再手动跑；不会自动触发。
 4. 查看运行日志是否成功。数据集到 Langfuse 的 **Datasets** 核对名称和 Items；提示词到 **Prompts** 核对名称、内容和 `staging` 标签。提示词日志中的 `created`、`updated`、`skipped` 分别表示新建、生成新版、内容未变。
 

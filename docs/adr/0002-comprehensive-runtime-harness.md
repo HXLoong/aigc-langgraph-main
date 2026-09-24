@@ -14,7 +14,7 @@
 | 阶段 | 能力 | 载体 |
 |---|---|---|
 | 开发期 | 节点 / 子图 / 模型单元测试；节点级回归工作台 | `tests/`；`python -m harness node-run`（ADR 0029） |
-| 运行期 | 每节点结构化 trace；延迟与错误率告警 | `langgraph_node_trace` 表 + LangFuse（[ADR 0004](./0004-trace-granularity-node-level-with-langsmith.md) / [0014](./0014-langfuse-as-harness-backend.md)）；`/metrics` + `app/observability/alerts.py` |
+| 运行期 | 每节点结构化 trace；延迟与错误率告警 | `langgraph_node_trace` 表 + LangFuse（[ADR 0004](./0004-trace-granularity-node-level.md) / [0014](./0014-langfuse-as-harness-backend.md)）；`/metrics` + `app/observability/alerts.py` |
 | 调优期 | 提示词版本化与灰度；数据集自动评分 | `_versions.yaml`（[ADR 0003](./0003-prompt-versioning-by-file-coexistence.md)）；`scripts/langfuse/langfuse_eval.py`（LLM Judge，[ADR 0005](./0005-annotation-roles-judge-plus-business-spotcheck.md)） |
 
 ## 现状

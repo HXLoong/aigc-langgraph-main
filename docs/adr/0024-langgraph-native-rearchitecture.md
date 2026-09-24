@@ -1,14 +1,13 @@
 # ADR 0024 · LangGraph 原生重构：退出 Dify 形态的目标架构
 
-- 状态：已采纳（2026-09-22 冻结：后续决策一律开新编号）
+- 状态：已采纳（已冻结：后续决策开新编号）
 - 日期：2026-09-17
-- 关系：取代 [ADR 0000](./0000-migrate-from-dify-to-langgraph.md) 后果段（Dify 不再是上游）；落实 [ADR 0001](./0001-rewrite-app-with-harness-first.md) D3 "另开 ADR"的承诺。后续拆出：[0025](./0025-instrument-resolution-delegated-to-backend.md) 标的移交后端（撤销本篇 ticker 子图）、[0026](./0026-request-idempotency-uncertain-receipts-reconciliation.md) 幂等与回执、[0027](./0027-field-evidence-contract.md) 字段证据、[0028](./0028-session-entry-and-multi-instruction-send-orchestration.md) 入口分流、[0029](./0029-node-level-debug-api-and-regression-workbench.md) 节点层；D8 门槛统一到 [0030](./0030-goal-restatement-native-langgraph-dataset-eval-harness.md) D3
-- 评估报告：[docs/langgraph-architecture-assessment.md](../langgraph-architecture-assessment.md)
+- 关系：后续拆出 [0025](./0025-instrument-resolution-delegated-to-backend.md) 标的移交后端、[0026](./0026-request-idempotency-uncertain-receipts-reconciliation.md) 幂等与回执、[0027](./0027-field-evidence-contract.md) 字段证据、[0028](./0028-session-entry-and-multi-instruction-send-orchestration.md) 入口分流、[0029](./0029-node-level-debug-api-and-regression-workbench.md) 节点层；D8 门槛统一到 [0030](./0030-goal-restatement-native-langgraph-dataset-eval-harness.md) D3
 - 作者：图灵科技 + Tony
 
 ## 背景
 
-2026-08 的迁移让全部业务链路在 LangGraph 上跑通，但评估显示四个决定性能力仍是 Dify 形态：
+业务链路迁到 LangGraph 后，有四个决定性能力仍是 Dify 形态：
 
 1. **图**：子图靠手写包装调用，无输入 / 输出契约；LangGraph 的 Send / RetryPolicy 等原生能力零使用；多个"厚节点"原样搬自 Dify。
 2. **持久化**：checkpoint 只写不读；生产连接无重连；无请求级幂等（重试即可能重复下单）。
@@ -75,9 +74,9 @@
 
 统一为 ADR 0030 D3 的评测门。无 LLM 密钥的环境只能跑 pytest 与确定性断言，不得替代评测门。
 
-## 当前边界（2026-09-22 修订）
+## 当前边界
 
-- 标的识别由 Java 负责，本地 ticker 子图已删除；HTTP 输出的 `tickers` 仅为空列表兼容字段（ADR 0025）。
+- 标的识别由 Java 负责，本地不做标的解析；HTTP 输出的 `tickers` 仅为空列表兼容字段（ADR 0025）。
 - 业务卡片由 Java 生成：render 透传有效回执；无回执时不得根据本地参数推断交易成功。
 - 七条最终确认路径要求当前订单引用与明确动作；跨轮记忆只作上下文，不为裸确认隐式补单号（ADR 0027 D5）。
 - 每条消息执行一个业务动作，可携带多笔订单；多动作拆分编排已退役（ADR 0028）。
@@ -93,4 +92,3 @@
 - 正面：图、State、持久化、可观测、评估五层各有显式契约；单连接、无幂等等金融正确性风险在首批关闭；Dify 同步类事故不再可能发生。
 - 负面：State 分层与子图输出契约让一批隐式跨层写入在类型层暴露，需逐个显式化。
 - 未决：`history_messages` 窗口取值的评测校准；`option_close` / `close` 命名统一；Store 是否引入；原生协议迁移时机。
-- 逐日落地记录、Dify 残留分级清单与巡检裁决见 [实施记录归档](../archive/history/adr-implementation-log-2026-09.md)。

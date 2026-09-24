@@ -1,8 +1,7 @@
-# 客户环境调研报告（C1.9 模板）
+# 客户环境调研模板
 
-> **版本**：v0.1 模板（2026-05-12）
-> **状态**：模板——Tony 在客户现场逐项填实际值，填完后状态升级为"已调研"
-> **目的**：在阶段 2 真后端联调（D2.1）启动**前**，把所有客户环境的关键参数 + 网络可达性 + 配置约束**一次性收集清楚**，避免联调时反复打扰客户 IT
+> **状态**：模板——在客户现场逐项填实际值，填完后状态改为"已调研"
+> **目的**：在真后端联调启动**前**，把所有客户环境的关键参数 + 网络可达性 + 配置约束**一次性收集清楚**，避免联调时反复打扰客户 IT
 > **预期填写时长**：现场半天到 1 天（含跑验证命令）
 
 ---
@@ -12,7 +11,7 @@
 ### 0.1 谁来填
 
 - **Tony** 主导：与客户 IT / 业务方对齐
-- **图灵科技工程负责人 #25** 远程协助：当某项验证需要写测试代码时
+- **图灵科技工程负责人**远程协助：当某项验证需要写测试代码时
 
 ### 0.2 怎么填
 
@@ -30,7 +29,7 @@
 
 ### 0.3 何时填完
 
-- **必须**在 D2.1（阶段 2 真后端联调启动）**之前**填完所有 §3.1-3.8 必填项
+- **必须**在真后端联调启动**之前**填完所有 §3.1-3.8 必填项
 - §3.9-3.11 可推到阶段 2 中段补完
 
 ---
@@ -66,7 +65,7 @@
 |---|---|---|---|---|
 | Docker 版本 | ≥ 24.x | 待填 | `docker --version` | LangFuse 镜像需 ≥ 20 |
 | Docker Compose | v2.x（plugin 形式） | 待填 | `docker compose version` | v1.x 旧版本 syntax 不兼容 |
-| 镜像拉取能力 | 可访问 hub.docker.com 或客户内网镜像仓库 | 待填 | `docker pull alpine` | 不通 → C1.14 离线包介入 |
+| 镜像拉取能力 | 可访问 hub.docker.com 或客户内网镜像仓库 | 待填 | `docker pull alpine` | 不通 → 使用离线依赖包介入 |
 | root 或 docker group | 部署账号在 docker group | 待填 | `groups <user> \| grep docker` | 否则每次命令加 sudo 麻烦 |
 
 ---
@@ -129,22 +128,20 @@
 | 项 | 实际值 | 验证步骤 | 备注 |
 |---|---|---|---|
 | Java 后端基础 URL | 待填 | — | 含 `/admin-api` 前缀 |
-| 认证方式 | 待填（`@PlatformApiAuth` token / OAuth / 内网信任）| `curl -H "Token: xxx" $URL/admin-api/integration/securities-instrument/select` | 与 ADR 0012 一致 |
+| 认证方式 | 待填（`@PlatformApiAuth` token / OAuth / 内网信任）| `curl -H "Token: xxx" "$URL/admin-api/swap-order/get?orderId=xxx"` | — |
 | Token / Secret 来源 | 待填（存保险库）| 客户 IT 提供 | 轮转周期？ |
-| 健康检查 endpoint | `/health` 或客户自定义 | `curl $URL/health` | C1.9 中验证 |
+| 健康检查 endpoint | `/health` 或客户自定义 | `curl $URL/health` | 调研时验证 |
 | 业务版本 | 待填（git tag / jar version）| 客户 IT 提供 | 与 `docs/api-contracts/` 编制日期对齐 |
 | 时区一致性 | 与 LangGraph 一致 | 业务负责人确认 | 否则订单时间戳异常 |
 
 **关键 endpoint 联通测试清单**（必须每条都验证）：
 
-- [ ] `GET /admin-api/integration/securities-instrument/select`（ticker 解析）
-- [ ] `GET /admin-api/counterparty/info/instrument-inference-prompt`（动态 prompt）
-- [ ] `GET /admin-api/counterparty/info/list`
 - [ ] `POST /admin-api/financial-orders/operate`（期权下单）
 - [ ] `POST /admin-api/financial-orders/query-close-orders`（持仓查询）
 - [ ] `POST /admin-api/swap-order/operate`（互换下单）
 - [ ] `GET /admin-api/swap-order/get?orderId=xxx`
 - [ ] `POST /admin-api/swap-order/get-conversation-orders`
+- [ ] `POST /admin-api/openapi/xbot/message/set-intent`（会话意图写回）
 
 每条至少跑一次 `curl` + 返回 `CommonResult.code = 0` 或合理错误码。
 
@@ -152,21 +149,21 @@
 
 ## 6. 大模型 API · DeepSeek-v4-pro
 
-> 见 ADR 0018 · 开发 Qwen / 现场 DeepSeek 双模型分立
+> 见 ADR 0020 · 全环境统一 DeepSeek-V4-pro
 
 | 项 | 实际值 | 验证步骤 | 备注 |
 |---|---|---|---|
 | API endpoint | 待填（默认 `https://api.deepseek.com/v1`）| — | 客户若走企业代理需填代理地址 |
-| API key 提供方 | 待填（客户 / 我方）| — | 与 ADR 0018 决策对齐 |
+| API key 提供方 | 待填（客户 / 我方）| — | 与 ADR 0020 一致 |
 | API key 实际值 | 待填（**存保险库，不写本文档**）| — | — |
 | 网络可达性 | 必须公网或代理可通 | `curl -H "Authorization: Bearer $KEY" $URL/chat/completions -d '...'` | 阻塞项 |
 | 模型可用性 | `deepseek-v4-pro` 实际可调 | 用 curl 跑一条最简 chat completion | 验证模型名称无误 |
 | 上下文窗口 | ≥ 128K（假设值） | 跑一条 50K tokens 输入测试 | swap.place_order 40K prompt 安全余量 |
-| 结构化输出支持 | 支持 `response_format: json_object` | OpenAI 风格测试 | 24 节点全依赖 |
-| Function calling 支持 | 支持 OpenAI 风格 tool calling | 跑 ticker ReAct 测试 | ticker 子图依赖 |
+| 结构化输出（function calling） | 支持 OpenAI 风格 tool calling | 跑一条带 tools 的 chat completion | 全部 LLM 节点的结构化输出依赖（ADR 0020 §2） |
+| 视觉模型 | 待填（`QWEN_MODEL_VL`） | 跑一条图片输入请求 | 互换图片 / Excel 下单依赖；未配置则该链路不可用 |
 | 计费方 | 待填 | — | — |
 | 月度 token 配额 | 待填 | — | 影响成本预算 |
-| 流式输出 | 默认不用 | — | M3 不依赖 streaming |
+| 流式输出 | 默认不用 | — | 不依赖 streaming |
 
 ---
 
@@ -181,7 +178,7 @@
 | 管理员账号创建 | 待填（账号存保险库）| 首次启动 web 控制台时初始化 |
 | 项目 / API key 配置 | 待填（key 存保险库）| 部署 LangFuse 后自动生成 |
 
-**部署步骤参考**：`infra/langfuse/docker-compose.yml`（M1 已建好）
+**部署步骤参考**：`infra/langfuse/docker-compose.yml`
 
 ---
 
@@ -195,7 +192,7 @@
 | 当前 Webhook URL（指向 Dify） | 待填 | 紧急回滚目标 |
 | 部署后切换 Webhook URL（指向 LangGraph） | 待填 | 含完整 HTTPS 入口 |
 | 加密通道 | 必须 HTTPS | 企微强制要求 |
-| 企微管理员 | 待填（姓名 + 企微 ID） | C1.16 runbook 联系人 |
+| 企微管理员 | 待填（姓名 + 企微 ID） | runbook 联系人 |
 
 ---
 
@@ -203,7 +200,7 @@
 
 | 项 | 实际值 | 备注 |
 |---|---|---|
-| 工程团队告警群（企微）| 待填（群名 + 群号） | C1.6 告警目标 |
+| 工程团队告警群（企微）| 待填（群名 + 群号） | 告警目标 |
 | LangFuse 监控仪表盘访问列表 | 待填 | 内网 IP 段或 SSO |
 | 邮件告警地址（备份）| 待填 | 重大故障兜底 |
 | 业务方反馈通道 | 待填 | sign-off 人 + 备用 |
@@ -238,7 +235,7 @@
 
 ---
 
-## 12. 现场联系人通讯录（C1.16 runbook 附录 A 来源）
+## 12. 现场联系人通讯录（runbook 附录 A 来源）
 
 > 调研中收集，回填到 `docs/on-call-runbook.md` 附录 A。
 
@@ -257,7 +254,7 @@
 | 风险项 | 概率 | 影响 | 应对计划 |
 |---|---|---|---|
 | MySQL 版本不在 8.0.19-9.6.0 区间 | 低 | 阻塞 | 升级 MySQL 或换 Checkpointer（成本高）|
-| DeepSeek API 不通 | 低 | 阻塞 | 配代理 / 切回 Qwen |
+| DeepSeek API 不通 | 低 | 阻塞 | 配代理 / 切换备用模型 |
 | Java 后端 token 频繁过期 | 中 | 高 | 接 OAuth refresh 或长有效期 token |
 | LangFuse 内网部署 OOM | 中 | 中 | 拆机或缩配置（disable ClickHouse 用 PG 备选）|
 | 客户数据出境合规未明确 | 中 | 高 | sign-off 前必须有书面 OK |
@@ -270,7 +267,7 @@
 | 项 | 完成日期 | 签字 |
 |---|---|---|
 | Tony 调研结束 | 待填 | Tony |
-| #25 工程负责人 review | 待填 | #25 |
+| 工程负责人 review | 待填 | 工程负责人 |
 | 客户 IT 信息确认 | 待填 | 客户 IT 联系人 |
 
 ---
@@ -279,9 +276,8 @@
 
 - **`docs/work-plan.md`** §2 客户现场部署 —— 本调研是其输入
 - **ADR 0009** · MySQL 版本兼容性硬约束（§4 依据）
-- **ADR 0012** · `securities-instrument/select` 后端 HTTP 路径（§5 依据）
-- **ADR 0013** · 动态推断 prompt 后端拉取（§5 endpoint 清单）
-- **ADR 0018** · 双模型分立（§6 依据）
+- **ADR 0025** · 标的识别由 Java 后端负责（§5 依据）
+- **ADR 0020** · 全环境统一 DeepSeek-V4-pro（§6 依据）
 - **`docs/api-contracts/java-backend.md`** · Java 业务 API 完整契约
 - **`docs/on-call-runbook.md`** · 附录 A 联系人由本调研 §12 回填
 - **CONTEXT.md** · 项目术语

@@ -47,7 +47,7 @@ for target in (
 ## Golden Set
 
 - 所有新增意图必须在 `tests/fixtures/categories/` 加至少 2 条用例（现役数据源，`scripts/check_fixture_consistency.py` 校验一致性）
-- case 格式沿用对应文件既有方言（详见 `scripts/ai_test_langgraph/README.md`）
+- case 格式沿用对应文件既有方言（详见 `tests/fixtures/README.md`）
 - 跑评估：`python scripts/langfuse/langfuse_eval.py --local <fixture>`
 
 ## 验证范围

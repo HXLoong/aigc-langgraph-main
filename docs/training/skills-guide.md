@@ -19,23 +19,20 @@
 
 工具启动时只读每个 skill 的 `name` + `description`，命中后才加载正文。所以 **`description` 决定它什么时候被用**，写清"使用场景"比写清"怎么做"更重要。
 
-## 2. 本仓库现有的 11 个 skill
+## 2. 本仓库现有的 skill
 
 | skill | 用途 | Claude Code | Codex |
 |---|---|---|---|
 | `test-driven-development` | TDD 红绿循环（修 bug / 新功能前必走） | `/test-driven-development` | `$test-driven-development 修复 xxx` |
 | `add-intent` | 在某子图新增意图（枚举 + 路由 + 提取节点 + 提示词 + 测试） | `/add-intent swap adjust_hedge` | `$add-intent 在 swap 新增 adjust_hedge` |
-| `migrate-prompt` | 从 Dify YAML 迁移单个 LLM 节点提示词 | `/migrate-prompt dify/yaml/场外交易-test.yml 互换-节点-下单` | `$migrate-prompt 把 场外交易-test.yml 里的「互换-节点-下单」迁进来` |
-| `sync-dify-prompts` | 批量同步 Dify 提示词并 diff | `/sync-dify-prompts dify/yaml` | `$sync-dify-prompts 用 dify/yaml 目录` |
-| `run-eval` | harness 跑 golden 评估 | `/run-eval --category swap` | `$run-eval 只跑 swap` |
-| `shadow-test` | LangGraph vs Dify 双跑对比 | `/shadow-test --n 20` | `$shadow-test 抽 20 条` |
+| `run-eval` | 通过本地 HTTP 入口评估 categories 用例 | `/run-eval --category swap` | `$run-eval 只跑 swap` |
+| `shadow-test` | shadow 对照工具（可选，不进任何评测门） | `/shadow-test --max-cases 20` | `$shadow-test 抽 20 条` |
+| `langfuse` | 查询 / 操作 LangFuse、查文档（上游 langfuse/skills，勿手改） | `/langfuse` | `$langfuse ...` |
 | `iterate-option` | 期权链路批量评估 → 归因 → TDD 修 → 重跑 | `/iterate-option --filter 期权询价` | `$iterate-option 只看期权询价` |
-| `dify-reviewer` | 审查代码与 Dify 行为是否一致（原 subagent） | 作为 subagent 自动派发 | `$dify-reviewer 审查 app/subgraphs/close/` |
-| `prompt-migrator` | 迁移提示词并生成模型 / 节点 / 测试（原 subagent） | 同上 | `$prompt-migrator ...` |
-| `subgraph-builder` | 新增 / 重构业务子图（原 subagent） | 同上 | `$subgraph-builder ...` |
+| `subgraph-builder` | 新增 / 重构业务子图（原 subagent） | 作为 subagent 自动派发 | `$subgraph-builder ...` |
 | `test-generator` | 为节点 / 子图 / 模型生成 pytest（原 subagent） | 同上 | `$test-generator 给 holding_query 补测试` |
 
-后四个在 Claude Code 里是 `.claude/agents/` 下的 **subagent**（独立上下文、指定工具集）；Codex 没有 subagent 机制，生成器把它们转成同名 skill，调用时 Codex 以该角色执行。
+后两个在 Claude Code 里是 `.claude/agents/` 下的 **subagent**（独立上下文、指定工具集）；Codex 没有 subagent 机制，生成器把它们转成同名 skill，调用时 Codex 以该角色执行。
 
 ## 3. 怎么调用
 

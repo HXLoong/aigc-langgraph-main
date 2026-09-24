@@ -1,6 +1,6 @@
 """cascade 防御专项测试：swap.intent 节点异常 → @safe_node → 子图路由到 swap_unknown。
 
-Issue #32 要求的 3 个用例：
+覆盖 3 个用例：
   1. LLM 抛 ValueError → state['error'] 写入
   2. LLM 返回 ValidationError（Pydantic 拒绝）→ state['error'] 写入
   3. 子图集成：intent 抛错 → 路由走 swap_unknown 兜底

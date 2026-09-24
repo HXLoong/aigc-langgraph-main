@@ -15,7 +15,7 @@ tracing → prompt management → monitoring → dataset → experiments → eva
 
 走完这套课，你能独立跑通「trace → 评测 → 对比改动」的完整闭环，并把同一套做法搬到自己项目上。
 
-> ⚠️ 请使用 **Langfuse Cloud**，这样才有课程描述的最新功能。自托管实例版本可能较旧，与课程内容对不上。
+> 课程统一使用项目自托管实例（`infra/langfuse/`）。如个别界面与课程描述不一致，以自托管版本为准。
 
 ## 模块
 
@@ -47,7 +47,7 @@ npm run dev
 OPENAI_API_KEY=sk-...
 LANGFUSE_PUBLIC_KEY=pk-lf-...
 LANGFUSE_SECRET_KEY=sk-lf-...
-LANGFUSE_BASE_URL=https://cloud.langfuse.com
+LANGFUSE_BASE_URL=http://127.0.0.1:3000
 ```
 
 **怎么验证**：`3333`（客户端）与 `8787`（API 服务）都在监听；`/api/health` 返回真实响应；浏览器显示 Specs 的问候而不是报错；点一个建议问题能拿到真实的 iPhone 回答。
@@ -973,7 +973,7 @@ git checkout checkpoint/08-wrap-up
    ```dotenv
    LANGFUSE_PUBLIC_KEY=pk-lf-...
    LANGFUSE_SECRET_KEY=sk-lf-...
-   LANGFUSE_BASE_URL=https://cloud.langfuse.com
+   LANGFUSE_BASE_URL=http://127.0.0.1:3000
    ```
 
    然后从加载了该文件的 shell 里跑 CLI：

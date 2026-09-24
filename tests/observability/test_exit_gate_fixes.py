@@ -1,9 +1,9 @@
-"""#157 裁决落地：告警与 M4 退出门测量修复（ADR 0017/0019）。
+"""告警与上线观察指标的测量口径（ADR 0030 D3 / ADR 0019）。
 
-1. cascade fail 率分母改为总请求数（http_total），不再用 node_total（宽 6-8 倍）
+1. cascade fail 率分母为总请求数（http_total），不用 node_total（会宽松 6-8 倍）
 2. P95 直方图剔除节点级样本（带 node= label），只统计端到端请求样本
 3. /v1/workflows/run 出口接线 emit_intent_latency（端到端 P95 数据源）
-4. canary_status：ALL 全量模式 + dry_run_intercept > 0 → 违规（runbook §5 护栏成真）
+4. canary_status：ALL 全量模式 + dry_run_intercept > 0 → 违规（runbook §5 护栏）
 """
 from __future__ import annotations
 

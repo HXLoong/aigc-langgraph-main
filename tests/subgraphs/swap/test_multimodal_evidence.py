@@ -7,7 +7,6 @@ import pytest
 from app.extraction.candidates import candidate_model
 from app.subgraphs.swap import multimodal as mm
 from app.subgraphs.swap.models import SwapPlaceOrderParams
-from app.tools.ticker_client import TickerClientHttpx
 
 IMAGE_TEXT = "甲证券 买入 1.5万股 限价20"
 IMAGE_REF = "file:0:image"
@@ -28,9 +27,7 @@ def patch_models(monkeypatch, orders, text=IMAGE_TEXT, tickers=None):
         return_value=candidate_model(SwapPlaceOrderParams).model_validate({"orderList": orders})
     )
     monkeypatch.setattr(mm, "get_qwen_structured", lambda: model)
-    resolver = AsyncMock(side_effect=AssertionError("backend owns security resolution"))
-    monkeypatch.setattr(TickerClientHttpx, "search_securities_instrument", resolver)
-    return vl, model, resolver
+    return vl, model
 
 
 def order():
@@ -39,7 +36,7 @@ def order():
 
 
 async def test_image_candidates_normalized_bound_and_locked(monkeypatch):
-    _, model, resolver = patch_models(monkeypatch, [order()])
+    _, model = patch_models(monkeypatch, [order()])
     out = await mm.swap_image_order({"input_files": [{"type": "image", "url": "https://file/img"}]})
     assert not out.get("error")
     row = out["place_params"]["orderList"][0]
@@ -55,7 +52,6 @@ async def test_image_candidates_normalized_bound_and_locked(monkeypatch):
     assert ticker.source == "user"
     assert ticker.origin == quantity.origin
     assert "attachment:" + IMAGE_REF in model.with_structured_output.return_value.ainvoke.call_args.args[0][-1][1]
-    resolver.assert_not_awaited()
 
 
 async def test_unknown_ticker_is_delegated_to_backend(monkeypatch):
@@ -66,10 +62,9 @@ async def test_unknown_ticker_is_delegated_to_backend(monkeypatch):
 
 
 async def test_empty_attachment_orders_do_not_reach_submit(monkeypatch):
-    _, _, resolver = patch_models(monkeypatch, [], text="")
+    patch_models(monkeypatch, [], text="")
     out = await mm.swap_image_order({"input_files": [{"type": "image", "url": "https://file/img"}]})
     assert out.get("error") is not None
-    resolver.assert_not_awaited()
 
 
 async def test_foreign_attachment_reference_is_rejected(monkeypatch):
@@ -116,7 +111,7 @@ async def test_excel_header_unit_is_applied_by_code_and_keeps_cell_reference(mon
 
 
 async def test_excel_two_rows_keep_separate_evidence_and_orders(monkeypatch):
-    _, model, resolver = patch_models(monkeypatch, [])
+    _, model = patch_models(monkeypatch, [])
     model.with_structured_output.return_value.ainvoke.side_effect = [
         candidate_model(SwapPlaceOrderParams).model_validate({"orderList": [{
             "placeOrderWindCode": field("甲证券", f"file:0:sheet:0:row:{index}:column:A"),
@@ -132,7 +127,6 @@ async def test_excel_two_rows_keep_separate_evidence_and_orders(monkeypatch):
     records = out["field_records"]
     assert records["swap/place_order.orderList.0.placeOrderQuantity"].origin.endswith("row:2:column:B")
     assert records["swap/place_order.orderList.1.placeOrderQuantity"].origin.endswith("row:3:column:B")
-    resolver.assert_not_awaited()
 
 
 async def test_authorized_counterparty_is_bound_and_locked(monkeypatch):

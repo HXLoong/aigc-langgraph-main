@@ -58,7 +58,7 @@ class GoldenCase(BaseModel):
     #: first_turn：case 级 expected 已复制到 turns[0].expected（A、单轮 B、raw）；
     #: any_turn：多轮 B，case 级 expected 由 differ.check_case_assertions 对所有已执行轮判定
     expected_scope: str = "first_turn"
-    #: 非空即不可执行（如 B 方言某轮 raw_content 为空——用户文本被写进了 quote_desc，Issue #113）；
+    #: 非空即不可执行（如 B 方言某轮 raw_content 为空——用户文本被写进了 quote_desc）；
     #: 加载与计数照常，runner / eval 用 select_runnable 跳过并显式报数
     skip_reason: str = ""
     turns: list[TurnSpec] = Field(default_factory=list)

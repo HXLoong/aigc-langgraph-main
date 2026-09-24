@@ -89,13 +89,13 @@ class Settings(BaseSettings):
     enable_langfuse: bool = False
     langfuse_public_key: str = ""
     langfuse_secret_key: str = ""
-    langfuse_base_url: str = "https://cloud.langfuse.com"
+    langfuse_base_url: str = "http://127.0.0.1:3000"
     langfuse_project: str = "otc-agent"
     # 是否信任入站 W3C traceparent（把请求挂到调用方父 Trace）。仅可信网络（测试工作台）开启；
     # 与 environment 解耦（ADR 0024 D5）
     trust_inbound_traceparent: bool = False
 
-    # === Checkpointer（ADR 0009/0021，#153 接线）===
+    # === Checkpointer（ADR 0009/0021）===
     # 生产必须 true（多轮状态持久化）；开发/CI 默认 false 避免 MySQL 依赖与脏 checkpoint
     use_mysql_checkpointer: bool = False
     # checkpoint 连接池（ADR 0024 D4）：from_conn_string 单连接无重连，生产禁用；
@@ -111,7 +111,7 @@ class Settings(BaseSettings):
 
     # shadow 对照用：拦截 *.operate / close_order_* 等"写类"客户端调用，
     # 返回 fake CommonResult，避免 LangGraph 替代客户真下单/真撤单。
-    # read 类（query / get / list / search / get_inference_prompt）正常调真后端。
+    # read 类（query / get / list）正常调真后端。
     # 详见 docs/deploy/SHADOW_COMPARE_GUIDE.md
     dry_run_backend: bool = False
 

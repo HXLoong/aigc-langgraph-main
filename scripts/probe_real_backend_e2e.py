@@ -1,8 +1,7 @@
 #!/usr/bin/env python3
 """真后端 E2E probe runner · 切流前最后一道真后端保障。
 
-整合原 4 个手动 probe（probe_swap_write_e2e / probe_option_write_e2e /
-probe_close_write_e2e / probe_ticker_e2e）：
+整合互换 / 期权 / 平仓写路径与标的相关消息的真后端探针：
 
 - 统一参数：--target swap|option|close|ticker|all
 - 强制校验 EVAL_USER_ID / EVAL_ROOM_ID（避免污染生产业务流）

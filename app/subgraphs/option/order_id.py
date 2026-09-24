@@ -1,18 +1,13 @@
-"""option 订单号确定性提取（瘦身 P1：撤单 / 取消下单 / 确认撤单 / 查单 4 节点去 LLM 化）。
+"""option 订单号确定性提取（撤单 / 取消下单 / 确认撤单 / 查单 4 个节点共用）。
 
-背景（对照 docs/swap-prompt-slimming-assessment.md 病灶 2）：原 4 个 LLM 节点
-（request_cancel_order / cancel_order_request / confirm_cancel_order /
-query_order_status）的唯一任务是提取 Q- 订单号——确定性正则即可完成，
-零幻觉、零成本、零延迟。被替换的 4 个提示词文件已同批删除。
-
-各意图的来源优先级 1:1 对照原提示词规约：
+用正则提取 Q- 订单号，不调用 LLM。各意图的来源优先级：
 - request_cancel       raw 指定具体订单则用 raw；否则从 quote 取全部；均无 → [None]
 - cancel_order_request 只取消 quote 中的订单；raw 指定则只取指定的几笔；无 quote → [None]
 - confirm_cancel_order 仅从 quote 取（机器人撤单确认消息，多单全取）；均无 → [None]
 - query_order_status   raw 优先，否则 quote；均无 → [None]
 
-均无时返回 `[None]` 而不是 `[]`：与历史 LLM 输出形状一致（orderList 保留一条
-orderId=null 的占位条目，下游接口据此查询近期全部订单）。
+均无时返回 `[None]` 而不是 `[]`：orderList 保留一条 orderId=null 的占位条目，
+下游接口据此查询近期全部订单。
 """
 from __future__ import annotations
 

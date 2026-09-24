@@ -2,7 +2,6 @@
 
 - 状态：已采纳（图片 / Excel 链路另配视觉模型，见 §3）
 - 日期：2026-08-27
-- 关系：取代早期的"开发用 Qwen / 现场用 DeepSeek"双模型方案与 Qwen 型号分工（原 0010 / 0018 号，已删除）
 - 作者：图灵科技 + Tony
 
 ## 背景
@@ -13,7 +12,7 @@
 
 ### 1. 模型统一
 
-开发、测试、评测与现场生产的所有文本 LLM 调用统一使用 `deepseek-v4-pro`，并统一**关闭思考模式**。切换只通过 `.env`，代码不硬编码 vendor（环境变量沿用历史前缀 `QWEN_*`）：
+开发、测试、评测与现场生产的所有文本 LLM 调用统一使用 `deepseek-v4-pro`，并统一**关闭思考模式**。切换只通过 `.env`，代码不硬编码 vendor（环境变量前缀为 `QWEN_*`）：
 
 ```dotenv
 QWEN_API_BASE=https://api.deepseek.com/v1
@@ -45,5 +44,5 @@ DeepSeek 暂无视觉模型。互换图片 / Excel 链路（`app/subgraphs/swap/
 - 正面：开发 / 评测 / 现场单一口径，数据集回归结论可直接外推现场；vendor 差异集中在一处，节点代码零改动。
 - 负面：旧 Qwen 口径的评测与延迟基线作废，需在当前模型上重建（ADR 0030 D3）；开发环境依赖公网 DeepSeek API 的可用性与计费安排。
 - 回退：`.env` 切回 §1 四行即可，适配层按模型名分支，双 vendor 兼容，无需改代码。
-- 分化前置纪律：工厂函数（`get_qwen_standard` / `get_qwen_thinking` / `get_qwen_structured` / `get_qwen_complex`）保留为未来按节点分化模型的挂载点；真要让不同工厂指向不同模型之前，须先把 structured output 调用点归位到语义正确的工厂，否则多数节点会静默跟随 thinking 工厂。函数名与环境变量沿用 `qwen` 前缀属历史命名。
+- 分化前置纪律：工厂函数（`get_qwen_standard` / `get_qwen_thinking` / `get_qwen_structured` / `get_qwen_complex`）保留为未来按节点分化模型的挂载点；真要让不同工厂指向不同模型之前，须先把 structured output 调用点归位到语义正确的工厂，否则多数节点会静默跟随 thinking 工厂。函数名与环境变量的 `qwen` 前缀只是命名，不代表模型厂商。
 - 教训：早期曾以"OpenAI 兼容接口、风险低"为由跳过 DeepSeek 冒烟验证，全量切换时才暴露 §2 两处硬差异。接口兼容不等于行为兼容，换模型须先跑数据集评测。

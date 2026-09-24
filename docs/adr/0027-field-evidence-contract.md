@@ -1,9 +1,8 @@
 # ADR 0027 · 字段证据契约：模型只产原文候选，Code 归一化并记录来源与锁定
 
-- 状态：已采纳（追认：2026-09-18 落地，起始 commit `58e5650`；2026-09-20 确认协议收口 `9493cb9`；2026-09-22 补记）
+- 状态：已采纳（追认，落地 commit `58e5650` / `9493cb9`）
 - 日期：2026-09-18
 - 关系：修订 [ADR 0023](./0023-prompt-as-code-langgraph.md) D2（模型不再直接输出最终值）、[ADR 0024](./0024-langgraph-native-rearchitecture.md) D2（新增 `field_records` 通道）；配合 [ADR 0025](./0025-instrument-resolution-delegated-to-backend.md)
-- 接入进度：[docs/migration-20260918/README.md](../migration-20260918/README.md)
 - 作者：图灵科技 + Tony
 
 ## 背景
@@ -58,4 +57,3 @@ swap 三确认、option 确认下单 / 确认撤单、close 确认平仓 / 确�
 - [ADR 0025](./0025-instrument-resolution-delegated-to-backend.md) · 标的原文透传
 - [ADR 0026](./0026-request-idempotency-uncertain-receipts-reconciliation.md) · E1–E5 错误分类
 - `.claude/rules/langgraph-patterns.md` · 操作口径（原文候选含 evidence / confidence / source；Code 验证）
-- [docs/migration-20260918/README.md](../migration-20260918/README.md) · 节点接入进度与字段契约快照

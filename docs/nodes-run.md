@@ -26,12 +26,7 @@ python -m venv .venv
 - `QWEN_API_BASE`、`QWEN_API_KEY` 和 `QWEN_MODEL_*` 可用；这些历史变量名也用于当前 DeepSeek/Qwen 兼容网关。
 - `DRY_RUN_BACKEND=false`，允许请求实际发往配置的后端。
 
-如果 `.env` 中启用了 `USE_MYSQL_CHECKPOINTER=true`，先启动 MySQL：
-
-```powershell
-docker compose up -d mysql
-docker compose ps mysql
-```
+如果 `.env` 中启用了 `USE_MYSQL_CHECKPOINTER=true`，确认 `MYSQL_URI` 指向的 Java 数据库可连通，且已执行过 [sql/init.sql](../sql/init.sql)（LangGraph 不自带 MySQL 容器）。
 
 如果只调试不依赖 checkpoint 或数据库的节点，可以在 `.env` 中暂时设 `USE_MYSQL_CHECKPOINTER=false`。要测试 `main/persist`，还需确认业务库已执行 [sql/init.sql](../sql/init.sql)。
 
@@ -261,7 +256,7 @@ $env:RUN_LOCAL_MYSQL_TESTS = '1'
 Remove-Item Env:RUN_LOCAL_MYSQL_TESTS
 ```
 
-完整回归仍按仓库统一命令执行。2026-09-20 的一次性环境、结果和视觉模型限制已单独归档在[节点接口验收记录](testing/nodes-run-acceptance-20260920.md)，不要把该历史记录当作当前全量基线。
+完整回归仍按仓库统一命令执行。
 
 实现入口：[路由](../app/api/nodes.py)、[注册表](../app/node_execution/registry.py)、[准备器](../app/node_execution/prepare.py)、[校验器](../app/node_execution/validation.py)、[执行器](../app/node_execution/executor.py)。
 

@@ -347,6 +347,5 @@ curl ... -d '{"inputs":{"raw_text":"完全不存在的标的xyz 询价"...}'
 - [`docs/api-contracts/java-backend.md`](../api-contracts/java-backend.md) · Java 后端契约
 - ADR 0009 · MySQL 版本兼容性
 - ADR 0014 · LangFuse 后端
-- ADR 0018 · 双模型分立
+- ADR 0020 · 全量 DeepSeek-V4-pro
 - `scripts/deploy-customer.sh`
-- `scripts/build-offline-bundle.sh`

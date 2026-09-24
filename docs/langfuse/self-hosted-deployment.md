@@ -55,7 +55,7 @@ done
 | Docker Hub `hub.docker.com` | 拉取 langfuse / postgres / clickhouse / redis / minio 镜像 | 推荐 |
 | 客户内网镜像仓库 | 离线场景从内部仓库拉镜像 | 离线场景必须 |
 
-**离线部署**：参考 C1.14（#59）的离线包导入流程。
+**离线部署**：先在联网环境 `docker save` 上述镜像，再在客户内网 `docker load` 或推入内部镜像仓库。
 
 ### 1.4 持久化卷
 
@@ -160,7 +160,7 @@ redis (健康) ──────┘
 
 ### 3.3 注入到 LangGraph 应用
 
-把上一步的 API Key 写到 LangGraph 应用的 `.env`（参考 C1.12 模板）：
+把上一步的 API Key 写到 LangGraph 应用的 `.env`（参考根目录 `.env.customer.template`）：
 
 ```bash
 LANGFUSE_HOST=http://<langfuse-host>:3000
@@ -275,7 +275,7 @@ docker run --rm --network host \
 
 ### 6.2 trace 量暴涨预警
 
-若日 trace 数突增 ≥ 30% 触发告警（C1.6 #55 / C1.7 #56 联动）：
+若日 trace 数较前一周均值突增 ≥ 30%（LangFuse dashboard 观察）：
 
 - 可能原因：业务量增长 / 调试漏关 trace / cascade fail 循环触发
 - 处置：先查 LangFuse dashboard 哪些 project 暴涨；定位异常调用方
@@ -390,8 +390,7 @@ docker volume rm langfuse_clickhouse_logs
 | ADR | [ADR 0014 · LangFuse 作为 Harness 后端](../adr/0014-langfuse-as-harness-backend.md) |
 | 客户环境调研 §7 | [`docs/customer/customer-env-assessment.md`](../customer/customer-env-assessment.md) |
 | On-call runbook §5.5 | [`docs/on-call-runbook.md`](../on-call-runbook.md) |
-| 一键部署脚本（C1.13） | `scripts/deploy-customer.sh`（PR 待发布） |
-| 离线包打包（C1.14） | `scripts/build-offline-bundle.sh`（PR 待发布） |
+| 一键部署脚本 | `scripts/deploy-customer.sh` |
 | LangFuse 官方文档 | https://langfuse.com/self-hosting |
 
-**故障升级路径**：本文档无法解决的问题 → 联系图灵科技工程负责人 #25（联系方式见 on-call runbook 附录 A）。
+**故障升级路径**：本文档无法解决的问题 → 联系图灵科技工程负责人（联系方式见 on-call runbook 附录 A）。

@@ -1,4 +1,4 @@
-"""C1.7 LLM 成本监控单元测试（Issue #56）。"""
+"""LLM 成本监控单元测试。"""
 from __future__ import annotations
 
 from unittest.mock import patch

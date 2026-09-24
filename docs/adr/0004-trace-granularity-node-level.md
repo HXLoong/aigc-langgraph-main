@@ -2,7 +2,7 @@
 
 - 状态：已采纳
 - 日期：2026-05-10
-- 关系：trace 后台由 [ADR 0014](./0014-langfuse-as-harness-backend.md) 从 LangSmith 改为 LangFuse（文件名保留历史命名）
+- 关系：trace 后台为自托管 LangFuse（[ADR 0014](./0014-langfuse-as-harness-backend.md)）
 - 作者：图灵科技 + Tony
 
 ## 决策

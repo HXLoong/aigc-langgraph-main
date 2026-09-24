@@ -103,7 +103,7 @@ def test_parse_alerts_py_p0_alerts() -> None:
 
 
 def test_parse_adr_0019_includes_p95() -> None:
-    """ADR 0019 §1 表必须含 p95_latency_degraded（PR #103 同步项）。"""
+    """ADR 0019 §1 表必须含 p95_latency_degraded。"""
     out = parse_adr_0019()
     assert "p95_latency_degraded" in out, "ADR 0019 §1 表缺 p95_latency_degraded"
 

@@ -1,17 +1,11 @@
-"""swap 订单号确定性提取(瘦身 P1:撤单/查单/三确认节点去 LLM 化)。
+"""swap 订单号确定性提取（撤单 / 查单 / 三类确认节点共用）。
 
-背景(docs/swap-prompt-slimming-assessment.md 病灶 2):原 5 个 LLM 节点
-(cancel_order / query_order / confirm_order / confirm_cancel / confirm_modify)
-的唯一任务是按格式 `H-YYYYMMDD-XXXXXXXXXX` 提取订单号——确定性正则即可完成,
-零幻觉、零成本、零延迟。被替换的 5 个节点提示词已同批删除
-(另含旧合并版快照 confirm.md；零加载点即删,ADR 0022)。
-
-各意图的来源优先级 1:1 对照原提示词规约:
-- cancel:raw 的单号/序号/标的/合约共同限定，无法确定时抛 CancelScopeError；无范围才取 quote 全部
-- query:raw 优先,否则 quote
-- confirm_order:quote 中全部(首现顺序去重、不遗漏),quote 无则 raw
-- confirm_cancel / confirm_modify:quote 优先,否则 raw
-均无 → [None](撤单仅在未指定范围时兜底,形状与原 LLM 输出一致)。
+按格式 `H-YYYYMMDD-XXXXXXXXXX` 用正则提取订单号，不调用 LLM。各意图的来源优先级：
+- cancel：raw 的单号/序号/标的/合约共同限定，无法确定时抛 CancelScopeError；无范围才取 quote 全部
+- query：raw 优先，否则 quote
+- confirm_order：quote 中全部（首现顺序去重、不遗漏），quote 无则 raw
+- confirm_cancel / confirm_modify：quote 优先，否则 raw
+均无 → [None]（撤单仅在未指定范围时兜底；orderList 保留一条 orderId=null 的占位条目）。
 """
 from __future__ import annotations
 

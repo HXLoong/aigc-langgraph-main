@@ -16,12 +16,12 @@ ADR 0030 D3 的上线观察层回答"是否已经稳定"；本 ADR 回答"正在
 | name | severity | 阈值 | 持续 | 触发动作 | 测量现状 |
 |---|---|---|---|---|---|
 | `http_5xx_spike` | P0 | 5xx 率 ≥ 1% | 5 分钟 | 立即介入 + 评估回切 | ✅ |
-| `cascade_fail_high` | P1 | fallback{cascade_fail} 率 ≥ 5% | 10 分钟 | 15 分钟介入 | ✅ 分母 = `http_total`（总请求数，2026-08-27 修复，与 0030 D3 口径统一） |
+| `cascade_fail_high` | P1 | fallback{cascade_fail} 率 ≥ 5% | 10 分钟 | 15 分钟介入 | ✅ 分母 = `http_total`（总请求数，与 0030 D3 口径统一） |
 | `llm_failure_high` | P1 | llm_total{status≠ok} 率 ≥ 10% | 5 分钟 | 15 分钟介入 | ✅ |
 | `non_canary_traffic` | P0 | is_canary=false 计数 ≥ 1 | 即时 | 立即回切 Webhook | ✅ runbook §3 已补条目，lint 校验 5/5/5 |
-| `p95_latency_degraded` | P1 | P95 端到端 ≥ 25662ms（8554 × 3，`M2_BASELINE_P95_MS` 可调） | 10 分钟 | 15 分钟介入 | ✅ 端到端埋点已接线且 P95 剔除节点级样本；2026-09-24 已按 DeepSeek dry-run 参考值回填，生产需覆盖 |
+| `p95_latency_degraded` | P1 | P95 端到端 ≥ 25662ms（8554 × 3，`M2_BASELINE_P95_MS` 可调） | 10 分钟 | 15 分钟介入 | ✅ 端到端埋点已接线且 P95 剔除节点级样本；默认值取 DeepSeek dry-run 参考值，生产需覆盖 |
 
-P95 基准（2026-09-24）：已用当前模型（[ADR 0020](./0020-unify-all-llm-on-deepseek-v4-pro.md)）本地 dry-run 实测 P95 8554ms 替换早期占位值，作为参考基线。生产启用前须按相同部署拓扑测量，并通过 `M2_BASELINE_P95_MS` 覆盖；采样口径与边界见 `docs/on-call-runbook.md` §3。
+P95 基准：当前模型（[ADR 0020](./0020-unify-all-llm-on-deepseek-v4-pro.md)）本地 dry-run 实测 P95 8554ms（截至 2026-09-24），作为参考基线。生产启用前须按相同部署拓扑测量，并通过 `M2_BASELINE_P95_MS` 覆盖；采样口径与边界见 `docs/on-call-runbook.md` §3。
 
 ### 2. 人工升级判定（与 `docs/on-call-runbook.md` §3 对应）
 

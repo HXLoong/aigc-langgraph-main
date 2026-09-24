@@ -101,7 +101,7 @@ def test_ids_must_be_unique_across_categories_and_unified(tmp_path: Path) -> Non
 
 
 def test_unknown_product_type_in_unified_is_a_warning_not_an_error(tmp_path: Path) -> None:
-    """9 条 query/* 记录标了运行时不存在的 product_type=query（Issue #113 业务方 review 项）：
+    """9 条 query/* 记录标了运行时不存在的 product_type=query（业务方 review 项）：
     schema 合法故不阻断，但要能被列出来。"""
     _write_unified(tmp_path, [_b_case(id="query-001", category="query/trs", expected={
         "product_type": "query", "intent": "query_order_status", "output": ""})])

@@ -1,7 +1,7 @@
 # ADR 0015 · 一级路由：规则前置 + LLM 兜底
 
 - 状态：已采纳
-- 日期：2026-05-10（2026-08-28 按新版业务流程重构为两层）
+- 日期：2026-08-28
 - 关系：入口层由 [ADR 0028](./0028-session-entry-and-multi-instruction-send-orchestration.md) 前置；新增产品时遵循 [ADR 0007](./0007-subgraph-vs-intent-scope-rule.md)
 - 作者：图灵科技 + Tony
 
@@ -31,4 +31,3 @@
 - 大部分流量省一次 LLM 调用，成本与延迟双优。
 - 新增产品需同步规则层、兜底提示词、标签映射与数据集；订单号前缀变更须走 ADR 并回归评估。
 - 规则层会随错例分析持续生长，新增规则必须在 trace 来源中可辨识，并有回归用例（`tests/nodes/test_route_rules_context.py`、`tests/nodes/test_intent_route_sticky.py`）。
-- 历次重构（四层路由 → 两层、多轮语境修正及其量化结果）见 [实施记录归档](../archive/history/adr-implementation-log-2026-09.md)。

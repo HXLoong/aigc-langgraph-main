@@ -1,4 +1,4 @@
-"""#159 裁决落地：judge 提示词从 langfuse_eval.py 硬编码抽到 app/prompts/judge/（ADR 0005 版本化要求）。
+"""judge 提示词从 langfuse_eval.py 硬编码抽到 app/prompts/judge/（ADR 0005 版本化要求）。
 
 （原第二项"export_dify_prompts.py 默认拒绝覆盖"随 Dify 同步链路退役删除，ADR 0024 D1。）
 """

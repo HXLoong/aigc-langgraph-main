@@ -87,7 +87,7 @@ def safe_node(
                     )
                 update["trace"] = _stamp_elapsed(existing_trace, node_name, elapsed_ms)
 
-            # C1.5 监控埋点：节点完成成功
+            # 监控埋点：节点完成成功
             emit_node_completed(node=node_name, status="ok", elapsed_ms=elapsed_ms)
 
             return update
@@ -101,7 +101,7 @@ def safe_node(
                 raise
             logger.exception("node=%s error=%s", node_name, type(exc).__name__)
 
-            # C1.5 监控埋点：节点抛异常（cascade fail 源头）
+            # 监控埋点：节点抛异常（cascade fail 源头）
             emit_node_completed(node=node_name, status="error", elapsed_ms=elapsed_ms)
 
             failed = {

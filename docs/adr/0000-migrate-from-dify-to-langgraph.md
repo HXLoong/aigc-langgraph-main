@@ -26,4 +26,4 @@
 
 四个痛点的解法均已建成（见 [ADR 0002](./0002-comprehensive-runtime-harness.md)）：`harness/` 评测台、节点级 trace（MySQL + LangFuse）、按 B / C / D 桶管理的数据集、LLM Judge 自动评分。
 
-2026-09-17 起 **Dify 完全退出上游地位**（[ADR 0024](./0024-langgraph-native-rearchitecture.md) D1）：代码与 git 中的提示词是唯一真源，Dify 资产冻结为历史参照，同步工具已删除。原计划的"Shadow 双跑校准"降为可选对照工具，验收改为数据集评测门（[ADR 0030](./0030-goal-restatement-native-langgraph-dataset-eval-harness.md) D3）。
+现状：**Dify 已退出上游地位**（[ADR 0024](./0024-langgraph-native-rearchitecture.md) D1）：代码与 git 中的提示词是唯一真源，不再有 Dify 同步链路；Shadow 对照只是可选工具，验收以数据集评测门为准（[ADR 0030](./0030-goal-restatement-native-langgraph-dataset-eval-harness.md) D3）。

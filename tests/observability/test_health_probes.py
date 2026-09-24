@@ -1,4 +1,4 @@
-"""D2.6 健康检查 probe + 路由测试（Issue #72）。"""
+"""健康检查 probe + 路由测试。"""
 from __future__ import annotations
 
 import asyncio

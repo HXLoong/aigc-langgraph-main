@@ -119,7 +119,7 @@ def test_workflows_run_returns_dify_compatible_schema(
 
     # outputs 含 product_type / intent
     outputs = data["outputs"]
-    assert outputs["product_type"] == "swap"  # M1 默认
+    assert outputs["product_type"] == "swap"  # 原文含「互换下单」
     assert outputs["intent"] is not None
     # 核销凭据（plan0909 R2）：HTTP 形态下状态码 / 后端结果 / 节点链可判定
     assert outputs["api_code"] == 0
@@ -279,7 +279,7 @@ def _patch_langfuse(
 async def test_self_created_trace_reuses_request_trace_id(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """自建 Trace 时 LangFuse trace id 复用业务 request_trace_id（ADR 0004/#156）。"""
+    """自建 Trace 时 LangFuse trace id 复用业务 request_trace_id（ADR 0004）。"""
     captured: dict[str, object] = {}
     _patch_langfuse(monkeypatch, captured)
 
@@ -685,7 +685,7 @@ def test_workflows_run_rejects_conflicting_input_aliases(
 
 
 def test_workflows_run_emits_end_to_end_latency(client: TestClient) -> None:
-    """#157：请求出口必须写端到端延迟直方图（无 node label，区别于节点级样本）。"""
+    """请求出口必须写端到端延迟直方图（无 node label，区别于节点级样本）。"""
     client.post(
         "/v1/workflows/run",
         json={

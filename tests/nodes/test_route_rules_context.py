@@ -1,4 +1,4 @@
-"""#167 P0-1/P0-2：规则层引用语境测试（真实卡片文案 fixture，非 quote_desc 占位符）。
+"""规则层引用语境测试（真实卡片文案 fixture，非 quote_desc 占位符）。
 
 修复对象：口语化平仓(step2)/互换下单特征(step4)在关键词计数层之前截胡、
 不消费 quote 的期权语境——引用期权卡后的跟进指令被错分互换（golden 45 条实锤）。
@@ -74,7 +74,7 @@ class TestSwapBehaviorPreserved:
 
 
 class TestHoldingQuoteFollowup:
-    """引用期权持仓卡后的序号/减仓跟进 → 期权平仓链（#167 修复第二层，57 条实锤）。"""
+    """引用期权持仓卡后的序号/减仓跟进 → 期权平仓链（规则层第二道判定）。"""
 
     def test_close_remaining(self) -> None:
         assert classify_trade_type("序号1市价平留300万", HOLDING_CARD) == "期权平仓-文本"

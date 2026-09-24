@@ -18,7 +18,7 @@
 
 <div class="callout">
 <span class="callout-title">为什么学这个（对齐任务）</span>
-"可严肃测试"是我们迁出 Dify 的第一理由（handbook 第 1.1 节），841 个测试就是成果。但这套体系有两条纪律撑着：<strong>依赖反转</strong>（后端可 mock）和 <strong>TDD 强制</strong>（CLAUDE.md 核心原则第 5 条：先写失败测试再改代码，禁止反过来）。你的每一个 PR 都会被用这两条检验。
+"可严肃测试"是我们迁出 Dify 的第一理由（ADR 0000），数千个测试就是成果。但这套体系有两条纪律撑着：<strong>依赖反转</strong>（后端可 mock）和 <strong>TDD 强制</strong>（CLAUDE.md 核心原则第 5 条：先写失败测试再改代码，禁止反过来）。你的每一个 PR 都会被用这两条检验。
 </div>
 
 <h2>1. Protocol：三行接口换来整个可测性（8 分钟）</h2>
@@ -150,7 +150,6 @@ monkeypatch.setattr(<span class="st">"app.subgraphs.swap.intent.get_qwen_thinkin
 <h2>6. 延伸与下一课</h2>
 <ul>
 <li><strong>本课首选一手资料</strong>：<code>tests/CLAUDE.md</code> + <code>.claude/rules/testing.md</code>（mock 陷阱与测试金字塔的项目权威出处）</li>
-<li>深入：<code>docs/training/langgraph-handbook.md</code> 第 4.3.4 节（Dify HTTP 节点对照）、第 9 章（测试与 harness）；<code>docs/api-contracts/java-backend.md</code>（写 ReqVO 必看）</li>
 <li>工具：修 bug 时可用 <code>/test-driven-development</code> skill 走完整 TDD workflow</li>
 <li>下一课：<a href="0008-harness-golden-pr.html">第 08 课 · harness 与 golden case：你的第一个 PR</a>——最后一课，把一切串成上线标准</li>
 </ul>

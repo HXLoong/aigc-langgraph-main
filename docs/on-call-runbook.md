@@ -264,7 +264,7 @@
 - **`docs/deploy/SHADOW_COMPARE_GUIDE.md`** · Shadow 对照工具（可选，与本手册无直接依赖）
 - **`docs/TROUBLESHOOTING.md`** · 开发期通用故障排查（与生产 on-call 不同语境）
 
-## checkpoint 表清理(客户现场例行运维,2026-08 架构体检改进 B)
+## checkpoint 表清理（客户现场例行运维）
 
 LangGraph checkpoint 三表(checkpoints / checkpoint_blobs / checkpoint_writes)只增不减,
 长期运行持续膨胀。按「线程最近一次 checkpoint 时间」清理,保留活跃会话完整历史:

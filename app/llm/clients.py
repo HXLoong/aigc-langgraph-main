@@ -1,8 +1,8 @@
-"""LLM 客户端封装（标准模型客户端，非仅 Qwen —— ADR 0018）。
+"""LLM 客户端统一工厂（ADR 0020：全环境统一 DeepSeek-V4-pro）。
 
 全部走 OpenAI 兼容 API，用 langchain_openai.ChatOpenAI。
 vendor 由 .env 的 QWEN_API_BASE / QWEN_API_KEY / QWEN_MODEL_* 切换
-（`qwen_` 前缀是历史通用命名，现场=DeepSeek-v4-pro，开发期=Qwen）。
+（`qwen_` 前缀是历史命名，当前全部指向 DeepSeek-V4-pro）。
 
 当前策略：全部节点统一关闭思考模式，以速度为先
 （4-7s/长 prompt vs thinking 模式 60-180s）。

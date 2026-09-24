@@ -80,7 +80,7 @@ CREATE TABLE IF NOT EXISTS langgraph_node_trace (
     id              BIGINT          PRIMARY KEY AUTO_INCREMENT COMMENT '节点追踪记录自增主键',
     message_id      VARCHAR(64)     NOT NULL COMMENT '关联的企微消息 ID',
     thread_id       VARCHAR(128)    NOT NULL COMMENT 'LangGraph thread_id',
-    trace_id        VARCHAR(64)     NOT NULL DEFAULT '' COMMENT '单次 graph 调用关联 ID（ADR 0004/#156，关联 LangFuse）',
+    trace_id        VARCHAR(64)     NOT NULL DEFAULT '' COMMENT '单次 graph 调用关联 ID（ADR 0004，关联 LangFuse）',
     node_name       VARCHAR(64)     NOT NULL COMMENT '图中执行的节点名称',
     step_index      INT             NOT NULL COMMENT '节点执行顺序',
     input_preview   TEXT            COMMENT '输入预览',

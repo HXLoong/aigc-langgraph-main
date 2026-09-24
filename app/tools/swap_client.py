@@ -141,7 +141,7 @@ class SwapClient(Protocol):
 class SwapClientHttpx:
     """走 httpx 的 SwapClient 实现。"""
 
-    #: F4.1 shadow 期 read 类 intent 白名单（即使调 operate 也不 dry-run 拦截）
+    #: shadow 对照时的 read 类 intent 白名单（即使调 operate 也不 dry-run 拦截）
     _READ_INTENTS: frozenset[str] = frozenset({
         "query_order_status",  # 查订单状态
         "unknown_intent",      # 兜底
@@ -155,7 +155,7 @@ class SwapClientHttpx:
         transport: httpx.AsyncBaseTransport | None = None,
         dry_run: bool | None = None,
     ) -> None:
-        """transport 仅测试用；dry_run 为 F4.1 shadow 期写类拦截开关（None=读 settings）。"""
+        """transport 仅测试用；dry_run 为 shadow 对照的写类拦截开关（None=读 settings）。"""
         from app.config import get_settings
         settings = get_settings()
         self._base_url = (base_url or settings.otc_api_base_url).rstrip("/")

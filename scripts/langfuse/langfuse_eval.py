@@ -21,6 +21,7 @@ import uuid
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
+from urllib.parse import urlsplit
 
 from pydantic import BaseModel, Field
 
@@ -43,8 +44,12 @@ for _k in ("ANTHROPIC_AUTH_TOKEN",):
     os.environ.pop(_k, None)
 
 # OTC_API_BASE_URL 由上方 .env 加载提供（mock 或真实 GOATS），不再强制覆盖
-# Langfuse API 不走代理
-os.environ["NO_PROXY"] = os.environ.get("NO_PROXY", "") + ",cloud.langfuse.com"
+# Langfuse API 不走代理（自托管实例通常在内网）
+_LANGFUSE_HOST = urlsplit(
+    os.environ.get("LANGFUSE_BASE_URL") or os.environ.get("LANGFUSE_HOST") or "http://127.0.0.1:3000"
+).hostname
+if _LANGFUSE_HOST:
+    os.environ["NO_PROXY"] = os.environ.get("NO_PROXY", "") + f",{_LANGFUSE_HOST}"
 
 sys.path.insert(0, str(PROJECT_ROOT))
 
@@ -478,7 +483,7 @@ async def run_langgraph_pipeline(*, item, suite: str = DEFAULT_SUITE, **kwargs):
 
 
 # ── Judge ──
-# #159 裁决：judge 提示词纳入 ADR 0003 版本化（app/prompts/judge/option_judge.md），
+# judge 提示词纳入 ADR 0003 版本化（app/prompts/judge/option_judge.md），
 # 改动走 git PR 留痕；不要在本脚本内改写 judge 正文
 JUDGE = load_prompt("judge", "option_judge").system
 
@@ -836,7 +841,7 @@ async def run_local(
     print(f"加载 {len(cases)} 条 (local, suite={suite})")
     cases, unrunnable = select_runnable(cases)
     if unrunnable:
-        print(f"跳过不可执行 case: {len(unrunnable)} 条 (某轮 raw_content 为空，见 skip_reason；Issue #113)")
+        print(f"跳过不可执行 case: {len(unrunnable)} 条 (某轮 raw_content 为空，见 skip_reason)")
     if _SKIP_IMAGE_CASES:
         skipped = [case for case in cases if _is_image_case(case)]
         cases = [case for case in cases if not _is_image_case(case)]
@@ -1021,7 +1026,7 @@ async def run_local(
                         comment=ev.comment,
                     )
             lf.flush()  # type: ignore[union-attr]
-            host = os.environ.get("LANGFUSE_HOST", "https://cloud.langfuse.com")
+            host = os.environ.get("LANGFUSE_HOST", "http://127.0.0.1:3000")
             print(f"\nLangFuse 写入成功  run={run_name}  host={host}")
         except Exception as e:
             print(f"\nLangFuse 写入失败（不影响本地结果）: {e}")
@@ -1125,7 +1130,7 @@ async def run_eval(
     print(f"\n实验完成: {result.name}")
     _print_report(result.name, result)
     print(
-        f"\nLangfuse: {os.environ.get('LANGFUSE_HOST', 'https://cloud.langfuse.com')}/project/{os.environ.get('LANGFUSE_PROJECT', 'otc-agent')}"
+        f"\nLangfuse: {os.environ.get('LANGFUSE_HOST', 'http://127.0.0.1:3000')}/project/{os.environ.get('LANGFUSE_PROJECT', 'otc-agent')}"
     )
 
 

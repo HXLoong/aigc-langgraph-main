@@ -17,7 +17,7 @@
 - 下界 8.0.19：`langgraph-checkpoint-mysql` 3.0.0 声明的最低版本；
 - 上界 < 9.6.0：MySQL 9.6 废弃生成列中的 MD5，而 checkpoint 表结构用到该特性。
 
-## 建表口径（2026-09-18 起，与 Java 共库）
+## 建表口径（与 Java 共库）
 
 - 业务表与 checkpoint 表放入 Java 现有 MySQL 数据库，全部使用 `langgraph_` 前缀；新表使用 `utf8mb4_general_ci`，不改变 Java 现有表与服务器默认规则。
 - `sql/init.sql` 是唯一初始化入口（由部署方选择数据库执行；脚本不建库、不授权）。应用启动只读校验表结构，缺表或版本不符即明确失败；不在运行期调用 `saver.setup()`。

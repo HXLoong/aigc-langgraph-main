@@ -1,4 +1,4 @@
-"""D2.3 client 不可达场景集成测试（Issue #73）。
+"""client 不可达场景集成测试。
 
 3 个 client × 4 类故障 = 12 个测试。
 用各 Client 自带的 transport= 注入 httpx.MockTransport 模拟 timeout / ConnectError / 5xx / 4xx，
@@ -13,7 +13,6 @@ from app.tools import (
     FinancialOrderOpenApiBaseSaveReqVO,
     FinancialOrderOpenApiSaveReqVO,
     OptionIntentionType,
-    SecuritiesInstrumentReqVO,
     SwapIntentionType,
     SwapOrderOpenApiBaseSaveReqVO,
     SwapOrderOpenApiSaveReqVO,
@@ -21,7 +20,7 @@ from app.tools import (
 from app.tools.exceptions import BackendUnreachableError
 from app.tools.option_client import OptionClientHttpx
 from app.tools.swap_client import SwapClientHttpx
-from app.tools.ticker_client import KeywordItem, TickerClientHttpx
+from app.tools.ticker_client import TickerClientHttpx
 
 # ============================================================
 # httpx MockTransport 工厂
@@ -87,12 +86,6 @@ def _swap_req() -> SwapOrderOpenApiSaveReqVO:
         userId="u1",
         roomId="r1",
         orderList=[SwapOrderOpenApiBaseSaveReqVO()],
-    )
-
-
-def _ticker_req() -> SecuritiesInstrumentReqVO:
-    return SecuritiesInstrumentReqVO(
-        keywordItems=[KeywordItem(keyword="贵州茅台", isFull=False)]
     )
 
 
@@ -173,13 +166,13 @@ async def test_swap_operate_unreachable(
         (_500_handler, "http_503"),
     ],
 )
-async def test_ticker_search_unreachable(
+async def test_ticker_list_counterparty_unreachable(
     handler,
     expected_reason: str,
 ) -> None:
     ticker_client = _ticker_client(handler)
     with pytest.raises(BackendUnreachableError) as exc_info:
-        await ticker_client.search_securities_instrument(_ticker_req())
+        await ticker_client.list_counterparty(room_id="r1")
     assert exc_info.value.target == "ticker"
     assert exc_info.value.reason == expected_reason
 
@@ -206,8 +199,8 @@ async def test_swap_operate_4xx_not_unreachable(
 
 
 @pytest.mark.asyncio
-async def test_ticker_search_4xx_not_unreachable(
+async def test_ticker_list_counterparty_4xx_not_unreachable(
 ) -> None:
     ticker_client = _ticker_client(_400_handler)
     with pytest.raises(httpx.HTTPStatusError):
-        await ticker_client.search_securities_instrument(_ticker_req())
+        await ticker_client.list_counterparty(room_id="r1")

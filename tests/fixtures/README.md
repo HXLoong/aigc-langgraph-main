@@ -1,33 +1,20 @@
-# 基准数据职责与恢复来源
+# 测试数据集说明
 
-## 1. 职责矩阵
+## 1. 目录与职责
 
-下表中的历史基准文件已归档到 `docs/archive/fixtures/old_typing/`（无代码消费者，2026-09-22 移出 tests/）；`unified_golden.jsonl` 仍在本目录。
-测试、合并脚本和一致性检查均读取迁移后的路径。
+| 路径 | 用途 |
+| --- | --- |
+| `categories/*.jsonl` | 现役业务验收集（A 方言），统一验收与 `harness run` 默认只加载这里 |
+| `intent/*.jsonl` | 意图集：只评一级路由与子图意图，只依赖 LLM + `mock_api`（见第 5 节） |
+| `nodes/<product>/<node>.jsonl` | 节点级 fixture，供 `python -m harness node-run` 回归（ADR 0029） |
+| `unified_golden.jsonl` | 历史参考集（B 方言），仅在显式选择时加载 |
+| `golden_swap_fresh_counterparty.jsonl` | 全新交易对手节点的工程回归样例（见第 4 节） |
+| `swap_confirmation_cases.json` | 互换确认路径的单元测试数据 |
+| `local_backend/` | 本地合成身份种子（见 `docs/testing/local-backend-seed.md`） |
 
-| 文件 | 用途 | 编号 | 记录数 |
-| --- | --- | --- | ---: |
-| `golden.jsonl` | 当前业务回归主集，保留现有编号、输入和预期 | `swap-` / `opt-` / `opt_close-` / `query-` | 535 |
-| `unified_golden.jsonl` | 历史合并集及当前主集的累计归档 | 产品前缀 + 数字；兼容历史 `close-` / `unknown-` | 921 |
-| `option_golden.jsonl` | 历史期权业务 QA 数据 | `opt-` | 131 |
-| `golden_business_seeds_2026-05.jsonl` | 历史业务种子快照 | `g` + 数字 | 287 |
-| `golden_ticker_2026-05.jsonl` | 标的回归数据 | `tk` + 三位数字 | 34 |
-| `golden_rule_anchors.jsonl` | ADR 0015 原始规则锚点 | `g001`–`g030` | 30 |
+## 2. 加载器：`harness/golden.py`（ADR 0024 D6）
 
-## 2. 恢复来源
-
-三个缺失文件恢复自 Git 提交 `68e11d5519e4d0e90546f4c4436293e9187b793b`，即删除提交 `e4c132a` 的父提交。
-
-- `option_golden.jsonl`：131 条，恢复后与 Git blob 逐字节一致。SHA-256：`9b02c3f787c9c84a52429ded805098bc9bbe031dfef5f95c3f1ba4950715212a`。
-- `golden_business_seeds_2026-05.jsonl`：287 条，恢复后与 Git blob 逐字节一致。SHA-256：`a178829cd8047b12ee285f49366cb9d5d11d7116cf04c27533eacc4df8f4c837`。
-- `unified_golden.jsonl`：先恢复原始 325 条，再通过同步脚本追加数据；原始 325 条的编号和内容保持不变。
-- `golden_rule_anchors.jsonl`：从同一提交的 `golden.jsonl` 原样抽取 `g001`–`g030`，保留输入、预期和编号。
-
-当前主集已由历史的 `g` 编号、单轮平铺结构迁移为产品编号和 `conversation` 结构。恢复独立锚点文件，避免为了满足旧检查而覆盖当前主集或改写其编号。快照用于历史追溯，不代表其中所有旧意图仍适用于当前业务契约。
-
-## 3. 现役加载器：`harness/golden.py`（ADR 0024 D6）
-
-`harness.golden.load_golden()` 是唯一现役加载器（`python -m harness run` 与
+`harness.golden.load_golden()` 是唯一加载器（`python -m harness run` 与
 `scripts/langfuse/langfuse_eval.py --local` 共用），默认只发现 `categories/*.jsonl`。
 历史参考集 `unified_golden.jsonl` 保留，通过 `python -m harness run --include-unified` 追加，
 或用 `--data` 显式选择。Python 调用对应 `load_golden(include_unified=True)`；与显式 paths
@@ -43,7 +30,7 @@ B 方言约定：后续轮 `quote_desc` 非空 → 引用上一轮实际回复�
 依赖 case）无回复可引，只保留在 `TurnSpec.quote_desc` 供概览与人工判读。某轮 `raw_content`
 为空（当前 48 条，用户文本被写进了 `quote_desc`）的 case 会被标 `skip_reason`，加载计数照常但
 runner / eval 跳过并打印数量；这类记录与 9 条 `product_type=query`（运行时无此取值）都在
-`scripts/check_fixture_consistency.py --verbose` 的 WARNING 里列出，归 Issue #113 业务方 review。
+`scripts/check_fixture_consistency.py --verbose` 的 WARNING 里列出，待业务方复核。
 
 一个文件只放一种方言：`categories/` 出现 `conversation` / `raw_content`、或 `unified_golden.jsonl`
 出现 `send_text` / `sub_scenes` 都是 lint 错误；id 跨两份文件唯一。
@@ -53,27 +40,17 @@ harness 的判定口径：`PASS` / `FAIL` / `REJECTED`（后端业务拒绝且�
 `--backend dry-run` 要求服务端 `/health` 报告 `backend_mode=dry-run`（`DRY_RUN_BACKEND=true`），否则拒绝启动；
 反之 `--backend real|mock` 打在 dry-run 服务端也会被拦，避免拿假结果当回归基线。
 
-`scripts/ai_test_langgraph/` 是早期工作台，仍能读三种记录，但已不是 gate（ADR 0024 D6 标
-deprecated），新增校验只进 `harness/`。
+## 3. 一致性要求与检查
 
-## 4. 一致性要求
-
-- 所有文件必须存在、非空，编号唯一且符合各自命名约定。
-- `unified_golden.jsonl` 的首轮输入集合必须覆盖当前 `golden.jsonl` 和规则锚点集。
-- 规则锚点 `g001`–`g030` 必须全部存在。
-- 合并脚本保留已有归档，只追加内容变化的记录；当前多轮消息及预期完整保留，不按首轮输入去重。
-- 追加记录用 `source_fixture` 和 `source_case_id` 记录来源；分配归档编号以避免与历史记录冲突。重复执行同步不产生新记录。
-
-## 5. 更新与检查
+- 编号跨文件唯一；一个文件只放一种方言；`$ref` 结构断言在执行前校验声明形状。
+- 新增或修改业务回归记录时按文件方言写入，再跑一致性检查：
 
 ```bash
 python scripts/check_fixture_consistency.py --verbose   # 现役 categories / intent + 历史 unified；WARNING 为业务方待修数据
 python -m harness run --data tests/fixtures/unified_golden.jsonl --limit 5   # 只跑 B 方言
 ```
 
-新增或修改业务回归记录时，按文件方言写入，再跑一致性检查（历史 `merge_golden.py` 已不存在，不再有"同步"步骤）。历史 QA 和业务种子快照保持可追溯，不用于覆盖当前业务预期。
-
-## 6. 全新交易对手节点回归集
+## 4. 全新交易对手节点回归集
 
 `golden_swap_fresh_counterparty.jsonl` 保存 6 条工程回归样例，覆盖完整名称／简称、
 单笔补全、多笔补全及已有相同名称的订单。它由
@@ -85,7 +62,7 @@ python -m harness run --data tests/fixtures/unified_golden.jsonl --limit 5   # �
 
 这组数据验证固定模型响应后的节点行为，不计入真实 LLM 准确率，也不代表真实后端验收。
 
-## 7. 意图集：`intent/<product>.jsonl`
+## 5. 意图集：`intent/<product>.jsonl`
 
 与 `categories/` 业务集分离（`docs/langfuse/workflow-guide.md` §8）。只评一级路由 `product_type`
 与子图 `intent`，不依赖 Java / GOATS：冻结用例只跑意图子链（`harness/intent_runner.py`），回放用例配 `mock_api`；不写任何 `response_*` 卡片断言。
@@ -103,13 +80,12 @@ python -m harness run --data tests/fixtures/unified_golden.jsonl --limit 5   # �
 - 标的识别子集 `intent/swap_instrument.jsonl`（375 条，来自三份 `swap*.jsonl`）：`expected.instruments[]` 断言 LLM 提取的
   标的原文任一候选与交易品种候选，评估器 `det_instrument_match_pass`；见 `intent/README.md`
 
-## 8. Excel 导出
+## 6. Excel 导出
 
 `python scripts/convert_jsonl_to_excel.py` 默认读取 `categories/` 直属 JSONL，每个文件一张表。
 `--dry-run` 只校验和统计，`--output` 可指定工作簿位置。
-旧 `categories/tr-data/` 镜像已移除，业务数据只在现役 categories 维护，导出前不再复制。
 
-## 9. 结构断言引用实际卡片
+## 7. 结构断言引用实际卡片
 
 业务 `expected` 可用 `$ref` 绑定本轮实际引用，避免把运行时订单号写死：
 

@@ -77,7 +77,7 @@ async def test_lifespan_wires_idempotency_using_single_mysql_uri(monkeypatch):
 
 
 def test_instrument_lookup_settings_are_gone(monkeypatch):
-    """ADR 0025：标的识别已移交 Java，ADR 0012 遗留的标的池直连与 securities-instrument 配置不再存在。"""
+    """ADR 0025：标的识别归 Java，不存在标的池直连与 securities-instrument 配置。"""
     kwargs = _isolate_settings(monkeypatch)
     monkeypatch.setenv("MYSQL_URI", URI)
     settings = Settings(**kwargs)

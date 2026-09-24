@@ -15,7 +15,7 @@
       }
     ]
   },
-  "description": "otc-agent LangGraph 灰度上线观测面板（F4.2-F4.5）· 节点级 / 业务指标 / 金丝雀 / 健康检查",
+  "description": "otc-agent LangGraph 灰度上线观测面板 · 节点级 / 业务指标 / 金丝雀 / 健康检查",
   "editable": true,
   "fiscalYearStartMonth": 0,
   "graphTooltip": 1,
@@ -321,7 +321,7 @@
       },
       "id": 200,
       "panels": [],
-      "title": "业务指标 · Fallback / HITL / LLM",
+      "title": "业务指标 · Fallback / LLM",
       "type": "row"
     },
     {
@@ -359,7 +359,7 @@
       },
       "gridPos": {
         "h": 6,
-        "w": 6,
+        "w": 12,
         "x": 0,
         "y": 18
       },
@@ -389,69 +389,6 @@
         }
       ],
       "title": "Fallback 1h",
-      "type": "stat"
-    },
-    {
-      "datasource": {
-        "type": "prometheus",
-        "uid": "${DS_PROMETHEUS}"
-      },
-      "description": "HITL 二次确认触发次数（1h）。ADR 0006 场景才计数。",
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "thresholds"
-          },
-          "mappings": [],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "green",
-                "value": null
-              },
-              {
-                "color": "blue",
-                "value": 1
-              }
-            ]
-          },
-          "unit": "short"
-        },
-        "overrides": []
-      },
-      "gridPos": {
-        "h": 6,
-        "w": 6,
-        "x": 6,
-        "y": 18
-      },
-      "id": 202,
-      "options": {
-        "colorMode": "background",
-        "graphMode": "area",
-        "justifyMode": "auto",
-        "orientation": "horizontal",
-        "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ],
-          "fields": "",
-          "values": false
-        },
-        "textMode": "auto"
-      },
-      "targets": [
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "${DS_PROMETHEUS}"
-          },
-          "expr": "sum(increase(otc_agent_hitl_total[1h]))",
-          "refId": "A"
-        }
-      ],
-      "title": "HITL 1h",
       "type": "stat"
     },
     {
@@ -489,7 +426,7 @@
       },
       "gridPos": {
         "h": 6,
-        "w": 6,
+        "w": 12,
         "x": 12,
         "y": 18
       },
@@ -526,74 +463,7 @@
         "type": "prometheus",
         "uid": "${DS_PROMETHEUS}"
       },
-      "description": "动态 prompt 缓存命中率（ADR 0013 / D2.5）。≥80% 健康。",
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "thresholds"
-          },
-          "mappings": [],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "red",
-                "value": null
-              },
-              {
-                "color": "yellow",
-                "value": 0.5
-              },
-              {
-                "color": "green",
-                "value": 0.8
-              }
-            ]
-          },
-          "unit": "percentunit"
-        },
-        "overrides": []
-      },
-      "gridPos": {
-        "h": 6,
-        "w": 6,
-        "x": 18,
-        "y": 18
-      },
-      "id": 204,
-      "options": {
-        "colorMode": "background",
-        "graphMode": "area",
-        "justifyMode": "auto",
-        "orientation": "horizontal",
-        "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ],
-          "fields": "",
-          "values": false
-        },
-        "textMode": "auto"
-      },
-      "targets": [
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "${DS_PROMETHEUS}"
-          },
-          "expr": "sum(increase(otc_agent_dynamic_prompt_total{status=\"cache_hit\"}[1h])) / clamp_min(sum(increase(otc_agent_dynamic_prompt_total[1h])), 1)",
-          "refId": "A"
-        }
-      ],
-      "title": "动态 prompt 缓存命中率 1h",
-      "type": "stat"
-    },
-    {
-      "datasource": {
-        "type": "prometheus",
-        "uid": "${DS_PROMETHEUS}"
-      },
-      "description": "LLM token 消耗速率（按模型 + direction prompt/completion）。F4.6 灰度期成本观测。",
+      "description": "LLM token 消耗速率（按模型 + direction prompt/completion）。用于灰度期成本观测。",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -716,7 +586,7 @@
       },
       "id": 300,
       "panels": [],
-      "title": "金丝雀 · otc_agent_canary_traffic_total (G5.1 · F4.2-F4.5)",
+      "title": "金丝雀 · otc_agent_canary_traffic_total",
       "type": "row"
     },
     {
@@ -846,7 +716,7 @@
         "type": "prometheus",
         "uid": "${DS_PROMETHEUS}"
       },
-      "description": "金丝雀流量占比 = canary / (canary + non_canary)。F4.2 单群 → 极低；F4.3 30% → ~0.3；F4.4 ALL → 1.0。",
+      "description": "金丝雀流量占比 = canary / (canary + non_canary)。单群灰度时极低，30% 灰度约 0.3，全量为 1.0。",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -910,7 +780,7 @@
       },
       "id": 400,
       "panels": [],
-      "title": "健康检查 · otc_agent_health_check_total (D2.6)",
+      "title": "健康检查 · otc_agent_health_check_total",
       "type": "row"
     },
     {

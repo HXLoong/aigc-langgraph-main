@@ -22,13 +22,6 @@ def model(monkeypatch, module, factory, payload):
     return fake
 
 
-@pytest.fixture
-def no_lookup(monkeypatch):
-    lookup = AsyncMock(side_effect=AssertionError("instrument resolution belongs to Java"))
-    monkeypatch.setattr(TickerClientHttpx, "search_securities_instrument", lookup)
-    return lookup
-
-
 _LOCAL_RESOLUTION_RX = re.compile(r"resolve_ticker|TickerClient|ticker_client|from_goats=True")
 
 
@@ -46,7 +39,7 @@ def test_business_graphs_do_not_import_local_instrument_resolution() -> None:
 
 
 @pytest.mark.parametrize("instrument", ["沪铜主力", "9月沪铜", "宁德时代", "2333长城汽车", "cu2609.shf", "00700"])
-async def test_swap_preserves_instrument_at_submit(monkeypatch, no_lookup, instrument):
+async def test_swap_preserves_instrument_at_submit(monkeypatch, instrument):
     model(monkeypatch, place_order, "get_qwen_complex", {"orderList": [{
         "placeOrderWindCode": field(instrument), "placeOrderQuantity": field("8万股"),
         "placeOrderOrderDirection": field("买入"),
@@ -61,11 +54,10 @@ async def test_swap_preserves_instrument_at_submit(monkeypatch, no_lookup, instr
     assert sent["placeOrderWindCode"] == instrument
     assert sent["placeOrderQuantity"] == 80000
     assert result["api_result"] == "后端处理结果"
-    no_lookup.assert_not_awaited()
 
 
 @pytest.mark.parametrize("instrument", ["宁德时代", "2333长城汽车", "000000.SZ"])
-async def test_inquiry_reaches_backend_even_for_unknown_instrument(monkeypatch, no_lookup, instrument):
+async def test_inquiry_reaches_backend_even_for_unknown_instrument(monkeypatch, instrument):
     model(monkeypatch, inquiry, "get_qwen_thinking", {"orderList": [{
         "stockCode": field(instrument), "tenor": field("1个月"),
         "optionType": field("欧式看涨"), "strikePercentage": field("80%"),
@@ -76,10 +68,9 @@ async def test_inquiry_reaches_backend_even_for_unknown_instrument(monkeypatch, 
     assert not result.get("error")
     assert backend.await_args.kwargs["order_list"][0]["stockCode"] == instrument
     assert result["api_result"] == "后端：标的待核实"
-    no_lookup.assert_not_awaited()
 
 
-async def test_attachment_expression_needs_evidence_but_no_local_security_lookup(monkeypatch, no_lookup):
+async def test_attachment_expression_needs_evidence_but_no_local_security_lookup(monkeypatch):
     text = "新证券 买入 100股"
     model(monkeypatch, multimodal, "get_qwen_vl", {"text": text})
     model(monkeypatch, multimodal, "get_qwen_structured", {"orderList": [{
@@ -91,11 +82,10 @@ async def test_attachment_expression_needs_evidence_but_no_local_security_lookup
     assert result["place_params"]["orderList"][0]["placeOrderWindCode"] == "新证券"
     record = result["field_records"]["swap/place_order.orderList.0.placeOrderWindCode"]
     assert record.source == "user" and record.origin == "attachment:file:0:image"
-    no_lookup.assert_not_awaited()
 
 
 @pytest.mark.parametrize("raw,expected,origin", [("选标的1", "AAPL.O", "quote"), ("换成腾讯控股", "腾讯控股", "raw")])
-async def test_selection_is_quote_lookup_or_raw_expression(monkeypatch, no_lookup, raw, expected, origin):
+async def test_selection_is_quote_lookup_or_raw_expression(monkeypatch, raw, expected, origin):
     oid = "H-20260918-0000000001"
     state = {"raw_text": raw, "quote_content": f"订单{oid} 候选标的：1.AAPL.O 苹果",
              "place_params": {"orderList": [{"orderId": oid}]},
@@ -110,7 +100,6 @@ async def test_selection_is_quote_lookup_or_raw_expression(monkeypatch, no_looku
     assert result["place_params"]["orderList"][0]["placeOrderWindCode"] == expected
     record = result["field_records"]["swap/place_order.orderList.0.placeOrderWindCode"]
     assert record.source != "goats" and record.origin == origin
-    no_lookup.assert_not_awaited()
 
 
 @pytest.mark.parametrize("raw", ["选B", "换成市价", "换成POV", "选100股"])
@@ -122,3 +111,9 @@ def test_parameter_or_account_choice_is_not_a_new_security(raw):
              "swap_counterparties": [{"sort": "B", "shortName": "账户乙"}]}
     result = ticker_choice(state)
     assert result is None or not result.picks
+
+
+def test_ticker_client_exposes_no_instrument_lookup() -> None:
+    """ADR 0025：标的识别归 Java，TickerClient 只保留授权交易对手列表查询。"""
+    for name in ("search_securities_instrument", "get_inference_prompt"):
+        assert not hasattr(TickerClientHttpx, name), name

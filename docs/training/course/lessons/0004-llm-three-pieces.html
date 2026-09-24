@@ -68,7 +68,7 @@ Dify 的 LLM 节点 = YAML 里嵌几千行 prompt + 内嵌 JSON Schema。迁移�
 <h2>2. 件套一：load_prompt 的三个必知点（8 分钟）</h2>
 
 <h3>2.1 .md 文件格式与来源</h3>
-<p>提示词是从 Dify YAML 导出的资产，放 <code>app/prompts/&lt;category&gt;/&lt;name&gt;.md</code>，格式约定：<code>## [system]</code> 与 <code>## [user]</code> 两段代码块。注意目录名陷阱：<strong>提示词目录是 <code>option_close/</code>，代码目录是 <code>subgraphs/close/</code></strong>，两边不对称（沿用 Dify 命名，<code>app/prompts/CLAUDE.md</code>）。</p>
+<p>提示词是 git 里的资产（唯一真源），放 <code>app/prompts/&lt;category&gt;/&lt;name&gt;.md</code>，格式约定：<code>## [system]</code> 与 <code>## [user]</code> 两段代码块。注意目录名陷阱：<strong>提示词目录是 <code>option_close/</code>，代码目录是 <code>subgraphs/close/</code></strong>，两边不对称（沿用 Dify 命名，<code>app/prompts/CLAUDE.md</code>）。</p>
 <p>Dify 占位符 <code>{{#node_id.var#}}</code> <strong>保留原样</strong>，不要 regex 替换——LLM 能理解为上下文标记，替换反而破坏与 Dify 的行为对齐。</p>
 
 <h3>2.2 lru_cache 陷阱（高频踩坑）</h3>
@@ -86,7 +86,7 @@ Dify 的 LLM 节点 = YAML 里嵌几千行 prompt + 内嵌 JSON Schema。迁移�
 <pre><code><span class="cm"># 适配一：统一关闭思考模式（速度：4-7s vs thinking 60-180s），两家参数不同</span>
 <span class="kw">def</span> _thinking_off_extra_body(model: <span class="kw">str</span>) -> <span class="kw">dict</span>[<span class="kw">str</span>, Any]:
     <span class="kw">if</span> _is_deepseek(model):
-        <span class="kw">return</span> {<span class="st">"thinking"</span>: {<span class="st">"type"</span>: <span class="st">"disabled"</span>}}   <span class="cm"># DeepSeek 会静默忽略 Qwen 的参数！</span>
+        <span class="kw">return</span> {<span class="st">"thinking"</span>: {<span class="st">"type"</span>: <span class="st">"disabled"</span>}}   <span class="cm"># 参数名须按模型厂商写，写错会被静默忽略！</span>
     <span class="kw">return</span> {<span class="st">"enable_thinking"</span>: <span class="kw">False</span>}
 
 <span class="cm"># 适配二：DeepSeek 不支持 response_format=json_schema（400 报错），</span>
@@ -128,7 +128,7 @@ Dify 的 LLM 节点 = YAML 里嵌几千行 prompt + 内嵌 JSON Schema。迁移�
 <label><input type="radio" name="q1" value="a"> md 文件格式写错，system 段没有被解析出来</label>
 <label><input type="radio" name="q1" value="b"> 服务在从 LangFuse 拉取提示词，本地文件无效</label>
 <label><input type="radio" name="q1" value="c"> load_prompt 有 lru_cache，进程没重启就不生效</label>
-<p class="quiz-explain" hidden>三个都可能，但最高频的是 lru_cache（handbook 附录 A.10）。排查顺序：先重启/clear_cache，再看 trace 里的 prompt 来源，最后查格式。</p>
+<p class="quiz-explain" hidden>三个都可能，但最高频的是 lru_cache（测试里用 <code>clear_cache()</code> 重载）。排查顺序：先重启/clear_cache，再看 trace 里的 prompt 来源，最后查格式。</p>
 </div>
 
 <div class="quiz-q" data-answer="b">
@@ -162,7 +162,6 @@ Dify 的 LLM 节点 = YAML 里嵌几千行 prompt + 内嵌 JSON Schema。迁移�
 <h2>7. 延伸与下一课</h2>
 <ul>
 <li><strong>本课首选一手资料</strong>：<code>.claude/rules/prompt-management.md</code>（提示词纪律的完整出处：改写登记、A/B 共存、Dify 同步流程）</li>
-<li>深入：<code>docs/training/langgraph-handbook.md</code> 第 4.3.1 节（Dify LLM 节点逐项对照）、第 8 章（提示词与 LLM 调用）</li>
 <li>相关 ADR：0003（提示词版本化）、0010（structured output 强制）、0014（LangFuse 来源）、0020（全量 DeepSeek-V4-pro）</li>
 <li>下一课：<a href="0005-checkpointer-multiturn.html">第 05 课 · Checkpointer 与多轮对话</a></li>
 </ul>

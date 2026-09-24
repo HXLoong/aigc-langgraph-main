@@ -31,4 +31,4 @@ app/prompts/_versions.yaml（灰度配置，如 95% intent / 5% intent_v2）
 
 ## 现状
 
-截至 2026-09-22：`_versions.yaml` 无灰度条目，所有历史 `*_v2.md` 已清理。
+现状：`_versions.yaml` 无灰度条目。

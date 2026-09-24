@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """真后端 write endpoint 端到端验证（option 询价，最低风险 write）。
 
-按 ADR 0016 灰度顺序，option.operate type=new_inquiry 在客户后端**生成询价记录**，
+option.operate type=new_inquiry 在客户后端**生成询价记录**，
 不是真订单——但仍是 write endpoint，会留下数据库行。
 
 使用 EVAL_* 测试账号（隔离测试空间，客户已授权）：

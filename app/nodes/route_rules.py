@@ -37,7 +37,7 @@ COLLOQUIAL_SWAP_CLOSE_PATTERNS: list[str] = [
     r"全部平了",
     r"平\s*\d+",
     r"平仓\s*\d+",
-    r"平剩",  # #167：平剩到 X 名本（期权持仓引用场景高频）
+    r"平剩",  # 平剩到 X 名本（期权持仓引用场景高频）
 ]
 
 OPTION_CLOSE_QUERY_KEYWORDS: list[str] = [
@@ -98,7 +98,7 @@ _OPTION_CONTEXT_RE = re.compile(r"(?<![A-Za-z])(?:CALL|PUT)(?![A-Za-z])")
 
 
 def _has_option_context(text: str, quote_content: str | None) -> bool:
-    """raw 或有效引用内容含明确期权特征（#167 P0-1 工程修正，登记于 ADR 0015）。
+    """raw 或有效引用内容含明确期权特征（工程修正，登记于 ADR 0015）。
 
     口语化平仓/互换下单特征两个高优先级分支原本完全不看 quote——引用期权
     持仓卡/询价卡后的跟进指令（"序号1市价全平"、"按市价买入"）被截胡判互换。
@@ -157,7 +157,7 @@ def classify_trade_type(text: str, quote_content: str | None = None) -> str:
         return "期权平仓-文本"
 
     # 2) 口语化平仓(早于平仓查询关键词,防"全平"被干扰)
-    #    #167 P0-1：期权语境（raw/quote 含期权特征）让位期权平仓链，
+    #    期权语境（raw/quote 含期权特征）让位期权平仓链，
     #    否则按 DSL 原语义归互换口语化减仓
     if text and _has_colloquial_swap_close(text):
         if _has_option_context(text, quote_content):
@@ -182,7 +182,7 @@ def classify_trade_type(text: str, quote_content: str | None = None) -> str:
             or any(k in upper_text for k in ("POV", "TWAP", "VWAP", "ICEBERG", "SNIPER", "MKT"))
             or any(k in text for k in ("市价", "限价"))
         )
-        # #167 P0-1：期权特征检查扩展到 quote（引用期权询价卡后"按市价买入"）
+        # 期权特征检查扩展到 quote（引用期权询价卡后"按市价买入"）
         has_explicit_option = _has_option_context(text, quote_content)
         if has_swap_direction and has_swap_params and not has_explicit_option:
             return "互换-文本"
@@ -201,7 +201,7 @@ def classify_trade_type(text: str, quote_content: str | None = None) -> str:
                     continue
                 return "期权平仓-文本"
 
-    # 5.5) #167 P0-1 第二层：引用期权持仓卡后的序号/减仓跟进 → 期权平仓。
+    # 5.5) 引用期权持仓卡后的序号/减仓跟进 → 期权平仓。
     #    持仓卡语境下"序号1平留300万/限价10 200w"是平仓指令，计数层会因
     #    quote 含"期权"误归 option；raw 含明确互换方向词时不让位（引用持仓卡
     #    另开互换单的边界场景）

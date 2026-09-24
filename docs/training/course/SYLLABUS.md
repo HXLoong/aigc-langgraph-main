@@ -15,9 +15,8 @@
 | 07 | Protocol Client 与 TDD | FakeClient mock 后端 + "patch 使用点"陷阱 + RED→GREEN | `lessons/0007-protocol-client-tdd.html` |
 | 08 | harness 与 golden case：你的第一个 PR | 跑评估、读 trace 定位失败节点、按节点级 PR 交付（毕业课） | `lessons/0008-harness-golden-pr.html` |
 
-## 学习节奏建议（配合 docs/training/README.md 路径 C）
+## 学习节奏建议
 
-- 老 Dify 成员：每天 1-2 课，配 handbook 第 3 章对照表，一周完成
-- 实习生：先读 `intern-langgraph-primer.md` 第 1-2 节，再从第 01 课开始
-- 每课末尾有小测（即时反馈）；测验拿不到全对就先别进下一课
-- 学完 04 课后即可开始领 P2 issue 练手（导师确认范围）
+- 先读 `docs/training/intern-langgraph-primer.md`，再从第 01 课开始，每天 1-2 课，一周完成。
+- 每课末尾有小测（即时反馈），全对再进下一课。
+- 学完 04 课后即可在导师确认范围后领小任务练手。

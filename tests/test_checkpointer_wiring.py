@@ -1,4 +1,4 @@
-"""#153 裁决落地：AIOMySQLSaver checkpointer 接线到生产（ADR 0009/0021）。
+"""AIOMySQLSaver checkpointer 接线到生产（ADR 0009/0021）。
 
 约定：
 - `use_mysql_checkpointer=true` → lifespan 初始化 AIOMySQLSaver 并传入 build_main_graph；

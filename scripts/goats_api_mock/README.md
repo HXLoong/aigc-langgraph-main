@@ -108,6 +108,5 @@ Java 的 `optionOrderJob`、`optionCloseOrderJob`、`optionCloseCancelOrderJob` 
 USE_MYSQL_CHECKPOINTER=false REQUEST_IDEMPOTENCY=false ENABLE_LANGFUSE=false \
   .venv/bin/python -m pytest tests/test_goats_api_mock.py \
   tests/test_goats_api_mock_trading.py \
-  tests/test_goats_api_mock_open.py tests/test_option_lifecycle_cases.py \
-  scripts/ai_test_langgraph/test_automation_runner_server.py -q
+  tests/test_goats_api_mock_open.py tests/test_option_lifecycle_cases.py -q
 ```

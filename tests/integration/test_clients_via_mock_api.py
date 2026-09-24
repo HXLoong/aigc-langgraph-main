@@ -1,9 +1,9 @@
-"""业务 client → mock_api 内存集成测试（F4 切流前补的"基于 Mock API 验证"层）。
+"""业务 client → mock_api 内存集成测试（基于 Mock API 的客户端契约验证层）。
 
 覆盖 3 个 client 的主要 endpoint：
 - OptionClient: operate（4 个代表 type）+ query_close_orders
 - SwapClient: operate（4 个代表 type）+ get / get_conversation_orders
-- TickerClient: search_securities_instrument / get_inference_prompt / list_counterparty
+- TickerClient: list_counterparty
 
 每个 case 验证：
 1. client 实际发的 URL 拼对（contract §1-§3）
@@ -31,7 +31,6 @@ from app.tools.swap_client import (
     SwapOrderOpenApiBaseSaveReqVO,
     SwapOrderOpenApiSaveReqVO,
 )
-from app.tools.ticker_client import KeywordItem, SecuritiesInstrumentReqVO
 
 # ============================================================
 # 测试用上下文（最小 BotContext 字段集）
@@ -136,32 +135,8 @@ async def test_swap_get_conversation_orders(swap_client) -> None:
 
 
 # ============================================================
-# TickerClient · search / inference / counterparty
+# TickerClient · counterparty
 # ============================================================
-
-
-async def test_ticker_search_by_keyword(ticker_client) -> None:
-    req = SecuritiesInstrumentReqVO(
-        keywordItems=[KeywordItem(keyword="腾讯", isFull=False)]
-    )
-    rows = await ticker_client.search_securities_instrument(req)
-    assert isinstance(rows, list)
-    # mock_api 返回至少一条命中（"腾讯"在白名单内）
-    assert len(rows) > 0
-    assert all("windCode" in r for r in rows)
-
-
-async def test_ticker_search_by_full_code(ticker_client) -> None:
-    req = SecuritiesInstrumentReqVO(placeOrderWindCode="00700.HK")
-    rows = await ticker_client.search_securities_instrument(req)
-    assert isinstance(rows, list)
-
-
-async def test_ticker_get_inference_prompt(ticker_client) -> None:
-    prompt = await ticker_client.get_inference_prompt()
-    assert isinstance(prompt, str)
-    # mock_api 返回非空字符串
-    assert len(prompt) > 0
 
 
 async def test_ticker_list_counterparty(ticker_client) -> None:

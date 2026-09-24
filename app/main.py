@@ -40,7 +40,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     """编译主图并挂载到 app.state。"""
     logger.info("starting otc-agent-langgraph")
 
-    # #153 裁决（ADR 0009/0021）：checkpointer 接线——多轮状态持久化是生产正确性。
+    # ADR 0009/0021：checkpointer 接线——多轮状态持久化是生产正确性。
     # 显式启用即硬依赖（init 失败直接抛，不静默降级）；生产未启用 fail-fast。
     settings = get_settings()
     configure_logging_from_settings(settings)  # ADR 0024 D5：structlog 接管 stdlib，日志带 trace_id
@@ -53,7 +53,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     elif getattr(settings, "environment", "") == "production":
         raise RuntimeError(
             "生产环境必须启用 MySQL checkpointer（USE_MYSQL_CHECKPOINTER=true，"
-            "见 ADR 0021 / issue #153）"
+            "见 ADR 0021）"
         )
     message_client_factory = (
         None if settings.environment == "development" else MessageClientHttpx
@@ -139,7 +139,7 @@ app.include_router(health_router)
 
 @app.get("/metrics", response_class=PlainTextResponse, include_in_schema=False)
 async def metrics() -> str:
-    """Prometheus 兼容指标端点（C1.5 / Issue #50）。
+    """Prometheus 兼容指标端点。
 
     返回 text/plain 格式的 exposition，可被 Prometheus / VictoriaMetrics 抓取。
     监控面板字段说明见 docs/observability.md。

@@ -1,41 +1,15 @@
-"""TickerClient — 标的查询 / 推断 prompt / 交易对手列表（contracts §1）。
+"""TickerClient — 授权交易对手列表（仅本地验收脚本使用，交易链路不调用）。
 
-特别注意：标的查询是 GET + RequestBody（Java 实现不规范但合法），
-要用 `client.request("GET", url, json=payload)` 不能用 `client.get()`。
-
-响应一律原样 dict 透传（Java 后端数据不做 Pydantic 建模/校验，2026-09 决定）。
+标的识别归 Java 后端（ADR 0025），本客户端不提供标的查询。
+响应一律原样 dict 透传（Java 后端数据不做 Pydantic 建模/校验）。
 """
 from __future__ import annotations
 
 from typing import Any, Protocol
 
 import httpx
-from pydantic import ConfigDict, Field
 
 from app.tools.http_pool import acquire_http_client
-from app.wire_model import WireModel
-
-# ============================================================
-# Pydantic 模型
-# ============================================================
-
-
-class KeywordItem(WireModel):
-    """关键词查询项。"""
-
-    keyword: str
-    is_full: bool = Field(default=False, alias="isFull")
-
-
-class SecuritiesInstrumentReqVO(WireModel):
-    """`GET /admin-api/integration/securities-instrument/select` 请求体（带 Body 的 GET）。"""
-
-    model_config = ConfigDict(extra="allow")
-
-    place_order_wind_code: str | None = Field(default=None, alias="placeOrderWindCode")
-    keyword_items: list[KeywordItem] = Field(alias="keywordItems", default_factory=list)
-    transaction_type_list: list[str] | None = Field(default=None, alias="transactionTypeList")
-
 
 # ============================================================
 # Protocol
@@ -43,13 +17,7 @@ class SecuritiesInstrumentReqVO(WireModel):
 
 
 class TickerClient(Protocol):
-    """标的相关客户端协议。"""
-
-    async def search_securities_instrument(
-        self, req: SecuritiesInstrumentReqVO
-    ) -> list[dict[str, Any]]: ...
-
-    async def get_inference_prompt(self) -> str: ...
+    """交易对手列表客户端协议。"""
 
     async def list_counterparty(
         self, room_id: str | None = None, *, user_id: str | None = None,
@@ -58,7 +26,7 @@ class TickerClient(Protocol):
 
 
 # ============================================================
-# Httpx 实现（注意：select 是 GET + RequestBody，ADR 0012 修订版）
+# Httpx 实现
 # ============================================================
 
 
@@ -95,37 +63,6 @@ class TickerClientHttpx:
         if self._transport is not None:
             kw["transport"] = self._transport
         return kw
-
-    async def search_securities_instrument(
-        self, req: SecuritiesInstrumentReqVO
-    ) -> list[dict[str, Any]]:
-        """⚠️ Java 端是 GET + RequestBody（不规范但合法），要用 client.request("GET", ...) 写法。"""
-        from app.tools.exceptions import translate_httpx_errors
-
-        url = f"{self._base_url}/admin-api/integration/securities-instrument/select"
-        payload = req.model_dump(mode="json", exclude_none=True)
-        async with (
-            translate_httpx_errors("ticker"),
-            acquire_http_client(timeout=self._timeout, transport=self._transport) as client,
-        ):
-            r = await client.request("GET", url, json=payload, headers=self._headers, timeout=self._timeout)
-            r.raise_for_status()
-            envelope: dict[str, Any] = r.json()
-            rows: list[dict[str, Any]] = envelope.get("data") or []
-            return rows
-
-    async def get_inference_prompt(self) -> str:
-        from app.tools.exceptions import translate_httpx_errors
-
-        url = f"{self._base_url}/admin-api/counterparty/info/instrument-inference-prompt"
-        async with (
-            translate_httpx_errors("ticker"),
-            acquire_http_client(timeout=self._timeout, transport=self._transport) as client,
-        ):
-            r = await client.get(url, headers=self._headers, timeout=self._timeout)
-            r.raise_for_status()
-            envelope: dict[str, Any] = r.json()
-            return str(envelope.get("data") or "")
 
     async def list_counterparty(
         self, room_id: str | None = None, *, user_id: str | None = None,
