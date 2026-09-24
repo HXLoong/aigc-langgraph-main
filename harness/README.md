@@ -29,7 +29,7 @@
 ```bash
 python -m harness doctor          # 环境体检（/health /ready）
 # HTTP 回归：必须提供授权测试身份（--user-id / --room-id 或 EVAL_USER_ID / EVAL_ROOM_ID），默认端口 8000
-python -m harness run --help      # --backend real|mock|dry-run、--checkpoint none|mysql、--include-unified
+python -m harness run --help      # --backend real|mock|dry-run、--checkpoint none|mysql
 python -m harness node-run --data <节点 fixture 目录>
 # 调已启动后端的受保护接口（密钥只通过环境变量传入；HTTP 模式不支持 --mock）
 NODE_RUN_API_KEY='<key>' python -m harness node-run --transport http \

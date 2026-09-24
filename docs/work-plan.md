@@ -8,7 +8,7 @@
 | 主线 | 已落地（截至 2026-09-24） | 未完成 |
 |---|---|---|
 | **原生 LangGraph 重构** | 子图原生嵌入、单动作多订单、RetryPolicy、State 分层与 output schema（ADR 0024 / 0028）；会话持久化与回执处理；现有字段来源记录（0027 的归一化与数字校验新边界待迁移）；标的识别移交 Java（0025）；Dify 资产冻结（0024 D1） | 单次工具调用一次模型请求重构（ADR 0031，见 §1.1）；取消本地二阶段要求及确认参数收敛（ADR 0021，见 §1.2）；请求幂等、回放、重投静默与对账代码清理（ADR 0026，见 §1.3）；字段归一化与数字校验清理（§1.4）；deepseek-v4-pro 统一配置与输入能力核对（§1.5）；协议原生化暂缓，保留现行 Java wire 契约（#222）；Store（按诉求） |
-| **数据集评测与评估** | 显式验收集 `tests/fixtures/categories/`（三方言唯一加载器；历史 unified 仅显式选入；Excel 导出共用 categories）；REJECTED 单独成桶、早停记失败；既有评测脚本（Judge 路径待移除）；节点级 fixture 与 `harness node-run`（0029） | 统一确定性断言、Langfuse 回归闭环（§1.6）；目标模型生产同拓扑基线与 7 天观察仍待验收，现有默认值只是原有 dry-run 参考；D 桶（客户真实输入）回流与标注运营（#236）；写类 case `expected.place_params` 补齐（#220） |
+| **数据集评测与评估** | 显式业务验收集 `tests/fixtures/biz/` + 意图集 `tests/fixtures/intent/`（A 方言；Excel 导出共用 biz）；REJECTED 单独成桶、早停记失败；既有评测脚本（Judge 路径待移除）；节点调试 API 与 `harness node-run`（0029，旧 git 节点 fixture 已退役） | 统一确定性断言、Langfuse 回归闭环（§1.6）；目标模型生产同拓扑基线与 7 天观察仍待验收，现有默认值只是原有 dry-run 参考；D 桶（客户真实输入）回流与标注运营（#236）；写类 case `expected.place_params` 补齐（#220） |
 | **Harness 工程** | CI 在 push / PR 上跑 fast + slow 两个 job（ruff、mypy、五项一致性 lint、全量 pytest；真实 MySQL 用例不进 CI）；PromptSpec（0023）；trace_id 贯穿与结构化日志（0004 / 0024 D5） | 真实数据库回归按本地环境 opt-in；节点 fixture 漂移守护；deepseek-v4-pro 零重试基线重测；本阶段不处理独立 VL 接线及拆分阈值 |
 
 评测门只有一套，见 ADR 0030 D3：数据集 PASS 率不低于前值 → 节点 fixture 回归 → CI 全绿 → 上线观察指标。
@@ -72,7 +72,8 @@
 
 - 清理批量评测的 LLM Judge 请求、默认配置与失败兜底评分；未迁移前显式使用 `--no-judge`，且不能把仅关闭 Judge 当成全量字段断言已达标。异步评分结果须完整汇总再决定退出码。
 - 统一期望字段、文本断言、差异报告与退出码；缺少 required expected、执行结果或上下文时不能判 PASS。评测数值比较独立于 ADR 0027 的业务数值校验边界。
-- 以审阅后的 fixture 为基线，按稳定 case ID、套件和版本单向发布 Dataset；Langfuse 新标注导出、复核后合入 fixture，不自动双向覆盖。
+- 现役 biz / intent 以审阅后的 fixture 为基线，按稳定 case ID、套件和版本单向发布 Dataset；Langfuse 新业务 / 意图标注导出、复核后合入对应 fixture，不自动双向覆盖。
+- 旧 git 节点 fixture 目录已退役且无现成替代；从 observation 复核节点样本后逐步接入 Langfuse 数据集，不恢复退役目录。缺少有效样本时记录待验收，不宣称节点回归通过。
 - 逐节点接入 Experiment、确定性 Scores 和来源 observation；同批输入在本地与平台的结果必须一致，带写副作用节点仍 SKIP，真实 Java 全链路验收继续按授权调度。
 - 完成 Trace → 标注 → Dataset → Experiment → 断言差异 → 修复重跑的闭环，记录数据集 / 断言 / 代码 / 模型版本；迁移期间不升级 SDK 或自托管部署，不变更外部账号、数据和评分器配置。
 

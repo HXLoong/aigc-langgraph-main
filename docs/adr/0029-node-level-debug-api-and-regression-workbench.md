@@ -18,9 +18,10 @@
 - `POST /v1/nodes/run`：隔离执行一个已注册节点或复合子图，只收集目标节点自身的 updates（`app/node_execution/executor.py`），不从最终 State 或差值推算输出；**不执行上游、不恢复 checkpoint、不继承前一次调用的 State**；下单 / 确认 / 撤单 / 持久化等节点保留原有副作用，连接真实后端时先测只读节点。
 - 注册名称以注册表为准，按产品分组（main / swap / option / option_close 等）；注册表不是展示白名单，节点数量不写死。
 
-### D2 · 节点级 fixture 与人工标注
+### D2 · 节点样本与人工标注
 
-- 存放：`tests/fixtures/nodes/<product>/<node>.jsonl`，一行一个用例；字段级标注是默认方式（只断言稳定业务字段，如标的代码 / 价格类型 / 跟量比例，不断言耗时、trace_id）。
+- 旧 git 节点 fixture 目录已退役，当前无替代数据集；节点调试 API（`app/node_execution/`）与 `harness node-run` 仍保留。后续按 D5 迁移审阅后的节点样本，不恢复退役目录。
+- 字段级标注只断言稳定业务字段，如标的表达、价格类型与跟量比例，不断言耗时、trace_id；没有有效样本时记为待验收，不能视为节点回归通过。
 - 稳定字段与安全回放契约由 `harness/node_registry.py` 显式声明；自动从 Langfuse observation 发现的新节点可标注，但**默认禁止回放**；只输出动态 trace / 私有中间态 / 空对象的节点为"仅查看"，服务端拒绝保存空断言。
 - 带写副作用的节点 fixture 只用于留存标注，批量回归时显示 `SKIP`，不调用节点、不计失败。
 
@@ -28,7 +29,7 @@
 
 - 本地直调（`harness/node_runner.py`）或 `--transport http`（依次调 `/v1/nodes/prepare` 与 `/v1/nodes/run`，HTTP 模式不支持 `--mock`）；两种模式与 `harness run` 复用同一 `differ` 字段级 diff 与 JSON 报告。
 - `--mock` 使用 `harness/node_mocks.py` 的显式外部依赖 mock（当前试点 `swap_place_order`），不在业务代码内置任何"备用实现"开关（CLAUDE.md 禁止项）。
-- 节点回归与全链路 categories 回归保持不同覆盖范围，均按确定性断言评分，不调用 LLM Judge（ADR 0005）；Langfuse Experiment 记录回归，统一放行门见 ADR 0030。
+- 节点回归与全链路 biz 回归保持不同覆盖范围，均按确定性断言评分，不调用 LLM Judge（ADR 0005）；Langfuse Experiment 记录回归，统一放行门见 ADR 0030。
 
 ### D4 · 私有工具 HTTP 录制与严格回放（`harness/http_tape.py`）
 
@@ -49,7 +50,8 @@ flowchart TD
 ```
 
 - Langfuse 管理 Dataset、Experiment、Score、Trace 与人工标注关联；harness 提供执行器、稳定字段契约、确定性比较和失败退出码，CLI 保留用于本地复现。
-- 迁移期以已审阅的 git fixture 为基线，按稳定 case ID、套件与版本单向同步到 Dataset。平台采集的新标注先导出并经业务复核后合入 fixture，再发布为下一版数据集；不做双向自动覆盖，也不维护两套不同断言。
+- 现役 biz / intent 以已审阅的 git fixture 为基线，按稳定 case ID、套件与版本单向同步到 Dataset。平台采集的业务 / 意图标注先导出并经复核后合入对应 fixture，再发布为下一版；不做双向自动覆盖，也不维护两套断言。
+- 节点样本从 observation 提取并复核，目标由 Langfuse 数据集管理；接入与版本关联尚待实施，不把已退役的 git 节点目录当成现成基线。
 - 逐节点迁移：先定义可回放输入与稳定期望，再关联来源 observation、记录 Experiment 与确定性 Scores，最后用同批输入比对本地与平台的字段差异和 PASS / FAIL。迁移通过前保留既有本地回归能力。
 - 写副作用的节点仍仅留存标注，自动节点回放显示 SKIP；平台接入不能绕过此限制。依赖真实 Java 的全链路业务验收继续由主代理在授权环境执行。
 - 回归结果须带数据集版本、代码版本、模型标识、执行模式、断言版本与 trace 关联；失败回到人工复核和修复后重跑，不能通过修改 expected 来掩盖实现错误。

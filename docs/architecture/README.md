@@ -122,7 +122,7 @@ checkpoint 保存图状态与对话上下文，订单权威数据与业务状态
 
 ## 评测
 
-- 数据集：`tests/fixtures/categories/`（验收集）、`tests/fixtures/intent/`（意图集）、`tests/fixtures/nodes/`（节点级）。
+- 现役数据集：`tests/fixtures/biz/`（业务验收集）、`tests/fixtures/intent/`（意图集）。旧节点 fixture 与 B 方言历史参考集已退役；节点执行 API / node-run 保留，Langfuse 节点样本闭环待迁移。
 - 入口：`python -m harness run`（HTTP 全链路回归）、`python -m harness node-run`（节点回归）、`scripts/langfuse/langfuse_eval.py`（既有 Judge 路径待移除，过渡期显式 `--no-judge`）。目标为 Langfuse Experiment + 确定性断言闭环（ADR 0005 / 0029）。
 - 放行标准：统一评测门，见 ADR 0030 D3。
 
