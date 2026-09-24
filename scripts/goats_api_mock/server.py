@@ -19,7 +19,7 @@ from typing import Annotated, Any, Literal
 import uvicorn
 from fastapi import FastAPI, Header, Query
 from fastapi.encoders import jsonable_encoder
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 DEFAULT_DATA_FILE = Path(__file__).with_name("option_positions.json")
 logger = logging.getLogger(__name__)
@@ -156,6 +156,33 @@ class OpenRequest(BaseModel):
     algorithm_order_end_time: str | None = Field(default=None, alias="algorithmOrderEndTime")
 
 
+class SwapRequest(BaseModel):
+    model_config = ConfigDict(extra="allow")
+    wind_code: str = Field(alias="windCode", min_length=1)
+    transaction_type: str = Field(alias="transactionType", min_length=1)
+    order_direction: str = Field(alias="orderDirection", min_length=1)
+    price_type: str = Field(alias="priceType", min_length=1)
+    order_type: str = Field(alias="orderType", min_length=1)
+    short_name: str = Field(alias="shortName", min_length=1)
+    quantity: Decimal | None = Field(default=None, gt=0)
+    notional: Decimal | None = Field(default=None, gt=0)
+    notional_currency: str | None = Field(default=None, alias="notionalCurrency")
+    price: Decimal | None = Field(default=None, gt=0)
+    fix_price: Decimal | None = Field(default=None, alias="fixPrice", gt=0)
+
+
+class SwapStatusRequest(BaseModel):
+    key_order_id: int = Field(alias="keyOrderId", gt=0)
+
+
+class SwapQuery(BaseModel):
+    key_order_id_list: list[int] | None = Field(default=None, alias="keyOrderIdList")
+
+
+class SwapWithdrawRequest(BaseModel):
+    order_list: list[int] = Field(alias="orderList", min_length=1)
+
+
 def goats_response(data: Any = None, *, error: str | None = None) -> dict[str, Any]:
     return {
         "errMsg": error,
@@ -258,6 +285,70 @@ class MockOpening:
         self.orders[identifier]["trdGoatsOptionOrder"]["orderStatus"] = "CANCELLED"
         return goats_response({"completed": True, "stockOrderCode": code,
                                "withdrawResult": "SUCCESS", "failureMsg": None})
+
+
+class MockSwap:
+    """互换提交、审核和撤单；仅保存模拟状态，不创建成交或真实市场数据。"""
+
+    def __init__(self) -> None:
+        self.orders: dict[int, dict[str, Any]] = {}
+        self.owners: dict[int, tuple[str, str | None]] = {}
+        self.identifiers = count(1_200_000_000 + int(time.time()) % 100_000_000)
+
+    def visible(self, identifier: int, agent: str, user: str | None) -> bool:
+        owner = self.owners.get(identifier)
+        return owner is not None and owner[0] == agent and (user is None or owner[1] == user)
+
+    def place(self, request: SwapRequest, agent: str, user: str | None) -> dict[str, Any]:
+        if (request.quantity is None) == (request.notional is None):
+            return goats_response(error="模拟互换下单须提供唯一委托数量或金额")
+        if request.price_type == "LimitOrder" and request.price is None and request.fix_price is None:
+            return goats_response(error="限价单缺少价格")
+        identifier = next(self.identifiers)
+        now = datetime.now()
+        self.orders[identifier] = {
+            **request.model_dump(by_alias=True, exclude_none=True),
+            "keyOrderId": identifier, "keyStockOrderId": identifier,
+            "orderCode": f"MOCK-TRS-{identifier}",
+            "orderDate": now.strftime("%Y-%m-%d"), "entrustDate": now.strftime("%Y-%m-%d"),
+            "entrustTime": now.strftime("%Y-%m-%d %H:%M:%S"),
+            "ctptyShortName": request.short_name, "orderStatus": "NEW", "canWithdraw": True,
+            "canReplace": False, "filledQty": 0, "avgPrice": 0, "execAmount": 0,
+        }
+        self.owners[identifier] = (agent, user)
+        logger.info("模拟互换下单成功：模拟订单=%s", identifier)
+        return goats_response({"keyOrderId": identifier, "result": True, "async": True,
+                               "errMsg": None, "transactionType": request.transaction_type,
+                               "orderCode": self.orders[identifier]["orderCode"]})
+
+    def status(self, identifiers: list[int], agent: str, user: str | None) -> dict[str, Any]:
+        if any(not self.visible(identifier, agent, user) for identifier in identifiers):
+            return goats_response(error="模拟互换订单不存在或不属于当前身份")
+        return goats_response([
+            {"keyOrderId": identifier, "keyStockOrderId": identifier, "success": True,
+             "completed": True, "failureMsg": None,
+             "transactionType": self.orders[identifier]["transactionType"],
+             "serialNo": str(identifier), "submitResultUuid": f"MOCK-TRS-{identifier}"}
+            for identifier in identifiers
+        ])
+
+    def query(self, identifiers: list[int] | None, agent: str, user: str | None) -> dict[str, Any]:
+        return goats_response([
+            row for identifier, row in self.orders.items()
+            if self.visible(identifier, agent, user)
+            and (identifiers is None or identifier in identifiers)
+        ])
+
+    def withdraw(self, identifiers: list[int], agent: str, user: str | None) -> dict[str, Any]:
+        if any(not self.visible(identifier, agent, user) for identifier in identifiers):
+            return goats_response(error="模拟互换订单不存在或不属于当前身份")
+        for identifier in identifiers:
+            row = self.orders[identifier]
+            row.update(orderStatus="CANCELED", canWithdraw=False, withdrawQty=row.get("quantity", 0))
+        logger.info("模拟互换撤单成功：模拟订单=%s", identifiers)
+        return goats_response([
+            {"keyOrderId": identifier, "result": True, "msg": None} for identifier in identifiers
+        ])
 
 
 class MockTrading:
@@ -386,6 +477,7 @@ def create_app(data_file: Path = DEFAULT_DATA_FILE) -> FastAPI:
         application.state.snapshot = load_snapshot(data_file)
         application.state.trading = MockTrading(application.state.snapshot["data"]["queryResults"])
         application.state.opening = MockOpening()
+        application.state.swap = MockSwap()
         logger.info(
             "持仓数据加载完成：文件=%s，数量=%s 条",
             data_file,
@@ -395,6 +487,35 @@ def create_app(data_file: Path = DEFAULT_DATA_FILE) -> FastAPI:
         yield
 
     application = FastAPI(title="GOATS 期权 Mock（持仓、开仓、平仓、撤单）", lifespan=lifespan)
+
+    @application.post("/api/internal/agent/trs/order")
+    async def place_swap(
+        request: SwapRequest, agentid: Annotated[str, Header(min_length=1)],
+        agentsubid: Annotated[str | None, Header()] = None,
+    ) -> dict[str, Any]:
+        return application.state.swap.place(request, agentid, agentsubid)
+
+    @application.post("/api/internal/agent/trs/order/status")
+    async def swap_status(
+        request: list[SwapStatusRequest], agentid: Annotated[str, Header(min_length=1)],
+        agentsubid: Annotated[str | None, Header()] = None,
+    ) -> dict[str, Any]:
+        return application.state.swap.status([item.key_order_id for item in request], agentid, agentsubid)
+
+    @application.post("/api/internal/agent/trs/order/query")
+    async def query_swap(
+        agentid: Annotated[str, Header(min_length=1)], request: SwapQuery | None = None,
+        agentsubid: Annotated[str | None, Header()] = None,
+    ) -> dict[str, Any]:
+        identifiers = request.key_order_id_list if request else None
+        return application.state.swap.query(identifiers, agentid, agentsubid)
+
+    @application.post("/api/internal/agent/trs/order/withdraw")
+    async def withdraw_swap(
+        request: SwapWithdrawRequest, agentid: Annotated[str, Header(min_length=1)],
+        agentsubid: Annotated[str | None, Header()] = None,
+    ) -> dict[str, Any]:
+        return application.state.swap.withdraw(request.order_list, agentid, agentsubid)
 
     @application.post("/api/internal/agent/option/order")
     async def place_open(
