@@ -187,7 +187,7 @@ async def test_io_retries_exactly_configured_attempts_and_exhaustion(
         assert body["output"]["trace"][0]["decision"] == "error:retry_exhausted"
 
 
-async def test_private_inquiry_and_place_close_fields_are_not_filtered() -> None:
+async def test_private_place_close_fields_are_not_filtered() -> None:
     executor = NodeExecutor(build_registry())
     parse = await request(
         executor, "option_close", "place_close_parse", {"raw_text": "平仓 OPT-ABC"}

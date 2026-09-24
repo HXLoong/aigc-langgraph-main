@@ -242,6 +242,7 @@ Invoke-RestMethod `
 
 ```powershell
 .venv/Scripts/python.exe -m pytest `
+    tests/test_app_startup_import.py `
     tests/test_nodes_run_api.py `
     tests/test_nodes_execution.py `
     tests/test_nodes_prepare.py `
@@ -284,6 +285,8 @@ Remove-Item Env:RUN_LOCAL_MYSQL_TESTS
 | `main` | `entry_route` | 三类业务入口选择 |
 | `main` | `pre_route` | 路由前置处理 |
 | `main` | `intent_route` | 一级意图路由 |
+| `main` | `plan_instructions` | 多指令拆分与依赖规划 |
+| `main` | `instructions` | 多指令执行子图 |
 | `main` | `swap` | 互换业务子图 |
 | `main` | `option` | 期权业务子图 |
 | `main` | `option_close` | 期权平仓业务子图 |

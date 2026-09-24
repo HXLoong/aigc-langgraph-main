@@ -1,6 +1,6 @@
 """LLM 对抗式 paraphrase 生成器（数据集 C 桶来源）。
 
-输入：业务方种子 case（来自 tests/fixtures/categories，source="business_seed"）
+输入：业务方种子 case（来自 tests/fixtures/biz，source="business_seed"）
 输出：候选 case 列表（source="llm_paraphrase"），等业务方 review 后合入数据集
 
 策略：
@@ -143,7 +143,7 @@ _REVIEW_HEADER = """\
 
 > grill-with-docs 第 4 决策 C 来源 · LLM 生成的 paraphrase 候选 case
 >
-> 业务方 review pass 的 case 转 jsonl 合入 `tests/fixtures/categories/`，
+> 业务方 review pass 的 case 转 jsonl 合入 `tests/fixtures/biz/`，
 > 标记 `source: llm_paraphrase`（PASS 阈值 80%，比 business_seed 90% 阈值更宽松）。
 
 ## 使用流程

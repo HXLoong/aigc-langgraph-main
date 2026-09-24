@@ -11,7 +11,7 @@ allowed-tools: Read, Bash, Grep
 
 ## 参数
 
-- `--sample`：JSONL 样本，每行至少 `id` + `raw_content`（`tests/fixtures/categories/` 不是该格式，需先转换或用导出的真实流量样本）
+- `--sample`：JSONL 样本，每行至少 `id` + `raw_content`（`tests/fixtures/biz/` 不是该格式，需先转换或用导出的真实流量样本）
 - `--max-cases`：只跑前 N 条
 
 ## 执行流程
@@ -42,7 +42,7 @@ python scripts/shadow_compare.py \
 - 参数不一致 → 子图 extract 节点与 Pydantic 模型
 - `tickers[i].*` 差异 → 结构性差异：LangGraph 的 `tickers` 是恒为空的兼容字段（标的识别归 Java，ADR 0025），无需排查；标的问题核对传给后端的原文
 
-差异确认是 LangGraph 的问题时，先在 `tests/fixtures/categories/` 补 case，再按 TDD 修复。
+差异确认是 LangGraph 的问题时，先在 `tests/fixtures/biz/` 补 case，再按 TDD 修复。
 
 ### Step 4：报告
 

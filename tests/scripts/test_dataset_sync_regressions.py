@@ -21,11 +21,36 @@ def uploader() -> ModuleType:
 def test_current_fixtures_can_be_prepared_without_remote_access() -> None:
     module = uploader()
     files = module.prepare_sync_files()
-    assert files
-    assert sum(len(source.items) for source in files) > 700
+    assert len(files) == 10
+    assert sum(len(source.items) for source in files) == 782
     assert len({item['id'] for source in files for item in source.items}) == sum(
         len(source.items) for source in files
     )
+
+
+def test_sync_discovers_nested_jsonl_and_uses_relative_path_names(tmp_path: Path) -> None:
+    sources = {
+        'biz/option_close.jsonl': 'case-biz',
+        'intent/option_close.jsonl': 'case-intent',
+        'biz/nested/swap_prod.jsonl': 'case-nested',
+    }
+    for relative, case_id in sources.items():
+        path = tmp_path / relative
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps({'id': case_id, 'send_text': '查订单'}) + '\n')
+    (tmp_path / 'biz' / 'ignored.csv').write_text('ignored')
+
+    files = uploader().prepare_sync_files(tmp_path)
+
+    assert {source.dataset_name for source in files} == {
+        'biz/option_close', 'intent/option_close', 'biz/nested/swap_prod',
+    }
+    for source in files:
+        case_id = sources[source.path.relative_to(tmp_path).as_posix()]
+        assert source.items[0]['id'] == f'{source.dataset_name}:{case_id}'
+        assert source.items[0]['metadata']['fixture_path'] == (
+            source.path.relative_to(tmp_path).as_posix()
+        )
 
 
 def test_duplicate_case_in_one_dataset_is_rejected(tmp_path: Path) -> None:

@@ -34,7 +34,7 @@ from scripts.langfuse._public_api import (
 
 load_dotenv()
 
-GOLDEN_PATH = PROJECT_ROOT / "tests" / "fixtures" / "categories"
+GOLDEN_PATH = PROJECT_ROOT / "tests" / "fixtures" / "biz"
 FIXTURE_ROOT = PROJECT_ROOT / "tests" / "fixtures"
 logger = logging.getLogger(__name__)
 DATASET_NAME = "otc-option-golden"
@@ -106,22 +106,12 @@ class PreparedFile:
 
 
 def _sync_paths(root: Path) -> list[Path]:
-    """Only top-level intent and categories fixtures are synced."""
-    return sorted(
-        [
-            *root.joinpath("intent").glob("*.jsonl"),
-            *root.joinpath("categories").glob("*.jsonl"),
-        ]
-    )
+    """Discover JSONL fixtures at any depth under the fixture root."""
+    return sorted(root.rglob("*.jsonl"))
 
 
 def _sync_dataset_name(path: Path, root: Path) -> str:
-    parts = path.relative_to(root).parts
-    if parts[0] == "intent" and len(parts) == 2:
-        return f"intent_{path.stem}"
-    if parts[0] == "categories" and len(parts) == 2:
-        return path.stem
-    raise ValueError(f"Unsupported sync fixture path: {path}")
+    return path.relative_to(root).with_suffix("").as_posix()
 
 
 def _read_rows(path: Path) -> list[tuple[int, dict[str, Any]]]:

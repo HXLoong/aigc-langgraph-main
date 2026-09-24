@@ -1,4 +1,4 @@
-"""Tests for the categories-based harness contract."""
+"""Tests for the biz-based harness contract."""
 from __future__ import annotations
 
 from collections.abc import Callable
@@ -31,15 +31,15 @@ ROOT = Path(__file__).resolve().parents[2]
 
 
 def test_load_categories_total(tmp_path: Path) -> None:
-    categories = tmp_path / "categories"
-    categories.mkdir()
-    _write(categories, {"caseNo": "a", "send_text": "询价", "category": "option"},
+    biz = tmp_path / "biz"
+    biz.mkdir()
+    _write(biz, {"caseNo": "a", "send_text": "询价", "category": "option"},
            {"caseNo": "b", "send_text": "下单", "category": "swap"})
     _write(tmp_path, {"caseNo": "outside", "send_text": "不应加载"})
-    nested = categories / "archive"
+    nested = biz / "archive"
     nested.mkdir()
     _write(nested, {"caseNo": "archived", "send_text": "不应加载"})
-    cases = load_golden(categories)
+    cases = load_golden(biz)
     assert [case.id for case in cases] == ["a", "b"]
     assert all(case.dialect == "a" for case in cases)
 
@@ -49,17 +49,17 @@ def test_load_categories_total(tmp_path: Path) -> None:
 def test_discovery_requires_opt_in_for_unified(
     tmp_path: Path, include_unified: bool, categories_root: bool,
 ) -> None:
-    """统一验收默认只读 categories；历史空轮仅在显式加载后统计。"""
-    categories = tmp_path / "categories"
-    categories.mkdir()
-    _write(categories, {"caseNo": "a", "send_text": "询价", "category": "option"})
+    """统一验收默认只读 biz；历史空轮仅在显式加载后统计。"""
+    biz = tmp_path / "biz"
+    biz.mkdir()
+    _write(biz, {"caseNo": "a", "send_text": "询价", "category": "option"})
     _write(tmp_path,
            {"id": "b", "category": "swap", "conversation": [
                {"raw_content": "下单"}, {"raw_content": "确认下单"}]},
            {"id": "empty", "category": "swap", "conversation": [
                {"raw_content": "下单"}, {"raw_content": "", "quote_desc": "引用上一轮"}]},
            ).rename(tmp_path / "unified_golden.jsonl")
-    root = categories if categories_root else tmp_path
+    root = biz if categories_root else tmp_path
     cases = load_golden(root=root, **({"include_unified": True} if include_unified else {}))
     if not include_unified:
         assert [case.id for case in cases] == ["a"]
@@ -75,9 +75,9 @@ def test_discovery_requires_opt_in_for_unified(
 
 
 def test_explicit_fixture_paths_do_not_implicitly_expand(tmp_path: Path) -> None:
-    categories = tmp_path / "categories"
-    categories.mkdir()
-    selected = _write(categories, {"caseNo": "a", "send_text": "询价"})
+    biz = tmp_path / "biz"
+    biz.mkdir()
+    selected = _write(biz, {"caseNo": "a", "send_text": "询价"})
     unified = _write(tmp_path, {"id": "b", "conversation": [{"raw_content": "下单"}]}).rename(
         tmp_path / "unified_golden.jsonl"
     )
@@ -560,9 +560,9 @@ async def test_cli_runs_only_explicitly_selected_suites(
     from harness import multi_turn
 
     fixtures = tmp_path / "tests/fixtures"
-    categories = fixtures / "categories"
-    categories.mkdir(parents=True)
-    _write(categories, {"caseNo": "a", "send_text": "现役询价"})
+    biz = fixtures / "biz"
+    biz.mkdir(parents=True)
+    _write(biz, {"caseNo": "a", "send_text": "现役询价"})
     _write(fixtures, {"id": "b", "conversation": [{"raw_content": "历史下单"}]}).rename(
         fixtures / "unified_golden.jsonl"
     )

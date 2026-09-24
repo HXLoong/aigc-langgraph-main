@@ -494,6 +494,8 @@ def test_sync_evaluators_filters_by_suite(tmp_path) -> None:
 def test_resolve_evaluator_suite_from_dataset_name() -> None:
     assert upload_evaluators.resolve_evaluator_suite(None, "intent-swap") == "intent"
     assert upload_evaluators.resolve_evaluator_suite(None, "intent_swap") == "intent"
+    assert upload_evaluators.resolve_evaluator_suite(None, "intent/option_close") == "intent"
+    assert upload_evaluators.resolve_evaluator_suite("business", "intent/option_close") == "business"
     assert upload_evaluators.resolve_evaluator_suite(None, "business-swap_prod_data") == "business"
     assert upload_evaluators.resolve_evaluator_suite(None, "golden_option_inquiry_case") == "business"
     assert upload_evaluators.resolve_evaluator_suite(None, None) == "business"

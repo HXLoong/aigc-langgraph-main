@@ -21,7 +21,7 @@
 
 - 在 `app/subgraphs/<product>/models.py` 的 `<Product>IntentType` 加枚举值，更新本轮联合解析契约与提示词；遵循 [ADR 0031](./0031-single-model-request-per-message.md)，不得新增独立的第二次参数模型请求；
 - 新增意图节点，并在子图 `graph.py` 的 `_INTENT_TO_NODE` 路由表登记（条件边由 `app/subgraphs/common.py` 的 `add_intent_dispatch` 从该表生成；未登记的意图落 `<product>_unknown` 兜底）；
-- 在 `tests/fixtures/categories/` 至少补 2 条用例（`scripts/check_fixture_consistency.py` 守护）。
+- 在 `tests/fixtures/biz/` 至少补 2 条用例（`scripts/check_fixture_consistency.py` 守护）。
 
 **新建独立子图（额外）**：
 

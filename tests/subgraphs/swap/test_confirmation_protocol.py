@@ -15,7 +15,7 @@ from app.tools.swap_client import SwapClientHttpx
 from tests.intent_fixtures import intent_reply, mock_ainvoke
 
 CASES = json.loads(
-    (Path(__file__).parents[2] / "fixtures" / "swap_confirmation_cases.json").read_text()
+    (Path(__file__).parents[0] / "confirmation_cases.json").read_text()
 )
 
 

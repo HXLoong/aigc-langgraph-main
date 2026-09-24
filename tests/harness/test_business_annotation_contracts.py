@@ -9,7 +9,7 @@ from harness.golden import load_golden
 
 def test_case028_pov_change_accepts_partial_payload_and_rejects_wrong_ratio():
     case = next(case for case in load_golden(
-        Path("tests/fixtures/categories/golden_option_open_case.jsonl"),
+        Path("tests/fixtures/biz/option_open.jsonl"),
     ) if case.id == "case-028")
     turn = case.turns[2]
     quote = (

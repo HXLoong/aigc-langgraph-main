@@ -9,7 +9,7 @@
 | 主线 | 内容 | 主要 ADR |
 |---|---|---|
 | **原生 LangGraph 重构** | 子图原生嵌入、单动作多订单、RetryPolicy、State 分层与 output schema；幂等 / 回执 / 对账；字段证据契约；标的识别移交 Java 后端；Dify 只作历史参照 | 0024 · 0025 · 0026 · 0027 · 0028 |
-| **数据集评测与评估** | ground truth 是数据集 `expected`：意图集 `tests/fixtures/intent/`（只调 LLM，CI 可跑）+ 业务验收集 `tests/fixtures/categories/`（依赖 Java）+ 节点级 fixture；harness HTTP 回归 + LLM Judge；错例先补 fixture 再修代码 | 0002 · 0005 · 0014 · 0029 · 0030 D3 |
+| **数据集评测与评估** | ground truth 是数据集 `expected`：意图集 `tests/fixtures/intent/`（只调 LLM，CI 可跑）+ 业务验收集 `tests/fixtures/biz/`（依赖 Java）；节点级 fixture 已退役（ADR 0029，仅保留 `app/node_execution` 节点调试 API）；harness HTTP 回归 + LLM Judge；错例先补 fixture 再修代码 | 0002 · 0005 · 0014 · 0029 · 0030 D3 |
 | **Harness 工程** | 任何提示词 / 节点 / 契约改动走同一条门：TDD、pytest、五项一致性 lint、ruff / mypy、数据集 PASS 率不低于前值、trace 可归因；CI 在 push / PR 上跑 | 0003 · 0004 · 0023 · 0030 |
 
 **已就绪的部署与运维工具链**：`scripts/deploy-customer.sh`（一键部署 + smoke）、`scripts/rollback_canary.sh`（应急回切）、`scripts/drill_smoke.sh`（演练）、`scripts/canary_status.py` / `scripts/metrics_snapshot.py`（灰度状态与指标快照）、`scripts/run_alerts.py`（阈值告警干跑）、`scripts/shadow_compare.py`（可选对照，不进任何门）、Grafana 面板模板（`infra/grafana/`）、[on-call 值班手册](./docs/operations/on-call-runbook.md)。
@@ -39,7 +39,7 @@ app/        # LangGraph 应用：api / graph / nodes / subgraphs{swap,option,clo
 harness/    # 评测台：python -m harness <doctor|run|node-run>、意图级 runner、Langfuse Evaluator
 scripts/    # 评估入口、真后端探针、灰度与运维、一致性 lint（目录页见 scripts/CLAUDE.md）
 infra/      # LangFuse self-hosted Compose + Grafana 面板模板
-tests/      # 单测 / 子图 / 节点 / 集成；fixtures/ 为意图集、业务验收集与节点级 fixture
+tests/      # 单测 / 子图 / 节点 / 集成；fixtures/ 为意图集与业务验收集（节点级 fixture 已退役）
 docs/       # 文档地图与存放规则见 docs/README.md
 sql/        # 业务库初始化与迁移
 mock_api/   # Java / GOATS 后端的本地 mock（意图集 CI 与集成测试用）

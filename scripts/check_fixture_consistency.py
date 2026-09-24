@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
-"""Validate the active fixtures: categories/*.jsonl (A dialect) + unified_golden.jsonl (B dialect)
+"""Validate the active fixtures: biz/*.jsonl (A dialect) + unified_golden.jsonl (B dialect)
 + intent/*.jsonl (意图集，A 方言子集).
 
 ADR 0024 D6：现役数据源同受 lint；一个文件只放一种方言，id 跨文件唯一。
 意图集（tests/fixtures/intent/）只评路由与意图：逐轮必须标 expected.product_type / intent
-且取运行时枚举值，禁止出现卡片文本断言（那是 categories/ 业务集的职责）。
+且取运行时枚举值，禁止出现卡片文本断言（那是 biz/ 业务集的职责）。
 """
 from __future__ import annotations
 
@@ -26,7 +26,9 @@ from harness.references import validate_expected_references  # noqa: E402
 UNIFIED_FIXTURE_NAME = "unified_golden.jsonl"
 #: 运行时 product_type 取值（app/graph/state.py ProductType）；fixture 标了别的值只告警不阻断
 KNOWN_PRODUCT_TYPES = ("swap", "option", "option_close", "unknown")
-#: 意图集目录（与 categories/ 平级）；文件按产品命名，id 以 intent- 开头
+#: 意图集目录（与 biz/ 平级）；文件按产品命名，id 以 intent- 开头
+BUSINESS_DIR_NAME = "biz"
+LEGACY_BUSINESS_DIR_NAME = "categories"
 INTENT_DIR_NAME = "intent"
 INTENT_ID_PREFIX = "intent-"
 INTENT_CASE_TYPES = ("positive", "negative")
@@ -154,7 +156,7 @@ def validate_unified(path: Path, ids: list[str]) -> tuple[list[str], list[str]]:
     for origin, obj in _iter_jsonl(path, errors):
         a_fields = sorted(key for key in ("send_text", "sub_scenes", "name") if key in obj)
         if a_fields:
-            errors.append(f"{origin}: fields {a_fields} belong to the A dialect (categories/), not {path.name}")
+            errors.append(f"{origin}: fields {a_fields} belong to the A dialect (biz/), not {path.name}")
         case_id = obj.get("id")
         if not isinstance(case_id, str) or not case_id.strip():
             errors.append(f"{origin}: missing id")
@@ -230,7 +232,7 @@ def _check_intent_turn(origin: str, turn: dict[str, Any], intents: dict[str, tup
     for field_name in TEXT_ASSERTION_FIELDS:
         if field_name in turn:
             errors.append(
-                f"{origin}: {field_name} belongs to the business suite (categories/), not {INTENT_DIR_NAME}/"
+                f"{origin}: {field_name} belongs to the business suite (biz/), not {INTENT_DIR_NAME}/"
             )
     expected = turn.get("expected")
     if not isinstance(expected, dict):
@@ -312,14 +314,25 @@ def validate_intent(path: Path, ids: list[str]) -> list[str]:
     return errors
 
 
+def _fixtures_root(root: Path) -> Path:
+    return root.parent if root.name in (BUSINESS_DIR_NAME, LEGACY_BUSINESS_DIR_NAME) else root
+
+
+def _business_dir(root: Path) -> Path:
+    if root.name in (BUSINESS_DIR_NAME, LEGACY_BUSINESS_DIR_NAME):
+        return root
+    biz = root / BUSINESS_DIR_NAME
+    return biz if biz.is_dir() else root / LEGACY_BUSINESS_DIR_NAME
+
+
 def _intent_paths(root: Path) -> list[Path]:
-    fixtures_root = root.parent if root.name == "categories" else root
+    fixtures_root = _fixtures_root(root)
     intent_dir = fixtures_root / INTENT_DIR_NAME
     return sorted(intent_dir.glob("*.jsonl")) if intent_dir.is_dir() else []
 
 
 def _unified_path(root: Path) -> Path:
-    fixtures_root = root.parent if root.name == "categories" else root
+    fixtures_root = _fixtures_root(root)
     return fixtures_root / UNIFIED_FIXTURE_NAME
 
 
@@ -331,12 +344,12 @@ def collect_warnings(root: Path) -> list[str]:
 
 
 def validate(root: Path, verbose: bool = False) -> list[str]:
-    categories = root / "categories" if root.name != "categories" else root
-    if not categories.is_dir():
-        return [f"missing fixture directory: {categories}"]
-    paths = sorted(categories.glob("*.jsonl"))
+    business_dir = _business_dir(root)
+    if not business_dir.is_dir():
+        return [f"missing fixture directory: {business_dir}"]
+    paths = sorted(business_dir.glob("*.jsonl"))
     if not paths:
-        return [f"no JSONL fixtures found: {categories}"]
+        return [f"no JSONL fixtures found: {business_dir}"]
 
     errors: list[str] = []
     ids: list[str] = []
@@ -361,7 +374,7 @@ def validate(root: Path, verbose: bool = False) -> list[str]:
             b_fields = sorted(key for key in ("conversation", "raw_content") if key in obj)
             if b_fields:
                 errors.append(
-                    f"{origin}: fields {b_fields} belong to the B dialect ({UNIFIED_FIXTURE_NAME}), not categories/"
+                    f"{origin}: fields {b_fields} belong to the B dialect ({UNIFIED_FIXTURE_NAME}), not {BUSINESS_DIR_NAME}/"
                 )
             case_id = obj.get("id") or obj.get("caseNo")
             errors.extend(f"{origin}: {error}" for error in validate_expected_references(obj.get("expected")))

@@ -172,7 +172,7 @@ shadow 是**等价性验证**，不是"哪边对"的裁决。三种典型差异�
 ```
 
 灰度期直接用从生产导入的真实流量样本（如 `sample_real_traffic.jsonl`）；
-`tests/fixtures/categories/` 的两种方言（`send_text` / `conversation`）**不是**该格式，需先转换。
+`tests/fixtures/biz/` 的 `send_text` 方言**不是**该格式，需先转换。
 
 ---
 
@@ -184,7 +184,7 @@ A: 用 `scripts/langfuse/langfuse_eval.py --local <fixture>` 跑本地评估 —
 "我们认为正确的答案"，不依赖 Dify：
 
 ```bash
-python scripts/langfuse/langfuse_eval.py --local tests/fixtures/categories
+python scripts/langfuse/langfuse_eval.py --local tests/fixtures/biz
 ```
 
 **Q: Dify 返回结构和我们约定的不一样怎么办？**
