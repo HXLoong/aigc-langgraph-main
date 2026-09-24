@@ -31,11 +31,11 @@ LangSmith 是海外 SaaS，所有 prompt + LLM 输出（含客户企微原话、
 
 ### D3 · 提示词管理：生产以 Git `.md` 为真理来源
 
-**决策**：真理来源永远是 `app/prompts/**/*.md`；生产绝不走 LangFuse 拉提示词；LangFuse Prompts 仅作 staging 演练区，演练通过后经 `promote_langfuse_prompt.py` 晋升为 `_v{N+1}.md` 走 git PR（保留审计屏障）。
+**决策**：真理来源永远是 `app/prompts/**/*.md`；生产绝不走 LangFuse 拉提示词；LangFuse Prompts 仅作 staging 演练区，演练通过后修改 git 中的 `_v{N+1}.md` 并走 PR（保留审计屏障）。2026-09-24 起云端拉取脚本已退役，合并后的 git 资产通过上传脚本同步到 staging。
 
 **落地现状**：
 
-- ✅ 晋升脚本 `scripts/langfuse/promote_langfuse_prompt.py <category.name>`：按 [ADR 0003](./0003-prompt-versioning-by-file-coexistence.md) 扫描现有版本写 `_v{N+1}.md`，行为与设计一致。
+- 按 [ADR 0003](./0003-prompt-versioning-by-file-coexistence.md) 在 git 中维护 `_v{N+1}.md`；合并后由 `scripts/langfuse/upload_prompt_to_langfuse.py` 单向同步到 staging。
 - **双源开关追认现状**（2026-08-27 裁决）：开发/评测环境使用 `enable_langfuse && use_langfuse_prompts` 全局布尔；开关打开时 Langfuse 优先、本地 `.md` 为 fallback。该机制不进入生产，故不改变“生产以 Git 为真理来源”的决策。
 - ✅ **生产硬闸门已补齐**（2026-08-27 裁决落地）：`load_prompt` 在 `environment=production` 且 `use_langfuse_prompts=true` 时直接 raise（`tests/prompts/test_langfuse_prompt_gate.py` 覆盖）；拉取失败从 debug 静默升为 warning。
 - D3-4"晋升后 7 天删 LangFuse 实验版"无自动化承载，降级为 checklist 纪律。
@@ -53,7 +53,7 @@ LangSmith 是海外 SaaS，所有 prompt + LLM 输出（含客户企微原话、
 
 ### D5 · Harness CLI 接入点（现状订正）
 
-- `harness run` ✅、`harness node-run` ✅（[ADR 0029](./0029-node-level-debug-api-and-regression-workbench.md)）；提示词晋升直接跑 `scripts/langfuse/promote_langfuse_prompt.py`
+- `harness run` ✅、`harness node-run` ✅（[ADR 0029](./0029-node-level-debug-api-and-regression-workbench.md)）；提示词修改走 git PR，合并后的同步见 [自动同步说明](../langfuse/auto-sync.md)
 - 早期 `eval` / `diff` / `sync-golden` stub 子命令已删除（2026-09）——评估主入口为 `scripts/langfuse/langfuse_eval.py`
 - `harness/langfuse_client.py` 实为 **LangChain CallbackHandler 单例封装**（非 SDK client 封装；未启用返回 None 走 no-op）
 

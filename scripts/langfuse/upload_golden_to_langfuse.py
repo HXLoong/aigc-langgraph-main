@@ -10,6 +10,7 @@ import logging
 import os
 import sys
 import uuid
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -76,15 +77,15 @@ def build_dataset_metadata(cases: list[GoldenCase], *, suite: str) -> dict[str, 
     return {"suite": suite, "evaluator_names": names}
 
 
-def _clear_dataset(dataset_name: str) -> None:
+def _clear_dataset(dataset_name: str, *, base_url: str | None = None) -> None:
     import httpx
 
     public_key = os.environ.get("LANGFUSE_PUBLIC_KEY", "")
     secret_key = os.environ.get("LANGFUSE_SECRET_KEY", "")
-    base_url = base_url or os.environ.get(
+    base_url = (base_url or os.environ.get(
         "LANGFUSE_BASE_URL",
         os.environ.get("LANGFUSE_HOST", "https://cloud.langfuse.com"),
-    ).rstrip("/")
+    )).rstrip("/")
     auth = (public_key, secret_key)
 
     item_ids: list[str] = []
@@ -317,9 +318,9 @@ def main() -> int:
 
     from langfuse import Langfuse
 
-    langfuse = Langfuse()
+    langfuse = Langfuse(base_url=base_url)
     dataset = langfuse.create_dataset(
-        name=args.dataset_name, metadata=build_dataset_metadata(cases, suite=suite),
+        name=dataset_name, metadata=build_dataset_metadata(cases, suite=suite),
     )
     print(f"创建或复用 Dataset：{dataset.name}")
 
@@ -328,8 +329,8 @@ def main() -> int:
     for case in cases:
         try:
             langfuse.create_dataset_item(
-                id=dataset_item_id(args.dataset_name, case.id),
-                dataset_name=args.dataset_name,
+                id=dataset_item_id(dataset_name, case.id),
+                dataset_name=dataset_name,
                 input=build_input(case),
                 expected_output=build_expected(case),
                 metadata=_metadata(case, suite=suite, backend=backend),

@@ -120,7 +120,9 @@ def _read_workspace_prompt(category: str, name: str) -> tuple[str, str, Path]:
     return system, user_template, path
 
 
-def _build_prompt_body(system: str, user_template: str) -> list[dict[str, str]]:
+def _build_prompt_body(
+    system: str, user_template: str, experiment: bool = True,
+) -> tuple[str, str | list[dict[str, str]], str]:
     """拼 chat 消息：有 [user] 段用 git 的模板，否则补 EXPERIMENT_USER_TEMPLATE。
 
     system 段始终是 git 原文。与 app/prompts/__init__.py::_load_from_langfuse 的
@@ -254,6 +256,7 @@ def main() -> int:
         help=f"部署标签（默认 {DEFAULT_LABEL}；运行时读 production，慎用）",
     )
     parser.add_argument("--dry-run", action="store_true", help="不推送，只打印将上传的内容摘要")
+    parser.add_argument("--plain", action="store_true", help="单文件上传时不补实验用 user 模板")
     args = parser.parse_args()
 
     if args.sync_all:
@@ -274,7 +277,7 @@ def main() -> int:
 
     if not args.sync_all:
         category, name = _parse_target(args.target)
-        system, user_template, path = _read_git_prompt(category, name)
+        system, user_template, path = _read_workspace_prompt(category, name)
         lf_name = _langfuse_name(category, name)
         prompt_type, body, origin = _build_prompt_body(system, user_template, not args.plain)
 
