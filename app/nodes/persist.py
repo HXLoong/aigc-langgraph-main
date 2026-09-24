@@ -1,11 +1,11 @@
 """persist 节点：把 trace 沉淀到持久化层。
 
-C1.8（Issue #57）完整实现：
+写入目标：
 
-- LangFuse：通过 CallbackHandler 自动写（M1 已接入，本节点不重复写）
+- LangFuse：通过 CallbackHandler 自动写（本节点不重复写）
 - MySQL `langgraph_node_trace` 表：本节点把 `state["trace"]` 每条转一行写入
 
-设计原则（CLAUDE.md 原则 3 + C1.8 acceptance）：
+设计原则（CLAUDE.md 原则 3）：
 - 写 MySQL 失败**不阻塞业务主流程**：try/except + log.warn，不抛
 - LangFuse 与 MySQL **互相独立**：一方 down 不影响另一方
 - 与 Java/checkpoint 共库，以 langgraph_ 表名前缀隔离
@@ -52,7 +52,7 @@ async def persist(state: AgentState) -> dict[str, Any]:
     thread_id = state.get("conversation_id") or ""
     trace_id = state.get("trace_id") or ""
 
-    # 控制台日志（保留 M1 行为）
+    # 控制台日志
     logger.info(
         "persist trace_count=%d conversation_id=%s product_type=%s intent=%s",
         len(trace),

@@ -54,7 +54,7 @@ graph = g.compile()
 result = asyncio.run(graph.ainvoke({<span class="st">"counter"</span>: 0}))
 <span class="kw">print</span>(result)
 <span class="cm"># {'counter': 3, 'log': ['now 1', 'now 2', 'now 3']}</span></code></pre>
-<span class="src">来源：docs/training/langgraph-handbook.md 第 2.11 节（可运行验证过）</span>
+
 
 <p>盯着输出想一件事：<code>counter</code> 最后只剩 <code>3</code>，而 <code>log</code> 攒下了三条。<strong>同样被节点写了三次，为什么一个覆盖、一个累加？</strong>答案就是 <code>Annotated[list, add]</code> 里那个 reducer——这是本课唯一需要"记住"的机制。</p>
 
@@ -130,7 +130,7 @@ Dify 的 if-else 节点是声明式配置（<code>comparison_operator: contains<
 <label><input type="radio" name="q1" value="a"> 修改传入的 state 后返回完整 state</label>
 <label><input type="radio" name="q1" value="b"> 只返回一个包含待更新字段的 dict</label>
 <label><input type="radio" name="q1" value="c"> 返回 None 并把结果写入全局变量</label>
-<p class="quiz-explain" hidden>节点返回 partial dict，框架负责合并；mutate 入参和返回完整 state 都是铁律反例（handbook 第 2.2 节）。</p>
+<p class="quiz-explain" hidden>节点返回 partial dict，框架负责合并；mutate 入参和返回完整 state 都是铁律反例。</p>
 </div>
 
 <div class="quiz-q" data-answer="c">
@@ -165,7 +165,6 @@ Dify 的 if-else 节点是声明式配置（<code>comparison_operator: contains<
 <ul>
 <li><strong>本课首选一手资料</strong>：<a href="https://langchain-ai.github.io/langgraph/concepts/low_level/">LangGraph 官方文档 · Low-level Concepts</a>（State/Node/Edge/Reducer 的权威出处，20 分钟能读完）</li>
 <li>速查：<a href="../reference/langgraph-core-cheatsheet.html">LangGraph 核心速查表</a>（建议打印贴工位）</li>
-<li>深入：<code>docs/training/langgraph-handbook.md</code> 第 2 章（5 个概念逐个展开）、第 3 章（Dify 概念对照表）</li>
 <li>下一课：<a href="0002-conditional-routing-cascade.html">第 02 课 · 条件路由与 cascade 防御</a>——学完练习并小测全对后再进入</li>
 </ul>
 

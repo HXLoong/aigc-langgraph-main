@@ -35,14 +35,14 @@ async def ingest(state: AgentState) -> dict[str, Any]:
       （状态串线）。跨轮记忆只保留 history_messages（与入口字段）
     - trace：Overwrite 清空上一轮，本轮从 ingest 起记（@safe_node 会把自身条目写进 Overwrite）
 
-    G5.1 金丝雀监控：每条请求按 roomId 判定 is_canary，emit metric。
-    F4.2 期间非 canary 流量计数 ≥ 1 触发告警（误切 Webhook 兜底）。
+    金丝雀监控：每条请求按 roomId 判定 is_canary，emit metric。
+    灰度期间非 canary 流量计数 ≥ 1 触发告警（误切 Webhook 兜底）。
     """
     room_id = state.get("room_id")
     emit_canary_traffic(is_canary=is_canary_room(room_id))
     updates: dict[str, Any] = {}
     if not state.get("trace_id"):
-        # ADR 0004/#156：单次调用关联 ID（API 入口 routes.py 已生成；此处兜底
+        # ADR 0004：单次调用关联 ID（API 入口 routes.py 已生成；此处兜底
         # 覆盖 eval 脚本 / harness 等直接 ainvoke 的路径）
         updates["trace_id"] = uuid.uuid4().hex
     now = time()

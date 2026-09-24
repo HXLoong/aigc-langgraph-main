@@ -1,6 +1,6 @@
 """app/llm/clients.py 工厂的 vendor 适配测试。
 
-背景（ADR 0018）：开发期 Qwen / 现场 DeepSeek-v4-pro 通过 .env 切换。
+背景（ADR 0020）：模型经 .env 切换，适配层兼容 Qwen 与 DeepSeek。
 关闭思考模式的参数两家不同：
 - Qwen (dashscope)：extra_body={"enable_thinking": False}
 - DeepSeek：extra_body={"thinking": {"type": "disabled"}}

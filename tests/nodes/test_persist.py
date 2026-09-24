@@ -1,4 +1,4 @@
-"""C1.8 persist 节点单元测试（Issue #57）。
+"""persist 节点单元测试。
 
 验证：
 - 空 trace 不写 MySQL（return 早退）
@@ -69,7 +69,7 @@ def test_trace_entry_to_row_from_pydantic() -> None:
     assert row == (
         "msg-1",          # message_id
         "conv-1",         # thread_id
-        "tid-1",          # trace_id（#156）
+        "tid-1",          # trace_id
         "swap.intent",    # node_name
         0,                # step_index
         "place_order_request",  # input_preview

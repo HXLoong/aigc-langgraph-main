@@ -1,4 +1,4 @@
-"""render 节点：从 final state 生成 reply_text（Issue #20 M2 实现）。
+"""render 节点：从 final state 生成 reply_text。
 
 业务卡片由 Java 生成；api_result 保留原文，展示按 Dify 的业务码规则投影。
 本地只生成纠错、消歧、缺上下文及执行结果待核对提示。

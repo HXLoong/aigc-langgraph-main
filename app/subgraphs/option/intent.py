@@ -17,6 +17,7 @@ from typing import Any
 from app.execution.confirmation import (
     confirmation_action,
     confirmation_attempt,
+    has_execution_parameters,
 )
 from app.extraction.intent_evidence import intent_records
 from app.graph.retry import io_node
@@ -56,10 +57,14 @@ async def option_intent(state: AgentState) -> dict[str, Any]:
     action = confirmation_action(raw)
     if confirmation_attempt(raw):
         intent = {"place": "confirm_order", "cancel": "confirm_cancel_order"}.get(action or "", "unknown_intent")
+        # 期权无独立改单流程：带参数的「确认修改」按提示词规则1第7条归请求下单；裸「确认修改」仍拒绝
+        if action == "modify" and has_execution_parameters(raw):
+            intent = "place_order_from_quote"
         return {"intent": intent, "trace": [TraceEntry(node="option_intent", decision=f"confirmation:{intent}")]}
-    if "撤单" in raw and ("撤单" in quote or "撤单请求" in quote):
+    # 引用撤单回执再回复「撤单」：提示词规则3「撤单」= request_cancel_order（不是取消下单）
+    if "撤单" in raw and "撤单" in quote:
         return {
-            "intent": "cancel_order_request",
+            "intent": "request_cancel_order",
             "trace": [TraceEntry(node="option_intent", decision="deterministic_cancel")],
         }
 

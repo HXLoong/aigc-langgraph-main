@@ -1,9 +1,7 @@
-# Java 后端业务 API 契约（LangGraph `app/tools/` 重写依据）
+# Java 后端业务 API 契约
 
-> 来源：`/Users/tony/code/GitHub/aigc/api/yudao-module-integration` + `yudao-module-wechat-bot` 实测代码挖掘
-> 最近一次审计：2026-05-10（亲自核对源码与 Spring 框架配置）
->
-> 本文件不是 ADR，是事实清单。tools/ 重写时按此契约定义 Pydantic 模型。
+> 来源：Java 后端 `yudao-module-integration` 与 `yudao-module-wechat-bot` 源码核对。
+> 本文件是事实清单：`app/tools/` 的 Pydantic 模型按此契约定义；Java 契约变更时同步修改本文。
 
 ## 0. 框架级路径前缀（关键）
 
@@ -17,12 +15,12 @@ private Api adminApi = new Api("/admin-api", "**.controller.admin.**");
 
 ## 路径分类
 
-| 类别 | 含义 | LangGraph tools 层处置 |
-|------|------|------------------------|
-| **Dify 回调路径** | 当前 Dify 工具节点回调 Java 业务 API | ✅ 必须实现（LangGraph 替换 Dify 后由其调用） |
-| **机器人参数透传** | Java Worker 从企微消息抽出上下文，作为 inputs 传给 Dify/LangGraph | ⚠️ 不通过 tools/ 调，由 ingest 节点解析 |
+| 类别 | 含义 | LangGraph 侧处置 |
+|------|------|------------------|
+| **业务 API** | Java 业务接口（操作、查询、会话写回） | 经 `app/tools/` 的 Protocol 客户端调用 |
+| **机器人参数透传** | Java Worker 从企微消息抽出上下文，作为 inputs 传给 LangGraph | 不经 tools/ 调用，由入口与 ingest 节点解析 |
 
-## Java → LangGraph 的会话入口（2026-09-07 修订）
+## Java → LangGraph 的会话入口
 
 `POST /v1/workflows/run` 接收 Java 实际发送的顶层 `conversation_id`，并兼容
 `inputs.conversationId`、`inputs.conversation_id`。响应顶层为 `conversationId`、`answer`，
@@ -60,13 +58,13 @@ private Api adminApi = new Api("/admin-api", "**.controller.admin.**");
 启用 checkpoint 时，同一会话恢复历史；主图在 `render` 后通过 `record_history`
 追加当轮用户原话与最终回复。业务子图只读取历史，其完整 state 输出不向父图重复追加旧历史。
 
-2026-09-22：当轮消息编号、群、操作者、附件及对手参考列表必须由当前请求提供，
+当轮消息编号、群、操作者、附件及对手参考列表必须由当前请求提供，
 缺失时显式清空，不从 checkpoint 继承。缺少有效消息编号时不提交交易，也不调用
 `/set-intent` 更新上一条消息；顶层 `user` 补充用户身份的规则保持不变。
 
 ## 1. 标的（Ticker / Instrument）
 
-2026-09-20：LangGraph 业务链只在既有订单字段传递原始证券表达。以下查询接口仍为 Java 工具契约，
+LangGraph 业务链只在既有订单字段传递原始证券表达。以下查询接口仍为 Java 工具契约，
 不作为 LangGraph 提交前识别或拒绝依据；Java `operate` 内部负责证券解析。
 HTTP `outputs.tickers` 保留为空列表的兼容字段，验收检查实际后端回复。
 
@@ -74,7 +72,7 @@ HTTP `outputs.tickers` 保留为空列表的兼容字段，验收检查实际后
 
 - **HTTP**: `GET /admin-api/integration/securities-instrument/select` ⚠️ **GET + RequestBody，不规范但合法**
 - **Controller**: `SecuritiesInstrumentController.selectSecuritiesInstrumentPage()` (`SecuritiesInstrumentController.java:100`)
-- **路径**: Dify 回调
+- **调用方**: LangGraph（经 Protocol 客户端）
 - **入参** `SecuritiesInstrumentOpenApiReqVO`:
   - `keywordItems: list[KeywordItem]` — 关键词列表，每项 `{keyword: str, isFull: bool}`
   - 可能含 `transactionTypeList: list[str]` 过滤
@@ -87,16 +85,7 @@ HTTP `outputs.tickers` 保留为空列表的兼容字段，验收检查实际后
 - **底层逻辑**: `InstrumentApiSearchHelper.searchAndScore()` (`InstrumentApiSearchHelper.java:105`)
 - **认证**: `@PlatformApiAuth`（开放接口）
 
-### 1.2 动态推断 prompt 拉取（ADR 0013）
-
-- **HTTP**: `GET /admin-api/counterparty/info/instrument-inference-prompt`
-- **Controller**: `CounterpartyInfoController.getInstrumentInferencePrompt()` (`CounterpartyInfoController.java:33`)
-- **路径**: Dify 回调
-- **入参**: 无
-- **出参** `CommonResult<String>`: 配置字符串，对应 `configApi.getConfigValueByKey("swap_instrument_inference_prompt")`
-- **认证**: `@PlatformApiAuth`
-
-### 1.3 交易对手列表
+### 1.2 交易对手列表
 
 - **HTTP**: `GET /admin-api/counterparty/info/list`
 - **Controller**: `CounterpartyInfoController.list()`
@@ -104,15 +93,9 @@ HTTP `outputs.tickers` 保留为空列表的兼容字段，验收检查实际后
 - **出参** `list[CounterpartyVO]`
 - **认证**: `@PlatformApiAuth`
 
-### 1.4 交易时间查询
-
-- **路径**: Java 直接（`InstrumentApiSearchHelper.queryTradingHours()`，非 HTTP 接口）
-- 配置 key: `INVEST_TRS_TRADING_HOURS_CONFIG`
-- LangGraph 接管后建议作为 `TickerClient` 的一个方法，实现走配置直读或新开 endpoint（待 D4 决定）
-
 ## 2. 期权操作（FinancialOrders）
 
-2026-09-22 Python 出站约定：`orderList[].tenor` 与 `optionRfq.tenor[]` 的非空值统一为
+Python 出站约定：`orderList[].tenor` 与 `optionRfq.tenor[]` 的非空值统一为
 正整数月份格式，例如 `半年 → 6M`、`1Y/1年 → 12M`、`0.5Y → 6M`、`3个月 → 3M`。
 当前输入、引用旧值和快速询价解析结果使用同一换算规则，HTTP 提交前再次检查；
 无法换算、非整月及冲突期限提示纠正，不回填旧期限、不静默丢弃列表元素。
@@ -126,7 +109,7 @@ HTTP `outputs.tickers` 保留为空列表的兼容字段，验收检查实际后
 
 - **HTTP**: `POST /admin-api/financial-orders/operate`
 - **Controller**: `FinancialOrdersOpenApiController.operate()` (`FinancialOrdersOpenApiController.java:38`)
-- **路径**: Dify 回调
+- **调用方**: LangGraph（经 Protocol 客户端）
 - **核心入参** `FinancialOrderOpenApiSaveReqVO`:
 
 ```python
@@ -179,7 +162,7 @@ class FinancialOrderOpenApiSaveReqVO:
   - `placeOrderPriceType: GoatsPriceType`
   - `notionalAmount: Decimal`（精度截断 2 位）
 
-### 询价补参与提取字段（2026-09-07 修订）
+### 询价补参与提取字段
 
 - `OptionInquiryItem.orderId: str | None`：补参携带原 `Q-...` 询价单号，首次询价无原单号时为空。
 - `OptionOrderItem.tenor: str | None`：建仓/改单提取也保留本轮给出的期限，避免 Java 纠正意图时期限已被丢弃。
@@ -202,7 +185,7 @@ Java 生成的卡片原样返回为 `answer` 和 `data.outputs.reply_text`，不
 
 - **HTTP**: `POST /admin-api/financial-orders/query-close-orders`
 - **Controller**: `FinancialOrdersOpenApiController.queryCloseOrders()` (`:49`)
-- **路径**: Dify 回调
+- **调用方**: LangGraph（经 Protocol 客户端）
 
 ## 3. 互换操作（SwapOrder）
 
@@ -210,7 +193,7 @@ Java 生成的卡片原样返回为 `answer` 和 `data.outputs.reply_text`，不
 
 - **HTTP**: `POST /admin-api/swap-order/operate`
 - **Controller**: `SwapOrderOpenApiController.operate()` (`SwapOrderOpenApiController.java:33`)
-- **路径**: Dify 回调
+- **调用方**: LangGraph（经 Protocol 客户端）
 - **核心入参** `SwapOrderOpenApiSaveReqVO`:
 
 ```python
@@ -294,7 +277,7 @@ class SwapOrderOpenApiSaveReqVO:
 
 ## 6. 消息会话与意图持久化（set-intent）
 
-2026-09-07 核对本地 Java 源码及 `dify/yaml/主干工作流.yml` 的“存储消息意图”节点。
+以下字段依据 Java 源码中的"存储消息意图"逻辑核对。
 
 - **HTTP**: `POST /admin-api/openapi/xbot/message/set-intent`
 - **Controller**: `BotOpenApiMessageController.setIntent()`（`yudao-module-wechat-bot-biz`，`controller/admin/open/xbot/`）
@@ -305,7 +288,7 @@ class SwapOrderOpenApiSaveReqVO:
 | JSON 字段 | 类型 | LangGraph 写入规则 |
 |-----------|------|-------------------|
 | `conversationId` | string | 原样使用 `state["conversation_id"]`；不解析 UUID、不增删括号或反斜杠、不重新格式化 |
-| `messageId` | string | `str(state["message_id"])`，与 Dify 一致；`/operate` 的整数 `messageId` 不变 |
+| `messageId` | string | `str(state["message_id"])`；`/operate` 的整数 `messageId` 不变 |
 | `intent` | string | 当前 `state["intent"]`；缺失或为空时为 `unknown_intent` |
 | `productType` | integer | `swap → 1`；`option / option_close / unknown → 0` |
 | `orderIds` | array | 固定 `[]`，不从业务订单结果填充 |
@@ -357,31 +340,16 @@ FastAPI lifespan 显式注入 `MessageClientHttpx`，保证真实 HTTP 入口每
 
 - 精度纪律：金额字段一律 `Decimal`，向 Goats 发送前 `truncate(2)`（对齐 `TradePrecisionUtil.truncateOrderScale()`）
 - 认证：所有 `@PlatformApiAuth` 接口走平台级 token，不依赖用户登录
-- LangGraph tools 层调用时机器人参数（`messageId / conversationId / userId / roomId / ...`）由 ingest 节点从 Dify Workflow Run inputs 解析后存入 AgentState，再由具体节点透传给 Java 业务 API
+- LangGraph tools 层调用时机器人参数（`messageId / conversationId / userId / roomId / ...`）由入口从 Workflow Run inputs 解析后存入 AgentState，再由具体节点透传给 Java 业务 API
 
-## 关键代码定位（含真实行号）
+## LangGraph 侧客户端
 
-| 功能 | 文件 | 行号 |
-|------|------|------|
-| 期权操作 Controller | `FinancialOrdersOpenApiController.java` | 38 |
-| 期权 ReqVO | `FinancialOrderOpenApiSaveReqVO.java` | 14-69 |
-| 期权意图枚举 | `StockEnum.java` | 42-79 |
-| 互换操作 Controller | `SwapOrderOpenApiController.java` | 33 |
-| 互换 ReqVO | `SwapOrderOpenApiSaveReqVO.java` | 13-61 |
-| 互换意图枚举 | `SwapEnum.java` | 20-43 |
-| 标的查询 Controller | `SecuritiesInstrumentController.java` | 100 |
-| 标的查询底层 | `InstrumentApiSearchHelper.java` | 105 |
-| 推断 prompt 接口 | `CounterpartyInfoController.java` | 33 |
-| 框架级 API 前缀配置 | `yudao-framework/.../WebProperties.java` | 22 |
-| Goats 共用枚举 | `SwapEnum.java` | 59-509 |
+| 客户端 | 对应接口 |
+|---|---|
+| `OptionClient`（`app/tools/option_client.py`） | `POST /admin-api/financial-orders/operate`（type 字段驱动期权各意图）、`POST /admin-api/financial-orders/query-close-orders` |
+| `SwapClient`（`app/tools/swap_client.py`） | `POST /admin-api/swap-order/operate`（type 字段驱动互换各意图）、订单详情与会话订单列表查询 |
+| `MessageClient`（`app/tools/message_client.py`） | `POST /admin-api/openapi/xbot/message/set-intent`，每轮回复前写回会话 ID 和意图（见 §6） |
+| `GoatsAgentClient`（`app/tools/goats_agent_client.py`） | GOATS `/api/internal/agent/*`（快速询价解析与存量兼容） |
+| `TickerClient`（`app/tools/ticker_client.py`） | 交易对手列表等查询；交易链路不调用，仅供本地验收脚本使用（ADR 0025） |
 
-## Tools 层目标 Protocol（按真实契约调整）
-
-- **`OptionClient`** — 替代之前的 `QuoteClient` + 部分 `OrderClient` + 平仓部分；操作走 `POST /admin-api/financial-orders/operate`，type 字段驱动 16 种意图
-- **`SwapClient`** — 互换全套；操作走 `POST /admin-api/swap-order/operate`，type 字段驱动 7 种意图
-- **`TickerClient`** — `GET /admin-api/integration/securities-instrument/select` + `GET /admin-api/counterparty/info/instrument-inference-prompt` + `GET /admin-api/counterparty/info/list`
-- **`MessageClient`** — `POST /admin-api/openapi/xbot/message/set-intent`，每轮回复前写回会话 ID 和意图（见 §6）
-
-> **重大调整**：之前 ADR 0001 D2 拆的 4 个 Protocol（QuoteClient / OrderClient / PositionClient / TickerClient）按"业务领域"切。但真实契约层面，期权和互换是**两个聚合 endpoint**（`/financial-orders/operate` + `/swap-order/operate`），不是按"询价/下单/撤单/平仓"切。Protocol 拆分应跟随**真实 endpoint 边界**而不是逻辑分类，否则 Pydantic 模型会与 Java DTO 不一一对应。
-
-业务查询和交易仍按 OptionClient + SwapClient + TickerClient 划分（合并 Quote/Order/Position 到 OptionClient/SwapClient）；消息元数据写回由独立的 MessageClient 承担。
+Protocol 按 Java 真实 endpoint 边界拆分（期权、互换各一个聚合操作接口），Pydantic 模型与 Java DTO 一一对应（ADR 0001 D2）。

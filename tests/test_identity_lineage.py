@@ -13,10 +13,14 @@ H1, H2 = "H-20260918-0000000001", "H-20260918-0000000002"
 C1, C2 = "CO-20260918-AAAAAAAA", "CO-20260918-BBBBBBBB"
 
 
-async def test_option_cancel_place_uses_quote_even_when_raw_contains_another_id(monkeypatch):
+async def test_option_cancel_place_raw_id_cannot_replace_quote(monkeypatch):
     backend = AsyncMock(return_value={"api_code": 0, "api_result": "原样回复"})
     monkeypatch.setattr(cancel_place, "call_option_backend", backend)
-    result = await cancel_place.option_extract_cancel_place({"raw_text": f"取消{Q1}", "quote_content": Q2})
+    # raw 点名引用外的订单：既不改取该单，也不静默取消引用里的另一单（O5 口径：只取消引用里的订单）
+    rejected = await cancel_place.option_extract_cancel_place({"raw_text": f"取消{Q1}", "quote_content": Q2})
+    assert rejected.get("cancel_params") is None and rejected["reply_text"]
+    backend.assert_not_awaited()
+    result = await cancel_place.option_extract_cancel_place({"raw_text": "取消", "quote_content": Q2})
     assert result["cancel_params"]["orderList"] == [{"orderId": Q2}]
     assert result["field_records"]["option/cancel_place.orderList.0.orderId"].origin == "quote"
     assert backend.call_args.args[0]["field_records"]["option/cancel_place.orderList.0.orderId"].locked

@@ -1,4 +1,4 @@
-"""健康检查端点（D2.6 / Issue #72）。
+"""健康检查端点。
 
 GET /health  · liveness  · 仅检查进程存活，无外部依赖
 GET /ready   · readiness · 4 个上游并发探测（MySQL/LangFuse/LLM/Java 后端）

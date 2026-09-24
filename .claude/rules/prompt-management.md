@@ -1,6 +1,6 @@
 # 提示词管理规则
 
-> 真源与契约：[ADR 0023](../../docs/adr/0023-prompt-as-code-langgraph.md)（PromptSpec）；版本化 / 灰度：[ADR 0003](../../docs/adr/0003-prompt-versioning-by-file-coexistence.md)。
+> 真源与契约：ADR 0023（`docs/adr/0023-prompt-as-code-langgraph.md`，PromptSpec）；版本化 / 灰度：ADR 0003（`docs/adr/0003-prompt-versioning-by-file-coexistence.md`）。
 > 局部陷阱：`app/prompts/CLAUDE.md`。本文件只写"怎么做"。
 
 ## 占位符纪律
@@ -60,8 +60,7 @@ result = await model.with_structured_output(SwapIntentOutput).ainvoke(messages)
 
 ## 相关 ADR
 
-- ADR 0001 D5：改写决定登记表
+- ADR 0001 D5：节点策略（保守路线 A+）
 - ADR 0003：同目录并存 + `_versions.yaml` 灰度（唯一版本化形态）
 - ADR 0014：LangFuse 作为演练区，git 为真源
-- ADR 0022：代码迁移完成后的提示词治理模型（**已废弃**）
-- ADR 0023：提示词即代码（PromptSpec / AgentState inputs / Pydantic description 输出契约）
+- ADR 0023：提示词即代码（PromptSpec / AgentState inputs / Pydantic description 输出契约；D5 瘦身原则）

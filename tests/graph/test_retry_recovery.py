@@ -1,4 +1,4 @@
-"""重试耗尽仍须完成原图的错误路由、并行汇合和审计收尾（#223）。"""
+"""重试耗尽仍须完成原图的错误路由、并行汇合和审计收尾。"""
 from __future__ import annotations
 
 from importlib import import_module

@@ -31,6 +31,21 @@ SPEC = register(PromptSpec(
 ))
 
 
+#: 同一分句内「撤单」前的否定（不要撤单 / 先不用撤单 / 别撤单了）
+_NEGATED_CANCEL_RE = re.compile(r"(?:不|别|没|未|无需|勿)[^，,。；;！!？?\s]{0,3}撤单")
+#: 询问撤单结果或状态（查询撤单状态 / 撤单成功了吗 / 撤单是否完成？）
+_CANCEL_QUERY_RE = re.compile(r"查|状态|进度|是否|有没有|吗|[？?]")
+
+
+def _is_cancel_instruction(raw: str) -> bool:
+    """raw 含正面撤单指令：有「撤单」且不是否定或查询语义。"""
+    return (
+        "撤单" in raw
+        and not _NEGATED_CANCEL_RE.search(raw)
+        and not _CANCEL_QUERY_RE.search(raw)
+    )
+
+
 def _deterministic_intent(raw: str) -> str | None:
     """Move unconditional corrections ahead of the model, preserving their precedence."""
     action = confirmation_action(raw)
@@ -78,8 +93,8 @@ async def close_intent(state: AgentState) -> dict[str, Any]:
         close_actions = ("平掉","平仓","平剩","平留","市价平","部分平","我想平","我要平")
         if has_contract and any(a in text for a in close_actions):
             intent = "close_order_request"
-    # "撤单" 关键词 → close_order_cancel_request（覆盖 LLM 误判）
-    if "撤单" in raw and intent not in (
+    # 正面撤单指令 → close_order_cancel_request（覆盖 LLM 误判）；否定 / 查询语义以模型为准
+    if _is_cancel_instruction(raw) and intent not in (
         "close_order_cancel_confirm", "close_order_cancel_request"
     ):
         intent = "close_order_cancel_request"

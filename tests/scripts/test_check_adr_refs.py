@@ -1,6 +1,6 @@
 """scripts/check_adr_refs.py 的单测。
 
-承接 AUDIT-2026-05-13 §4 复检能力（#152 裁决落地，#161）：
+覆盖三项复检能力：
 1. ADR 互引虚悬检测（含相对 markdown 链接目标）
 2. ADR 引用代码路径存在性——必须跳过 ``~~删除线~~`` 段
 3. 引用热度 / 孤儿 ADR 统计（信息性输出，不算失败）
@@ -52,6 +52,27 @@ class TestDanglingAdrRefs:
         _mk_adr(tmp_path, "0001-a.md", "[ADR 0002](./0002-b.md)")
         _mk_adr(tmp_path, "0002-b.md", "ok")
         assert find_dangling_adr_refs(tmp_path / "docs" / "adr") == []
+
+    def test_broken_doc_link_detected(self, tmp_path: Path) -> None:
+        _mk_adr(tmp_path, "0001-a.md", "记录见 [归档](../archive/gone.md#sec)。")
+        findings = find_dangling_adr_refs(tmp_path / "docs" / "adr")
+        assert any("../archive/gone.md" in f.detail for f in findings)
+
+    def test_valid_doc_link_and_urls_pass(self, tmp_path: Path) -> None:
+        (tmp_path / "docs" / "guide.md").parent.mkdir(parents=True, exist_ok=True)
+        (tmp_path / "docs" / "guide.md").write_text("ok", encoding="utf-8")
+        _mk_adr(
+            tmp_path,
+            "0001-a.md",
+            "[指南](../guide.md#x) · [官网](https://example.com/a.md) · [锚点](#d1)",
+        )
+        assert find_dangling_adr_refs(tmp_path / "docs" / "adr") == []
+
+    def test_readme_links_checked(self, tmp_path: Path) -> None:
+        _mk_adr(tmp_path, "0001-a.md", "ok")
+        _mk_adr(tmp_path, "README.md", "[0012](./0012-removed.md)")
+        findings = find_dangling_adr_refs(tmp_path / "docs" / "adr")
+        assert any(f.location == "README.md" for f in findings)
 
 
 class TestMissingPaths:

@@ -30,6 +30,8 @@ _MODE = re.compile(rf"(?<![a-z_])(?:{_TOKENS})(?![a-z_])")
 _NEGATED_PREFIX = re.compile(
     r"(?:不|别|勿|非|禁止|无需|取消)[^，,；;。\n]{0,8}$|\b(?:not|no|never|don't)\s*$"
 )
+#: 价格约束（不超过 / 不低于 …）不是对执行方式的否定
+_PRICE_BOUND = re.compile(r"不(?:得)?(?:超过|低于|高于|少于|多于|大于|小于)")
 _NEGATED_SUFFIX = re.compile(
     r"\s*(?:下单|平仓|执行|委托)?\s*(?:不要(?!\s*跟量)|不行|不可以|不做|不执行)"
 )
@@ -85,7 +87,8 @@ def normalize_close_order_type(
         if modes and (_CONDITIONAL.search(text) or _CHOICE.search(text)):
             raise CloseOrderTypeNormalizationError(candidate, "conflicting")
         for mode in modes:
-            if _NEGATED_PREFIX.search(text[: mode.start()]) or _NEGATED_SUFFIX.match(
+            prefix = _PRICE_BOUND.sub(" ", text[: mode.start()])
+            if _NEGATED_PREFIX.search(prefix) or _NEGATED_SUFFIX.match(
                 text[mode.end() :]
             ):
                 raise CloseOrderTypeNormalizationError(candidate, "negated")

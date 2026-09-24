@@ -3,7 +3,7 @@
 设计原则：
 - 按业务对象聚合，不按节点输出扁平铺
 - reducer 字段：trace 用 merge_by_id 按 id 合并；history_messages 用 merge_history（按 id 合并 + 最近 N 条窗口，ADR 0024 D3/D4）
-- 业务参数字段 M1 阶段用 dict[str, Any] 占位，M2 阶段替换为具体 Pydantic 模型
+- 业务参数字段运行时为 dict，写入经 app/graph/business_params.py 的 Pydantic 模型校验
 """
 from __future__ import annotations
 
@@ -95,7 +95,7 @@ class Message(_Identified):
 
 
 class TickerCandidate(WireModel):
-    """ticker 子图输出的候选标的（对齐 Java SecuritiesInstrumentOpenApiRespVO）。"""
+    """候选标的（对齐 Java SecuritiesInstrumentOpenApiRespVO；HTTP `tickers` 兼容字段，ADR 0025）。"""
 
     model_config = ConfigDict(extra="allow")
     wind_code: str = Field(alias="windCode", description="标的代码，如 600989.SH")
@@ -213,7 +213,7 @@ class AgentState(TypedDict, total=False):
     - 入口：解析 Dify Workflow Run inputs 后由 ingest 节点写入（9 个机器人上下文字段）
     - 历史：history_messages（reducer 累加）
     - 业务路由：product_type 一级 + intent 二级
-    - 业务对象：聚合的参数字典（多节点共享同字段；M1 用 dict 占位，M2 替换为 Pydantic）
+    - 业务对象：聚合的参数字典（多节点共享同字段；dict 形态，写入经 Pydantic 校验）
     - 工程层：trace（reducer 累加）+ error
     """
 
@@ -262,12 +262,12 @@ class AgentState(TypedDict, total=False):
     session_status: Literal["active", "expired"]
 
     # -------- 业务路由 --------
-    #: 单次 graph 调用的关联 ID（ADR 0004/#156：node_trace ↔ LangFuse 关联键）
+    #: 单次 graph 调用的关联 ID（ADR 0004：node_trace ↔ LangFuse 关联键）
     trace_id: str
     product_type: ProductType
     intent: str  # 本轮意图，ingest 清空；对齐 Java SwapIntentionType / stockOptionIntentionType
 
-    # -------- 业务对象（#160/ADR 0001 D6：运行时为 dict，写入必须经
+    # -------- 业务对象（ADR 0001 D6：运行时为 dict，写入必须经
     # app/graph/business_params.py 的 validated_* 校验——形状的唯一权威）--------
     #: 本轮要对后端执行的动作类别（ADR 0024 D2 顶层化）：写类节点写入，render / 输出层读取；
     #: 查询类意图为 None。与 Java operate 的 type 无关——那条由 intent 驱动
@@ -285,8 +285,7 @@ class AgentState(TypedDict, total=False):
     swap_counterparty_picks: dict[str, Any] | None  # {hasSignal, picks: [{orderId, letter, directName}]}
     swap_ticker_picks: list[dict[str, Any]] | None  # [{orderId, seq, directRef}]
 
-    # -------- ticker 消歧 --------
-    # 多命中分差不足时收集到此处，render 节点生成消歧卡片（Issue #20）
+    # -------- ticker 消歧（旧 checkpoint 兼容；标的识别归 Java，本地不生成消歧卡片）--------
     ticker_hitl_candidates: list[dict[str, Any]] | None  # 旧状态兼容，不参与本地回复
 
     # -------- 回复渲染 --------

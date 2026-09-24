@@ -1,6 +1,6 @@
-"""M1 smoke test: 主图编译 + 端到端 stub run。
+"""smoke test: 主图编译 + 端到端 stub run。
 
-ADR 0001 D1 + ADR 0015：M1 smoke 已升级为含 intent_route 的端到端验证：
+ADR 0001 D1 + ADR 0015：含 intent_route 的端到端验证：
 - ingest → intent_route（规则层）→ swap/option/option_close stub → persist → render
 - unknown / cascade 路径走 fallback
 """

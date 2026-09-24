@@ -67,9 +67,9 @@ test(e2e): 新增 2 条雪球询价的 golden case
 **示例**：
 
 ```
-✅ docs(roadmap): M3/M4 路线图 + 分工 SOP
+✅ docs(adr): 精简 ADR，只保留现行决策
 ✅ feat(swap): 支持按名义本金下单的参数提取
-❌ docs: Add M3/M4 roadmap and team assignment SOP
+❌ docs: Simplify ADRs and keep current decisions only
 ```
 
 ## PR 检查清单

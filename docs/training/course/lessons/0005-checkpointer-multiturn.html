@@ -18,45 +18,54 @@
 
 <div class="callout">
 <span class="callout-title">为什么学这个（对齐任务）</span>
-业务流程几乎全是多轮的：下单 → 补参数 → 确认下单，跨 2-4 条企微消息。Dify 里这靠"会话变量"（conversation_variables，平台黑盒）；LangGraph 里是 checkpointer——<strong>整个 state 每步自动落库，同一 thread_id 自动恢复</strong>。M3 错例里"多轮 tickers/params 丢失"一类根因全和本课内容有关。
+业务流程几乎全是多轮的：下单 → 补参数 → 确认下单，跨 2-4 条企微消息。LangGraph 里靠 checkpointer 把 state 落库，同一 thread_id 自动恢复；但本项目刻意规定<strong>哪些字段跨轮保留、哪些每轮清空</strong>——搞错这一点，就会出现"上一轮的订单被这一轮误用"的 bug。
 </div>
 
-<h2>1. 恢复语义：state 是"续写"不是"新建"（8 分钟）</h2>
-<p>机制一句话：<strong>每个节点跑完，全量 state 快照写入存储；下次同一个 <code>thread_id</code> 调 <code>ainvoke</code>，新输入合并到上次的 state 上继续跑</strong>。</p>
+<h2>1. 恢复语义：哪些跨轮保留，哪些每轮清空（8 分钟）</h2>
+<p>机制一句话：<strong>每个节点跑完，state 快照写入存储；下次同一个 <code>thread_id</code> 调 <code>ainvoke</code>，新输入合并到上次的 state 上继续跑</strong>。在此之上，本项目按生命周期给字段分层（ADR 0024 D2）：</p>
+
+<div class="table-wrap">
+<table>
+<tr><th>层</th><th>典型字段</th><th>跨轮行为</th></tr>
+<tr><td>本轮输入</td><td><code>raw_text</code> / <code>quote_content</code> / <code>message_id</code></td><td>每轮由 API 入口全量写入</td></tr>
+<tr><td>会话记忆</td><td><code>history_messages</code>、<code>last_confirmed_params</code></td><td><strong>跨轮保留</strong>（历史按窗口截断）</td></tr>
+<tr><td>业务对象</td><td><code>place_params</code> / <code>cancel_params</code> / <code>confirm</code> / <code>close_params</code></td><td><strong>每轮由 <code>ingest</code> 清空</strong></td></tr>
+<tr><td>工程字段</td><td><code>trace</code> / <code>error</code> / <code>trace_id</code></td><td>每轮清空</td></tr>
+</table>
+</div>
 
 <pre><code><span class="cm"># 第 1 轮：客户说"下单平安银行 5000 股"</span>
-config = {<span class="st">"configurable"</span>: {<span class="st">"thread_id"</span>: <span class="st">"room-42-cust-7"</span>}}
-<span class="kw">await</span> graph.ainvoke({<span class="st">"raw_text"</span>: <span class="st">"下单平安银行 5000 股"</span>, ...}, config=config)
-<span class="cm"># 跑完后 checkpoint 里已有：tickers=[000001.SZ...], place_params={...}, intent="place_order_request"</span>
+config = {<span class="st">"configurable"</span>: {<span class="st">"thread_id"</span>: <span class="st">"conv-42"</span>}}
+<span class="kw">await</span> graph.ainvoke(inputs_to_state(turn1_inputs), config=config)
+<span class="cm"># 后端生成待确认卡片；history_messages 记下本轮原话与回复</span>
 
-<span class="cm"># 第 2 轮：客户只说"确认"</span>
-<span class="kw">await</span> graph.ainvoke({<span class="st">"raw_text"</span>: <span class="st">"确认"</span>, ...}, config=config)
-<span class="cm"># 图启动时 state 已经带着第 1 轮的 tickers / place_params —— 不用重新提取！</span></code></pre>
+<span class="cm"># 第 2 轮：客户引用卡片回复"确认下单"</span>
+<span class="kw">await</span> graph.ainvoke(inputs_to_state(turn2_inputs), config=config)
+<span class="cm"># ingest 先清空上一轮的 place_params 等业务对象；确认节点从本轮引用的卡片里取订单号</span></code></pre>
 
-<p>合并规则就是第 01 课的 reducer 语义：覆盖型字段（<code>raw_text</code>）被新输入覆盖；累加型字段（<code>history_messages</code> / <code>trace</code>）继续追加。这也解释了 CLAUDE.md 排查表里那句"<strong>trace 是累积的，多轮 case 的本轮节点在末尾</strong>"。</p>
+<p>为什么业务对象要每轮清空：如果上一轮的 <code>place_params</code> 残留到下一轮，render 会把它当成本轮结果渲染，或让确认动作作用到客户没有引用的订单上。跨轮上下文只靠 <code>history_messages</code> 和 <code>last_confirmed_params</code>（仅作上下文，不能替代用户引用）。</p>
 
 <div class="callout warn">
-<span class="callout-title">高频真实根因：初始 state 覆盖 checkpoint</span>
-CLAUDE.md"常见根因模式"表里有两条都是它：<em>"reply 含'无法识别'但未问标的 → make_initial_state 设了 tickers=[] 覆盖 checkpoint"</em>、<em>"多轮 tickers/params 丢失 → make_initial_state 不应对业务字段设默认值"</em>。原理：你在第 2 轮的初始 state 里写了 <code>tickers=[]</code>，覆盖型合并就会把 checkpoint 里第 1 轮辛苦提取的标的冲掉。<strong>结论：初始 state 只放本轮输入字段，业务字段一律不给默认值。</strong>
+<span class="callout-title">一轮输入只有一个入口</span>
+<code>app/api/turn_state.py::inputs_to_state</code> 是一轮输入 → AgentState 的唯一入口，生产与评测共用；本轮输入字段缺省时显式置空，不从 checkpoint 继承。不要在别处手工拼初始 state。
 </div>
 
 <h2>2. thread_id 约定与生产接线（7 分钟）</h2>
-<p>API 层真实代码——thread_id 就是请求里的 <code>user</code> 字段（Java 侧传的 conversation_id）：</p>
+<p>API 层代码——thread_id 取请求里的 conversation_id：</p>
 
-<pre><code>initial_state = _inputs_to_state(req.inputs, fallback_conversation_id=req.user)
-<span class="hl">config = {<span class="st">"configurable"</span>: {<span class="st">"thread_id"</span>: req.user}}</span>
+<pre><code>initial_state = inputs_to_state(req.inputs)
+<span class="hl">config = {<span class="st">"configurable"</span>: {<span class="st">"thread_id"</span>: conversation_id}}</span>
 final_state: AgentState = <span class="kw">await</span> graph.ainvoke(initial_state, config=config)</code></pre>
-<span class="src">app/api/routes.py:92-98</span>
+<span class="src">app/api/routes.py（简化）</span>
 
 <p>项目约定：<strong>thread_id 固定 = conversation_id（企微会话 ID）</strong>。同群同客户共享历史；换群/换客户 → 不同 thread_id → state 完全隔离。</p>
 
 <p>生产用 MySQL 存储，生命周期绑定 FastAPI lifespan（应用级单例，<strong>不要每个请求新建</strong>）：</p>
 
-<pre><code><span class="kw">async def</span> init_checkpointer() -> AIOMySQLSaver:
-    _saver_ctx = AIOMySQLSaver.from_conn_string(settings.mysql_uri)
-    _checkpointer = <span class="kw">await</span> _saver_ctx.__aenter__()
-<span class="hl">    <span class="kw">await</span> _checkpointer.setup()      <span class="cm"># 首次启动自动建 4 张系统表（幂等）</span></span>
-    <span class="kw">return</span> _checkpointer</code></pre>
+<pre><code><span class="cm"># app/checkpointer/factory.py（简化）</span>
+pool = <span class="kw">await</span> aiomysql.create_pool(..., pool_recycle=<span class="st">1800</span>)   <span class="cm"># 连接池，回收时间小于 wait_timeout</span>
+saver = AIOMySQLSaver(conn=pool, serde=白名单序列化器)
+<span class="cm"># 表由 sql/init.sql 预先创建；启动时只读校验表结构，不在运行期调用 setup()</span></code></pre>
 <span class="src">app/checkpointer/factory.py:28-42</span>
 
 <div class="table-wrap">
@@ -68,18 +77,9 @@ final_state: AgentState = <span class="kw">await</span> graph.ainvoke(initial_st
 </table>
 </div>
 
-<h2>3. Interrupt：下单前的人工确认（4 分钟）</h2>
-<p>checkpointer 的存在让"暂停-恢复"成为可能。编译时声明在哪些节点前暂停：</p>
-
-<pre><code>graph = g.compile(
-    checkpointer=cp,
-    interrupt_before=[<span class="st">"call_swap_api"</span>],   <span class="cm"># 真实下单前暂停，等人工确认</span>
-)
-
-<span class="cm"># 第一次 ainvoke：跑到该节点前停下，state 已落 checkpoint</span>
-<span class="cm"># 人工确认后：ainvoke(None, config)  ← None = 不加新输入，从断点继续</span></code></pre>
-
-<p>项目边界（ADR 0006）：HITL <strong>只用于业务参数二次确认</strong>（如下单前确认卡片），<strong>不用于</strong> LLM 解析失败兜底——那是第 03 课 fallback 链路的职责。两条路线别混。</p>
+<h2>3. 为什么本项目不用 interrupt（4 分钟）</h2>
+<p>LangGraph 支持用 <code>interrupt_before</code> 在某节点前暂停、人工确认后用 <code>ainvoke(None, config)</code> 从断点继续。本项目<strong>不用</strong>它（ADR 0021）：写操作的二次确认统一走<strong>文本二阶段</strong>——第一轮后端生成待确认卡片并结束本轮，客户下一条消息"确认 + 引用订单"时才真正写后端。这样每条消息都是一次完整的图执行，不依赖断点恢复，也不需要企微按钮回调。</p>
+<p>checkpointer 在本项目里的作用是<strong>跨轮保留会话记忆</strong>，不是暂停-恢复。</p>
 
 <h2>4. 动手实验（6 分钟）</h2>
 <div class="task">
@@ -88,7 +88,7 @@ final_state: AgentState = <span class="kw">await</span> graph.ainvoke(initial_st
 <li>取第 01 课的玩具图，编译时传 <code>InMemorySaver</code>：<code>graph = g.compile(checkpointer=InMemorySaver())</code></li>
 <li>用同一个 <code>config = {"configurable": {"thread_id": "t1"}}</code> 连续 <code>ainvoke({"counter": 0})</code> 两次，观察第二次的 <code>counter</code> 和 <code>log</code>——为什么 counter 没有从 3 继续涨？（提示：你第二次传入的 <code>{"counter": 0}</code> 对覆盖型字段意味着什么）</li>
 <li>第三次调用改传 <code>{}</code>（空输入），再观察——这回从 checkpoint 恢复的 counter 生效了吗？</li>
-<li>把三次的输出和你的解释发给助教。这个实验做透了，第 1 节那个"生产真实根因"你就永远不会踩</li>
+<li>把三次的输出和你的解释发给助教。想清楚"传入的值会覆盖 checkpoint 里的同名字段"，就能理解为什么本项目只允许 <code>inputs_to_state</code> 一个入口写本轮输入</li>
 </ol>
 </div>
 
@@ -97,19 +97,19 @@ final_state: AgentState = <span class="kw">await</span> graph.ainvoke(initial_st
 <h3>自测 · 4 题</h3>
 
 <div class="quiz-q" data-answer="b">
-<p class="quiz-stem">1. 同一客户在同一个企微群的第 2 条消息，图启动时的 state 是什么？</p>
-<label><input type="radio" name="q1" value="a"> 全新空 state，历史要靠节点去数据库里查询</label>
-<label><input type="radio" name="q1" value="b"> 上轮 checkpoint 的 state 合并上本轮新输入</label>
-<label><input type="radio" name="q1" value="c"> 只有 history_messages 保留，其余字段清空</label>
-<p class="quiz-explain" hidden>thread_id 相同 → 从 checkpoint 恢复全量 state，新输入按 reducer 规则合并（覆盖型覆盖、累加型追加）。这是多轮对话不用重复提参的根本机制。</p>
+<p class="quiz-stem">1. 同一会话的第 2 条消息进入主图、经过 ingest 之后，下列哪项仍保留着上一轮的内容？</p>
+<label><input type="radio" name="q1" value="a"> 上一轮抽取出的 place_params 订单参数</label>
+<label><input type="radio" name="q1" value="b"> history_messages 里的历史原话与回复</label>
+<label><input type="radio" name="q1" value="c"> 上一轮各节点写入的 trace 执行记录</label>
+<p class="quiz-explain" hidden>业务对象和 trace 每轮由 ingest 清空；跨轮只保留会话记忆（history_messages、last_confirmed_params）。</p>
 </div>
 
 <div class="quiz-q" data-answer="a">
-<p class="quiz-stem">2. 第 2 轮的初始 state 里给业务字段写了 <code>tickers=[]</code>，后果是？</p>
-<label><input type="radio" name="q2" value="a"> 覆盖型合并把 checkpoint 里第 1 轮的标的冲掉</label>
-<label><input type="radio" name="q2" value="b"> reducer 把空列表追加进去，对结果没有影响</label>
-<label><input type="radio" name="q2" value="c"> 框架发现字段已有值，忽略传入的空列表默认值</label>
-<p class="quiz-explain" hidden>tickers 是覆盖型字段（没挂 reducer），传入 [] 就是"用空值覆盖"。这是 CLAUDE.md 常见根因表里的真实生产 bug——初始 state 不要给业务字段设默认值。</p>
+<p class="quiz-stem">2. 为什么业务对象（如 place_params）要每轮清空？</p>
+<label><input type="radio" name="q2" value="a"> 避免上一轮残留被当成本轮结果渲染或误用</label>
+<label><input type="radio" name="q2" value="b"> 为了减少 checkpoint 表的存储空间占用</label>
+<label><input type="radio" name="q2" value="c"> 因为 LangGraph 框架不允许字段跨轮保留</label>
+<p class="quiz-explain" hidden>残留的业务对象会被 render 当成本轮结果，或让确认动作作用到客户没有引用的订单上（ADR 0024 D2）。</p>
 </div>
 
 <div class="quiz-q" data-answer="c">
@@ -120,12 +120,12 @@ final_state: AgentState = <span class="kw">await</span> graph.ainvoke(initial_st
 <p class="quiz-explain" hidden>不传 checkpointer 完全合法（单轮场景够用），所以这个错不报警、只在多轮时静默失忆——最阴险的一类 bug（.claude/rules/langgraph-patterns.md 明确列为陷阱）。</p>
 </div>
 
-<div class="quiz-q" data-answer="b">
-<p class="quiz-stem">4. 恢复被 interrupt_before 暂停的图，正确调用是？</p>
-<label><input type="radio" name="q4" value="a"> ainvoke(上次的完整 state, config)，把状态原样传回去</label>
-<label><input type="radio" name="q4" value="b"> ainvoke(None, config)，不加新输入从断点处继续跑</label>
-<label><input type="radio" name="q4" value="c"> ainvoke({}, config)，用空字典触发框架的恢复逻辑</label>
-<p class="quiz-explain" hidden>None 是专门的信号："不新增输入，从 checkpoint 继续"。传完整 state 或 {} 都会被当成新一轮输入做合并，语义完全不同（handbook 第 2.9 节）。</p>
+<div class="quiz-q" data-answer="c">
+<p class="quiz-stem">4. 本项目里客户下单后的二次确认是怎么实现的？</p>
+<label><input type="radio" name="q4" value="a"> interrupt_before 暂停，确认后 ainvoke(None) 继续</label>
+<label><input type="radio" name="q4" value="b"> 企微按钮回调一个专门的确认接口恢复执行</label>
+<label><input type="radio" name="q4" value="c"> 客户下一条消息"确认 + 引用订单"触发写操作</label>
+<p class="quiz-explain" hidden>文本二阶段确认（ADR 0021）：每条消息都是一次完整的图执行，不依赖断点恢复。</p>
 </div>
 
 <button class="quiz-check">核对答案</button>
@@ -135,13 +135,13 @@ final_state: AgentState = <span class="kw">await</span> graph.ainvoke(initial_st
 <h2>6. 延伸与下一课</h2>
 <ul>
 <li><strong>本课首选一手资料</strong>：<a href="https://langchain-ai.github.io/langgraph/concepts/persistence/">LangGraph 官方文档 · Persistence</a>（checkpoint / thread / 恢复语义的权威定义）</li>
-<li>深入：<code>app/checkpointer/factory.py</code>（70 行通读）+ <code>.claude/rules/langgraph-patterns.md</code> 的 checkpointer / thread_id / HITL 三节</li>
-<li>相关 ADR：0006（HITL 边界）</li>
+<li>深入：<code>app/checkpointer/factory.py</code> + <code>app/nodes/ingest.py</code> + <code>.claude/rules/langgraph-patterns.md</code> 的持久化一节</li>
+<li>相关 ADR：0021（文本二阶段确认）、0024 D2（State 分层）</li>
 <li>下一课：<a href="0006-subgraph-swap-template.html">第 06 课 · 子图模板：以 swap 为例</a>——把前五课拼成一个完整业务子图</li>
 </ul>
 
 <footer class="lesson-footer">
-<p>实验第 2 步的现象想不通很正常——这正是本课最值钱的坑，发结果给助教（图灵科技）讨论。</p>
+<p>实验第 2 步的现象想不通很正常，发结果给助教（图灵科技）讨论。</p>
 </footer>
 
 </main>

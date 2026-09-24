@@ -1,6 +1,6 @@
 """eval 与生产必须走同一条初始化路径（ADR 0024 D2：make_initial_state 退役）。
 
-历史：app/state.py 的 M1 兼容层会硬清空 place_params / cancel_params / close_params、写 6 个
+历史：app/state.py 的旧兼容层会硬清空 place_params / cancel_params / close_params、写 6 个
 AgentState 里不存在的键，只保护 tickers——eval 走它、生产走 routes._inputs_to_state，评估结论
 与生产行为存在系统性偏差（CLAUDE.md 曾把它列为已知故障模式）。
 """

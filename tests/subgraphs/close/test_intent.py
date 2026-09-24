@@ -154,6 +154,37 @@ class TestCloseIntentNode:
 
 
 @pytest.mark.asyncio
+class TestCancelKeywordOverride:
+    """「撤单」关键词只在正面撤单指令时纠正模型；否定或查询语义以模型判定为准。"""
+
+    @pytest.mark.parametrize(
+        ("raw", "model_intent"),
+        [
+            ("不要撤单", "unknown_intent"),
+            ("别撤单了，CO-20260304-4FE9C941 平200万", "close_order_request"),
+            ("先不用撤单", "unknown_intent"),
+            ("查询撤单状态 CO-20260304-4FE9C941", "close_order_order_query"),
+            ("CO-20260304-4FE9C941 撤单成功了吗", "close_order_order_query"),
+            ("撤单是否已经完成？", "close_order_order_query"),
+        ],
+    )
+    async def test_negated_or_query_cancel_keeps_model_intent(
+        self, monkeypatch: pytest.MonkeyPatch, raw: str, model_intent: str
+    ) -> None:
+        _patch_llm(monkeypatch, model_intent)
+        result = await close_intent({"raw_text": raw})
+        assert result["intent"] == model_intent
+
+    @pytest.mark.parametrize("raw", ["帮我撤单 CO-20260304-4FE9C941", "撤单第二笔"])
+    async def test_positive_cancel_still_corrects_model(
+        self, monkeypatch: pytest.MonkeyPatch, raw: str
+    ) -> None:
+        _patch_llm(monkeypatch, "close_order_query")
+        result = await close_intent({"raw_text": raw})
+        assert result["intent"] == "close_order_cancel_request"
+
+
+@pytest.mark.asyncio
 class TestDeterministicRulesStayInEnum:
     """提示词治理评估 OC-02：代码规则层写入的 intent 必须是 CloseIntentType 合法值。"""
 

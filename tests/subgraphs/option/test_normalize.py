@@ -13,6 +13,7 @@ from app.subgraphs.option.models import OptionInquiryRawItem
 from app.subgraphs.option.normalize import (
     expand_inquiry_items,
     normalize_notional,
+    normalize_option_type,
     normalize_participation,
     normalize_strike,
     normalize_tenor,
@@ -137,8 +138,8 @@ class TestNormalizeNotional:
             ("1w", "10000"),
             ("1000w", "10000000"),
             ("1000W", "10000000"),
-            ("1KW", "10000"),
-            ("1kw", "10000"),
+            ("1KW", "10000000"),
+            ("1kw", "10000000"),  # 业务裁决：1kw = 1000 万
             ("1千万", "10000000"),
             ("1亿", "100000000"),
             ("1E", "100000000"),
@@ -176,6 +177,23 @@ class TestNormalizeParticipation:
     )
     def test_normalize(self, raw: str | None, expected: float | None) -> None:
         assert normalize_participation(raw) == expected
+
+
+class TestNormalizeOptionType:
+    @pytest.mark.parametrize(
+        ("raw", "expected"),
+        [
+            ("看涨", "欧式看涨"),
+            ("看涨期权", "欧式看涨"),
+            ("欧式看涨期权", "欧式看涨"),
+            ("CALL", "欧式看涨"),
+            ("call期权", "欧式看涨"),
+            ("参与型看涨期权", "参与型看涨"),
+            ("雪球期权", "雪球"),
+        ],
+    )
+    def test_supported_variants_normalize_to_enum(self, raw: str, expected: str) -> None:
+        assert normalize_option_type(raw) == expected
 
 
 class TestExpandInquiryItems:

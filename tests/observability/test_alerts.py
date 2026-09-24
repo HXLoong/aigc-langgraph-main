@@ -1,4 +1,4 @@
-"""C1.6 告警评估器单元测试（Issue #55）。"""
+"""告警评估器单元测试。"""
 from __future__ import annotations
 
 from unittest.mock import patch
@@ -22,8 +22,8 @@ def test_calc_ratio_pct_handles_zero_denominator() -> None:
     assert _calc_ratio_pct(5, 100) == 5.0
 
 
-def test_thresholds_align_with_adr_0017() -> None:
-    """ADR 0017 量化阈值断言。"""
+def test_thresholds_align_with_adr_0019() -> None:
+    """ADR 0019 量化阈值断言。"""
     assert THRESHOLDS["http_5xx_spike"].threshold_pct == 1.0
     assert THRESHOLDS["http_5xx_spike"].sustain_seconds == 300
     assert THRESHOLDS["http_5xx_spike"].severity == "P0"

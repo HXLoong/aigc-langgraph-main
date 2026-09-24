@@ -2,17 +2,13 @@
 
 > **生产故障**请走结构化 SOP：[`docs/troubleshooting-sop.md`](./troubleshooting-sop.md)
 > **值班响应**请走：[`docs/on-call-runbook.md`](./on-call-runbook.md)
-> 本文档是**开发期通用 Q&A**——快速查"我遇到这个错误怎么办"，含历史经验沉淀。
+> 本文档是**开发期通用 Q&A**——快速查"我遇到这个错误怎么办"。
 
 ## 启动类问题
 
-### Q: AIOMySQLSaver.setup() 报 "Access denied"
-**原因**：MySQL 用户对 `otc_agent_checkpoint` 库权限不够。
-**解决**：
-```bash
-docker compose exec mysql mysql -uroot -prootpassword -e \
-  "GRANT ALL PRIVILEGES ON otc_agent_checkpoint.* TO 'otc_agent'@'%'; FLUSH PRIVILEGES;"
-```
+### Q: 启动报 checkpoint 表缺失或 "Access denied"
+**原因**：Java 数据库尚未执行 `sql/init.sql`，或 `MYSQL_URI` 的账号对 `langgraph_` 前缀表没有读写权限。应用启动只做只读校验，不会自动建表（ADR 0009）。
+**解决**：由 DBA 在 `MYSQL_URI` 指向的数据库执行一次 `sql/init.sql`，并给该账号授予 `langgraph_*` 表的 SELECT / INSERT / UPDATE / DELETE 权限。
 
 ### Q: 启动时报 "ModuleNotFoundError: No module named 'langgraph.checkpoint.mysql'"
 **原因**：未装 `langgraph-checkpoint-mysql`。
@@ -26,8 +22,8 @@ pip install "langgraph-checkpoint-mysql[aiomysql]"
 **原因**：MySQL 9.6.0 废弃了生成列的 MD5 函数。
 **解决**：降级到 8.0.x 或 9.5.x。测试可用 `InMemorySaver`。
 
-### Q: Qwen API 不通
-**原因**：`QWEN_API_BASE` 配置错 / 内网访问受限。
+### Q: LLM API 不通
+**原因**：`QWEN_API_BASE` 配置错 / 内网访问受限（变量沿用 `QWEN_*` 前缀，实际模型为 DeepSeek-V4-pro，ADR 0020）。
 **解决**：
 ```bash
 curl $QWEN_API_BASE/models -H "Authorization: Bearer $QWEN_API_KEY"
@@ -49,29 +45,28 @@ curl $QWEN_API_BASE/models -H "Authorization: Bearer $QWEN_API_KEY"
 3. `app/nodes/route_rules.py` 的规则顺序：
    - 平仓单号正则 > 附件 > 关键词（平仓 > 互换 > 期权）
 
-### Q: 标的识别返回空
+### Q: 标的识别结果不对
+标的识别归 Java 后端（ADR 0025），LangGraph 只传原文。
 **排查**：
-1. goats 库不通？在 `ticker_tools.py::search_goats` 加日志
-2. LLM 自行跳过了 search_goats？看 LangFuse trace
-3. Agent 循环超限？设 `recursion_limit=25`
+1. trace 里看提交给后端的 `placeOrderWindCode` / `stockCode` 是否是用户原文
+2. 原文正确 → 查 Java 标的工具日志；原文提取错 → 查子图 extract 节点与提示词
+3. HTTP 输出的 `tickers` 恒为空列表，不代表零命中
 
-### Q: LLM 输出 JSON 解析失败
-**可能原因**：`with_structured_output` 的 Pydantic 校验失败。
+### Q: LLM 结构化输出校验失败
+**可能原因**：`with_structured_output` 的 Pydantic 校验失败，或候选缺少证据（ADR 0027）。
 **定位**：看 `state['error']` 或 `trace` 里 error 节点的详情。
-**修复**：
-- Qwen 对 function calling 的支持不稳定，切 `method="json_mode"` 试试
-- 或者 Pydantic 模型字段约束过严，适当放宽
+**修复**：先补失败用例，再改提示词或输出模型的 `Field(description=)`；不要手工解析 JSON。
 
 ### Q: 后端 API 调用 500
 **定位**：
-1. `trace` 里看 `call_*_api` 节点的 output_preview
-2. `tenacity` 已重试 3 次，若仍失败，是后端问题
-3. 检查 payload 字段名是否 camelCase（后端约定）
+1. `trace` 里看对应 backend 节点的 `api_code` / `api_result`
+2. 写类接口**不会**自动重试（防重复下单）；只读接口经 `RetryPolicy` 最多 2 次尝试
+3. 检查 payload 字段名是否与 Java DTO 一致（camelCase）
+4. 用户看到的是"交易指令服务暂不可用"，原始 `api_code/api_result` 保留在审计表
 
 ### Q: 会话历史错乱（返回别的客户的订单）
 **原因**：thread_id 用错了。
-**确认**：`thread_id` 必须 = `conversation_id`（不是 room_id / user_id）。
-检查：`app/api/routes.py` 里的 `config = {"configurable": {"thread_id": req.conversation_id}}`。
+**确认**：`thread_id` 必须 = `conversation_id`（不是 room_id / user_id），见 `app/api/routes.py`。
 
 ## 测试类问题
 
@@ -80,19 +75,17 @@ curl $QWEN_API_BASE/models -H "Authorization: Bearer $QWEN_API_KEY"
 **解决**：按使用点 monkeypatch（先例：`tests/test_inquiry_continuation.py`），例如：
 - `app.subgraphs.option.backend.OptionClientHttpx` / `app.subgraphs.close.backend.OptionClientHttpx`（option 与 close 共用同一类，两处都要 patch）
 - `app.subgraphs.swap.backend.SwapClientHttpx`
-- `app.subgraphs.ticker` 的 `_make_client`
 
 ### Q: 测试依赖 langgraph 没安装就报错
 **解决**：
 ```bash
 pip install -e ".[dev]"
 ```
-或者在没装 langgraph 的环境下，相关测试会自动 skip（通过 `@pytest.mark.skipif`）。
 
 ### Q: pytest 跑一半卡住
 **原因**：某个测试真的调用了外部 LLM/HTTP。
 **解决**：
-1. 找卡住的测试：`pytest --timeout=30`
+1. 找卡住的测试：`python -m pytest -x -v` 看最后一条输出
 2. 加 mock
 
 ## Claude Code 相关
@@ -119,44 +112,24 @@ pip install -e ".[dev]"
 
 ## 性能问题
 
-### Q: P95 延迟 > 10s
+### Q: P95 延迟偏高
 **排查**：
-1. 看 LangFuse 或 trace，哪个节点慢
-2. 大概率是 `extract_place_order`（用 133K 字符提示词）
-3. 优化方向：
-   - 路由阶段用 Haiku 蒸馏小模型（1s 内）
-   - 只在真实需要时才用 thinking 模型
-   - 并行化 ingest 已经做了
+1. 看 LangFuse trace 或 `/metrics` 的节点延迟直方图，定位慢节点
+2. 通常是提示词过长的抽取节点或后端往返；当前基线见 ADR 0019
+3. 不要通过跳过校验或合并写路径来提速
 
 ### Q: MySQL 连接数爆了
-**原因**：每个请求建新连接。
-**检查**：AIOMySQLSaver 默认连接池 10。生产调大：
-```python
-# 在 app/checkpointer/factory.py
-# 参考 langgraph-checkpoint-mysql 的 Pool 参数
-```
+**检查**：checkpointer 使用连接池（`CHECKPOINT_POOL_MAXSIZE` 默认 10，`CHECKPOINT_POOL_RECYCLE_SECONDS` 须小于 `wait_timeout`），按实例数核算总连接数。
 
-### Q: Qwen API 速率限制
-**缓解**：
-- 提高并发请求复用：httpx AsyncClient 复用
-- 添加 tenacity 的 rate_limit 装饰
-- 接备用模型（Claude / DeepSeek）做 fallback
+### Q: LLM API 速率限制
+**缓解**：降低评测并发（`--concurrency`）；生产侧联系模型网关提升配额。不要在 client 里自写重试（重试统一由 `RetryPolicy` 管理）。
 
 ## 生产事故响应
 
-### 大面积解析失败
-1. **立即**：`USE_LANGGRAPH=false` 切回 Dify
-2. 看最近 1h `message_log` 表的 error 分布
-3. 看 LangFuse 定位是哪个节点批量失败
-4. 热修复走 hotfix 分支，跑 golden set → 快速发布
-
-### Shadow 双跑一致率骤降
-1. 看最近 24h `shadow_compare` 表的 is_equal=0 分布
-2. 按 diff_detail 字段分类
-3. 若 > 5% 不一致：暂停灰度，调 dify-reviewer
+生产故障按 [`docs/troubleshooting-sop.md`](./troubleshooting-sop.md) 与 [`docs/on-call-runbook.md`](./on-call-runbook.md) 执行；紧急回滚见 runbook §7。
 
 ### 某个客户反馈订单识别错了
-1. 从 `message_log` 拉该客户该时段消息
-2. 在本地重现：`curl /v1/message` 发同样 payload
+1. 从 `langgraph_message_log` / `langgraph_node_trace` 拉该客户该时段消息与节点轨迹
+2. 本地用同样 payload 请求 `POST /v1/workflows/run` 重现
 3. 看 trace 定位错误节点
-4. 补 golden case 防止回归
+4. 先在 `tests/fixtures/categories/` 补 case，再按 TDD 修复

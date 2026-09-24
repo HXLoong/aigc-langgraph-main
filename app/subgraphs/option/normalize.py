@@ -8,7 +8,7 @@ LLM 只负责逐字抽取原文片段（`OptionInquiryRawItem`）。
   小写 m 归一化、纯数字补 M；小数月（"1.5M"）非法 → None
 - strikePercentage: "80%" → 80.0、"平值"/"平直" → 100.0、"/" 多值展开
 - notionalAmount: "100万"/"1W"/"1kw"/"1千万"/"1亿"/"两千万" → 数字字符串
-  （单位口径按询价提示词：1kw = 1万；下单链路此前未单独定义 kw，统一此口径）
+  （业务裁决：1kw = 1000 万，询价 / 下单 / 平仓统一此口径）
 - participationRate: "90%" / "参与率: 90%" → 90.0
 
 名义本金相关基础函数同时供 `place_params.py`（下单链路）复用。
@@ -37,7 +37,7 @@ _CN_AMOUNT_RE = re.compile(r"([零〇一二两三四五六七八九十百千]{1,
 _PLAIN_DIGITS_RE = re.compile(r"^\d+$")
 _AMOUNT_MULTIPLIERS = {
     "千万": 10_000_000,
-    "kw": 10_000,
+    "kw": 10_000_000,  # 业务裁决：1kw = 1000 万（与平仓链路一致）
     "万": 10_000,
     "w": 10_000,
     "亿": 100_000_000,
@@ -149,7 +149,11 @@ def normalize_option_type(value: str | None) -> str | None:
     if value is None:
         return None
     text = value.strip()
-    if text.lower() == "call" or text == "看涨" or compound_call_strike(text) is not None:
+    if compound_call_strike(text) is not None:
+        return "欧式看涨"
+    # 「看涨期权」「雪球期权」等带通称后缀的写法与枚举同义；不支持的类型原样返回，由调用方拒绝
+    text = re.sub(r"\s*期权$", "", text)
+    if text.lower() == "call" or text in {"看涨", "欧式看涨"}:
         return "欧式看涨"
     return text
 

@@ -19,7 +19,7 @@
 | 3 · 全链路手测（mock 后端） | uvicorn mock_api + uvicorn app + curl | 真实 LLM key | 秒级/条 | 验证单条指令的真实识别效果 |
 | 4 · golden 批量评估 | `langfuse_eval.py` / `python -m harness run` | 真实 LLM key（+后端，可 mock） | 分钟级 | 改提示词/路由后、发版前 |
 | 5 · 真后端探针 | `scripts/probe_*_e2e.py` | VPN + 真实测试环境 | 手动 | 联调期、现场部署时 |
-| 6 · 真后端 golden 回归 | `langfuse_eval.py`（指向真后端） | VPN + LLM key | 小时级 | E3.x 退出门（PASS ≥ 92.5%） |
+| 6 · 真后端数据集回归 | `scripts/local_eval.py` / `langfuse_eval.py`（指向真后端） | VPN + LLM key | 小时级 | 发版前（评测门见 ADR 0030 D3） |
 
 原则：**低层绿了才上高层**。层 1-2 零外部依赖，是 CI 与日常开发的守卫；层 3-4 验证 LLM
 真实效果；层 5-6 验证真实环境契约。
@@ -43,27 +43,20 @@ CI 用到的环境变量（全部指向 mock、只有 `QWEN_API_BASE` / `QWEN_AP
 
 ## 二、命令速查
 
-### 本地联合回归验收（Windows）
+### 提交前本地检查（与 CI fast job 一致）
 
-```powershell
-$env:PYTHONUTF8 = '1'
-$env:ENABLE_LANGFUSE = 'false'
-.\.venv\Scripts\python.exe -m pytest tests/ scripts/ai_test_langgraph/ -v -W error -rs
-.\.venv\Scripts\python.exe -m ruff check app/ tests/ scripts/ai_test_langgraph/
-.\.venv\Scripts\python.exe scripts/ai_test_langgraph/langgraph_direct_regression.py --dry-run --limit 3
-.\.venv\Scripts\python.exe scripts/ai_test_langgraph/langgraph_direct_regression.py --self-test
-.\.venv\Scripts\python.exe scripts/ai_test_langgraph/automation_runner_server.py --self-test
+```bash
+ruff check app/ tests/ harness/ scripts/probe_goats/
+python -m mypy app/ harness/
+python scripts/check_alert_threshold_consistency.py
+python scripts/check_fixture_consistency.py
+python scripts/check_adr_refs.py
+python scripts/sync_agents_md.py --check
+pytest tests/ -q -k "not e2e"
 ```
 
-直接回归 CLI 未传 `--data` 时，按文件名排序加载 `tests/fixtures/categories/`
-直属的全部 JSONL；工作台默认发现范围相同，不扫描历史归档或嵌套目录。
-当前是 6 份、389 条顶层用例；可重复传入 `--data` 显式选择多个文件，兼容既有格式。
-详见 [工作台使用文档](../../scripts/ai_test_langgraph/README.md)。
-
-联合 pytest 不再排除任何目录（GOATS 探针已迁至 `scripts/probe_goats/`），保留本地 MySQL 等条件跳过，不新增 skip/xfail，
-以零失败、零警告及 Ruff 零告警为通过条件。默认 dry-run 只验证数据加载与筛选；
-两项自检不执行真实交易。检查记录分别报告本地自动化和真实业务验收状态，
-真实模型准确率、客户 GOATS 业务闭环须另行取得证据。
+以零失败、零告警为通过条件；保留本地 MySQL 等条件跳过，不新增 skip/xfail。
+真实模型准确率与客户业务闭环须另行取得证据。
 
 ### 分层调试命令
 
@@ -94,7 +87,6 @@ curl -X POST http://localhost:8000/v1/workflows/run \
 .venv/bin/python scripts/probe_swap_write_e2e.py       # 互换写
 .venv/bin/python scripts/probe_option_write_e2e.py     # 期权写
 .venv/bin/python scripts/probe_close_write_e2e.py      # 平仓写
-.venv/bin/python scripts/probe_ticker_e2e.py           # 标的识别
 ```
 
 ## 三、本地 Mock 测试环境
@@ -117,7 +109,7 @@ GOATS_BASE_URL=http://127.0.0.1:8099
 ## 四、切换到真实客户测试环境
 
 1. **改 .env**：三个 URL 换成真实地址（内网格式参考 `.env.example` 注释），需 VPN 可达
-2. **跑探针**（层 5）：五个 `probe_*_e2e.py` 逐条过，确认契约与连通性；任何 4xx/5xx
+2. **跑探针**（层 5）：四个 `probe_*_e2e.py` 逐条过，确认契约与连通性；任何 4xx/5xx
    先解决再往下走
 3. **真后端数据集回归**（层 6）：`langfuse_eval.py` 跑 B 桶全集，退出门见
    ADR 0030 D3（总 PASS 率不低于上一基线；B 桶 ≥ 90% / C 桶 ≥ 80%）
@@ -125,10 +117,8 @@ GOATS_BASE_URL=http://127.0.0.1:8099
    `scripts/deploy-customer.sh`（自带预检 + smoke 自检）
 
 已知坑（真后端联调前必读）：
-- **GOATS agent 路径（2026-09-18 定案）** · 路径统一为 `GOATS_BASE_URL`（主机根，或带
-  `/api` 尾缀，客户端归一）+ 客户端补全 `/api/internal/agent/*`。此前 `goats_agent_client`
-  漏前缀，在 tstgoats 被 APISIX 网关以 405 / 静态页拒绝（快速询价恒报"参数解析服务异常"）；
-  两个客户端已统一，单测锁定两种基址写法，实调（tstgoats）验证通过
+- **GOATS agent 路径** · 统一配置 `GOATS_BASE_URL`（主机根，或带 `/api` 尾缀，客户端会归一），
+  客户端自动补全 `/api/internal/agent/*`；两种基址写法均有单测锁定
 - 后端 dedup：多轮 case 间隔太短会撞"正在处理，请勿重复提交"；workaround 只允许放在
   `scripts/langfuse/langfuse_eval.py`（turn 间 sleep），**严禁进业务代码**（根 CLAUDE.md P0 红线）
 
@@ -138,20 +128,12 @@ GOATS_BASE_URL=http://127.0.0.1:8099
 
 1. **层 1-2 失败**：普通 TDD——先写复现测试（RED）→ 最小修复（GREEN）→ 全量回归
 2. **层 3-4 失败**：看 Langfuse 富 output（score / judge_comment / turns[i] 逐字段定位），
-   或 stdout 的 per-turn trace；按 `product_type` → `intent` → `tickers` → `place_params`
-   → `api_result` 的顺序锁定错误层
+   或 stdout 的 per-turn trace；按 `product_type` → `intent` → `place_params`
+   → `api_result` 的顺序锁定错误层（标的问题核对传给后端的原文与后端工具日志）
 3. **层 5-6 失败**：先分清是契约问题（对照 `docs/api-contracts/java-backend.md`）还是
    环境问题（VPN / 鉴权 / dedup）；契约问题回到 mock 复现后按 TDD 修
 
 ## 六、本目录的文档存放约定
 
-| 放什么 | 命名建议 |
-|---|---|
-| 阶段性测试报告 | `report-<阶段>-<YYYY-MM-DD>.md`（如 `report-e3.1-2026-09-01.md`） |
-| 现场 smoke checklist 与执行记录 | `smoke-checklist-<客户>-<日期>.md` |
-| 测试环境配置记录（脱敏） | `env-<环境名>.md` |
-| 专项测试计划 | `plan-<主题>.md` |
-
-- 报告写完、行动项闭环后按归档纪律移入 `docs/archive/`（见 `docs/archive/README.md`）
-- **不放**：golden case（去 `tests/fixtures/`）、测试代码（去 `tests/`）、
-  含真实密钥的配置（严禁入库）
+本目录只放仍在使用的测试说明（如 `local-backend-seed.md`）。一次性的测试报告、执行记录在行动项闭环后直接删除，历史从 git 找回；
+golden case 放 `tests/fixtures/`，测试代码放 `tests/`，含真实密钥的配置严禁入库。

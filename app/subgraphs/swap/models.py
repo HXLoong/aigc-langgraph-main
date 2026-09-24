@@ -70,7 +70,7 @@ SwapOrderDirection = Literal["BUY", "SELL", "SHORT_OPEN", "SHORT_CLOSE"]
 SwapPriceType = Literal["LimitOrder", "MarketOrder"]
 
 #: 算法类型
-#: 算法类型（与 Java GoatsAlgoType 一致：POV/TWAP/VWAP/ICEBERG/SNIPER；M2 阶段 LLM 主要用 POV/TWAP/VWAP）。
+#: 算法类型（与 Java GoatsAlgoType 一致：POV/TWAP/VWAP/ICEBERG/SNIPER；LLM 主要用 POV/TWAP/VWAP）。
 SwapAlgorithmType = Literal["POV", "TWAP", "VWAP", "ICEBERG", "SNIPER"]
 
 #: 委托数量单位（DSL v2 新增，互换-节点-下单.md「placeOrderQuantityUnit」）。

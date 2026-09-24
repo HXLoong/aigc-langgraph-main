@@ -1,4 +1,4 @@
-"""D2.3 render 节点不可达文案分支测试（Issue #73）。"""
+"""render 节点不可达文案分支测试。"""
 from __future__ import annotations
 
 import pytest

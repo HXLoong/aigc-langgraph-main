@@ -42,11 +42,14 @@ def test_required_checks_do_not_swallow_failures():
     assert workflow()["jobs"]["fast"].get("continue-on-error", "false") == "false"
 
 
-def test_slow_job_runs_full_suite_with_mysql_after_fast_checks():
+def test_slow_job_runs_full_suite_without_real_mysql_after_fast_checks():
+    """全量 pytest（含 e2e）仍在 fast 之后跑；真实 MySQL 用例不再进 CI（opt-in 用例自动 skip）。"""
     job = workflow()["jobs"]["slow"]
     assert job["needs"] == "fast"
-    assert "mysql" in job["services"]
-    assert job["env"]["RUN_LOCAL_MYSQL_TESTS"] == "1"
+    assert "services" not in job
+    assert "RUN_LOCAL_MYSQL_TESTS" not in job["env"]
+    assert job["env"]["USE_MYSQL_CHECKPOINTER"] == "false"
+    assert not any("init.sql" in step.get("run", "") for step in job["steps"])
     steps = [step for step in job["steps"] if "pytest tests/" in step.get("run", "")]
     assert len(steps) == 1
     command = steps[0]["run"]

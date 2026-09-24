@@ -27,6 +27,7 @@ from app.subgraphs.option.normalize import _cn_number
 
 _SEQ = re.compile(r"序号\s*[:：]?\s*(\d+)|第\s*([零〇一二两三四五六七八九十百\d]+)\s*笔")
 _FULL = re.compile(r"全部平仓|确认全部平仓|全平|全部平掉")
+_NEGATED_FULL = re.compile(r"(?:不|别|不要|不想|不用|无需)\s*(?:全部|全平)")
 _KEEP = re.compile(r"(?:保留|只留|留|平到还剩|平到剩|平剩到|剩到|剩)\s*([\d零〇一二两三四五六七八九十百千.]+\s*(?:千万|百万|kw|KW|[万亿wWkKeE])?)")
 _ENUMS = {
     "insFamilyList": {"EQUITY": ("股票", "个股"), "INDEX": ("指数",),
@@ -35,6 +36,10 @@ _ENUMS = {
                          "AUTOCALL": ("雪球",), "PARTICIPATORY": ("参与型", "参与型看涨"),
                          "AIRBAG": ("气囊", "安全气囊")},
 }
+
+
+class CloseAmountError(ValueError):
+    """用户给出的平仓金额不合法（0 / 负数），直接提示用户修改。"""
 
 
 def _enum(alias: str, text: str) -> str:
@@ -50,7 +55,14 @@ def _number(text: str) -> Decimal:
     if not match:
         raise ValueError("平仓金额或比例无法解析")
     raw = match[1]
-    value = Decimal(raw) if re.fullmatch(r"[+-]?\d+(?:\.\d+)?", raw) else Decimal(_cn_number(raw) or 0)
+    if re.fullmatch(r"[+-]?\d+(?:\.\d+)?", raw):
+        value = Decimal(raw)
+    else:
+        # 中文数字解析失败必须报错，不能编造成 0 发给 Java
+        cn_value = _cn_number(raw)
+        if cn_value is None:
+            raise ValueError("平仓金额或比例无法解析")
+        value = Decimal(cn_value)
     scale = {"": 1, "万": 10000, "w": 10000, "k": 1000, "kw": 10000000,
              "千万": 10000000, "百万": 1000000, "亿": 100000000, "e": 100000000}
     return value * scale[(match[2] or "").lower()]
@@ -58,7 +70,8 @@ def _number(text: str) -> Decimal:
 
 def _amount(value: str, row: Mapping[str, Any] | None) -> str | None:
     keep = _KEEP.search(value)
-    token = re.sub(r"^(?:名义本金|名本|平掉|平仓|平|以|按)", "", value).strip()
+    # 前缀可叠加：「平仓名义本金200万」「按名义本金100万平」
+    token = re.sub(r"^(?:(?:名义本金|名本|平掉|平仓|平|以|按)\s*)+", "", value).strip()
     token = re.sub(r"(?:来平|平仓|平)$", "", token).strip()
     ratio: Decimal | None = None
     if "一半" in token:
@@ -92,6 +105,9 @@ def _amount(value: str, row: Mapping[str, Any] | None) -> str | None:
             amount = available * ratio
         return str(amount.to_integral_value(rounding=ROUND_FLOOR)) if amount >= 1 else None
     amount = _number(token)
+    if amount <= 0:
+        # 业务裁决 C8：0 / 负数本地拦截；超额等其余金额策略仍交给 Java
+        raise CloseAmountError("平仓名义本金必须大于0，请修改后重新提交。")
     return format(amount, "f").rstrip("0").rstrip(".") if "." in format(amount, "f") else str(amount)
 
 
@@ -202,8 +218,10 @@ def normalize_place_candidates(
     rows: list[dict[str, Any]] = []
     ledgers: list[dict[str, FieldRecord]] = []
     negated_full = bool(re.search(r"(?:不|别|不要|不想)\s*(?:全部平仓|全平|全部平掉)", raw))
-    unbound_full = bool(re.search(r"(?:^|[，,；;])\s*(?:确认)?全部平仓[。！!\s]*$", raw)) or (
-        bool(_FULL.search(raw)) and not explicit and not _KEEP.search(raw) and not negated_full
+    # 业务裁决 C5：点名了具体订单时「全部平仓」只作用于被点名的订单，不再扩展到引用里其它只能全平的订单
+    unbound_full = not explicit and (
+        bool(re.search(r"(?:^|[，,；;])\s*(?:确认)?全部平仓[。！!\s]*$", raw))
+        or (bool(_FULL.search(raw)) and not _KEEP.search(raw) and not negated_full)
     )
     if cast(Any, candidates).close_order_list and not explicit and not unbound_full and len(parsed["pureErrorOrderIds"]) > 1:
         # Original contract: ambiguous supplements preserve identities, never broadcast a value.
@@ -264,8 +282,10 @@ def normalize_place_candidates(
                     value = f"{int(match[1]):02d}:{int(match[2]):02d}"
                 elif alias == "confirmFullClose":
                     value = (bool(_FULL.search(text)) or text == "全部") and not bool(_KEEP.search(candidate.evidence))
-                    if re.search(r"不|别|不要", candidate.evidence) or any(
-                        re.search(r"(?:不|别|不要|不想)\s*(?:全部|全平)", segment) for segment in segments
+                    # 只有否定全平本身才取消；「全部平仓，不用跟量」里的否定属于其它参数
+                    if any(
+                        _NEGATED_FULL.search(source)
+                        for source in (candidate.evidence, *segments)
                     ):
                         value = False
                 row[alias], ledger[alias] = value, _record(value, candidate)

@@ -82,7 +82,7 @@ class TestParseRfqInstrument:
 
     @pytest.mark.asyncio
     async def test_api_suffix_base_is_normalized_to_single_prefix(self):
-        """#178：base 带 /api 尾缀（历史写法）归一后，最终路径仍只含一次 /api。"""
+        """base 带 /api 尾缀（历史写法）归一后，最终路径仍只含一次 /api。"""
         def handler(request: httpx.Request) -> httpx.Response:
             assert request.url.path == "/api/internal/agent/option_rfq_instrument_parser"
             return httpx.Response(200, json={"errCode": {"code": 200}, "data": {"ok": 1}})

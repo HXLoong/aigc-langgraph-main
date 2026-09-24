@@ -1,4 +1,4 @@
-"""#155 裁决落地：LangFuse 提示词生产硬闸门 + 降级告警（ADR 0014 D3-2）。
+"""LangFuse 提示词生产硬闸门 + 降级告警（ADR 0014 D3-2）。
 
 - production + use_langfuse_prompts=true → load_prompt 直接 raise（防绕过 git PR 审计）
 - 非生产环境拉取失败 → warning 级日志（原为 debug 静默）后回退本地

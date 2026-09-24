@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
-"""ADR 一致性复检 lint（承接 2026-05-13 一致性审计 §4，2026-08-27 落地）。
+"""ADR 一致性复检 lint（CI fast job）。
 
 三项检查：
-  1. ADR 互引虚悬——正文出现的 `ADR NNNN` 与相对链接 `./NNNN-*.md` 必须指向存在的文件
+  1. ADR 互引虚悬——正文出现的 `ADR NNNN` 必须指向存在的文件；ADR 与 README 中的
+     Markdown 相对链接（`./NNNN-*.md`、`../xxx.md` 等，忽略 URL 与页内锚点）目标必须存在
   2. ADR 引用代码路径存在性——反引号内的仓库路径必须存在；
-     **跳过 ``~~删除线~~`` 段**（0001/0013 用删除线标注过期原文的模式会让朴素检查误报）；
+     **跳过 ``~~删除线~~`` 段**（删除线标注的过期原文不参与检查）；
      行号后缀（`app/x.py:42`）与 glob/占位符（`*` `<` `{`）自动豁免
   3. 引用热度 / 孤儿 ADR 统计——信息性输出，不计入失败
 
@@ -18,7 +19,6 @@
     1  发现虚悬引用或失效路径
     2  docs/adr 目录缺失
 
-建议节奏（AUDIT §4 原约定）：每新增 5 个 ADR 跑一次；切流前必跑。
 """
 from __future__ import annotations
 
@@ -40,7 +40,7 @@ _PATH_RX = re.compile(
 )
 _STRIKE_RX = re.compile(r"~~.*?~~", re.S)
 _ADR_REF_RX = re.compile(r"ADR ?(0[0-9]{3})")
-_REL_LINK_RX = re.compile(r"\]\(\./([0-9]{4}-[A-Za-z0-9\-]+\.md)")
+_REL_LINK_RX = re.compile(r"\]\(([^)\s#]*)(?:#[^)]*)?\)")
 
 
 @dataclass(frozen=True)
@@ -66,15 +66,19 @@ def _existing_numbers(adr_dir: Path) -> set[str]:
 
 
 def find_dangling_adr_refs(adr_dir: Path) -> list[Finding]:
-    """检查 1：互引虚悬（编号引用 + 相对链接目标）。"""
+    """检查 1：互引虚悬（编号引用 + ADR / README 中的相对链接目标）。"""
     known = _existing_numbers(adr_dir)
     findings: list[Finding] = []
-    for adr in _adr_files(adr_dir):
+    readme = adr_dir / "README.md"
+    docs = _adr_files(adr_dir) + ([readme] if readme.exists() else [])
+    for adr in docs:
         text = adr.read_text(encoding="utf-8")
         for num in sorted(set(_ADR_REF_RX.findall(text))):
             if num not in known:
                 findings.append(Finding(adr.name, f"虚悬 ADR 引用: ADR {num}"))
         for target in sorted(set(_REL_LINK_RX.findall(text))):
+            if not target or "://" in target or target.startswith("mailto:"):
+                continue
             if not (adr_dir / target).exists():
                 findings.append(Finding(adr.name, f"相对链接目标不存在: {target}"))
     return findings

@@ -20,11 +20,9 @@
     ...
 
     ## 业务指标
-    Fallback 触发: 12（reason=cascade_fail:8 / zero_match:3 / hitl_card:1）
-    HITL 触发: 5
+    Fallback 触发: 12（reason=cascade_fail:9 / backend_unreachable:3）
     LLM 调用: 287（ok:280 error:7 = 2.4% 失败率）
     LLM token 消耗: prompt=1.2M completion=345K
-    动态 prompt: cache_hit=240 / cache_miss_ok=42 / fallback=0
 
     ## 金丝雀（otc_agent_canary_traffic_total）
     is_canary=true:  142
@@ -177,10 +175,6 @@ def _render_business_section(counters: dict[str, dict[tuple, float]]) -> list[st
     else:
         lines.append("  Fallback 触发: 0")
 
-    hitl = counters.get("otc_agent_hitl_total", {})
-    hitl_total = int(sum(hitl.values()))
-    lines.append(f"  HITL 触发: {hitl_total}")
-
     llm = counters.get("otc_agent_llm_total", {})
     llm_total = int(sum(llm.values()))
     llm_by_status = {k: int(v) for k, v in _sum_by_label(llm, "status").items()}
@@ -202,14 +196,6 @@ def _render_business_section(counters: dict[str, dict[tuple, float]]) -> list[st
             f"  LLM token 消耗: prompt={prompt:,} completion={completion:,}"
         )
 
-    dyn = counters.get("otc_agent_dynamic_prompt_total", {})
-    if dyn:
-        by_status = {k: int(v) for k, v in _sum_by_label(dyn, "status").items()}
-        lines.append(
-            f"  动态 prompt: cache_hit={by_status.get('cache_hit', 0)} "
-            f"miss_ok={by_status.get('cache_miss_ok', 0)} "
-            f"fallback={by_status.get('fallback', 0)}"
-        )
     return lines
 
 

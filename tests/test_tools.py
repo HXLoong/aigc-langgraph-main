@@ -10,7 +10,6 @@ from app.tools import (
     GoatsPriceType,
     GoatsTransactionType,
     OptionIntentionType,
-    SecuritiesInstrumentReqVO,
     SwapIntentionType,
     SwapOrderOpenApiBaseSaveReqVO,
     SwapOrderOpenApiSaveReqVO,
@@ -105,16 +104,3 @@ def test_option_reqvo_round_trip() -> None:
     assert dumped["type"] == "new_inquiry"
     assert dumped["orderList"][0]["placeOrderWindCode"] == "600519.SH"
     assert dumped["orderList"][0]["notionalAmount"] == "100000.00"
-
-
-def test_ticker_reqvo_keyword_items() -> None:
-    """标的查询的关键词列表 schema。"""
-    req = SecuritiesInstrumentReqVO(
-        keywordItems=[
-            {"keyword": "招行", "isFull": False},  # type: ignore[list-item]
-            {"keyword": "600036.SH", "isFull": True},  # type: ignore[list-item]
-        ]
-    )
-    dumped = req.model_dump(mode="json", exclude_none=True)
-    assert dumped["keywordItems"][0]["keyword"] == "招行"
-    assert dumped["keywordItems"][1]["isFull"] is True

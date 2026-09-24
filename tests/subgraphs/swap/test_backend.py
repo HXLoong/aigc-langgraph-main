@@ -1,4 +1,4 @@
-"""Swap 子图 backend 集成单测（Issue #79）。"""
+"""Swap 子图 backend 集成单测。"""
 from __future__ import annotations
 
 from unittest.mock import AsyncMock, MagicMock

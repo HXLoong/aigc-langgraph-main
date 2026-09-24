@@ -3,7 +3,7 @@
 > **编写者**：图灵科技
 > **目标读者**：新来的实习生——不要求有 Dify 背景，不要求用过 LangGraph，只要求会 Python + async 基础
 > **预期用时**：第 1 天建立全貌，第 1 周能独立改一个节点并提 PR
-> **配套资料**：本目录 `langgraph-handbook.md`（4000+ 行参考书，按需查阅，不要从头读）
+> **配套资料**：本目录 `course/` 交互式小课
 
 ---
 
@@ -11,7 +11,7 @@
 
 - 你是**实习生、第一次接触 LangGraph** → 从头往下读，跟着代码走，大约 2 小时读完
 - 你是**从 Dify 团队转过来的老同事** → 直接看 [README.md](./README.md) 的路径 A/B/C，那边以 Dify 对照为主线
-- 读到任何一节觉得"想再深入" → 每节末尾标了 handbook 对应章节，跳过去查
+- 读到任何一节觉得"想再深入" → 对应的 `course/` 小课与 LangGraph 官方文档
 
 **一句话版本**：本项目用 LangGraph 把"客户在企微群里说一句话 → 机器人理解意图 → 调后端下单/查单 → 回复客户"这条链路建模为一张**有状态的有向图**。你要学的就是：图怎么定义、状态怎么流动、节点怎么写、错误怎么兜底、测试怎么跑。
 
@@ -36,7 +36,7 @@
 ```
 
 - 业务后端是 Java（下单、查单等真实交易接口），我们通过 HTTP 客户端调它
-- LLM 用 Qwen 系列（`app/llm/clients.py` 统一工厂）
+- LLM 全环境统一 DeepSeek-V4-pro（`app/llm/clients.py` 统一工厂，ADR 0020）
 - 多轮对话状态存 MySQL（LangGraph checkpointer）
 - 可观测用 LangFuse（每个节点的输入输出、耗时都能在 UI 里看到）
 
@@ -147,7 +147,7 @@ g.add_node("swap", build_swap_graph())   # 整个 swap 子图作为主图的一�
 
 本项目所有业务子图与主图**共享 AgentState**，子图内部改的字段会回传主图。
 
-> 深入：handbook 第 2 章（5 个概念逐个展开）、第 3 章（如果你想了解 Dify 对照）。
+> 深入：`course/` 第 01-02 课。
 > 官方文档：<https://langchain-ai.github.io/langgraph/>
 
 ---
@@ -226,7 +226,7 @@ async def swap_intent(state: AgentState) -> dict:
 # ✅ 必须：走三个 Protocol 之一
 from app.tools.swap_client import SwapClient      # POST /swap-order/operate
 from app.tools.option_client import OptionClient  # POST /financial-orders/operate
-from app.tools.ticker_client import TickerClient  # GET /securities-instrument/select
+from app.tools.message_client import MessageClient  # POST /set-intent（会话意图写回）
 ```
 
 Protocol（接口）+ Httpx 实现分离 = 单测时塞一个 FakeClient 就能 mock 整个后端。
@@ -239,10 +239,10 @@ Protocol（接口）+ Httpx 实现分离 = 单测时塞一个 FakeClient 就能 
 2. `app/graph/main.py` —— 主图组装：ingest → intent_route → 条件路由 → 子图 → render
 3. `app/nodes/intent_route.py` —— 一级路由三层策略：正则 → 关键词 → LLM 兜底
 4. `app/subgraphs/swap/graph.py` —— 子图模板：intent 节点 → 按意图分发到 5 个真节点 + 1 个 unknown 兜底
-5. `app/subgraphs/swap/place_order.py` —— 最复杂的业务节点：LLM 提参 + ticker 识别
+5. `app/subgraphs/swap/place_order.py` —— 最复杂的业务节点：LLM 提取参数原文与证据，标的原文交后端识别
 6. `app/nodes/render.py` —— 把业务结果渲染成企微回复文本
 
-> 深入：handbook 第 4 章（结构逐一对照）、第 5 章（手把手写一个子图）、第 6 章（主图与一级路由）、第 7 章（ticker ReAct Agent）。
+> 深入：`course/` 第 06 课（子图模板）+ `docs/ARCHITECTURE.md`。
 
 ---
 
@@ -254,9 +254,9 @@ Protocol（接口）+ Httpx 实现分离 = 单测时塞一个 FakeClient 就能 
 git clone https://github.com/GZTL-AI/aigc-langgraph.git    # 用 HTTPS
 cd aigc-langgraph
 pip install -e ".[dev]"
-cp .env.example .env                  # 找导师拿 QWEN_API_KEY
-docker compose up -d mysql
-pytest tests/test_smoke.py -v         # 应全绿；跑不通先解决环境再往下
+cp .env.example .env                  # 找导师拿 QWEN_API_KEY 与 MYSQL_URI
+USE_MYSQL_CHECKPOINTER=false REQUEST_IDEMPOTENCY=false ENABLE_LANGFUSE=false \
+    python -m pytest tests/test_smoke.py -q   # 应全绿；跑不通先解决环境再往下
 
 # 启动服务，发一条真实请求
 uvicorn app.main:app --reload
@@ -303,21 +303,19 @@ curl -X POST http://localhost:8000/v1/workflows/run \
 
 ```bash
 # 测试
-pytest tests/ -v                      # 全套（约 2 分钟，841 passed + 14 skipped）
+python -m pytest tests/ -q             # 全套
 pytest -k "not e2e"                   # 跳过 e2e
 pytest -v --lf                        # 只跑上次失败的
 ruff check app/ tests/                # lint（行宽 100）
 mypy app/                             # 类型检查
 
 # 评估
-python -m harness run                 # golden 全集（本地快速 smoke）
-python -m harness diff <run-a> <run-b>
-python scripts/langfuse/langfuse_eval.py --local tests/fixtures/golden.jsonl --ids opt-001 --concurrency 2
-                                      # 带 DeepSeek Judge 的正式评估（M3 主用）
+python -m harness run --backend mock  # categories 业务集快速 smoke
+python scripts/langfuse/langfuse_eval.py --local tests/fixtures/categories --ids case-025 --concurrency 1
+                                      # 带 DeepSeek Judge 的正式评估
 
 # 服务
 uvicorn app.main:app --reload         # FastAPI
-docker compose up -d mysql            # 业务库 + checkpoint
 ```
 
 ---
@@ -330,7 +328,7 @@ docker compose up -d mysql            # 业务库 + checkpoint
 4. **State 字段先声明后使用**——新字段必须先进 `app/graph/state.py` 的 `AgentState`
 5. **TDD 强制**——bug fix / 新功能必须先写失败测试（RED）再改代码（GREEN），禁止反过来
 6. **cascade 防御**——任何条件路由第一行检查 `state.get("error")`
-7. **标的代码必须 `from_goats=True`**——ticker 输出的绝对约束（ADR 0008）
+7. **标的原文交后端识别**——LangGraph 只提取客户原文，不补代码、不查证券池（ADR 0025）
 8. **后端调用走 Protocol**——禁止节点里直接 `httpx.AsyncClient`
 9. **不在 main 分支直接改业务子图**——feature 分支 + PR，PR 标题/描述用中文
 10. **不掩盖后端真实响应**——严禁"后端返回 X 就本地改成 Y"的伪造逻辑（P0 红线）
@@ -345,9 +343,9 @@ docker compose up -d mysql            # 业务库 + checkpoint
 |---|---|
 | 所有约定的总入口（项目宪法） | 根目录 `CLAUDE.md` |
 | 业务术语（雪球/互换/平仓的行话） | `CONTEXT.md` |
-| LangGraph 每个概念的展开讲解 | `docs/training/langgraph-handbook.md` 第 2 章 |
-| 手把手写一个新子图 | handbook 第 5 章 |
-| 常见陷阱 12 条 | handbook 附录 A |
+| LangGraph 每个概念的展开讲解 | `docs/training/course/` + LangGraph 官方文档 |
+| 手把手写一个新子图 | `course/` 第 06 课 + `.claude/agents/subgraph-builder.md` |
+| 常见陷阱 | `tests/CLAUDE.md` + `docs/TROUBLESHOOTING.md` |
 | 为什么这样设计（架构决定） | `docs/adr/`（ADR 0000-0020） |
 | Java 后端接口契约 | `docs/api-contracts/java-backend.md` |
 | State/节点/路由/checkpointer 项目模式 | `.claude/rules/langgraph-patterns.md` |
@@ -360,9 +358,9 @@ docker compose up -d mysql            # 业务库 + checkpoint
 ## 8. 卡住了怎么办
 
 - 环境跑不起来 → `docs/TROUBLESHOOTING.md`，还不行找导师
-- 看不懂某段代码 → 先读该文件顶部 docstring 和所在目录的 CLAUDE.md，再查 handbook 对应章
+- 看不懂某段代码 → 先读该文件顶部 docstring 和所在目录的 CLAUDE.md，再查 `course/` 对应小课
 - 测试 mock 不生效 → 九成是 patch 了定义处而不是使用点，看 `tests/CLAUDE.md`
 - 改了提示词没效果 → `load_prompt` 有 lru_cache，测试里 `from app.prompts import clear_cache; clear_cache()`
 - 不知道一个设计为什么这样 → `docs/adr/` 按编号找，找不到就问，**不要猜**
 
-> 最后一条建议：**遇到问题先花 15 分钟自己查（本表 + handbook + 代码 docstring），15 分钟内没头绪就去问导师**。不问白白卡半天，是实习期最常见的浪费。
+> 最后一条建议：**遇到问题先花 15 分钟自己查（本表 + course + 代码 docstring），15 分钟内没头绪就去问导师**。不问白白卡半天，是实习期最常见的浪费。

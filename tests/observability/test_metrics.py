@@ -1,4 +1,4 @@
-"""C1.5 业务指标埋点单元测试（Issue #50）。"""
+"""业务指标埋点单元测试。"""
 from __future__ import annotations
 
 import pytest
@@ -89,15 +89,6 @@ def test_emit_option_backend_validation_metrics() -> None:
     coll = metrics.get_collector()
     assert coll.get_counter(metrics.METRIC_OPTION_BACKEND_MISSING_CONTEXT_TOTAL) == 1
     assert coll.get_counter(metrics.METRIC_OPTION_BACKEND_EMPTY_RESULT_TOTAL) == 1
-
-
-def test_emit_hitl() -> None:
-    metrics.emit_hitl(node="ticker.resolver")
-    metrics.emit_hitl(node="ticker.resolver")
-
-    assert metrics.get_collector().get_counter(
-        metrics.METRIC_HITL_TOTAL, {"node": "ticker.resolver"}
-    ) == 2
 
 
 def test_emit_llm_call() -> None:

@@ -89,6 +89,27 @@ class TestOptionIntentNode:
         })
         assert result["intent"] == intent
 
+    async def test_repeated_cancel_on_cancel_card_is_request_cancel(
+        self, monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """引用撤单回执再回复「撤单」仍是请求撤单（提示词规则3 / case-029），不是取消下单。"""
+        ainvoke = _patch_llm(monkeypatch, "unknown_intent")
+        result = await option_intent({
+            "raw_text": "撤单",
+            "quote_content": "期权订单Q-20260922-AAAA1：已收到您的撤单请求，如需继续，请引用本消息并回复【确认撤单】",
+        })
+        assert result["intent"] == "request_cancel_order"
+        ainvoke.assert_not_awaited()
+
+    @pytest.mark.parametrize("raw", ["确认修改期限3M", "确认修改，名义本金200万"])
+    async def test_confirm_modify_with_parameters_is_place_order(
+        self, monkeypatch: pytest.MonkeyPatch, raw: str,
+    ) -> None:
+        """期权无独立改单流程：带参数的「确认修改」按提示词规则1第7条归 place_order_from_quote。"""
+        _patch_llm(monkeypatch, "unknown_intent")
+        result = await option_intent({"raw_text": raw, "quote_content": "Q-20260907-000001 询价详情"})
+        assert result["intent"] == "place_order_from_quote"
+
     async def test_classifies_new_inquiry(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:

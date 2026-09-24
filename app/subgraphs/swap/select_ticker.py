@@ -11,8 +11,7 @@
 输出：state['swap_ticker_picks']（LLM 指针列表；candidate_list 为空 → [] 且跳过 LLM）。
       确定性查表覆盖 placeOrderWindCode 收敛到 swap_apply_picks 汇合节点
 
-LLM：complex 模型（对齐 Dify external-deepseek-v4-pro-non-thinking）+
-     with_structured_output（ADR 0010）。
+LLM：complex 模型（DeepSeek-V4-pro，关闭思考）+ with_structured_output（ADR 0020）。
 prompt：app/prompts/swap/select_ticker.md（Dify 原文）。
 """
 from __future__ import annotations

@@ -8,7 +8,7 @@
 ```
 tests/
 ├── conftest.py            # 全局 pytest 配置（仅占位；根纪律禁止用 autouse 绕过真实业务路径）
-├── fixtures/              # categories/（A 方言）+ unified_golden.jsonl（B 方言，历史参考集，显式 --include-unified 加载）+ README.md（历史归档已移至 docs/archive/fixtures/old_typing/）
+├── fixtures/              # categories/（A 方言）+ unified_golden.jsonl（B 方言，历史参考集，显式 --include-unified 加载）+ README.md
 ├── intent_fixtures.py / evidence_support.py / llm_guard.py   # 共享 mock 工厂与守卫（证据必须来自真实输入；去 LLM 化模块不得持有 LLM 工厂）
 ├── graph/                 # 主图：拓扑 / reducer / 路由纯函数 / RetryPolicy 读写清单 / 子图契约 / 确认路径
 ├── nodes/                 # 节点级测试（ingest / entry_route / render / fallback / persist ...）
@@ -16,7 +16,7 @@ tests/
 ├── api_wire/              # /v1/workflows/run 对 Java 的现行 wire 契约；原生协议迁移暂缓，保持兼容 + 幂等 + 输入映射
 ├── tools/                 # backend client / auth / exception / http_pool
 ├── observability/         # tracing / metrics / logs / health
-├── integration/           # mock_api ASGI 内存集成 + 本地 MySQL opt-in（RUN_LOCAL_MYSQL_TESTS=1，CI slow job 打开）
+├── integration/           # mock_api ASGI 内存集成 + 本地 MySQL opt-in（RUN_LOCAL_MYSQL_TESTS=1，仅本地 / 联调环境；CI 不跑）
 ├── harness/               # 评测台（harness/）：golden 加载、判定口径、节点 fixture 运行器、HTTP tape
 ├── prompts/               # 提示词治理：PromptSpec / loader / 灰度 / LangFuse 演练稿门槛
 ├── scripts/               # scripts/ 下运维与评估脚本的测试（导入靠 pyproject pythonpath=["."]，禁止 sys.path.insert）

@@ -12,7 +12,7 @@ Langfuse 是**可选依赖**：本模块是它唯一的接入点，`app/` 下其
 两个 ID 的归属必须分清：
 
 - `request_trace_id`：业务审计 ID，调用方生成，贯穿 `node_trace.trace_id` 与
-  `config.metadata.trace_id`（ADR 0004/#156）—— **恒定存在**
+  `config.metadata.trace_id`（ADR 0004）—— **恒定存在**
 - `RequestTrace.langfuse_trace_id`：LangFuse 侧 Trace ID —— **可能不存在**
 """
 from __future__ import annotations
@@ -253,7 +253,7 @@ async def attach_request_trace(
 
     Args:
         request_trace_id: 业务审计 ID；自建 Trace 时复用为 LangFuse Trace ID，
-            保证 `node_trace.trace_id` 与 LangFuse trace 同值可直查（ADR 0004/#156）
+            保证 `node_trace.trace_id` 与 LangFuse trace 同值可直查（ADR 0004）
         traceparent: 调用方传入的 W3C traceparent；仅 `trust_inbound_traceparent=true`
             时生效（测试工作台等可信网络），否则恒被忽略
     """

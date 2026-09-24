@@ -261,7 +261,6 @@ Claude Code 有能力执行 bash 命令。即使有 `settings.json` 的白名单
 - [项目内其他文档](docs/)
   - [架构](docs/ARCHITECTURE.md)
   - [开发指南](docs/DEVELOPMENT.md)
-  - [Dify 迁移](docs/archive/history/DIFY_MIGRATION.md)
   - [常见问题](docs/TROUBLESHOOTING.md)
   - [工作计划](docs/work-plan.md)
   - [on-call SOP](docs/on-call-runbook.md)

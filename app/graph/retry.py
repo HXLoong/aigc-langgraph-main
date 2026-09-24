@@ -4,7 +4,7 @@
 - `@io_node`：@safe_node 的只读 IO 变体——**可重试异常**（网络不可达 / LLM 限流超时）穿透
   到 LangGraph 的 RetryPolicy；其它异常与 @safe_node 一样就地落 `state['error']`
 - `add_io_node(g, name, fn)`：RetryPolicy 执行重试，最后一次失败由原节点返回
-  ErrorInfo，保留原条件边、并行汇合及父图收尾（#223）
+  ErrorInfo，保留原条件边、并行汇合及父图收尾
 - 写类节点（下单 / 撤单 / 确认 / 平仓）**绝不**用本模块：超时后自动重试可能重复下单，
   它们保持 @safe_node，超时直接交 render 出"系统暂时不可用"
 

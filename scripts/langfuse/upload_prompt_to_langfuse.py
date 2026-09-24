@@ -121,9 +121,13 @@ def _read_workspace_prompt(category: str, name: str) -> tuple[str, str, Path]:
 
 
 def _build_prompt_body(
-    system: str, user_template: str, experiment: bool = True,
+    system: str, user_template: str, experiment: bool
 ) -> tuple[str, str | list[dict[str, str]], str]:
-    """拼 chat 消息：有 [user] 段用 git 的模板，否则补 EXPERIMENT_USER_TEMPLATE。
+    """决定上传类型与内容，返回 (prompt 类型, 内容, user 来源说明)。
+
+    - `.md` 自带 [user] 段 → chat，用 git 的 user 模板（实验与演练一致，无需替换）
+    - 无 [user] 段 + experiment → chat，user 用 EXPERIMENT_USER_TEMPLATE
+    - 无 [user] 段 + --plain → text，纯 system（UI experiment 会报 no variables）
 
     system 段始终是 git 原文。与 app/prompts/__init__.py::_load_from_langfuse 的
     反序列化契约（list → 按 role 取 system / user）一一对应。
@@ -255,8 +259,12 @@ def main() -> int:
         default=DEFAULT_LABEL,
         help=f"部署标签（默认 {DEFAULT_LABEL}；运行时读 production，慎用）",
     )
+    parser.add_argument(
+        "--plain",
+        action="store_true",
+        help="不补实验用 user 消息，上传成纯 system 的 text 提示词（UI experiment 将不可用）",
+    )
     parser.add_argument("--dry-run", action="store_true", help="不推送，只打印将上传的内容摘要")
-    parser.add_argument("--plain", action="store_true", help="单文件上传时不补实验用 user 模板")
     args = parser.parse_args()
 
     if args.sync_all:
@@ -339,7 +347,7 @@ def main() -> int:
     try:
         created = lf.create_prompt(
             name=lf_name,
-            type="chat",
+            type=prompt_type,
             prompt=body,
             labels=[args.label],
         )
@@ -353,13 +361,17 @@ def main() -> int:
     version = getattr(created, "version", "?")
     print(f"\n✅ 已推送：{lf_name} 版本 v{version}，标签 [{args.label}]")
 
-    experiment_help = f"""
+    if prompt_type == "chat":
+        experiment_help = f"""
   在 UI 里跑 Prompt Experiment（对应 dataset 需含 send_text 键）：
     1. Datasets → 选数据集 → Start Experiment
     2. Prompt 选 {lf_name}
     3. 变量 {{send_text}} 会自动映射到 dataset item 的 send_text
     4. 结构化输出：打开开关，挂 CloseIntentOutput 的 JSON schema（在 Playground 存过就能选）
     5. 注意：只跑首轮；不跑 LangGraph 图，链路回归仍用 langfuse_eval.py"""
+    else:
+        experiment_help = """
+  （--plain：无变量，UI Prompt Experiment 不可用。需要实验请去掉 --plain 重推）"""
 
     print(
         f"""

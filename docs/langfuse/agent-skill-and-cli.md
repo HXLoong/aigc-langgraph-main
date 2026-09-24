@@ -23,7 +23,7 @@ CLI 由 Langfuse 的 OpenAPI spec 生成，每个 API 端点都有对应命令�
 ```bash
 export LANGFUSE_PUBLIC_KEY="pk-lf-..."
 export LANGFUSE_SECRET_KEY="sk-lf-..."
-export LANGFUSE_BASE_URL="https://us.cloud.langfuse.com"   # 按数据区域填，自托管填自己的地址
+export LANGFUSE_BASE_URL="http://127.0.0.1:3000"   # 自托管实例地址（infra/langfuse）
 ```
 
 **CLI**

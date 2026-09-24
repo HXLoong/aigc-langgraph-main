@@ -8,7 +8,7 @@
 ```bash
 # 最小用法（差异打印到 stdout，明细写入 JSON 文件）
 python scripts/shadow_compare.py \\
-    --langgraph http://localhost:8000/v1/message \\
+    --langgraph http://127.0.0.1:8201/v1/workflows/run \\
     --dify https://dify.example.com/v1/workflows/run \\
     --dify-api-key dify-app-xxx \\
     --sample sample_real_traffic.jsonl \\
@@ -166,7 +166,7 @@ DEFAULT_IGNORED_PATHS = frozenset(
         "*.created_at",
         "*.finished_at",
         "*.timestamp",
-        # reply_text 是渲染层，按 ADR 0017 不强 diff（业务方按业务对象 review）
+        # reply_text 是渲染层文本，不强制 diff（业务方按业务对象 review）
         "reply_text",
     }
 )
@@ -498,7 +498,7 @@ async def main(args: argparse.Namespace) -> int:
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="LangGraph vs Dify shadow 双跑对比")
-    parser.add_argument("--langgraph", required=True, help="LangGraph /v1/message 端点 URL")
+    parser.add_argument("--langgraph", required=True, help="LangGraph /v1/workflows/run 端点 URL（与 Dify 同一 wire 格式）")
     parser.add_argument("--dify", required=True, help="Dify /v1/workflows/run 端点 URL")
     parser.add_argument("--dify-api-key", default="", help="Dify App API Key（写入 Authorization 头）")
     parser.add_argument("--sample", required=True, type=Path, help="JSONL 样本文件路径")

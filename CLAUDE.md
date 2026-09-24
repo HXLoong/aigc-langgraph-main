@@ -3,7 +3,7 @@
 场外衍生品 AI 指令助手。**FastAPI + LangGraph + MySQL + LangFuse self-hosted**，从 Dify 工作流迁移而来。
 企微群客户消息 → 意图解析 → 后端业务/交易系统。
 
-> 目标（[ADR 0030](./docs/adr/0030-goal-restatement-native-langgraph-dataset-eval-harness.md)）：**原生 LangGraph 重构 + 数据集评测与评估 + Harness 工程**；里程碑与 GitHub issue 口径已退役，现状与待办见 [docs/work-plan.md](./docs/work-plan.md)。主干节点：swap 6 + option 6 + option_close 7，ticker 已于 2026-09-20 移交 Java（ADR 0025）；灰度与部署工具链（rollback_canary / drill_smoke / shadow_compare / deploy-customer / Grafana 模板 / Prompt 晋升 + on-call runbook）已就绪。
+> 目标（[ADR 0030](./docs/adr/0030-goal-restatement-native-langgraph-dataset-eval-harness.md)）：**原生 LangGraph 重构 + 数据集评测与评估 + Harness 工程**；里程碑与 GitHub issue 口径已退役，现状与待办见 [docs/work-plan.md](./docs/work-plan.md)。主干节点：swap 6 + option 6 + option_close 7，标的识别归 Java（ADR 0025）；灰度与部署工具链（rollback_canary / drill_smoke / shadow_compare / deploy-customer / Grafana 模板 + on-call runbook）已就绪。
 
 ## 关键命令
 
@@ -30,7 +30,8 @@ python scripts/local_eval.py --base-url http://127.0.0.1:8201 --data tests/fixtu
 
 # Langfuse Dataset Experiment（Judge + 自动 Evaluator；不替代 HTTP/Java 写回与幂等验收）
 python scripts/langfuse/langfuse_eval.py --dataset golden_option_inquiry_case --ids case-022 --concurrency 1
-# 意图集（只调 LLM + 仓库内 mock_api，不依赖 Java/GOATS；确定性评分本地算，--fail-under 给退出码；
+# 意图集（不依赖 Java/GOATS；冻结上下文的用例由 harness/intent_runner.py 只跑意图子链、只调 LLM，
+# 仍引用上一轮回复的用例走主图 + mock_api 回放；确定性评分本地算，--fail-under 给退出码；
 # CI：.github/workflows/intent-eval.yml；业务集 categories/ 依赖 Java 后端只在开发环境跑；workflow-guide §8）
 python scripts/langfuse/langfuse_eval.py --local tests/fixtures/intent --concurrency 3 --fail-under 0.95 --report .harness-runs/intent-eval.json
 
@@ -59,7 +60,7 @@ app/
 │   └── main.py              # 主图组装入口（build_main_graph;旧 graphs/ shim 已删）
 ├── nodes/                   # ingest / pre_route（对手+候选提取）/ route_rules + intent_route（DSL v2 两层路由）
 │                            # / fast_query（快速询价+存量兼容前置分支）/ persist / render / fallback
-├── subgraphs/               # —— 2026-08 Dify DSL v2 迁移后结构 ——
+├── subgraphs/               # 三个业务子图
 │   ├── swap/                # intent / place_order(+submit) / select_counterparty / select_ticker
 │   │                        # / confirm(三提示词+二次校验) / cancel / query_order / multimodal(图片+Excel)
 │   │                        # （+ quote_hints / aggregate / prewash / backend / graph / models;手转股已删）
@@ -67,7 +68,7 @@ app/
 │   │                        # confirm_cancel / cancel / query）+ sanitize + backend
 │   ├── close/               # intent / place_close(5 步引用解析链) / cancel_close / confirm_close /
 │   │                        # confirm_cancel / holding_query / query_status + reference_parser/merge/aggregate/backend
-│                            # 标的识别、分词与排序由 Java 调对应工具处理（2026-09-20）
+│                            # 标的识别、分词与排序由 Java 调对应工具处理（ADR 0025）
 ├── tools/
 │   ├── models.py            # Java DTO 对应 Pydantic
 │   ├── option_client.py     # OptionClient Protocol（POST /financial-orders/operate）
@@ -83,6 +84,8 @@ app/
 harness/                     # 评测台（经 HTTP 调本地 /v1/workflows/run，与 app/ 解耦）
 ├── golden.py                # categories fixture 加载（两方言归一化）
 ├── multi_turn.py            # 多轮 case 的 HTTP runner
+├── intent_runner.py         # 意图级 runner：只跑意图子链 + 冻结上下文（意图集只调 LLM）
+├── intent_context.py        # 意图集冻结 / 回放两种模式判定（lint 与 runner 共用）
 ├── differ.py                # 字段级 diff（按业务对象路径）+ 文本 / 结构化断言
 ├── langfuse_client.py       # LangFuse SDK 封装（v4 OTel-based）
 ├── token_tracker.py         # LLM token / 成本估算
@@ -94,13 +97,13 @@ scripts/                     # langfuse/langfuse_eval.py（Judge 评估） / pro
                              # rollback_canary.sh / run_alerts.py / llm_cost_report.py / shadow_compare.py 等
 
 infra/langfuse/              # LangFuse self-hosted Docker Compose（PG + ClickHouse + Redis + MinIO + Web + Worker）
-docs/adr/                    # 架构决定 ADR 0000-0030（共 31 篇）+ README 索引
+docs/adr/                    # 架构决定 ADR 现行 22 篇（只保留现行结论，已取代的已删除）+ README 索引
 docs/api-contracts/          # Java 后端真实业务 API 契约
 docs/work-plan.md            # 三条主线的现状与待办（取代 m3-m4-roadmap）
 docs/on-call-runbook.md      # 上线 on-call SOP
-tests/                       # 2900+ passed（2026-09-22；按 graph / nodes / subgraphs / api_wire / harness / prompts / scripts 归位）
-tests/fixtures/              # categories/（A 方言业务集，6 文件 / 389 条）+ intent/（意图集：逐轮 product_type/intent，只调 LLM + mock 后端）
-                             # + unified_golden.jsonl（B 方言，921 条，历史参考集，显式 --include-unified 加载）+ 历史归档见 docs/archive/fixtures/old_typing/
+tests/                       # 3500+ 条（按 graph / nodes / subgraphs / api_wire / harness / prompts / scripts 归位）
+tests/fixtures/              # categories/（A 方言业务集，6 文件 / 389 条）+ intent/（意图集：逐轮 product_type/intent；冻结用例只调 LLM，回放用例配 mock 后端）
+                             # + unified_golden.jsonl（B 方言，921 条，历史参考集，显式 --include-unified 加载）
 ```
 
 ## 团队工具链：Claude Code 与 Codex 共用一份纪律
@@ -147,14 +150,14 @@ tests/fixtures/              # categories/（A 方言业务集，6 文件 / 389 
 6. **git 里的提示词是唯一真源** —— 改提示词直接改 `app/prompts/**/*.md` + 普通 PR review，`prompt(<scope>)` commit；Dify 已退出上游地位（ADR 0024 D1），YAML 快照冻结在 tag `dify-assets-frozen-20260917（指向 commit fddd94e；tag 仅存本地，远端拒绝 tag 推送，维护者可从该 sha 重建）`，不再有同步 / 导出链路
 7. **单动作多订单** —— 每条消息按既有产品与意图优先级执行一个业务动作，多笔订单共用该动作；主图、节点执行接口和评测目录均不提供多动作编排。
 8. **标的原文交后端识别**（ADR 0025）—— LangGraph 只提取代码/名称原文和用户候选选择，不补代码、不计算近月、不查证券池；Java 业务接口负责调用标的工具及权威校验。原文及引用候选不标记为 `from_goats=True`；HTTP `tickers` 保留为空的兼容字段。详见 `docs/backend-instrument-boundary.md`。
-9. **节点失败必须 cascade 防御** —— 任一节点写入 `state['error']` 后，下游 conditional 路由必须检查并跳到 fallback render，禁止 cascade 失败。具体：主图 `_route_by_product` 与每子图首节点后的 conditional 都加 `if state.get('error'): return 'fallback'`。fallback / render 输出统一的未知指令引导文案（`Settings.default_reply`，对齐 Dify）+ trace 记录原 fail 节点名。LLM 解析失败由 `with_structured_output` 自带 1 次重试 + `@safe_node` 兜底捕获 ValidationError 写入 error；不走 HITL（HITL 仅用于 ADR 0006 的业务参数二次确认场景）
+9. **节点失败必须 cascade 防御** —— 任一节点写入 `state['error']` 后，下游 conditional 路由必须检查并跳到 fallback render，禁止 cascade 失败。具体：主图 `_route_by_product` 与每子图首节点后的 conditional 都加 `if state.get('error'): return 'fallback'`。fallback / render 输出统一的未知指令引导文案（`Settings.default_reply`，对齐 Dify）+ trace 记录原 fail 节点名。LLM 解析失败由 `with_structured_output` 自带 1 次重试 + `@safe_node` 兜底捕获 ValidationError 写入 error；写操作的二次确认统一走文本二阶段（ADR 0021），不使用 interrupt
 
 ## 排查与修复流程（Bug Debug Workflow）
 
 ### 1. 从 Langfuse 富 output 定位根因（首选）
 
-`scripts/langfuse/langfuse_eval.py` 每跑完一条 case 会把**结构化富集 JSON** 写到 Langfuse Cloud
-（https://us.cloud.langfuse.com），outer span output 包含：
+`scripts/langfuse/langfuse_eval.py` 每跑完一条 case 会把**结构化富集 JSON** 写到自托管 LangFuse
+（地址取 `LANGFUSE_BASE_URL`，本地默认 http://127.0.0.1:3000），outer span output 包含：
 
 ```jsonc
 {
@@ -240,7 +243,7 @@ tests/fixtures/              # categories/（A 方言业务集，6 文件 / 389 
 - **直接 `httpx.AsyncClient` 调后端** —— 走 `OptionClient` / `SwapClient` / `TickerClient` 三个 Protocol（ADR 0001 D2 修订版）
 - **在 main 分支直接改业务子图** —— 走 feature branch + PR
 - **面向测试编程** —— 禁止为提高通过率硬编码白名单标的，禁止在 `app/` 业务代码里内置"备用实现"开关（如 `DEFAULT_MODE` 环境变量切换查询路径），禁止在 `conftest.py` 用 `autouse` fixture 全局绕过真实业务路径。测试慢应 mock HTTP 层（`_make_client`），不改业务代码路径
-- **P0 · 业务代码不能掩盖后端真实响应** —— 严禁在 `app/nodes/render.py` 或子图里加"如果后端返回 X 就改成 Y"的回退逻辑（典型反例：后端返回"正在处理，请勿重复提交"时改用本地 LLM 抽取结果伪造订单卡）。即使 eval 通过率因此下跌，也必须如实透传后端响应。Why: 生产环境下用户会被错误引导，看到伪造的订单卡以为已下单，实际请求被后端 dedup 丢弃；调试时也会误以为业务流程通了。如果是 eval 节奏导致的偶发问题（如多轮间隔太短撞 dedup），workaround 必须放在 `scripts/langfuse_eval.py`（如 turn 间 sleep），**绝不进业务代码** 2026-09-20 用户确认的 Dify 展示规则：Java 业务 `code=500` 的用户文案统一为“交易指令服务暂不可用”，原始 `api_code/api_result` 保留审计；有效成功卡片仍完全由 Java 生成。
+- **P0 · 业务代码不能掩盖后端真实响应** —— 严禁在 `app/nodes/render.py` 或子图里加"如果后端返回 X 就改成 Y"的回退逻辑（典型反例：后端返回"正在处理，请勿重复提交"时改用本地 LLM 抽取结果伪造订单卡）。即使 eval 通过率因此下跌，也必须如实透传后端响应。Why: 生产环境下用户会被错误引导，看到伪造的订单卡以为已下单，实际请求被后端 dedup 丢弃；调试时也会误以为业务流程通了。如果是 eval 节奏导致的偶发问题（如多轮间隔太短撞 dedup），workaround 必须放在 `scripts/langfuse/langfuse_eval.py`（如 turn 间 sleep），**绝不进业务代码**。业务方确认的展示规则：Java 业务 `code=500` 的用户文案统一为“交易指令服务暂不可用”，原始 `api_code/api_result` 保留审计；有效成功卡片仍完全由 Java 生成。
 - **P0 · 迭代过程中禁止 `git push` / `gh pr create`** —— `/goal` `/iterate-option` 这类自驱动循环里**严禁**调用 `git push` 或 `gh pr create`（即使 commit 已落地）。Why: 这两个命令默认会触发 permission 弹窗 → 循环阻塞等用户点 Yes，被强制 pause。`/goal` 的语义是"持续推进不打断"，远程操作必须等用户**显式**说"push" / "pr" 才能做。本地 `git commit` 可以正常做（不触发权限弹窗），但远程推送和 PR 创建必须留到用户主动指示
 - **P0 · 硬编码业务数据字典** —— 严禁在代码或本仓 YAML/JSON 配置里维护**业务数据映射清单**（如"命名指数 → ETF 代码"、"中文名 → windCode"、"产品名 → 行业代码"等）。理由：业务数据规模会快速膨胀到 100+ 条且持续变化（新 ETF/新指数/新产品每月发行），代码侧维护必然过期、漂移、出错。正确做法是 **原文提取 + 后端权威识别**：LangGraph 保留用户证券表达，由 Java 调用对应标的工具识别并校验。把"业务清单"留给后端或业务方维护的数据库，代码侧只负责调用与校验
 
@@ -276,8 +279,8 @@ tests/fixtures/              # categories/（A 方言业务集，6 文件 / 389 
 详见：
 
 - 领域语言：`@CONTEXT.md`
-- 架构决定：`@docs/adr/`（ADR 0000-0030 共 31 篇，索引见 `docs/adr/README.md`）
-- LangGraph 原生重构评估与路线：`@docs/langgraph-architecture-assessment.md` + ADR 0024
+- 架构决定：`@docs/adr/`（现行 22 篇，索引见 `docs/adr/README.md`）
+- LangGraph 原生重构目标架构：ADR 0024
 - Java 契约：`@docs/api-contracts/java-backend.md`
 - 工作计划：`@docs/work-plan.md`
 - on-call SOP：`@docs/on-call-runbook.md` + `@docs/troubleshooting-sop.md`

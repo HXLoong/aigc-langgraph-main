@@ -114,7 +114,8 @@ async def test_partial_or_unsupported_type_never_submits(
 ) -> None:
     calls = setup(monkeypatch, [item(token)])
     result = await inquiry.option_extract_inquiry(state(f"宁德时代，{token}，1M"))
-    assert result.get("error")
+    # 不支持的类型明确回复支持范围（O2），不再以校验异常落入兜底文案；核心约束是绝不提交
+    assert "暂不支持期权类型" in (result.get("reply_text") or "")
     assert calls == []
 
 

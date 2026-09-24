@@ -3,7 +3,7 @@
 按真实 endpoint 边界拆 3 个 Protocol（不是按业务领域）：
 - OptionClient: POST /admin-api/financial-orders/operate（16 个意图）
 - SwapClient: POST /admin-api/swap-order/operate（7 个意图）
-- TickerClient: 标的查询 / 推断 prompt / 交易对手列表
+- TickerClient: 授权交易对手列表（仅本地验收使用；标的识别归 Java，ADR 0025）
 
 工程纪律：
 - 字段名严格 1:1 匹配 Java DTO（保留 placeOrderWindCode 等 camelCase）
@@ -34,8 +34,6 @@ from app.tools.swap_client import (
     SwapOrderOpenApiSaveReqVO,
 )
 from app.tools.ticker_client import (
-    KeywordItem,
-    SecuritiesInstrumentReqVO,
     TickerClient,
     TickerClientHttpx,
 )
@@ -62,8 +60,6 @@ __all__ = [
     "SwapOrderOpenApiBaseSaveReqVO",
     "SwapOrderOpenApiSaveReqVO",
     # ticker
-    "KeywordItem",
-    "SecuritiesInstrumentReqVO",
     "TickerClient",
     "TickerClientHttpx",
 ]

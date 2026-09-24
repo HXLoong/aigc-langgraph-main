@@ -11,7 +11,7 @@
 
 <p class="kicker">参考速查 · Reference</p>
 <h1>LangGraph 核心速查表</h1>
-<p class="lede">5 个核心概念 + 节点四铁律 + 项目十二铁律，一页纸打印版。深入解释见 <code>docs/training/langgraph-handbook.md</code> 第 2 章。</p>
+<p class="lede">5 个核心概念 + 节点四铁律 + 项目十二铁律，一页纸打印版。</p>
 <div class="meta"><span>编写者：图灵科技</span><span>适用：otc-agent 全体成员</span></div>
 
 <h2>一、5 个核心概念</h2>
@@ -21,7 +21,7 @@
 <tr><td><strong>State</strong></td><td>类型化 dict（TypedDict），节点间传数据的唯一载体。字段先声明后使用</td><td><code>app/graph/state.py</code> 的 <code>AgentState</code>（按业务对象聚合，ADR 0001 D6）</td></tr>
 <tr><td><strong>Node</strong></td><td>async 函数：读 state → 干活 → 返回 partial dict（只含要改的字段）</td><td>所有节点加 <code>@safe_node</code>（<code>app/graph/safe_node.py</code>）</td></tr>
 <tr><td><strong>Edge</strong></td><td>普通边 <code>add_edge</code> 无条件流转；条件边 <code>add_conditional_edges</code> 由同步纯函数路由</td><td>路由第一行必查 <code>state.get("error")</code>（cascade 防御）</td></tr>
-<tr><td><strong>Graph</strong></td><td><code>StateGraph(State)</code> 组装 → <code>compile()</code> → <code>ainvoke()</code>；子图就是一个节点</td><td><code>app/graphs/main_graph.py</code> 主图 + swap/option/close/ticker 四个子图</td></tr>
+<tr><td><strong>Graph</strong></td><td><code>StateGraph(State)</code> 组装 → <code>compile()</code> → <code>ainvoke()</code>；子图就是一个节点</td><td><code>app/graph/main.py</code> 主图 + swap / option / close 三个子图</td></tr>
 <tr><td><strong>Checkpointer</strong></td><td>每步后 state 快照落库；同 thread_id 自动恢复 → 多轮对话</td><td>生产 <code>AIOMySQLSaver</code>，测试 <code>InMemorySaver</code>；<strong>thread_id = conversation_id</strong></td></tr>
 </table>
 </div>
@@ -29,8 +29,8 @@
 <h2>二、Reducer：覆盖 vs 累加</h2>
 <pre><code><span class="kw">class</span> AgentState(TypedDict, total=<span class="kw">False</span>):
     product_type: ProductType                      <span class="cm"># 覆盖型：后写的赢</span>
-    trace: Annotated[list[TraceEntry], add]        <span class="cm"># 累加型：旧值 + 新值</span>
-    history_messages: Annotated[list[Message], add]<span class="cm"># 累加型：多轮不丢</span></code></pre>
+    trace: Annotated[list[TraceEntry], merge_by_id]            <span class="cm"># 按 id 合并，并行不重复</span>
+    history_messages: Annotated[list[Message], merge_history]  <span class="cm"># 多轮合并，不丢不重</span></code></pre>
 <span class="src">app/graph/state.py</span>
 <p>判断口诀：<strong>"多个节点都要往里写、且不能互相冲掉"的字段 → 加 reducer</strong>；单值结论字段 → 不加。</p>
 
@@ -53,8 +53,8 @@
 <li>State 字段先在 <code>app/graph/state.py</code> 声明再用</li>
 <li>TDD 强制——先写失败测试（RED）再改代码（GREEN）</li>
 <li>cascade 防御——任何条件路由第一行检查 <code>state.get("error")</code></li>
-<li>标的必须 <code>from_goats=True</code>（ADR 0008）</li>
-<li>后端调用走 Protocol（Swap/Option/TickerClient），禁止节点里直接 <code>httpx.AsyncClient</code></li>
+<li>标的原文交 Java 后端识别，LangGraph 不维护证券清单（ADR 0025）</li>
+<li>后端调用走 Protocol（Swap/Option/Message 客户端），禁止节点里直接 <code>httpx.AsyncClient</code></li>
 <li>不在 main 直接改业务子图——feature 分支 + 中文 PR</li>
 <li>不掩盖后端真实响应（P0 红线）</li>
 <li>不硬编码业务数据字典——LLM 推断 + 后端校验（P0 红线）</li>
@@ -64,13 +64,13 @@
 <h2>五、常用命令</h2>
 <pre><code>pytest tests/ -v                        <span class="cm"># 全套测试（约 2 分钟）</span>
 ruff check app/ tests/ && mypy app/     <span class="cm"># lint + 类型</span>
-python -m harness run                   <span class="cm"># golden 全集快速 smoke</span>
-python scripts/langfuse/langfuse_eval.py --local tests/fixtures/golden.jsonl --ids opt-001 --concurrency 2
-                                        <span class="cm"># DeepSeek Judge 正式评估（M3 主用）</span>
+python -m harness run --backend mock    <span class="cm"># 业务集快速 smoke</span>
+python scripts/langfuse/langfuse_eval.py --local tests/fixtures/categories --ids case-025 --concurrency 1
+                                        <span class="cm"># DeepSeek Judge 正式评估</span>
 uvicorn app.main:app --reload           <span class="cm"># 启动 FastAPI</span></code></pre>
 
 <footer class="lesson-footer">
-<p>姊妹页：<a href="graph-map.html">主图与子图状态图</a>（全部节点与边的可视化）。<br>
+<p>主图全貌：<code>docs/ARCHITECTURE.md</code> 单页导览。<br>
 出处：<a href="https://langchain-ai.github.io/langgraph/concepts/low_level/">LangGraph 官方 Low-level Concepts</a> ·
 仓库 <code>CLAUDE.md</code> · <code>.claude/rules/langgraph-patterns.md</code> · <code>docs/training/intern-langgraph-primer.md</code> 第 6 节。
 有疑问随时在会话里问助教（图灵科技）。</p>

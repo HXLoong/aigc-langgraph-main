@@ -20,7 +20,7 @@
 ## 二、快速开始（本地 dev）
 
 ```bash
-# 1) 启 LangGraph 全栈（参考 docs/training/WINDOWS_LOCAL_SETUP.md 或 HOW_TO_RUN.md）
+# 1) 启 LangGraph 全栈（参考 docs/DEVELOPMENT.md）
 uv run uvicorn mock_api.server:app --host 0.0.0.0 --port 8099 &
 uv run uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload &
 

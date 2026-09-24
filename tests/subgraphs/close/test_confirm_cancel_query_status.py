@@ -148,6 +148,13 @@ class TestCloseQueryStatusNode:
         )
         assert result["query_filter"]["queryOrderNoList"] == ["CO-20260305-59772C14"]
 
+    async def test_lowercase_only_id_is_extracted_upper(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        _patch(monkeypatch, qs_module)
+        result = await close_query_status({"raw_text": "查询 co-20260305-59772c14 状态"})
+        assert result["query_filter"]["queryOrderNoList"] == ["CO-20260305-59772C14"]
+
     async def test_no_ids_returns_empty_list(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:

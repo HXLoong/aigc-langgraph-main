@@ -35,11 +35,11 @@ def cmd_generate_seeds(out_dir: Path, num_slots: int = 8) -> int:
 
     # 生成索引页
     index_lines = [
-        "# M2 Golden 种子收集索引",
+        "# Golden 种子收集索引",
         "",
         "> grill-with-docs 2026-05-10 第 4 决策落地 · 业务方填空",
         "",
-        f"共 **{len(written)}** 个 M2 节点等待业务方种子。每个节点至少 6-8 条，",
+        f"共 **{len(written)}** 个节点等待业务方种子。每个节点至少 6-8 条，",
         "总目标 ≥ 80 条以满足 P0 退出门（ADR 0001 D9.2）。",
         "",
         "## 节点列表",

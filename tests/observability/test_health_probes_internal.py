@@ -1,10 +1,10 @@
-"""D2.6 health_probes 内部 _check 测试 · 把 32% 覆盖率拉到 ~85%。
+"""health_probes 内部 _check 测试 · 把 32% 覆盖率拉到 ~85%。
 
 之前 test_health_probes.py 覆盖了 /health /ready 路由 + run_all_probes 聚合，
 但 4 个 probe 内部的真实 IO 路径（aiomysql / httpx）全部用 stub_probe 替换，
 导致 _check 内部代码（51-67 / 81-91 / 103-121 / 134-151 行）覆盖率 0。
 
-F4.0 演练 /ready 准确性依赖 _check 行为正确——本文件用细粒度 mock 补齐。
+/ready 准确性依赖 _check 行为正确——本文件用细粒度 mock 补齐。
 
 Mock 策略：
   - aiomysql.connect: AsyncMock，返回 mock connection 支持 cursor + execute

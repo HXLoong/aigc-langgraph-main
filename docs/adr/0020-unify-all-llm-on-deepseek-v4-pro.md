@@ -1,99 +1,48 @@
-# ADR 0020 · 全量统一 DeepSeek-V4-pro（取代开发/现场双模型分立）
+# ADR 0020 · 全量统一 DeepSeek-V4-pro
 
-- 状态：已采纳
+- 状态：已采纳（图片 / Excel 链路另配视觉模型，见 §3）
 - 日期：2026-08-27
-- 取代：[ADR 0018](./0018-dev-qwen-prod-deepseek-llm-split.md)（双模型分立）；修订 [ADR 0010](./0010-llm-model-selection-rules.md)（Qwen 三型号分工）
-- 起源：Tony 2026-08-27 指示"全部使用 DeepSeek-V4-pro"
-- 修订：2026-08-27 订正 4 处事实（调用点计数、§4 措辞、smoke gate、工厂清单）
 - 作者：图灵科技 + Tony
 
-## 上下文
+## 背景
 
-ADR 0018 规定"开发期 Qwen / 客户现场 DeepSeek-v4-pro"双轨制，代价是：
-
-- 早期 92.5% PASS baseline 只对 Qwen 有效，DeepSeek 上要单独重建
-- prompt 适配、行为漂移排查都要在两套模型上做两遍
-- 开发环境验证过的行为不能直接外推到现场
-
-真后端数据集回归的评估结论必须与现场同口径。
-2026-08-27 决定：**开发 / 测试 / harness 评测 / 现场生产全部统一使用 DeepSeek-V4-pro**。
+此前"开发用 Qwen、现场用 DeepSeek"的双轨制，使评测基线只对 Qwen 有效、提示词适配要做两遍、开发结论无法外推现场。客户现场只认 DeepSeek 上的表现，评测结论必须与现场同口径。
 
 ## 决策
 
 ### 1. 模型统一
 
-所有 LLM 调用统一 `deepseek-v4-pro`，覆盖 5 个文本工厂：standard / thinking / **make_qwen_thinking**（跨 event loop 非缓存工厂，同读 `qwen_model_thinking`）/ structured / complex（VL 例外见 §3）。
-切换仍只通过 `.env`，代码不硬编码 vendor（`QWEN_*` 是历史通用前缀，沿用 ADR 0018 的命名妥协）：
+开发、测试、评测与现场生产的所有文本 LLM 调用统一使用 `deepseek-v4-pro`，并统一**关闭思考模式**。切换只通过 `.env`，代码不硬编码 vendor（环境变量前缀为 `QWEN_*`）：
 
 ```dotenv
 QWEN_API_BASE=https://api.deepseek.com/v1
 QWEN_MODEL_STANDARD=deepseek-v4-pro
 QWEN_MODEL_THINKING=deepseek-v4-pro
-QWEN_MODEL_COMPLEX=deepseek-v4-pro   # 必须显式设置：config.py 默认值是 qwen 模型名，不覆盖会 404
+QWEN_MODEL_COMPLEX=deepseek-v4-pro   # 必须显式设置，默认值不是 DeepSeek 模型名
 ```
 
-### 2. vendor 适配层（app/llm/clients.py，2026-08-27 落地）
+### 2. vendor 适配集中在一处（`app/llm/clients.py`）
 
-DeepSeek 的 OpenAI 兼容接口与 Qwen/dashscope 有两处硬差异，已在统一工厂集中适配，
-**节点层不得重复处理**（回归测试：`tests/test_llm_clients.py`，13 用例）：
+DeepSeek 的 OpenAI 兼容接口与 Qwen 有两处硬差异，统一在工厂层适配，**节点层不得重复处理**（回归测试 `tests/test_llm_clients.py`）：
 
 | 差异 | 现象 | 适配 |
 |---|---|---|
-| 关闭思考模式参数不同 | DeepSeek 静默忽略 Qwen 的 `enable_thinking=False`，默认仍开思考（实测 reasoning token 非零，延迟不可控） | `_thinking_off_extra_body()`：DeepSeek 用 `{"thinking": {"type": "disabled"}}`，Qwen 保持 `enable_thinking=False` |
-| 不支持 `response_format=json_schema` | 400 "This response_format type is unavailable now"；而 langchain_openai 的 `with_structured_output` 默认走 json_schema，业务代码 **20 处调用点**均不传 method | `_ChatLLM.with_structured_output`：模型名以 deepseek 开头且未显式传 method 时，自动降级 `method="function_calling"`（实测可用；`json_mode` 会漂移字段名，不采用） |
+| 关闭思考的参数不同 | DeepSeek 忽略 Qwen 的 `enable_thinking=False`，默认仍思考，延迟不可控 | DeepSeek 传 `{"thinking": {"type": "disabled"}}` |
+| 不支持 `response_format=json_schema` | 结构化输出默认走 json_schema，直接 400 | 模型为 DeepSeek 且未显式指定时，自动改用 `function_calling`（`json_mode` 会漂移字段名，不采用） |
 
-注：`_thinking_off_extra_body` 应用于 5 个文本工厂；VL 工厂不传该 extra_body（视觉模型无思考开关）。
+### 3. 视觉模型例外
 
-### 3. VL 视觉模型例外
+DeepSeek 暂无视觉模型。互换图片 / Excel 链路（`app/subgraphs/swap/multimodal.py`）经 `QWEN_MODEL_VL` 单独配置视觉模型；现场未配置时该链路不可用，部署 checklist 须明确此项。
 
-DeepSeek 暂无视觉模型。**2026-09-22 修订**：`get_qwen_vl` 已有调用方（`app/subgraphs/swap/multimodal.py`，swap 图片 / Excel 分支已接线），视觉模型经 `QWEN_MODEL_VL` 单独配置——第二个 vendor 依赖已成立，[ADR 0019](./0019-incident-severity-thresholds.md) §3 已同步标注。`.env.customer.template` 的 `QWEN_MODEL_VL` 为留空占位：现场未配置视觉模型时图片 / Excel 链路不可用，部署 checklist 须明确该项。
+## 备选方案
 
-### 4. 对 ADR 0010 选型规则的影响
-
-- standard / thinking / complex 三型号**事实合一**（同一模型、同为关思考）；工厂函数与
-  import 语义保留，未来按节点切不同模型时只改 `.env` 或对应工厂
-- ADR 0010 的核心约束"thinking 模型不支持 structured output"在 DeepSeek 下不再成立
-  （function calling 全模型可用），该规则降级为历史背景
-- ⚠️ **工厂语义现状如实记录**（2026-08-27 订正本节原措辞）：ADR 0010 的
-  "structured output 强制 standard"**从未被执行**——20 个 structured output 调用点实际
-  分布为 thinking 15 / structured 2 / complex 1 / standard 0。当前同模型无运行时后果，
-  该偏离已裁决（2026-08-27）：**追认 thinking 工厂为事实默认**；
-  **分化前置纪律**——按工厂分化模型前必须先做调用点统一 PR，否则 15 个节点会静默跟随 thinking 工厂
-
-## 替代方案
-
-- **维持 ADR 0018 双轨制**：放弃。双口径评估成本不可接受，且
-  客户现场只认 DeepSeek 上的表现。
-- **开发期用 DeepSeek 其他型号（如更便宜的非 pro）**：放弃。引入新的行为漂移维度，
-  与"同口径"目标矛盾。
+- **维持双轨制**：双口径评估成本不可接受。
+- **开发期用更便宜的 DeepSeek 非 pro 型号**：引入新的行为漂移维度，与"同口径"目标矛盾。
 
 ## 后果
 
-### 正面
-
-- 开发 / 评测 / 现场单一口径，golden 回归结论可直接外推现场
-- ADR 0018 的 DeepSeek smoke gate 验证意图由日常评估天然承接（注：该 gate 曾于 2026-05-12
-  被跳过、从未执行，见 ADR 0018 存根第 3 条——事后证明"风险低"是误判，两处硬差异由
-  本 ADR §2 适配层补救）
-- vendor 差异集中在 clients.py 一处，节点代码零改动（20 处 `with_structured_output` 调用点未动）
-
-### 负面 / 风险
-
-- **baseline 作废**：Qwen 口径的 92.5%（mock）/ 84.6%（真 LLM）不再是对照基线，
-  需在 DeepSeek 上重跑 `scripts/langfuse/langfuse_eval.py` 重建（沿用 ADR 0018 的 PASS 红线思路）
-- 开发期 API key 计费与管理归属需要与客户/内部重新明确（原 ADR 0018 的"key 边界清晰"优势失效）
-- 开发环境依赖公网 DeepSeek API 的可用性与延迟
-- 长提示词节点（swap/place_order ≈ 40K tokens）在 DeepSeek 上的 P95 延迟需重新测量
-  （ADR 0030 D3 上线观察指标同步在 DeepSeek 上重建）
-
-### 回退路径
-
-- `.env` 中保留 Qwen 配置注释，切回只改 §1 四行
-- `_thinking_off_extra_body` / `_ChatLLM` 按模型名分支，双 vendor 兼容，回退无需改代码
-
-## 关联
-
-- ADR 0018 · 开发 Qwen / 现场 DeepSeek 双模型分立（被本 ADR 取代）
-- ADR 0010 · Qwen 三型号分工（被本 ADR 修订为历史背景）
-- ADR 0030 D3 · 上线观察层指标（在 DeepSeek 上重新测量）
-- ADR 0001 D5 · DeepSeek 适配类 prompt 改写仍须独立标记（沿用 ADR 0018 约定）
+- 正面：开发 / 评测 / 现场单一口径，数据集回归结论可直接外推现场；vendor 差异集中在一处，节点代码零改动。
+- 负面：旧 Qwen 口径的评测与延迟基线作废，需在当前模型上重建（ADR 0030 D3）；开发环境依赖公网 DeepSeek API 的可用性与计费安排。
+- 回退：`.env` 切回 §1 四行即可，适配层按模型名分支，双 vendor 兼容，无需改代码。
+- 分化前置纪律：工厂函数（`get_qwen_standard` / `get_qwen_thinking` / `get_qwen_structured` / `get_qwen_complex`）保留为未来按节点分化模型的挂载点；真要让不同工厂指向不同模型之前，须先把 structured output 调用点归位到语义正确的工厂，否则多数节点会静默跟随 thinking 工厂。函数名与环境变量的 `qwen` 前缀只是命名，不代表模型厂商。
+- 教训：早期曾以"OpenAI 兼容接口、风险低"为由跳过 DeepSeek 冒烟验证，全量切换时才暴露 §2 两处硬差异。接口兼容不等于行为兼容，换模型须先跑数据集评测。

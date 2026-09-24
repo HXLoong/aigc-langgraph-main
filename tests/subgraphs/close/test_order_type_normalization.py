@@ -294,3 +294,10 @@ async def test_inference_cannot_contradict_explicit_order_text(monkeypatch, text
     result = await pc.close_place_close({"raw_text": f"{ORDER} {text}"})
     submit.assert_not_awaited()
     assert result["error"].type == "CloseOrderTypeNormalizationError"
+
+
+@pytest.mark.parametrize("text", ["价格不超过10块限价", "限价平仓，价格不低于10.5", "限价，不高于10"])
+def test_price_bound_words_are_not_negation(text):
+    """「不超过 / 不低于 / 不高于」是价格约束，不是对执行方式的否定。"""
+    result, _ = normalize(f"{ORDER} {text}", {"orderId": ORDER, "closeOrderType": "限价"})
+    assert result.close_order_list[0].close_order_type == "限价单"

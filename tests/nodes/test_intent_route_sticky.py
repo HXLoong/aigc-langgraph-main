@@ -1,4 +1,4 @@
-"""#167 P1-3：一级路由多轮粘性——规则与 LLM 双 unknown 时继承上一轮 product_type。
+"""一级路由多轮粘性——规则与 LLM 双 unknown 时继承上一轮 product_type。
 
 修复对象：裸发「确认下单」「200万」等跟进指令 → LLM 兜底判 unknown → fallback
 打断对话；checkpoint 里明明有上一轮 product_type 却不利用。

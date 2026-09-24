@@ -1,4 +1,4 @@
-"""健康检查探测（D2.6 / Issue #72）。
+"""健康检查探测。
 
 4 个上游 probe：MySQL / LangFuse / LLM / Java 后端。
 每个独立 timeout，单点慢不阻塞。失败时返回简短状态码，不泄漏内部细节。

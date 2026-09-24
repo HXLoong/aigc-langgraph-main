@@ -27,7 +27,7 @@ Dify 时代加一类业务 = 在 12957 行主干 YAML 里拖节点连线；LangG
 ├── __init__.py        <span class="cm"># 暴露 build_swap_graph</span>
 ├── models.py          <span class="cm"># 第 1 步：Pydantic Output 模型（意图枚举 + 参数 schema）</span>
 ├── intent.py          <span class="cm"># 第 2 步：二级意图分类节点（第 04 课的主角）</span>
-├── place_order.py     <span class="cm"># 第 3 步：业务节点 × N（LLM 提参 + ticker 解析）</span>
+├── place_order.py     <span class="cm"># 第 3 步：业务节点 × N（LLM 提取参数原文与证据）</span>
 ├── confirm.py         <span class="cm">#          3 个 confirm 子意图合并为 1 节点（ADR 0001 D5）</span>
 ├── cancel.py
 ├── query_order.py
@@ -93,7 +93,7 @@ g.add_node(<span class="st">"swap"</span>, build_swap_graph())      <span class=
 <li><strong>意图全覆盖 + 兜底</strong>：路由表覆盖 7 个意图中的 6 个，第 7 个 <code>unknown_intent</code> 和一切表外值都落到 <code>swap_unknown</code>。任何子图都必须有这个"意图收容所"，保证 LLM 输出什么都有地方去。</li>
 <li><strong>特例节点也是节点</strong>：<code>swap_unknown</code> 就定义在 graph.py 里（10 行，只写 trace），照样戴 <code>@safe_node</code>。不要因为节点简单就跳过规范。</li>
 </ol>
-<p>另外注意 ticker 子图是个例外——它不是手工组装的图，而是 <code>create_agent</code> 生成的 ReAct Agent（LLM 思考 → 调工具 → 看结果循环）。业务子图通过 <code>resolver.py</code> 调它。细节见 handbook 第 7 章，本课不展开。</p>
+<p>另外注意：标的（证券代码 / 名称）不在 LangGraph 里识别——业务节点只提取客户原文，交给 Java 后端的标的工具权威识别（ADR 0025）。</p>
 
 <h2>4. 动手练习（8 分钟）</h2>
 <div class="task">
@@ -114,7 +114,7 @@ g.add_node(<span class="st">"swap"</span>, build_swap_graph())      <span class=
 <label><input type="radio" name="q1" value="a"> 因为子图结束时框架把输出拷贝进主图变量</label>
 <label><input type="radio" name="q1" value="b"> 因为 persist 节点负责把子图状态同步过去</label>
 <label><input type="radio" name="q1" value="c"> 因为子图与主图共享同一个 AgentState schema</label>
-<p class="quiz-explain" hidden>两边都是 StateGraph(AgentState)，子图节点返回的 partial dict 合并进的就是同一份 state——没有"拷贝/同步"这一步（handbook 第 2.8 节）。</p>
+<p class="quiz-explain" hidden>两边都是 StateGraph(AgentState)，子图节点返回的 partial dict 合并进的就是同一份 state——没有"拷贝/同步"这一步。</p>
 </div>
 
 <div class="quiz-q" data-answer="a">
@@ -148,8 +148,7 @@ g.add_node(<span class="st">"swap"</span>, build_swap_graph())      <span class=
 <h2>6. 延伸与下一课</h2>
 <ul>
 <li><strong>本课首选一手资料</strong>：<a href="https://langchain-ai.github.io/langgraph/concepts/subgraphs/">LangGraph 官方文档 · Subgraphs</a>（共享 vs 独立 schema 两种模式的权威说明）</li>
-<li>全景图：<a href="../reference/graph-map.html">主图与子图状态图</a>——主图 + 三个子图 + ticker 调用关系一页看完，练习第 1 步对答案用它</li>
-<li>深入：<code>docs/training/langgraph-handbook.md</code> 第 5 章（手把手写子图，含 place_order 完整实现）、第 7 章（ticker ReAct Agent）</li>
+<li>全景：<code>docs/ARCHITECTURE.md</code> 单页导览——主图与三个子图的关系一页看完，练习第 1 步对答案用它</li>
 <li>相关 ADR：0001 D5（confirm 合并 / option 拆分）、0001 D6（State 聚合）、0011（option intent 二次拆分）</li>
 <li>下一课：<a href="0007-protocol-client-tdd.html">第 07 课 · Protocol Client 与 TDD</a>——子图怎么调真后端，以及怎么在不联网的情况下测它</li>
 </ul>

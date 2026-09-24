@@ -1,13 +1,13 @@
-"""告警评估器（C1.6 / Issue #55）。
+"""告警评估器。
 
-基于 C1.5 (#65) `/metrics` endpoint 的实时指标，按 ADR 0019 量化阈值评估
+基于 `/metrics` endpoint 的实时指标，按 ADR 0019 量化阈值评估
 4 类告警，触发时推送到企微告警群（Webhook）。
 
 设计原则：
 - **状态机式触发**：只在"未触发 → 触发"或"触发 → 恢复"的状态转换时发消息，
   避免每次评估都重复告警轰炸
 - **持续时长约束**：阈值需要"持续 X 分钟"才触发（不被瞬时抖动误报）
-- **基于 delta 计算率（self-review #69 修复）**：counters 是累积值，必须取
+- **基于 delta 计算率**：counters 是累积值，必须取
   与上次评估的差值，才能检测短期突发（不被历史数据稀释）
 - **降级**：webhook 推送失败 log.warn，不抛
 - 配置全部来自环境变量，便于运维调整
@@ -64,7 +64,7 @@ class AlertThreshold:
         return self.threshold_value
 
 
-# P95 baseline 从环境变量读，便于 M3 真后端测得新数据后无需改代码即可调整
+# P95 baseline 从环境变量读，按部署环境重测后无需改代码即可调整
 # 2026-09-24 DeepSeek 本地 dry-run 参考值；生产须按同部署拓扑重测并覆盖。
 _P95_BASELINE_MS = float(os.environ.get("M2_BASELINE_P95_MS", "8554"))
 _P95_MULTIPLIER = 3.0  # ADR 0019 P1 阈值
@@ -125,7 +125,7 @@ THRESHOLDS: dict[str, AlertThreshold] = {
 class AlertState:
     """单条告警的运行时状态。
 
-    last_metrics + last_timestamp 用于 delta 计算（self-review #69 修复）：
+    last_metrics + last_timestamp 用于 delta 计算：
     counter 是累积值，必须与上次评估求差才能反映"最近窗口"的率，否则历史
     数据会稀释短期突发（如长时间运行后突发 30 cascade fail 被历史数据淹没）。
     """
@@ -293,28 +293,28 @@ def _evaluate_metric(name: str, ctx: AlertContext, state: AlertState) -> float:
         return float(max(d, 0.0))
 
     if name == "http_5xx_spike":
-        # 接 HTTPMetricsMiddleware 计数（PR #104）
+        # 接 HTTPMetricsMiddleware 计数
         # 分母是 http_total 而非 node_total —— middleware 排除了 /health /ready /metrics
         # 探测路径，分子分母同源避免分母被探测流量稀释
         return _calc_ratio_pct(delta("http_5xx"), delta("http_total"))
 
     if name == "cascade_fail_high":
-        # #157 裁决：分母改为总请求数（http_total）——ADR 0017/0019 的"率"语义按请求，
-        # 原 node_total（节点执行数 ≈ 请求 ×6-8）让阈值实际宽松近一个数量级
+        # 分母为总请求数（http_total）：ADR 0030 D3 与 ADR 0019 的"率"均按请求计算；
+        # 若按节点执行数（约为请求数的 6-8 倍）计算，阈值会宽松近一个数量级
         return _calc_ratio_pct(delta("fallback_cascade_fail"), delta("http_total"))
 
     if name == "llm_failure_high":
         return _calc_ratio_pct(delta("llm_error"), delta("llm_total"))
 
     if name == "non_canary_traffic":
-        # G5.1：F4.2 阶段任何 non-canary 流量都该触发回切告警（threshold=0.0）
+        # 灰度期间任何 non-canary 流量都该触发回切告警（threshold=0.0）
         # 返回"窗口内 non-canary 请求数 × 100"作为伪比率（≥ 1 都越线 0.0）
         d = delta("canary_traffic_non_canary")
         return d * 100.0 if d > 0 else 0.0
 
     if name == "p95_latency_degraded":
         # 瞬时 P95（ms）—— 不做 delta，histogram_quantile 已是当前累积分布的统计量。
-        # 局限：长期累积会让短期突发被稀释；F4.2+ 用 PromQL rate(bucket[5m]) 更精确。
+        # 局限：长期累积会让短期突发被稀释；需要更精确时用 PromQL rate(bucket[5m])。
         # 本期可接受，因为生产 cron 每分钟跑、状态机有 sustain_seconds 缓冲。
         return float(current.get("p95_latency_ms", 0.0))
 
@@ -347,7 +347,7 @@ def parse_prometheus_metrics(text: str) -> dict[str, Any]:
         "llm_error": 0,
         "llm_total": 0,
         "node_total": 0,
-        "canary_traffic_non_canary": 0,  # G5.1：非 canary 流量计数
+        "canary_traffic_non_canary": 0,  # 非 canary 流量计数
         "p95_latency_ms": 0.0,  # ADR 0019 P1：P95 端到端延迟
     }
     # 收集所有 latency bucket 用于 P95 计算（跨 label 聚合 le → 累积 count）

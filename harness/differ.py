@@ -56,7 +56,6 @@ def diff_fields(
 
 
 #: 动态值（单号 / 合约编号）模糊匹配：Q- 截断前缀与完整单号、OPT-/CO-/H- 等编号
-#: （与 scripts/ai_test_langgraph/regression_support.normalize_dynamic_tokens 同口径）
 _ORDER_ID_RE = re.compile(r"(?<![A-Za-z0-9])Q-\d{4,}(?:-[A-Za-z0-9]+)?")
 _GENERIC_ID_RE = re.compile(r"(?<![A-Za-z0-9])[A-Z]{1,4}-\d{6,}(?:-[A-Za-z0-9]+)?")
 

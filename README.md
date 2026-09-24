@@ -16,7 +16,7 @@
 
 ## 快速开始
 
-详见 [HOW_TO_RUN.md](./HOW_TO_RUN.md)。简版：
+完整开发流程见 [docs/DEVELOPMENT.md](./docs/DEVELOPMENT.md)。简版：
 
 ```bash
 # 1. 安装
@@ -98,7 +98,7 @@ app/                        # LangGraph 应用层
 harness/                    # 评测台（python -m harness <doctor|run|node-run>，经 HTTP 调本地服务）+ 节点 fixture / HTTP 录放
 scripts/                    # langfuse/（Judge 评估、数据集上传、提示词上传）/ local_eval.py / probe_*.py / canary_* / 一致性 lint
 infra/langfuse/             # LangFuse self-hosted Docker Compose（PG + ClickHouse + Redis + MinIO + Web + Worker）
-docs/adr/                   # 架构决定 ADR 0000-0030（共 31 篇）+ README 索引
+docs/adr/                   # 架构决定 ADR 现行 22 篇（只保留现行结论，已取代的已删除）+ README 索引
 docs/api-contracts/         # Java 后端真实业务 API 契约
 tests/                      # 单测 / 子图 / 节点 / 集成（真实 MySQL 用例 RUN_LOCAL_MYSQL_TESTS=1 opt-in）
 tests/fixtures/             # categories/（显式验收集）+ unified_golden.jsonl + nodes/（节点级 fixture）
@@ -147,12 +147,11 @@ python scripts/langfuse/upload_score_configs.py --apply   # Score Config 同理
 | 文档 | 用途 |
 |------|------|
 | [docs/work-plan.md](./docs/work-plan.md) | 三条主线的现状与待办 |
-| [docs/adr/](./docs/adr/) | 架构决定 ADR 0000-0030（共 31 篇），入口见 [索引](./docs/adr/README.md) |
+| [docs/adr/](./docs/adr/) | 架构决定 ADR 现行 22 篇（只保留现行结论，已取代的已删除），入口见 [索引](./docs/adr/README.md) |
 | [节点执行接口](docs/nodes-run.md) | `/v1/nodes/run`：节点目录、State 契约、本地启动与真实后端切换 |
 | [CLAUDE.md](./CLAUDE.md) | AI 工具加载的项目 memory |
 | [CONTEXT.md](./CONTEXT.md) | 领域术语 + 概念边界 |
-| [HOW_TO_RUN.md](./HOW_TO_RUN.md) | 完整启动流程 |
-| [PLAN.md](./PLAN.md) | 期权链路评估与提示词迭代方案 |
+| [docs/DEVELOPMENT.md](./docs/DEVELOPMENT.md) | 本地开发环境与日常工作流 |
 | [QUICKSTART_CLAUDE_CODE.md](./QUICKSTART_CLAUDE_CODE.md) | Claude Code 实操指南 |
 | [docs/testing/README.md](./docs/testing/README.md) | 测试分层与真后端切换 |
 | [docs/on-call-runbook.md](./docs/on-call-runbook.md) | 上线 on-call SOP |

@@ -1,4 +1,4 @@
-"""状态级业务参数模型（ADR 0001 D6 / #160 裁决落地）。
+"""状态级业务参数模型（ADR 0001 D6）。
 
 AgentState 的五个业务参数字段（place_params / cancel_params / confirm /
 query_filter / close_params）运行时保持 dict（读取侧、checkpoint、eval 零改动），

@@ -38,7 +38,13 @@ _LIMIT_PROBE_RE = re.compile(r"限价")
 _LEAD_NUMBER_RE = re.compile(r"(\d+(?:\.\d+)?)")
 _UNIT_TAIL_RE = re.compile(r"\s*(?:千万|[Kk][Ww]|亿|万|[Ww]|[Ee]|%)")
 
-_POV_RATIO_RE = re.compile(r"pov\s*[:：]?\s*(\d+(?:\.\d+)?)\s*%?", re.IGNORECASE)
+#: POV 比例：「POV20」「跟量20%」「跟量比例：30%」；后接金额单位的数字（跟量 100万）不是比例，
+#: 口径与 app/extraction/fast_execution._EXPLICIT_POV_RATIO 一致
+_POV_RATIO_RE = re.compile(
+    r"(?:pov|跟量(?:比例)?)\s*[:：]?\s*(\d+(?:\.\d+)?)"
+    r"(?![0-9.]|\s*(?:千万|万|亿|股|手|[wke]))\s*%?",
+    re.IGNORECASE,
+)
 _TIME_RE = re.compile(r"(?<!\d)(\d{1,2}):(\d{2})(?!\d)")
 
 #: 交易对手标签（其后整段为名称候选）
@@ -79,8 +85,15 @@ _LABEL_TAIL = (
 _OPTION_TYPE_TOKENS = ("参与型看涨", "欧式看涨", "雪球", "看涨")
 
 
+#: 被否定的下单方式（「不限价」「不要跟量」「别用市价」）不参与订单类型判定
+_NEGATED_ORDER_TYPE_RE = re.compile(
+    r"(?:不|别|勿|无需)(?:要|用|走|按|使用)?\s*(?:twap|pov|跟量|限价|市价)", re.IGNORECASE,
+)
+
+
 def _extract_order_type(raw: str) -> str | None:
-    """关键词优先级：TWAP > POV（含"跟量"）> 限价单 > 市价单，与出现顺序无关。"""
+    """关键词优先级：TWAP > POV（含"跟量"）> 限价单 > 市价单，与出现顺序无关；被否定的关键词忽略。"""
+    raw = _NEGATED_ORDER_TYPE_RE.sub(" ", raw)
     if re.search(r"twap", raw, re.IGNORECASE):
         return "TWAP"
     if re.search(r"pov", raw, re.IGNORECASE):

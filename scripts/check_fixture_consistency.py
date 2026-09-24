@@ -20,6 +20,7 @@ ROOT = Path(__file__).resolve().parents[1]
 if __package__ in {None, ""}:
     sys.path.insert(0, str(ROOT))
 
+from harness.intent_context import has_frozen_context, requires_replay  # noqa: E402
 from harness.references import validate_expected_references  # noqa: E402
 
 UNIFIED_FIXTURE_NAME = "unified_golden.jsonl"
@@ -190,9 +191,42 @@ def validate_unified(path: Path, ids: list[str]) -> tuple[list[str], list[str]]:
     return errors, warnings
 
 
-def _check_intent_turn(origin: str, turn: dict[str, Any], intents: dict[str, tuple[str, ...]]) -> list[str]:
-    """一轮意图集断言：只允许 expected.product_type / intent，值取运行时枚举。"""
+#: 冻结历史消息允许的角色（app.graph.state.Message.role）
+HISTORY_ROLES = ("user", "assistant", "system")
+#: prev_product_type 只能是会进子图的产品（intent_route 多轮粘性只继承这三类）
+STICKY_PRODUCT_TYPES = ("swap", "option", "option_close")
+
+
+def _check_intent_context(origin: str, turn: dict[str, Any]) -> list[str]:
+    """意图集冻结上下文字段格式（引用 / 历史 / 上一轮产品写死在 fixture，见 harness/intent_context.py）。"""
     errors: list[str] = []
+    if "quote_content" in turn and (
+        not isinstance(turn["quote_content"], str) or not turn["quote_content"].strip()
+    ):
+        errors.append(f"{origin}: quote_content must be a non-empty string")
+    history = turn.get("history", [])
+    if not isinstance(history, list):
+        errors.append(f"{origin}: history must be a list of {{role, content}}")
+        history = []
+    for index, message in enumerate(history):
+        if not isinstance(message, dict):
+            errors.append(f"{origin}: history[{index}] must be an object {{role, content}}")
+            continue
+        if message.get("role") not in HISTORY_ROLES:
+            errors.append(f"{origin}: history[{index}].role must be one of {HISTORY_ROLES}: {message.get('role')!r}")
+        content = message.get("content")
+        if not isinstance(content, str) or not content.strip():
+            errors.append(f"{origin}: history[{index}].content must be a non-empty string")
+    if "prev_product_type" in turn and turn["prev_product_type"] not in STICKY_PRODUCT_TYPES:
+        errors.append(
+            f"{origin}: prev_product_type must be one of {STICKY_PRODUCT_TYPES}: {turn['prev_product_type']!r}"
+        )
+    return errors
+
+
+def _check_intent_turn(origin: str, turn: dict[str, Any], intents: dict[str, tuple[str, ...]]) -> list[str]:
+    """一轮意图集断言：只允许 expected.product_type / intent，值取运行时枚举；上下文须冻结。"""
+    errors: list[str] = _check_intent_context(origin, turn)
     for field_name in TEXT_ASSERTION_FIELDS:
         if field_name in turn:
             errors.append(
@@ -269,6 +303,12 @@ def validate_intent(path: Path, ids: list[str]) -> list[str]:
             if not isinstance(sub_scene.get("send_text"), str) or not sub_scene["send_text"].strip():
                 errors.append(f"{sub_origin} missing send_text")
             errors.extend(_check_intent_turn(sub_origin, sub_scene, intents))
+        turns = [obj, *(scene for scene in sub_scenes if isinstance(scene, dict))]
+        if has_frozen_context(turns) and requires_replay(turns):
+            errors.append(
+                f"{origin}: case mixes frozen context (quote_content/history/prev_product_type) with replay "
+                "(quote_previous or {{previous_*}}); frozen fields are ignored when replaying — freeze every turn"
+            )
     return errors
 
 

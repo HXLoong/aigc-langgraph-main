@@ -6,7 +6,7 @@
   {workflow_run_id, task_id, conversationId, answer, data: {outputs, status, ...}}
 - 仅支持 blocking 模式（Java StockBotMessageServiceImpl.java:1646 写死 blocking）
 - inputs 字段透传 9 个机器人上下文 + raw_text
-- outputs 字段含 intent / product_type / 业务对象（M1 阶段含 stub 数据）
+- outputs 字段含 intent / product_type / 业务对象
 """
 from __future__ import annotations
 
@@ -192,7 +192,7 @@ async def _execute_workflow(
     if not user_id:
         initial_state["user_id"] = req.user.strip()
 
-    # ADR 0004/#156：每次调用保留独立的 node_trace 关联 ID；测试工作台可另行
+    # ADR 0004：每次调用保留独立的 node_trace 关联 ID；测试工作台可另行
     # 把多轮调用挂到同一个 LangFuse 父 Trace，不改变业务审计粒度。
     request_trace_id = uuid.uuid4().hex
     initial_state["trace_id"] = request_trace_id
@@ -277,7 +277,7 @@ async def _execute_workflow(
             error_msg = f"{type(exc).__name__}: {exc}"
 
     elapsed = time.perf_counter() - t0
-    # #157 裁决：端到端 P95 数据源（ADR 0017/0019 退出门与 p95_latency_degraded 告警）
+    # 端到端 P95 数据源（ADR 0030 D3 上线观察与 ADR 0019 p95_latency_degraded 告警）
     # 无 node label —— alerts 侧以此与节点级样本区分
     emit_intent_latency(
         product_type=final_state.get("product_type") or "unknown",
@@ -506,4 +506,4 @@ def _state_to_outputs(state: AgentState) -> dict[str, Any]:
     return outputs
 
 
-# /health 与 /ready 已迁至 app/api/health.py（D2.6 / Issue #72）
+# /health 与 /ready 在 app/api/health.py

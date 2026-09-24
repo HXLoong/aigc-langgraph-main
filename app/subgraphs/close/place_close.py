@@ -53,7 +53,7 @@ from app.subgraphs.close.aggregate import build_close_order_req_vo
 from app.subgraphs.close.backend import call_close_backend
 from app.subgraphs.close.execution_fragments import split_execution_fragments
 from app.subgraphs.close.models import CloseOrderItem, ClosePlaceParams
-from app.subgraphs.close.normalization import normalize_place_candidates
+from app.subgraphs.close.normalization import CloseAmountError, normalize_place_candidates
 from app.subgraphs.close.reference_parser import ReferenceParseResult, parse_reference_message
 from app.tools.option_client import OptionClientHttpx
 
@@ -211,9 +211,17 @@ async def place_close_normalize(state: PlaceCloseState) -> dict[str, Any]:
     parsed = state["pc_parsed"]
     candidates = CANDIDATE_MODEL.model_validate(state.get("pc_candidates") or {})
     candidates = split_execution_fragments(candidates)
-    params, records = normalize_place_candidates(
-        candidates, evidence_sources(state), parsed, state.get("pc_order_data") or [],
-    )
+    try:
+        params, records = normalize_place_candidates(
+            candidates, evidence_sources(state), parsed, state.get("pc_order_data") or [],
+        )
+    except CloseAmountError as exc:
+        return {
+            "pc_close_orders": [],
+            "pc_reject_reply": str(exc),
+            "pc_reject_decision": "invalid_close_amount",
+            "trace": [TraceEntry(node="place_close_normalize", decision="invalid_close_amount")],
+        }
     if not params.close_order_list:
         return {
             "pc_close_orders": [],

@@ -41,7 +41,7 @@ GOLDEN_PATH = PROJECT_ROOT / "tests" / "fixtures" / "categories"
 FIXTURE_ROOT = PROJECT_ROOT / "tests" / "fixtures"
 logger = logging.getLogger(__name__)
 DATASET_NAME = "otc-option-golden"
-#: 套件：intent（只调 LLM 评路由/意图，配 mock 后端）/ business（真后端 + 卡片断言 + Judge）
+#: 套件：intent（评路由/意图：冻结用例只调 LLM，回放用例配 mock 后端）/ business（真后端 + 卡片断言 + Judge）
 SUITES = ("intent", "business")
 INTENT_DIR_NAME = "intent"
 BACKENDS = ("mock", "real", "dry-run")
@@ -82,10 +82,10 @@ def _clear_dataset(dataset_name: str, *, base_url: str | None = None) -> None:
 
     public_key = os.environ.get("LANGFUSE_PUBLIC_KEY", "")
     secret_key = os.environ.get("LANGFUSE_SECRET_KEY", "")
-    base_url = (base_url or os.environ.get(
+    base_url = base_url or os.environ.get(
         "LANGFUSE_BASE_URL",
-        os.environ.get("LANGFUSE_HOST", "https://cloud.langfuse.com"),
-    )).rstrip("/")
+        os.environ.get("LANGFUSE_HOST", "http://127.0.0.1:3000"),
+    ).rstrip("/")
     auth = (public_key, secret_key)
 
     item_ids: list[str] = []

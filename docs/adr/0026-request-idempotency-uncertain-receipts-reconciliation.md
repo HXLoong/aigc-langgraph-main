@@ -1,12 +1,11 @@
 # ADR 0026 · 请求级幂等、不确定回执与运维对账（金融写路径正确性契约）
 
-- 状态：已采纳（2026-09-17 幂等首版 → 2026-09-18 完整响应回放 / 不确定写入 / 对账（commit `67f74c3`）→ 2026-09-20 重投通知（`8249510`）与回执文案；本篇为 2026-09-22 追认记录）
-- 日期：2026-09-18（记录：2026-09-22）
-- 起源：[ADR 0024](./0024-langgraph-native-rearchitecture.md) D4 把"写路径提交前的 durability 裁决与幂等设计"留待后续记录；执行过程见 [docs/langgraph-reconstruction-20260918.md](../langgraph-reconstruction-20260918.md) 第二、六、八批
-- 修订：[ADR 0024](./0024-langgraph-native-rearchitecture.md) D4（幂等落地形态）；补 [ADR 0021](./0021-text-confirm-replaces-interrupt.md)（确认链路的写操作在此获得回执与超时语义）；沿用 [ADR 0019](./0019-incident-severity-thresholds.md)（E 类错误进告警）
+- 状态：已采纳（追认，落地 commit `67f74c3` / `8249510`）
+- 日期：2026-09-18
+- 关系：细化 [ADR 0024](./0024-langgraph-native-rearchitecture.md) D4；补充 [ADR 0021](./0021-text-confirm-replaces-interrupt.md) 确认链路的回执语义；错误分类进入 [ADR 0019](./0019-incident-severity-thresholds.md) 告警
 - 作者：图灵科技 + Tony
 
-## 上下文
+## 背景
 
 写类业务动作（下单 / 改单 / 撤单 / 确认 / 平仓）经 Java `operate` 接口落库，重复提交即重复下单。三个外部事实决定了契约形状：
 
@@ -43,7 +42,7 @@ CLAUDE.md P0 纪律"业务代码不能掩盖后端真实响应"约束所有回�
 
 - `receipt_guard`：只包住 dispatch / 解码阶段；此阶段的 `httpx.HTTPError` / `ValueError` 升为 `BackendUnreachableError(unverifiable_receipt:*)`，标记为不确定写入。dispatch 前的 DTO 错误不算不确定写入。
 - `receipt_update`：`code` 非整数、或 `code=0` 但 `data` 为空 → `EmptyBackendResultError`，**不伪造成功回执**；原始 `api_code` / `api_result` 原样保留供审计。
-- `receipt_text`：`code=500` 统一用户文案"交易指令服务暂不可用"（2026-09-20 用户确认的 Dify 展示规则）；非零且无 `msg` → "未知错误"；有效成功卡片完全由 Java 生成，LangGraph 不改写。
+- `receipt_text`：`code=500` 统一用户文案"交易指令服务暂不可用"（业务方确认的展示规则）；非零且无 `msg` → "未知错误"；有效成功卡片完全由 Java 生成，LangGraph 不改写。
 
 ### D4 · 系统重投通知静默
 
@@ -71,7 +70,7 @@ HTTP 输出只暴露分类、节点与异常类型，不返回内部详情与堆
 
 ### D7 · 消息写回是回放的前提
 
-每轮回复前 `persist_intent` 调 Java `set-intent` 写回会话 ID 与意图（2026-09-07 决策，验证记录见 [docs/set-intent-validation.md](../set-intent-validation.md)）；最终失败返回 502、不产生正常 `answer`。`DRY_RUN_BACKEND` 只拦截交易副作用，消息元数据写回不受影响。
+每轮回复前 `persist_intent` 调 Java `set-intent` 写回会话 ID 与意图；最终失败返回 502、不产生正常 `answer`。`DRY_RUN_BACKEND` 只拦截交易副作用，消息元数据写回不受影响。
 
 ## 备选方案
 
@@ -92,4 +91,3 @@ HTTP 输出只暴露分类、节点与异常类型，不返回内部详情与堆
 - [ADR 0021](./0021-text-confirm-replaces-interrupt.md) · 文本二阶段确认
 - [ADR 0019](./0019-incident-severity-thresholds.md) · 告警阈值
 - `docs/api-contracts/java-backend.md` §6 · set-intent 契约 / 超时与 502 / 504 语义
-- [docs/langgraph-reconstruction-20260918.md](../langgraph-reconstruction-20260918.md) · 执行记录

@@ -1,14 +1,14 @@
-"""LLM 对抗式 paraphrase 生成器（grill-with-docs 第 4 决策 C 来源）。
+"""LLM 对抗式 paraphrase 生成器（数据集 C 桶来源）。
 
-输入：业务方种子 case（来自 golden.jsonl，source="business_seed"）
-输出：候选 case 列表（source="llm_paraphrase"），等业务方 review 后合入 golden
+输入：业务方种子 case（来自 tests/fixtures/categories，source="business_seed"）
+输出：候选 case 列表（source="llm_paraphrase"），等业务方 review 后合入数据集
 
 策略：
-- 用 thinking 模型（ADR 0010：复杂推理用 thinking）
+- 用 thinking 工厂的模型（ADR 0020）
 - 给 LLM 一条种子，让它生成 N 条**与种子表达不同但 expected 相同**的对抗变体
 - 变体覆盖：缩写 / 错别字 / 口语化 / 引用同义词 / 边界场景
 
-注：生成的 case **不直接合入** golden.jsonl —— 必须经业务方 review pass。
+注：生成的 case **不直接合入**数据集 —— 必须经业务方 review 通过。
 本工具只产生 review 候选清单 markdown（默认 tmp/case_generator/paraphrase-candidates.md）。
 """
 from __future__ import annotations

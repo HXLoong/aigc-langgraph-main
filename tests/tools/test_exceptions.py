@@ -1,4 +1,4 @@
-"""D2.3 不可达异常 + translate_httpx_errors context manager 测试（Issue #73）。"""
+"""不可达异常 + translate_httpx_errors context manager 测试。"""
 from __future__ import annotations
 
 import httpx
