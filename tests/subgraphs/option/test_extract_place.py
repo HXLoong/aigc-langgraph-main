@@ -157,6 +157,74 @@ class TestOptionExtractPlaceNode:
         assert item["hasFastExecutionIntent"] is fast
         assert item["orderType"] == order_type
 
+    @pytest.mark.parametrize(
+        ("raw", "ratio"),
+        [("跟量20% 100万", 20.0), ("跟量25 100万", 25.0), ("跟量比例：30% 100万", 30.0)],
+    )
+    async def test_follow_volume_ratio_is_pov_not_strike(
+        self, monkeypatch: pytest.MonkeyPatch, raw: str, ratio: float
+    ) -> None:
+        """「跟量N%」是 POV 比例，不得被当作执行价覆盖引用卡片的执行价。"""
+        _patch(monkeypatch)
+        quote = "Q-20250616-000011\r\n执行价格：100%\r\n期限：3M"
+        item = _item(await option_extract_place({"raw_text": raw, "quote_content": quote}))
+        assert item["orderType"] == "POV"
+        assert item["povRatio"] == ratio
+        assert item["strikePercentage"] == 100.0
+        assert item["notionalAmount"] == "1000000"
+
+    async def test_follow_volume_amount_is_not_ratio(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        _patch(monkeypatch)
+        item = _item(await option_extract_place({"raw_text": "跟量 100万", "quote_content": "Q-1"}))
+        assert item["povRatio"] is None
+        assert item["notionalAmount"] == "1000000"
+
+    @pytest.mark.parametrize(
+        ("raw", "order_type"),
+        [("按前收盘价限价下单 100万", "限价单"), ("收盘前最后半小时市价下单 100万", "市价单")],
+    )
+    async def test_time_words_are_not_order_scope(
+        self, monkeypatch: pytest.MonkeyPatch, raw: str, order_type: str
+    ) -> None:
+        """「前收盘价」「最后半小时」不是订单范围表达，不得拒绝整笔下单。"""
+        _patch(monkeypatch)
+        result = await option_extract_place({"raw_text": raw, "quote_content": "Q-20250616-000011"})
+        assert result.get("reply_text") is None
+        assert _item(result)["orderType"] == order_type
+
+    @pytest.mark.parametrize("raw", ["最后一笔市价下单 100万", "前两笔市价下单 100万"])
+    async def test_unsupported_scope_words_still_rejected(
+        self, monkeypatch: pytest.MonkeyPatch, raw: str
+    ) -> None:
+        backend = _patch(monkeypatch)
+        result = await option_extract_place(
+            {"raw_text": raw, "quote_content": "Q-20250616-000011、Q-20250616-000012"}
+        )
+        assert "订单范围" in result["reply_text"]
+        backend.assert_not_awaited()
+
+    @pytest.mark.parametrize(
+        ("raw", "order_type"),
+        [
+            ("不限价，市价下单 100万", "市价单"),
+            ("不要限价，市价 100万", "市价单"),
+            ("不用跟量，市价下单 100万", "市价单"),
+            ("别用市价，限价10 100万", "限价单"),
+        ],
+    )
+    async def test_negated_order_type_keyword_is_ignored(
+        self, monkeypatch: pytest.MonkeyPatch, raw: str, order_type: str
+    ) -> None:
+        _patch(monkeypatch)
+        result = await option_extract_place({"raw_text": raw, "quote_content": "Q-20250616-000011"})
+        assert _item(result)["orderType"] == order_type
+
+    async def test_kw_means_ten_million(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """业务裁决：1kw = 1000 万，与平仓链路一致。"""
+        _patch(monkeypatch)
+        result = await option_extract_place({"raw_text": "市价下单1kw", "quote_content": "Q-20250616-000011"})
+        assert _item(result)["notionalAmount"] == "10000000"
+
     async def test_multiple_order_ids_from_quote(self, monkeypatch: pytest.MonkeyPatch) -> None:
         _patch(monkeypatch)
         result = await option_extract_place(

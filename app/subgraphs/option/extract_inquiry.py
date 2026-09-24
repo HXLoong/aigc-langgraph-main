@@ -5,7 +5,7 @@
 from __future__ import annotations
 
 from functools import lru_cache
-from typing import Annotated, Any, TypedDict
+from typing import Annotated, Any, TypedDict, get_args
 
 from langgraph.graph import END, START, StateGraph
 from langgraph.graph.state import CompiledStateGraph
@@ -31,10 +31,24 @@ from app.graph.state import (
 from app.llm.clients import get_qwen_thinking
 from app.prompts.spec import PromptSpec, register
 from app.subgraphs.option.backend import call_option_backend
-from app.subgraphs.option.models import OptionInquiryParams, OptionInquiryRawParams, OptionOrderItem
+from app.subgraphs.option.models import (
+    OptionContractType,
+    OptionInquiryParams,
+    OptionInquiryRawParams,
+    OptionOrderItem,
+)
 from app.subgraphs.option.normalize import compound_call_strike, expand_inquiry_items
 from app.subgraphs.option.prompting import EXTRACT_INPUTS
 from app.subgraphs.option.sanitize import sanitize_order_list
+
+#: 询价支持的期权类型（枚举唯一真源：models.OptionContractType）
+_SUPPORTED_OPTION_TYPES: tuple[str, ...] = get_args(OptionContractType)
+#: 用户给出原文后必须解析成功的字段（原文字段名 = 展开后字段名）→ 回复用标签
+_PARSED_FIELDS = (
+    ("strike_percentage", "执行价格"),
+    ("notional_amount", "名义本金"),
+    ("participation_rate", "参与率"),
+)
 
 CANDIDATE_MODEL = candidate_model(OptionInquiryRawParams)
 SPEC = register(PromptSpec(
@@ -111,6 +125,17 @@ async def inquiry_normalize(state: InquiryState) -> dict[str, Any]:
         if raw_item.tenor and any(item["tenor"] is None for item in items):
             return {"reply_text": "期限无法转换为正整数月份，请明确所有期限后重新提交。",
                     "trace": [TraceEntry(node="inquiry_normalize", decision="invalid_tenor")]}
+        # 用户明确给出却无法解析的参数与期限同口径：提示修正，不静默置空后询价
+        for field, label in _PARSED_FIELDS:
+            if getattr(raw_item, field) and any(item[field] is None for item in items):
+                return {"reply_text": f"{label}无法识别，请明确{label}后重新提交。",
+                        "trace": [TraceEntry(node="inquiry_normalize", decision=f"invalid_{field}")]}
+        unsupported = [item["option_type"] for item in items
+                       if item["option_type"] and item["option_type"] not in _SUPPORTED_OPTION_TYPES]
+        if unsupported:
+            return {"reply_text": f"暂不支持期权类型「{unsupported[0]}」，目前支持："
+                                  f"{'、'.join(_SUPPORTED_OPTION_TYPES)}。请修改后重新询价。",
+                    "trace": [TraceEntry(node="inquiry_normalize", decision="unsupported_option_type")]}
         for item in items:
             canonical_item = OptionOrderItem.model_validate(item).model_dump()
             target = f"option/inquiry.orderList.{len(expanded)}."

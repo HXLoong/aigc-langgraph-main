@@ -61,7 +61,19 @@ async def _run(raw: str) -> dict[str, Any]:
     })
 
 
-@pytest.mark.parametrize("amount,available", [("80万", 800000), ("0", 800000), ("-1万", 800000)])
+@pytest.mark.parametrize("amount", ["0", "-1万", "平0万"])
+async def test_zero_or_negative_amount_is_rejected_locally(monkeypatch, amount):
+    """业务裁决 C8：0 与负数金额本地拦截，明确提示且不调 Java。"""
+    sent = _isolate(monkeypatch, [{"orderId": ORDER, "closeOrderType": "市价",
+                                  "closeOrderNotionalDelta": amount}],
+                    holdings=[{"orderId": ORDER, "availableNotional": 800000}])
+    result = await _run(f"{ORDER} {amount} 市价")
+    assert result.get("error") is None
+    assert sent == []
+    assert "大于0" in result["reply_text"]
+
+
+@pytest.mark.parametrize("amount,available", [("80万", 800000), ("900万", 800000)])
 async def test_amount_policy_is_delegated_to_java(monkeypatch, amount, available):
     reply = "Java返回的全仓确认或金额校验提示"
     sent = _isolate(monkeypatch, [{"orderId": ORDER, "closeOrderType": "市价",
@@ -71,7 +83,7 @@ async def test_amount_policy_is_delegated_to_java(monkeypatch, amount, available
     result = await _run(f"{ORDER} {amount} 市价")
     assert result.get("error") is None
     assert len(sent) == 1
-    expected = {"80万": "800000", "0": "0", "-1万": "-10000"}[amount]
+    expected = {"80万": "800000", "900万": "9000000"}[amount]  # 超额交给 Java 判断
     assert sent[0]["closeOrderReqVO"]["closeOrderList"][0]["closeOrderNotionalDelta"] == expected
     shown = await render({**result, "product_type": "option_close"})
     assert shown["reply_text"] == reply

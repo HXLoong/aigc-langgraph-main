@@ -82,3 +82,39 @@ class TestOptionExtractCancelPlaceNode:
         assert trace[0].node == "option_extract_cancel_place"
         assert "deterministic" in trace[0].decision
         assert "cancel_request" in trace[0].decision
+
+
+_TWO_ORDERS = "请确认下单\nQ-20250616-000017\nQ-20250616-000018"
+
+
+@pytest.mark.asyncio
+class TestCancelPlaceScope:
+    """取消下单只取消引用里用户指定的订单；未指定时仍取消引用中的全部。"""
+
+    @pytest.mark.parametrize(
+        "raw", ["取消第2笔", "第二笔不下了", "取消下单 Q-20250616-000018"],
+    )
+    async def test_specified_order_only(self, monkeypatch: pytest.MonkeyPatch, raw: str) -> None:
+        backend = _patch(monkeypatch)
+        result = await option_extract_cancel_place({"raw_text": raw, "quote_content": _TWO_ORDERS})
+        assert result["cancel_params"]["orderList"] == [{"orderId": "Q-20250616-000018"}]
+        assert backend.await_args.kwargs["order_list"] == [{"orderId": "Q-20250616-000018"}]
+
+    async def test_unspecified_cancels_all_quoted(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        _patch(monkeypatch)
+        result = await option_extract_cancel_place({"raw_text": "算了不下了", "quote_content": _TWO_ORDERS})
+        assert [o["orderId"] for o in result["cancel_params"]["orderList"]] == [
+            "Q-20250616-000017", "Q-20250616-000018",
+        ]
+
+    @pytest.mark.parametrize(
+        "raw", ["取消第3笔", "取消下单 Q-20250616-000099", "取消前两笔以外的"],
+    )
+    async def test_unresolvable_or_outside_quote_is_rejected(
+        self, monkeypatch: pytest.MonkeyPatch, raw: str,
+    ) -> None:
+        backend = _patch(monkeypatch)
+        result = await option_extract_cancel_place({"raw_text": raw, "quote_content": _TWO_ORDERS})
+        assert result.get("reply_text")
+        assert result.get("cancel_params") is None
+        backend.assert_not_awaited()

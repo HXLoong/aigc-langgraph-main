@@ -26,6 +26,16 @@ _QUOTE_THREE = (
     "期权平仓订单CO-20260304-E2BA7501（OPTG-SZZSCF20250030）：平仓确认下单成功。\n"
     "期权平仓订单CO-20260304-3393211B（OPTG-SZZSCF20260003）：平仓确认下单成功。"
 )
+#: Java 平仓卡真实版式：序号 → 合约编号 → 单号
+_JAVA_CARD = (
+    "以下平仓申请，请核对详情后确认：\n-----场外期权平仓详情-----\n"
+    "序号：1\n合约编号：OPT-AAAA1\n单号：CO-20260921-AAAAAAAA\n"
+    "平仓名义本金：1,000,000\n平仓价格方式：市价单\n"
+    "-----场外期权平仓详情-----\n"
+    "序号：2\n合约编号：OPT-BBBB2\n单号：CO-20260921-BBBBBBBB\n"
+    "平仓名义本金：2,000,000\n平仓价格方式：限价单\n限定价格：10.00\n"
+    "若要对以上订单执行平仓操作，请引用本消息回复【确认平仓】"
+)
 
 
 def _patch(monkeypatch: pytest.MonkeyPatch, module: object) -> AsyncMock:
@@ -254,6 +264,58 @@ class TestCloseCancelCloseNode:
         assert len(trace) == 1
         assert trace[0].node == "close_cancel_close"
         assert "orders=2" in trace[0].decision
+
+    @pytest.mark.parametrize(
+        ("raw", "expected"),
+        [
+            ("撤单OPT-AAAA1", ["CO-20260921-AAAAAAAA"]),
+            ("撤单OPT-BBBB2", ["CO-20260921-BBBBBBBB"]),
+        ],
+    )
+    async def test_java_card_contract_selects_following_order(
+        self, monkeypatch: pytest.MonkeyPatch, raw: str, expected: list[str]
+    ) -> None:
+        """Java 平仓卡是「序号 → 合约编号 → 单号」，合约编号属于其后的单号。"""
+        backend = _patch(monkeypatch, cancel_module)
+        result = await close_cancel_close({"raw_text": raw, "quote_content": _JAVA_CARD})
+        assert result["cancel_params"]["cancelOrderNoList"] == expected
+        assert backend.await_args.kwargs["close_order_req_vo"]["cancelOrderNoList"] == expected
+
+    @pytest.mark.parametrize("raw", ["撤序号2", "序号2撤单", "撤单 序号2", "撤单，序号：2"])
+    async def test_sequence_label_selects_labelled_order(
+        self, monkeypatch: pytest.MonkeyPatch, raw: str
+    ) -> None:
+        """「序号N」按引用卡片的序号标签绑定，不得扩大到引用中的全部订单。"""
+        _patch(monkeypatch, cancel_module)
+        result = await close_cancel_close({"raw_text": raw, "quote_content": _JAVA_CARD})
+        assert result["cancel_params"]["cancelOrderNoList"] == ["CO-20260921-BBBBBBBB"]
+
+    async def test_sequence_without_quote_labels_uses_position(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """引用没有序号标签时，「序号N」与确认协议一致按出现顺序绑定。"""
+        _patch(monkeypatch, cancel_module)
+        result = await close_cancel_close({"raw_text": "撤序号2", "quote_content": _QUOTE_TWO})
+        assert result["cancel_params"]["cancelOrderNoList"] == ["CO-20260304-E2BA7501"]
+
+    async def test_unknown_sequence_label_does_not_expand(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        backend = _patch(monkeypatch, cancel_module)
+        result = await close_cancel_close({"raw_text": "撤序号5", "quote_content": _JAVA_CARD})
+        assert result.get("cancel_params") is None
+        assert result["trace"][0].decision == "close_scope_unresolved"
+        backend.assert_not_awaited()
+
+    async def test_lowercase_order_id_selects_only_that_order(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """单号大小写不敏感：只写小写单号时不得扩大到引用中的全部订单。"""
+        _patch(monkeypatch, cancel_module)
+        result = await close_cancel_close(
+            {"raw_text": "撤 co-20260921-bbbbbbbb", "quote_content": _JAVA_CARD}
+        )
+        assert result["cancel_params"]["cancelOrderNoList"] == ["CO-20260921-BBBBBBBB"]
 
     async def test_calls_real_backend_when_context_present(
         self, monkeypatch: pytest.MonkeyPatch

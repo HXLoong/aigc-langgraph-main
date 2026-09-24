@@ -257,12 +257,91 @@ async def test_bound_negation_cannot_be_removed_by_shorter_evidence(monkeypatch)
 
 
 @pytest.mark.asyncio
-async def test_standalone_full_close_clause_merges_only_authorized_confirmation_targets(monkeypatch):
+async def test_full_close_clause_after_explicit_target_does_not_pull_other_orders(monkeypatch):
+    """业务裁决 C5：点名了 A 时，「全部平仓」不把引用里其它只能全平的 B 带上。"""
     mock_close(monkeypatch, [{"orderId": evidence("CO-20260918-AAAAAAAA"),
                              "closeOrderNotionalDelta": evidence("200万")}])
     result = await pc.close_place_close({"raw_text": "CO-20260918-AAAAAAAA平200万，全部平仓",
         "quote_content": "期权平仓订单CO-20260918-BBBBBBBB：只能全部平仓"})
     rows = result["close_params"]["closeOrderList"]
-    assert len(rows) == 2
+    assert [row["orderId"] for row in rows] == ["CO-20260918-AAAAAAAA"]
     assert rows[0]["closeOrderNotionalDelta"] == "2000000"
-    assert rows[1]["orderId"] == "CO-20260918-BBBBBBBB" and rows[1]["confirmFullClose"] is True
+
+
+@pytest.mark.asyncio
+async def test_explicitly_named_full_close_order_is_included(monkeypatch):
+    """业务裁决 C5：写了「B，全部平仓」时 B 一起全平。"""
+    mock_close(monkeypatch, [
+        {"orderId": evidence("CO-20260918-AAAAAAAA"), "closeOrderNotionalDelta": evidence("200万")},
+        {"orderId": evidence("CO-20260918-BBBBBBBB"), "confirmFullClose": evidence("全部平仓")},
+    ])
+    result = await pc.close_place_close({
+        "raw_text": "CO-20260918-AAAAAAAA平200万，CO-20260918-BBBBBBBB，全部平仓",
+        "quote_content": "期权平仓订单CO-20260918-BBBBBBBB：只能全部平仓"})
+    rows = {row["orderId"]: row for row in result["close_params"]["closeOrderList"]}
+    assert rows["CO-20260918-AAAAAAAA"]["closeOrderNotionalDelta"] == "2000000"
+    assert rows["CO-20260918-BBBBBBBB"]["confirmFullClose"] is True
+
+
+@pytest.mark.parametrize("raw", ["全部平仓，不用跟量", "全部平仓，不用等了"])
+def test_unrelated_negation_does_not_cancel_full_close(raw):
+    """证据里其它参数的否定词不得取消全平；只有否定全平本身才取消。"""
+    from app.subgraphs.close.normalization import normalize_place_candidates
+    from app.subgraphs.close.reference_parser import parse_reference_message
+    order = "CO-20260921-ABCDEF12"
+    text = f"{order} {raw}"
+    params, _ = normalize_place_candidates(candidate_model(ClosePlaceParams).model_validate({
+        "closeOrderList": [{"orderId": evidence(order), "confirmFullClose": evidence("全部平仓", context=raw)}]}),
+        {"raw": text}, parse_reference_message(None, text), [])
+    assert params.close_order_list[0].confirm_full_close is True
+
+
+def _normalize_amount(amount):
+    from app.subgraphs.close.normalization import normalize_place_candidates
+    from app.subgraphs.close.reference_parser import parse_reference_message
+    raw = f"OPT-A {amount}"
+    params, _ = normalize_place_candidates(candidate_model(ClosePlaceParams).model_validate(
+        {"closeOrderList": [{"internalTradeId": evidence("OPT-A"),
+                              "closeOrderNotionalDelta": evidence(amount)}]}),
+        {"raw": raw}, parse_reference_message(None, raw),
+        [{"contractCode": "OPT-A", "availableNotional": 5000000}])
+    return params.close_order_list[0].close_order_notional_delta
+
+
+@pytest.mark.parametrize("amount,expected", [
+    ("平仓名义本金200万", "2000000"), ("平掉名义本金300万", "3000000"), ("按名义本金100万平", "1000000"),
+])
+def test_stacked_amount_prefixes_are_stripped(amount, expected):
+    """「平仓 + 名义本金」等叠加前缀不应导致合法金额解析失败。"""
+    assert _normalize_amount(amount) == expected
+
+
+@pytest.mark.parametrize("amount", ["十.五万", ".万"])
+def test_unparseable_chinese_amount_is_not_zero(amount):
+    """中文数字解析失败必须报错，不得编造成 0 发给 Java。"""
+    with pytest.raises(ValueError, match="无法解析"):
+        _normalize_amount(amount)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("response", [
+    {"code": 500, "msg": "Java内部错误：数据库连接失败 table=close_order"},
+    {"code": 0, "data": {"unexpected": "结构"}, "msg": "Java返回原文"},
+])
+async def test_fetch_failure_never_shows_java_text_to_customer(monkeypatch, response):
+    """C9 口径：取可平数据失败时客户只看到统一兜底文案，不展示 Java 原文，也不提交平仓。"""
+    from app.config import get_settings
+    from app.nodes.render import render
+
+    _, _, submit = mock_close(monkeypatch, [])
+    client = MagicMock()
+    client.query_close_orders = AsyncMock(return_value=response)
+    monkeypatch.setattr(pc, "OptionClientHttpx", lambda: client)
+
+    result = await pc.close_place_close({"raw_text": "CO-20260918-AAAAAAAA 平200万"})
+
+    assert result["error"].node == "place_close_fetch_orders"
+    submit.assert_not_called()
+    reply = (await render({**result, "product_type": "option_close"}))["reply_text"]
+    assert reply == get_settings().default_reply
+    assert "Java" not in reply and "数据库" not in reply
