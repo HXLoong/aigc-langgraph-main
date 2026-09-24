@@ -347,7 +347,7 @@ def main() -> int:
     try:
         created = lf.create_prompt(
             name=lf_name,
-            type="chat",
+            type=prompt_type,
             prompt=body,
             labels=[args.label],
         )
@@ -361,13 +361,17 @@ def main() -> int:
     version = getattr(created, "version", "?")
     print(f"\n✅ 已推送：{lf_name} 版本 v{version}，标签 [{args.label}]")
 
-    experiment_help = f"""
+    if prompt_type == "chat":
+        experiment_help = f"""
   在 UI 里跑 Prompt Experiment（对应 dataset 需含 send_text 键）：
     1. Datasets → 选数据集 → Start Experiment
     2. Prompt 选 {lf_name}
     3. 变量 {{send_text}} 会自动映射到 dataset item 的 send_text
     4. 结构化输出：打开开关，挂 CloseIntentOutput 的 JSON schema（在 Playground 存过就能选）
     5. 注意：只跑首轮；不跑 LangGraph 图，链路回归仍用 langfuse_eval.py"""
+    else:
+        experiment_help = """
+  （--plain：无变量，UI Prompt Experiment 不可用。需要实验请去掉 --plain 重推）"""
 
     print(
         f"""

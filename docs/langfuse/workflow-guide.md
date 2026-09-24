@@ -165,6 +165,8 @@ python scripts/langfuse/upload_prompt_to_langfuse.py --sync-all --base-url https
 # 单文件手动上传仍可使用
 python scripts/langfuse/upload_prompt_to_langfuse.py option_close.intent --dry-run
 python scripts/langfuse/upload_prompt_to_langfuse.py option_close.intent
+# 纯 system 的 text 提示词（不补实验用 user 消息，UI Prompt Experiment 不可用）
+python scripts/langfuse/upload_prompt_to_langfuse.py option_close.intent --plain
 ```
 
 批量模式只扫描三个业务目录的顶层 `.md`（目前 13 个）。名称按目录和文件 stem 用下划线连接：
