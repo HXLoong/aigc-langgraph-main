@@ -32,6 +32,11 @@ class TurnSpec(BaseModel):
     #: B 方言的引用说明原文（"用户引用上一条机器人消息"）；首轮标注了引用的上下文依赖 case
     #: 无上一轮回复可引，只能留在这里供概览与人工判读
     quote_desc: str = ""
+    #: 意图集冻结上下文（harness/intent_runner.py）：引用文本、历史消息、上一轮产品，
+    #: 直接注入 state，不回放上一轮机器人回复；业务集不使用
+    quote_content: str = ""
+    history: list[dict[str, str]] = Field(default_factory=list)
+    prev_product_type: str = ""
     expected: dict[str, Any] = Field(default_factory=dict)
     response_contains: list[str] = Field(default_factory=list)
     response_contains_any: list[str] = Field(default_factory=list)
@@ -88,6 +93,9 @@ def _turn_from_object(
         at_bot=obj.get("at_bot", default_at_bot),
         quote_previous=obj.get("quote_previous"),
         wait_before_seconds=obj.get("wait_before_seconds", 0),
+        quote_content=obj.get("quote_content") or "",
+        history=obj.get("history") or [],
+        prev_product_type=obj.get("prev_product_type") or "",
         expected=expected,
         response_contains=_assertion_lines(
             obj.get("response_contains"), origin=origin, field_name="response_contains"
@@ -346,6 +354,10 @@ def _dataset_turn_input(turn: TurnSpec) -> dict[str, Any]:
         result["quote_previous"] = turn.quote_previous
     if turn.wait_before_seconds:
         result["wait_before_seconds"] = turn.wait_before_seconds
+    for field_name in ("quote_content", "history", "prev_product_type"):
+        value = getattr(turn, field_name)
+        if value:
+            result[field_name] = value
     return result
 
 

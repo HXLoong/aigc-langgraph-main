@@ -34,7 +34,8 @@ python scripts/local_eval.py --base-url http://127.0.0.1:8201 --data tests/fixtu
 
 # Langfuse Dataset Experiment（Judge + 自动 Evaluator；不替代 HTTP/Java 写回与幂等验收）
 python scripts/langfuse/langfuse_eval.py --dataset golden_option_inquiry_case --ids case-022 --concurrency 1
-# 意图集（只调 LLM + 仓库内 mock_api，不依赖 Java/GOATS；确定性评分本地算，--fail-under 给退出码；
+# 意图集（不依赖 Java/GOATS；冻结上下文的用例由 harness/intent_runner.py 只跑意图子链、只调 LLM，
+# 仍引用上一轮回复的用例走主图 + mock_api 回放；确定性评分本地算，--fail-under 给退出码；
 # CI：.github/workflows/intent-eval.yml；业务集 categories/ 依赖 Java 后端只在开发环境跑；workflow-guide §8）
 python scripts/langfuse/langfuse_eval.py --local tests/fixtures/intent --concurrency 3 --fail-under 0.95 --report .harness-runs/intent-eval.json
 
@@ -87,6 +88,8 @@ app/
 harness/                     # 评测台（经 HTTP 调本地 /v1/workflows/run，与 app/ 解耦）
 ├── golden.py                # categories fixture 加载（两方言归一化）
 ├── multi_turn.py            # 多轮 case 的 HTTP runner
+├── intent_runner.py         # 意图级 runner：只跑意图子链 + 冻结上下文（意图集只调 LLM）
+├── intent_context.py        # 意图集冻结 / 回放两种模式判定（lint 与 runner 共用）
 ├── differ.py                # 字段级 diff（按业务对象路径）+ 文本 / 结构化断言
 ├── langfuse_client.py       # LangFuse SDK 封装（v4 OTel-based）
 ├── token_tracker.py         # LLM token / 成本估算
@@ -103,7 +106,7 @@ docs/api-contracts/          # Java 后端真实业务 API 契约
 docs/work-plan.md            # 三条主线的现状与待办（取代 m3-m4-roadmap）
 docs/on-call-runbook.md      # 上线 on-call SOP
 tests/                       # 2900+ passed（2026-09-22；按 graph / nodes / subgraphs / api_wire / harness / prompts / scripts 归位）
-tests/fixtures/              # categories/（A 方言业务集，6 文件 / 389 条）+ intent/（意图集：逐轮 product_type/intent，只调 LLM + mock 后端）
+tests/fixtures/              # categories/（A 方言业务集，6 文件 / 389 条）+ intent/（意图集：逐轮 product_type/intent；冻结用例只调 LLM，回放用例配 mock 后端）
                              # + unified_golden.jsonl（B 方言，921 条，历史参考集，显式 --include-unified 加载）+ 历史归档见 docs/archive/fixtures/old_typing/
 ```
 

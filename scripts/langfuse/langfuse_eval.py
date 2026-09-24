@@ -52,6 +52,7 @@ from langgraph.checkpoint.memory import InMemorySaver
 from app.graph.main import build_main_graph
 from app.prompts import load_prompt
 from app.api.turn_state import inputs_to_state
+from harness import intent_runner
 from harness.evaluators import instrument_match, intent_match, rejection_match
 from harness.golden import (
     GoldenCase,
@@ -68,7 +69,7 @@ from app.tools.ticker_client import TickerClientHttpx
 
 DATASET_NAME = "otc-option-golden"
 
-#: 套件：intent（意图集，只调 LLM + mock 后端，确定性 intent_match 评分，不跑 Judge）
+#: 套件：intent（意图集，只跑意图子链、只调 LLM，确定性 intent_match 评分，不跑 Judge）
 #: / business（业务集，真后端 + 卡片文本断言 + Judge）
 SUITES = ("intent", "business")
 DEFAULT_SUITE = "business"
@@ -202,19 +203,142 @@ def _graph_callbacks() -> list:
         return []
 
 
-async def run_langgraph_pipeline(*, item, suite: str = DEFAULT_SUITE, **kwargs):
+#: 一轮输入里 runner 认识的键（Langfuse Dataset 的 send_text + sub_scenes 结构）
+_TURN_INPUT_KEYS = frozenset(
+    {"send_text", "at_bot", "quote_previous", "quote_desc", "quote_content", "history", "prev_product_type"}
+)
+
+
+def _item_turns(item) -> list[dict[str, Any]]:
+    """本地 _LocalItem（turns[]）与 Langfuse Dataset item（首轮 + sub_scenes[]）统一成逐轮列表。"""
     inp = item.input if isinstance(item.input, dict) else json.loads(item.input)
     turns_data = inp.get("turns")
-    if not isinstance(turns_data, list):
-        first_turn = {
-            key: value
-            for key, value in inp.items()
-            if key in {"send_text", "at_bot", "quote_previous", "quote_desc"}
+    if isinstance(turns_data, list):
+        return turns_data
+    first_turn = {key: value for key, value in inp.items() if key in _TURN_INPUT_KEYS}
+    sub_scenes = inp.get("sub_scenes", [])
+    turns = [first_turn]
+    if isinstance(sub_scenes, list):
+        turns.extend(scene for scene in sub_scenes if isinstance(scene, dict))
+    return turns
+
+
+def _simplify_place_params(rs: dict[str, Any]) -> dict[str, Any] | None:
+    """place_params 简化（顶层 expected_action + orderList 字段，去掉 None 减少噪音）。"""
+    pp = rs.get("place_params") or {}
+    if not pp:
+        return None
+    orders_simple = [
+        {
+            k: v
+            for k, v in (
+                o if isinstance(o, dict) else (o.model_dump() if hasattr(o, "model_dump") else {})
+            ).items()
+            if v is not None
         }
-        sub_scenes = inp.get("sub_scenes", [])
-        turns_data = [first_turn]
-        if isinstance(sub_scenes, list):
-            turns_data.extend(scene for scene in sub_scenes if isinstance(scene, dict))
+        for o in pp.get("orderList", [])
+    ]
+    return {"action": rs.get("expected_action"), "orderList": orders_simple}
+
+
+def _simplify_error(err: Any) -> dict[str, Any] | None:
+    if err is None:
+        return None
+    err_dict = err.model_dump() if hasattr(err, "model_dump") else err
+    if isinstance(err_dict, dict):
+        return {
+            "node": err_dict.get("node"),
+            "type": err_dict.get("type"),
+            "message": (err_dict.get("message") or "")[:200],
+        }
+    return {"message": str(err)[:200]}
+
+
+def _expects_rejection(item) -> bool:
+    """拒绝验收要检查面向用户的拒绝回复与“未提交后端”，只有主图（render / fallback）能给出。"""
+    flag = getattr(item, "has_rejections", None)
+    if flag is not None:
+        return bool(flag)
+    expected = getattr(item, "expected_output", None)
+    text = expected if isinstance(expected, str) else json.dumps(expected or {}, ensure_ascii=False)
+    return '"rejection"' in text
+
+
+def _needs_instrument_extraction(item) -> bool:
+    """期望里有 instruments 才追加 swap 参数抽取（标的原文评估读 place_params）。"""
+    flag = getattr(item, "has_instruments", None)
+    if flag is not None:
+        return bool(flag)
+    expected = getattr(item, "expected_output", None)
+    text = expected if isinstance(expected, str) else json.dumps(expected or {}, ensure_ascii=False)
+    return '"instruments"' in text
+
+
+async def run_intent_pipeline(*, item, **kwargs):
+    """意图集：只跑意图子链（harness/intent_runner.py），逐轮独立 + 冻结上下文，不碰后端。
+
+    与业务集 pipeline 同一输出结构（turns[i].product_type / intent / place_params / error），
+    评估器无需区分；不早停——每轮都有自己的期望，前一轮错不影响后一轮的输入。
+    """
+    graph = intent_runner.build_intent_graph(swap_extraction=_needs_instrument_extraction(item))
+    conversation_id = str(uuid.uuid4())
+    # 与生产 routes._build_run_config 同一契约；意图子链不挂 checkpointer，thread_id 只作关联
+    config = {
+        "configurable": {"thread_id": conversation_id},
+        "metadata": {
+            "trace_id": uuid.uuid4().hex,
+            "langfuse_session_id": conversation_id,
+            "langfuse_tags": ["eval", "intent"],
+        },
+        "callbacks": _graph_callbacks(),
+    }
+    results = []
+    for index, turn in enumerate(_item_turns(item), 1):
+        quote = turn.get("quote_content") or ""
+        try:
+            rs = await intent_runner.run_turn(graph, turn, conversation_id=conversation_id, config=config)
+            tr = {
+                "product_type": rs.get("product_type", "unknown"),
+                "intent": rs.get("intent"),
+                "reply_text": "",
+                "place_params": _simplify_place_params(rs),
+                "error": _simplify_error(rs.get("error")),
+                "trace": _fmt_trace(rs.get("trace")),
+            }
+        except Exception as e:
+            tr = {
+                "product_type": "error",
+                "intent": None,
+                "reply_text": "",
+                "place_params": None,
+                "error": {"message": str(e)[:200]},
+                "trace": "",
+            }
+        tr.update(
+            api_result=None, api_code=None, tickers=[], quote_passed=quote[:120],
+            turn=index, raw_content=turn.get("send_text", ""),
+        )
+        results.append(tr)
+    trace_log = "\n".join(
+        f"[第{r['turn']}轮] input={r['raw_content'][:40]!r}"
+        f" | route={r['product_type']}/{r['intent'] or '?'}"
+        f" | quote={len(r['quote_passed'])}c | trace: {r['trace']}"
+        + (f" | ERROR: {r['error']}" if r.get("error") else "")
+        for r in results
+    )
+    return {"reply_text": "", "turns": results, "trace_log": trace_log, "mode": "intent_chain"}
+
+
+async def run_langgraph_pipeline(*, item, suite: str = DEFAULT_SUITE, **kwargs):
+    turns_data = _item_turns(item)
+    # 意图集两种模式并存（harness/intent_context.py）：冻结用例只跑意图子链；仍需上一轮
+    # 真实回复的回放用例、以及要验收用户可见拒绝回复的用例，走下面的主图 + mock_api
+    if (
+        suite == "intent"
+        and not intent_runner.requires_replay(turns_data)
+        and not _expects_rejection(item)
+    ):
+        return await run_intent_pipeline(item=item)
     cp = InMemorySaver()
     graph = build_main_graph(cp)
     conversation_id = str(uuid.uuid4())
@@ -277,48 +401,8 @@ async def run_langgraph_pipeline(*, item, suite: str = DEFAULT_SUITE, **kwargs):
                         }
                     )
 
-            # place_params 简化（顶层 expected_action + orderList 字段，去掉 None 减少噪音）
-            pp = rs.get("place_params") or {}
-            orders_raw = pp.get("orderList", [])
-            orders_simple = [
-                {
-                    k: v
-                    for k, v in (
-                        o
-                        if isinstance(o, dict)
-                        else (o.model_dump() if hasattr(o, "model_dump") else {})
-                    ).items()
-                    if v is not None
-                }
-                for o in orders_raw
-            ]
-            place_simple = (
-                {
-                    "action": rs.get("expected_action"),
-                    "orderList": orders_simple,
-                }
-                if pp
-                else None
-            )
-
-            err = rs.get("error")
-            err_simple = None
-            if err is not None:
-                if hasattr(err, "model_dump"):
-                    err_dict = err.model_dump()
-                    err_simple = {
-                        "node": err_dict.get("node"),
-                        "type": err_dict.get("type"),
-                        "message": (err_dict.get("message") or "")[:200],
-                    }
-                elif isinstance(err, dict):
-                    err_simple = {
-                        "node": err.get("node"),
-                        "type": err.get("type"),
-                        "message": (err.get("message") or "")[:200],
-                    }
-                else:
-                    err_simple = {"message": str(err)[:200]}
+            place_simple = _simplify_place_params(rs)
+            err_simple = _simplify_error(rs.get("error"))
 
             tr = {
                 "product_type": rs.get("product_type", "unknown"),
@@ -385,6 +469,8 @@ async def run_langgraph_pipeline(*, item, suite: str = DEFAULT_SUITE, **kwargs):
         "turns": results,
         "trace_log": "\n".join(trace_log_lines),
     }
+    if suite == "intent":
+        output["mode"] = "main_graph"
     if failure is not None:
         output["failure"] = failure
         output["remaining_turns"] = len(turns_data) - len(results)
@@ -718,6 +804,9 @@ class _LocalItem:
                     "at_bot": turn.at_bot,
                     "quote_previous": turn.quote_previous,
                     "quote_desc": turn.quote_desc,
+                    "quote_content": turn.quote_content,
+                    "history": turn.history,
+                    "prev_product_type": turn.prev_product_type,
                 }
                 for turn in case.turns
             ]

@@ -363,7 +363,7 @@ Online Evaluator 异步执行，Experiment 完成后 Score 可能稍后显示。
 | fixture 目录 | `tests/fixtures/intent/<product>.jsonl` | `tests/fixtures/categories/*.jsonl` |
 | 用例形态 | A 方言子集：逐轮 `expected.{product_type, intent}`，**不写** `response_*` | A 方言：卡片文本断言（`response_contains` 等） |
 | 期望值来源 | 各子图 `models.py` 的意图枚举（lint 校验） | Java 真实回复 |
-| 运行后端 | `mock_api`（`metadata.backend=mock`） | 真后端 / staging |
+| 运行方式 | 冻结用例只跑意图子链（`harness/intent_runner.py`），不调后端；回放用例走主图 + `mock_api`（`metadata.backend=mock`） | 真后端 / staging |
 | Dataset 命名 | `intent_<文件名>`（历史 `intent-` 仍识别） | 与 JSONL 文件名相同，不含 `.jsonl`（如 `golden_option_close_case`） |
 | 自动评分 | `det_intent_match_pass`（`harness/evaluators/intent_match.py`）+ 标的识别子集 `det_instrument_match_pass`（`harness/evaluators/instrument_match.py`） | `det_required_text_pass` / `det_required_any_text_pass` / `det_forbidden_text_pass` + `otc-option-judge` |
 | LLM Judge | 不跑（脚本强制 `no-judge`） | 跑 |
@@ -390,7 +390,8 @@ python scripts/check_fixture_consistency.py --verbose
 ### 8.1a 标的识别子集（`tests/fixtures/intent/swap_instrument.jsonl`）
 
 标的识别是意图集里的独立数据集：LangGraph 只提取用户原文里的标的表达（`placeOrderWindCode` 逐字保留）
-和市场限定（`placeOrderTransactionType`），权威识别由 Java 完成，所以它同样只调 LLM + mock 后端。
+和市场限定（`placeOrderTransactionType`），权威识别由 Java 完成，所以它同样只调 LLM：单轮用例走意图子链，
+runner 在 swap `place_order_request` 之后追加参数抽取子图（候选抽取 → 归一化），不含提交节点。
 `expected.instruments[i]` 给出**原文表达的任一候选**与**交易品种候选**，`instrument_match` 按订单无序匹配：
 
 ```bash
@@ -407,7 +408,7 @@ python scripts/langfuse/langfuse_eval.py --dataset intent_swap_instrument --conc
 ### 8.2 执行
 
 ```bash
-# 意图集：终端 1 起 mock_api，终端 2 以 OTC_API_BASE_URL 指向 mock 起应用
+# 意图集：冻结用例只需 LLM 网关；含回放用例时先起 mock_api，并以 OTC_API_BASE_URL 指向它
 python scripts/langfuse/upload_golden_to_langfuse.py --sync-all
 python scripts/langfuse/upload_evaluators.py --dataset-name intent_option_close --apply
 python scripts/langfuse/langfuse_eval.py --dataset intent_option_close --concurrency 3
@@ -428,7 +429,8 @@ python scripts/langfuse/langfuse_eval.py --dataset swap_prod_data --concurrency 
 - 意图集的评分逻辑与 Langfuse Online Rule 是同一份源码（`harness/evaluators/`），`langfuse_eval.py --local`
   对 `suite=intent` 直接在本地执行 `intent_match` / `instrument_match`，不需要 Langfuse、Java、GOATS；
   `--fail-under 0.95` 低于门槛退出码 1，`--report` 写 JSON 摘要
-- `.github/workflows/intent-eval.yml`：runner 上起仓库内 `mock_api`（GOATS 22 + Java 10 端点假实现）顶替后端，
+- `.github/workflows/intent-eval.yml`：两种模式并存（`harness/intent_context.py`）——冻结用例只跑意图子链、不调后端；
+  回放用例（`quote_previous` / `{{previous_*}}`）与拒绝验收走主图，runner 上起仓库内 `mock_api` 顶替后端。
   LLM 网关走 secrets `QWEN_API_BASE` / `QWEN_API_KEY`。**仅手动触发**（不随 PR 自动跑，全量约 14 分钟并消耗 LLM 额度）：
   改提示词 / 路由意图节点 / 评估器 / 意图集后，在 Actions 页 Run workflow，可改 `fixture` / `limit` / `fail_under`
   （首次可用 `fail_under=0` 只出基线报告，再定门槛）

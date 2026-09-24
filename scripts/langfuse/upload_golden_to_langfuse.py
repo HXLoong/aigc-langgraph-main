@@ -41,7 +41,7 @@ GOLDEN_PATH = PROJECT_ROOT / "tests" / "fixtures" / "categories"
 FIXTURE_ROOT = PROJECT_ROOT / "tests" / "fixtures"
 logger = logging.getLogger(__name__)
 DATASET_NAME = "otc-option-golden"
-#: 套件：intent（只调 LLM 评路由/意图，配 mock 后端）/ business（真后端 + 卡片断言 + Judge）
+#: 套件：intent（评路由/意图：冻结用例只调 LLM，回放用例配 mock 后端）/ business（真后端 + 卡片断言 + Judge）
 SUITES = ("intent", "business")
 INTENT_DIR_NAME = "intent"
 BACKENDS = ("mock", "real", "dry-run")

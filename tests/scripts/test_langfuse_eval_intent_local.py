@@ -11,7 +11,8 @@ from unittest.mock import AsyncMock
 import langfuse
 import pytest
 
-from harness.golden import GoldenCase, TurnSpec, dataset_expected, dataset_input
+from harness import intent_runner
+from harness.golden import GoldenCase, TurnSpec, dataset_expected, dataset_input, load_golden
 from scripts.langfuse import langfuse_eval
 from scripts.langfuse.langfuse_eval import _LocalItem, case_passed, code_evaluations
 
@@ -118,6 +119,10 @@ class _IntentGraph:
         }
 
 
+def _main_graph_forbidden(*_args: object, **_kwargs: object) -> None:
+    raise AssertionError("intent suite must not build the main graph (it needs backends)")
+
+
 class _NoLangfuse:
     def __init__(self) -> None:
         raise RuntimeError("langfuse disabled in test")
@@ -159,11 +164,8 @@ async def test_run_local_intent_suite_scores_without_langfuse_and_writes_report(
 ) -> None:
     fixture = tmp_path / "swap.jsonl"
     _write_intent_fixture(fixture)
-    monkeypatch.setattr(langfuse_eval, "build_main_graph", lambda _cp: _IntentGraph())
-    monkeypatch.setattr(langfuse_eval, "TickerClientHttpx", lambda: SimpleNamespace(
-        list_counterparty=AsyncMock(return_value=[]),
-    ))
-    monkeypatch.setattr(langfuse_eval, "_TURN_INTERVAL_SECONDS", 0)
+    monkeypatch.setattr(intent_runner, "build_intent_graph", lambda **_: _IntentGraph())
+    monkeypatch.setattr(langfuse_eval, "build_main_graph", _main_graph_forbidden)
     monkeypatch.setattr(langfuse_eval, "_graph_callbacks", lambda: [])
     monkeypatch.setattr(langfuse, "Langfuse", _NoLangfuse)
     report = tmp_path / "intent-eval.json"
@@ -205,6 +207,92 @@ def test_main_fail_under_turns_pass_rate_into_exit_code(monkeypatch: pytest.Monk
     assert langfuse_eval.main() == 0
 
 
+class _RecordingGraph:
+    """记录每轮收到的 state；第 1 轮故意报错，验证逐轮独立、不早停。"""
+
+    def __init__(self) -> None:
+        self.states: list[dict] = []
+
+    async def ainvoke(self, state: dict, config: dict | None = None) -> dict:
+        self.states.append(dict(state))
+        if len(self.states) == 1:
+            return {**state, "product_type": "unknown", "intent": "", "error": {"node": "intent_route", "message": "boom"}}
+        return {**state, "product_type": "option_close", "intent": "close_order_confirm", "error": None}
+
+
+@pytest.mark.asyncio
+async def test_intent_pipeline_runs_every_turn_with_frozen_context(monkeypatch: pytest.MonkeyPatch) -> None:
+    recorder = _RecordingGraph()
+    monkeypatch.setattr(intent_runner, "build_intent_graph", lambda **_: recorder)
+    monkeypatch.setattr(langfuse_eval, "build_main_graph", _main_graph_forbidden)
+    monkeypatch.setattr(langfuse_eval, "_graph_callbacks", lambda: [])
+    case = GoldenCase(
+        id="intent-option_close-x",
+        category="intent/option_close",
+        turns=[
+            TurnSpec(send_text="我想平仓", at_bot=True, expected={"product_type": "option_close", "intent": "close_order_query"}),
+            TurnSpec(
+                send_text="确认平仓",
+                quote_content="以下平仓申请，请核对详情后确认：单号：CO-20260506-DEAF117C",
+                history=[{"role": "user", "content": "我想平仓"}],
+                prev_product_type="option_close",
+                expected={"product_type": "option_close", "intent": "close_order_confirm"},
+            ),
+        ],
+    )
+    output = await langfuse_eval.run_langgraph_pipeline(item=_LocalItem(case, suite="intent"), suite="intent")
+
+    assert len(output["turns"]) == 2, "intent suite evaluates every turn; no early stop"
+    assert "failure" not in output
+    assert output["turns"][0]["error"] == {"node": "intent_route", "type": None, "message": "boom"}
+    second = recorder.states[1]
+    assert second["quote_content"] == "以下平仓申请，请核对详情后确认：单号：CO-20260506-DEAF117C"
+    assert second["product_type"] == "option_close"
+    assert [(m.role, m.content) for m in second["history_messages"]] == [("user", "我想平仓")]
+    assert recorder.states[0].get("quote_content") in (None, "")
+    assert output["turns"][1]["intent"] == "close_order_confirm"
+    assert output["turns"][1]["quote_passed"].startswith("以下平仓申请")
+
+
+def test_frozen_context_round_trips_through_loader_and_dataset_projection(tmp_path: Path) -> None:
+    fixture = tmp_path / "option_close.jsonl"
+    row = {
+        "caseNo": "intent-option_close-1",
+        "category": "intent/option_close",
+        "type": "positive",
+        "send_text": "我想平仓",
+        "at_bot": True,
+        "expected": {"product_type": "option_close", "intent": "close_order_query"},
+        "sub_scenes": [
+            {
+                "send_text": "确认平仓",
+                "quote_content": "单号：CO-20260506-DEAF117C 请引用本消息回复【确认平仓】",
+                "history": [{"role": "assistant", "content": "以下是您的期权持仓："}],
+                "prev_product_type": "option_close",
+                "expected": {"product_type": "option_close", "intent": "close_order_confirm"},
+            }
+        ],
+    }
+    fixture.write_text(json.dumps(row, ensure_ascii=False) + "\n", encoding="utf-8")
+    (case,) = load_golden([fixture])
+    turn = case.turns[1]
+    assert turn.quote_content.startswith("单号：CO-20260506-DEAF117C")
+    assert turn.history == [{"role": "assistant", "content": "以下是您的期权持仓："}]
+    assert turn.prev_product_type == "option_close"
+    assert case.turns[0].quote_content == "" and case.turns[0].history == []
+
+    projected = dataset_input(case)["sub_scenes"][0]
+    assert projected["quote_content"] == turn.quote_content
+    assert projected["history"] == turn.history
+    assert projected["prev_product_type"] == "option_close"
+    assert not {"quote_content", "history", "prev_product_type"} & set(dataset_input(case)), "empty context stays out"
+
+    local = _LocalItem(case, suite="intent").input["turns"][1]
+    assert (local["quote_content"], local["history"], local["prev_product_type"]) == (
+        turn.quote_content, turn.history, "option_close"
+    )
+
+
 def test_labeled_rejection_requires_rejection_score_in_addition_to_intent():
     case = GoldenCase(id='reject', category='intent/swap', type='negative', turns=[
         TurnSpec(send_text='甲证券已买100股', expected={
@@ -229,3 +317,76 @@ def test_quality_gate_does_not_hide_unsafe_rejection_failure_in_high_total():
     assert langfuse_eval.passes_quality_gate(summary, .95)
     summary['acceptance_buckets']['executable']['pass_rate'] = .94
     assert not langfuse_eval.passes_quality_gate(summary, .95)
+
+
+class _ReplayGraph:
+    async def ainvoke(self, state: dict, config: dict) -> dict:
+        return {**state, "product_type": "option_close", "intent": "close_order_query",
+                "reply_text": "以下是您的期权持仓：", "api_code": 0, "error": None}
+
+
+@pytest.mark.asyncio
+async def test_intent_cases_that_replay_previous_reply_keep_main_graph_path(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """两种模式并存：未冻结、需要引用上一轮回复的用例继续走主图 + mock 回放。"""
+    def _intent_chain_forbidden(**_: object) -> None:
+        raise AssertionError("replay case must not run on the frozen intent chain")
+
+    monkeypatch.setattr(intent_runner, "build_intent_graph", _intent_chain_forbidden)
+    monkeypatch.setattr(langfuse_eval, "build_main_graph", lambda _cp: _ReplayGraph())
+    monkeypatch.setattr(langfuse_eval, "TickerClientHttpx", lambda: SimpleNamespace(
+        list_counterparty=AsyncMock(return_value=[]),
+    ))
+    monkeypatch.setattr(langfuse_eval, "_TURN_INTERVAL_SECONDS", 0)
+    monkeypatch.setattr(langfuse_eval, "_graph_callbacks", lambda: [])
+    case = GoldenCase(
+        id="intent-option_close-replay",
+        category="intent/option_close",
+        turns=[
+            TurnSpec(send_text="查可平持仓", at_bot=True, expected={"product_type": "option_close", "intent": "close_order_query"}),
+            TurnSpec(send_text="我想平掉 {{previous_holding_contract_id:1}}", quote_previous=True,
+                     expected={"product_type": "option_close", "intent": "close_order_request"}),
+        ],
+    )
+    output = await langfuse_eval.run_langgraph_pipeline(item=_LocalItem(case, suite="intent"), suite="intent")
+    assert output["mode"] == "main_graph"
+    assert output["turns"][1]["quote_passed"].startswith("以下是您的期权持仓")
+
+
+@pytest.mark.asyncio
+async def test_frozen_intent_cases_report_intent_chain_mode(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(intent_runner, "build_intent_graph", lambda **_: _IntentGraph())
+    monkeypatch.setattr(langfuse_eval, "build_main_graph", _main_graph_forbidden)
+    monkeypatch.setattr(langfuse_eval, "_graph_callbacks", lambda: [])
+    case = GoldenCase(id="intent-swap-f", category="intent/swap", turns=[
+        TurnSpec(send_text="确认下单", at_bot=True, expected={"product_type": "swap", "intent": "confirm_order"}),
+    ])
+    output = await langfuse_eval.run_langgraph_pipeline(item=_LocalItem(case, suite="intent"), suite="intent")
+    assert output["mode"] == "intent_chain"
+
+
+@pytest.mark.asyncio
+async def test_rejection_cases_keep_main_graph_for_user_visible_reply(monkeypatch: pytest.MonkeyPatch) -> None:
+    """拒绝验收要检查面向用户的拒绝回复与“未提交后端”，只有主图（render / fallback）能给出。"""
+    def _intent_chain_forbidden(**_: object) -> None:
+        raise AssertionError("rejection case must run the main graph")
+
+    monkeypatch.setattr(intent_runner, "build_intent_graph", _intent_chain_forbidden)
+    monkeypatch.setattr(langfuse_eval, "build_main_graph", lambda _cp: _ReplayGraph())
+    monkeypatch.setattr(langfuse_eval, "TickerClientHttpx", lambda: SimpleNamespace(
+        list_counterparty=AsyncMock(return_value=[]),
+    ))
+    monkeypatch.setattr(langfuse_eval, "_graph_callbacks", lambda: [])
+    case = GoldenCase(id="intent-swap-reject", category="intent/swap", type="negative", turns=[
+        TurnSpec(send_text="卖出 -100 股", at_bot=True, expected={
+            "product_type": "swap", "intent": "place_order_request", "rejection": "non_positive_quantity",
+        }),
+    ])
+    output = await langfuse_eval.run_langgraph_pipeline(item=_LocalItem(case, suite="intent"), suite="intent")
+    assert output["mode"] == "main_graph"
+    remote = SimpleNamespace(
+        input={"send_text": "卖出 -100 股", "at_bot": True, "sub_scenes": []},
+        expected_output={"expected": {"rejection": "non_positive_quantity"}, "sub_scenes": []},
+    )
+    assert (await langfuse_eval.run_langgraph_pipeline(item=remote, suite="intent"))["mode"] == "main_graph"

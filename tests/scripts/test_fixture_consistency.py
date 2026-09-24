@@ -199,7 +199,8 @@ def _intent_case(**overrides: object) -> dict:
             {
                 "send_text": "确认平仓",
                 "at_bot": False,
-                "quote_previous": True,
+                "quote_content": "以下平仓申请，请核对详情后确认：单号：CO-20260506-DEAF117C 请引用本消息回复【确认平仓】",
+                "prev_product_type": "option_close",
                 "expected": {"product_type": "option_close", "intent": "close_order_confirm"},
             }
         ],
@@ -335,6 +336,55 @@ def test_instruments_only_allowed_for_swap(tmp_path: Path) -> None:
     })
     errors = _validate_intent(tmp_path, [case])
     assert any("instruments is only supported for product_type 'swap'" in error for error in errors)
+
+
+# ── 意图集冻结上下文：quote_content / history / prev_product_type ──
+
+
+def test_intent_case_may_still_replay_previous_reply(tmp_path: Path) -> None:
+    """未冻结的多轮用例仍走主图 + mock 回放（与冻结用例并存）。"""
+    case = _intent_case()
+    for field_name in ("quote_content", "prev_product_type"):
+        case["sub_scenes"][0].pop(field_name)
+    case["sub_scenes"][0]["quote_previous"] = True
+    assert _validate_intent(tmp_path, [case]) == []
+
+
+def test_intent_case_rejects_mixing_frozen_context_and_replay(tmp_path: Path) -> None:
+    """一条用例要么全部冻结、要么回放；混用时冻结的上下文会在回放模式下被静默忽略。"""
+    case = _intent_case()
+    case["sub_scenes"].append({
+        "send_text": "确认撤单",
+        "quote_previous": True,
+        "expected": {"product_type": "option_close", "intent": "close_order_cancel_confirm"},
+    })
+    errors = _validate_intent(tmp_path, [case])
+    assert any("mixes frozen context" in e for e in errors), errors
+
+
+def test_intent_case_allows_quote_previous_false(tmp_path: Path) -> None:
+    assert _validate_intent(tmp_path, [_intent_case(quote_previous=False)]) == []
+
+
+def test_intent_case_accepts_frozen_history(tmp_path: Path) -> None:
+    case = _intent_case()
+    case["sub_scenes"][0]["history"] = [
+        {"role": "user", "content": "我想平仓"},
+        {"role": "assistant", "content": "以下是您的期权持仓："},
+    ]
+    assert _validate_intent(tmp_path, [case]) == []
+
+
+def test_intent_case_rejects_malformed_frozen_context(tmp_path: Path) -> None:
+    case = _intent_case(quote_content="")
+    case["sub_scenes"][0]["history"] = [{"role": "bot", "content": "x"}, {"role": "user", "content": ""}, "x"]
+    case["sub_scenes"][0]["prev_product_type"] = "unknown"
+    errors = _validate_intent(tmp_path, [case])
+    assert any("quote_content" in e and "non-empty" in e for e in errors), errors
+    assert any("history[0]" in e and "role" in e for e in errors), errors
+    assert any("history[1]" in e and "content" in e for e in errors), errors
+    assert any("history[2]" in e for e in errors), errors
+    assert any("prev_product_type" in e for e in errors), errors
 
 
 def test_checker_runs_as_documented_script_without_pythonpath(tmp_path: Path) -> None:
