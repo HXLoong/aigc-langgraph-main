@@ -450,6 +450,7 @@ def test_real_definitions_declare_suites() -> None:
         "response-not-contains": "business",
         "intent-match": "intent",
         "instrument-match": "intent",
+        "rejection-match": "intent",
     }
 
 
@@ -511,9 +512,33 @@ def test_upload_evaluator_cli_binds_only_intent_evaluator_for_intent_dataset(
     assert upload_evaluators.main() == 0
 
     lines = capsys.readouterr().out.splitlines()
-    assert "Configured Evaluators: 2" in lines
+    assert "Configured Evaluators: 3" in lines
     assert "Suite: intent" in lines
     assert "  Name: intent-match" in lines
     assert "  Name: instrument-match" in lines
     assert "    Name: golden-intent-match:intent-swap" in lines
     assert "    Name: golden-instrument-match:intent-swap" in lines
+
+
+def test_dataset_evaluator_metadata_excludes_instrument_scoring_without_labels(monkeypatch):
+    api = FakeEvaluatorApi()
+    monkeypatch.setattr(api, 'get_dataset', lambda name: {
+        'id': 'option-dataset', 'name': name,
+        'metadata': {'suite': 'intent', 'evaluator_names': ['intent-match']},
+    })
+    results = sync_evaluators(api, dataset_name='intent-option', suite='intent', apply=True)
+    assert [r.definition.name for r in results] == ['intent-match']
+    assert [r['name'] for r in api.created_rules] == ['golden-intent-match:intent-option']
+
+
+def test_dataset_evaluator_metadata_cannot_cross_suite(monkeypatch):
+    import pytest
+
+    api = FakeEvaluatorApi()
+    monkeypatch.setattr(api, 'get_dataset', lambda name: {
+        'id': 'option-dataset', 'name': name,
+        'metadata': {'suite': 'intent', 'evaluator_names': ['response-contains']},
+    })
+    with pytest.raises(ValueError, match='Evaluator'):
+        sync_evaluators(api, dataset_name='intent-option', suite='intent', apply=True)
+    assert not api.created_evaluators and not api.created_rules

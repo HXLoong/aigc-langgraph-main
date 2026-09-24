@@ -49,7 +49,7 @@ Java 负责精确匹配、标的工具调用、多候选处理、权限与市场
 |---|---|
 | 删除 | `app/subgraphs/ticker/`（`graph` / `resolver` / `tools` / `models` / `context` / `__init__`，共 6 文件）、`app/prompts/ticker/`（`infer_code` / `judge_type` / `rank` / `tokenize`）、`tests/subgraphs/ticker/`（14 个测试）、~~`tests/subgraphs/swap/test_ticker_binding.py`~~、~~`scripts/probe_ticker_e2e.py`~~（删除线 = 已删除路径，供 lint 跳过） |
 | 收缩 | PromptSpec 注册表 20 → **15**（ADR 0023 D5 第三批的 ticker 4 个随之注销）；`swap/select_ticker.py` 改为只映射引用选择 |
-| 遗留（待裁决） | `app/tools/ticker_client.py` 在 `app/` 内已无调用方（仅 `app/tools/__init__.py` 导出），去留待定；`app/config.py` 的 `ticker_mysql_*` / `securities_instrument_*` 死配置已于 2026-09-22 清理 |
+| 保留（2026-09-23 裁决） | `app/tools/ticker_client.py` 继续供 `scripts/local_eval.py` 的 `LocalJavaMessages.prepare` 获取按群、用户、业务类型授权的交易对手列表；交易图不调用它进行本地标的识别。相关客户端契约测试继续保留；`app/config.py` 的 `ticker_mysql_*` / `securities_instrument_*` 死配置已于 2026-09-22 清理 |
 | 追加清理（2026-09-22） | 节点调试注册表 `app/node_execution/registry.py` 与工作台 `harness/node_registry.py` 移除 ticker 命名空间，并对齐 09-20 后的询价 / 平仓阶段（`inquiry_normalize` / `pc_candidates`）；此前主分支因该注册表仍 import 已删除的 ticker 子图而无法启动，CI 关闭期间未被发现 |
 
 ### D5 · 验证口径

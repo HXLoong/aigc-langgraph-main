@@ -233,19 +233,21 @@ def build_overview(case: GoldenCase) -> str:
     return "\n".join(lines)
 
 
-#: B 方言现役文件（ADR 0024 D6 并入默认发现）
+#: B 方言历史参考集；仅在显式选择时加载（ADR 0030）。
 UNIFIED_FIXTURE_NAME = "unified_golden.jsonl"
 
 
-def discover_fixtures(root: Path = Path("tests/fixtures")) -> list[Path]:
-    """现役数据源：categories/*.jsonl（A）+ 根目录 unified_golden.jsonl（B，存在即纳入）。"""
+def discover_fixtures(
+    root: Path = Path("tests/fixtures"), *, include_unified: bool = False,
+) -> list[Path]:
+    """默认只读 categories；include_unified 显式纳入同级历史参考集。"""
     if root.name == "categories":
         categories, fixtures_root = root, root.parent
     else:
         categories, fixtures_root = root / "categories", root
     paths = sorted(categories.glob("*.jsonl"))
     unified = fixtures_root / UNIFIED_FIXTURE_NAME
-    if unified.is_file():
+    if include_unified and unified.is_file():
         paths.append(unified)
     return paths
 
@@ -254,15 +256,24 @@ def load_golden(
     paths: Sequence[Path] | Path | None = None,
     *,
     root: Path = Path("tests/fixtures"),
+    include_unified: bool = False,
 ) -> list[GoldenCase]:
+    """加载所选文件；include_unified 追加 root 下的参考集，同一路径只追加一次。"""
     fixture_paths: list[Path]
     if paths is None:
-        fixture_paths = discover_fixtures(root)
+        fixture_paths = discover_fixtures(root, include_unified=include_unified)
     else:
         raw_paths = [paths] if isinstance(paths, Path) else list(paths)
         fixture_paths = []
         for path in raw_paths:
             fixture_paths.extend(sorted(path.glob("*.jsonl")) if path.is_dir() else [path])
+        if include_unified:
+            fixtures_root = root.parent if root.name == "categories" else root
+            unified = fixtures_root / UNIFIED_FIXTURE_NAME
+            if unified.is_file() and unified.resolve() not in {
+                path.resolve() for path in fixture_paths
+            }:
+                fixture_paths.append(unified)
 
     cases: list[GoldenCase] = []
     for path in fixture_paths:

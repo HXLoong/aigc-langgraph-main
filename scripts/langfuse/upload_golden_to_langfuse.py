@@ -9,7 +9,7 @@ import json
 import logging
 import os
 import sys
-from dataclasses import dataclass
+import uuid
 from pathlib import Path
 from typing import Any
 
@@ -57,7 +57,26 @@ build_input = dataset_input
 build_expected = dataset_expected
 
 
-def _clear_dataset(dataset_name: str, *, base_url: str | None = None) -> None:
+def dataset_item_id(dataset_name: str, case_id: str) -> str:
+    """Langfuse Item ID 在项目内唯一；不同套件不得相互搬移或覆盖同名案例。"""
+    return str(uuid.uuid5(
+        uuid.NAMESPACE_URL,
+        f"https://github.com/GZTL-AI/aigc-langgraph/datasets/{dataset_name}/{case_id}",
+    ))
+
+
+def build_dataset_metadata(cases: list[GoldenCase], *, suite: str) -> dict[str, Any]:
+    names = ["response-contains", "response-contains-any", "response-not-contains"]
+    if suite == "intent":
+        names = ["intent-match"]
+        if any(turn.expected.get("instruments") for case in cases for turn in case.turns):
+            names.append("instrument-match")
+        if any(turn.expected.get("rejection") for case in cases for turn in case.turns):
+            names.append("rejection-match")
+    return {"suite": suite, "evaluator_names": names}
+
+
+def _clear_dataset(dataset_name: str) -> None:
     import httpx
 
     public_key = os.environ.get("LANGFUSE_PUBLIC_KEY", "")
@@ -298,8 +317,10 @@ def main() -> int:
 
     from langfuse import Langfuse
 
-    langfuse = Langfuse(base_url=base_url)
-    dataset = langfuse.create_dataset(name=dataset_name)
+    langfuse = Langfuse()
+    dataset = langfuse.create_dataset(
+        name=args.dataset_name, metadata=build_dataset_metadata(cases, suite=suite),
+    )
     print(f"创建或复用 Dataset：{dataset.name}")
 
     success = 0
@@ -307,8 +328,8 @@ def main() -> int:
     for case in cases:
         try:
             langfuse.create_dataset_item(
-                id=case.id,
-                dataset_name=dataset_name,
+                id=dataset_item_id(args.dataset_name, case.id),
+                dataset_name=args.dataset_name,
                 input=build_input(case),
                 expected_output=build_expected(case),
                 metadata=_metadata(case, suite=suite, backend=backend),

@@ -20,13 +20,14 @@ LangGraph 只把用户原文里的标的表达逐字送给后端（`docs/backend
 {"caseNo":"intent-swap-instrument-…","category":"intent/swap","type":"positive","source":"derived:swap_test_fuzzy_target_recog_data#…",
  "send_text":"港股市价买一百万京东 11125测试短名（张天琪专用）","at_bot":true,"quote_previous":false,
  "expected":{"product_type":"swap","intent":"place_order_request",
-             "instruments":[{"expression":["京东"],"transaction_type":["HK_STOCK","SH_HK_CONNECT","SZ_HK_CONNECT"]}]},
+             "instruments":[{"expression":["京东"],"transaction_type":["HK_STOCK"]}]},
  "sub_scenes":[],"reference":{"backend_codes":["9618.HK","89618.HK"]}}
 ```
 
 - `instruments[i].expression`：任一候选命中即可（"金力永磁300748.sz" / "300748.sz" / "金力永磁"）；按订单无序匹配，
   订单数以业务卡片 `标的代码：` 行数为准（拆单同标的重复出现）
-- `instruments[i].transaction_type`：只在原文有 港股 / A股 / 美股 / 深港通 / 沪港通 时断言；港股口语允许三种港股通取值
+- `instruments[i].transaction_type`：只在原文有 港股 / A股 / 美股 / 深港通 / 沪港通 时断言；只说“港股”严格要求 HK_STOCK；明确“沪港通”/“深港通”分别要求 SH_HK_CONNECT / SZ_HK_CONNECT（2026-09-23 用户确认）
+- 名称与代码混写继续接受完整表达、代码或名称任一候选（2026-09-23 用户确认）。
 - `reference.backend_codes`：原业务卡片 / 候选列表里的后端码，只供人工核对，不参与评分
 - 评估器：`det_instrument_match_pass`（`harness/evaluators/instrument_match.py`）+ `det_intent_match_pass`
 

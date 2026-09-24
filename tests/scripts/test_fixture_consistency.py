@@ -31,6 +31,24 @@ def test_valid_case_passes(tmp_path: Path) -> None:
     assert _validate(tmp_path, [_valid_case()]) == []
 
 
+def test_quote_reference_shape_is_checked_without_live_quote(tmp_path: Path) -> None:
+    case = _valid_case(expected={"confirm": {"orderList": [{
+        "orderId": {"$ref": "quote.order_id"},
+    }]}})
+    assert _validate(tmp_path, [case]) == []
+    case["expected"]["confirm"]["orderList"][0]["orderId"] = {"$ref": "outputs.orderId"}
+    errors = _validate(tmp_path, [case])
+    assert any("$ref" in error and "confirm.orderList[0].orderId" in error for error in errors)
+
+
+def test_subscene_reference_selector_is_validated(tmp_path: Path) -> None:
+    case = _valid_case(sub_scenes=[{"send_text": "选第二笔", "expected": {"place_params": {
+        "orderList": [{"orderId": {"$ref": "quote.order_id", "position": 0}}],
+    }}}])
+    errors = _validate(tmp_path, [case])
+    assert any("sub_scenes[0]" in error and "$ref" in error for error in errors)
+
+
 def test_b_dialect_fields_rejected_in_categories(tmp_path: Path) -> None:
     """categories/ 只放 A 方言；conversation / raw_content 属于 unified_golden.jsonl（B 方言）。"""
     case = _valid_case()
@@ -317,3 +335,18 @@ def test_instruments_only_allowed_for_swap(tmp_path: Path) -> None:
     })
     errors = _validate_intent(tmp_path, [case])
     assert any("instruments is only supported for product_type 'swap'" in error for error in errors)
+
+
+def test_checker_runs_as_documented_script_without_pythonpath(tmp_path: Path) -> None:
+    import os
+    import subprocess
+    import sys
+
+    _validate(tmp_path, [_valid_case()])
+    env = {key: value for key, value in os.environ.items() if key != "PYTHONPATH"}
+    result = subprocess.run(
+        [sys.executable, str(Path(checker.__file__).resolve()), "--root", str(tmp_path)],
+        cwd=tmp_path, env=env, capture_output=True, text=True, check=False,
+    )
+    assert result.returncode == 0, result.stderr
+    assert "fixture consistency: PASS" in result.stdout

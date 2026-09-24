@@ -104,7 +104,7 @@ docs/work-plan.md            # 三条主线的现状与待办（取代 m3-m4-roa
 docs/on-call-runbook.md      # 上线 on-call SOP
 tests/                       # 2900+ passed（2026-09-22；按 graph / nodes / subgraphs / api_wire / harness / prompts / scripts 归位）
 tests/fixtures/              # categories/（A 方言业务集，6 文件 / 389 条）+ intent/（意图集：逐轮 product_type/intent，只调 LLM + mock 后端）
-                             # + unified_golden.jsonl（B 方言，921 条，harness 默认并入）+ 历史归档见 docs/archive/fixtures/old_typing/
+                             # + unified_golden.jsonl（B 方言，921 条，历史参考集，显式 --include-unified 加载）+ 历史归档见 docs/archive/fixtures/old_typing/
 ```
 
 ## 团队工具链：Claude Code 与 Codex 共用一份纪律

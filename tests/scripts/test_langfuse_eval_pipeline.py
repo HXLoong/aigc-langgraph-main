@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from types import SimpleNamespace
+from unittest.mock import AsyncMock
 from uuid import UUID
 
 import pytest
@@ -208,6 +209,9 @@ async def test_pipeline_tags_carry_suite(monkeypatch: pytest.MonkeyPatch) -> Non
     monkeypatch.setattr(langfuse_eval, "build_main_graph", lambda _cp: graph)
     monkeypatch.setattr(langfuse_eval, "_TURN_INTERVAL_SECONDS", 0)
     monkeypatch.setattr(langfuse_eval, "_graph_callbacks", lambda: [])
+    monkeypatch.setattr(langfuse_eval, "TickerClientHttpx", lambda: SimpleNamespace(
+        list_counterparty=AsyncMock(return_value=[]),
+    ))
     item = SimpleNamespace(
         id="intent-swap-1",
         input={"turns": [{"send_text": "市价买一百万京东"}]},

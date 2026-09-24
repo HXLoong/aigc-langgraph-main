@@ -88,11 +88,7 @@ def _parse_labels(labels_str: str) -> tuple:
 
 
 def _parse_metrics(text: str) -> dict[str, dict[tuple, float]]:
-    """parse prometheus exposition → counter[name][labels_tuple] = value。
-
-    只处理 counter 行；histogram 的 _sum / _count / _bucket 暂不在快照范围
-    （历史 P95 看 latency 不在 切流决策 critical path）。
-    """
+    """保留 counter 和经典 histogram 样本，供文本及 JSON 快照使用。"""
     counters: dict[str, dict[tuple, float]] = defaultdict(dict)
     for line in text.splitlines():
         line = line.strip()
@@ -104,9 +100,6 @@ def _parse_metrics(text: str) -> dict[str, dict[tuple, float]]:
                 name, value_str = line.rsplit(" ", 1)
             except ValueError:
                 continue
-            # 跳过 histogram 衍生指标（_bucket / _sum / _count）
-            if name.endswith(("_bucket", "_sum", "_count")):
-                continue
             try:
                 counters[name][()] = float(value_str)
             except ValueError:
@@ -116,9 +109,6 @@ def _parse_metrics(text: str) -> dict[str, dict[tuple, float]]:
             name, rest = line.split("{", 1)
             labels_str, value_str = rest.split("}", 1)
         except ValueError:
-            continue
-        # 跳过 histogram 衍生指标（_bucket / _sum / _count）
-        if name.endswith(("_bucket", "_sum", "_count")):
             continue
         try:
             value = float(value_str.strip())
@@ -263,11 +253,49 @@ def _render_health_section(counters: dict[str, dict[tuple, float]]) -> list[str]
     return lines
 
 
+def _render_http_section(counters: dict[str, dict[tuple, float]]) -> list[str]:
+    lines = ["## HTTP 请求累计（单次快照，不代表滚动窗口通过率）"]
+    requests = counters.get("otc_agent_http_total", {})
+    total = sum(requests.values())
+    if total <= 0:
+        return [*lines, "  （无 HTTP 请求样本，错误率不可计算）"]
+    errors = sum(value for labels, value in requests.items()
+                 if dict(labels).get("status_class") == "5xx")
+    cascade = sum(value for labels, value in counters.get("otc_agent_fallback_total", {}).items()
+                  if dict(labels).get("reason") == "cascade_fail")
+    lines.extend([
+        f"  HTTP 请求累计: {total:g}",
+        f"  5xx: {errors:g} ({errors / total:.2%})",
+        f"  cascade_fail: {cascade:g} ({cascade / total:.2%})",
+    ])
+    return lines
+
+
+def _render_histogram_section(counters: dict[str, dict[tuple, float]]) -> list[str]:
+    lines = ["## Histogram 原始累计样本（_sum / _count / _bucket）"]
+    for name, samples in sorted(counters.items()):
+        if not name.endswith(("_bucket", "_sum", "_count")):
+            continue
+        for labels, value in sorted(samples.items()):
+            scope = dict(labels).get("node") or (
+                "端到端" if name.startswith("otc_agent_intent_latency_ms_") else "无节点标签"
+            )
+            label_text = ",".join(f'{key}="{val}"' for key, val in labels)
+            lines.append(f"  {name}{{{label_text}}} {value:g} [{scope}]")
+    if len(lines) == 1:
+        lines.append("  （无直方图数据）")
+    return lines
+
+
 def render_human(snap: MetricsSnapshot) -> str:
     lines: list[str] = []
     lines.append(
         f"=== LangGraph 指标快照 · {snap.timestamp} · host={snap.host} ==="
     )
+    lines.append("")
+    lines.extend(_render_http_section(snap.counters))
+    lines.append("")
+    lines.extend(_render_histogram_section(snap.counters))
     lines.append("")
     lines.extend(_render_node_section(snap.counters))
     lines.append("")

@@ -11,7 +11,7 @@
 ```
 tests/
 ├── conftest.py            # 全局 pytest 配置（仅占位；根纪律禁止用 autouse 绕过真实业务路径）
-├── fixtures/              # categories/（A 方言）+ unified_golden.jsonl（B 方言，harness 默认并入）+ README.md（历史归档已移至 docs/archive/fixtures/old_typing/）
+├── fixtures/              # categories/（A 方言）+ unified_golden.jsonl（B 方言，历史参考集，显式 --include-unified 加载）+ README.md（历史归档已移至 docs/archive/fixtures/old_typing/）
 ├── intent_fixtures.py / evidence_support.py / llm_guard.py   # 共享 mock 工厂与守卫（证据必须来自真实输入；去 LLM 化模块不得持有 LLM 工厂）
 ├── graph/                 # 主图：拓扑 / reducer / 路由纯函数 / RetryPolicy 读写清单 / 子图契约 / 确认路径
 ├── nodes/                 # 节点级测试（ingest / entry_route / render / fallback / persist ...）

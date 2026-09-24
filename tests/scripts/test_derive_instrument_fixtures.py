@@ -40,7 +40,7 @@ def test_fuzzy_name_with_market_hint() -> None:
     assert case["expected"]["product_type"] == "swap"
     assert case["expected"]["intent"] == "place_order_request"
     assert case["expected"]["instruments"] == [
-        {"expression": ["京东"], "transaction_type": ["HK_STOCK", "SH_HK_CONNECT", "SZ_HK_CONNECT"]}
+        {"expression": ["京东"], "transaction_type": ["HK_STOCK"]}
     ]
     assert case["reference"] == {"backend_codes": ["9618.HK"]}
     assert "review" not in case
@@ -53,10 +53,26 @@ def test_market_hint_absent_means_no_transaction_type_assertion() -> None:
 
 
 def test_market_hints_map_to_enum_candidates() -> None:
+    assert derive.market_candidates("港股买入比亚迪") == ["HK_STOCK"]
     assert derive.market_candidates("A股百济神州限价14买100w") == ["A_SHARE"]
     assert derive.market_candidates("美股网易，限价10") == ["US_STOCK"]
     assert derive.market_candidates("深港通买入比亚迪") == ["SZ_HK_CONNECT"]
+    assert derive.market_candidates("沪港通买入比亚迪") == ["SH_HK_CONNECT"]
     assert derive.market_candidates("市价买一百万京东") == []
+
+
+def test_reviewed_hong_kong_cases_require_direct_hk_market() -> None:
+    """用户裁决：只说港股不接受沪港通/深港通作为替代品种。"""
+    fixture = Path(__file__).resolve().parents[1] / "fixtures/intent/swap_instrument.jsonl"
+    checked = 0
+    for line in fixture.read_text().splitlines():
+        case = json.loads(line)
+        text = case["send_text"]
+        if "港股" in text and not any(hint in text for hint in ("沪港通", "深港通")):
+            checked += 1
+            assert all(item.get("transaction_type") == ["HK_STOCK"]
+                       for item in case["expected"]["instruments"]), case["caseNo"]
+    assert checked > 0
 
 
 def test_code_in_text_yields_code_name_and_combined_alternatives() -> None:
@@ -72,6 +88,17 @@ def test_code_in_text_yields_code_name_and_combined_alternatives() -> None:
 
     case = _derive(_case("AAPL苹果市价 卖空100股", ["AAPL.O"]))
     assert case["expected"]["instruments"] == [{"expression": ["AAPL苹果", "AAPL", "苹果"]}]
+
+
+def test_spaced_exchange_and_name_preserve_all_approved_alternatives() -> None:
+    case = _derive(_case("1810 HK 小米集团 3080000 @15.6647", ["1810.HK"]))
+    expressions = case["expected"]["instruments"][0]["expression"]
+    assert expressions == ["1810 HK 小米集团", "1810 HK", "1810", "小米集团"]
+
+
+def test_spaced_trading_word_is_not_an_exchange_suffix() -> None:
+    case = _derive(_case("1810 MKT 买入100股", ["1810.HK"]))
+    assert case["expected"]["instruments"] == [{"expression": ["1810"]}]
 
 
 def test_split_orders_of_one_instrument_repeat_the_expression() -> None:

@@ -68,8 +68,23 @@ async def swap_extract_candidates(state: SwapPlaceState) -> dict[str, Any]:
         await get_qwen_complex().with_structured_output(CANDIDATE_MODEL).ainvoke(messages)
     )
     verify_candidates(candidates, evidence_sources(state))
+    before = candidates.model_dump(by_alias=True)
     candidates = constrain_candidates(candidates, evidence_sources(state))
-    return {"sp_candidates": candidates.model_dump(by_alias=True), "sp_prompt_name": prompt_name}
+    after = candidates.model_dump(by_alias=True)
+    changes = []
+    if len(before["orderList"]) != len(after["orderList"]):
+        changes.append({"field": "orderList", "change": "scope_restricted"})
+    else:
+        for index, (old, new) in enumerate(zip(before["orderList"], after["orderList"], strict=True)):
+            for field, value in new.items():
+                if old.get(field) != value:
+                    changes.append({"field": f"orderList.{index}.{field}",
+                                    "change": "omitted" if value is None else "evidence_scoped"})
+    return {
+        "sp_candidates": after, "sp_prompt_name": prompt_name,
+        "trace": [TraceEntry(node="swap_extract_candidates", decision=f"constraints={len(changes)}",
+                             llm_output={"prompt_name": prompt_name, "candidate_changes": changes})],
+    }
 
 
 @safe_node

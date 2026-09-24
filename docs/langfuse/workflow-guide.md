@@ -437,3 +437,9 @@ python scripts/langfuse/langfuse_eval.py --dataset swap_prod_data --concurrency 
   `reply-check` 名写回（此前误用 `otc-option-judge`）
 - 业务集（`categories/`）依赖 Java 后端与授权账号，只在开发 / staging 环境用 `--dataset business-*` 或
   `scripts/local_eval.py` 跑，不进 CI；依赖矩阵见 `docs/testing/README.md` §一a
+
+### 显式选择 Judge 调用入口
+
+默认 `EVAL_JUDGE_PROVIDER=anthropic` 保留既有 Anthropic 兼容入口和凭证。若团队只提供已验证的 OpenAI 兼容模型网关，可显式设置 `EVAL_JUDGE_PROVIDER=standard`，使用 `QWEN_API_BASE`、`QWEN_API_KEY`、`QWEN_MODEL_STANDARD` 和同一 Judge 提示词，通过结构化输出返回评分。不会在鉴权或网络失败后自动切换入口；无效配置直接报错。标准入口的 Score metadata 记录 provider，报告应同时记录实际模型。Judge 结果用于业务评估，不能替代确定性断言、HTTP 写回与真实交易状态验收。
+
+意图数据集的 `metadata.evaluator_names` 来自实际断言：普通意图只绑定 `intent-match`；标的集另绑 `instrument-match`；明确拒绝集另绑 `rejection-match`。不要将不适用的评分器绑定到整个项目。上传器使用数据集命名空间生成稳定 Item ID，原始案例 ID 保留在 metadata，防止不同数据集相互覆盖。

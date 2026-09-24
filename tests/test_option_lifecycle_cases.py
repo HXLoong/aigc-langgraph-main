@@ -15,7 +15,10 @@ def test_option_lifecycle_cases_cover_final_confirmation_and_cancel():
     ):
         assert case_id in cases
         turns = cases[case_id].turns
-        assert len(turns) == 6
+        assert len(turns) == (7 if product == "option_close" else 6)
+        if product == "option_close":
+            assert turns[0].expected["intent"] == "close_order_query"
+            assert "{{previous_holding_contract_id:1}}" in turns[1].send_text
         assert [turn.expected["intent"] for turn in turns[-4:]] == intents
         assert all(turn.expected["product_type"] == product for turn in turns)
         assert all(turn.response_contains for turn in turns)

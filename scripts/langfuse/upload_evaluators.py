@@ -235,6 +235,14 @@ def sync_evaluators(
         dataset_id = str(dataset.get("id") or "")
         if not dataset_id:
             raise RuntimeError(f"Dataset 缺少 id：{dataset_name}")
+        metadata = dataset.get("metadata") or {}
+        selected = metadata.get("evaluator_names") if isinstance(metadata, dict) else None
+        if selected is not None:
+            available = {definition.name for definition in definitions}
+            if (not isinstance(selected, list) or not selected
+                    or any(not isinstance(name, str) or name not in available for name in selected)):
+                raise ValueError(f"Dataset Evaluator 选择不属于当前套件：{dataset_name}")
+            definitions = tuple(item for item in definitions if item.name in selected)
 
     remote_evaluators = api.list_evaluators()
     remote_rules = api.list_evaluation_rules()

@@ -1,6 +1,6 @@
 # otc-agent On-Call Runbook · 值班手册（草稿）
 
-> **版本**：v0.1 草稿（2026-05-12）
+> **版本**：v0.3 草稿（2026-09-24）
 > **状态**：草稿；真实回切演练完成后基于实测更新到 v1.0（演练计划见 §8）
 > **适用范围**：客户现场生产环境的 LangGraph + 后台依赖（Java 后端 / DeepSeek-v4-pro / LangFuse / MySQL）
 > **维护**：图灵科技工程团队 + 客户企微管理员
@@ -44,7 +44,7 @@
 
 > **不要为 P2 触发回滚**——回滚的恢复成本高于个别 case 错误。
 >
-> 表中 `M2 baseline` 即 `app/observability/alerts.py` 的 `M2_BASELINE_P95_MS` 常量（历史命名，取当前模型口径重测值；退出门见 [ADR 0030](./adr/0030-goal-restatement-native-langgraph-dataset-eval-harness.md) D3）。
+> 表中 `M2 baseline` 由环境变量 `M2_BASELINE_P95_MS` 配置（历史命名）。2026-09-24 本地 DeepSeek dry-run 参考 P95 为 **8554ms**，默认 P1 阈值为 **25662ms**（×3，持续 10 分钟）。生产须按相同部署拓扑测量并覆盖此环境变量；本次写入拦截、业务断言 2/391 PASS、5xx 0/417、cascade 41/417，不代表生产验收通过。上线观察仍按 [ADR 0030](./adr/0030-goal-restatement-native-langgraph-dataset-eval-harness.md) D3 的 ×1.5 和 7 天窗口单独验收。
 
 ---
 
@@ -240,6 +240,7 @@
 |---|---|---|---|
 | v0.1 草稿 | 2026-05-12 | 图灵科技团队 | 初版草稿，含 5 类故障 playbook + 紧急回滚步骤 + 演练计划 |
 | v0.2 | 2026-09-22 | 图灵科技团队 | 去掉里程碑 / 任务码口径（ADR 0030）；回切前提改按 ADR 0024 D7 |
+| v0.3 草稿 | 2026-09-24 | 图灵科技团队 | 回填当前模型 dry-run 参考基线，明确生产覆盖和验收边界；尚未执行真实回切演练 |
 | v1.0 | 待定（回切演练后） | 图灵科技团队 | 基于演练实测更新 |
 
 ---

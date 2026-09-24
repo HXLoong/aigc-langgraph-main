@@ -37,6 +37,7 @@ USE_MYSQL_CHECKPOINTER=false REQUEST_IDEMPOTENCY=false ENABLE_LANGFUSE=false pyt
 # 联调服务可使用 ENVIRONMENT=staging uvicorn app.main:app --host 127.0.0.1 --port 8201
 python scripts/local_eval.py --base-url http://127.0.0.1:8201 --data tests/fixtures/categories --case case-025 --concurrency 1
 # 统一验收去掉 --case，只跑显式 categories；不默认并入 unified。
+# harness run 默认范围相同；历史参考集仅 --include-unified 或 --data 显式选择。
 
 # 6. Langfuse Dataset Experiment
 python scripts/langfuse/langfuse_eval.py --dataset golden_option_inquiry_case --ids case-022 --concurrency 1

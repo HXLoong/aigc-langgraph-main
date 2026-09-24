@@ -86,6 +86,54 @@ async def test_direct_contract_yuan_and_pov_are_normalized_by_code(monkeypatch):
     assert row["closeOrderPovRatio"] == 15 and row["closeOrderType"] == "POV"
 
 
+@pytest.mark.parametrize("selector,field", [
+    ("OPT-A", "internalTradeId"), ("CO-20260924-AAAAAAAA", "orderId"),
+])
+async def test_quoted_order_identity_selects_its_own_balance_not_same_contract_rows(
+    monkeypatch, selector, field,
+):
+    quote = "序号：8\n单号：CO-20260924-AAAAAAAA\n合约编号：OPT-A"
+    _, _, submit = mock_close(monkeypatch, [{
+        field: evidence(selector), "closeOrderNotionalDelta": evidence("平一半"),
+        "closeOrderType": evidence("市价"),
+    }], [
+        {"orderId": None, "contractCode": "OPT-A", "availableNotional": 10000000},
+        {"orderId": "CO-20260924-BBBBBBBB", "contractCode": "OPT-A", "availableNotional": 9000000},
+        {"orderId": "CO-20260924-AAAAAAAA", "contractCode": "OPT-A", "availableNotional": 4000000},
+    ])
+    result = await pc.close_place_close({
+        "raw_text": selector + "平一半 市价", "quote_content": quote,
+    })
+    assert result.get("error") is None
+    row = submit.call_args.kwargs["close_order_req_vo"]["closeOrderList"][0]
+    assert row["orderId"] == "CO-20260924-AAAAAAAA"
+    assert row["internalTradeId"] == "OPT-A"
+    assert row["closeOrderNotionalDelta"] == "2000000"
+
+
+async def test_quoted_order_contract_conflicting_with_query_is_rejected(monkeypatch):
+    quote = "序号：8\n单号：CO-20260924-AAAAAAAA\n合约编号：OPT-A"
+    _, _, submit = mock_close(monkeypatch, [{
+        "orderId": evidence("序号8"), "closeOrderNotionalDelta": evidence("平一半"),
+    }], [{"orderId": "CO-20260924-AAAAAAAA", "contractCode": "OPT-B", "availableNotional": 4000000}])
+    result = await pc.close_place_close({"raw_text": "序号8平一半", "quote_content": quote})
+    assert result.get("error") is not None
+    submit.assert_not_called()
+
+
+async def test_contract_with_multiple_quoted_orders_remains_ambiguous(monkeypatch):
+    quote = ("序号：1\n单号：CO-20260924-AAAAAAAA\n合约编号：OPT-A\n"
+             "序号：2\n单号：CO-20260924-BBBBBBBB\n合约编号：OPT-A")
+    _, _, submit = mock_close(monkeypatch, [{"internalTradeId": evidence("OPT-A")}], [
+        {"orderId": "CO-20260924-AAAAAAAA", "contractCode": "OPT-A"},
+        {"orderId": "CO-20260924-BBBBBBBB", "contractCode": "OPT-A"},
+        {"orderId": None, "contractCode": "OPT-A"},
+    ])
+    result = await pc.close_place_close({"raw_text": "平掉 OPT-A", "quote_content": quote})
+    assert result.get("error") is not None
+    submit.assert_not_called()
+
+
 @pytest.mark.asyncio
 async def test_multiple_unbound_errors_do_not_spread_supplement(monkeypatch):
     mock_close(monkeypatch, [{"closeOrderNotionalDelta": evidence("200万")}])

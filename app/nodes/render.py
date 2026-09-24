@@ -26,6 +26,7 @@ _SWAP_MISSING_CONTEXT_REPLY = (
     "请求信息不完整，暂时无法调用互换服务，请重新发送原消息或联系运营。"
 )
 _SWAP_NO_RESULT_REPLY = UNCERTAIN_REPLY
+_SWAP_NON_POSITIVE_QUANTITY_REPLY = "委托数量必须大于零，请核对后重新发送。"
 
 
 def _default_reply() -> str:
@@ -60,6 +61,9 @@ def _render_branch(state: AgentState) -> tuple[dict[str, Any], str]:
         err_type = err.type if hasattr(err, "type") else (
             err.get("type") if isinstance(err, dict) else None
         )
+    if product_type == "swap" and err_type == "NonPositiveQuantityError":
+        emit_fallback(reason="swap_non_positive_quantity")
+        return {"reply_text": _SWAP_NON_POSITIVE_QUANTITY_REPLY}, "error:swap_non_positive_quantity"
     if is_option and err_type == "MissingBackendContextError":
         emit_fallback(reason="option_backend_missing_context")
         return {"reply_text": _OPTION_MISSING_CONTEXT_REPLY}, "error:option_backend_missing_context"
