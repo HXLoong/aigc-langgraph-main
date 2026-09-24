@@ -18,6 +18,8 @@
 
 ### D1 · 每个 LLM 节点声明一个 `PromptSpec`（`app/prompts/spec.py`）
 
+节点声明不授予额外模型请求额度；同一消息的所有 PromptSpec 共用 [ADR 0031](./0031-single-model-request-per-message.md) 的一次请求上限。
+
 ```python
 SPEC = register(PromptSpec(
     category="option_close", name="holding_query",

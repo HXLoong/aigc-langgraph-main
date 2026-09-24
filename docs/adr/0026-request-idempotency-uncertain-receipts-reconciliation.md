@@ -2,7 +2,7 @@
 
 - 状态：已采纳（追认，落地 commit `67f74c3` / `8249510`）
 - 日期：2026-09-18
-- 关系：细化 [ADR 0024](./0024-langgraph-native-rearchitecture.md) D4；补充 [ADR 0021](./0021-text-confirm-replaces-interrupt.md) 确认链路的回执语义；错误分类进入 [ADR 0019](./0019-incident-severity-thresholds.md) 告警
+- 关系：D2 模型重试规则由 [ADR 0031](./0031-single-model-request-per-message.md) 修订；细化 [ADR 0024](./0024-langgraph-native-rearchitecture.md) D4；补充 [ADR 0021](./0021-text-confirm-replaces-interrupt.md) 确认链路的回执语义；错误分类进入 [ADR 0019](./0019-incident-severity-thresholds.md) 告警
 - 作者：图灵科技 + Tony
 
 ## 背景
@@ -30,7 +30,7 @@ CLAUDE.md P0 纪律"业务代码不能掩盖后端真实响应"约束所有回�
 | 预算 | 默认 | 约束 |
 |---|---|---|
 | 整体请求 `request_timeout_seconds` | 60s | 最大 80s，必须早于 Java 90s |
-| LLM 单次 `llm_timeout_seconds` | 20s | SDK `max_retries=0`，重试由图层 RetryPolicy 承担（ADR 0024 D3） |
+| LLM 单次 `llm_timeout_seconds` | 20s | SDK 与图层均不重试 LLM；全链路最多一次请求（[ADR 0031](./0031-single-model-request-per-message.md)，代码待重构） |
 | 业务工具 `backend_timeout_seconds` | 5s | GOATS / operate / set-intent 各自可配 |
 | 响应落库预留 `response_reserve_seconds` | 5s | 图预算 = 请求预算 − 预留 |
 

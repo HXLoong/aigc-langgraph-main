@@ -10,7 +10,7 @@
 
 ## IO 与错误
 
-- 纯计算及写类节点用 @safe_node；只读 IO 用 @io_node，并通过 add_io_node 注册 RetryPolicy。默认最多2次尝试，LLM SDK max_retries=0；写接口不自动重试。
+- 纯计算、LLM 和写类节点用 @safe_node；仅独立的后端只读查询用 @io_node + add_io_node 注册 RetryPolicy。LLM 的 SDK、图层与外层封装均零重试；后端查询失败不得连带重跑模型。单消息额度与失败边界见 ADR 0031；当前代码迁移状态见 docs/work-plan.md。
 - add_io_node 在最后一次可重试失败时由原节点返回 ErrorInfo，沿原图边完成汇合、回复和审计；with_error_handler=False 才在耗尽后继续抛出。主图与并行错误收尾由 tests/graph/test_retry_recovery.py 守护。
 - 错误由 ErrorInfo 和 cascade 路由处理；后端查询失败不能伪装成空记录继续交易。
 - 条件路由为纯函数，错误优先转兜底：主图 `_route_after_intent` 等转 `fallback` / `render`，子图内 `_route_after_<p>_intent` 转 `<p>_unknown`（先查 `has_error`）；副作用只在节点里执行。
@@ -18,6 +18,8 @@
 - 每条消息按既有产品与意图优先级进入一个业务分支，该分支识别出的多笔订单统一使用本轮动作；混合措辞不按分句拆成不同动作，也不新增多动作识别门禁。例如识别为撤单申请后，A、B 两笔订单都按撤单申请处理。原有身份、归属、状态和确认校验继续执行；提交保留原 messageId，遵守 Java 幂等与批量契约。
 
 ## 提示词
+
+- 新增或重构模型节点时先读 `docs/adr/0031-single-model-request-per-message.md`：主图与全部子图每消息最多一次真实模型请求，产品/意图/候选联合解析，附件批量输入；保留独立确定性节点，不逐行、逐图、逐订单追加模型调用。
 
 - 每个 LLM 节点声明 PromptSpec；模型使用 with_structured_output，字段说明由 Pydantic Field(description=) 提供。
 - 原文候选含 evidence/confidence/source；Code 验证原文并做单位/枚举/身份解析。禁止手工 JSON 容错或模型直接决定交易最终值。

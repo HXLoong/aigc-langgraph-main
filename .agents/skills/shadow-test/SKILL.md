@@ -40,7 +40,7 @@ python scripts/shadow_compare.py \
 
 ### Step 3：分析差异
 
-- `product_type` 不一致 → 一级路由（`app/nodes/intent_route.py`，ADR 0015）
+- `product_type` 不一致 → 一级路由（`app/nodes/intent_route.py`；联合解析目标见 ADR 0031）
 - `intent` 不一致 → 子图意图提示词
 - 参数不一致 → 子图 extract 节点与 Pydantic 模型
 - `tickers[i].*` 差异 → 结构性差异：LangGraph 的 `tickers` 是恒为空的兼容字段（标的识别归 Java，ADR 0025），无需排查；标的问题核对传给后端的原文

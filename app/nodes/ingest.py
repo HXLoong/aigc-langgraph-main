@@ -1,7 +1,7 @@
 """ingest 节点：从 Dify Workflow Run inputs 进入主图的薄入口。
 
-ADR 0001 D6 + ADR 0015 修订：ingest 仅做最低校验，不再设 product_type 默认值。
-product_type 由下游 `intent_route` 节点（ADR 0015 三层路由）负责。
+ADR 0001 D6：ingest 仅做最低校验，不再设 product_type 默认值。
+product_type 由下游 `intent_route` 节点（当前三层路由，联合解析目标见 ADR 0031）负责。
 """
 from __future__ import annotations
 

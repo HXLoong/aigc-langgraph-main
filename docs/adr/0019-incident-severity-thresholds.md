@@ -2,7 +2,7 @@
 
 - 状态：已采纳（阈值表与 `app/observability/alerts.py` 一致，由 CI lint 守护）
 - 日期：2026-05-12
-- 关系：与 [ADR 0030](./0030-goal-restatement-native-langgraph-dataset-eval-harness.md) D3 上线观察层互补
+- 关系：模型零重试的观察口径随 [ADR 0031](./0031-single-model-request-per-message.md) 重测；与 [ADR 0030](./0030-goal-restatement-native-langgraph-dataset-eval-harness.md) D3 上线观察层互补
 - 作者：图灵科技 + Tony
 
 ## 背景
@@ -33,7 +33,7 @@ P95 基准：当前模型（[ADR 0020](./0020-unify-all-llm-on-deepseek-v4-pro.m
 
 - 5xx 1% / 5 分钟，与退出门 0.1% 拉开十倍：故障升级关心突发，退出门关心稳态。
 - cascade 5% / 10 分钟定为 P1：降级路径给用户友好回复，不是服务崩溃。
-- LLM 失败 ≥ 10% / 5 分钟：大模型是外部依赖，失败冲高通常是上游故障；10% 约为重试后仍不通的水位。图片 / Excel 链路已接入独立视觉模型，形成第二个模型依赖，按模型拆分阈值为待办，重估前沿用本阈值。
+- LLM 失败 ≥ 10% / 5 分钟：大模型是外部依赖，失败冲高通常是上游故障；按 [ADR 0031](./0031-single-model-request-per-message.md) 关闭模型重试后，失败率需按单次请求重新测量，重估前沿用本阈值。图片使用独立视觉模型，按模型拆分阈值仍待验证。
 - 非白名单流量 ≥ 1 即时 P0：切流白名单外的任何流量意味着 Java 侧 `agentUrl` 配错，单条即可造成损失。
 - P95 × 3 / 10 分钟定为 P1：慢但未崩，10 分钟窗口区分抖动与卡死。
 - 单条错例定为 P2：不阻塞其他流量，避免值班被告警淹没。

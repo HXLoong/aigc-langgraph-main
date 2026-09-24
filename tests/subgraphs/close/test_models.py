@@ -33,7 +33,7 @@ def test_all_seven_intent_types_accepted(intent_type: str) -> None:
     ],
 )
 def test_non_close_intents_rejected(non_close_intent: str) -> None:
-    """ADR 0011 二次修订：close 子图只处理 close_order_* + unknown_intent。"""
+    """产品边界（ADR 0007 / 0031）：close 子图只处理 close_order_* + unknown_intent。"""
     with pytest.raises(ValidationError):
         CloseIntentOutput(type=non_close_intent, confidence=0.91, evidence=[{"text": "本轮意图模型测试输入", "origin": "raw"}])  # type: ignore[arg-type]
 

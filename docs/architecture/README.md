@@ -69,7 +69,7 @@ Java 后端业务接口 → 交易系统（标的识别、业务默认值、订�
 - `main.py`：`build_main_graph()` 组装主图，三个业务子图以原生子图嵌入；这是 `app/graph` 中唯一依赖业务节点的模块。
 - `state.py`：`AgentState` 按生命周期分层——本轮输入、会话记忆、业务对象（每轮由 `ingest` 重置）、工程字段（ADR 0024 D2）。
 - `business_params.py`：业务对象（place_params / cancel_params / confirm / query_filter / close_params）写入前的形状校验。
-- `safe_node.py` / `retry.py`：写类节点用 `@safe_node`，异常落 `state['error']`；只读 IO 节点用 `@io_node` + `add_io_node` 挂 `RetryPolicy`，写类节点永不自动重试。
+- `safe_node.py` / `retry.py`：当前只读 IO 节点用 `@io_node` + `add_io_node` 挂 `RetryPolicy`，写类节点不重试。[ADR 0031](../adr/0031-single-model-request-per-message.md) 已采纳 LLM 零重试与全链路一次请求目标，代码待重构；后端只读查询继续独立重试。
 - `cascade.py`：`has_error`，所有条件路由先判错再分流。
 
 ### 3. 业务节点（`app/nodes/`、`app/subgraphs/`）
@@ -79,7 +79,7 @@ Java 后端业务接口 → 交易系统（标的识别、业务默认值、订�
 | 子图 | 构成 |
 |---|---|
 | swap | 意图 / 下单（选对手 ‖ 选标的并行后汇合）/ 确认 / 撤单 / 查单 / 图片与 Excel 多模态；撤单、查单、确认的订单号为确定性提取 |
-| option | 1 个意图节点 + 7 个分意图节点（ADR 0011）；询价为「证据提取 → 归一化 → 提交」嵌套子图，其余为确定性代码节点 |
+| option | 当前为意图节点 + 分意图节点（一次联合解析目标见 ADR 0031）；询价为「证据提取 → 归一化 → 提交」嵌套子图，其余为确定性代码节点 |
 | close（期权平仓） | 意图 / 平仓（引用解析嵌套子图）/ 撤销平仓 / 确认平仓 / 确认撤销 / 持仓查询 / 状态查询 |
 
 ### 4. 规则层与交易正确性（`app/domain/`、`app/extraction/`、`app/tools/receipts.py`）
@@ -119,6 +119,8 @@ Java 后端业务接口 → 交易系统（标的识别、业务默认值、订�
 - 放行标准：统一评测门，见 ADR 0030 D3。
 
 ## 设计要点
+
+- **每消息最多一次模型请求**：[ADR 0031](../adr/0031-single-model-request-per-message.md) 的目标规范已采纳，当前图仍待重构；上文目录与结构表描述现状，不能据此认为调用额度已经达标。
 
 - **写类接口零自动重试**：超时后重试可能重复下单；失败走降级并如实透传后端响应。
 - **thread_id = conversation_id**：企微同一会话天然共享状态，checkpointer 按 thread 隔离。

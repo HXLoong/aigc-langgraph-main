@@ -29,7 +29,7 @@ Dify 主干工作流里那个 12957 行 YAML 的核心复杂度，一大半在 i
 
     优先级：
     1. state['error'] 存在 → fallback（cascade 防御，CLAUDE.md 核心原则第 8 条）
-    2. product_type == "unknown" → fallback（ADR 0015 第 3 层兜底）
+    2. product_type == "unknown" → fallback（unknown 兜底；联合解析目标见 ADR 0031）
     3. 否则按 product_type 选子图
     """</span>
 <span class="hl">    <span class="kw">if</span> state.get(<span class="st">"error"</span>) <span class="kw">is not None</span>:</span>

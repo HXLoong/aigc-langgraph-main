@@ -37,7 +37,7 @@ def test_swap_confirm_merges_three_intents() -> None:
 
 
 def test_option_intent_does_not_include_close_intents() -> None:
-    """ADR 0011 二次修订：option 意图不含 close_order_*。"""
+    """产品边界（ADR 0007 / 0031）：option 意图不含 close_order_*。"""
     spec = NODE_REGISTRY["option.intent"]
     assert all(
         not v.startswith("close_order_") for v in spec.intent_values
@@ -45,7 +45,7 @@ def test_option_intent_does_not_include_close_intents() -> None:
 
 
 def test_close_intent_has_six_close_order_intents() -> None:
-    """ADR 0011：close 子图独立，6 个 close_order_* 意图都归 close。"""
+    """产品边界（ADR 0007 / 0031）：close 子图独立，6 个 close_order_* 意图都归 close。"""
     spec = NODE_REGISTRY["close.intent"]
     close_intents = [v for v in spec.intent_values if v.startswith("close_order_")]
     assert len(close_intents) == 6

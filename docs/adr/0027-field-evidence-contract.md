@@ -2,6 +2,7 @@
 
 - 状态：已采纳（追认，落地 commit `58e5650` / `9493cb9`）
 - 日期：2026-09-18
+- 关系：D2 的模型重试规则由 [ADR 0031](./0031-single-model-request-per-message.md) 修订
 - 关系：修订 [ADR 0023](./0023-prompt-as-code-langgraph.md) D2（模型不再直接输出最终值）、[ADR 0024](./0024-langgraph-native-rearchitecture.md) D2（新增 `field_records` 通道）；配合 [ADR 0025](./0025-instrument-resolution-delegated-to-backend.md)
 - 作者：图灵科技 + Tony
 
@@ -17,7 +18,7 @@ ADR 0023 让每个 LLM 节点的输出契约收敛为一个 Pydantic 模型，�
 
 ### D2 · Code 校验证据，失败即 E2
 
-`FieldCandidate.verify(sources)`：`value ⊂ evidence ⊂ 对应来源文本`，数字候选还须在证据中是独立数值（不能是另一个数的一部分）。校验失败抛 `EvidenceError`（错误分类 E2，[ADR 0026](./0026-request-idempotency-uncertain-receipts-reconciliation.md) D6），由只读 IO 节点的 RetryPolicy 有限重试；耗尽后落 `state["error"]`，不降级为"取模型值"。
+`FieldCandidate.verify(sources)`：`value ⊂ evidence ⊂ 对应来源文本`，数字候选还须在证据中是独立数值（不能是另一个数的一部分）。校验失败抛 `EvidenceError`（错误分类 E2，[ADR 0026](./0026-request-idempotency-uncertain-receipts-reconciliation.md) D6），落 `state["error"]` 并停止本轮提交；按 [ADR 0031](./0031-single-model-request-per-message.md) 不重新请求模型、不降级为"取模型值"（目标规范已采纳，代码待重构）。
 
 ### D3 · 归一化与默认值归属
 

@@ -127,7 +127,7 @@ tests/fixtures/              # intent/（意图集，只调 LLM）+ categories/�
 
 1. **提示词不硬编码在代码里** —— 从 `app/prompts/**/*.md` 加载；LLM 节点用 `PromptSpec`（`app/prompts/spec.py`，ADR 0023）声明 `inputs`（AgentState 字段）/ `output_model` / `injects` / `user_builder`，`SPEC.build_messages(state)` 拼消息；user 里的规则文本住 `.md` `[user]` 段，代码只供变量；共享拼装用 `app/prompts/blocks.py`，不在子图里复制 `_format_history`
 2. **LLM 输出用 `with_structured_output(PydanticModel)`** —— 绝不手工解析 JSON；输出模型每个字段写 `Field(description=)`，这是输出语义的唯一真源（经 function calling schema 下发），提示词正文不再维护 JSON 骨架 / 字段表
-3. **每个节点用 `@safe_node` 装饰** —— 异常降级到 `state['error']`，不让图崩；只读 IO 节点（LLM / 后端查询）改用 `@io_node` + `add_io_node` 注册挂 `RetryPolicy`，写类节点绝不自动重试（ADR 0024 D3）
+3. **节点错误与重试分界** —— 纯计算、LLM 与写类节点用 `@safe_node`，异常落 `state['error']`；独立后端只读查询用 `@io_node` + `add_io_node` 挂 `RetryPolicy`。LLM 与写类节点不自动重试，后端查询重试不得重跑模型（ADR 0031，现有链路待重构）。
 4. **State 字段只通过 TypedDict 约定** —— 新增字段必须先在 `app/graph/state.py` 中声明
 5. **TDD 强制** —— 任何 bug fix / 新功能必须先写失败测试：
    - 写测试 → 跑到 RED（测试失败） → 写最小修复代码 → 跑到 GREEN → 受影响测试回归（全量按统一验收，见 testing.md「验证范围」）
@@ -136,7 +136,9 @@ tests/fixtures/              # intent/（意图集，只调 LLM）+ categories/�
 6. **git 里的提示词是唯一真源** —— 改提示词直接改 `app/prompts/**/*.md` + 普通 PR review，`prompt(<scope>)` commit；Dify 已退出上游地位（ADR 0024 D1），YAML 快照只作历史证据（commit `fddd94e`），不再有同步 / 导出链路
 7. **单动作多订单** —— 每条消息只执行一个业务动作，多笔订单共用该动作；不提供多动作编排（细则见 `.claude/rules/langgraph-patterns.md`）。
 8. **标的原文交后端识别**（ADR 0025）—— LangGraph 只提取代码/名称原文和用户候选选择，不补代码、不计算近月、不查证券池；Java 业务接口负责调用标的工具及权威校验。原文及引用候选不标记为 `from_goats=True`；HTTP `tickers` 保留为空的兼容字段。详见 `docs/architecture/backend-instrument-boundary.md`。
-9. **节点失败必须 cascade 防御** —— 任一节点写入 `state['error']` 后，下游条件路由必须先检查错误并转兜底，禁止 cascade 失败：主图 `_route_after_intent` 等转 `fallback` / `render`，子图 `_route_after_<p>_intent` 先查 `has_error` 转 `<p>_unknown`。兜底输出统一的未知指令引导文案（`Settings.default_reply`）+ trace 记录原 fail 节点名。LLM 结构化解析失败由 `@io_node` + RetryPolicy 重试（默认最多 2 次，SDK `max_retries=0`），耗尽后写入 error；写操作的二次确认统一走文本二阶段（ADR 0021），不使用 interrupt
+9. **节点失败必须 cascade 防御** —— 任一节点写入 `state['error']` 后，下游条件路由必须先检查错误并转兜底，禁止 cascade 失败：主图 `_route_after_intent` 等转 `fallback` / `render`，子图 `_route_after_<p>_intent` 先查 `has_error` 转 `<p>_unknown`。兜底输出统一的未知指令引导文案（`Settings.default_reply`）+ trace 记录原 fail 节点名。LLM 网络、结构化输出或证据校验失败直接写入 error，本轮不再请求模型（ADR 0031）；写操作的二次确认统一走文本二阶段（ADR 0021），不使用 interrupt
+
+10. **单条消息最多一次模型请求** —— 主图、子图、工具、并行与循环共享额度，允许零次，LLM 零重试；覆盖互换、期权、平仓及全部附件。产品、意图、候选一次联合解析，模型节点重构先读 [ADR 0031](./docs/adr/0031-single-model-request-per-message.md)；规范已采纳，代码迁移待办见 `docs/work-plan.md`。
 
 ## 排查与修复流程（Bug Debug Workflow）
 

@@ -8,7 +8,7 @@ allowed-tools: Read, Write, Edit, Glob, Grep, Bash
 # 新增一个业务意图
 
 归属判定与执行清单以 [ADR 0007](../../../docs/adr/0007-subgraph-vs-intent-scope-rule.md) 为准；节点写法以
-`.claude/rules/langgraph-patterns.md` 与 `.claude/rules/prompt-management.md` 为准。本 skill 只给停顿点和改动清单。
+`.claude/rules/langgraph-patterns.md` 与 `.claude/rules/prompt-management.md` 为准。新增意图遵守 [ADR 0031](../../../docs/adr/0031-single-model-request-per-message.md) 的每消息一次模型请求上限，现有链路迁移见工作计划。本 skill 只给停顿点和改动清单。
 
 ## 参数
 - `$1` = 产品类型：swap / option / close（close 子图的提示词目录是 `app/prompts/option_close/`）
@@ -31,13 +31,11 @@ allowed-tools: Read, Write, Edit, Glob, Grep, Bash
 
 ### Step 3：意图识别
 - `app/subgraphs/<product>/models.py`：`<Product>IntentType` 加枚举值，意图输出模型的 `Field(description=)` 同步说明
-- 更新该产品的意图提示词 `app/prompts/<dir>/intent.md`（新意图不写进提示词就识别不出来）
+- 更新本轮联合解析的产品/意图/候选契约及提示词；当前 `intent.md` 等资产作为迁移输入，不另加独立的分类或提取请求
 
 ### Step 4：参数节点
 - 能由 Code 确定的字段：`@safe_node` 纯计算节点
-- 需要 LLM 的：`PromptSpec` + `candidate_model(<Canonical>)`（`app/extraction/candidates.py`）抽原文候选，
-  `@io_node` + `add_io_node` 注册；最终值由 Code 归一化节点决定（先例：`app/subgraphs/swap/place_order.py`
-  的 `swap_extract_candidates` → `swap_normalize`）
+- 需要 LLM 的字段纳入本轮唯一联合解析：`PromptSpec` + 原文候选契约 + `@safe_node`，零重试；不得在意图分类后增加参数模型请求。最终值由 Code 归一化节点决定
 - 写后端的节点用 `@safe_node`，绝不自动重试；后端响应如实透传
 
 ### Step 5：接路由与登记
@@ -46,7 +44,7 @@ allowed-tools: Read, Write, Edit, Glob, Grep, Bash
 
 ### Step 6：测试（先 RED 再 GREEN，见 `test-driven-development` skill）
 - `tests/subgraphs/<product>/test_graph_routing.py`：新意图的路由用例
-- 节点单测：放在对应 `tests/subgraphs/<product>/test_<node>.py`
+- 节点单测：放在对应 `tests/subgraphs/<product>/test_<node>.py`；补全链路调用次数断言，模型失败后请求次数仍不超过一次
 - 数据集：`tests/fixtures/categories/` 至少 2 条（`scripts/check_fixture_consistency.py` 守护）；意图集
   `tests/fixtures/intent/` 补对应逐轮标签
 - 需要批量生成测试且用户已授权子代理时，可派 `test-generator`
@@ -61,7 +59,7 @@ python scripts/check_fixture_consistency.py
 
 ### Step 8：交付清单
 - [ ] `models.py`：`<Product>IntentType` + 输出模型字段说明
-- [ ] 意图提示词 + 参数提示词（如需 LLM），`prompt(<scope>)` commit
+- [ ] 联合解析提示词 + 产品/意图/候选契约，`prompt(<scope>)` commit
 - [ ] 参数节点（Code / 候选 + 归一化）
 - [ ] `graph.py`：`_INTENT_TO_NODE` + 节点 + 边
 - [ ] `catalog.py` + `node_labels.py` 登记

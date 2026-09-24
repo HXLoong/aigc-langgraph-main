@@ -7,11 +7,22 @@
 
 | 主线 | 已落地（截至 2026-09-23） | 未完成 |
 |---|---|---|
-| **原生 LangGraph 重构** | 子图原生嵌入、单动作多订单、RetryPolicy、State 分层与 output schema（ADR 0024 / 0028）；持久化与幂等、回执、对账（0026）；字段证据契约（0027）；标的识别移交 Java（0025）；Dify 资产冻结（0024 D1） | 协议原生化暂缓，保留现行 Java wire 契约（#222）；Store（按诉求） |
+| **原生 LangGraph 重构** | 子图原生嵌入、单动作多订单、RetryPolicy、State 分层与 output schema（ADR 0024 / 0028）；持久化与幂等、回执、对账（0026）；字段证据契约（0027）；标的识别移交 Java（0025）；Dify 资产冻结（0024 D1） | 单消息一次模型请求重构（ADR 0031，见 §1.1）；协议原生化暂缓，保留现行 Java wire 契约（#222）；Store（按诉求） |
 | **数据集评测与评估** | 显式验收集 `tests/fixtures/categories/`（三方言唯一加载器；历史 unified 仅显式选入；Excel 导出共用 categories）；REJECTED 单独成桶、早停记失败；LLM Judge（`scripts/langfuse/langfuse_eval.py`）；节点级 fixture 与 `harness node-run`（0029） | 生产同拓扑基线（本地 dry-run 参考值已回填告警默认值）与 7 天观察仍待验收；D 桶（客户真实输入）回流与标注运营（#236）；写类 case `expected.place_params` 补齐（#220） |
 | **Harness 工程** | CI 在 push / PR 上跑 fast + full 两个 job（ruff、mypy、五项一致性 lint、全量 pytest；真实 MySQL 用例不进 CI）；PromptSpec（0023）；trace_id 贯穿与结构化日志（0004 / 0024 D5） | 真实数据库回归按本地环境 opt-in；节点 fixture 漂移守护；VL 接线后 `llm_failure_high` 按模型拆阈值（#232） |
 
 评测门只有一套，见 ADR 0030 D3：数据集 PASS 率不低于前值 → 节点 fixture 回归 → CI 全绿 → 上线观察指标。
+
+## 1.1 单条消息最多一次模型请求（规范已采纳，代码待重构）
+
+[ADR 0031](./adr/0031-single-model-request-per-message.md) 覆盖互换、期权、平仓与附件。当前代码仍存在主图分类后子图再次解析、图片 OCR 后抽取、Excel 逐行调用及 LLM 图层重试；尚未满足新规范。
+
+- 合并产品/意图/原文候选及有歧义的候选选择；规则明确产品时用产品专用联合解析，歧义输入一次得到完整语义结果。保留平仓引用、订单查询等上下文依赖和确定性业务节点。
+- 关闭所有 LLM 重试，分离模型解析与可重试的后端只读查询；在模型请求边界落实单轮额度，错误后停止本轮模型处理。
+- Excel 确定性读取后一次批量解析，图片一次多模态解析；容量超限或能力不足时明确引导调整输入，保留全部订单与附件证据。
+- 迁移 PromptSpec、节点执行目录、fixture 与主图/子图各自的流程文档；验证请求次数与业务正确性，并按零重试口径重测失败率、成本和延迟。执行 ADR 0030 统一评测门。
+
+本轮只完成规范与文档，不代表上述代码迁移或业务验收完成。
 
 ## 2. 客户现场部署与运维（已就绪的能力）
 
