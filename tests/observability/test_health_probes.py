@@ -216,3 +216,22 @@ async def test_run_all_probes_returns_4_results() -> None:
         results = await run_all_probes()
     assert len(results) == 4
     assert {r.target for r in results} == {"mysql", "langfuse", "llm", "java_backend"}
+
+
+@pytest.mark.parametrize("code,expected", [(0, "ok"), (401, "fail"), (500, "fail")])
+async def test_java_probe_requires_successful_business_envelope(monkeypatch, code, expected):
+    from types import SimpleNamespace
+
+    import httpx
+
+    original = httpx.AsyncClient
+    transport = httpx.MockTransport(lambda request: httpx.Response(
+        200, json={"code": code, "data": None, "msg": "系统异常" if code else ""},
+    ))
+    monkeypatch.setattr(httpx, "AsyncClient", lambda **kwargs: original(transport=transport, **kwargs))
+    monkeypatch.setattr("app.config.get_settings", lambda: SimpleNamespace(
+        otc_api_base_url="http://java.invalid", otc_api_secret="test-only",
+    ))
+    monkeypatch.setattr("app.tools.auth.get_goats_auth_headers", lambda: {})
+    result = await hp.probe_java_backend()
+    assert result.status == expected

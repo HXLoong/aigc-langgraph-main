@@ -155,6 +155,8 @@ async def probe_java_backend() -> ProbeResult:
             payload = r.json()
             if not isinstance(payload, dict) or "code" not in payload:
                 raise RuntimeError("bad_envelope")
+            if type(payload["code"]) is not int or payload["code"] != 0:
+                raise RuntimeError("business_error")
 
     status, err, lat = await _timed("java_backend", _check())
     return ProbeResult(target="java_backend", status=status, error=err, latency_ms=lat)
