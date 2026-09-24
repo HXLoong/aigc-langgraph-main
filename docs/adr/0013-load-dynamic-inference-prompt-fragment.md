@@ -1,47 +1,17 @@
-# ADR 0013 · 加载后端动态 prompt 片段（swap_instrument_inference_prompt）
+# ADR 0013 · 加载后端动态 prompt 片段（历史存根）
 
-- 状态：**已撤销**（2026-08-28 停止动态片段拉取；2026-09-20 本地标的推断与静态 prompt 一并退役）。遗留客户端不代表主链仍使用该能力。
+- 状态：**已撤销**（2026-08-28 停止拉取；2026-09-20 本地标的推断整体退役，见 [ADR 0025](./0025-instrument-resolution-delegated-to-backend.md)）
 - 日期：2026-05-10
-- 修订：2026-08-27 深度改写为现状口径（对照代码核查）
 - 作者：图灵科技 + Tony
 
-## 当前职责（2026-09-22 修订）
+## 原决策
 
-标的识别由 Java 负责，见[标的识别边界](../backend-instrument-boundary.md)。本轮不恢复
-动态片段、缓存或本地推断，也不修改 Java。下文记录撤销前的决策与行为，不是现役待办。
+对齐 Dify：标的推断前从后端拉取一段运维可热改的全局 prompt 片段（`swap_instrument_inference_prompt`），与本地静态提示词拼接后送入 LLM，5 分钟缓存，后端不可达时降级为纯静态提示词。
 
-## 历史决策
+## 为何撤销
 
-Dify 工作流通过后端接口拉取一段**运维可热改的 prompt 片段**（全局配置 `swap_instrument_inference_prompt`）注入标的推断 LLM 节点。LangGraph 若只用静态 `infer_code.md`，业务方/运维临时调整推断规则（加新约束、新字典）就必须发版。决定补上：ticker 推断前先拉取动态片段，与静态文件拼接后喂给 LLM。
+2026-08-28 标的推断改为纯静态提示词批量调用，动态片段链路删除；2026-09-20 标的识别整体移交 Java 后端，本地推断节点与提示词一并退役。不恢复动态片段、缓存或本地推断。实现细节见 [实施记录归档](../archive/history/adr-implementation-log-2026-09.md)。
 
-## 历史落地记录（2026-08-27）
+## 留给后续的经验
 
-**Endpoint**：`GET /admin-api/counterparty/info/instrument-inference-prompt`，返回 `CommonResult<String>`（包裹纯字符串）。Java 侧 `CounterpartyInfoController.java:32`（`@GetMapping`）/ `:36`（方法签名）——原修订注的 `:33` 是行号偏移，`docs/api-contracts/java-backend.md` 同处偏移待一并修正。`/admin-api` 前缀由 `WebProperties.adminApi` 框架级注入。
-
-**实现链路**：
-
-1. 客户端：`app/tools/ticker_client.py` 的 `TickerClient.get_inference_prompt()`（普通 GET → `result.data` 为 `str`；ADR 0001 D2 三 Protocol 拆分后的归属，原文的 `OtcBackendClient` 已不存在）。
-2. 缓存：~~`app/subgraphs/ticker/tools.py`~~ 的 `_get_dynamic_prompt_cached()` —— **模块级单 key 缓存 + 300s 绝对过期 + 进程重启清空**（非 `functools.lru_cache`；`infer_code` 工具入口调用）。多副本部署时各副本缓存独立，热改后最长 5 分钟不一致，可接受。
-3. 拼接：静态 ~~`app/prompts/ticker/infer_code.md`~~ 作框架（输出格式、调用规范），动态片段以 `## 后端动态片段（实时拼接）` 追加到 system 末尾。
-4. 净化：`_sanitize_dynamic_prompt`（**实现于调用侧** `tools.py`，非原文说的 client 侧；行为等价）——strip + 控制字符剔除 + 4096 字符截断。⚠️ 超限当前是**静默截断**，非原文的"落警并降级"。
-5. 降级：后端不可达 → warning + 空片段（仅静态文件），metrics 计数 `otc_agent_dynamic_prompt_total{status=cache_hit|cache_miss_ok|fallback}`，不让 ticker 崩。
-
-## 实现偏离（2026-08-27 裁决：追认 metrics 方案 + 轻修）
-
-| 偏离 | 现状 |
-|---|---|
-| 拼接后完整 prompt 摘要未落 trace | 裁决：**降级为结构化日志**——`_get_dynamic_prompt_cached` 命中/拉取时以 warning/info 记录片段长度（现有 logger 已含），完整还原依赖后端 config 的变更审计；不再作为 trace 硬要求 |
-| 降级标记落 metrics 不落 trace | 裁决：**追认 metrics 方案**（`otc_agent_dynamic_prompt_total{status=fallback}` 为正式载体）；会话级定位可用 trace_id 关联 LangFuse warning 日志 |
-
-## 备选方案
-
-- **不补，保留静态文件**：失去运维热改能力。
-- **按 counterparty 拉取**：后端返回的是全局配置，过度设计。
-- **拼接策略反向**：动态片段是规则补充非框架，反向风险高。
-- **拉取 + 拼接 + 降级（已选）**：3 步恢复等价行为。
-
-## 后果（历史口径）
-
-- 热改后最长 5 分钟生效；即时生效的缓存清除接口暂不做。
-- 推断 prompt 不再"完全静态可读"：读 `infer_code.md` 只见框架，完整提示词 = 框架 + 后端 config；排错依赖后端配置变更审计、结构化日志和 metrics。
-- 同样模式（热配 prompt 片段）暂不抽象通用框架——当前仅 ticker `infer_code` 一处使用，按需求出现再做。
+"运维热改提示词片段"会让完整提示词不再能从仓库读全，排错依赖后端配置审计；如未来确需同类能力，应先评估审计与可复现性。
