@@ -13,7 +13,7 @@ import pytest
 
 ROOT = Path(__file__).resolve().parents[2]
 SCRIPT = ROOT / "scripts" / "convert_jsonl_to_csv.py"
-FIXTURES = ROOT / "tests" / "fixtures" / "categories"
+FIXTURES = ROOT / "tests" / "fixtures" / "biz"
 
 
 def run_cli(*args: str | Path, cwd: Path | None = None) -> subprocess.CompletedProcess[str]:

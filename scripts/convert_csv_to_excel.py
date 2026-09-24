@@ -40,7 +40,7 @@ from openpyxl.styles import Alignment, Font, PatternFill
 from openpyxl.utils import get_column_letter
 
 logger = logging.getLogger(__name__)
-DEFAULT_INPUT = Path(__file__).resolve().parents[1] / "tests" / "fixtures" / "categories" / "csv"
+DEFAULT_INPUT = Path(__file__).resolve().parents[1] / "tests" / "fixtures" / "biz" / "csv"
 MAX_ROWS = 1_048_576
 MAX_COLUMNS = 16_384
 MAX_CELL_LENGTH = 32_767

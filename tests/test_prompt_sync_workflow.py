@@ -1,4 +1,4 @@
-"""Langfuse 同步只手动触发（Actions → Run workflow），不随 push / PR 自动写远端。"""
+"""Langfuse 同步在 main 收到对应文件 push 时自动触发，也可手动重跑（Actions → Run workflow）。"""
 
 from pathlib import Path
 
@@ -7,12 +7,14 @@ import yaml
 
 
 @pytest.mark.parametrize("filename", ["langfuse-prompt-sync.yml", "langfuse-dataset-sync.yml"])
-def test_sync_workflows_are_manual_only(filename: str) -> None:
+def test_sync_workflows_auto_trigger_on_main_push(filename: str) -> None:
     path = Path(".github/workflows") / filename
     workflow = yaml.load(path.read_text(encoding="utf-8"), Loader=yaml.BaseLoader)
     trigger = workflow["on"]
 
-    assert set(trigger) == {"workflow_dispatch"}
+    assert set(trigger) == {"workflow_dispatch", "push"}
+    assert trigger["push"]["branches"] == ["main"]
+    assert trigger["push"]["paths"]
     assert "if" not in workflow["jobs"]["sync"]
 
 
@@ -20,7 +22,12 @@ def test_prompt_sync_workflow_trigger_and_runtime() -> None:
     path = Path(".github/workflows/langfuse-prompt-sync.yml")
     workflow = yaml.load(path.read_text(encoding="utf-8"), Loader=yaml.BaseLoader)
 
-    assert set(workflow["on"]) == {"workflow_dispatch"}
+    assert set(workflow["on"]) == {"workflow_dispatch", "push"}
+    assert workflow["on"]["push"]["paths"] == [
+        "app/prompts/option/*.md",
+        "app/prompts/option_close/*.md",
+        "app/prompts/swap/*.md",
+    ]
 
     job = workflow["jobs"]["sync"]
     assert "if" not in job
