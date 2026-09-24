@@ -4,15 +4,15 @@ from __future__ import annotations
 import logging
 from typing import Any
 
+from app.domain.tenor import TenorError, normalize_request_tenors
 from app.extraction.locks import protect_orders
-from app.extraction.tenor import TenorError, normalize_request_tenors
 from app.graph.state import AgentState
 from app.observability.metrics import (
     emit_option_backend_empty_result,
     emit_option_backend_missing_context,
 )
 from app.subgraphs.option.sanitize import sanitize_order_list
-from app.tools.bot_context import BotContext, normalize_message_id
+from app.tools.bot_context import BotContext
 from app.tools.exceptions import EmptyBackendResultError, MissingBackendContextError
 from app.tools.option_client import (
     FinancialOrderOpenApiBaseSaveReqVO,
@@ -36,16 +36,6 @@ _INTENT_TO_OPERATE: dict[str, str] = {
     "confirm_cancel_order": "交易",
     "query_order_status": "交易",
 }
-
-
-def _message_id(value: Any) -> int:
-    return normalize_message_id(value)
-
-
-def _context(state: AgentState) -> dict[str, Any]:
-    """机器人上下文 → Java ReqVO 字段；唯一定义在 app/tools/bot_context.py。"""
-    wire = BotContext.from_state(state).to_wire()
-    return wire
 
 
 async def call_option_backend(
@@ -83,7 +73,7 @@ async def call_option_backend(
             if option_rfq is not None
             else None
         ),
-        **_context(state),
+        **BotContext.from_state(state).to_wire(),
     )
     async with receipt_guard("option"):
         result = await OptionClientHttpx().operate(req)

@@ -7,5 +7,6 @@
 
 | 报告 | 摘要 |
 |---|---|
+| [2026-09-24-app-structure-review.md](./2026-09-24-app-structure-review.md) | app/ 结构体检与分层整理：发现、已完成整理与待业务确认事项 |
 | [2026-09-24-intent-dataset-assessment.md](./2026-09-24-intent-dataset-assessment.md) | 期权 / 互换意图识别数据集评估：意图集只调 LLM 的可行性与改造建议 |
 | [2026-09-24-option-open-close-review-guide.md](./2026-09-24-option-open-close-review-guide.md) | 期权开仓 / 平仓重构代码的人工审阅导读与问题清单 |

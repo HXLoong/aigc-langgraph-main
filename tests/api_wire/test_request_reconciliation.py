@@ -7,11 +7,11 @@ from dataclasses import replace
 
 import pytest
 
-from app.api.idempotency import IdempotencyConflictError, InMemoryIdempotencyStore
+from app.storage.idempotency import IdempotencyConflictError, InMemoryIdempotencyStore
 
 
 def test_independent_reconciliation_is_available() -> None:
-    assert importlib.util.find_spec("app.api.reconciliation") is not None
+    assert importlib.util.find_spec("app.storage.reconciliation") is not None
 
 
 async def test_timeout_snapshot_remains_uncertain() -> None:
@@ -29,7 +29,7 @@ async def test_timeout_snapshot_remains_uncertain() -> None:
 
 
 async def _claim():
-    from app.api.idempotency import IdempotencyRecord
+    from app.storage.idempotency import IdempotencyRecord
 
     store = InMemoryIdempotencyStore(processing_timeout_seconds=10, clock=lambda: 100.0)
     await store.begin("123", conversation_id="c", user_id="u", room_id="r", raw_text="确认")
@@ -40,7 +40,7 @@ async def _claim():
 
 
 def _audit(response: str | None, *, user: str = "u", log_id: int = 7):
-    from app.api.reconciliation import JavaAuditEntry
+    from app.storage.reconciliation import JavaAuditEntry
 
     return JavaAuditEntry(
         log_id=log_id, endpoint="/admin-api/swap-order/operate",
@@ -52,7 +52,7 @@ def _audit(response: str | None, *, user: str = "u", log_id: int = 7):
 
 
 async def test_only_exact_original_response_can_recover_and_apply_is_explicit() -> None:
-    from app.api.reconciliation import reconcile_request
+    from app.storage.reconciliation import reconcile_request
 
     store, _ = await _claim()
 
@@ -74,7 +74,7 @@ async def test_only_exact_original_response_can_recover_and_apply_is_explicit() 
 
 @pytest.mark.parametrize("kind", ["missing", "different_user", "multiple", "malformed"])
 async def test_incomplete_or_ambiguous_evidence_stays_reserved(kind: str) -> None:
-    from app.api.reconciliation import reconcile_request
+    from app.storage.reconciliation import reconcile_request
 
     store, _ = await _claim()
     response = json.dumps({"code": 0, "data": "真实回复"})
@@ -95,7 +95,7 @@ async def test_incomplete_or_ambiguous_evidence_stays_reserved(kind: str) -> Non
 
 
 async def test_recovery_checks_owner_and_cannot_overwrite_new_completion() -> None:
-    from app.api.reconciliation import reconcile_request
+    from app.storage.reconciliation import reconcile_request
 
     store, _ = await _claim()
 
@@ -120,7 +120,7 @@ async def test_mysql_recovery_locks_and_rechecks_claim_before_commit(monkeypatch
     from contextlib import asynccontextmanager
     from unittest.mock import AsyncMock, MagicMock
 
-    from app.api.idempotency import MySQLIdempotencyStore
+    from app.storage.idempotency import MySQLIdempotencyStore
 
     _, expected = await _claim()
     cursor = MagicMock(execute=AsyncMock(), fetchone=AsyncMock(return_value=(

@@ -29,7 +29,7 @@ ADR 0023 让每个 LLM 节点的输出契约收敛为一个 Pydantic 模型，�
 - `AgentState.field_records` 使用 `merge_fields` reducer：锁定值拒绝被后续更新覆盖；`app/extraction/locks.py::protect_orders` 在 **State 写入** 与 **后端提交前** 两处检查，锁定订单不得在当前指令内被删除或改写。
 - 来源记录与锁定必须在实际后端请求边界生效（子图 `backend.py`），不是提示词承诺。
 
-### D5 · 七条最终确认路径的统一校验（`app/execution/confirmation.py`）
+### D5 · 七条最终确认路径的统一校验（`app/domain/confirmation.py`）
 
 swap 三确认、option 确认下单 / 确认撤单、close 确认平仓 / 确认撤销共七条最终确认路径统一要求：
 

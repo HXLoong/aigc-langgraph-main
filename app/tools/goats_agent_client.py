@@ -131,7 +131,7 @@ class GoatsAgentClientHttpx:
     async def parse_rfq_instrument(
         self, query: str, room_id: str, user_id: str | None
     ) -> dict[str, Any]:
-        """参与型看涨/雪球快速询价指令解析(timeout 60s,对照 DSL)。"""
+        """参与型看涨/雪球快速询价指令解析(超时见 Settings.goats_agent_rfq_timeout_seconds)。"""
         base = {
             "code": 500,
             "errMsg": _RFQ_UNAVAILABLE_MSG,
@@ -187,7 +187,7 @@ class GoatsAgentClientHttpx:
     async def query_instruction(
         self, query: str, room_id: str, user_id: str | None
     ) -> dict[str, Any]:
-        """存量兼容交易查询指令(timeout 10s;errMsg 恒为静默哨兵,对照 DSL)。"""
+        """存量兼容交易查询指令(超时见 Settings.goats_agent_instruction_timeout_seconds;errMsg 恒为静默哨兵,对照 DSL)。"""
 
         def _result(code: int, **extra: Any) -> dict[str, Any]:
             return {

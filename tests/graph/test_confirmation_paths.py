@@ -163,14 +163,14 @@ async def test_confirmation_routing_is_deterministic(monkeypatch, module_name, i
 
 
 def test_quote_footer_examples_do_not_change_scope():
-    from app.execution.confirmation import parse_confirmation
+    from app.domain.confirmation import parse_confirmation
 
     quote = f"序号1：{H}\n如只确认部分订单，请引用回复【序号2、序号4，确认下单】。"
     assert parse_confirmation("序号1，确认下单", quote).order_ids == (H,)
 
 
 def test_multiple_mappings_on_one_line():
-    from app.execution.confirmation import parse_confirmation
+    from app.domain.confirmation import parse_confirmation
 
     quote = f"序号1：{H}；序号2：H-20260920-2222222222"
     result = parse_confirmation("序号2，确认下单", quote)
@@ -214,7 +214,7 @@ async def test_option_parameter_confirmation_cannot_hide_another_action(monkeypa
 
 @pytest.mark.parametrize("marker", ["序号+1", "序号01", "序号一"])
 def test_swap_single_order_does_not_repair_invalid_quote_sequence(marker):
-    from app.execution.confirmation import parse_confirmation
+    from app.domain.confirmation import parse_confirmation
 
     result = parse_confirmation("序号1，确认下单", f"{marker}：{H}")
     assert result.error and not result.order_ids

@@ -1,6 +1,6 @@
 """BotContext：调业务后端所需的机器人上下文（ADR 0024 D3：协议层吃它，不吃 AgentState）。
 
-三个子图的 backend 适配层曾各自维护一份 `_context()` / `_message_id()`；这里只定义一次。
+三个子图的 backend 适配层共用这里的上下文定义（`to_wire()` / `normalize_message_id`）。
 节点仍把 AgentState 交给 `call_*_backend`，适配层在边界处 `BotContext.from_state()`，
 其下的请求拼装只看这个模型——业务对象（tickers / place_params …）进不了协议层。
 """
@@ -60,22 +60,19 @@ class BotContext(BaseModel):
         )
 
     def missing_required(self) -> list[str]:
-        missing = [f for f in ("conversation_id", "room_id", "user_id") if not getattr(self, f)]
-        if self.message_id <= 0:
-            missing.append("message_id")
-        return missing
+        present = {field: bool(getattr(self, field)) for field in REQUIRED_FIELDS}
+        present["message_id"] = self.message_id > 0
+        return [field for field in REQUIRED_FIELDS if not present[field]]
 
     @classmethod
     def missing_required_from_state(cls, state: Mapping[str, Any]) -> list[str]:
         """不要求 State 已完成类型校验，供准备接口聚合全部诊断。"""
-        missing = [
-            field
-            for field in ("conversation_id", "room_id", "user_id")
-            if not isinstance(state.get(field), str) or not state.get(field)
-        ]
-        if normalize_message_id(state.get("message_id")) <= 0:
-            missing.append("message_id")
-        return missing
+        present = {
+            field: isinstance(state.get(field), str) and bool(state.get(field))
+            for field in REQUIRED_FIELDS
+        }
+        present["message_id"] = normalize_message_id(state.get("message_id")) > 0
+        return [field for field in REQUIRED_FIELDS if not present[field]]
 
     @property
     def message_content(self) -> str:

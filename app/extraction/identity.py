@@ -3,11 +3,13 @@ from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
 from copy import deepcopy
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from app.extraction.fields import FieldRecord, merge_fields
 from app.extraction.locks import protect_orders
-from app.graph.state import AgentState
+
+if TYPE_CHECKING:  # 仅类型标注；运行时不依赖 app.graph（graph.state 依赖 extraction.fields）
+    from app.graph.state import AgentState
 
 CLOSE_ID_ARRAYS = frozenset({"confirmOrderNoList", "cancelOrderNoList", "confirmCancelOrderNoList", "queryOrderNoList"})
 

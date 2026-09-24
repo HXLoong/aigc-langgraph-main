@@ -6,7 +6,7 @@
 from __future__ import annotations
 
 from app.nodes.ingest import ingest
-from app.nodes.persist import _trace_entry_to_row
+from app.storage.node_trace import trace_entry_to_row as _trace_entry_to_row
 
 
 class TestIngestTraceId:
@@ -34,9 +34,9 @@ class TestPersistTraceId:
     def test_insert_sql_has_trace_id_column(self) -> None:
         import inspect
 
-        from app.nodes import persist as persist_mod
+        from app.storage import node_trace
 
-        src = inspect.getsource(persist_mod._write_to_mysql)
+        src = inspect.getsource(node_trace.write_node_trace)
         assert "trace_id" in src, "INSERT 语句缺 trace_id 列"
 
 

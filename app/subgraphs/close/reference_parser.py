@@ -15,7 +15,8 @@ from __future__ import annotations
 import re
 from typing import Any, TypedDict
 
-from app.subgraphs.close.order_id import ORDER_ID_EXACT8_TOKEN, ORDER_ID_STRICT_TOKEN
+from app.domain.order_ids import CLOSE_ORDER_ID_EXACT8_TOKEN as ORDER_ID_EXACT8_TOKEN
+from app.domain.order_ids import CLOSE_ORDER_ID_STRICT_TOKEN as ORDER_ID_STRICT_TOKEN
 
 _SEQ_RE = re.compile(r"序号[：:]\s*(\d+)")
 _ORDER_ID_RE = re.compile(rf"单号[：:]\s*({ORDER_ID_EXACT8_TOKEN})")

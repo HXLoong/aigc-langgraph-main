@@ -9,6 +9,7 @@ from langgraph.checkpoint.base import BaseCheckpointSaver
 from langgraph.graph import END, START, StateGraph
 from langgraph.graph.state import CompiledStateGraph
 
+from app.graph.cascade import has_error
 from app.graph.retry import add_io_node
 from app.graph.state import AgentState
 from app.nodes.entry_route import entry_route
@@ -38,7 +39,7 @@ from app.tools.message_client import MessageClient
 
 def _route_after_ingest(state: AgentState) -> str:
     """入口准备异常或会话过期时退出，不进入三分支业务路由。"""
-    if state.get("error") is not None or state.get("session_status") == "expired":
+    if has_error(state) or state.get("session_status") == "expired":
         return "render"
     return "entry_route"
 
@@ -47,11 +48,11 @@ def _route_after_intent(state: AgentState) -> str:
     """intent_route 节点后的路由。
 
     优先级：
-    1. state['error'] 存在 → fallback（cascade 防御，CLAUDE.md 核心原则第 8 条）
+    1. state['error'] 存在 → fallback（cascade 防御，CLAUDE.md 核心原则第 9 条）
     2. product_type == "unknown" → fallback（DSL v2 一级分支 false 落兜底）
     3. 否则按 product_type 选子图
     """
-    if state.get("error") is not None:
+    if has_error(state):
         return "fallback"
     pt = state.get("product_type", "unknown")
     if pt == "unknown":

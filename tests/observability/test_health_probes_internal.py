@@ -76,6 +76,23 @@ async def test_probe_mysql_ok() -> None:
 
 
 @pytest.mark.asyncio
+async def test_probe_mysql_uses_shared_connection_args() -> None:
+    """探针与业务连接同一解析：URL 编码的密码需解码，并带会话字符集初始化。"""
+    fake = _fake_settings(mysql_uri="mysql+aiomysql://user:p%40ss@db.local:3308/shared_java")
+    mock_connect = _mock_aiomysql_connect_success()
+    with (
+        patch("app.config.get_settings", return_value=fake),
+        patch("aiomysql.connect", mock_connect),
+    ):
+        result = await hp.probe_mysql()
+    assert result.status == "ok"
+    kwargs = mock_connect.await_args.kwargs
+    assert kwargs["password"] == "p@ss"
+    assert kwargs["db"] == "shared_java" and kwargs["port"] == 3308
+    assert "utf8mb4" in kwargs["init_command"]
+
+
+@pytest.mark.asyncio
 async def test_probe_mysql_no_uri_returns_fail() -> None:
     """mysql_uri 空 → RuntimeError('no_uri') → fail。"""
     fake = _fake_settings(mysql_uri="")

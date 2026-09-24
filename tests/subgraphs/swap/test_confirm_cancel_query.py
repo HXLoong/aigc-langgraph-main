@@ -14,9 +14,9 @@ import app.subgraphs.swap.query_order as query_module
 from app.subgraphs.swap.cancel import swap_cancel
 from app.subgraphs.swap.confirm import (
     _expected_action,
-    confirm_order_secondary_check_passed,
     swap_confirm,
 )
+from app.subgraphs.swap.confirmation import is_confirmation
 from app.subgraphs.swap.query_order import swap_query_order
 
 ORDER = "H-20260304-0000000001"
@@ -52,11 +52,11 @@ class TestConfirmExpectedAction:
 class TestConfirmOrderSecondaryCheck:
     @pytest.mark.parametrize("raw_text", ["确认下单", " 确认下单 ", "序号2，确认下单", "序号4、序号2，确认下单"])
     def test_passes_with_keyword(self, raw_text: str) -> None:
-        assert confirm_order_secondary_check_passed(raw_text)
+        assert is_confirmation(raw_text)
 
     @pytest.mark.parametrize("raw_text", ["确认", "下单", "好的", "", None, "swap确定下单", "确认订单 H-1", "下单确认!"])
     def test_fails_without_keyword(self, raw_text: str | None) -> None:
-        assert not confirm_order_secondary_check_passed(raw_text)
+        assert not is_confirmation(raw_text)
 
 
 class TestSwapConfirmNode:

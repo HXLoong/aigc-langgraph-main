@@ -1,6 +1,6 @@
 """option 子图前置清洗 · 对齐 Dify code 节点「期权开仓-前置清洗」。
 
-Dify 原节点（spec/code_nodes/期权开仓-前置清洗.py）在 LLM 输出的 `orderList`
+Dify 原节点（Dify 资产已冻结于 tag dify-assets-frozen-20260917，ADR 0024 D1）在 LLM 输出的 `orderList`
 送入「期权开仓」code 节点之前做一次脏值清洗：
 
 - 字符串 "null"（大小写不敏感，去空白后比对）→ None
@@ -17,28 +17,12 @@ from __future__ import annotations
 
 from typing import Any
 
-#: 默认 null 字面量集合（对齐 Dify 环境变量 NULL_LITERALS 缺省值）
-_DEFAULT_NULL_LITERALS: frozenset[str] = frozenset({"null"})
-
-
-def _sanitize_value(value: Any, literals: frozenset[str]) -> Any:
-    """递归清洗单个值：null 字面量字符串 → None；list 丢弃清成 None 的元素；dict 递归。"""
-    if isinstance(value, str):
-        return None if value.strip().lower() in literals else value
-    if isinstance(value, list):
-        return [
-            cleaned
-            for cleaned in (_sanitize_value(item, literals) for item in value)
-            if cleaned is not None
-        ]
-    if isinstance(value, dict):
-        return {k: _sanitize_value(v, literals) for k, v in value.items()}
-    return value
+from app.domain.sanitize import DEFAULT_NULL_LITERALS, strip_null_literals
 
 
 def sanitize_order_list(
     order_list: list[dict[str, Any]] | None,
-    null_literals: frozenset[str] = _DEFAULT_NULL_LITERALS,
+    null_literals: frozenset[str] = DEFAULT_NULL_LITERALS,
 ) -> list[dict[str, Any]]:
     """清洗 orderList：每个订单 dict 内的字符串字段做 null 字面量清洗。
 
@@ -47,7 +31,7 @@ def sanitize_order_list(
     """
     if not order_list:
         return []
-    return [_sanitize_value(order, null_literals) for order in order_list]
+    return [strip_null_literals(order, null_literals) for order in order_list]
 
 
 __all__ = ["sanitize_order_list"]

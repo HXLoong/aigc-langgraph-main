@@ -13,14 +13,21 @@ import logging
 import re
 from typing import Any
 
+from app.domain.order_ids import (
+    ROUTE_OPTION_CLOSE_ORDER,
+    ROUTE_OPTION_OPEN_ORDER,
+    ROUTE_SWAP_ORDER,
+)
+
 logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------
 # 订单号正则(优先级:互换 H- > 期权开仓 Q- > 期权平仓 CO-/OPT)
 # ---------------------------------------------------------------
-OPTION_CLOSE_ORDER_PATTERN = r"CO-\d{8}-[0-9A-F]{8}|OPTG?-[A-Z]{4,8}\d{6,10}"
-SWAP_ORDER_PATTERN = r"H-\d{8}-\d{10}"
-OPTION_OPEN_ORDER_PATTERN = r"Q-\d{8}-\d{10}"
+# 形态定义在 app/domain/order_ids.py（路由用窄形态）
+OPTION_CLOSE_ORDER_PATTERN = ROUTE_OPTION_CLOSE_ORDER
+SWAP_ORDER_PATTERN = ROUTE_SWAP_ORDER
+OPTION_OPEN_ORDER_PATTERN = ROUTE_OPTION_OPEN_ORDER
 
 # 口语化平仓表达(无平仓单号时 → 互换头寸口语化减仓)
 COLLOQUIAL_SWAP_CLOSE_PATTERNS: list[str] = [

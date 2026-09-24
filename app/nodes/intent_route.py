@@ -1,6 +1,6 @@
 """一级路由节点(DSL v2 版,ADR 0015 修订)。
 
-两层处理(对照 dify/yaml/主干工作流.yml):
+两层处理(对照 Dify 主干工作流（Dify 资产已冻结于 tag dify-assets-frozen-20260917，ADR 0024 D1）):
 1. 规则层:「脚本判断期权、互换、其他查询指令」1:1 移植(app/nodes/route_rules.py)
    —— 订单号正则、口语化平仓、互换系统引用、下单特征、平仓查询关键词、关键词计数
 2. LLM 兜底:「unknown意图兜底识别」(app/prompts/router/unknown_intent.md)
@@ -22,11 +22,12 @@ from typing import Any, Literal
 
 from pydantic import Field
 
-from app.extraction.intent_evidence import IntentEvidenceOutput, intent_records, source_payload
+from app.extraction.intent_evidence import IntentEvidenceOutput, intent_records
 from app.graph.retry import io_node
 from app.graph.state import AgentState, ProductType, TraceEntry
 from app.llm.clients import get_qwen_thinking
 from app.nodes.route_rules import is_swap_transaction
+from app.prompts import blocks
 from app.prompts.spec import PromptSpec, register
 
 logger = logging.getLogger(__name__)
@@ -51,7 +52,7 @@ class UnknownIntentOutput(IntentEvidenceOutput):
 
 
 def _user_from_state(state: AgentState) -> str:
-    return source_payload(state)
+    return blocks.source_payload(state)
 
 
 SPEC = register(PromptSpec(
@@ -100,7 +101,6 @@ async def intent_route(state: AgentState) -> dict[str, Any]:
     if label == "unknown" and not files and text.strip():
         result = UnknownIntentOutput.model_validate(
             await _classify_with_llm(text, quote, state.get("history_messages"))
-            if state.get("history_messages") else await _classify_with_llm(text, quote)
         )
         records = intent_records(result, state, scope="router/intent", value=result.label)
         label = result.label

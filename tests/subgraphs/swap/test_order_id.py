@@ -10,8 +10,6 @@ from __future__ import annotations
 
 from app.subgraphs.swap.order_id import (
     extract_for_cancel,
-    extract_for_confirm_order,
-    extract_for_confirm_single,
     extract_for_query,
     extract_order_ids,
 )
@@ -57,26 +55,3 @@ class TestQuery:
 
     def test_none(self):
         assert extract_for_query(raw="查订单", quote=None) == [None]
-
-
-class TestConfirmOrder:
-    def test_all_from_quote_ordered_dedup(self):
-        quote = f"订单{Q1}(序号1)\n订单{Q2}(序号2)\n又见 {Q1}"
-        assert extract_for_confirm_order(raw="确认下单", quote=quote) == [Q1, Q2]
-
-    def test_raw_fallback(self):
-        assert extract_for_confirm_order(raw=f"确认下单 {R1}", quote="") == [None]
-
-    def test_none(self):
-        assert extract_for_confirm_order(raw="确认下单", quote="") == [None]
-
-
-class TestConfirmSingle:
-    def test_quote_first(self):
-        assert extract_for_confirm_single(raw=f"确认撤单 {R1}", quote=f"单号:{Q1}") == [Q1]
-
-    def test_raw_fallback(self):
-        assert extract_for_confirm_single(raw=f"确认撤单 {R1}", quote="") == [R1]
-
-    def test_none(self):
-        assert extract_for_confirm_single(raw="确认撤单", quote="") == [None]

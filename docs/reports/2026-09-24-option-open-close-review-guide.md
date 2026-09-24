@@ -2,7 +2,7 @@
 
 > 日期：2026-09-24；基线 commit `6475adc`。
 > 范围：`app/subgraphs/option/`（开仓，19 个文件约 2100 行）、`app/subgraphs/close/`（平仓，17 个文件约 2200 行）、
-> 共享确认协议 `app/execution/confirmation.py`，以及 `app/prompts/option/`、`app/prompts/option_close/`。
+> 共享确认协议 `app/domain/confirmation.py`，以及 `app/prompts/option/`、`app/prompts/option_close/`。
 > 用途：这部分代码由 AI 生成，本文帮助审阅人快速建立心智模型，并附上已发现的问题。
 > 本文只读检查，**没有修改任何业务代码**。
 
@@ -56,7 +56,7 @@ START → <x>_intent（LLM + 确定性规则）→ 条件路由（有 error → 
 
 | 机制 | 位置 | 审阅要点 |
 |---|---|---|
-| 确认协议 | `app/execution/confirmation.py` | 7 条最终确认路径共用。`confirmation_action` 判定口令（出现疑问/否定/条件词就返回 None，要求恰好一个口令）；`parse_confirmation` 从引用消息里取单号、绑定"序号N"、解析用户的范围选择，产出 `Confirmation.order_ids`；`verify_scope` 在字段锁之后再校验一次范围。该文件几乎没有 docstring，正则密集，是**最值得逐行审**的文件之一 |
+| 确认协议 | `app/domain/confirmation.py` | 7 条最终确认路径共用。`confirmation_action` 判定口令（出现疑问/否定/条件词就返回 None，要求恰好一个口令）；`parse_confirmation` 从引用消息里取单号、绑定"序号N"、解析用户的范围选择，产出 `Confirmation.order_ids`；`verify_scope` 在字段锁之后再校验一次范围。该文件几乎没有 docstring，正则密集，是**最值得逐行审**的文件之一 |
 | 字段溯源与锁 | `app/extraction/locks.py::protect_orders`、`app/extraction/identity.py::prepare_identity_scope` | 业务节点产出 `FieldRecord`（value / source / evidence / origin / locked），发送前 backend 再按锁回滚被篡改的字段 |
 | 错误处理 | `@safe_node`：异常写入 `state['error']`；`@io_node` + `add_io_node`：只读节点挂 RetryPolicy | 已核对：**所有写类节点都是 `@safe_node`，没有自动重试**，符合 ADR 0024 D3 |
 | cascade | `graph.py` 的 `_route_after_*_intent`、询价子图和平仓子图内部的 `_route_or_end` | 已核对：每条条件边都先检查 error |
@@ -162,7 +162,6 @@ parse ──▶ fetch_orders ──▶ extract ──▶ normalize ──▶ val
 | `order_id.py` | CO- 单号正则与撤单范围解析 |
 | `aggregate.py` | 组装 `closeOrderReqVO`，清洗字面量 "null" |
 | `backend.py` | close 域统一出口 |
-| `merge.py` | **生产无引用**，只剩测试在用（见 6.2） |
 
 ---
 
@@ -255,6 +254,8 @@ parse ──▶ fetch_orders ──▶ extract ──▶ normalize ──▶ val
 - 平仓：`merge.py` 整个文件（逻辑已由 `normalization.py:296-300` 取代）、`order_id.py:81 is_order_id`、`backend.py:33 _message_id`、
   `intent.py:45-46`（被 :37 的 `confirmation_attempt` 提前拦截，永远走不到）。
 
+> 2026-09-24 结构整理：6.2 所列死代码（`_build_user_message` 兼容别名与 `option_rfq` 参数除外）已删除，含 `close/merge.py` 与其测试。
+
 ### 6.3 重复实现（建议收敛到 `app/extraction/`）
 
 - 中文数字解析至少 6 份：`confirmation._number` 与 `option/order_scope._number` **逐字相同**；另有 `close/order_id._ordinal_value`、
@@ -301,7 +302,7 @@ parse ──▶ fetch_orders ──▶ extract ──▶ normalize ──▶ val
 - [ ] 用户可见的回复是否来自 Java 回执；本地只允许"拒绝 / 澄清"类文案，不允许伪造成功卡片
 - [ ] 订单范围是否只会**收窄**、不会**扩大**：解析失败时应拒绝，而不是回退到"引用中的全部订单"
 - [ ] 新正则：是否处理大小写、词边界、否定窗口（不要跨越标点）、中文数字
-- [ ] 是否又新写了一份中文数字、单号或序号解析？应优先复用 `app/execution/confirmation.py` 或 `app/extraction/`
+- [ ] 是否又新写了一份中文数字、单号或序号解析？应优先复用 `app/domain/confirmation.py` 或 `app/extraction/`
 - [ ] 归一化失败时是明确拒绝，还是静默变成 None 或 0 后继续提交？
 - [ ] 新字段是否写了 `FieldRecord`（evidence / origin / locked），并且没有被 `**backend` 覆盖
 - [ ] docstring 是否与实际行为一致（是否调 LLM、节点数量、引用的文件是否存在）

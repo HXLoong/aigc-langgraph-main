@@ -47,7 +47,7 @@ def swap_rows(rows, sources):
     ("尽快成交 POV９％", False, False),
 ])
 def test_shared_rule(text, ratio, expected):
-    from app.extraction.fast_execution import resolve_fast_execution
+    from app.domain.fast_execution import resolve_fast_execution
 
     assert resolve_fast_execution(text, has_explicit_pov_ratio=ratio) is expected
 
@@ -155,6 +155,6 @@ def test_maximum_rule_does_not_overwrite_explicit_order_parameters():
     ("ASAP POV5%", False),
 ])
 def test_asap_uses_fast_intent_without_overriding_negation_or_ratio(text, expected):
-    from app.extraction.fast_execution import resolve_fast_execution
+    from app.domain.fast_execution import resolve_fast_execution
 
     assert resolve_fast_execution(text) is expected

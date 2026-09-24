@@ -4,7 +4,7 @@
 list 中被清成 None 的元素丢弃；dict 递归清洗。只清洗 orderList，顶层字段
 （如 type）不清洗——清成 None 会触发后端 `@NotBlank` 裸 400，保留原值更安全。
 
-1:1 对照 `/private/tmp/.../spec/code_nodes/互换开仓-前置清洗.py`，在
+源自 Dify「互换开仓-前置清洗」code 节点（Dify 资产已冻结于 tag dify-assets-frozen-20260917，ADR 0024 D1），在
 `call_swap_backend`（backend.py）里对所有 6 个意图统一调用一次，对应 Dify
 「模型数据聚合 → 互换开仓-前置清洗 → 互换开仓」的单一清洗落点。
 """
@@ -12,23 +12,12 @@ from __future__ import annotations
 
 from typing import Any, cast
 
-#: Dify `NULL_LITERALS` 环境变量默认值（逗号分隔，缺省即 {"null"}）。
-_DEFAULT_NULL_LITERALS = frozenset({"null"})
-
-
-def _sanitize(value: Any, literals: frozenset[str]) -> Any:
-    if isinstance(value, str):
-        return None if value.strip().lower() in literals else value
-    if isinstance(value, list):
-        return [c for c in (_sanitize(i, literals) for i in value) if c is not None]
-    if isinstance(value, dict):
-        return {k: _sanitize(v, literals) for k, v in value.items()}
-    return value
+from app.domain.sanitize import DEFAULT_NULL_LITERALS, strip_null_literals
 
 
 def sanitize_order_list(
     order_list: list[dict[str, Any]] | None,
-    null_literals: frozenset[str] = _DEFAULT_NULL_LITERALS,
+    null_literals: frozenset[str] = DEFAULT_NULL_LITERALS,
 ) -> list[dict[str, Any]]:
     """清洗 orderList：字面量 "null" 字符串 → None，list 中的 None 元素丢弃。
 
@@ -39,7 +28,7 @@ def sanitize_order_list(
     Returns:
         清洗后的新 order_list（不修改入参）
     """
-    return cast(list[dict[str, Any]], _sanitize(order_list or [], null_literals))
+    return cast(list[dict[str, Any]], strip_null_literals(order_list or [], null_literals))
 
 
 __all__ = ["sanitize_order_list"]

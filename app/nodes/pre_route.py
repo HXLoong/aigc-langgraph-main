@@ -1,6 +1,6 @@
 """路由前置提取(DSL v2「交易对手、候选标的提取」1:1 移植)。
 
-对照源:dify/yaml/主干工作流.yml 同名 code 节点。
+对照源:Dify 主干工作流同名 code 节点（Dify 资产已冻结于 tag dify-assets-frozen-20260917，ADR 0024 D1）。
 - option/trs:后端预查对手 JSON 串 → 精简列表(ctptyId/shortName/longName/sort)
 - quote_content:引用消息中的候选标的块 → [{orderId, orderSeq, candidates:[{seq,code,name}]}]
 
@@ -14,6 +14,7 @@ import json
 import re
 from typing import Any
 
+from app.domain.order_ids import SWAP_ORDER_ID_RE
 from app.graph.safe_node import safe_node
 from app.graph.state import AgentState, TraceEntry
 
@@ -21,7 +22,7 @@ ORDER_SEP = "-----场外收益互换详情-----"
 CAND_BEGIN = "匹配到其他标的"
 CAND_END = "如果以上"
 
-_ORDER_ID_RE = re.compile(r"H-\d{8}-\d{10}")
+_ORDER_ID_RE = SWAP_ORDER_ID_RE
 _ORDER_SEQ_RE = re.compile(r"序号[：:]\s*(\d+)")
 _CAND_START_RE = re.compile(r"(\d+)\s*\.\s*([A-Za-z0-9.]+)\s*-\s*")
 
@@ -82,8 +83,8 @@ def parse_candidates(quote: str | None) -> list[dict[str, Any]]:
 async def pre_route(state: AgentState) -> dict[str, Any]:
     """路由前置节点:解析对手列表与引用候选标的,异常由 @safe_node 兜底。
 
-    入参约定:ingest 把 Java 侧原始 JSON 串透传进
-    option_counterparties_raw / swap_counterparties_raw(见 app/nodes/ingest.py)。
+    入参约定:API 入口 inputs_to_state 把 Java 侧原始 JSON 串透传进
+    option_counterparties_raw / swap_counterparties_raw(见 app/api/turn_state.py)。
     """
     option_raw = state.get("option_counterparties_raw")
     swap_raw = state.get("swap_counterparties_raw")

@@ -7,7 +7,7 @@ import unicodedata
 from collections.abc import Sequence
 from typing import Literal
 
-from app.extraction.fast_execution import FAST_EXECUTION_PHRASES
+from app.domain.fast_execution import FAST_EXECUTION_PHRASES
 from app.observability.privacy import mask_sensitive
 from app.subgraphs.close.models import ClosePriceType
 from app.subgraphs.close.order_id import CONTRACT_CODE_RE, ORDER_ID_RE

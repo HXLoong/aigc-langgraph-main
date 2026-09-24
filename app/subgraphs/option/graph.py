@@ -1,4 +1,4 @@
-"""option 子图编译入口（Dify DSL v2 迁移，分支 feature/dify-dsl-migration，P2 option 域）。
+"""option 子图编译入口。
 
     START → option_intent → [route_by_intent]
         → option_extract_inquiry        (new_inquiry)
@@ -17,15 +17,12 @@ unknown_intent 走兜底）。不再有 request_modify_order / confirm_modify_or
 """
 from __future__ import annotations
 
-from typing import Any
-
 from langgraph.graph import END, START, StateGraph
 from langgraph.graph.state import CompiledStateGraph
 
-from app.graph.cascade import has_error
 from app.graph.retry import add_io_node
-from app.graph.safe_node import safe_node
-from app.graph.state import AgentState, SubgraphOutput, TraceEntry
+from app.graph.state import AgentState, SubgraphOutput
+from app.subgraphs.common import add_intent_dispatch, intent_router, make_unknown_node
 from app.subgraphs.option.extract_cancel import option_extract_cancel
 from app.subgraphs.option.extract_cancel_place import option_extract_cancel_place
 from app.subgraphs.option.extract_confirm_cancel import option_extract_confirm_cancel
@@ -35,20 +32,8 @@ from app.subgraphs.option.extract_place import option_extract_place
 from app.subgraphs.option.extract_query import option_extract_query
 from app.subgraphs.option.intent import option_intent
 
-
-@safe_node
-async def option_unknown(state: AgentState) -> dict[str, Any]:
-    """unknown_intent + cascade 错误兜底节点。"""
-    intent = state.get("intent") or "unknown_intent"
-    return {
-        "trace": [
-            TraceEntry(
-                node="option_unknown",
-                decision=f"unhandled_intent={intent}",
-            )
-        ]
-    }
-
+#: unknown_intent + cascade 错误兜底节点
+option_unknown = make_unknown_node("option_unknown")
 
 #: intent → 真节点 key 路由表（option 子图 7 个基础意图全覆盖，unknown 走 unknown 兜底）
 _INTENT_TO_NODE: dict[str, str] = {
@@ -61,17 +46,12 @@ _INTENT_TO_NODE: dict[str, str] = {
     "query_order_status": "option_extract_query",
 }
 
-
-def _route_after_option_intent(state: AgentState) -> str:
-    """option.intent 后路由：cascade 防御 + intent 分发。"""
-    if has_error(state):
-        return "option_unknown"
-    intent = state.get("intent") or "unknown_intent"
-    return _INTENT_TO_NODE.get(intent, "option_unknown")
+#: option.intent 后路由：cascade 防御 + intent 分发
+_route_after_option_intent = intent_router(_INTENT_TO_NODE, "option_unknown")
 
 
 def build_option_graph() -> CompiledStateGraph[AgentState, None, AgentState, SubgraphOutput]:
-    """构建 option 子图（7 意图 : 7 真节点一一对应，Dify DSL v2）。"""
+    """构建 option 子图（7 意图 : 7 真节点一一对应）。"""
     g: StateGraph[AgentState, None, AgentState, SubgraphOutput] = StateGraph(AgentState, output_schema=SubgraphOutput)
     add_io_node(g, "option_intent", option_intent)
     g.add_node("option_extract_inquiry", build_inquiry_graph())  # 子图原生嵌入（ADR 0024 D3）
@@ -84,30 +64,10 @@ def build_option_graph() -> CompiledStateGraph[AgentState, None, AgentState, Sub
     g.add_node("option_unknown", option_unknown)
 
     g.add_edge(START, "option_intent")
-    g.add_conditional_edges(
-        "option_intent",
-        _route_after_option_intent,
-        {
-            "option_extract_inquiry": "option_extract_inquiry",
-            "option_extract_place": "option_extract_place",
-            "option_extract_confirm_place": "option_extract_confirm_place",
-            "option_extract_cancel_place": "option_extract_cancel_place",
-            "option_extract_cancel": "option_extract_cancel",
-            "option_extract_confirm_cancel": "option_extract_confirm_cancel",
-            "option_extract_query": "option_extract_query",
-            "option_unknown": "option_unknown",
-        },
+    targets = add_intent_dispatch(
+        g, "option_intent", _route_after_option_intent, _INTENT_TO_NODE, "option_unknown",
     )
-    for n in (
-        "option_extract_inquiry",
-        "option_extract_place",
-        "option_extract_confirm_place",
-        "option_extract_cancel_place",
-        "option_extract_cancel",
-        "option_extract_confirm_cancel",
-        "option_extract_query",
-        "option_unknown",
-    ):
+    for n in targets:
         g.add_edge(n, END)
     return g.compile()
 

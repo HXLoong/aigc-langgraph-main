@@ -145,48 +145,6 @@ class SwapPlaceOrderParams(WireModel):
 
 
 # ============================================================
-# 确认/撤单/查询 共享 schema（confirm / cancel / query）
-#
-# 三个节点输出共用 schema：仅含 orderList[orderId]。
-# orderId 允许 null（与 Dify 原 schema 一致，表示"找不到订单号"兜底）。
-# ============================================================
-
-
-class SwapOrderRefItem(WireModel):
-    """轻量订单引用（与 Dify swap/confirm/cancel/query 输出 schema 对齐）。"""
-
-    model_config = ConfigDict(extra="ignore")
-
-    order_id: str | None = Field(default=None, alias="orderId")
-
-
-class SwapConfirmParams(WireModel):
-    """swap.confirm 合并版输出（confirm_order + confirm_cancel_order +
-    confirm_modify_order 三子意图共用，靠 expected_action 区分）。
-    """
-
-    model_config = ConfigDict(extra="ignore")
-
-    order_list: list[SwapOrderRefItem] = Field(alias="orderList", default_factory=list)
-
-
-class SwapCancelParams(WireModel):
-    """swap.cancel 输出（cancel_order_request 意图）。"""
-
-    model_config = ConfigDict(extra="ignore")
-
-    order_list: list[SwapOrderRefItem] = Field(alias="orderList", default_factory=list)
-
-
-class SwapQueryParams(WireModel):
-    """swap.query_order 输出（query_order_status 意图）。"""
-
-    model_config = ConfigDict(extra="ignore")
-
-    order_list: list[SwapOrderRefItem] = Field(alias="orderList", default_factory=list)
-
-
-# ============================================================
 # 标的/交易对手选择指针（swap.select_ticker / swap.select_counterparty）
 #
 # DSL v2 新节点：只判断用户是否在切换候选标的 / 选择交易对手，输出指针
@@ -270,10 +228,6 @@ __all__ = [
     "SwapNotionalCurrency",
     "SwapOrderItem",
     "SwapPlaceOrderParams",
-    "SwapOrderRefItem",
-    "SwapConfirmParams",
-    "SwapCancelParams",
-    "SwapQueryParams",
     "SwapTickerPick",
     "SwapSelectTickerOutput",
     "SwapCounterpartyPick",

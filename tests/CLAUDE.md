@@ -12,7 +12,8 @@ tests/
 ├── intent_fixtures.py / evidence_support.py / llm_guard.py   # 共享 mock 工厂与守卫（证据必须来自真实输入；去 LLM 化模块不得持有 LLM 工厂）
 ├── graph/                 # 主图：拓扑 / reducer / 路由纯函数 / RetryPolicy 读写清单 / 子图契约 / 确认路径
 ├── nodes/                 # 节点级测试（ingest / entry_route / render / fallback / persist ...）
-├── subgraphs/{swap,option,close}/  # 子图级测试（标的识别已委托 Java，无 ticker 子图）
+├── subgraphs/{swap,option,close}/  # 子图级测试（标的识别已委托 Java，无 ticker 子图）；test_common.py 守三子图共用骨架
+├── domain/                # app/domain 纯业务规则单测（order_ids / numerals / sanitize）
 ├── api_wire/              # /v1/workflows/run 对 Java 的现行 wire 契约；原生协议迁移暂缓，保持兼容 + 幂等 + 输入映射
 ├── tools/                 # backend client / auth / exception / http_pool
 ├── observability/         # tracing / metrics / logs / health

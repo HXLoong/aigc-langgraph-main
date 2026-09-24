@@ -10,22 +10,14 @@
 from __future__ import annotations
 
 import json
-import re
 from typing import Any
 
+from app.domain.order_ids import ORDER_ID_RE_BY_PRODUCT
 from app.graph.safe_node import safe_node
 from app.graph.state import AgentState, TraceEntry
-from app.subgraphs.close.order_id import ORDER_ID_RE as CLOSE_ORDER_ID_RE
-from app.subgraphs.option.order_id import ORDER_ID_RE as OPTION_ORDER_ID_RE
-from app.subgraphs.swap.order_id import ORDER_ID_RE as SWAP_ORDER_ID_RE
 
 #: 建单类动作：产生可被后续确认 / 撤单引用的订单
 _REMEMBER_ACTIONS = frozenset({"place", "modify", "inquiry", "close"})
-_ORDER_ID_RES: dict[str, re.Pattern[str]] = {
-    "swap": SWAP_ORDER_ID_RE,
-    "option": OPTION_ORDER_ID_RE,
-    "option_close": CLOSE_ORDER_ID_RE,
-}
 
 
 def _ids_from_objects(state: AgentState) -> list[str]:
@@ -47,7 +39,7 @@ def _ids_from_objects(state: AgentState) -> list[str]:
 
 
 def _ids_from_api_result(state: AgentState, product_type: str) -> list[str]:
-    pattern = _ORDER_ID_RES.get(product_type)
+    pattern = ORDER_ID_RE_BY_PRODUCT.get(product_type)
     result = state.get("api_result")
     if pattern is None or result is None:
         return []

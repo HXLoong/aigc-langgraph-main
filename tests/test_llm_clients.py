@@ -81,7 +81,7 @@ def _clear_factory_caches():
 @pytest.mark.parametrize(
     "factory_name",
     [
-        "get_qwen_standard", "get_qwen_thinking", "make_qwen_thinking",
+        "get_qwen_standard", "get_qwen_thinking",
         "get_qwen_structured", "get_qwen_complex", "get_qwen_vl",
     ],
 )
@@ -159,7 +159,7 @@ class TestFactoryExtraBody:
 
     @pytest.mark.parametrize(
         "factory_name",
-        ["get_qwen_standard", "get_qwen_thinking", "get_qwen_structured", "get_qwen_complex", "make_qwen_thinking"],
+        ["get_qwen_standard", "get_qwen_thinking", "get_qwen_structured", "get_qwen_complex"],
     )
     @pytest.mark.parametrize("model", ["deepseek-v4-pro", "external-deepseek-v4-pro"])
     def test_deepseek_model_gets_thinking_disabled(
@@ -181,14 +181,6 @@ class TestFactoryExtraBody:
         llm = clients.get_qwen_standard()
         assert llm.extra_body == {"enable_thinking": False}
 
-    def test_make_qwen_thinking_deepseek(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        monkeypatch.setattr(
-            clients, "get_settings", lambda: _fake_settings("deepseek-v4-pro")
-        )
-        llm = clients.make_qwen_thinking()
-        assert llm.extra_body == {"thinking": {"type": "disabled"}}
 
 
 class _DummyOut(SimpleNamespace):
@@ -198,7 +190,7 @@ class _DummyOut(SimpleNamespace):
 @pytest.mark.parametrize("factory_name,expected", [
     ("get_qwen_standard", 800), ("get_qwen_thinking", 800),
     ("get_qwen_structured", 800), ("get_qwen_complex", 800),
-    ("make_qwen_thinking", 800), ("get_qwen_vl", 4096),
+    ("get_qwen_vl", 4096),
 ])
 def test_factory_enforces_configured_output_budget(monkeypatch, factory_name, expected):
     factory = getattr(clients, factory_name)

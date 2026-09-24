@@ -29,7 +29,7 @@
 - 首次通过 sql/init.sql 初始化；启动只读校验，不在节点调用 saver.setup 建表，不使用生产单连接 from_conn_string。
 - 测试使用 InMemorySaver；没有跨轮要求的纯计算子图可显式 checkpointer=False。
 - thread_id 固定为 conversation_id；消息、群、用户身份必须沿用真实入口，禁止截断数字ID。
-- 确认采用文本两阶段：七条最终确认路径均须明确动作并引用当前订单，范围由 app/execution/confirmation.py 校验；历史记忆及程序生成的引用不能替代用户引用。
+- 确认采用文本两阶段：七条最终确认路径均须明确动作并引用当前订单，范围由 app/domain/confirmation.py 校验；历史记忆及程序生成的引用不能替代用户引用。
 - 不引入 interrupt 确认；递归上限通过 API 的统一 config 设置。
 - Langfuse callbacks 由请求入口统一注入，子图自然继承；本地审计写 langgraph_node_trace。
 - 节点公共契约只维护在 app/node_execution/catalog.py；执行平台负责 schema 与客户端注入，harness 负责展示和回放策略。暴露范围可不同，写节点保持禁止回放。

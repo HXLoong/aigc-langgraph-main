@@ -205,7 +205,7 @@ async def test_persist_write_failure_keeps_existing_success_output(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     writer = AsyncMock(side_effect=RuntimeError("db offline"))
-    monkeypatch.setattr("app.nodes.persist._write_to_mysql", writer)
+    monkeypatch.setattr("app.nodes.persist.write_node_trace", writer)
     response = await request(
         NodeExecutor(build_registry()), "main", "persist", {"trace": [{"node": "old"}]}
     )

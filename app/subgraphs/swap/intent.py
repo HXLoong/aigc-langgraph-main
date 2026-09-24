@@ -15,7 +15,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from app.execution.confirmation import (
+from app.domain.confirmation import (
     confirmation_action,
     confirmation_attempt,
 )
@@ -25,13 +25,7 @@ from app.graph.state import AgentState, TraceEntry
 from app.llm.clients import get_qwen_thinking
 from app.prompts import blocks
 from app.prompts.spec import PromptSpec, register
-from app.subgraphs.swap.confirmation import is_confirmation
 from app.subgraphs.swap.models import SwapIntentOutput
-
-
-def has_confirm_order_keyword(raw: str | None) -> bool:
-    """兼容旧函数名；完整匹配 CWAIJY-957 确认口令。"""
-    return is_confirmation(raw)
 
 
 def _build_user_message(state: AgentState) -> str:
@@ -86,4 +80,4 @@ async def swap_intent(state: AgentState) -> dict[str, Any]:
     }
 
 
-__all__ = ["has_confirm_order_keyword", "swap_intent"]
+__all__ = ["swap_intent"]

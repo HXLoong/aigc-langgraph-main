@@ -13,7 +13,9 @@ from __future__ import annotations
 import os
 from typing import Any
 
-_DEFAULT_NULL_LITERALS = frozenset({"null"})
+from app.domain.sanitize import DEFAULT_NULL_LITERALS, strip_null_literals
+
+_DEFAULT_NULL_LITERALS = DEFAULT_NULL_LITERALS
 
 
 def _clean_str_list(values: list[Any] | None) -> list[str]:
@@ -72,22 +74,12 @@ def _parse_null_literals(null_literals: str | None) -> frozenset[str]:
         return _DEFAULT_NULL_LITERALS
 
 
-def _sanitize(value: Any, literals: frozenset[str]) -> Any:
-    if isinstance(value, str):
-        return None if value.strip().lower() in literals else value
-    if isinstance(value, list):
-        return [c for c in (_sanitize(i, literals) for i in value) if c is not None]
-    if isinstance(value, dict):
-        return {k: _sanitize(v, literals) for k, v in value.items()}
-    return value
-
-
 def sanitize_close_order_req_vo(
     close_order_req_vo: dict[str, Any], null_literals: str | None = None
 ) -> dict[str, Any]:
     """期权平仓-前置清洗（1:1 移植）。递归清洗 null 字面量字符串 -> None。"""
     literals = _parse_null_literals(null_literals)
-    cleaned = _sanitize(close_order_req_vo, literals)
+    cleaned = strip_null_literals(close_order_req_vo, literals)
     return cleaned if isinstance(cleaned, dict) else {}
 
 

@@ -67,7 +67,7 @@ def inquiry_workflow(
     monkeypatch.setenv("ENABLE_LANGFUSE", "false")
     monkeypatch.setattr(app_main, "init_checkpointer", AsyncMock(return_value=InMemorySaver()))
     monkeypatch.setattr(app_main, "close_checkpointer", AsyncMock())
-    monkeypatch.setattr("app.nodes.persist._write_to_mysql", AsyncMock())
+    monkeypatch.setattr("app.nodes.persist.write_node_trace", AsyncMock())
 
     # 保留真实 tokenizer / resolver / ticker HTTP，仅替换外部 LLM。
     from app.nodes.intent_route import UnknownIntentOutput

@@ -52,34 +52,41 @@ python scripts/probe_close_write_e2e.py
 app/
 ├── main.py                  # FastAPI 入口 + lifespan + HTTPMetricsMiddleware + /metrics
 ├── config.py                # pydantic-settings 配置加载
-├── api/                     # routes.py（POST /v1/workflows/run）+ health.py（/health, /ready）
+├── api/                     # 仅 HTTP 层：routes.py（POST /v1/workflows/run）+ health.py（/health, /ready）+ nodes.py（节点调试）
 ├── graph/
 │   ├── state.py             # AgentState（按业务对象聚合）
 │   ├── safe_node.py         # @safe_node 装饰器
 │   ├── cascade.py           # cascade fallback（error → 友好降级）
-│   └── main.py              # 主图组装入口（build_main_graph;旧 graphs/ shim 已删）
+│   ├── business_params.py   # 业务对象写入前的形状校验（validated_*）
+│   └── main.py              # 主图组装入口（build_main_graph；app/graph 内唯一依赖业务节点的模块）
 ├── nodes/                   # ingest / pre_route（对手+候选提取）/ route_rules + intent_route（DSL v2 两层路由）
 │                            # / fast_query（快速询价+存量兼容前置分支）/ persist / render / fallback
-├── subgraphs/               # 三个业务子图
+├── subgraphs/               # 三个业务子图（互不依赖）+ common.py（意图分发路由 + <product>_unknown 兜底）
 │   ├── swap/                # intent / place_order(+submit) / select_counterparty / select_ticker
 │   │                        # / confirm(三提示词+二次校验) / cancel / query_order / multimodal(图片+Excel)
 │   │                        # （+ quote_hints / aggregate / prewash / backend / graph / models;手转股已删）
 │   ├── option/              # intent + 7 extract（inquiry / place / confirm_place / cancel_place /
 │   │                        # confirm_cancel / cancel / query）+ sanitize + backend
 │   ├── close/               # intent / place_close(5 步引用解析链) / cancel_close / confirm_close /
-│   │                        # confirm_cancel / holding_query / query_status + reference_parser/merge/aggregate/backend
+│   │                        # confirm_cancel / holding_query / query_status + reference_parser/aggregate/backend
 │                            # 标的识别、分词与排序由 Java 调对应工具处理（ADR 0025）
+├── domain/                  # 纯业务规则（无 IO）：order_ids（订单号形态单一来源）/ numerals / confirmation
+│                            # （七条最终确认校验）/ tenor / fast_execution / sanitize
+├── extraction/              # 字段证据契约：候选 → 代码校验 / 归一化 → FieldRecord 锁定（ADR 0027）
 ├── tools/
 │   ├── models.py            # Java DTO 对应 Pydantic
 │   ├── option_client.py     # OptionClient Protocol（POST /financial-orders/operate）
 │   ├── swap_client.py       # SwapClient Protocol（POST /swap-order/operate）
-│   ├── ticker_client.py     # TickerClient Protocol（GET /securities-instrument/select）
+│   ├── ticker_client.py     # TickerClient Protocol（历史命名；实际只查授权交易对手列表，仅本地验收用）
 │   ├── goats_agent_client.py # GOATS /internal/agent/*（快速询价 rfq parser + 存量兼容,md5-16 签名）
 │   ├── auth.py / exceptions.py
 ├── llm/clients.py           # LLM 统一工厂：全量 DeepSeek-V4-pro（ADR 0020，thinking 关闭 + structured output 走 function_calling 适配）
 ├── checkpointer/factory.py  # AIOMySQLSaver
+├── storage/                 # MySQL 表与读写：mysql（MYSQL_URI 唯一解析）/ idempotency / reconciliation / node_trace
 ├── observability/           # tracing.py + metrics.py（Prometheus 兼容 /metrics）
 └── prompts/                 # 提示词资产（git 唯一真源，ADR 0024 D1；router / swap / option / option_close）
+
+# 分层依赖方向见 docs/architecture/README.md §分层，由 tests/test_architecture_layers.py 守护
 
 harness/                     # 评测台（经 HTTP 调本地 /v1/workflows/run，与 app/ 解耦）
 ├── golden.py                # categories fixture 加载（两方言归一化）
@@ -222,7 +229,7 @@ tests/fixtures/              # categories/（A 方言业务集，6 文件 / 389 
 | 第2轮路由走了 LLM 而非 quote_marker | `_QUOTE_MARKERS` 未覆盖实际标记 | `app/nodes/intent_route.py` |
 | 标的未匹配 | 核对 Java 真实回复与提交的原始证券表达；不根据空 `tickers` 生成本地拒绝 | 子图 `backend.py` |
 | option place_order 显示"互换订单参数" | render 第3分支缺 `product_type=="swap"` 条件 | `app/nodes/render.py` |
-| 多轮 tickers/params 丢失 | 业务对象是 per-turn（ingest 清空，ADR 0024 D2）；跨轮上下文只靠 `history_messages` + `last_confirmed_params`（上一轮已确认订单号，仅作上下文；七条最终确认路径均必须引用当前订单并明确确认具体动作，范围校验统一由 `app/execution/confirmation.py` 执行） | `app/nodes/ingest.py` / `app/nodes/remember_confirmed.py` |
+| 多轮 tickers/params 丢失 | 业务对象是 per-turn（ingest 清空，ADR 0024 D2）；跨轮上下文只靠 `history_messages` + `last_confirmed_params`（上一轮已确认订单号，仅作上下文；七条最终确认路径均必须引用当前订单并明确确认具体动作，范围校验统一由 `app/domain/confirmation.py` 执行） | `app/nodes/ingest.py` / `app/nodes/remember_confirmed.py` |
 | 后端返回"订单不存在" | 参数中 orderId/Q- 单号提取错误 | 子图 extract 节点 + 提示词 |
 
 ### 2. TDD 修复（强制）

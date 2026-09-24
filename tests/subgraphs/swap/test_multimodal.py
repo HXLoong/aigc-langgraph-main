@@ -1,7 +1,6 @@
 """swap 图片/Excel 多模态链测试(DSL v2 互换-图片 / 互换-Excel 分支)。
 
 覆盖 `app/subgraphs/swap/multimodal.py`：
-- `parse_excel_rows`：openpyxl 解析 + 「产品」列改名「交易对手」（确定性代码规则）
 - `_image_urls`：remote_url / url / base64 三键取值
 - `swap_image_order`：VL OCR → 参数提取 → place_params
 - `swap_excel_order`：下载 → 解析 → 参数提取 → place_params
@@ -23,7 +22,6 @@ from app.extraction.candidates import candidate_model
 from app.subgraphs.swap.models import SwapOrderItem, SwapPlaceOrderParams
 from app.subgraphs.swap.multimodal import (
     _image_urls,
-    parse_excel_rows,
     swap_excel_order,
     swap_image_order,
 )
@@ -112,43 +110,6 @@ _PARAMS = SwapPlaceOrderParams(
 _MODIFY_PARAMS = SwapPlaceOrderParams(
     orderList=[SwapOrderItem(orderId="H-20260101-0000000001", placeOrderPrice=350)]
 )
-
-
-# ============================================================
-# parse_excel_rows
-# ============================================================
-
-
-class TestParseExcelRows:
-    def test_product_column_renamed(self) -> None:
-        data = _make_excel_bytes(["产品", "数量"], [["中信", 100]])
-        rows = parse_excel_rows(data)
-        assert rows == [{"交易对手": "中信", "数量": 100}]
-
-    def test_product_column_renamed_in_middle(self) -> None:
-        data = _make_excel_bytes(["标的", "产品", "方向"], [["600519.SH", "中信", "买入"]])
-        rows = parse_excel_rows(data)
-        assert rows == [{"标的": "600519.SH", "交易对手": "中信", "方向": "买入"}]
-
-    def test_no_product_column(self) -> None:
-        data = _make_excel_bytes(["标的", "方向"], [["600519.SH", "买入"]])
-        rows = parse_excel_rows(data)
-        assert rows == [{"标的": "600519.SH", "方向": "买入"}]
-
-    def test_empty_sheet(self) -> None:
-        data = _make_excel_bytes(["A"], [])
-        assert parse_excel_rows(data) == []
-
-    def test_fully_empty_row_skipped(self) -> None:
-        data = _make_excel_bytes(["A", "B"], [["x", "y"], [None, None]])
-        assert parse_excel_rows(data) == [{"A": "x", "B": "y"}]
-
-    def test_multiple_rows(self) -> None:
-        data = _make_excel_bytes(["产品", "数量"], [["中信", 100], ["华泰", 200]])
-        assert parse_excel_rows(data) == [
-            {"交易对手": "中信", "数量": 100},
-            {"交易对手": "华泰", "数量": 200},
-        ]
 
 
 # ============================================================

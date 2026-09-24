@@ -223,16 +223,17 @@ class TestQuickInquiry:
 class TestErrorCopyDisambiguation:
     def test_parser_failure_and_backend_failure_have_distinct_copy(self):
         import app.tools.goats_agent_client as goats
+        from app.tools.receipts import SERVICE_UNAVAILABLE
 
         texts = {
             goats._RFQ_UNAVAILABLE_MSG,
             goats._RFQ_RESPONSE_INVALID_MSG,
-            fq._SERVICE_UNAVAILABLE,
+            SERVICE_UNAVAILABLE,
         }
         assert len(texts) == 2
         assert "请检查网络" in goats._RFQ_UNAVAILABLE_MSG
         assert goats._RFQ_RESPONSE_INVALID_MSG == goats._RFQ_UNAVAILABLE_MSG
-        assert "交易指令服务" in fq._SERVICE_UNAVAILABLE
+        assert "交易指令服务" in SERVICE_UNAVAILABLE
 
 
 class TestExistingCommand:

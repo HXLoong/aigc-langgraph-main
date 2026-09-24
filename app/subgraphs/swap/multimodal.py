@@ -2,11 +2,9 @@
 from __future__ import annotations
 
 import asyncio
-import io
 from typing import Any
 
 import httpx
-import openpyxl
 from pydantic import BaseModel
 
 from app.config import get_settings
@@ -27,22 +25,6 @@ from app.subgraphs.swap.place_order import (
     CANDIDATE_MODEL,
     _expected_action,
 )
-
-
-def parse_excel_rows(content: bytes) -> list[dict[str, Any]]:
-    """保留旧工具接口：解析首个 sheet，产品列改名交易对手。"""
-    workbook = openpyxl.load_workbook(io.BytesIO(content), read_only=True)
-    try:
-        sheet = workbook.active
-        if sheet is None:
-            return []
-        rows_iter = sheet.iter_rows(values_only=True)
-        headers = [str(h) if h is not None else "" for h in next(rows_iter, ())]
-        headers = ["交易对手" if h == "产品" else h for h in headers]
-        return [dict(zip(headers, row, strict=False))
-                for row in rows_iter if any(value is not None for value in row)]
-    finally:
-        workbook.close()
 
 
 async def _fetch_bytes(url: str) -> bytes:
@@ -180,4 +162,4 @@ async def swap_excel_order(state: AgentState) -> dict[str, Any]:
     )
 
 
-__all__ = ["swap_image_order", "swap_excel_order", "parse_excel_rows"]
+__all__ = ["swap_image_order", "swap_excel_order"]

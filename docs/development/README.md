@@ -79,7 +79,7 @@ python scripts/check_alert_threshold_consistency.py && python scripts/sync_agent
 - 用 `with_structured_output(PydanticModel)`，不要手工解析 JSON
 - 统一从 `app/llm/clients.py` 取工厂（全量 DeepSeek-V4-pro，ADR 0020；函数名沿用 `get_qwen_*`）
 - 意图 / 参数提取节点用 `get_qwen_thinking()`（先例：swap/intent、option/extract_*）；swap 复杂提取用 `get_qwen_complex()`
-- 图片 OCR 用 `get_qwen_vl()`；跨线程场景用非缓存 `make_qwen_thinking()`
+- 图片 OCR 用 `get_qwen_vl()`
 
 ### HTTP 调用
 - 统一走 `OptionClient` / `SwapClient` / `TickerClient` Protocol（ADR 0001 D2），连接走 `app/tools/http_pool.py` 单例池

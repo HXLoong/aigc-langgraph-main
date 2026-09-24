@@ -53,21 +53,14 @@ async def probe_mysql() -> ProbeResult:
             await checkpointer_factory.probe_checkpointer()
             return
 
-        from urllib.parse import urlparse
-
         import aiomysql
+
+        from app.storage.mysql import connection_args
 
         uri = get_settings().mysql_uri
         if not uri:
             raise RuntimeError("no_uri")
-        parsed = urlparse(uri)
-        conn = await aiomysql.connect(
-            host=parsed.hostname,
-            port=parsed.port or 3306,
-            user=parsed.username or "",
-            password=parsed.password or "",
-            db=(parsed.path or "/").lstrip("/") or None,
-        )
+        conn = await aiomysql.connect(**connection_args(uri))
         try:
             async with conn.cursor() as cur:
                 await cur.execute("SELECT 1")

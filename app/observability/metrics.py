@@ -25,7 +25,6 @@ from __future__ import annotations
 import logging
 import threading
 from collections import defaultdict
-from time import perf_counter
 from typing import Any
 
 logger = logging.getLogger(__name__)
@@ -365,35 +364,10 @@ def emit_llm_tokens(
     coll.inc_counter(METRIC_LLM_TOKENS, labels_completion, value=completion_tokens)
 
 
-# ============================================================
-# 计时上下文（用于细粒度延迟测量）
-# ============================================================
-
-
-class Timer:
-    """with Timer() as t: ... ; t.elapsed_ms  → int
-
-    用法:
-        with Timer() as t:
-            do_work()
-        emit_intent_latency("swap", "place_order", t.elapsed_ms)
-    """
-
-    def __init__(self) -> None:
-        self._start: float = 0.0
-        self.elapsed_ms: int = 0
-
-    def __enter__(self) -> Timer:
-        self._start = perf_counter()
-        return self
-
-    def __exit__(self, exc_type: object, exc_val: object, exc_tb: object) -> None:
-        self.elapsed_ms = int((perf_counter() - self._start) * 1000)
 
 
 __all__ = [
     "MetricsCollector",
-    "Timer",
     "emit_node_completed",
     "emit_intent_latency",
     "emit_fallback",

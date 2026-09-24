@@ -12,8 +12,7 @@ from typing import Any, Literal, Protocol
 import aiomysql
 import pymysql
 
-from app.nodes.persist import _parse_mysql_uri
-from app.storage.mysql import MESSAGE_LOG, SESSION_INIT
+from app.storage.mysql import MESSAGE_LOG, connection_args
 
 PROCESSING_NOTICE = "该消息正在处理中，请勿重复提交。"
 UNCERTAIN_NOTICE = "该消息的执行结果待核对，请勿重复提交。"
@@ -157,16 +156,13 @@ class MySQLIdempotencyStore:
         self, mysql_uri: str, *, timeout_seconds: float = 5.0,
         processing_timeout_seconds: float = 120.0,
     ) -> None:
-        self._conn_args = _parse_mysql_uri(mysql_uri)
+        self._conn_args = connection_args(mysql_uri)
         self._timeout = timeout_seconds
         self._processing_timeout = processing_timeout_seconds
 
     async def _connect(self) -> aiomysql.Connection:
-        host, port, user, password, db = self._conn_args
         return await asyncio.wait_for(
-            aiomysql.connect(host=host, port=port, user=user, password=password, db=db,
-                             charset="utf8mb4", init_command=SESSION_INIT, autocommit=True),
-            timeout=self._timeout,
+            aiomysql.connect(**self._conn_args, autocommit=True), timeout=self._timeout,
         )
 
     async def begin(

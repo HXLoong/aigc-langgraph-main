@@ -24,14 +24,12 @@ class Settings(BaseSettings):
         default=True,
         description="LLM HTTP 客户端是否读取环境/系统代理和证书配置；内网直连设为 false",
     )
-    # 全部统一 qwen3.5-35b-a3b + enable_thinking=False（见 clients.py），
-    # 保留 3 个变量名是为了未来按节点切回不同模型时只改 .env
+    # `qwen_` 前缀为历史命名；实际模型由 .env 指定（ADR 0020 全量 DeepSeek-V4-pro，见 clients.py）。
+    # 保留多个变量名是为了未来按节点切回不同模型时只改 .env
     qwen_model_standard: str = "qwen3.5-35b-a3b"
     qwen_model_thinking: str = "qwen3.5-35b-a3b"
     qwen_model_complex: str = "qwen3.5-35b-a3b"
     qwen_model_vl: str = "qwen-vl-max-latest"
-
-    anthropic_api_key: str | None = None
 
     # === 后端业务 API ===
     otc_api_base_url: str
@@ -47,7 +45,7 @@ class Settings(BaseSettings):
     node_retry_max_attempts: int = Field(default=2, ge=1, le=3)
     node_retry_initial_interval_seconds: float = Field(default=0.5, ge=0)
     backend_timeout_seconds: float = Field(default=5.0, gt=0)
-    persist_timeout_seconds: float = 5.0     # node_trace 写库连接（app/nodes/persist.py）
+    persist_timeout_seconds: float = 5.0     # node_trace 写库连接（app/storage/node_trace.py）
     multimodal_fetch_timeout_seconds: float = Field(default=5.0, gt=0)  # 图片 / Excel 远端文件下载（swap/multimodal.py）
     goats_agent_rfq_timeout_seconds: float = Field(default=5.0, gt=0)        # GOATS agent：快速询价参数解析
     goats_agent_instruction_timeout_seconds: float = Field(default=5.0, gt=0)  # GOATS agent：存量兼容指令查询
@@ -69,10 +67,6 @@ class Settings(BaseSettings):
     eval_user_id: str = ""
     eval_guid: str = ""
 
-    # === 外部搜索 ===
-    bocha_api_key: str = ""
-    tavily_api_key: str = ""
-
     # === 可观测性 ===
     log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR"] = "INFO"
     # ADR 0024 D5：结构化日志格式；auto = development 彩色控制台、其余 JSON（每条带 trace_id）
@@ -90,7 +84,6 @@ class Settings(BaseSettings):
     langfuse_public_key: str = ""
     langfuse_secret_key: str = ""
     langfuse_base_url: str = "http://127.0.0.1:3000"
-    langfuse_project: str = "otc-agent"
     # 是否信任入站 W3C traceparent（把请求挂到调用方父 Trace）。仅可信网络（测试工作台）开启；
     # 与 environment 解耦（ADR 0024 D5）
     trust_inbound_traceparent: bool = False
@@ -104,11 +97,7 @@ class Settings(BaseSettings):
     checkpoint_pool_maxsize: int = Field(default=10, ge=1)
     checkpoint_pool_recycle_seconds: int = Field(default=1800, ge=1)
 
-    # === 灰度切换 ===
-    use_langgraph: bool = True
-    langgraph_traffic_ratio: float = Field(default=1.0, ge=0.0, le=1.0)
-    shadow_mode: bool = False
-
+    # === 影子对照 ===
     # shadow 对照用：拦截 *.operate / close_order_* 等"写类"客户端调用，
     # 返回 fake CommonResult，避免 LangGraph 替代客户真下单/真撤单。
     # read 类（query / get / list）正常调真后端。

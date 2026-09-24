@@ -39,41 +39,65 @@ Java 后端业务接口 → 交易系统（标的识别、业务默认值、订�
 
 ## 分层
 
-### 1. 接入层（`app/main.py`、`app/api/`）
+依赖只能自上而下；`tests/test_architecture_layers.py` 守护下列方向（含函数内延迟导入）。
+
+```
+接入层      app/main.py · app/api/（HTTP 协议、请求预算、幂等编排）· app/node_execution/（节点调试执行）
+               ↓
+图编排层    app/graph/main.py（唯一的主图组装入口）
+               ↓
+业务节点    app/nodes/（主图入口与收尾节点）· app/subgraphs/{swap,option,close}/ + common.py
+               ↓            三个子图互不依赖，共用骨架只在 subgraphs/common.py
+图基础设施  app/graph/{state,safe_node,retry,cascade,business_params}.py · app/prompts/
+               ↓
+能力层      app/tools/（Java / GOATS Protocol 客户端与回执）· app/llm/ · app/storage/（MySQL 表与读写）
+            app/checkpointer/ · app/observability/
+               ↓
+规则层      app/domain/（纯业务规则）→ app/extraction/（字段证据框架）→ app/wire_model.py / app/config.py
+```
+
+### 1. 接入层（`app/main.py`、`app/api/`、`app/node_execution/`）
 
 - lifespan 初始化 checkpointer 连接池、HTTP 客户端池、日志与 LangFuse；启动时只读校验数据库表结构。
-- `POST /v1/workflows/run`：兼容 Dify 协议（ADR 0024 D7）；请求级幂等、不确定回执与对账见 ADR 0026。
-- `POST /v1/nodes/prepare`、`POST /v1/nodes/run`：节点级调试接口（ADR 0029）。
+- `POST /v1/workflows/run`：兼容 Dify 协议（ADR 0024 D7）；请求级幂等、不确定回执与对账见 ADR 0026（存储实现在 `app/storage/`）。
+- `POST /v1/nodes/prepare`、`POST /v1/nodes/run`：节点级调试接口（ADR 0029）；节点公共契约只在 `app/node_execution/catalog.py`。
 - `GET /health`、`GET /ready`（区分硬依赖与软依赖）、`GET /metrics`。
+- `api/` 只放 HTTP 层，不直接依赖子图。
 
-### 2. 图编排层（`app/graph/`）
+### 2. 图编排层与图基础设施（`app/graph/`）
 
-- `main.py`：`build_main_graph()` 组装主图，三个业务子图以原生子图嵌入。
+- `main.py`：`build_main_graph()` 组装主图，三个业务子图以原生子图嵌入；这是 `app/graph` 中唯一依赖业务节点的模块。
 - `state.py`：`AgentState` 按生命周期分层——本轮输入、会话记忆、业务对象（每轮由 `ingest` 重置）、工程字段（ADR 0024 D2）。
+- `business_params.py`：业务对象（place_params / cancel_params / confirm / query_filter / close_params）写入前的形状校验。
 - `safe_node.py` / `retry.py`：写类节点用 `@safe_node`，异常落 `state['error']`；只读 IO 节点用 `@io_node` + `add_io_node` 挂 `RetryPolicy`，写类节点永不自动重试。
-- `cascade.py`：出错后的降级路由。
+- `cascade.py`：`has_error`，所有条件路由先判错再分流。
 
-### 3. 子图层（`app/subgraphs/`）
+### 3. 业务节点（`app/nodes/`、`app/subgraphs/`）
 
-每个业务域一个包：`graph.py`（组装）+ `models.py`（Pydantic 契约）+ 节点文件 + `backend.py`（DTO 构造与后端调用）。
+主图节点在 `app/nodes/`，不依赖任何子图内部模块。每个业务域一个子图包：`graph.py`（组装）+ `models.py`（Pydantic 契约）+ 节点文件 + `backend.py`（DTO 构造与后端调用）；三个子图共用 `subgraphs/common.py` 的意图分发路由与 `<product>_unknown` 兜底节点。
 
 | 子图 | 构成 |
 |---|---|
 | swap | 意图 / 下单（选对手 ‖ 选标的并行后汇合）/ 确认 / 撤单 / 查单 / 图片与 Excel 多模态；撤单、查单、确认的订单号为确定性提取 |
-| option | 1 个意图节点 + 7 个分意图提取节点（ADR 0011）；4 个订单号类节点为确定性提取 |
-| close（期权平仓） | 意图 / 平仓（引用解析子图）/ 撤销平仓 / 确认平仓 / 确认撤销 / 持仓查询 / 状态查询 |
+| option | 1 个意图节点 + 7 个分意图节点（ADR 0011）；询价为「证据提取 → 归一化 → 提交」嵌套子图，其余为确定性代码节点 |
+| close（期权平仓） | 意图 / 平仓（引用解析嵌套子图）/ 撤销平仓 / 确认平仓 / 确认撤销 / 持仓查询 / 状态查询 |
 
-### 4. 交易正确性（`app/extraction/`、`app/execution/`、`app/tools/receipts.py`）
+### 4. 规则层与交易正确性（`app/domain/`、`app/extraction/`、`app/tools/receipts.py`）
 
-- 字段证据契约：模型只输出原文候选与证据，代码校验、归一化并锁定字段（ADR 0027）。
-- 最终确认校验：七条确认路径统一由 `app/execution/confirmation.py` 校验"明确动作 + 引用当前订单"（ADR 0021 / 0027）。
+- `app/domain/`：无 IO、无 LangGraph 依赖的纯业务规则，主图节点、子图与客户端共用——
+  `order_ids.py`（H- / Q- / CO- / OPT(G)- 形态单一来源）、`numerals.py`（序号与中文数字）、
+  `confirmation.py`（七条最终确认路径统一校验"明确动作 + 引用当前订单"，ADR 0021 / 0027）、
+  `tenor.py`（期权期限换算）、`fast_execution.py`（最大跟量）、`sanitize.py`（null 字面量清洗）。
+- `app/extraction/`：字段证据契约——模型只输出原文候选与证据，代码校验、归一化并锁定字段（ADR 0027）。
 - 回执契约：无法验证的回执记为不确定，不推断成功或失败（ADR 0026）。
 
-### 5. 工具与模型（`app/tools/`、`app/llm/`、`app/prompts/`）
+### 5. 能力层（`app/tools/`、`app/llm/`、`app/prompts/`、`app/storage/`）
 
-- 调用方只依赖 Protocol，禁止直接 `httpx` 调后端（ADR 0001 D2）；类型契约与 Java DTO 一一对应（`models.py`）。
-- `llm/clients.py`：全环境统一 DeepSeek-V4-pro，vendor 差异集中适配（ADR 0020）。
+- 调用方只依赖 Protocol，禁止直接 `httpx` 调后端（ADR 0001 D2）；类型契约与 Java DTO 一一对应（`models.py`）；机器人上下文统一由 `tools/bot_context.py` 生成。
+- `llm/clients.py`：全环境统一 DeepSeek-V4-pro，vendor 差异集中适配（ADR 0020）；各工厂共用 `_build_llm`。
 - `app/prompts/`：git 是提示词唯一真源；每个 LLM 节点声明一个 `PromptSpec`（ADR 0023）；灰度用同目录并存 + `_versions.yaml`（ADR 0003）。
+- `app/storage/`：`mysql.py`（表名与连接参数，全项目唯一的 MYSQL_URI 解析）、`idempotency.py`（请求幂等）、
+  `reconciliation.py`（不确定回执对账）、`node_trace.py`（节点审计写入）。
 
 ## 存储
 

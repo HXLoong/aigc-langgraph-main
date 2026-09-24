@@ -13,7 +13,7 @@ from app.graph.business_params import validated_confirm
 from app.graph.safe_node import safe_node
 from app.graph.state import AgentState, ExpectedAction, TraceEntry
 from app.subgraphs.swap.backend import call_swap_backend
-from app.subgraphs.swap.confirmation import is_confirmation, parse_confirmation
+from app.subgraphs.swap.confirmation import parse_confirmation
 
 
 def _expected_action(intent: str | None) -> ExpectedAction:
@@ -28,11 +28,6 @@ def _expected_action(intent: str | None) -> ExpectedAction:
     if intent == "confirm_modify_order":
         return "modify"
     return "place"  # confirm_order 或兜底
-
-
-def confirm_order_secondary_check_passed(raw_text: str | None) -> bool:
-    """兼容旧调用名，实际执行严格确认格式校验。"""
-    return is_confirmation(raw_text)
 
 
 @safe_node
@@ -82,4 +77,4 @@ async def swap_confirm(state: AgentState) -> dict[str, Any]:
     }
 
 
-__all__ = ["swap_confirm", "confirm_order_secondary_check_passed"]
+__all__ = ["swap_confirm"]

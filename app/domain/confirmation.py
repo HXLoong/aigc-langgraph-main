@@ -6,6 +6,8 @@ import re
 from collections.abc import Sequence
 from dataclasses import dataclass, field
 
+from app.domain.numerals import require_ordinal
+from app.domain.order_ids import ANY_ORDER_ID_RE, CONTRACT_CODE_RE
 from app.extraction.fields import EvidenceError
 
 ALIASES: dict[str, tuple[str, ...]] = {
@@ -14,10 +16,8 @@ ALIASES: dict[str, tuple[str, ...]] = {
     "modify": ("确认改单", "确定改单", "改单确认", "确认修改", "确定修改", "修改确认"),
     "close": ("确认平仓", "确定平仓", "平仓确认"),
 }
-_IDS = re.compile(
-    r"(?<![A-Za-z0-9-])(?:H-\d{8}-\d{10}|Q-\d{8}-[A-Za-z0-9]{4,16}|CO-\d{8}-[A-Za-z0-9]{4,16})(?![A-Za-z0-9-])"
-)
-_CONTRACT = re.compile(r"OPTG?-[A-Za-z0-9]+")
+_IDS = ANY_ORDER_ID_RE
+_CONTRACT = CONTRACT_CODE_RE
 _SEQUENCE = re.compile(
     r"(?:序号\s*[:：]?\s*|第\s*)([+-]?\d+|[零〇一二两三四五六七八九十百]+)(?:\s*(?:个单|个|笔|单(?!号)|条))?"
 )
@@ -74,21 +74,6 @@ def only_execution_parameters(text: str, *, allow_choice: bool = False) -> bool:
     if allow_choice:
         rest = re.sub(r"(?<![A-Za-z])[A-Z](?![A-Za-z])", "", rest)
     return re.fullmatch(r"[\s，,、；;。.!！:：%/-]*", rest) is not None
-
-
-def _number(token: str) -> int:
-    if token.lstrip("+-").isdigit():
-        return int(token)
-    digits = {c: i for i, c in enumerate("零一二三四五六七八九")}
-    digits.update({"〇": 0, "两": 2})
-    total = current = 0
-    for char in token:
-        if char in "十百":
-            total += (current or 1) * (10 if char == "十" else 100)
-            current = 0
-        else:
-            current = digits[char]
-    return total + current
 
 
 @dataclass(frozen=True)
@@ -179,7 +164,7 @@ def parse_confirmation(
         if product == "swap" and not re.fullmatch(r"[1-9][0-9]*", marker[1]):
             mapping.clear()
             return fail("ambiguous_quote")
-        number, oid = _number(marker[1]), target[0].upper()
+        number, oid = require_ordinal(marker[1]), target[0].upper()
         seq = str(number)
         if (
             number <= 0
@@ -228,7 +213,7 @@ def parse_confirmation(
             return fail("ambiguous_quote")
         marker_ids: list[str] = []
         for marker in markers:
-            number = _number(marker[1])
+            number = require_ordinal(marker[1])
             if product == "option" and marker[0].lstrip().startswith("第"):
                 # 期权“第N笔”是引用顺序，“序号N”是显示标签；与补参解析一致。
                 if not 0 < number <= len(ids):

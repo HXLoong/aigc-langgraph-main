@@ -2,8 +2,8 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from app.api.idempotency import response_is_uncertain
 from app.nodes.render import _render_branch
+from app.storage.idempotency import response_is_uncertain
 from app.subgraphs.close.backend import call_close_backend
 from app.tools.exceptions import EmptyBackendResultError, MissingBackendContextError
 

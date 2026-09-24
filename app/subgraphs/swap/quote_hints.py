@@ -8,15 +8,16 @@
 委托数量），供 swap.place_order 的 LLM 下单节点消费（对应 Dify 变量
 `raw_content_for_llm` / `quote_param_hints`）。
 
-纯函数、无 IO——1:1 对照
-`/private/tmp/.../spec/code_nodes/互换-规整引用补参摘要.py`。
+纯函数、无 IO——源自 Dify「互换-规整引用补参摘要」code 节点（Dify 资产已冻结于 tag dify-assets-frozen-20260917，ADR 0024 D1）。
 """
 from __future__ import annotations
 
 import re
 from typing import TypedDict
 
-SWAP_ORDER = r"H-\d{8}-\d{10}"
+from app.domain.order_ids import SWAP_ORDER_ID
+
+SWAP_ORDER = SWAP_ORDER_ID
 HINT_MARK = "【请补充参数："
 HINT = re.compile(r"【请补充参数：([^】]+)】")
 # 回退: 详情行「X：【待补充】」也视为待补字段(兼容不带【请补充参数：X】块的消息变体)

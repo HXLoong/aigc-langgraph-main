@@ -92,17 +92,18 @@ _INTENT_TO_NODE: <span class="kw">dict</span>[<span class="kw">str</span>, <span
   → render 节点看到 error → 输出"我没完全理解你的意思，能换种说法……"      <span class="cm"># 用户侧友好</span>
   → API 层 status="failed" + error message                                  <span class="cm"># 调用方可感知</span></code></pre>
 
-<p>项目提供了两个现成工具，简单场景不用手写路由：</p>
+<p>项目提供了两个现成工具：判错函数，以及三个子图共用的意图分发路由（error 优先落本子图的 <code>&lt;product&gt;_unknown</code>）：</p>
 
-<pre><code><span class="kw">def</span> has_error(state: AgentState) -> <span class="kw">bool</span>:
+<pre><code><span class="kw">def</span> has_error(state: Mapping[<span class="kw">str</span>, Any]) -> <span class="kw">bool</span>:
     <span class="kw">return</span> state.get(<span class="st">"error"</span>) <span class="kw">is not None</span>
 
-<span class="kw">def</span> with_cascade_guard(next_node: <span class="kw">str</span>, fallback_node: <span class="kw">str</span> = <span class="st">"fallback"</span>):
-    <span class="st">"""生成路由函数：有 error → fallback_node，否则 → next_node。"""</span>
-    <span class="kw">def</span> router(state: AgentState) -> <span class="kw">str</span>:
-        <span class="kw">return</span> fallback_node <span class="kw">if</span> has_error(state) <span class="kw">else</span> next_node
-    <span class="kw">return</span> router</code></pre>
-<span class="src">app/graph/cascade.py:15-39</span>
+<span class="kw">def</span> intent_router(intent_to_node: Mapping[<span class="kw">str</span>, <span class="kw">str</span>], fallback: <span class="kw">str</span>):
+    <span class="kw">def</span> route(state: AgentState) -> <span class="kw">str</span>:
+        <span class="kw">if</span> has_error(state):
+            <span class="kw">return</span> fallback
+        <span class="kw">return</span> intent_to_node.get(state.get(<span class="st">"intent"</span>) <span class="kw">or</span> <span class="st">"unknown_intent"</span>, fallback)
+    <span class="kw">return</span> route</code></pre>
+<span class="src">app/graph/cascade.py · app/subgraphs/common.py</span>
 
 <p>fallback 节点本身只做一件事——把"是谁的锅"写进 trace，供 harness 定位：</p>
 

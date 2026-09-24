@@ -7,9 +7,9 @@ import pytest
 
 from app.subgraphs.swap import backend as backend_mod
 from app.subgraphs.swap.backend import (
-    _message_id,
     call_swap_backend,
 )
+from app.tools.bot_context import normalize_message_id
 from app.tools.exceptions import (
     BackendUnreachableError,
     EmptyBackendResultError,
@@ -18,20 +18,20 @@ from app.tools.exceptions import (
 from tests.evidence_support import swap_candidate_output
 
 # ============================================================
-# _message_id
+# normalize_message_id（backend 上下文统一走 BotContext）
 # ============================================================
 
 
 def test_message_id_int_passthrough() -> None:
-    assert _message_id(12345) == 12345
+    assert normalize_message_id(12345) == 12345
 
 
 def test_message_id_digit_string() -> None:
-    assert _message_id("msg-99887766") == 99887766
+    assert normalize_message_id("msg-99887766") == 99887766
 
 
 def test_message_id_no_digits_returns_zero() -> None:
-    assert _message_id("no-digits-here") == 0
+    assert normalize_message_id("no-digits-here") == 0
 
 
 # ============================================================

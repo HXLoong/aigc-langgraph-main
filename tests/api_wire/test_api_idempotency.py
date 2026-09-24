@@ -8,13 +8,13 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 from fastapi.testclient import TestClient
 
-from app.api.idempotency import (
+from app.graph.state import ErrorInfo, TraceEntry
+from app.main import app
+from app.storage.idempotency import (
     IdempotencyRecord,
     InMemoryIdempotencyStore,
     MySQLIdempotencyStore,
 )
-from app.graph.state import ErrorInfo, TraceEntry
-from app.main import app
 
 
 class _CountingGraph:
@@ -234,7 +234,7 @@ async def test_mysql_store_duplicate_key_reads_existing_row(monkeypatch: pytest.
     conn = MagicMock()
     conn.cursor = _cursor
     conn.close = MagicMock()
-    monkeypatch.setattr("app.api.idempotency.aiomysql.connect", AsyncMock(return_value=conn))
+    monkeypatch.setattr("app.storage.idempotency.aiomysql.connect", AsyncMock(return_value=conn))
 
     store = MySQLIdempotencyStore("mysql+aiomysql://u:p@h:3306/biz")
     rec = await store.begin("77", conversation_id="c", user_id="u", room_id="r", raw_text="x")

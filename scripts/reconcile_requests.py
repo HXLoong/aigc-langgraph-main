@@ -13,8 +13,8 @@ from urllib.parse import urlsplit
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from app.api.idempotency import MySQLIdempotencyStore  # noqa: E402
-from app.api.reconciliation import JavaAuditReader, reconcile_request  # noqa: E402
+from app.storage.idempotency import MySQLIdempotencyStore  # noqa: E402
+from app.storage.reconciliation import JavaAuditReader, reconcile_request  # noqa: E402
 from app.config import get_settings  # noqa: E402
 
 logger = logging.getLogger(__name__)

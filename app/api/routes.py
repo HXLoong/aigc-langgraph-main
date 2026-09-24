@@ -21,13 +21,6 @@ from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict, Field, computed_field
 
-from app.api.idempotency import (
-    PROCESSING_NOTICE,
-    UNCERTAIN_NOTICE,
-    IdempotencyConflictError,
-    IdempotencyStore,
-    response_is_uncertain,
-)
 from app.api.notifications import project_retry_notification
 from app.api.turn_state import inputs_to_state
 from app.config import get_settings
@@ -38,6 +31,13 @@ from app.observability.llm_metrics import LLMMetricsCallback
 from app.observability.logs import bound_request_context
 from app.observability.metrics import emit_intent_latency
 from app.observability.tracing import HandledErrorCallback, attach_request_trace
+from app.storage.idempotency import (
+    PROCESSING_NOTICE,
+    UNCERTAIN_NOTICE,
+    IdempotencyConflictError,
+    IdempotencyStore,
+    response_is_uncertain,
+)
 from app.tools.bot_context import normalize_message_id
 
 router = APIRouter()
