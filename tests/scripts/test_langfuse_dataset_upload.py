@@ -119,3 +119,50 @@ def test_dataset_item_ids_are_stable_and_do_not_move_items_between_datasets():
 
     assert dataset_item_id('intent-option', 'case-025') == dataset_item_id('intent-option', 'case-025')
     assert dataset_item_id('intent-option', 'case-025') != dataset_item_id('business-option', 'case-025')
+
+
+def test_manual_upload_defaults_dataset_name_and_passes_base_url(monkeypatch) -> None:
+    """--sync-all 去掉了 --dataset-name 默认值后，手动模式必须回落到 DATASET_NAME，
+    且 --base-url 要同时传给清空接口与 Langfuse 客户端（回归：合并后曾用 None 作数据集名）。"""
+    import inspect
+    import sys
+    import types
+
+    import scripts.langfuse.upload_golden_to_langfuse as mod
+
+    assert "base_url" in inspect.signature(mod._clear_dataset).parameters
+    source = Path("tests/fixtures/categories/golden_option_inquiry_case.jsonl")
+    cleared: list[tuple[str, str | None]] = []
+    monkeypatch.setattr(
+        mod, "_clear_dataset",
+        lambda name, *, base_url=None: cleared.append((name, base_url)),
+    )
+
+    created: dict[str, object] = {}
+
+    class FakeLangfuse:
+        def __init__(self, **kwargs: object) -> None:
+            created["client_kwargs"] = kwargs
+
+        def create_dataset(self, *, name: str, metadata: object) -> object:
+            created["dataset"] = name
+            return types.SimpleNamespace(name=name)
+
+        def create_dataset_item(self, **kwargs: object) -> None:
+            created.setdefault("item_datasets", []).append(kwargs["dataset_name"])  # type: ignore[union-attr]
+
+    monkeypatch.setitem(sys.modules, "langfuse", types.SimpleNamespace(Langfuse=FakeLangfuse))
+    monkeypatch.setenv("LANGFUSE_PUBLIC_KEY", "pk")
+    monkeypatch.setenv("LANGFUSE_SECRET_KEY", "sk")
+    monkeypatch.setattr(
+        sys, "argv",
+        ["upload", "--source", str(source), "--base-url", "http://langfuse.local"],
+    )
+
+    assert mod.main() == 0
+    assert cleared == [(mod.DATASET_NAME, "http://langfuse.local")]
+    assert created["client_kwargs"] == {"base_url": "http://langfuse.local"}
+    assert created["dataset"] == mod.DATASET_NAME
+    item_datasets = created["item_datasets"]
+    assert isinstance(item_datasets, list) and item_datasets
+    assert set(item_datasets) == {mod.DATASET_NAME}

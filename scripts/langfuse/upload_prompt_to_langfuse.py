@@ -120,8 +120,14 @@ def _read_workspace_prompt(category: str, name: str) -> tuple[str, str, Path]:
     return system, user_template, path
 
 
-def _build_prompt_body(system: str, user_template: str) -> list[dict[str, str]]:
-    """拼 chat 消息：有 [user] 段用 git 的模板，否则补 EXPERIMENT_USER_TEMPLATE。
+def _build_prompt_body(
+    system: str, user_template: str, experiment: bool
+) -> tuple[str, str | list[dict[str, str]], str]:
+    """决定上传类型与内容，返回 (prompt 类型, 内容, user 来源说明)。
+
+    - `.md` 自带 [user] 段 → chat，用 git 的 user 模板（实验与演练一致，无需替换）
+    - 无 [user] 段 + experiment → chat，user 用 EXPERIMENT_USER_TEMPLATE
+    - 无 [user] 段 + --plain → text，纯 system（UI experiment 会报 no variables）
 
     system 段始终是 git 原文。与 app/prompts/__init__.py::_load_from_langfuse 的
     反序列化契约（list → 按 role 取 system / user）一一对应。
@@ -253,6 +259,11 @@ def main() -> int:
         default=DEFAULT_LABEL,
         help=f"部署标签（默认 {DEFAULT_LABEL}；运行时读 production，慎用）",
     )
+    parser.add_argument(
+        "--plain",
+        action="store_true",
+        help="不补实验用 user 消息，上传成纯 system 的 text 提示词（UI experiment 将不可用）",
+    )
     parser.add_argument("--dry-run", action="store_true", help="不推送，只打印将上传的内容摘要")
     args = parser.parse_args()
 
@@ -274,7 +285,7 @@ def main() -> int:
 
     if not args.sync_all:
         category, name = _parse_target(args.target)
-        system, user_template, path = _read_git_prompt(category, name)
+        system, user_template, path = _read_workspace_prompt(category, name)
         lf_name = _langfuse_name(category, name)
         prompt_type, body, origin = _build_prompt_body(system, user_template, not args.plain)
 

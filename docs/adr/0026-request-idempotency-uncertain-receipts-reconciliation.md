@@ -1,12 +1,12 @@
 # ADR 0026 · 请求级幂等、不确定回执与运维对账（金融写路径正确性契约）
 
-- 状态：已采纳（2026-09-17 幂等首版 → 2026-09-18 完整响应回放 / 不确定写入 / 对账（commit `67f74c3`）→ 2026-09-20 重投通知（`8249510`）与回执文案；本篇为 2026-09-22 追认记录）
-- 日期：2026-09-18（记录：2026-09-22）
-- 起源：[ADR 0024](./0024-langgraph-native-rearchitecture.md) D4 把"写路径提交前的 durability 裁决与幂等设计"留待后续记录；执行过程见 [docs/langgraph-reconstruction-20260918.md](../langgraph-reconstruction-20260918.md) 第二、六、八批
-- 修订：[ADR 0024](./0024-langgraph-native-rearchitecture.md) D4（幂等落地形态）；补 [ADR 0021](./0021-text-confirm-replaces-interrupt.md)（确认链路的写操作在此获得回执与超时语义）；沿用 [ADR 0019](./0019-incident-severity-thresholds.md)（E 类错误进告警）
+- 状态：已采纳（追认：2026-09-17 幂等首版 → 2026-09-18 完整响应回放 / 不确定写入 / 对账（commit `67f74c3`）→ 2026-09-20 重投通知（`8249510`）；2026-09-22 补记）
+- 日期：2026-09-18
+- 关系：细化 [ADR 0024](./0024-langgraph-native-rearchitecture.md) D4；补充 [ADR 0021](./0021-text-confirm-replaces-interrupt.md) 确认链路的回执语义；错误分类进入 [ADR 0019](./0019-incident-severity-thresholds.md) 告警
+- 执行记录：[docs/langgraph-reconstruction-20260918.md](../langgraph-reconstruction-20260918.md)
 - 作者：图灵科技 + Tony
 
-## 上下文
+## 背景
 
 写类业务动作（下单 / 改单 / 撤单 / 确认 / 平仓）经 Java `operate` 接口落库，重复提交即重复下单。三个外部事实决定了契约形状：
 

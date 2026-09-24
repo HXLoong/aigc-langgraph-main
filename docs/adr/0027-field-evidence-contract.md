@@ -1,12 +1,12 @@
 # ADR 0027 · 字段证据契约：模型只产原文候选，Code 归一化并记录来源与锁定
 
-- 状态：已采纳（2026-09-18 第四 / 五 / 八批落地，起始 commit `58e5650`；2026-09-20 确认协议收口 `9493cb9`；本篇为 2026-09-22 追认记录，接入进度以 [docs/migration-20260918/README.md](../migration-20260918/README.md) 为准）
-- 日期：2026-09-18（记录：2026-09-22）
-- 起源：[docs/langgraph-reconstruction-20260918.md](../langgraph-reconstruction-20260918.md) 用户确认的完整重构计划——"字段 evidence / confidence / source、来源校验与字段锁定"
-- 修订：[ADR 0023](./0023-prompt-as-code-langgraph.md) D2（输出契约从"模型直接输出规范值"改为"模型输出原文候选，规范值由 Code 产生"）、[ADR 0024](./0024-langgraph-native-rearchitecture.md) D2（AgentState 新增 `field_records` 通道）与落地记录中"记忆补裸确认"的口径；配合 [ADR 0025](./0025-instrument-resolution-delegated-to-backend.md)（标的原文透传）
+- 状态：已采纳（追认：2026-09-18 落地，起始 commit `58e5650`；2026-09-20 确认协议收口 `9493cb9`；2026-09-22 补记）
+- 日期：2026-09-18
+- 关系：修订 [ADR 0023](./0023-prompt-as-code-langgraph.md) D2（模型不再直接输出最终值）、[ADR 0024](./0024-langgraph-native-rearchitecture.md) D2（新增 `field_records` 通道）；配合 [ADR 0025](./0025-instrument-resolution-delegated-to-backend.md)
+- 接入进度：[docs/migration-20260918/README.md](../migration-20260918/README.md)
 - 作者：图灵科技 + Tony
 
-## 上下文
+## 背景
 
 ADR 0023 让每个 LLM 节点的输出契约收敛为一个 Pydantic 模型，但模型输出的仍是**交易最终值**（数量、价格、期限、订单号）。真实回归暴露三类问题：模型会把授权对手前缀并入名称、把多期限展开后串错执行价、在确认回合把疑问句当确认；这些错误在 HTTP 回执之前没有任何机械可检的信号。金融写路径不能接受"模型说了算"的最终值。
 
@@ -38,7 +38,7 @@ swap 三确认、option 确认下单 / 确认撤单、close 确认平仓 / 确�
 2. 引用当前订单（单号 `H-` / `Q-` / `CO-`、序号、或合约编号）且范围与业务对象一致；
 3. 否定、疑问、条件句（"不确认" / "是否" / "吗" / "成交后"）与携带新参数的文本不触发写入。
 
-`last_confirmed_params`（ADR 0024 ConversationMemory）与程序生成的引用**不能替代用户引用**——ADR 0024 落地记录中"记忆只补裸确认"的口径由此收紧为"记忆仅作上下文"。
+`last_confirmed_params`（ADR 0024 会话记忆）与程序生成的引用**不能替代用户引用**，记忆仅作上下文。
 
 ## 备选方案
 
@@ -48,7 +48,7 @@ swap 三确认、option 确认下单 / 确认撤单、close 确认平仓 / 确�
 
 ## 后果
 
-- 正面：幻觉值在提交前可检；每个最终值有来源与证据可审计；锁定防止多轮 / 多指令间的静默覆盖；提示词 system 段大幅缩短（`option/extract_inquiry` 8472 → 462 字符、`swap/place_order` 38898 → 557）。
+- 正面：幻觉值在提交前可检；每个最终值有来源与证据可审计；锁定防止多轮间的静默覆盖；提示词 system 段大幅缩短（以期权询价与互换下单为例，均缩减 90% 以上）。
 - 负面：候选 schema 嵌套增大 function-calling 输入；`history` / `attachment` 来源需要节点提供 `sources` 文本；已接入证据契约的节点与未接入节点并存期间口径不一。
 - 未决：候选 schema 压缩；未接入节点清单（migration README 标"需逐项迁移 / 核对"）的完成时点；`inferred` 来源值是否允许进入写请求。
 

@@ -2,41 +2,28 @@
 
 - 状态：已采纳（元 ADR：项目存在的根本动机）
 - 日期：2026-05-10
-- 修订：2026-08-27 深度改写为现状口径（对照代码核查）
+- 关系：后果段被 [ADR 0024](./0024-langgraph-native-rearchitecture.md) 修订（Dify 退出上游）；"如何重写"见 [ADR 0001](./0001-rewrite-app-with-harness-first.md)
 - 作者：图灵科技 + Tony
-- 说明：本 ADR 回答"为什么从 Dify 迁过来"；"如何重写 `app/`"由 [ADR 0001](./0001-rewrite-app-with-harness-first.md) 接管
 
-## 动机：Dify 的四个核心痛点
+## 背景：Dify 的四个核心痛点
 
-原系统用 Dify 编排意图识别 + 业务子图。随着业务需求增长，Dify 工作流暴露了四个长期累积的核心痛点：
+1. **业务逻辑藏在提示词里**：无法在代码层 review、静态分析或 diff，每次改动都是黑盒变更。
+2. **无法自动化监测**：节点级延迟、错误率、LLM 命中率无法进入统一可观测体系。
+3. **无法自动化回归**：工作流必须真实部署才能跑，发版只能靠人工抽测。
+4. **无法评估大模型处理质量**：缺少数据集与评分机制，提示词调整只能凭直觉。
 
-1. **业务逻辑藏在提示词里**，无法在代码层 review、无法静态分析、无法 diff，每次提示词改动都是黑盒变更。
-2. **无法自动化监测**：节点级延迟、错误率、LLM 命中率不能在统一 APM/可观测体系里采集。
-3. **无法自动化回归测试**：Dify 工作流必须真实部署才能跑，CI 跑不了 in-process 端到端验证，每次发版只能靠人工抽测。
-4. **无法对大模型处理做评估**：缺少 golden set + 评分机制，提示词调整后只能凭直觉判断"是不是变好了"。
+## 决策
 
-我们需要一个能让业务逻辑回到代码、能在 CI 里跑闭环、能产出结构化 trace 供监测和评估的运行时。LangGraph + FastAPI 满足这四条，且子图嵌套、HITL interrupt、checkpointer 都是一等公民。
-
-## 决策与落地现状（2026-08-27）
-
-决定迁移到 **LangGraph + FastAPI**，把 Dify YAML 中的提示词导出为 `app/prompts/**/*.md`（业务提示词数量随瘦身与去 LLM 化持续下降，以目录为准，不在本文写计数）。
-
-原决策的两条执行方式已按后续 ADR 演进：
-
-- **"提示词只做加载不改写"** → 已由 [ADR 0001 D5](./0001-rewrite-app-with-harness-first.md) 在重构期解禁：合并/拆分/瘦身类改写须在 D5 处置表登记，Dify 原版以非活跃快照保留并在 ~~`app/prompts/_manifest.yaml`~~ 登记（2026-09-16 已废弃）；改写走 eval 门 + PR review（[ADR 0022](./0022-prompt-governance-after-code-migration.md)，现由 [ADR 0030](./0030-goal-restatement-native-langgraph-dataset-eval-harness.md) D3 统一评测门承接）。
-- **"shadow 双跑校准到金丝雀切换"** → 已降级为切流期的第二意见（历史 ADR 0016，现由 [ADR 0030](./0030-goal-restatement-native-langgraph-dataset-eval-harness.md) 承接），合格性判定改为数据集 PASS 率评测门。
-
-四个痛点的主要解药均已建成（详见 [ADR 0002](./0002-comprehensive-runtime-harness.md)）：`harness/` 评测台、`node_trace` 写入代码 + LangFuse trace、golden set（2026-09-22：`tests/fixtures/categories/` 389 条 + `tests/fixtures/unified_golden.jsonl` 921 条，按 B/C/D 桶管理）、DeepSeek Judge 评估（`scripts/langfuse/langfuse_eval.py`）。`node_trace` 建表资产已随 2026-09-18 共库调整入库（`sql/init.sql` 的 `langgraph_node_trace`，见 [ADR 0009](./0009-mysql-version-and-tdsql-compatibility.md) 09-18 段）。
+迁移到 **LangGraph + FastAPI**：业务逻辑回到代码，能在 CI 里跑闭环，每个节点产出结构化 trace 供监测与评估。
 
 ## 备选方案
 
 - **保留 Dify**：四个痛点无解，业务复杂度上限低。
-- **完全自研 DAG 引擎**：可控性最高但开发量大，且失去 LangGraph 生态（checkpointer / interrupt / structured output）。
-- **LangGraph + FastAPI（已选）**：成熟生态，子图嵌套和 interrupt 一等公民，可在 in-process 测试中跑通。
+- **自研 DAG 引擎**：可控但开发量大，且失去 LangGraph 生态（checkpointer、structured output、子图）。
+- **LangGraph + FastAPI（已选）**：生态成熟，子图嵌套为一等公民，可在进程内完整测试。
 
-## 后果（现状口径）
+## 现状
 
-- ~~需要长期维护 Dify YAML 同步工具（`dify/sync.py` + `scripts/export_dify_prompts.py`），让业务方继续用 Dify UI 调整提示词，再批量同步进代码~~ —— **已被 [ADR 0024](./0024-langgraph-native-rearchitecture.md) D1 取代（2026-09-17）**：代码即真源，Dify YAML 冻结为历史参照、不再同步。同步脚本已随之退役。
-- 新增意图/子图必须同步更新 `app/graph/state.py` 的 TypedDict（早期状态兼容 shim 已于 2026-09-17 随 ADR 0024 删除，入口唯一路径为 `app/api/turn_state.py`）与 `tests/fixtures/categories/` golden case——后者由 `scripts/check_fixture_consistency.py` 守护（`old_typing/` 已归档）。
-- "业务逻辑下沉到代码 vs. 业务方继续在 Dify UI 改提示词"的双轨期治理边界：提示词归 Dify / 节点编排归代码；重构期内的改写例外由 ADR 0001 D5 处置表管理。
-- 原文提到的"统一 APM 体系"最终由 **LangFuse** 承载（[ADR 0014](./0014-langfuse-as-harness-backend.md) 取代早期 LangSmith 方案）。
+四个痛点的解法均已建成（见 [ADR 0002](./0002-comprehensive-runtime-harness.md)）：`harness/` 评测台、节点级 trace（MySQL + LangFuse）、按 B / C / D 桶管理的数据集、LLM Judge 自动评分。
+
+2026-09-17 起 **Dify 完全退出上游地位**（[ADR 0024](./0024-langgraph-native-rearchitecture.md) D1）：代码与 git 中的提示词是唯一真源，Dify 资产冻结为历史参照，同步工具已删除。原计划的"Shadow 双跑校准"降为可选对照工具，验收改为数据集评测门（[ADR 0030](./0030-goal-restatement-native-langgraph-dataset-eval-harness.md) D3）。

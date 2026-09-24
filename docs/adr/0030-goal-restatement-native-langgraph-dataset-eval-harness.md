@@ -1,15 +1,13 @@
-# ADR 0030 · 目标重述：原生 LangGraph 重构 + 数据集评测 + Harness 工程（里程碑与 issue 口径退役）
+# ADR 0030 · 目标重述：原生 LangGraph 重构 + 数据集评测 + Harness 工程
 
-- 状态：已采纳（2026-09-22）
+- 状态：已采纳
 - 日期：2026-09-22
-- 起源：用户指示——ADR 中的 M1 / M2 / M3 / M4 里程碑与 GitHub issue 跟踪口径已过时，只保留架构决策；目标改为三条主线
-- 取代：[ADR 0016](./0016-m3-scope-engineering-loop-not-shadow.md)（M3 范围重定义）、[ADR 0017](./0017-m4-canary-quantitative-exit-gate.md)（M4 金丝雀退出门）
-- 修订：[ADR 0001](./0001-rewrite-app-with-harness-first.md) D8 / D9（上线节奏与实现优先级）、[ADR 0002](./0002-comprehensive-runtime-harness.md)（阶段表改为能力面）、[ADR 0005](./0005-annotation-roles-judge-plus-business-spotcheck.md)（"Phase 4"改为目标态）、[ADR 0019](./0019-incident-severity-thresholds.md)（与退出门的互补关系改指向本篇 D3）、[ADR 0024](./0024-langgraph-native-rearchitecture.md) D8（分阶段门槛改为统一评测门）
+- 关系：取代 [ADR 0016](./0016-m3-scope-engineering-loop-not-shadow.md)、[ADR 0017](./0017-m4-canary-quantitative-exit-gate.md)；修订 [ADR 0001](./0001-rewrite-app-with-harness-first.md)（上线节奏段）、[ADR 0002](./0002-comprehensive-runtime-harness.md)（阶段表改为能力面）、[ADR 0005](./0005-annotation-roles-judge-plus-business-spotcheck.md)、[ADR 0019](./0019-incident-severity-thresholds.md)、[ADR 0024](./0024-langgraph-native-rearchitecture.md) D8
 - 作者：图灵科技 + Tony
 
-## 上下文
+## 背景
 
-迁移期的 ADR 用 M1–M4 / F4.x / E3.x / D2.x / C1.x 任务码和 GitHub issue 编号记录进度与裁决。到 2026-09-22，代码已经完成 Dify 形态退出（ADR 0024 D1）、标的移交后端（0025）、幂等与回执契约（0026）、字段证据契约（0027）、会话保护与单动作多订单（0028）、节点级工作台（0029）。这些任务码与 issue 不再反映工作的组织方式；留在 ADR 里只会让读者误以为它们仍是当前门槛，也让每篇 ADR 的状态行被"某个 issue 是否关闭"绑架。
+迁移期的 ADR 用里程碑任务码和 issue 编号记录进度与裁决。到 2026-09-22，代码已经完成 Dify 形态退出（ADR 0024 D1）、标的移交后端（0025）、幂等与回执契约（0026）、字段证据契约（0027）、会话保护与单动作多订单（0028）、节点级工作台（0029）。这些任务码与 issue 不再反映工作的组织方式；留在 ADR 里只会让读者误以为它们仍是当前门槛，也让每篇 ADR 的状态行被"某个 issue 是否关闭"绑架。
 
 ## 决策
 
@@ -21,9 +19,8 @@
 
 ### D2 · 退役口径
 
-- M1–M4、F / E / D / C 任务码、roadmap 阶段表、GitHub issue / PR 编号不再出现在 ADR 正文与状态行；历史裁决只保留"日期 + 结论"。~~`docs/m3-m4-roadmap.md`~~ 退役并删除，由 `docs/work-plan.md`（三条主线的现状与待办）取代。
-- 由这些任务码定义的"退出门"（M2 mock baseline、M3.3 sign-off、M4 金丝雀 7 天）全部改写为 D3 的评测门；相关基线数值（Qwen 口径 92.5% / 84.6%、4200ms P95）作废，以当前模型（[ADR 0020](./0020-unify-all-llm-on-deepseek-v4-pro.md)）与真后端 / dry-run 模式重测后的报告为准。
-- ADR 0016 / 0017 改写为历史存根；ADR 0001 D8 / D9、0002 阶段表、0005 "Phase 4"、0024 D8 按本篇修订。
+- 里程碑、任务码、roadmap 阶段表、issue / PR 编号不再出现在 ADR 正文与状态行；历史裁决只保留"日期 + 结论"。现状与待办统一见 [docs/work-plan.md](../work-plan.md)。
+- 由里程碑定义的退出门全部改写为 D3 的评测门；旧基线数值（Qwen 口径的通过率与 P95）作废，以当前模型（[ADR 0020](./0020-unify-all-llm-on-deepseek-v4-pro.md)）重测报告为准。
 
 ### D3 · 统一评测门（取代阶段退出门）
 
@@ -34,13 +31,11 @@
 | 代码 | pytest 全量 GREEN；ruff / mypy 零错；`sync_agents_md` / 阈值 / fixture / ADR 四项 lint 通过；CI 在 push 与 PR 上跑 | `.github/workflows/ci.yml` |
 | 上线观察 | 5xx < 0.1%、cascade fail < 1%、P95 ≤ 当前基线 × 1.5（7 天滚动）；业务方严重错例（标的错 / 参数错 / 意图大类错）≤ 5 次 / 7 天；故障期间定级与介入见 [ADR 0019](./0019-incident-severity-thresholds.md) | `/metrics` + `app/observability/alerts.py` + `scripts/metrics_snapshot.py` |
 
-阈值取值理由沿用 ADR 0017 原论证（服务器崩溃近零、用户可感知的临界、尾部延迟决定体验、给业务方留可签字的容差）；基线由当前模型口径重测回填。
-
-2026-09-24：已完成 DeepSeek 本地 dry-run 参考采样并回填告警默认值，详见 [ADR 0019](./0019-incident-severity-thresholds.md) baseline 注记；报告位于 `tmp/goal-issues/`。业务交易验收和生产同拓扑 7 天观察仍未通过，两者不由 dry-run 结果替代。
+阈值取值理由沿用 ADR 0017 原论证（服务器崩溃近零、用户可感知的临界、尾部延迟决定体验、给业务方留可签字的容差）。2026-09-24 已完成当前模型本地 dry-run 参考采样并回填告警默认值（见 [ADR 0019](./0019-incident-severity-thresholds.md)）；业务交易验收与生产同拓扑 7 天观察仍未通过，不由 dry-run 结果替代。
 
 ### D4 · ADR 写法
 
-状态行只写日期与一句现状；正文不写会腐烂的计数与任务码；实施记录进 `docs/`（如 `docs/langgraph-reconstruction-20260918.md`），ADR 只链接；先有实现后补 ADR 时标"已采纳（追认）"并注明 commit。
+状态行只写日期与一句现状；正文不写会腐烂的计数与任务码；实施记录进 `docs/`（如 `docs/langgraph-reconstruction-20260918.md`、`docs/archive/history/adr-implementation-log-2026-09.md`），ADR 只链接；先有实现后补 ADR 时标"已采纳（追认）"并注明 commit。
 
 ## 备选方案
 
@@ -51,8 +46,8 @@
 ## 后果
 
 - 正面：ADR 只承载决策与契约；评测门只有一套，且与 CI、harness、Judge 的实际入口一一对应。
-- 负面：本地 dry-run 参考基线已回填，生产同拓扑基线及观察窗口仍待部署验证；`docs/archive/m2/`、`docs/archive/m3/` 的里程碑过程文档已于 2026-09-22 删除（可从 git 历史找回）；`docs/archive/` 只保留日期型报告、历史叙事与业务用例原始资料。根 `README.md`、`docs/on-call-runbook.md`、`CLAUDE.md` 已于 2026-09-22 同步清理，~~`docs/m3-m4-roadmap.md`~~ 已删除、由 `docs/work-plan.md` 取代。
-- **2026-09-23 裁决**：统一验收和 `harness run` 默认仅加载 `categories`。保留 `unified_golden.jsonl` 作为历史参考集，通过 `--include-unified` 追加或 `--data` 显式选择；加载器继续支持 B 方言，历史数据继续参加一致性 lint。
+- 负面：生产同拓扑基线与观察窗口仍待部署验证；里程碑过程文档已删除（可从 git 历史找回）。
+- 2026-09-23 裁决：统一验收与 `harness run` 默认只加载 `categories`；`unified_golden.jsonl` 保留为历史参考集，经 `--include-unified` 或 `--data` 显式选择，仍参加一致性 lint。
 - 未决：节点 fixture 与代码演进的漂移守护；上线观察窗口的正式起点由部署决定。
 
 ## 关联

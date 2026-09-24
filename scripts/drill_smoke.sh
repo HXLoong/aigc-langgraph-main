@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
-# 回切演练 smoke 脚本 · 不注入故障，仅串联 6 件套验证可用性。
+# 回切演练 smoke 脚本 · 不注入故障，仅串联 5 件套验证可用性。
 #
 # 用途：
 #   1. 首次 walkthrough docs/on-call-runbook.md §8 回切演练前，本地干跑确认
-#      6 件套工具的命令、退出码、输出格式都正常。
+#      5 件套工具的命令、退出码、输出格式都正常。
 #   2. 演练当天 Scene 1（基线确认）可直接调本脚本替代手敲多条命令。
 #
 # 注意：
@@ -109,14 +109,13 @@ EOF
 done
 
 # ============================================================
-# Check 1 · 演练 6 件套工具存在
+# Check 1 · 演练 5 件套工具存在
 # ============================================================
 check_tools_exist() {
-    section "Check 1/6 · 6 件套工具就位"
+    section "Check 1/6 · 5 件套工具就位"
     local tools=(
         "scripts/canary_status.py"
         "scripts/metrics_snapshot.py"
-        "scripts/langfuse/promote_langfuse_prompt.py"
         "scripts/deploy-customer.sh"
         "scripts/rollback_canary.sh"
         "infra/grafana/dashboards/otc-agent-overview.json"
@@ -128,9 +127,9 @@ check_tools_exist() {
         fi
     done
     if [ "${#missing[@]}" -eq 0 ]; then
-        record_check "6 件套工具存在" pass "全部 6 项"
+        record_check "5 件套工具存在" pass "全部 ${#tools[@]} 项"
     else
-        record_check "6 件套工具存在" fail "缺失: ${missing[*]}"
+        record_check "5 件套工具存在" fail "缺失: ${missing[*]}"
     fi
 }
 
@@ -146,7 +145,6 @@ check_tools_syntax() {
     local pyscripts=(
         "scripts/canary_status.py"
         "scripts/metrics_snapshot.py"
-        "scripts/langfuse/promote_langfuse_prompt.py"
     )
 
     local errs=()
