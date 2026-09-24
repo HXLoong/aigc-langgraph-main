@@ -269,7 +269,7 @@ def maybe_alert_growth(report: dict, growth_pct: float, threshold: float = 30.0)
         f"今日成本：${report['total_cost_usd']}\n"
         f"日期：{report['date']}\n\n"
         f"可能原因：业务量增长 / 调试漏关 trace / cascade fail 循环\n"
-        f"参考：docs/observability.md §6\n"
+        f"参考：docs/operations/observability.md §6\n"
     )
     webhook = os.environ.get("WECHAT_ALERT_WEBHOOK_URL", "")
     if webhook:

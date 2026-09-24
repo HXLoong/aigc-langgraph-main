@@ -112,7 +112,7 @@ class Settings(BaseSettings):
     # shadow 对照用：拦截 *.operate / close_order_* 等"写类"客户端调用，
     # 返回 fake CommonResult，避免 LangGraph 替代客户真下单/真撤单。
     # read 类（query / get / list）正常调真后端。
-    # 详见 docs/deploy/SHADOW_COMPARE_GUIDE.md
+    # 详见 docs/deploy/shadow-compare-guide.md
     dry_run_backend: bool = False
 
     # === 兜底回复（DSL v2 env.default_reply,fallback/answer 节点统一文案）===

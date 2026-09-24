@@ -115,7 +115,7 @@ done
 
 if [ -z "$REASON" ]; then
     abort "--reason 必填（审计要求）。例：--reason \"java_backend fail at 22:14\"" \
-        "docs/on-call-runbook.md"
+        "docs/operations/on-call-runbook.md"
 fi
 
 # ============================================================

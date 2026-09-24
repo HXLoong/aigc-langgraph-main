@@ -242,7 +242,7 @@ Protocol（接口）+ Httpx 实现分离 = 单测时塞一个 FakeClient 就能 
 5. `app/subgraphs/swap/place_order.py` —— 最复杂的业务节点：LLM 提取参数原文与证据，标的原文交后端识别
 6. `app/nodes/render.py` —— 把业务结果渲染成企微回复文本
 
-> 深入：`course/` 第 06 课（子图模板）+ `docs/ARCHITECTURE.md`。
+> 深入：`course/` 第 06 课（子图模板）+ `docs/architecture/README.md`。
 
 ---
 
@@ -345,7 +345,7 @@ uvicorn app.main:app --reload         # FastAPI
 | 业务术语（雪球/互换/平仓的行话） | `CONTEXT.md` |
 | LangGraph 每个概念的展开讲解 | `docs/training/course/` + LangGraph 官方文档 |
 | 手把手写一个新子图 | `course/` 第 06 课 + `.claude/agents/subgraph-builder.md` |
-| 常见陷阱 | `tests/CLAUDE.md` + `docs/TROUBLESHOOTING.md` |
+| 常见陷阱 | `tests/CLAUDE.md` + `docs/development/troubleshooting.md` |
 | 为什么这样设计（架构决定） | `docs/adr/`（ADR 0000-0020） |
 | Java 后端接口契约 | `docs/api-contracts/java-backend.md` |
 | State/节点/路由/checkpointer 项目模式 | `.claude/rules/langgraph-patterns.md` |
@@ -357,7 +357,7 @@ uvicorn app.main:app --reload         # FastAPI
 
 ## 8. 卡住了怎么办
 
-- 环境跑不起来 → `docs/TROUBLESHOOTING.md`，还不行找导师
+- 环境跑不起来 → `docs/development/troubleshooting.md`，还不行找导师
 - 看不懂某段代码 → 先读该文件顶部 docstring 和所在目录的 CLAUDE.md，再查 `course/` 对应小课
 - 测试 mock 不生效 → 九成是 patch 了定义处而不是使用点，看 `tests/CLAUDE.md`
 - 改了提示词没效果 → `load_prompt` 有 lru_cache，测试里 `from app.prompts import clear_cache; clear_cache()`

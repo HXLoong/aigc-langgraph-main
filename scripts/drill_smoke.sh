@@ -2,14 +2,14 @@
 # 回切演练 smoke 脚本 · 不注入故障，仅串联 5 件套验证可用性。
 #
 # 用途：
-#   1. 首次 walkthrough docs/on-call-runbook.md §8 回切演练前，本地干跑确认
+#   1. 首次 walkthrough docs/operations/on-call-runbook.md §8 回切演练前，本地干跑确认
 #      5 件套工具的命令、退出码、输出格式都正常。
 #   2. 演练当天 Scene 1（基线确认）可直接调本脚本替代手敲多条命令。
 #
 # 注意：
 #   - 本脚本只覆盖 Scene 1（基线）+ Scene 5 的查询动作（不真回切）+
 #     Scene 6 的恢复验证（不真改 .env）。
-#   - **绝不**注入故障 / 改 .env / 调 rollback。真演练按 docs/on-call-runbook.md §8 人工执行。
+#   - **绝不**注入故障 / 改 .env / 调 rollback。真演练按 docs/operations/on-call-runbook.md §8 人工执行。
 #
 # 跑法：
 #   bash scripts/drill_smoke.sh                                # 本地（默认 :8000）
@@ -302,7 +302,7 @@ print_summary() {
         "$PASSED" "$FAILED" "$TOTAL" "$rate"
 
     if [ "$FAILED" -eq 0 ]; then
-        printf "${GREEN}=== 演练基线 OK · 可执行 docs/on-call-runbook.md §8 回切演练 ===${NC}\n"
+        printf "${GREEN}=== 演练基线 OK · 可执行 docs/operations/on-call-runbook.md §8 回切演练 ===${NC}\n"
         return 0
     fi
     printf "${RED}=== 演练基线异常 · 修复后再演练 ===${NC}\n"

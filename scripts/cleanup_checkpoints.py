@@ -10,7 +10,7 @@
     python scripts/cleanup_checkpoints.py --days 30
     python scripts/cleanup_checkpoints.py --days 30 --execute   # 真删
 
-建议客户现场以 cron 每日执行(见 docs/on-call-runbook.md「checkpoint 清理」节)。
+建议客户现场以 cron 每日执行(见 docs/operations/on-call-runbook.md「checkpoint 清理」节)。
 """
 from __future__ import annotations
 

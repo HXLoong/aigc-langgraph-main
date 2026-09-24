@@ -2,7 +2,7 @@
 
 `POST /v1/nodes/run` 用于隔离执行一个已注册的 LangGraph 节点或复合子图，返回该目标的实际 State 更新。它适合定位意图识别、参数提取、后端调用和内部阶段问题；完整会话仍应使用 `POST /v1/workflows/run`。
 
-注册命名空间为 `main`、`option`、`swap`、`option_close`（标的识别已委托 Java，ADR 0025）。单条消息只执行一个业务动作，该动作可包含多笔订单；多动作编排节点已退役。注册名称与数量以 [registry.py](../app/node_execution/registry.py) 为准，文末有[节点中英文对照表](#9-节点中英文对照表)。
+注册命名空间为 `main`、`option`、`swap`、`option_close`（标的识别已委托 Java，ADR 0025）。单条消息只执行一个业务动作，该动作可包含多笔订单；多动作编排节点已退役。注册名称与数量以 [registry.py](../../app/node_execution/registry.py) 为准，文末有[节点中英文对照表](#9-节点中英文对照表)。
 
 普通期权询价仅执行 `inquiry_extract → inquiry_normalize → inquiry_submit`，通过 `orderList` 提交。快速询价仅保留 `main/quick_inquiry`，主图依据 `fast_query=1` 选择该入口。旧的 `option/inquiry_fast_parse`、`option/inquiry_fast_submit` 已退役；调用其 `/prepare` 或 `/run` 返回 404，不重定向到其他节点。
 
@@ -26,9 +26,9 @@ python -m venv .venv
 - `QWEN_API_BASE`、`QWEN_API_KEY` 和 `QWEN_MODEL_*` 可用；这些历史变量名也用于当前 DeepSeek/Qwen 兼容网关。
 - `DRY_RUN_BACKEND=false`，允许请求实际发往配置的后端。
 
-如果 `.env` 中启用了 `USE_MYSQL_CHECKPOINTER=true`，确认 `MYSQL_URI` 指向的 Java 数据库可连通，且已执行过 [sql/init.sql](../sql/init.sql)（LangGraph 不自带 MySQL 容器）。
+如果 `.env` 中启用了 `USE_MYSQL_CHECKPOINTER=true`，确认 `MYSQL_URI` 指向的 Java 数据库可连通，且已执行过 [sql/init.sql](../../sql/init.sql)（LangGraph 不自带 MySQL 容器）。
 
-如果只调试不依赖 checkpoint 或数据库的节点，可以在 `.env` 中暂时设 `USE_MYSQL_CHECKPOINTER=false`。要测试 `main/persist`，还需确认业务库已执行 [sql/init.sql](../sql/init.sql)。
+如果只调试不依赖 checkpoint 或数据库的节点，可以在 `.env` 中暂时设 `USE_MYSQL_CHECKPOINTER=false`。要测试 `main/persist`，还需确认业务库已执行 [sql/init.sql](../../sql/init.sql)。
 
 启动应用：
 
@@ -135,9 +135,9 @@ Invoke-RestMethod `
 
 | 类型 | 使用范围 | 定义 |
 | --- | --- | --- |
-| `AgentState` | 主图、业务子图和大多数节点 | [app/graph/state.py](../app/graph/state.py) |
-| `InquiryState` | `option/inquiry_*` | [extract_inquiry.py](../app/subgraphs/option/extract_inquiry.py) |
-| `PlaceCloseState` | `option_close/place_close_*` | [place_close.py](../app/subgraphs/close/place_close.py) |
+| `AgentState` | 主图、业务子图和大多数节点 | [app/graph/state.py](../../app/graph/state.py) |
+| `InquiryState` | `option/inquiry_*` | [extract_inquiry.py](../../app/subgraphs/option/extract_inquiry.py) |
+| `PlaceCloseState` | `option_close/place_close_*` | [place_close.py](../../app/subgraphs/close/place_close.py) |
 
 调用后端的节点通常要求以下上下文：
 
@@ -258,7 +258,7 @@ Remove-Item Env:RUN_LOCAL_MYSQL_TESTS
 
 完整回归仍按仓库统一命令执行。
 
-实现入口：[路由](../app/api/nodes.py)、[注册表](../app/node_execution/registry.py)、[准备器](../app/node_execution/prepare.py)、[校验器](../app/node_execution/validation.py)、[执行器](../app/node_execution/executor.py)。
+实现入口：[路由](../../app/api/nodes.py)、[注册表](../../app/node_execution/registry.py)、[准备器](../../app/node_execution/prepare.py)、[校验器](../../app/node_execution/validation.py)、[执行器](../../app/node_execution/executor.py)。
 
 ## 8. 执行边界与真实后端安全
 
@@ -273,7 +273,7 @@ Remove-Item Env:RUN_LOCAL_MYSQL_TESTS
 
 ## 9. 节点中英文对照表
 
-以下是 `/v1/nodes/run` 的注册项（以注册表为准，本表不维护计数）。所属对应请求中的 `product`，英文名对应 `node`；业务子图入口会执行内部链路。单条消息只执行一个业务动作，该动作可包含多笔订单；多动作编排节点已退役。注册名称以 [registry.py](../app/node_execution/registry.py) 为准。
+以下是 `/v1/nodes/run` 的注册项（以注册表为准，本表不维护计数）。所属对应请求中的 `product`，英文名对应 `node`；业务子图入口会执行内部链路。单条消息只执行一个业务动作，该动作可包含多笔订单；多动作编排节点已退役。注册名称以 [registry.py](../../app/node_execution/registry.py) 为准。
 
 | 所属（product） | 节点英文名（node） | 中文名 |
 | --- | --- | --- |

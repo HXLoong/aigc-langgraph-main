@@ -1,7 +1,7 @@
 # 故障排查（开发期 Q&A）
 
-> **生产故障**请走结构化 SOP：[`docs/troubleshooting-sop.md`](./troubleshooting-sop.md)
-> **值班响应**请走：[`docs/on-call-runbook.md`](./on-call-runbook.md)
+> **生产故障**请走结构化 SOP：[`docs/operations/troubleshooting-sop.md`](../operations/troubleshooting-sop.md)
+> **值班响应**请走：[`docs/operations/on-call-runbook.md`](../operations/on-call-runbook.md)
 > 本文档是**开发期通用 Q&A**——快速查"我遇到这个错误怎么办"。
 
 ## 启动类问题
@@ -126,7 +126,7 @@ pip install -e ".[dev]"
 
 ## 生产事故响应
 
-生产故障按 [`docs/troubleshooting-sop.md`](./troubleshooting-sop.md) 与 [`docs/on-call-runbook.md`](./on-call-runbook.md) 执行；紧急回滚见 runbook §7。
+生产故障按 [`docs/operations/troubleshooting-sop.md`](../operations/troubleshooting-sop.md) 与 [`docs/operations/on-call-runbook.md`](../operations/on-call-runbook.md) 执行；紧急回滚见 runbook §7。
 
 ### 某个客户反馈订单识别错了
 1. 从 `langgraph_message_log` / `langgraph_node_trace` 拉该客户该时段消息与节点轨迹

@@ -83,7 +83,7 @@ _Avoid_: 三个独立的"确认下单 / 确认撤单 / 确认改单"节点（已
 - 一份 **Golden case** 既被 **Harness** 用作回归基线，也可被 **Shadow compare** 用作双跑输入
 - **Harness** 的失败报告会指向具体的 **节点（Node）**，让 AI 工具知道改哪里
 - 用户原话先经 **入口路由** 分流；LLM 指令分支内按 **product_type** 和 **意图（Intent）** 处理
-- LangGraph 保留 **标的** 原文及用户引用选择，Java 负责权威识别与校验；空 `tickers` 兼容字段不表示零命中，原文不标记为 `from_goats=True`。职责见 [标的识别后端边界](docs/backend-instrument-boundary.md)
+- LangGraph 保留 **标的** 原文及用户引用选择，Java 负责权威识别与校验；空 `tickers` 兼容字段不表示零命中，原文不标记为 `from_goats=True`。职责见 [标的识别后端边界](docs/architecture/backend-instrument-boundary.md)
 - LangGraph 通过 3 个 **Protocol**（OptionClient / SwapClient / TickerClient）调用 Java 后端业务 API，契约定义见 `docs/api-contracts/java-backend.md`
 - 业务卡片与订单执行结果来自 Java 后端，原始回执是业务核查依据。
 

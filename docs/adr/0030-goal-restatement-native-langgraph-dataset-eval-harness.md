@@ -15,7 +15,7 @@
 
 1. **原生 LangGraph 重构场外 AI 指令链路**：图即架构（子图原生嵌入、单动作多订单、RetryPolicy、State 分层与 output schema，[ADR 0024](./0024-langgraph-native-rearchitecture.md) D2 / D3、[ADR 0028](./0028-session-entry-and-multi-instruction-send-orchestration.md)）；持久化与可观测契约（0024 D4 / D5、[ADR 0026](./0026-request-idempotency-uncertain-receipts-reconciliation.md)）；提示词即代码与字段证据契约（[ADR 0023](./0023-prompt-as-code-langgraph.md)、[ADR 0027](./0027-field-evidence-contract.md)）；Dify 已退出，标的识别与业务默认值归 Java 后端（[ADR 0025](./0025-instrument-resolution-delegated-to-backend.md)）。
 2. **通过数据集进行评测和评估**：ground truth 是数据集的 `expected`，不是 Dify 输出（迁移动机恰恰是 Dify 的标的不准、参数错误与缺少评估，拿它作标准会冤枉新系统、美化旧系统）。数据集 = `tests/fixtures/categories/`（显式验收集）+ `tests/fixtures/unified_golden.jsonl`（历史参考集，显式选择）+ `tests/fixtures/nodes/`（节点级 fixture，[ADR 0029](./0029-node-level-debug-api-and-regression-workbench.md)）；评测入口 = harness HTTP 回归（[ADR 0002](./0002-comprehensive-runtime-harness.md) / 0024 D6）+ LLM Judge（[ADR 0005](./0005-annotation-roles-judge-plus-business-spotcheck.md) / [ADR 0014](./0014-langfuse-as-harness-backend.md)）；错例先补 fixture 再修代码。
-3. **按 Harness 工程的要求重构**：任何提示词 / 节点 / 契约改动都经同一条门（D3）——TDD RED → GREEN、pytest、四项一致性 lint、ruff / mypy、数据集 PASS 率不低于前值、trace 可归因（[ADR 0004](./0004-trace-granularity-node-level.md) / 0024 D5）。harness 与 `app/` 解耦，只经 HTTP 入口驱动。
+3. **按 Harness 工程的要求重构**：任何提示词 / 节点 / 契约改动都经同一条门（D3）——TDD RED → GREEN、pytest、五项一致性 lint、ruff / mypy、数据集 PASS 率不低于前值、trace 可归因（[ADR 0004](./0004-trace-granularity-node-level.md) / 0024 D5）。harness 与 `app/` 解耦，只经 HTTP 入口驱动。
 
 ### D2 · 退役口径
 
@@ -28,7 +28,7 @@
 |---|---|---|
 | 数据集 | 显式 `categories` 全量 PASS 率不低于上一基线（同模型、同后端模式）；`REJECTED` 单独成桶不计 PASS；写类 case 必须有 `expected.place_params`；多轮 case 早停未执行轮记失败 | `python -m harness run` / `scripts/local_eval.py` / `scripts/langfuse/langfuse_eval.py` |
 | 节点级 | 被改动节点的 fixture 回归 PASS；带写副作用的 fixture 只留存标注不回放 | `python -m harness node-run`（ADR 0029） |
-| 代码 | pytest 全量 GREEN；ruff / mypy 零错；`sync_agents_md` / 阈值 / fixture / ADR 四项 lint 通过；CI 在 push 与 PR 上跑 | `.github/workflows/ci.yml` |
+| 代码 | pytest 全量 GREEN；ruff / mypy 零错；`sync_agents_md` / 阈值 / fixture / ADR / 文档布局五项 lint 通过；CI 在 push 与 PR 上跑 | `.github/workflows/ci.yml` |
 | 上线观察 | 5xx < 0.1%、cascade fail < 1%、P95 ≤ 当前基线 × 1.5（7 天滚动）；业务方严重错例（标的错 / 参数错 / 意图大类错）≤ 5 次 / 7 天；故障期间定级与介入见 [ADR 0019](./0019-incident-severity-thresholds.md) | `/metrics` + `app/observability/alerts.py` + `scripts/metrics_snapshot.py` |
 
 阈值取值理由：服务器崩溃应近似为零（0.1% 留瞬时抖动容差）；1% 是"用户能感知但不至于认为 AI 坏了"的临界；聊天体验由尾部延迟决定，×1.5 为真后端往返与写库留预算；错例阈值不取 0，以免业务方永远无法签字。测量口径：5xx 与 cascade 率取自 `/metrics`，分母为总请求数；P95 取 `/v1/workflows/run` 端到端延迟，剔除节点级样本。当前模型的本地 dry-run 参考值已回填告警默认值（见 [ADR 0019](./0019-incident-severity-thresholds.md)）；业务交易验收与生产同拓扑 7 天观察尚未完成，不由 dry-run 结果替代。

@@ -1,5 +1,13 @@
 # 开发指南
 
+本目录回答"本地怎么开发、调试、排错"：
+
+| 文档 | 用途 |
+|---|---|
+| 本页 | 环境准备、日常命令、新功能流程、最佳实践、调试与发布 |
+| [troubleshooting.md](./troubleshooting.md) | **开发期**遇错快查（Q&A）；生产故障见 [../operations/](../operations/README.md) |
+| [nodes-run.md](./nodes-run.md) | `POST /v1/nodes/run` 节点级调试接口与节点回归 |
+
 ## 环境准备
 
 ### 系统要求
@@ -174,5 +182,5 @@ ORDER BY step_index;
 2. develop → main：PR 审核通过 + CI 通过
 3. main tag：`v0.2.0`
 4. 部署到预发，跑数据集与 `scripts/drill_smoke.sh`
-5. 金丝雀：按企微群组逐步切流（测试群 → 部分群 → 全量），见 `docs/on-call-runbook.md`
+5. 金丝雀：按企微群组逐步切流（测试群 → 部分群 → 全量），见 `docs/operations/on-call-runbook.md`
 6. 上线观察按 ADR 0030 D3（7 天窗口）

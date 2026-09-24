@@ -54,6 +54,7 @@
 | `check_alert_threshold_consistency.py` | 告警阈值一致性 lint |
 | `check_fixture_consistency.py` | fixture 一致性 lint（categories 业务集 + intent 意图集 + unified）|
 | `check_adr_refs.py` | ADR 互引虚悬 + 代码路径与 Markdown 链接存在性 lint（跳过删除线段）|
+| `check_docs_layout.py` | docs/ 存放规则 lint：目录白名单、kebab-case 命名、带日期报告只进 `reports/`、相对链接与全仓 `docs/...` 引用有效 |
 
 ### 数据维护
 

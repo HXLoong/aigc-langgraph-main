@@ -259,11 +259,11 @@ Claude Code 有能力执行 bash 命令。即使有 `settings.json` 的白名单
 - [Claude Code 官方文档](https://docs.claude.com/en/docs/claude-code/overview)
 - [Subagents 指南](https://code.claude.com/docs/en/sub-agents)
 - [项目内其他文档](docs/)
-  - [架构](docs/ARCHITECTURE.md)
-  - [开发指南](docs/DEVELOPMENT.md)
-  - [常见问题](docs/TROUBLESHOOTING.md)
+  - [架构](docs/architecture/README.md)
+  - [开发指南](docs/development/README.md)
+  - [常见问题](docs/development/troubleshooting.md)
   - [工作计划](docs/work-plan.md)
-  - [on-call SOP](docs/on-call-runbook.md)
+  - [on-call SOP](docs/operations/on-call-runbook.md)
   - [ADR 索引](docs/adr/README.md)
 
 ---

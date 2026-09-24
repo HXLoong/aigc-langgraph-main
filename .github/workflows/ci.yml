@@ -3,7 +3,7 @@ name: CI
 # 2026-05-12 曾暂停自动触发；2026-09-22 按 ADR 0024 D6 / D8 阶段 0 门槛恢复：
 # fast job（每次 push / PR，< 2 min）守 lint + 一致性检查 + 快速测试，
 # slow job（PR + main）跑全量 pytest（含 e2e）。真实 MySQL 用例（RUN_LOCAL_MYSQL_TESTS=1）
-# 2026-09-24 起不再进 CI，只在本地 / 联调环境 opt-in 运行（docs/nodes-run.md）。
+# 2026-09-24 起不再进 CI，只在本地 / 联调环境 opt-in 运行（docs/development/nodes-run.md）。
 on:
   push:
     branches: [main]
@@ -60,6 +60,9 @@ jobs:
 
       - name: ADR 引用一致性（互引虚悬 + 代码路径存在性）
         run: python scripts/check_adr_refs.py
+
+      - name: docs/ 存放规则（目录白名单 + 命名 + 报告归档 + 链接有效）
+        run: python scripts/check_docs_layout.py
 
       - name: AGENTS.md / .agents 与 CLAUDE.md / .claude 同步
         run: python scripts/sync_agents_md.py --check

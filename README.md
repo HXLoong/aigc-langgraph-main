@@ -10,13 +10,13 @@
 |---|---|---|
 | **原生 LangGraph 重构** | 子图原生嵌入、单动作多订单、RetryPolicy、State 分层与 output schema；幂等 / 回执 / 对账；字段证据契约；标的识别移交 Java 后端；Dify 只作历史参照 | 0024 · 0025 · 0026 · 0027 · 0028 |
 | **数据集评测与评估** | ground truth 是数据集 `expected`：显式验收集 `tests/fixtures/categories/` + 节点级 fixture；harness HTTP 回归 + LLM Judge；错例先补 fixture 再修代码 | 0002 · 0005 · 0014 · 0029 · 0030 D3 |
-| **Harness 工程** | 任何提示词 / 节点 / 契约改动走同一条门：TDD、pytest、四项一致性 lint、ruff / mypy、数据集 PASS 率不低于前值、trace 可归因；CI 在 push / PR 上跑 | 0003 · 0004 · 0023 · 0030 |
+| **Harness 工程** | 任何提示词 / 节点 / 契约改动走同一条门：TDD、pytest、五项一致性 lint、ruff / mypy、数据集 PASS 率不低于前值、trace 可归因；CI 在 push / PR 上跑 | 0003 · 0004 · 0023 · 0030 |
 
-**已就绪的部署与运维工具链**：`scripts/deploy-customer.sh`（一键部署 + smoke）、`scripts/rollback_canary.sh`（应急回切）、`scripts/drill_smoke.sh`（演练）、`scripts/canary_status.py` / `scripts/metrics_snapshot.py`（灰度状态与指标快照）、`scripts/run_alerts.py`（阈值告警干跑）、`scripts/shadow_compare.py`（可选对照，不进任何门）、Grafana 面板模板（`infra/`）、[on-call 值班手册](./docs/on-call-runbook.md)。
+**已就绪的部署与运维工具链**：`scripts/deploy-customer.sh`（一键部署 + smoke）、`scripts/rollback_canary.sh`（应急回切）、`scripts/drill_smoke.sh`（演练）、`scripts/canary_status.py` / `scripts/metrics_snapshot.py`（灰度状态与指标快照）、`scripts/run_alerts.py`（阈值告警干跑）、`scripts/shadow_compare.py`（可选对照，不进任何门）、Grafana 面板模板（`infra/`）、[on-call 值班手册](./docs/operations/on-call-runbook.md)。
 
 ## 快速开始
 
-完整开发流程见 [docs/DEVELOPMENT.md](./docs/DEVELOPMENT.md)。简版：
+完整开发流程见 [docs/development/README.md](./docs/development/README.md)。简版：
 
 ```bash
 # 1. 安装
@@ -48,7 +48,7 @@ python -m harness node-run --data tests/fixtures/nodes
 
 ## 架构
 
-标的名称 / 代码由 LangGraph 按原文提取，Java 业务接口调用标的识别、分词和排序工具；本地不运行 ticker 子图（[ADR 0025](./docs/adr/0025-instrument-resolution-delegated-to-backend.md)，边界见 [docs/backend-instrument-boundary.md](docs/backend-instrument-boundary.md)）。
+标的名称 / 代码由 LangGraph 按原文提取，Java 业务接口调用标的识别、分词和排序工具；本地不运行 ticker 子图（[ADR 0025](./docs/adr/0025-instrument-resolution-delegated-to-backend.md)，边界见 [docs/architecture/backend-instrument-boundary.md](docs/architecture/backend-instrument-boundary.md)）。
 
 询价入口由请求标志决定：`fast_query=1` 走主图 `quick_inquiry`，调用 GOATS 解析并以 `optionRfq` 提交；普通入口的 `new_inquiry` 只走模型提取、归一化和 `orderList` 提交。文本中出现雪球、参与型或“快速询价”等词不改变入口。
 
@@ -148,13 +148,13 @@ python scripts/langfuse/upload_score_configs.py --apply   # Score Config 同理
 |------|------|
 | [docs/work-plan.md](./docs/work-plan.md) | 三条主线的现状与待办 |
 | [docs/adr/](./docs/adr/) | 架构决定 ADR 现行 22 篇（只保留现行结论，已取代的已删除），入口见 [索引](./docs/adr/README.md) |
-| [节点执行接口](docs/nodes-run.md) | `/v1/nodes/run`：节点目录、State 契约、本地启动与真实后端切换 |
+| [节点执行接口](docs/development/nodes-run.md) | `/v1/nodes/run`：节点目录、State 契约、本地启动与真实后端切换 |
 | [CLAUDE.md](./CLAUDE.md) | AI 工具加载的项目 memory |
 | [CONTEXT.md](./CONTEXT.md) | 领域术语 + 概念边界 |
-| [docs/DEVELOPMENT.md](./docs/DEVELOPMENT.md) | 本地开发环境与日常工作流 |
+| [docs/development/README.md](./docs/development/README.md) | 本地开发环境与日常工作流 |
 | [QUICKSTART_CLAUDE_CODE.md](./QUICKSTART_CLAUDE_CODE.md) | Claude Code 实操指南 |
 | [docs/testing/README.md](./docs/testing/README.md) | 测试分层与真后端切换 |
-| [docs/on-call-runbook.md](./docs/on-call-runbook.md) | 上线 on-call SOP |
+| [docs/operations/on-call-runbook.md](./docs/operations/on-call-runbook.md) | 上线 on-call SOP |
 | [docs/api-contracts/java-backend.md](./docs/api-contracts/java-backend.md) | Java 后端真实契约 |
 | [infra/langfuse/README.md](./infra/langfuse/README.md) | LangFuse self-hosted 启动 |
 

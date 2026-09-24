@@ -3,7 +3,7 @@
 - 状态：已采纳（追认，落地 commit `2f9ce65`）
 - 日期：2026-09-20
 - 关系：修订 [ADR 0001](./0001-rewrite-app-with-harness-first.md) D4、[ADR 0023](./0023-prompt-as-code-langgraph.md)、[ADR 0024](./0024-langgraph-native-rearchitecture.md) D2 / D3
-- 执行说明：[docs/backend-instrument-boundary.md](../backend-instrument-boundary.md)
+- 执行说明：[docs/architecture/backend-instrument-boundary.md](../architecture/backend-instrument-boundary.md)
 - 作者：图灵科技 + Tony
 
 ## 背景

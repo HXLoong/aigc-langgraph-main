@@ -3,7 +3,7 @@
 - 状态：已采纳（追认，落地 commit `e1f373e` / `4f6173a` / `b7915e8`）
 - 日期：2026-09-22
 - 关系：在 [ADR 0024](./0024-langgraph-native-rearchitecture.md) D6 全链路评测门之下增加节点层；沿用 [ADR 0002](./0002-comprehensive-runtime-harness.md)
-- 使用指南：[docs/nodes-run.md](../nodes-run.md)
+- 使用指南：[docs/development/nodes-run.md](../development/nodes-run.md)
 - 作者：图灵科技 + Tony
 
 ## 背景
@@ -52,5 +52,5 @@
 
 - [ADR 0002](./0002-comprehensive-runtime-harness.md) · 综合运行时 Harness
 - [ADR 0024](./0024-langgraph-native-rearchitecture.md) D5 / D6 · Langfuse 契约与评估 gate
-- [docs/nodes-run.md](../nodes-run.md) · 使用指南
+- [docs/development/nodes-run.md](../development/nodes-run.md) · 使用指南
 - `harness/README.md` · 模块职责

@@ -5,7 +5,7 @@
     python scripts/derive_instrument_fixtures.py --out tmp/intent_drafts/swap_instrument.jsonl
     python scripts/derive_instrument_fixtures.py --only-reviewed --out tests/fixtures/intent/swap_instrument.jsonl
 
-口径（docs/backend-instrument-boundary.md）：LangGraph 只把用户原文里的标的表达逐字送给后端，
+口径（docs/architecture/backend-instrument-boundary.md）：LangGraph 只把用户原文里的标的表达逐字送给后端，
 权威识别由 Java 完成。因此期望值不是证券代码，而是"用户原文里的表达"任一候选：
 - 订单数与顺序以业务卡片的 `标的代码：` 行为准（后端权威回执）
 - 原文含该代码的主体（300748 / NVDA / 9618 …）→ 候选 = [名称+代码, 代码, 名称]
