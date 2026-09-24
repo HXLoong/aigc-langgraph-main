@@ -334,7 +334,7 @@ def maybe_send_webhook(summary: dict[str, Any], report_path: Path) -> None:
         f"通过率: {summary['pass_rate']:.1%}\n"
         f"状态分布: `{summary['by_status']}`\n\n"
         f"报告: {report_path}\n"
-        f"参考: docs/on-call-runbook.md §5.4（Java 后端不可达）"
+        f"参考: docs/operations/on-call-runbook.md §5.4（Java 后端不可达）"
     )
     try:
         from app.observability.alerts import send_wechat_webhook

@@ -1,7 +1,7 @@
 """Langfuse Code Evaluator：标的识别——逐轮比对 LLM 提取的标的原文与交易品种。
 
 LangGraph 只提取用户原文里的标的表达（`placeOrderWindCode` 逐字保留）和交易品种，
-权威识别由 Java 完成（docs/backend-instrument-boundary.md）。因此本评估器只评"送给后端的
+权威识别由 Java 完成（docs/architecture/backend-instrument-boundary.md）。因此本评估器只评"送给后端的
 表达对不对"：expected.instruments[i].expression 是可接受表达的任一候选列表，
 transaction_type 是可接受枚举的任一候选；按订单无序多重集匹配，缺单、多单、品种不符都算失败。
 上传到 Langfuse 后独立执行，不 import harness 其它模块。

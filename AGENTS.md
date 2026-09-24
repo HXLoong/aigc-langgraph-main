@@ -101,10 +101,20 @@ scripts/                     # langfuse/langfuse_eval.py（Judge 评估） / pro
                              # rollback_canary.sh / run_alerts.py / llm_cost_report.py / shadow_compare.py 等
 
 infra/langfuse/              # LangFuse self-hosted Docker Compose（PG + ClickHouse + Redis + MinIO + Web + Worker）
-docs/adr/                    # 架构决定 ADR 现行 22 篇（只保留现行结论，已取代的已删除）+ README 索引
-docs/api-contracts/          # Java 后端真实业务 API 契约
-docs/work-plan.md            # 三条主线的现状与待办（取代 m3-m4-roadmap）
-docs/on-call-runbook.md      # 上线 on-call SOP
+docs/                        # 文档按主题分目录，存放规则见 docs/README.md + .claude/rules/docs.md（lint 强制）
+├── README.md                # 文档地图 + 存放规则
+├── work-plan.md             # 三条主线的现状与待办（唯一动态计划）
+├── architecture/            # 系统导览与职责边界（现行设计事实）
+├── adr/                     # 架构决定 ADR 现行 22 篇（只保留现行结论）+ README 索引
+├── api-contracts/           # Java 后端真实业务 API 契约
+├── development/             # 开发指南 / 开发期排错 / 节点调试接口
+├── testing/                 # 测试分层、数据集、本地种子
+├── langfuse/                # LangFuse 评测链路、Web UI、同步与自托管
+├── deploy/                  # 客户环境调研、私有化部署、shadow 对照
+├── operations/              # 可观测性、on-call 值班手册、生产故障 SOP
+├── training/                # 培训材料
+├── agents/                  # AI agent 协作约定
+└── reports/                 # 一次性报告快照（YYYY-MM-DD-<topic>.md）
 tests/                       # 3500+ 条（按 graph / nodes / subgraphs / api_wire / harness / prompts / scripts 归位）
 tests/fixtures/              # categories/（A 方言业务集，6 文件 / 389 条）+ intent/（意图集：逐轮 product_type/intent；冻结用例只调 LLM，回放用例配 mock 后端）
                              # + unified_golden.jsonl（B 方言，921 条，历史参考集，显式 --include-unified 加载）
@@ -115,7 +125,7 @@ tests/fixtures/              # categories/（A 方言业务集，6 文件 / 389 
 团队主用 Codex。Codex 只读根目录与各级子目录的 `AGENTS.md` 和 `.agents/skills/<name>/SKILL.md`，不读本文件、
 `.claude/rules/`、`.claude/skills/`、`.claude/agents/`。因此这些 **Codex 产物全部由 `python scripts/sync_agents_md.py` 生成，禁止手改**：
 
-- 根 `AGENTS.md` = 本文件 + 并入 `.claude/rules/{prompt-management,testing}.md`，其余 rules 只列路径（控制上下文体积）
+- 根 `AGENTS.md` = 本文件 + 并入 `.claude/rules/{prompt-management,testing,docs}.md`，其余 rules 只列路径（控制上下文体积）
 - `app/prompts` / `tests` / `scripts` 下的 `AGENTS.md` = 各自的 `CLAUDE.md`
 - `.agents/skills/<name>/` = `.claude/skills/<name>/`（frontmatter 收敛为 Agent Skills 标准的 `name` / `description` / `metadata`）
   + `.claude/agents/*.md`（生成可复用角色技能）；Codex 支持显式授权的子代理，技能通过 `$name` 调用
@@ -129,6 +139,7 @@ tests/fixtures/              # categories/（A 方言业务集，6 文件 / 389 
 - Java 源码不修改；本地 Java 48080 → 48081，LangGraph 使用本地端口，禁止使用 10.49.91.229:8201；应用持久化统一 MYSQL_URI。
 - 当前重构采用轻量验证：业务改动先最小 RED，再 GREEN 与相关关键测试；用户要求最终统一测试时，不逐批跑全套 pytest、388 条真实回归或压测。
 - 真实写入测试仅由主代理调度；先确认授权测试账号、群、对手及持仓。业务回归使用 scripts/local_eval.py 和显式 tests/fixtures/categories，不并入 unified。
+- 新建或移动文档先按 `.claude/rules/docs.md` 判定归属目录（一次性报告进 `docs/reports/YYYY-MM-DD-<topic>.md`），跑 `python scripts/check_docs_layout.py`。
 - 任务和证据记录在 tmp；区分实现完成、专项通过、待用户验收、外部阻塞。外部阻塞不可写成已完成；全量结果未经运行不得宣称通过。
 - 不 push、不创建 PR；保留用户原有未提交改动。新 worktree 显式准备依赖与所需本地配置，禁止输出或提交密钥。
 - 2026-09-22 issue 裁决：#218 不处理；#219 仅待部署环境核查；#220 categories 标注后续单列；#221 暂不改脱敏默认值与审计原文；#222 协议迁移暂缓，保持 Java 源码、配置、agentUrl、DTO 和现行 wire 契约；#224 的 shadow_compare 保留待 F4.1 裁决。
@@ -153,7 +164,7 @@ tests/fixtures/              # categories/（A 方言业务集，6 文件 / 389 
    - `.claude/skills/test-driven-development/SKILL.md` 流程 包含完整 workflow，修改代码前调用
 6. **git 里的提示词是唯一真源** —— 改提示词直接改 `app/prompts/**/*.md` + 普通 PR review，`prompt(<scope>)` commit；Dify 已退出上游地位（ADR 0024 D1），YAML 快照冻结在 tag `dify-assets-frozen-20260917（指向 commit fddd94e；tag 仅存本地，远端拒绝 tag 推送，维护者可从该 sha 重建）`，不再有同步 / 导出链路
 7. **单动作多订单** —— 每条消息按既有产品与意图优先级执行一个业务动作，多笔订单共用该动作；主图、节点执行接口和评测目录均不提供多动作编排。
-8. **标的原文交后端识别**（ADR 0025）—— LangGraph 只提取代码/名称原文和用户候选选择，不补代码、不计算近月、不查证券池；Java 业务接口负责调用标的工具及权威校验。原文及引用候选不标记为 `from_goats=True`；HTTP `tickers` 保留为空的兼容字段。详见 `docs/backend-instrument-boundary.md`。
+8. **标的原文交后端识别**（ADR 0025）—— LangGraph 只提取代码/名称原文和用户候选选择，不补代码、不计算近月、不查证券池；Java 业务接口负责调用标的工具及权威校验。原文及引用候选不标记为 `from_goats=True`；HTTP `tickers` 保留为空的兼容字段。详见 `docs/architecture/backend-instrument-boundary.md`。
 9. **节点失败必须 cascade 防御** —— 任一节点写入 `state['error']` 后，下游 conditional 路由必须检查并跳到 fallback render，禁止 cascade 失败。具体：主图 `_route_by_product` 与每子图首节点后的 conditional 都加 `if state.get('error'): return 'fallback'`。fallback / render 输出统一的未知指令引导文案（`Settings.default_reply`，对齐 Dify）+ trace 记录原 fail 节点名。LLM 解析失败由 `with_structured_output` 自带 1 次重试 + `@safe_node` 兜底捕获 ValidationError 写入 error；写操作的二次确认统一走文本二阶段（ADR 0021），不使用 interrupt
 
 ## 排查与修复流程（Bug Debug Workflow）
@@ -261,7 +272,7 @@ tests/fixtures/              # categories/（A 方言业务集，6 文件 / 389 
 
 ## 当前工作面（按 ADR 0030）
 
-三条主线的已落地项与未完成项见 [docs/work-plan.md](./docs/work-plan.md)；评测门只有一套（ADR 0030 D3）：数据集 PASS 率不低于前值 → 节点 fixture 回归 → CI 全绿（ruff / mypy / 四项 lint / 全量 pytest）→ 上线观察指标（5xx / cascade / P95 / 严重错例，基线按当前模型重测）。未完成项摘要：`POST /v1/runs` 协议原生化与 Dify wire adapter 退役；上线观察基线重测；D 桶回流与标注运营；CI MySQL service；离线依赖包。
+三条主线的已落地项与未完成项见 [docs/work-plan.md](./docs/work-plan.md)；评测门只有一套（ADR 0030 D3）：数据集 PASS 率不低于前值 → 节点 fixture 回归 → CI 全绿（ruff / mypy / 一致性 lint / 全量 pytest）→ 上线观察指标（5xx / cascade / P95 / 严重错例，基线按当前模型重测）。未完成项摘要：`POST /v1/runs` 协议原生化与 Dify wire adapter 退役；上线观察基线重测；D 桶回流与标注运营；CI MySQL service；离线依赖包。
 
 ### 节点工作模板（不变）
 
@@ -287,7 +298,7 @@ tests/fixtures/              # categories/（A 方言业务集，6 文件 / 389 
 - LangGraph 原生重构目标架构：ADR 0024
 - Java 契约：`@docs/api-contracts/java-backend.md`
 - 工作计划：`@docs/work-plan.md`
-- on-call SOP：`@docs/on-call-runbook.md` + `@docs/troubleshooting-sop.md`
+- on-call SOP：`@docs/operations/on-call-runbook.md` + `@docs/operations/troubleshooting-sop.md`
 
 ## Agent skills
 
@@ -462,6 +473,48 @@ pytest -v --lf                  # last-failed（只跑上次失败的）
 pytest -v -x                    # 遇到第一个失败就停
 pytest --cov=app.nodes.route    # 覆盖率
 ```
+
+
+<!-- 来源：.claude/rules/docs.md -->
+
+# 文档存放规则
+
+> 完整目录表与判定表见 `docs/README.md`「存放规则」；`scripts/check_docs_layout.py` 在 CI fast job 强制检查。
+> 本文件只写 agent 写文档时必须遵守的"怎么做"。
+
+## 写之前先判定归属
+
+| 文档回答的问题 | 放到 |
+|---|---|
+| 系统现在长什么样 / 职责边界 | `docs/architecture/` |
+| 为什么这样决定 | `docs/adr/NNNN-<topic>.md`（只写现行结论） |
+| 外部接口契约 | `docs/api-contracts/` |
+| 本地开发、调试、开发期报错 | `docs/development/` |
+| 测试分层、数据集、测试环境 | `docs/testing/` |
+| LangFuse 与评测链路 | `docs/langfuse/` |
+| 客户环境调研、部署、上线前对照 | `docs/deploy/` |
+| 上线后监控、值班、生产排障 | `docs/operations/` |
+| 培训材料 | `docs/training/` |
+| agent 协作约定 | `docs/agents/` |
+| 某次评估 / 审阅 / 调研 / 复盘的结论 | `docs/reports/YYYY-MM-DD-<topic>.md` |
+| 现状与待办 | 更新 `docs/work-plan.md`，不另建计划文件 |
+
+优先并入已有文档的一节；只有确属新主题时才新建文件。
+
+## 硬性约束
+
+- `docs/` 根目录只允许 `README.md`、`work-plan.md`；主题目录只用上表，新增目录须先改 `docs/README.md` 与 lint 白名单
+- 文件名小写 kebab-case（`README.md` 例外），不用大写、下划线、空格、中文文件名
+- 带日期的文档只进 `docs/reports/`，且以日期开头；其他目录的文档写现状，不带日期
+- 新建文档同时登记到所在目录的 `README.md` 索引
+- 移动 / 改名文档时全仓更新引用（代码注释、脚本、CI、`CLAUDE.md`），跑 `python scripts/check_docs_layout.py` 零违规
+
+## 禁止
+
+- 在仓库根目录或 `docs/` 根散落分析、计划、方案类 `.md`（这类内容进 `reports/` 或并入 `work-plan.md`）
+- 生成物（测试报告、评测输出、导出数据）进 `docs/`——写 `.harness-runs/` 或 `tmp/`
+- 同一事实多处维护、"v2 / 新版 / 备份"文件并存；过时内容直接改或删，历史从 git 找回
+- 在 `docs/` 复述 `CLAUDE.md` / `.claude/rules/` 的纪律，链接过去即可
 
 
 # 附二：其余仓库规则（按需读取，同样具有约束力）

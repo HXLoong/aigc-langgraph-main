@@ -34,7 +34,7 @@
 
 ## 3. 严重等级（Severity）
 
-对齐 [ADR 0019](./adr/0019-incident-severity-thresholds.md) 量化指标。值班工程师按下表定级，决定响应速度。
+对齐 [ADR 0019](../adr/0019-incident-severity-thresholds.md) 量化指标。值班工程师按下表定级，决定响应速度。
 
 | 级别 | 判定标准（满足任一） | 响应时间 | 处置动作 |
 |---|---|---|---|
@@ -44,13 +44,13 @@
 
 > **不要为 P2 触发回滚**——回滚的恢复成本高于个别 case 错误。
 >
-> 表中 `M2 baseline` 由环境变量 `M2_BASELINE_P95_MS` 配置（历史命名）。2026-09-24 本地 DeepSeek dry-run 参考 P95 为 **8554ms**，默认 P1 阈值为 **25662ms**（×3，持续 10 分钟）。生产须按相同部署拓扑测量并覆盖此环境变量；本次写入拦截、业务断言 2/391 PASS、5xx 0/417、cascade 41/417，不代表生产验收通过。上线观察仍按 [ADR 0030](./adr/0030-goal-restatement-native-langgraph-dataset-eval-harness.md) D3 的 ×1.5 和 7 天窗口单独验收。
+> 表中 `M2 baseline` 由环境变量 `M2_BASELINE_P95_MS` 配置（历史命名）。2026-09-24 本地 DeepSeek dry-run 参考 P95 为 **8554ms**，默认 P1 阈值为 **25662ms**（×3，持续 10 分钟）。生产须按相同部署拓扑测量并覆盖此环境变量；本次写入拦截、业务断言 2/391 PASS、5xx 0/417、cascade 41/417，不代表生产验收通过。上线观察仍按 [ADR 0030](../adr/0030-goal-restatement-native-langgraph-dataset-eval-harness.md) D3 的 ×1.5 和 7 天窗口单独验收。
 
 ---
 
 ## 4. 监控告警来源
 
-| 来源 | 监控对象 | 阈值（对齐 [ADR 0019](./adr/0019-incident-severity-thresholds.md)） |
+| 来源 | 监控对象 | 阈值（对齐 [ADR 0019](../adr/0019-incident-severity-thresholds.md)） |
 |---|---|---|
 | LangFuse trace 仪表盘 | 5xx 率 / cascade fail 率 / P95 延迟 / fallback render 触发率 | 见 §3 P0/P1 判定标准 |
 | 业务监控埋点 | 每意图 PASS 率 / 节点错误 | 见 §3 P0/P1 判定标准 |
@@ -146,7 +146,7 @@
 **预防机制**（已实现）：
 - `scripts/deploy-customer.sh` step2 加 advisory（待落地）
 - `scripts/canary_status.py` 检测 `CANARY_ROOM_IDS=ALL` + `dry_run_intercept > 0` 时 P0 即时告警
-- `docs/deploy/SHADOW_COMPARE_GUIDE.md` 的安全护栏说明
+- `docs/deploy/shadow-compare-guide.md` 的安全护栏说明
 
 ---
 
@@ -257,12 +257,12 @@
 
 ## 关联资源
 
-- **[ADR 0019](./adr/0019-incident-severity-thresholds.md)** · 故障升级阈值（本手册 §3-§4 严重等级 + alerts.py 阈值的依据）
-- **[ADR 0030](./adr/0030-goal-restatement-native-langgraph-dataset-eval-harness.md)** D3 · 上线观察退出门（互补：灰度结束判定，不是故障升级）
+- **[ADR 0019](../adr/0019-incident-severity-thresholds.md)** · 故障升级阈值（本手册 §3-§4 严重等级 + alerts.py 阈值的依据）
+- **[ADR 0030](../adr/0030-goal-restatement-native-langgraph-dataset-eval-harness.md)** D3 · 上线观察退出门（互补：灰度结束判定，不是故障升级）
 - **CONTEXT.md** · "紧急回滚"术语定义（本手册 §7 的语义来源）
 - **`docs/work-plan.md`** · 工作计划（本手册与回切演练的归属）
-- **`docs/deploy/SHADOW_COMPARE_GUIDE.md`** · Shadow 对照工具（可选，与本手册无直接依赖）
-- **`docs/TROUBLESHOOTING.md`** · 开发期通用故障排查（与生产 on-call 不同语境）
+- **`docs/deploy/shadow-compare-guide.md`** · Shadow 对照工具（可选，与本手册无直接依赖）
+- **`docs/development/troubleshooting.md`** · 开发期通用故障排查（与生产 on-call 不同语境）
 
 ## checkpoint 表清理（客户现场例行运维）
 

@@ -3,8 +3,8 @@
 > **版本**：v1.0（2026-05-12）
 > **适用范围**：客户现场生产环境的 LangGraph 应用运行时故障
 > **关联**：
-> - `docs/on-call-runbook.md`（值班手册，**决策导向**）
-> - `docs/TROUBLESHOOTING.md`（开发期 Q&A，**调试导向**）
+> - `docs/operations/on-call-runbook.md`（值班手册，**决策导向**）
+> - `docs/development/troubleshooting.md`（开发期 Q&A，**调试导向**）
 > - 本文档（生产 SOP，**根因诊断 + 修复路径导向**）
 
 本文档与 on-call runbook 互补：
@@ -313,8 +313,8 @@ mysql -e "SELECT VERSION();"  # 必须 8.0.19 ≤ v < 9.6.0
 
 ## 关联资源
 
-- `docs/on-call-runbook.md` · 值班手册（决策导向）
-- `docs/TROUBLESHOOTING.md` · 开发期 Q&A
+- `docs/operations/on-call-runbook.md` · 值班手册（决策导向）
+- `docs/development/troubleshooting.md` · 开发期 Q&A
 - ADR 0009 · MySQL 版本兼容性硬约束
 - ADR 0019 · 故障升级阈值（识别信号阈值依据）
 - ADR 0030 · 评测门与上线观察指标

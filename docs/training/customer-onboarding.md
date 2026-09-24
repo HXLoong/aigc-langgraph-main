@@ -258,7 +258,7 @@ A：工作，7×24 小时。但**严重错例的修复**通常在工作日处理
 
 ## 关联资源
 
-- `docs/on-call-runbook.md` · 值班手册（技术运维参考）
+- `docs/operations/on-call-runbook.md` · 值班手册（技术运维参考）
 
 ---
 

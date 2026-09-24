@@ -2,6 +2,13 @@
 
 新人阅读路径：`CLAUDE.md` → 本页 → `CONTEXT.md`（领域语言）→ `docs/adr/README.md`（决策索引）。
 
+本目录描述**现行设计的事实**（"为什么"写在 ADR）：
+
+| 文档 | 用途 |
+|---|---|
+| 本页 | 单页导览、分层、存储、可观测性与评测概览 |
+| [backend-instrument-boundary.md](./backend-instrument-boundary.md) | 标的识别的 LangGraph / Java 职责边界（ADR 0025） |
+
 ## 单页导览
 
 ```

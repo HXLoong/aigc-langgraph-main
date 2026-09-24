@@ -33,7 +33,7 @@
 
 ## 3. 告警
 
-阈值定义在 `app/observability/alerts.py` 的 `THRESHOLDS`，与 ADR 0019 §1、`docs/on-call-runbook.md` §3 由 CI 校验一致。
+阈值定义在 `app/observability/alerts.py` 的 `THRESHOLDS`，与 ADR 0019 §1、`docs/operations/on-call-runbook.md` §3 由 CI 校验一致。
 
 | 告警 | 级别 | 条件 |
 |---|---|---|
@@ -69,4 +69,4 @@
 | 历史订单追溯 | `langgraph_node_trace` 按 `message_id` / `trace_id` 查询 |
 | 灰度状态 | `python scripts/canary_status.py` |
 
-故障定级与处置见 `docs/on-call-runbook.md`，根因诊断见 `docs/troubleshooting-sop.md`。
+故障定级与处置见 `docs/operations/on-call-runbook.md`，根因诊断见 `docs/operations/troubleshooting-sop.md`。

@@ -25,9 +25,9 @@
 #
 # 关联文档：
 #   - docs/deploy/customer-private.md（详细手工步骤）
-#   - docs/deploy/langfuse-self-hosted.md（LangFuse 深度部署）
-#   - docs/customer/customer-env-assessment.md（环境调研）
-#   - docs/on-call-runbook.md（部署后故障）
+#   - docs/langfuse/self-hosted-deployment.md（LangFuse 深度部署）
+#   - docs/deploy/customer-env-assessment.md（环境调研）
+#   - docs/operations/on-call-runbook.md（部署后故障）
 # ============================================================
 
 set -u  # 未定义变量报错；不用 -e，每步函数自己控制 exit
@@ -106,7 +106,7 @@ step1_preflight() {
 
     # Docker
     if ! command -v docker >/dev/null 2>&1; then
-        abort "未安装 Docker (≥ 24.x)" "docs/customer/customer-env-assessment.md#2.2"
+        abort "未安装 Docker (≥ 24.x)" "docs/deploy/customer-env-assessment.md#2.2"
     fi
     local docker_ver
     docker_ver=$(docker --version | grep -oE '[0-9]+\.[0-9]+' | head -1)
@@ -114,7 +114,7 @@ step1_preflight() {
 
     # Docker Compose
     if ! docker compose version >/dev/null 2>&1; then
-        abort "未安装 Docker Compose v2 (plugin)" "docs/customer/customer-env-assessment.md#2.2"
+        abort "未安装 Docker Compose v2 (plugin)" "docs/deploy/customer-env-assessment.md#2.2"
     fi
     info "Docker Compose: $(docker compose version --short)"
 
@@ -217,7 +217,7 @@ step2_env_check() {
     if [ "$dry_run_val" = "true" ] || [ "$dry_run_val" = "1" ]; then
         warn "DRY_RUN_BACKEND=true（shadow 期生效，写类调用被拦截）"
         warn "  → 切流前**务必**改回 false，否则用户下单会被拦截！"
-        warn "  → 详见 docs/on-call-runbook.md §5.7"
+        warn "  → 详见 docs/operations/on-call-runbook.md §5.7"
     elif [ -n "$dry_run_val" ] && [ "$dry_run_val" != "false" ] && [ "$dry_run_val" != "0" ]; then
         warn "DRY_RUN_BACKEND 值未识别 ($dry_run_val)，按 false 处理"
     else
@@ -275,7 +275,7 @@ EOF
 
     if ! mysql --defaults-extra-file="$creds_file" -h "$host" -P "$port" -u "$user" -e "SELECT 1" >/dev/null 2>&1; then
         rm -f "$creds_file"
-        abort "MySQL 连不通，检查 .env 中 MYSQL_URI" "docs/troubleshooting-sop.md#4"
+        abort "MySQL 连不通，检查 .env 中 MYSQL_URI" "docs/operations/troubleshooting-sop.md#4"
     fi
 
     local ver
@@ -311,7 +311,7 @@ step4_backend_check() {
         -H "Content-Type: application/json" \
         -H "Token: $secret" \
         -d '{"keywordItems":[{"keyword":"600519","isFull":false}]}' 2>&1) \
-        || abort "Java 后端连不通或返回非 2xx。response: $resp" "docs/troubleshooting-sop.md#3"
+        || abort "Java 后端连不通或返回非 2xx。response: $resp" "docs/operations/troubleshooting-sop.md#3"
 
     # CommonResult.code = 0 才算业务成功
     if echo "$resp" | grep -q '"code":0'; then
@@ -328,17 +328,17 @@ step5_langfuse_up() {
     section "Step 5/10 · LangFuse 启动"
 
     if [ ! -f "${LANGFUSE_DIR}/docker-compose.yml" ]; then
-        abort "找不到 ${LANGFUSE_DIR}/docker-compose.yml" "docs/deploy/langfuse-self-hosted.md"
+        abort "找不到 ${LANGFUSE_DIR}/docker-compose.yml" "docs/langfuse/self-hosted-deployment.md"
     fi
 
     if [ ! -f "${LANGFUSE_DIR}/.env" ]; then
-        abort "${LANGFUSE_DIR}/.env 不存在。参考 docs/deploy/langfuse-self-hosted.md §2.1 生成" "docs/deploy/langfuse-self-hosted.md#2"
+        abort "${LANGFUSE_DIR}/.env 不存在。参考 docs/langfuse/self-hosted-deployment.md §2.1 生成" "docs/langfuse/self-hosted-deployment.md#2"
     fi
 
     # 检查 3 个必填密钥
     for key in SALT ENCRYPTION_KEY NEXTAUTH_SECRET; do
         if ! grep -q "^${key}=" "${LANGFUSE_DIR}/.env"; then
-            abort "${LANGFUSE_DIR}/.env 缺少 $key（用 openssl 生成）" "docs/deploy/langfuse-self-hosted.md#2.1"
+            abort "${LANGFUSE_DIR}/.env 缺少 $key（用 openssl 生成）" "docs/langfuse/self-hosted-deployment.md#2.1"
         fi
     done
 
@@ -346,7 +346,7 @@ step5_langfuse_up() {
 
     info "启动容器（约 30-60 秒首次 migration）"
     docker compose -f "${LANGFUSE_DIR}/docker-compose.yml" --env-file "${LANGFUSE_DIR}/.env" up -d \
-        || abort "docker compose up 失败" "docs/deploy/langfuse-self-hosted.md#8"
+        || abort "docker compose up 失败" "docs/langfuse/self-hosted-deployment.md#8"
 
     # 等所有容器 healthy（最多 120 秒）
     # 注意：旧 docker compose 输出 JSON array、新版输出 JSONL；用 docker ps
@@ -382,7 +382,7 @@ step5_langfuse_up() {
         echo -n "."
     done
     echo
-    abort "LangFuse 等待超时（120s）。看 docker compose logs" "docs/deploy/langfuse-self-hosted.md#8"
+    abort "LangFuse 等待超时（120s）。看 docker compose logs" "docs/langfuse/self-hosted-deployment.md#8"
 }
 
 # ============================================================
@@ -448,7 +448,7 @@ step7_python_deps() {
     # 验证 import
     "$PROJECT_DIR"/venv/bin/python -c "from app.config import get_settings; get_settings()" 2>/dev/null \
         || uv run python -c "from app.config import get_settings; get_settings()" \
-        || abort "应用配置加载失败（检查 .env 字段）" "docs/troubleshooting-sop.md"
+        || abort "应用配置加载失败（检查 .env 字段）" "docs/operations/troubleshooting-sop.md"
 
     ok "Python 依赖安装 + 配置加载成功"
 }
@@ -503,7 +503,7 @@ step9_health_check() {
         sleep 2
         waited=$((waited + 2))
     done
-    [ "$waited" -ge 30 ] && abort "/health 30 秒未通" "docs/troubleshooting-sop.md#1"
+    [ "$waited" -ge 30 ] && abort "/health 30 秒未通" "docs/operations/troubleshooting-sop.md#1"
 
     # /metrics
     if curl -sf -m 3 http://localhost:8000/metrics >/dev/null 2>&1; then
@@ -655,7 +655,7 @@ main() {
     echo "📈 监控指标:        http://localhost:8000/metrics"
     echo
     echo "📖 接入企微 Webhook 见 docs/deploy/customer-private.md §8"
-    echo "📖 故障处理 见 docs/on-call-runbook.md"
+    echo "📖 故障处理 见 docs/operations/on-call-runbook.md"
     echo
 }
 

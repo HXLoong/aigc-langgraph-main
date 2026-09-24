@@ -5,7 +5,7 @@
 （开放的 Agent Skills 标准，只要求 frontmatter `name` + `description`），不读
 CLAUDE.md / .claude/rules / .claude/skills / .claude/agents。项目纪律都写在后者，所以：
 
-    AGENTS.md                         = CLAUDE.md 正文 + 并入 .claude/rules/{prompt-management,testing}.md
+    AGENTS.md                         = CLAUDE.md 正文 + 并入 .claude/rules/{prompt-management,testing,docs}.md
                                         + 其余 rules 只列路径（按需读取，控制上下文体积）
     <dir>/AGENTS.md                   = <dir>/CLAUDE.md（app/prompts、tests、scripts 三个陷阱页）
     .agents/skills/<name>/SKILL.md    = .claude/skills/<name>/SKILL.md（frontmatter 收敛为标准字段）
@@ -28,7 +28,7 @@ from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 #: 并入根 AGENTS.md 正文的规则（其余只列路径，避免 Codex 每次会话加载 800+ 行）
-MERGED_RULES: tuple[str, ...] = ("prompt-management.md", "testing.md")
+MERGED_RULES: tuple[str, ...] = ("prompt-management.md", "testing.md", "docs.md")
 HEADER = (
     "<!-- 自动生成：python scripts/sync_agents_md.py —— 禁止手改。\n"
     "     真源是 {source}；改那里再重新生成，提交前跑 python scripts/sync_agents_md.py --check 校验同步。 -->\n\n"

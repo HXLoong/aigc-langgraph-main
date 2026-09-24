@@ -237,7 +237,7 @@
 
 ## 12. 现场联系人通讯录（runbook 附录 A 来源）
 
-> 调研中收集，回填到 `docs/on-call-runbook.md` 附录 A。
+> 调研中收集，回填到 `docs/operations/on-call-runbook.md` 附录 A。
 
 | 角色 | 姓名 | 企微 / 电话 | 备用联系 |
 |---|---|---|---|
@@ -279,5 +279,5 @@
 - **ADR 0025** · 标的识别由 Java 后端负责（§5 依据）
 - **ADR 0020** · 全环境统一 DeepSeek-V4-pro（§6 依据）
 - **`docs/api-contracts/java-backend.md`** · Java 业务 API 完整契约
-- **`docs/on-call-runbook.md`** · 附录 A 联系人由本调研 §12 回填
+- **`docs/operations/on-call-runbook.md`** · 附录 A 联系人由本调研 §12 回填
 - **CONTEXT.md** · 项目术语

@@ -40,7 +40,7 @@
 ## 标的识别子集：`swap_instrument.jsonl`
 
 从 `../categories/swap*.jsonl` 派生（`scripts/derive_instrument_fixtures.py`，抽取结果已逐条人工复核）。
-LangGraph 只把用户原文里的标的表达逐字送给后端（`docs/backend-instrument-boundary.md`），所以期望值
+LangGraph 只把用户原文里的标的表达逐字送给后端（`docs/architecture/backend-instrument-boundary.md`），所以期望值
 不是证券代码，而是 **LLM 应提取的原文表达任一候选** + **市场限定词对应的交易品种候选**：
 
 ```jsonl

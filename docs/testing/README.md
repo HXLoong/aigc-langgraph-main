@@ -1,7 +1,12 @@
 # 测试指南 · docs/testing 目录说明
 
-> 本目录保存**专用测试文档**：测试计划、阶段性测试报告、现场 smoke checklist、
-> 测试环境配置记录等。本文件是测试体系的**总入口与实操指南**。
+> 本目录保存**仍在使用的测试说明**：测试分层与命令、数据集组织、测试环境与种子数据。
+> 本文件是测试体系的**总入口与实操指南**；带日期的评估 / 测试报告放 [../reports/](../reports/README.md)。
+>
+> | 文档 | 用途 |
+> |---|---|
+> | 本文 | 测试分层、黄金集依赖矩阵、命令与失败定位 |
+> | [local-backend-seed.md](./local-backend-seed.md) | 本地合成身份种子与验收边界 |
 >
 > 纪律真源（本文不重复，冲突时以它们为准）：
 > - `.claude/rules/testing.md` — 测试金字塔 / Mock 陷阱 / TDD / Golden 规范
@@ -135,5 +140,6 @@ GOATS_BASE_URL=http://127.0.0.1:8099
 
 ## 六、本目录的文档存放约定
 
-本目录只放仍在使用的测试说明（如 `local-backend-seed.md`）。一次性的测试报告、执行记录在行动项闭环后直接删除，历史从 git 找回；
-golden case 放 `tests/fixtures/`，测试代码放 `tests/`，含真实密钥的配置严禁入库。
+本目录只放仍在使用的测试说明（如 `local-backend-seed.md`）。一次性的评估、测试报告按 `YYYY-MM-DD-<topic>.md`
+放 [../reports/](../reports/README.md)，结论吸收后删除；评测运行输出写 `.harness-runs/`，不进 `docs/`；
+golden case 放 `tests/fixtures/`，测试代码放 `tests/`，含真实密钥的配置严禁入库。总规则见 [../README.md](../README.md#存放规则)。

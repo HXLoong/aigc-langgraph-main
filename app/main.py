@@ -142,6 +142,6 @@ async def metrics() -> str:
     """Prometheus 兼容指标端点。
 
     返回 text/plain 格式的 exposition，可被 Prometheus / VictoriaMetrics 抓取。
-    监控面板字段说明见 docs/observability.md。
+    监控面板字段说明见 docs/operations/observability.md。
     """
     return get_collector().render_prometheus()

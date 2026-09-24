@@ -9,7 +9,7 @@
 |---|---|---|
 | **原生 LangGraph 重构** | 子图原生嵌入、单动作多订单、RetryPolicy、State 分层与 output schema（ADR 0024 / 0028）；持久化与幂等、回执、对账（0026）；字段证据契约（0027）；标的识别移交 Java（0025）；Dify 资产冻结（0024 D1） | 协议原生化暂缓，保留现行 Java wire 契约（#222）；Store（按诉求） |
 | **数据集评测与评估** | 显式验收集 `tests/fixtures/categories/`（三方言唯一加载器；历史 unified 仅显式选入；Excel 导出共用 categories）；REJECTED 单独成桶、早停记失败；LLM Judge（`scripts/langfuse/langfuse_eval.py`）；节点级 fixture 与 `harness node-run`（0029） | 生产同拓扑基线（本地 dry-run 参考值已回填告警默认值）与 7 天观察仍待验收；D 桶（客户真实输入）回流与标注运营（#236）；写类 case `expected.place_params` 补齐（#220） |
-| **Harness 工程** | CI 在 push / PR 上跑 fast + full 两个 job（ruff、mypy、四项一致性 lint、全量 pytest、MySQL service）；PromptSpec（0023）；trace_id 贯穿与结构化日志（0004 / 0024 D5） | 真实数据库回归按本地环境 opt-in；节点 fixture 漂移守护；VL 接线后 `llm_failure_high` 按模型拆阈值（#232） |
+| **Harness 工程** | CI 在 push / PR 上跑 fast + full 两个 job（ruff、mypy、五项一致性 lint、全量 pytest、MySQL service）；PromptSpec（0023）；trace_id 贯穿与结构化日志（0004 / 0024 D5） | 真实数据库回归按本地环境 opt-in；节点 fixture 漂移守护；VL 接线后 `llm_failure_high` 按模型拆阈值（#232） |
 
 评测门只有一套，见 ADR 0030 D3：数据集 PASS 率不低于前值 → 节点 fixture 回归 → CI 全绿 → 上线观察指标。
 
@@ -17,7 +17,7 @@
 
 - `scripts/deploy-customer.sh` 一键部署 + smoke 自检；`.env.customer.template`；`infra/langfuse/` self-hosted 栈
 - `scripts/rollback_canary.sh` 应急回切、`scripts/drill_smoke.sh` 演练 smoke、`scripts/canary_status.py` / `scripts/metrics_snapshot.py` 灰度状态与指标快照、`scripts/run_alerts.py` 阈值告警干跑、Grafana 面板模板（`infra/`）
-- `docs/on-call-runbook.md` 值班手册（严重等级对齐 ADR 0019）；回切演练在首次切流前执行
+- `docs/operations/on-call-runbook.md` 值班手册（严重等级对齐 ADR 0019）；回切演练在首次切流前执行
 - `scripts/shadow_compare.py` 为可选对照工具，不进任何门
 - 待办：离线依赖包（pip wheel + docker save）；runbook 附录 A 真实 URL / 联系人回填与回切演练后升 v1.0（#234）
 
@@ -32,4 +32,4 @@
 
 - `docs/adr/README.md` · 决策索引与待办表
 - `docs/testing/README.md` · 测试分层与真后端切换
-- `docs/on-call-runbook.md` · 值班手册 / `docs/troubleshooting-sop.md` · 生产排障
+- `docs/operations/on-call-runbook.md` · 值班手册 / `docs/operations/troubleshooting-sop.md` · 生产排障

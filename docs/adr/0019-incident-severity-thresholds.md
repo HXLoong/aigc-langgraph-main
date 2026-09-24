@@ -21,9 +21,9 @@ ADR 0030 D3 的上线观察层回答"是否已经稳定"；本 ADR 回答"正在
 | `non_canary_traffic` | P0 | is_canary=false 计数 ≥ 1 | 即时 | 立即回切 Webhook | ✅ runbook §3 已补条目，lint 校验 5/5/5 |
 | `p95_latency_degraded` | P1 | P95 端到端 ≥ 25662ms（8554 × 3，`M2_BASELINE_P95_MS` 可调） | 10 分钟 | 15 分钟介入 | ✅ 端到端埋点已接线且 P95 剔除节点级样本；默认值取 DeepSeek dry-run 参考值，生产需覆盖 |
 
-P95 基准：当前模型（[ADR 0020](./0020-unify-all-llm-on-deepseek-v4-pro.md)）本地 dry-run 实测 P95 8554ms（截至 2026-09-24），作为参考基线。生产启用前须按相同部署拓扑测量，并通过 `M2_BASELINE_P95_MS` 覆盖；采样口径与边界见 `docs/on-call-runbook.md` §3。
+P95 基准：当前模型（[ADR 0020](./0020-unify-all-llm-on-deepseek-v4-pro.md)）本地 dry-run 实测 P95 8554ms（截至 2026-09-24），作为参考基线。生产启用前须按相同部署拓扑测量，并通过 `M2_BASELINE_P95_MS` 覆盖；采样口径与边界见 `docs/operations/on-call-runbook.md` §3。
 
-### 2. 人工升级判定（与 `docs/on-call-runbook.md` §3 对应）
+### 2. 人工升级判定（与 `docs/operations/on-call-runbook.md` §3 对应）
 
 - **P0 · 5 分钟介入**：Java 后端不可达 ≥ 3 分钟（`/ready` 持续失败）；进程崩溃且重启失败 ≥ 2 次；业务方反馈"系统完全不工作"。
 - **P1 · 15 分钟介入**：P95 ≥ 基线 × 3 持续 10 分钟；LangFuse 不可达 ≥ 10 分钟（监控盲区）。
@@ -51,7 +51,7 @@ P95 基准：当前模型（[ADR 0020](./0020-unify-all-llm-on-deepseek-v4-pro.m
 
 1. 改 `app/observability/alerts.py` 的 `THRESHOLDS`；
 2. 改本 ADR §1 / §2；
-3. 改 `docs/on-call-runbook.md` §3 及 §8 回切演练中引用阈值的场景。
+3. 改 `docs/operations/on-call-runbook.md` §3 及 §8 回切演练中引用阈值的场景。
 
 `scripts/check_alert_threshold_consistency.py`（CI fast job）校验 alerts.py、本 ADR §1 与 runbook §3 三处一致。
 

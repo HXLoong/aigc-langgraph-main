@@ -20,6 +20,7 @@ def _mk(tmp_path: Path) -> Path:
     (rules / "testing.md").write_text("# 测试规范\n\n- 规则甲\n", encoding="utf-8")
     (rules / "prompt-management.md").write_text("# 提示词管理规则\n\n- 规则丙\n", encoding="utf-8")
     (rules / "python-style.md").write_text("# Python 编码规范\n\n- 规则乙\n", encoding="utf-8")
+    (rules / "docs.md").write_text("# 文档存放规则\n\n- 规则丁\n", encoding="utf-8")
     sub = tmp_path / "app" / "prompts"
     sub.mkdir(parents=True)
     (sub / "CLAUDE.md").write_text("# app/prompts · 局部约定\n\n> 规则见 `.claude/rules/prompt-management.md`\n", encoding="utf-8")
@@ -39,11 +40,15 @@ def _mk(tmp_path: Path) -> Path:
 
 
 class TestRenderRoot:
-    def test_merges_only_prompt_management_and_testing(self, tmp_path):
+    def test_merges_only_listed_rules(self, tmp_path):
         out = sync.render_root(_mk(tmp_path))
         assert "规则甲" in out and "规则丙" in out
         assert "规则乙" not in out
         assert ".claude/rules/python-style.md" in out  # 其余规则以链接列出
+
+    def test_merges_docs_rule_so_codex_sees_doc_placement(self, tmp_path):
+        out = sync.render_root(_mk(tmp_path))
+        assert "规则丁" in out
 
     def test_claude_only_phrases_are_generalized(self, tmp_path):
         out = sync.render_root(_mk(tmp_path))

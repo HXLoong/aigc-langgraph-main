@@ -15,7 +15,7 @@
 
 | Day | 任务 |
 |---|---|
-| 1 | 读 `intern-langgraph-primer.md`；按 `docs/DEVELOPMENT.md` 跑通本地环境，`pytest tests/test_smoke.py` 全绿 |
+| 1 | 读 `intern-langgraph-primer.md`；按 `docs/development/README.md` 跑通本地环境，`pytest tests/test_smoke.py` 全绿 |
 | 2-3 | 学完 `course/` 第 1-4 课；走读 `app/graph/main.py` 与 `app/subgraphs/swap/` |
 | 4 | 学完第 5-8 课；用 `python -m harness run` 跑一次回归，在 LangFuse 中看一次 trace |
 | 5-7 | 领一个小任务，按 TDD 写测试与实现，补数据集用例，开 PR |
@@ -32,7 +32,7 @@
 
 | 卡点 | 该看什么 |
 |---|---|
-| 环境跑不起来 | `docs/DEVELOPMENT.md` + `docs/TROUBLESHOOTING.md` |
+| 环境跑不起来 | `docs/development/README.md` + `docs/development/troubleshooting.md` |
 | 不懂 LangGraph 某个 API | LangGraph 官方文档 <https://langchain-ai.github.io/langgraph/> |
 | 想知道某个设计为什么这样 | `docs/adr/README.md` + `CLAUDE.md` |
 | 业务术语看不懂 | `CONTEXT.md` |

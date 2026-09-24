@@ -90,7 +90,7 @@
 **自动检查**（CI fast job）：
 
 - `scripts/check_adr_refs.py`：ADR 互引无虚悬、反引号中的代码路径与 Markdown 相对链接存在（跳过 `~~删除线~~` 段）；`--heat` 可查看孤儿 ADR。
-- `scripts/check_alert_threshold_consistency.py`：[ADR 0019](./0019-incident-severity-thresholds.md) §1 告警表与 `app/observability/alerts.py`、`docs/on-call-runbook.md` §3 一致（修改该表须保持列格式）。
+- `scripts/check_alert_threshold_consistency.py`：[ADR 0019](./0019-incident-severity-thresholds.md) §1 告警表与 `app/observability/alerts.py`、`docs/operations/on-call-runbook.md` §3 一致（修改该表须保持列格式）。
 
 ## 人工复核
 

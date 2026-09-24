@@ -4,7 +4,7 @@
 校验三处文档之间的告警阈值数值一致：
   1. `app/observability/alerts.py:THRESHOLDS`（代码 · 真实生效）
   2. `docs/adr/0019-incident-severity-thresholds.md` §1 表（ADR 决策）
-  3. `docs/on-call-runbook.md` §3 严重等级表（on-call 操作）
+  3. `docs/operations/on-call-runbook.md` §3 严重等级表（on-call 操作）
 
 任一不一致 → exit 1 + 输出差异位置，避免"代码改了文档没跟上"。
 
@@ -31,7 +31,7 @@ from pathlib import Path
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 ALERTS_PY = PROJECT_ROOT / "app" / "observability" / "alerts.py"
 ADR_0019 = PROJECT_ROOT / "docs" / "adr" / "0019-incident-severity-thresholds.md"
-RUNBOOK = PROJECT_ROOT / "docs" / "on-call-runbook.md"
+RUNBOOK = PROJECT_ROOT / "docs" / "operations" / "on-call-runbook.md"
 
 
 @dataclass(frozen=True)
