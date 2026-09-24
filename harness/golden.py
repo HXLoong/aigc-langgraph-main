@@ -1,14 +1,14 @@
 """现役 fixture 加载器：三种方言归一化为 GoldenCase（ADR 0024 D6）。
 
-- A 方言（`tests/fixtures/categories/*.jsonl`）：`name/caseNo + send_text + sub_scenes[]`，
+- A 方言（`tests/fixtures/biz/*.jsonl`）：`name/caseNo + send_text + sub_scenes[]`，
   每轮可带独立断言；case 级 `expected` 落到首轮。
-- B 方言（`tests/fixtures/unified_golden.jsonl`）：`id + conversation[{raw_content, quote_desc}]`
+- B 方言（历史 `tests/fixtures/unified_golden.jsonl`）：`id + conversation[{raw_content, quote_desc}]`
   + case 级 `expected{product_type, intent, output}`。单轮时 expected 落到首轮；多轮时
   expected 描述的是整段对话中的焦点轮（swap/confirm 是末轮、option/place_from_quote 是中间轮），
   不落到任何一轮，改为 `expected_scope="any_turn"`：任一已执行轮命中即通过。
 - raw 方言（`id + raw_content` 单轮，标的回归集）：等价于单轮 A。
 
-一个文件只放一种方言；`categories/` 不接受 B / raw 字段（`scripts/check_fixture_consistency.py`）。
+一个文件只放一种方言；`biz/` 不接受 B / raw 字段（`scripts/check_fixture_consistency.py`）。
 """
 from __future__ import annotations
 
@@ -248,12 +248,14 @@ UNIFIED_FIXTURE_NAME = "unified_golden.jsonl"
 def discover_fixtures(
     root: Path = Path("tests/fixtures"), *, include_unified: bool = False,
 ) -> list[Path]:
-    """默认只读 categories；include_unified 显式纳入同级历史参考集。"""
-    if root.name == "categories":
-        categories, fixtures_root = root, root.parent
+    """默认只读 biz；include_unified 显式纳入同级历史参考集。"""
+    if root.name in ("biz", "categories"):
+        biz_dir, fixtures_root = root, root.parent
     else:
-        categories, fixtures_root = root / "categories", root
-    paths = sorted(categories.glob("*.jsonl"))
+        biz_dir, fixtures_root = root / "biz", root
+        if not biz_dir.is_dir() and (root / "categories").is_dir():
+            biz_dir = root / "categories"  # 旧 checkout 回退
+    paths = sorted(biz_dir.glob("*.jsonl"))
     unified = fixtures_root / UNIFIED_FIXTURE_NAME
     if include_unified and unified.is_file():
         paths.append(unified)
@@ -276,7 +278,7 @@ def load_golden(
         for path in raw_paths:
             fixture_paths.extend(sorted(path.glob("*.jsonl")) if path.is_dir() else [path])
         if include_unified:
-            fixtures_root = root.parent if root.name == "categories" else root
+            fixtures_root = root.parent if root.name in ("biz", "categories") else root
             unified = fixtures_root / UNIFIED_FIXTURE_NAME
             if unified.is_file() and unified.resolve() not in {
                 path.resolve() for path in fixture_paths
@@ -345,7 +347,7 @@ def filter_by_ids(cases: Iterable[GoldenCase], ids: list[str] | None) -> list[Go
     return [case for case in cases if case.id in wanted]
 
 
-# ── Langfuse Dataset / 本地确定性评分共用的 categories 结构投影 ──
+# ── Langfuse Dataset / 本地确定性评分共用的 biz 结构投影 ──
 
 
 def _dataset_turn_input(turn: TurnSpec) -> dict[str, Any]:
@@ -376,7 +378,7 @@ def _dataset_turn_expected(turn: TurnSpec) -> dict[str, Any]:
 
 
 def dataset_input(case: GoldenCase) -> dict[str, Any]:
-    """Dataset Item input：保持 categories 的首轮 + sub_scenes 输入结构。"""
+    """Dataset Item input：保持 biz 的首轮 + sub_scenes 输入结构。"""
     first, *sub_scenes = case.turns
     return {**_dataset_turn_input(first), "sub_scenes": [_dataset_turn_input(t) for t in sub_scenes]}
 

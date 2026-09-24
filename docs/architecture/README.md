@@ -114,7 +114,7 @@ Java 后端业务接口 → 交易系统（标的识别、业务默认值、订�
 
 ## 评测
 
-- 数据集：`tests/fixtures/categories/`（验收集）、`tests/fixtures/intent/`（意图集）、`tests/fixtures/nodes/`（节点级）。
+- 数据集：`tests/fixtures/biz/`（业务验收集）、`tests/fixtures/intent/`（意图集）。
 - 入口：`python -m harness run`（HTTP 全链路回归）、`python -m harness node-run`（节点回归）、`scripts/langfuse/langfuse_eval.py`（LLM Judge）。
 - 放行标准：统一评测门，见 ADR 0030 D3。
 

@@ -1,4 +1,4 @@
-"""从 categories 业务集派生意图集草稿（tests/fixtures/intent/ 的输入来源）。
+"""从 biz 业务集派生意图集草稿（tests/fixtures/intent/ 的输入来源）。
 
 用法：
     python scripts/derive_intent_fixtures.py --dry-run
@@ -24,7 +24,7 @@ from typing import Any
 logger = logging.getLogger(__name__)
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-DEFAULT_SOURCE = REPO_ROOT / "tests" / "fixtures" / "categories"
+DEFAULT_SOURCE = REPO_ROOT / "tests" / "fixtures" / "biz"
 DEFAULT_OUT = REPO_ROOT / "tmp" / "intent_drafts"
 
 INTENT_ID_PREFIX = "intent-"
@@ -130,7 +130,7 @@ def write_drafts(source: Path, out: Path, *, only_labeled: bool) -> dict[str, in
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("--source", type=Path, default=DEFAULT_SOURCE, help="categories 目录或单个 JSONL")
+    parser.add_argument("--source", type=Path, default=DEFAULT_SOURCE, help="biz 目录或单个 JSONL")
     parser.add_argument("--out", type=Path, default=DEFAULT_OUT, help="输出目录，按产品写 <product>.jsonl")
     parser.add_argument("--only-labeled", action="store_true", help="只输出逐轮 intent 已标注的 case")
     parser.add_argument("--dry-run", action="store_true", help="只统计，不写文件")

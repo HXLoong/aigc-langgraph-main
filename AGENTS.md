@@ -26,24 +26,23 @@ uvicorn app.main:app --reload                # FastAPI（POST /v1/workflows/run�
 
 # 轻量测试；当前 .env 开启持久化，单测通过命令级配置隔离数据库依赖
 USE_MYSQL_CHECKPOINTER=false REQUEST_IDEMPOTENCY=false ENABLE_LANGFUSE=false pytest tests/test_smoke.py -q
-# 完整 pytest / categories 业务集全量 / 性能测试按用户统一验收安排执行，不逐批重复。
+# 完整 pytest / biz 业务集全量 / 性能测试按用户统一验收安排执行，不逐批重复。
 
 # 本地 HTTP 业务回归（仅在准备好授权测试账号和数据后，由主代理或用户执行）
-python scripts/local_eval.py --base-url http://127.0.0.1:8201 --data tests/fixtures/categories --case case-025 --concurrency 1
-# 全量验收时去掉 --case；只跑显式 categories，不并入 unified。
+python scripts/local_eval.py --base-url http://127.0.0.1:8201 --data tests/fixtures/biz --case case-025 --concurrency 1
+# 全量验收时去掉 --case；只跑显式 biz。
 # 本地真实联调：ENVIRONMENT=staging uvicorn app.main:app --host 127.0.0.1 --port 8201
 
 # Langfuse Dataset Experiment（Judge + 自动 Evaluator；不替代 HTTP/Java 写回与幂等验收）
-python scripts/langfuse/langfuse_eval.py --dataset golden_option_inquiry_case --ids case-022 --concurrency 1
+python scripts/langfuse/langfuse_eval.py --dataset biz/option_inquiry --ids case-022 --concurrency 1
 # 意图集（不依赖 Java/GOATS；冻结上下文的用例由 harness/intent_runner.py 只跑意图子链、只调 LLM，
 # 拒绝验收（及引用上一轮回复的回放）用例走主图 + mock_api；确定性评分本地算，--fail-under 给退出码；
-# CI：.github/workflows/intent-eval.yml 仅手动触发；业务集 categories/ 依赖 Java 后端只在开发环境跑；docs/langfuse/workflow-guide.md §8）
+# CI：.github/workflows/intent-eval.yml 仅手动触发；业务集 biz/ 依赖 Java 后端只在开发环境跑；docs/langfuse/workflow-guide.md §8）
 python scripts/langfuse/langfuse_eval.py --local tests/fixtures/intent --concurrency 3 --fail-under 0.95 --report .harness-runs/intent-eval.json
 
 # Harness CLI（备用 / 本地快速 smoke，无 Judge；run 需授权测试身份，见 harness/README.md）
 python -m harness doctor
 python -m harness run --backend real|mock|dry-run
-python -m harness node-run --data tests/fixtures/nodes   # 节点级回归（ADR 0029）
 
 # 真后端探针（联调用）
 python scripts/probe_real_backend_e2e.py
@@ -91,8 +90,8 @@ scripts/                     # 评估入口、真后端探针、灰度与运维�
 infra/                       # langfuse/（self-hosted Compose）+ grafana/（面板模板）
 docs/                        # 文档地图与存放规则见 docs/README.md（lint 强制）
 tests/                       # 3500+ 条，布局见 tests/CLAUDE.md
-tests/fixtures/              # intent/（意图集，只调 LLM）+ categories/（业务验收集，6 文件，依赖 Java）+ nodes/（节点级）
-                             # + unified_golden.jsonl（B 方言历史参考集，显式 --include-unified 加载），见 tests/fixtures/README.md
+tests/fixtures/              # intent/（意图集，只调 LLM）+ biz/（业务验收集，6 文件，依赖 Java）；见 tests/fixtures/README.md
+                             # nodes/（节点级 fixture，ADR 0029）与 unified_golden.jsonl（B 方言历史参考集）已退役
 ```
 
 ## 团队工具链：Claude Code 与 Codex 共用一份纪律
@@ -112,12 +111,12 @@ tests/fixtures/              # intent/（意图集，只调 LLM）+ categories/�
 - 用户明确授权后可使用主代理与最多三个子代理。实现任务使用独立 worktree 和分支；子代理提交后由主代理审阅、集成。
 - 每个任务指定文件所有者与验收用例；公共 State、配置、数据库结构及服务生命周期由主代理统一处理。子代理提出公共契约需求，不互相覆盖共享文件。
 - Java 源码不修改；本地 Java 48080 → 48081，LangGraph 使用本地端口，禁止使用 10.49.91.229:8201；应用持久化统一 MYSQL_URI。
-- 当前重构采用轻量验证：业务改动先最小 RED，再 GREEN 与相关关键测试；用户要求最终统一测试时，不逐批跑全套 pytest、categories 全量真实回归或压测。
-- 真实写入测试仅由主代理调度；先确认授权测试账号、群、对手及持仓。业务回归使用 scripts/local_eval.py 和显式 tests/fixtures/categories，不并入 unified。
+- 当前重构采用轻量验证：业务改动先最小 RED，再 GREEN 与相关关键测试；用户要求最终统一测试时，不逐批跑全套 pytest、biz 全量真实回归或压测。
+- 真实写入测试仅由主代理调度；先确认授权测试账号、群、对手及持仓。业务回归使用 scripts/local_eval.py 和显式 tests/fixtures/biz。
 - 新建或移动文档先按 `.claude/rules/docs.md` 判定归属目录（一次性报告进 `docs/reports/YYYY-MM-DD-<topic>.md`），跑 `python scripts/check_docs_layout.py`。
 - 任务和证据记录在 tmp；区分实现完成、专项通过、待用户验收、外部阻塞。外部阻塞不可写成已完成；全量结果未经运行不得宣称通过。
 - 不 push、不创建 PR；保留用户原有未提交改动。新 worktree 显式准备依赖与所需本地配置，禁止输出或提交密钥。
-- 2026-09-22 issue 裁决：#218 不处理；#219 仅待部署环境核查；#220 categories 标注后续单列；#221 暂不改脱敏默认值与审计原文；#222 协议迁移暂缓，保持 Java 源码、配置、agentUrl、DTO 和现行 wire 契约；#224 的 shadow_compare 保留待 F4.1 裁决。
+- 2026-09-22 issue 裁决：#218 不处理；#219 仅待部署环境核查；#220 biz 标注后续单列；#221 暂不改脱敏默认值与审计原文；#222 协议迁移暂缓，保持 Java 源码、配置、agentUrl、DTO 和现行 wire 契约；#224 的 shadow_compare 保留待 F4.1 裁决。
 
 ## 子目录陷阱页（按需加载）
 
@@ -222,7 +221,7 @@ USE_MYSQL_CHECKPOINTER=false REQUEST_IDEMPOTENCY=false ENABLE_LANGFUSE=false pyt
 修完跑对应 case 确认：
 
 ```bash
-python scripts/langfuse/langfuse_eval.py --local tests/fixtures/categories --ids case-025,case-026 --concurrency 2   # 依赖 Java，由主代理调度
+python scripts/langfuse/langfuse_eval.py --local tests/fixtures/biz --ids case-025,case-026 --concurrency 2   # 依赖 Java，由主代理调度
 ```
 
 ## 绝对禁止
@@ -391,7 +390,7 @@ for target in (
 
 ## Golden Set
 
-- 所有新增意图必须在 `tests/fixtures/categories/` 加至少 2 条用例，并在 `tests/fixtures/intent/` 补逐轮意图标签（`scripts/check_fixture_consistency.py` 校验一致性）
+- 所有新增意图必须在 `tests/fixtures/biz/` 加至少 2 条用例，并在 `tests/fixtures/intent/` 补逐轮意图标签（`scripts/check_fixture_consistency.py` 校验一致性）
 - case 格式沿用对应文件既有方言（详见 `tests/fixtures/README.md`）
 - 跑评估：意图集 `python scripts/langfuse/langfuse_eval.py --local tests/fixtures/intent`；依赖 Java 的业务集按 `run-eval` skill 由主代理调度
 

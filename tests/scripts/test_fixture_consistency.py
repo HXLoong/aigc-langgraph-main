@@ -20,15 +20,25 @@ def _valid_case(**overrides: object) -> dict:
 
 
 def _validate(root: Path, payloads: list[dict]) -> list[str]:
-    categories = root / "categories"
-    categories.mkdir(exist_ok=True)
+    biz = root / "biz"
+    biz.mkdir(exist_ok=True)
     lines = [json.dumps(payload, ensure_ascii=False) for payload in payloads]
-    (categories / "option.jsonl").write_text("\n".join(lines), encoding="utf-8")
+    (biz / "option.jsonl").write_text("\n".join(lines), encoding="utf-8")
     return checker.validate(root)
 
 
 def test_valid_case_passes(tmp_path: Path) -> None:
     assert _validate(tmp_path, [_valid_case()]) == []
+
+
+def test_business_fixture_dir_uses_biz(tmp_path: Path) -> None:
+    biz = tmp_path / "biz"
+    biz.mkdir()
+    biz.joinpath("option.jsonl").write_text(
+        json.dumps(_valid_case(), ensure_ascii=False), encoding="utf-8"
+    )
+
+    assert checker.validate(tmp_path) == []
 
 
 def test_quote_reference_shape_is_checked_without_live_quote(tmp_path: Path) -> None:
@@ -50,7 +60,7 @@ def test_subscene_reference_selector_is_validated(tmp_path: Path) -> None:
 
 
 def test_b_dialect_fields_rejected_in_categories(tmp_path: Path) -> None:
-    """categories/ 只放 A 方言；conversation / raw_content 属于 unified_golden.jsonl（B 方言）。"""
+    """biz/ 只放 A 方言；conversation / raw_content 属于 unified_golden.jsonl（B 方言）。"""
     case = _valid_case()
     case["conversation"] = [{"raw_content": "x"}]
     case["raw_content"] = "x"
@@ -135,9 +145,9 @@ def test_invalid_category_and_wrong_assertion_types_rejected(tmp_path: Path) -> 
 
 
 def test_empty_fixture_file_rejected(tmp_path: Path) -> None:
-    categories = tmp_path / "categories"
-    categories.mkdir()
-    (categories / "option.jsonl").write_text("", encoding="utf-8")
+    biz = tmp_path / "biz"
+    biz.mkdir()
+    (biz / "option.jsonl").write_text("", encoding="utf-8")
     assert any("empty file" in error for error in checker.validate(tmp_path))
 
 
@@ -209,10 +219,10 @@ def _intent_case(**overrides: object) -> dict:
     return case
 
 
-def _validate_intent(root: Path, payloads: list[dict], *, categories: list[dict] | None = None) -> list[str]:
-    (root / "categories").mkdir(exist_ok=True)
-    category_lines = [json.dumps(payload, ensure_ascii=False) for payload in (categories or [_valid_case()])]
-    (root / "categories" / "option.jsonl").write_text("\n".join(category_lines), encoding="utf-8")
+def _validate_intent(root: Path, payloads: list[dict], *, biz: list[dict] | None = None) -> list[str]:
+    (root / "biz").mkdir(exist_ok=True)
+    category_lines = [json.dumps(payload, ensure_ascii=False) for payload in (biz or [_valid_case()])]
+    (root / "biz" / "option.jsonl").write_text("\n".join(category_lines), encoding="utf-8")
     intent_dir = root / "intent"
     intent_dir.mkdir(exist_ok=True)
     lines = [json.dumps(payload, ensure_ascii=False) for payload in payloads]
@@ -284,7 +294,7 @@ def test_intent_ids_must_be_unique_across_categories(tmp_path: Path) -> None:
     errors = _validate_intent(
         tmp_path,
         [_intent_case(caseNo="intent-shared")],
-        categories=[_valid_case(id="intent-shared")],
+        biz=[_valid_case(id="intent-shared")],
     )
     assert any("duplicate id 'intent-shared'" in error for error in errors)
 

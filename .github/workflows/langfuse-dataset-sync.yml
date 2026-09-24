@@ -1,8 +1,13 @@
 name: langfuse-dataset-sync
 
-# 仅手动触发：Actions → langfuse-dataset-sync → Run workflow（选 main）。不随 push 自动写 Langfuse。
+# 合并到 main 后，fixture JSONL 的变更自动同步；仍可从 Actions 手动重跑。
 on:
   workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - "tests/fixtures/**/*.jsonl"
 
 concurrency:
   group: langfuse-dataset-sync

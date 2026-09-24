@@ -34,10 +34,10 @@ class EvaluatorDefinition:
 
 
 def resolve_evaluator_suite(suite: str | None, dataset_name: str | None) -> str:
-    """显式 --suite 优先；否则按 intent_ / intent- 前缀判定。"""
+    """显式 --suite 优先；否则按 intent 数据集名前缀判定。"""
     if suite:
         return suite
-    if dataset_name and dataset_name.startswith(("intent_", "intent-")):
+    if dataset_name and dataset_name.startswith(("intent/", "intent_", "intent-")):
         return "intent"
     return DEFAULT_SUITE
 
@@ -322,7 +322,7 @@ def main() -> int:
     parser.add_argument(
         "--suite",
         choices=SUITES,
-        help="只同步该套件的 Evaluator；默认按 --dataset-name 前缀 intent_ / intent- 判定，其余为 business",
+        help="只同步该套件的 Evaluator；默认按 --dataset-name 前缀 intent/、intent_、intent- 判定，其余为 business",
     )
     mode = parser.add_mutually_exclusive_group(required=True)
     mode.add_argument("--dry-run", action="store_true")

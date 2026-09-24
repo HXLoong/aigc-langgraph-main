@@ -46,7 +46,7 @@ for target in (
 
 ## Golden Set
 
-- 所有新增意图必须在 `tests/fixtures/categories/` 加至少 2 条用例，并在 `tests/fixtures/intent/` 补逐轮意图标签（`scripts/check_fixture_consistency.py` 校验一致性）
+- 所有新增意图必须在 `tests/fixtures/biz/` 加至少 2 条用例，并在 `tests/fixtures/intent/` 补逐轮意图标签（`scripts/check_fixture_consistency.py` 校验一致性）
 - case 格式沿用对应文件既有方言（详见 `tests/fixtures/README.md`）
 - 跑评估：意图集 `python scripts/langfuse/langfuse_eval.py --local tests/fixtures/intent`；依赖 Java 的业务集按 `run-eval` skill 由主代理调度
 

@@ -20,7 +20,7 @@
 
 ```bash
 # 从 Langfuse Dataset 跑
-python scripts/langfuse/langfuse_eval.py --dataset golden_option_inquiry_case --ids case-022 --concurrency 1
+python scripts/langfuse/langfuse_eval.py --dataset biz/option_inquiry --ids case-022 --concurrency 1
 
 # 从本地 fixture 跑（不走 Langfuse Dataset，可用 --fail-under 做 CI 门槛）
 python scripts/langfuse/langfuse_eval.py --local tests/fixtures/intent --concurrency 3 --fail-under 0.95
@@ -28,15 +28,17 @@ python scripts/langfuse/langfuse_eval.py --local tests/fixtures/intent --concurr
 
 ## upload_golden_to_langfuse.py
 
-把 fixture 上传成 Langfuse Dataset。默认源是 `tests/fixtures/categories`。
+把 fixture 上传成 Langfuse Dataset。手动模式默认源是 `tests/fixtures/biz`；`--sync-all`
+递归扫描 `tests/fixtures/` 下所有 JSONL，按相对路径去掉扩展名命名（如
+`biz/option_close.jsonl` → `biz/option_close`）。路径中的 `/` 会在 Langfuse 中形成文件夹。
 
 ```bash
 # 同步所有现役 JSONL（每个文件一个 Dataset）
 python scripts/langfuse/upload_golden_to_langfuse.py --sync-all
 
 # 单个文件（--suite / --backend 可覆盖按路径自动判定的套件）
-python scripts/langfuse/upload_golden_to_langfuse.py --dataset-name golden_option_close_case \
-  --source tests/fixtures/categories/golden_option_close_case.jsonl --mode append
+python scripts/langfuse/upload_golden_to_langfuse.py --dataset-name biz/option_close \
+  --source tests/fixtures/biz/option_close.jsonl --mode append
 ```
 
 > 新数据集用 `--mode append`。默认的 `overwrite` 会先清空旧条目，而它对**还不存在**的

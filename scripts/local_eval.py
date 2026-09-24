@@ -173,7 +173,7 @@ async def run(args: argparse.Namespace) -> int:
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--base-url", default="http://127.0.0.1:8201")
-    parser.add_argument("--data", default="tests/fixtures/categories")
+    parser.add_argument("--data", default="tests/fixtures/biz")
     parser.add_argument("--case", action="append")
     parser.add_argument("--limit", type=int)
     parser.add_argument("--concurrency", type=int, default=2)

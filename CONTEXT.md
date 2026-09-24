@@ -24,11 +24,11 @@ _Avoid_: 本地业务交易 PASS、mock GOATS 成功、把“失败可观测”�
 _Avoid_: 仅凭 Java 已尝试调用 GOATS、集成日志存在或 mock 返回成功就宣称交易成功
 
 **Harness（评测台 / Harness Engineering）**：
-一套把 "case → 跑 LangGraph → 比对预期 → 结构化输出失败原因 → 喂给 AI 编码工具改代码 → 再跑" 做成闭环的工具链。三层粒度：HTTP 端到端回归（业务验收集）、意图子链（意图集）、节点级回归（节点 fixture，ADR 0029）；配结构化 diff 报告与 CLI（`harness/README.md`）。
+一套把 "case → 跑 LangGraph → 比对预期 → 结构化输出失败原因 → 喂给 AI 编码工具改代码 → 再跑" 做成闭环的工具链。三层粒度：HTTP 端到端回归（业务验收集）、意图子链（意图集）、节点级回归（节点 fixture 已退役，ADR 0029 仅保留 `app/node_execution` 节点调试 API）；配结构化 diff 报告与 CLI（`harness/README.md`）。
 _Avoid_: 混沌工程（Chaos Engineering，不同概念）、可观测性平台（trace 只是 harness 的副产品之一）、单元测试（harness 跑的是数据集而非代码单元）
 
 **Golden case**：
-一条 harness 输入：用户原话 + 期望输出。集合（golden set）是 harness 的回归基线；业务验收集 `tests/fixtures/categories/` 以 Java 卡片文本断言为主、可选结构化 `expected`，意图集 `tests/fixtures/intent/` 逐轮断言 product_type / intent。按来源分三个桶（目标口径；当前只有历史参考集 `unified_golden.jsonl` 带桶标记，categories 未标注）：
+一条 harness 输入：用户原话 + 期望输出。集合（golden set）是 harness 的回归基线；业务验收集 `tests/fixtures/biz/` 以 Java 卡片文本断言为主、可选结构化 `expected`，意图集 `tests/fixtures/intent/` 逐轮断言 product_type / intent。按来源分三个桶（目标口径；当前 biz 与 intent 未标注桶，B 方言历史参考集 `unified_golden.jsonl` 已退役）：
 - **B 桶**：业务方手写种子——主动构造、意图均衡的典型句式，expected 字段由业务方直接填写
 - **C 桶**：LLM paraphrase——以 B 桶为种子做对抗式改写（换说法 / 边界 case），业务方 review pass 后合入
 - **D 桶**：客户历史真实输入——从企微群抄录的原话，反映真实分布（含拼写错误、缩写、上下文依赖）；expected 字段**必须由业务方人工标注后才能合入**数据集，是持续增长的集合
@@ -110,8 +110,8 @@ _Avoid_: 把拒绝改写成成功卡片，或把拒绝当作 LangGraph 缺陷
 意图集（`tests/fixtures/intent/`）只评产品与意图，不依赖 Java。冻结用例把每轮上下文写在 fixture 里、只跑意图子链；走主图 + `mock_api` 的是拒绝验收用例和引用上一轮真实回复的回放用例（当前多轮用例已全部冻结，`harness/intent_context.py` 判定）。
 _Avoid_: 把意图集与依赖 Java 的业务验收集混跑
 
-**节点级 fixture**：
-单个节点的输入 State 与期望输出，由 `python -m harness node-run` 回放；带写副作用的节点只留标注、不回放（ADR 0029）。
+**节点级 fixture（已退役）**：
+节点级 fixture 已随 ADR 0029 的 fixture 部分退役；节点级调试改由 `app/node_execution` 的单节点执行 API 承担。
 _Avoid_: 用节点 fixture 代替端到端业务验收
 
 ### 运维与评测术语

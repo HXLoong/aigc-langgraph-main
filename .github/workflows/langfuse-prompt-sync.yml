@@ -1,8 +1,15 @@
 name: langfuse-prompt-sync
 
-# 仅手动触发：Actions → langfuse-prompt-sync → Run workflow（选 main）。不随 push 自动写 Langfuse。
+# 合并到 main 后，现役提示词的变更自动同步；仍可从 Actions 手动重跑。
 on:
   workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - "app/prompts/option/*.md"
+      - "app/prompts/option_close/*.md"
+      - "app/prompts/swap/*.md"
 
 concurrency:
   group: langfuse-prompt-sync

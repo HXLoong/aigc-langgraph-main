@@ -1,6 +1,6 @@
 """Langfuse Code Evaluator：意图集逐轮比对 expected.product_type / intent。
 
-与 response_* 评估器同构：expectedOutput 保持 categories 结构（首轮 + sub_scenes[]），
+与 response_* 评估器同构：expectedOutput 保持 biz 结构（首轮 + sub_scenes[]），
 实际值取 Experiment Item 根输出的 turns[i].product_type / intent。只比对 expected 里
 出现的键（product_type=unknown 的反案例可以不标 intent）；没有任何可比对键视为失败，
 避免标注缺失被当作通过。上传到 Langfuse 后独立执行，因此不 import harness 其它模块。

@@ -5,7 +5,7 @@ from harness.golden import load_golden
 
 
 def test_option_lifecycle_cases_cover_final_confirmation_and_cancel():
-    cases = {case.id: case for case in load_golden(Path("tests/fixtures/categories"))}
+    cases = {case.id: case for case in load_golden(Path("tests/fixtures/biz"))}
     for case_id, product, intents in (
         ("case-029-lifecycle", "option",
          ["confirm_order", "request_cancel_order", "confirm_cancel_order", "query_order_status"]),

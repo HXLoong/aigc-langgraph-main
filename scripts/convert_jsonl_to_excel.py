@@ -2,11 +2,11 @@
 
 用法：
     python scripts/convert_jsonl_to_excel.py
-    python scripts/convert_jsonl_to_excel.py --input tests/fixtures/categories
+    python scripts/convert_jsonl_to_excel.py --input tests/fixtures/biz
     python scripts/convert_jsonl_to_excel.py --input example.jsonl --output example.xlsx
     python scripts/convert_jsonl_to_excel.py --dry-run
 
-默认读取 ``tests/fixtures/categories``，输出该目录下的“黄金数据集.xlsx”。
+默认读取 ``tests/fixtures/biz``，输出该目录下的“黄金数据集.xlsx”。
 目录模式只扫描直接子级 JSONL，按文件名排序。每张表的列由对应
 JSONL 实际出现的顶层字段按首次出现顺序组成；对象、数组、布尔值和 null
 使用 JSON 文本写入单元格，不展开 ``sub_scenes`` 等嵌套字段。
@@ -25,7 +25,7 @@ from openpyxl import Workbook
 
 logger = logging.getLogger(__name__)
 REPO_ROOT = Path(__file__).resolve().parents[1]
-DEFAULT_INPUT = REPO_ROOT / "tests" / "fixtures" / "categories"
+DEFAULT_INPUT = REPO_ROOT / "tests" / "fixtures" / "biz"
 
 
 def _cell(value: object) -> str:

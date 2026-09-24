@@ -130,7 +130,7 @@ curl -X POST http://127.0.0.1:8099/admin-api/swap-order/operate \
 
 ## 持仓数据
 
-`POSITIONS` 5 条（与 `tests/fixtures/categories/` 常用 `OPT-LYAFT…` `OPT-SZZSCF…` case 对齐），以 `mock_api/backend/fixtures.py` 为准，覆盖：
+`POSITIONS` 5 条（与 `tests/fixtures/biz/` 常用 `OPT-LYAFT…` `OPT-SZZSCF…` case 对齐），以 `mock_api/backend/fixtures.py` 为准，覆盖：
 - 贵州茅台欧式看涨 × 1（`OPT-AAAA1`）
 - 川能动力欧式看涨 × 3
 - 蓝帆医疗雪球 × 1
@@ -172,4 +172,4 @@ OTC_API_BASE_URL=http://127.0.0.1:8099 GOATS_BASE_URL=http://127.0.0.1:8099 \
   python scripts/langfuse/langfuse_eval.py --local tests/fixtures/intent --fail-under 0.95
 ```
 
-业务验收集 `tests/fixtures/categories/` 依赖真 Java 后端，不用 mock 跑。接口 OpenAPI 可用 `app.openapi()` 现场生成。
+业务验收集 `tests/fixtures/biz/` 依赖真 Java 后端，不用 mock 跑。接口 OpenAPI 可用 `app.openapi()` 现场生成。

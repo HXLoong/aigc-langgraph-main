@@ -1,17 +1,17 @@
-# Git 文件同步到 Langfuse（手动触发）
+# Git 文件同步到 Langfuse
 
-仓库中的测试用例和提示词由 Git 管理。需要时在 GitHub Actions 页面**手动运行**同步任务，把 `main` 上的内容同步到 Langfuse；push 和 PR 合并**不会**自动触发。两个同步任务彼此独立。
+仓库中的测试用例和提示词由 Git 管理。合并包含对应文件变更的 PR 到 `main` 后，GitHub Actions 自动把 `main` 上的内容同步到 Langfuse；两个同步任务彼此独立，也可以在 Actions 页面手动重跑。
 
 | 同步任务 | 读取哪些文件 | 同步到 Langfuse |
 |---|---|---|
-| `langfuse-dataset-sync` | `tests/fixtures/intent/*.jsonl`、`tests/fixtures/categories/*.jsonl` | 一个 JSONL 文件对应一个 Dataset |
+| `langfuse-dataset-sync` | `tests/fixtures/**/*.jsonl` | 一个 JSONL 文件对应一个 Dataset |
 | `langfuse-prompt-sync` | `app/prompts/option/*.md`、`option_close/*.md`、`swap/*.md` | Chat Prompt，标签为 `staging` |
 
-这里只扫描所列目录的**顶层文件**。`tests/fixtures/nodes/` 是本地节点测试数据，不会上传。两个任务运行时都检出最新的 `main`，因此上传的是主分支内容。
+数据集同步会递归扫描 `tests/fixtures/` 下的 JSONL；提示词同步只扫描表中的三个业务目录的顶层 Markdown 文件。两个任务运行时都检出最新的 `main`，因此上传的是主分支内容。
 
 ## 数据集会怎样更新
 
-- 名称由文件名决定：`intent/option.jsonl` → `intent_option`；`categories/golden_option_close_case.jsonl` → `golden_option_close_case`。
+- 名称由相对路径去掉扩展名决定：`intent/option.jsonl` → `intent/option`；`biz/option_close.jsonl` → `biz/option_close`。
 - 上传前先检查所有文件。每条用例使用固定的 Item ID：`<数据集名>:<用例 ID>`。
 - 每次运行都会按这个 ID 上传或更新已有 Item。所有文件上传成功后，脚本会把远端多出的 `ACTIVE` Item 标记为 `ARCHIVED`；上传阶段失败时不会开始归档。
 - 删除整个本地文件、或把文件移出扫描范围，不会自动删除或归档远端 Dataset。以前上传过的 `nodes/` 数据集也不会被清理。
@@ -29,7 +29,7 @@
 
 1. 先确保两个 workflow 文件已随 PR 合并到目标仓库的 `main`：`.github/workflows/langfuse-dataset-sync.yml` 和 `.github/workflows/langfuse-prompt-sync.yml`（Run workflow 按钮只对默认分支上的 workflow 显示）。
 2. 在目标仓库的 **Settings → Secrets and variables → Actions** 配置：变量 `LANGFUSE_BASE_URL`（自托管实例地址，须为 GitHub Actions 可达的内网或专线地址）；Secrets `LANGFUSE_PUBLIC_KEY`、`LANGFUSE_SECRET_KEY`。再设置变量 `LANGFUSE_TIMEOUT=60`（秒），供数据集任务使用。
-3. 在 **Actions → langfuse-dataset-sync / langfuse-prompt-sync → Run workflow** 选择 `main` 手动运行。改了数据集、提示词或上传脚本并合入 `main` 后，需要同步时再手动跑；不会自动触发。
+3. 数据集 JSONL 或现役提示词 Markdown 合并到 `main` 后会自动运行相应任务；如需重试，或只改了上传脚本，可在 **Actions → langfuse-dataset-sync / langfuse-prompt-sync → Run workflow** 手动运行。
 4. 查看运行日志是否成功。数据集到 Langfuse 的 **Datasets** 核对名称和 Items；提示词到 **Prompts** 核对名称、内容和 `staging` 标签。提示词日志中的 `created`、`updated`、`skipped` 分别表示新建、生成新版、内容未变。
 
 两个 workflow 都使用 Python 3.11 和 Langfuse SDK `4.15.0`，单次任务最长运行 30 分钟。`LANGFUSE_TIMEOUT` 控制数据集任务的单次 SDK 请求超时，与 30 分钟的任务上限不同。

@@ -1,4 +1,4 @@
-"""Command line entry point for categories-based HTTP regression."""
+"""Command line entry point for biz-based HTTP regression."""
 
 from __future__ import annotations
 
@@ -409,7 +409,7 @@ def build_parser() -> argparse.ArgumentParser:
     run.add_argument("--data", action="append")
     run.add_argument(
         "--include-unified", action="store_true",
-        help="显式追加 tests/fixtures/unified_golden.jsonl 历史参考集（默认只读 categories）",
+        help="显式追加 tests/fixtures/unified_golden.jsonl 历史参考集（默认只读 biz）",
     )
     run.add_argument("--base-url", default="http://127.0.0.1:8000")
     run.add_argument("--backend", choices=("real", "mock", "dry-run"), default="real")

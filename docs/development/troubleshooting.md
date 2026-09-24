@@ -132,4 +132,4 @@ pip install -e ".[dev]"
 1. 从 `langgraph_message_log` / `langgraph_node_trace` 拉该客户该时段消息与节点轨迹
 2. 本地用同样 payload 请求 `POST /v1/workflows/run` 重现
 3. 看 trace 定位错误节点
-4. 先在 `tests/fixtures/categories/` 补 case，再按 TDD 修复
+4. 先在 `tests/fixtures/biz/` 补 case，再按 TDD 修复

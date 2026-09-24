@@ -1,4 +1,4 @@
-"""从 categories 业务集派生意图集草稿：只搬路由/意图标签，不搬卡片断言，不猜标签。"""
+"""从 biz 业务集派生意图集草稿：只搬路由/意图标签，不搬卡片断言，不猜标签。"""
 
 from __future__ import annotations
 
@@ -88,7 +88,7 @@ def test_derive_negative_type_is_kept() -> None:
 
 
 def test_write_drafts_groups_by_product_and_can_filter_labeled(tmp_path: Path) -> None:
-    source = tmp_path / "categories"
+    source = tmp_path / "biz"
     source.mkdir()
     swap = {
         "caseNo": "s1",

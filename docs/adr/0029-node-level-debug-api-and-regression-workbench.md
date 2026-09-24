@@ -20,7 +20,7 @@
 
 ### D2 · 节点级 fixture 与人工标注
 
-- 存放：`tests/fixtures/nodes/<product>/<node>.jsonl`，一行一个用例；字段级标注是默认方式（只断言稳定业务字段，如标的代码 / 价格类型 / 跟量比例，不断言耗时、trace_id）。
+- 存放：节点级 fixture 目录 `tests/fixtures/nodes/` 已退役（无替代）；节点调试 API（`app/node_execution`）与 `harness node-run` 仍在，仅其 fixture 部分退役。
 - 稳定字段与安全回放契约由 `harness/node_registry.py` 显式声明；自动从 Langfuse observation 发现的新节点可标注，但**默认禁止回放**；只输出动态 trace / 私有中间态 / 空对象的节点为"仅查看"，服务端拒绝保存空断言。
 - 带写副作用的节点 fixture 只用于留存标注，批量回归时显示 `SKIP`，不调用节点、不计失败。
 
@@ -28,7 +28,7 @@
 
 - 本地直调（`harness/node_runner.py`）或 `--transport http`（依次调 `/v1/nodes/prepare` 与 `/v1/nodes/run`，HTTP 模式不支持 `--mock`）；两种模式与 `harness run` 复用同一 `differ` 字段级 diff 与 JSON 报告。
 - `--mock` 使用 `harness/node_mocks.py` 的显式外部依赖 mock（当前试点 `swap_place_order`），不在业务代码内置任何"备用实现"开关（CLAUDE.md 禁止项）。
-- 节点回归**不替代**全链路 categories 回归与 LLM Judge（`scripts/langfuse/langfuse_eval.py`）；golden gate 仍是 `harness run`。
+- 节点回归**不替代**全链路 biz 回归与 LLM Judge（`scripts/langfuse/langfuse_eval.py`）；golden gate 仍是 `harness run`。
 
 ### D4 · 私有工具 HTTP 录制与严格回放（`harness/http_tape.py`）
 
