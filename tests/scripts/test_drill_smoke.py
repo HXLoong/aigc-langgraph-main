@@ -2,7 +2,7 @@
 
 测试范围：
 - 参数解析（--help / 未知参数）
-- 6 件套工具存在性 check（重命名/删除任一工具 → fail）
+- 5 件套工具存在性 check（重命名/删除任一工具 → fail）
 - 工具语法 check（注入语法错误的临时脚本 → fail）
 - 服务未启动场景（metrics/ready 不可达 → 多项 fail，整体 exit 1）
 - --skip-deploy-check 行为
@@ -95,7 +95,7 @@ def test_runs_without_service_returns_1() -> None:
              "--ready-url", "http://127.0.0.1:1/nope")
     assert r.returncode == 1
     # 工具存在 + 语法应通过
-    assert "6 件套工具存在" in r.stdout
+    assert "5 件套工具存在" in r.stdout
     assert "工具语法可加载" in r.stdout
     # 服务相关应失败
     assert "不可达" in r.stdout or "fail" in r.stdout.lower() or "❌" in r.stdout
