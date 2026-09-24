@@ -105,7 +105,8 @@ async def run(args: argparse.Namespace) -> int:
     database_args = connection_args(settings.mysql_uri)
     if not settings.eval_user_id or not settings.eval_room_id:
         raise ValueError("EVAL_USER_ID and EVAL_ROOM_ID are required")
-    gate = await _doctor(args.base_url, checkpoint="mysql", backend="real")
+    backend = "dry-run" if getattr(settings, "dry_run_backend", False) else "real"
+    gate = await _doctor(args.base_url, checkpoint="mysql", backend=backend)
     if gate:
         return gate
     models = await probe_text_models()
@@ -125,7 +126,7 @@ async def run(args: argparse.Namespace) -> int:
     reports: list[dict[str, Any]] = []
     latencies: list[int] = []
     manifest = {
-        "run": run_id, "base_url": args.base_url, "backend": "real", "checkpoint": "mysql",
+        "run": run_id, "base_url": args.base_url, "backend": backend, "checkpoint": "mysql",
         "commit": subprocess.check_output(["git", "rev-parse", "HEAD"], text=True).strip(),
         "cases": len(cases), "turns": sum(len(case.turns) for case in cases),
         "model": settings.qwen_model_standard,

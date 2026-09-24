@@ -41,17 +41,17 @@ Session ────────────────────────
 
 Dataset Item 的三个字段全部由 `scripts/langfuse/upload_golden_to_langfuse.py` 写入，Langfuse 不会自动补充任何字段：
 
-- `input`：首轮输入与 `sub_scenes` 多轮输入，键为 `send_text`、`at_bot`、`quote_previous`（有子场景时才有 `sub_scenes`）。
+- `input`：首轮输入与 `sub_scenes` 多轮输入，键为 `send_text`、`at_bot`、`quote_previous`；非零的 `wait_before_seconds` 也逐轮保留。
 - `expectedOutput`：首轮断言与 `sub_scenes` 多轮断言。**只写非空字段**，所以各用例的键不完全一致：`expected`、`response_contains`、`response_contains_any`、`response_not_contains` 中保留有值的那些，另外总有 `sub_scenes`。
-- `metadata`：固定 11 个字段，见 3.1。
+- `metadata`：用例标签、来源和说明，见 3.1。
 
 ### 3.1 metadata 字段
 
-`metadata` 由 `upload_golden_to_langfuse.py::_metadata()` 构造，共 11 个字段，全部来自本地 fixture 或由脚本派生：
+`metadata` 由 `upload_golden_to_langfuse.py::_metadata()` 构造基础字段。自动同步还保存原始 `reference`、`description`（若存在）、相对 `fixture_path` 和 `source_line`：
 
 | 字段 | 来源 | 用途 |
 |---|---|---|
-| `id` | fixture 的 `id`（无则用 `caseNo`） | 用例编号；同时是 Dataset Item 的 ID，定位单条用例、回写结果都靠它 |
+| `id` | fixture 的 `id`（无则用 `caseNo`） | 原始用例编号；自动同步的 Item ID 为 `<dataset_name>:<id>`，避免跨 Dataset 冲突 |
 | `caseNo` | fixture 的 `caseNo`，缺失回退 `id` | 原始用例编号，用于和本地 fixture 对账 |
 | `name` | fixture 的 `name`，缺失回退 `id` | 用例名，列表展示用 |
 | `category` | fixture 的 `category`，缺失回退文件名 | 用例分类，按业务域统计通过率 |
@@ -60,12 +60,15 @@ Dataset Item 的三个字段全部由 `scripts/langfuse/upload_golden_to_langfus
 | `source` | fixture 的 `source` | 用例来源（`business_seed`、`llm_paraphrase`），追溯用例怎么来的。**A 方言没有这个字段，上传后是空串** |
 | `scene` | fixture 的 `scene` | 场景标签。**A 方言没有这个字段，上传后是空串** |
 | `overview` | 脚本生成 | 多行概览：ID / 类别 / 类型 / 来源 / 期望路由 + 逐轮对话。**本地 Judge 直接用它作为“题目”拼进评分提示词**，是这里最有实际作用的一个字段 |
-| `tags` | 脚本生成 | `[category, source]`，列表里的分类标签；`source` 为空时会带一个空串，如 `["option_inquiry_case", ""]` |
+| `tags` | 脚本生成 | 非空的 `[category, source, suite]`，列表里的分类标签 |
 | `turns` | 脚本计算 | 轮次数，用于分辨单轮 / 多轮用例 |
+| `suite` / `backend` | 路径或命令参数 | 区分意图集与业务集及其评测后端 |
+| `reference` / `description` | fixture 原文 | 自动同步时保留来源依据和用例说明 |
+| `fixture_path` / `source_line` | 文件相对路径与行号 | 自动同步时定位 Git 中的真源 |
 
 > A 方言指 `tests/fixtures/categories/*.jsonl`，B 方言指 `tests/fixtures/unified_golden.jsonl`；只有 B 方言带 `type` / `source` / `scene`。另外，早期用旧版脚本上传的 Dataset（如 `otc-option-golden`，350 条，2026-05 创建）只有 8 个字段，没有 `name` / `caseNo` / `scene`，需要当前字段集就用当前脚本重新上传。
 
-下面是一条真实上传后的 Item（取自 Dataset `golden_option_inquiry_case` 的 `case-024`，`response_contains` 已截断）：
+下面是一条旧版手动上传后的 Item（取自 Dataset `golden_option_inquiry_case` 的 `case-024`，`response_contains` 已截断）。自动同步会补入上表的来源字段和 `suite` / `backend`：
 
 ```json
 {
@@ -99,11 +102,26 @@ Dataset Item 的三个字段全部由 `scripts/langfuse/upload_golden_to_langfus
 
 上传结果的字段值取决于 `--source` 指向的方言：`tests/fixtures/categories/*.jsonl`（A 方言）的 `category` 形如 `option_inquiry_case`；`tests/fixtures/unified_golden.jsonl`（B 方言）的 `category` 形如 `option/inquiry`，并会带上 `type` 与 `source`。
 
+`tests/fixtures/nodes/` 是本地节点测试数据，不参与 Langfuse Dataset 批量同步。
+
 ## 4. 首次配置
 
 以下命令均在 `aigc-langgraph/` 目录执行。先确认 `.env` 已配置 Langfuse 地址和密钥。
 
 ### 4.1 上传 Dataset
+
+`.github/workflows/langfuse-dataset-sync.yml` 在 `main` 收到相关 JSONL、上传脚本或投影变更的推送时自动执行（包括 PR 合并）；Actions 页也可手动触发。它检出运行时最新 `main`，在 `ubuntu-latest` 上用 Langfuse Python SDK `4.15.0` 串行同步。仓库变量 `LANGFUSE_BASE_URL`（当前为 `https://us.cloud.langfuse.com`）和 Secrets `LANGFUSE_PUBLIC_KEY` / `LANGFUSE_SECRET_KEY` 都是必需的；缺失时 workflow 失败。
+
+```bash
+python scripts/langfuse/upload_golden_to_langfuse.py --sync-all --dry-run
+python scripts/langfuse/upload_golden_to_langfuse.py --sync-all
+# 临时覆盖服务地址
+python scripts/langfuse/upload_golden_to_langfuse.py --sync-all --base-url https://us.cloud.langfuse.com
+```
+
+`--sync-all` 只扫描 `intent/*.jsonl` 和 `categories/*.jsonl`。每个文件独立成 Dataset：`intent/option_close.jsonl` → `intent_option_close`，`categories/golden_option_close_case.jsonl` → `golden_option_close_case`。`nodes/` 下的文件不会扫描，也不会因其变更触发自动同步。上传前检查 Dataset 名称冲突和全局用例 ID 重复；Item ID 固定为 `<dataset_name>:<case_id>`（Langfuse 要求项目内唯一），原始 ID 保存在 metadata。每次 upsert 设为 `ACTIVE`。所有文件上传成功后，才归档各 Dataset 中已经从对应文件移除的 Item；空文件或上传失败时不归档。此前上传的节点 Dataset 不会自动删除或归档。历史 `intent-` Dataset 不自动删除。
+
+手动指定来源和 Dataset 的旧用法仍可使用：
 
 ```powershell
 # 预览
@@ -130,6 +148,36 @@ python scripts\langfuse\upload_golden_to_langfuse.py --source tests\fixtures\cat
 
 `append` 通过稳定的 Item ID 执行新增或更新，不会删除远端已有但本次文件中不存在的 Item；需要让远端 Item 集合
 与本地文件完全一致时，显式使用 `--mode overwrite`。
+
+### 4.1a 上传 Prompt 到 staging
+
+`.github/workflows/langfuse-prompt-sync.yml` 在 `main` 收到推送（包括 PR 合并）且
+`app/prompts/option/*.md`、`option_close/*.md`、`swap/*.md` 或上传脚本变更时运行。
+Actions 页选择 **langfuse-prompt-sync → Run workflow** 可手动触发。workflow 检出运行时最新
+`main`，使用 Langfuse Python SDK `4.15.0` 串行上传。它需要仓库变量 `LANGFUSE_BASE_URL`
+及 Secrets `LANGFUSE_PUBLIC_KEY`、`LANGFUSE_SECRET_KEY`，缺一即失败。
+
+```bash
+python scripts/langfuse/upload_prompt_to_langfuse.py --sync-all --dry-run
+python scripts/langfuse/upload_prompt_to_langfuse.py --sync-all
+python scripts/langfuse/upload_prompt_to_langfuse.py --sync-all --base-url https://us.cloud.langfuse.com
+
+# 单文件手动上传仍可使用
+python scripts/langfuse/upload_prompt_to_langfuse.py option_close.intent --dry-run
+python scripts/langfuse/upload_prompt_to_langfuse.py option_close.intent
+```
+
+批量模式只扫描三个业务目录的顶层 `.md`（目前 13 个）。名称按目录和文件 stem 用下划线连接：
+`option_close/intent.md` → `option_close_intent`；`swap/intent_v2.md` →
+`swap_intent_v2`，`_vN.md` 是独立 Prompt 名称。上传前会解析并校验全部文件及名称冲突。
+`[system]` 内容原样保留；有 `[user]` 时使用文件中的模板；否则加入含
+`{{send_text}}` 的首轮实验用 chat user 模板。批量模式固定只上传 `staging`，不接受 `--plain`
+或其他标签。
+
+脚本无缓存读取每个 Prompt 的 `staging` 版本。内容和类型相同则跳过；不同则创建同名新版本，
+`staging` 标签随新版本移动。若 UI 中存在不同的 staging 草稿，本次 Git 内容会覆盖其标签指向；
+历史版本仍保留。远端同名 text/chat 类型冲突、鉴权或网络失败会使任务失败。删除本地文件不会
+自动删除 Langfuse 中的 Prompt。生产继续从 Git 加载提示词，提示词修改仍需 PR 评审。
 
 ### 4.2 配置 Online 自动评分
 
@@ -296,8 +344,8 @@ Online Evaluator 异步执行，Experiment 完成后 Score 可能稍后显示。
 
 | 文件 | 用途 |
 |---|---|
-| `upload_golden_to_langfuse.py` | 上传 categories / intent golden case 到 Dataset（`--suite` 默认按路径判定，metadata 带 `suite` / `backend`）|
-| `upload_evaluators.py` | 读取集中定义，按套件（`--suite` 或 dataset 前缀 `intent-`）同步 Code Evaluators 和全局或指定 Dataset 的 Online Rules |
+| `upload_golden_to_langfuse.py` | `--sync-all` 自动同步 intent / categories；也支持手动指定来源和 Dataset |
+| `upload_evaluators.py` | 读取集中定义，按套件（`--suite` 或 dataset 前缀 `intent_` / `intent-`）同步 Code Evaluators 和全局或指定 Dataset 的 Online Rules |
 | `upload_score_configs.py` | 读取集中定义，全量同步人工 Score Configs |
 | `langfuse_eval.py` | 执行 Dataset Experiment 或本地评测（`--suite intent` 不跑 Judge，trace tags 带套件名）|
 | `upload_prompt_to_langfuse.py` | 把 git 的提示词推到 Langfuse（单轮实验用；**不从 Langfuse 拉回**）|
@@ -315,13 +363,12 @@ Online Evaluator 异步执行，Experiment 完成后 Score 可能稍后显示。
 | 用例形态 | A 方言子集：逐轮 `expected.{product_type, intent}`，**不写** `response_*` | A 方言：卡片文本断言（`response_contains` 等） |
 | 期望值来源 | 各子图 `models.py` 的意图枚举（lint 校验） | Java 真实回复 |
 | 运行后端 | `mock_api`（`metadata.backend=mock`） | 真后端 / staging |
-| Dataset 命名 | `intent-<product>` | `business-<文件名>`（历史 `golden_*` 命名仍按 business） |
+| Dataset 命名 | `intent_<文件名>`（历史 `intent-` 仍识别） | 与 JSONL 文件名相同，不含 `.jsonl`（如 `golden_option_close_case`） |
 | 自动评分 | `det_intent_match_pass`（`harness/evaluators/intent_match.py`）+ 标的识别子集 `det_instrument_match_pass`（`harness/evaluators/instrument_match.py`） | `det_required_text_pass` / `det_required_any_text_pass` / `det_forbidden_text_pass` + `otc-option-judge` |
 | LLM Judge | 不跑（脚本强制 `no-judge`） | 跑 |
 | Trace tags | `eval, intent` | `eval, business` |
 
-`upload_evaluators.py` 按套件绑定 Rule：`--dataset-name intent-swap` 只创建
-`golden-intent-match:intent-swap`；`--dataset-name business-*` / 历史命名只创建三个文本断言 Rule。
+`upload_evaluators.py` 按套件绑定 Rule：`--dataset-name intent_swap_instrument` 创建意图集 Rule；`intent-` 历史命名仍识别。`--dataset-name golden_*` 按业务集绑定文本断言 Rule。
 不要给意图集绑全局（all-datasets）Rule，否则 intent_match 会对业务集 Item 产生大量失败 Score。
 
 ### 8.1 意图集从业务集派生
@@ -349,9 +396,9 @@ python scripts/check_fixture_consistency.py --verbose
 # 从三份 swap 业务集派生（订单数以卡片 标的代码 行为准；--ignore-token 只影响抽取，不改 send_text）
 python scripts/derive_instrument_fixtures.py --dry-run --ignore-token "11125测试短名（张天琪专用）" --ignore-token "聚鸣价值精选" --ignore-token "临沂阿凡提"
 python scripts/derive_instrument_fixtures.py --only-reviewed --ignore-token "…" --out tests/fixtures/intent/swap_instrument.jsonl
-python scripts/langfuse/upload_golden_to_langfuse.py --source tests/fixtures/intent/swap_instrument.jsonl --dataset-name intent-swap_instrument --mode overwrite
-python scripts/langfuse/upload_evaluators.py --dataset-name intent-swap_instrument --apply   # 绑 intent_match + instrument_match
-python scripts/langfuse/langfuse_eval.py --dataset intent-swap_instrument --concurrency 3
+python scripts/langfuse/upload_golden_to_langfuse.py --sync-all
+python scripts/langfuse/upload_evaluators.py --dataset-name intent_swap_instrument --apply   # 绑 intent_match + instrument_match
+python scripts/langfuse/langfuse_eval.py --dataset intent_swap_instrument --concurrency 3
 ```
 
 抽取规则与人工复核口径见 `tests/fixtures/intent/README.md`；`reference.backend_codes` 保留后端码仅供核对。
@@ -360,16 +407,15 @@ python scripts/langfuse/langfuse_eval.py --dataset intent-swap_instrument --conc
 
 ```bash
 # 意图集：终端 1 起 mock_api，终端 2 以 OTC_API_BASE_URL 指向 mock 起应用
-python scripts/langfuse/upload_golden_to_langfuse.py --source tests/fixtures/intent/option_close.jsonl --dataset-name intent-option_close --mode overwrite
-python scripts/langfuse/upload_evaluators.py --dataset-name intent-option_close --apply
-python scripts/langfuse/langfuse_eval.py --dataset intent-option_close --concurrency 3
+python scripts/langfuse/upload_golden_to_langfuse.py --sync-all
+python scripts/langfuse/upload_evaluators.py --dataset-name intent_option_close --apply
+python scripts/langfuse/langfuse_eval.py --dataset intent_option_close --concurrency 3
 # 本地不上传：路径含 intent/ 自动判定套件
 python scripts/langfuse/langfuse_eval.py --local tests/fixtures/intent --concurrency 3
 
 # 业务集：真后端 / staging，写类流程串行
-python scripts/langfuse/upload_golden_to_langfuse.py --source tests/fixtures/categories/swap_prod_data.jsonl --dataset-name business-swap_prod_data --mode overwrite
-python scripts/langfuse/upload_evaluators.py --dataset-name business-swap_prod_data --apply
-python scripts/langfuse/langfuse_eval.py --dataset business-swap_prod_data --concurrency 1
+python scripts/langfuse/upload_evaluators.py --dataset-name swap_prod_data --apply
+python scripts/langfuse/langfuse_eval.py --dataset swap_prod_data --concurrency 1
 ```
 
 意图集 Experiment 命名为 `intent-eval-YYYYMMDD-HHMMSS`，业务集沿用 `option-eval-YYYYMMDD-HHMMSS`。
@@ -391,3 +437,9 @@ python scripts/langfuse/langfuse_eval.py --dataset business-swap_prod_data --con
   `reply-check` 名写回（此前误用 `otc-option-judge`）
 - 业务集（`categories/`）依赖 Java 后端与授权账号，只在开发 / staging 环境用 `--dataset business-*` 或
   `scripts/local_eval.py` 跑，不进 CI；依赖矩阵见 `docs/testing/README.md` §一a
+
+### 显式选择 Judge 调用入口
+
+默认 `EVAL_JUDGE_PROVIDER=anthropic` 保留既有 Anthropic 兼容入口和凭证。若团队只提供已验证的 OpenAI 兼容模型网关，可显式设置 `EVAL_JUDGE_PROVIDER=standard`，使用 `QWEN_API_BASE`、`QWEN_API_KEY`、`QWEN_MODEL_STANDARD` 和同一 Judge 提示词，通过结构化输出返回评分。不会在鉴权或网络失败后自动切换入口；无效配置直接报错。标准入口的 Score metadata 记录 provider，报告应同时记录实际模型。Judge 结果用于业务评估，不能替代确定性断言、HTTP 写回与真实交易状态验收。
+
+意图数据集的 `metadata.evaluator_names` 来自实际断言：普通意图只绑定 `intent-match`；标的集另绑 `instrument-match`；明确拒绝集另绑 `rejection-match`。不要将不适用的评分器绑定到整个项目。上传器使用数据集命名空间生成稳定 Item ID，原始案例 ID 保留在 metadata，防止不同数据集相互覆盖。

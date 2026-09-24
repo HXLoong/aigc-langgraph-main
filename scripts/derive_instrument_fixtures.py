@@ -31,11 +31,11 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_SOURCES = sorted((REPO_ROOT / "tests" / "fixtures" / "categories").glob("swap*.jsonl"))
 DEFAULT_OUT = REPO_ROOT / "tmp" / "intent_drafts" / "swap_instrument.jsonl"
 
-#: 市场限定词 → placeOrderTransactionType 候选（港股口语可能落港股通，三者任一即可）
+#: 市场限定词 → 交易品种；只说港股严格为 HK_STOCK，港股通须明确指定。
 _MARKET_HINTS: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("深港通", ("SZ_HK_CONNECT",)),
     ("沪港通", ("SH_HK_CONNECT",)),
-    ("港股", ("HK_STOCK", "SH_HK_CONNECT", "SZ_HK_CONNECT")),
+    ("港股", ("HK_STOCK",)),
     ("A股", ("A_SHARE",)),
     ("美股", ("US_STOCK",)),
     ("境内期货", ("CHN_FUTURE",)),
@@ -146,11 +146,15 @@ def _code_in_text(text: str, code: str) -> dict[str, str] | None:
         keys.append(key.lstrip("0"))  # 用户少打前导零（325 → 0325.HK）
     for candidate in keys:
         if candidate.isdigit():
-            body, suffix = rf"0*{re.escape(candidate)}", r"(?:\.?[A-Za-z]{1,3})?"  # 03939 / 3939hk
+            body, suffix = rf"0*{re.escape(candidate)}", r"\.?[A-Za-z]{1,3}"  # 03939 / 3939hk
         else:
-            body, suffix = re.escape(candidate), r"(?:\.[A-Za-z]{1,3})?"
+            body, suffix = re.escape(candidate), r"\.[A-Za-z]{1,3}"
+        exchange = code.partition(".")[2]
+        if exchange:
+            suffix += rf"|[ \t]+{re.escape(exchange)}"
+        suffix = rf"(?:{suffix})?"
         pattern = re.compile(
-            rf"(?P<before>[一-龥]{{2,}})?(?P<token>(?<![A-Za-z0-9]){body}{suffix})"
+            rf"(?P<before>[一-龥]{{2,}})?(?P<token>(?<![A-Za-z0-9])(?P<bare>{body}){suffix})"
             rf"(?![A-Za-z0-9])(?P<sep>[\s-]?)(?P<after>[一-龥]{{2,}})?",
             re.IGNORECASE,
         )
@@ -158,6 +162,7 @@ def _code_in_text(text: str, code: str) -> dict[str, str] | None:
         if match is not None:
             return {
                 "token": match.group("token"),
+                "bare": match.group("bare"),
                 "before": _strip_vocab_head(match.group("before") or ""),
                 "sep": match.group("sep") or "",
                 "after": _strip_vocab_tail(match.group("after") or ""),
@@ -174,6 +179,8 @@ def _code_alternatives(found: dict[str, str], text: str) -> list[str]:
     if after:
         alternatives.append(f"{token}{found.get('sep', '')}{after}")
     alternatives.append(token)
+    if re.search(r"[ \t]", token):
+        alternatives.append(found["bare"])
     for name in (before, after):
         if name and name not in _GENERIC_SUFFIX and name not in alternatives:
             alternatives.append(name)

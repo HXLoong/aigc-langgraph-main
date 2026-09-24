@@ -22,6 +22,8 @@ from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
 
+from pydantic import BaseModel, Field
+
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 _DOTENV = PROJECT_ROOT / ".env"
 if _DOTENV.exists():
@@ -50,7 +52,7 @@ from langgraph.checkpoint.memory import InMemorySaver
 from app.graph.main import build_main_graph
 from app.prompts import load_prompt
 from app.api.turn_state import inputs_to_state
-from harness.evaluators import instrument_match, intent_match
+from harness.evaluators import instrument_match, intent_match, rejection_match
 from harness.golden import (
     GoldenCase,
     build_overview,
@@ -61,6 +63,8 @@ from harness.golden import (
     select_runnable,
 )
 from harness.multi_turn import early_stop_kind, quote_for_turn
+from harness.scenario_inputs import resolve_order_reference
+from app.tools.ticker_client import TickerClientHttpx
 
 DATASET_NAME = "otc-option-golden"
 
@@ -74,12 +78,12 @@ INTENT_DIR_NAME = "intent"
 def resolve_suite(
     suite: str | None, local_paths: list[Path] | None, dataset_name: str | None
 ) -> str:
-    """显式 --suite 优先；--local 路径含 intent/ 或 dataset 名以 intent- 开头 → intent。"""
+    """显式 --suite 优先；--local 路径或 intent_ / intent- Dataset 名判断套件。"""
     if suite:
         return suite
     if local_paths and any(INTENT_DIR_NAME in path.parts for path in local_paths):
         return "intent"
-    if dataset_name and dataset_name.startswith("intent-"):
+    if dataset_name and dataset_name.startswith(("intent_", "intent-")):
         return "intent"
     return DEFAULT_SUITE
 
@@ -130,9 +134,12 @@ def _fmt_trace(trace_entries) -> str:
 
 
 # ── Task ──
-async def _run_graph_once(graph, config, raw_content, has_mention=True, turn=1, quote_content=None):
+async def _run_graph_once(
+    graph, config, raw_content, has_mention=True, turn=1, quote_content=None,
+    suite: str = DEFAULT_SUITE,
+):
     # 与生产 routes 同一条入口（ADR 0024 D2）：Dify 形态 inputs → inputs_to_state
-    state = inputs_to_state({
+    inputs = {
         "rawContent": raw_content,
         "quoteContent": quote_content,
         "messageId": secrets.randbelow(900_000_000_000_000) + 100_000_000_000_000,
@@ -140,7 +147,17 @@ async def _run_graph_once(graph, config, raw_content, has_mention=True, turn=1, 
         "userId": os.environ.get("EVAL_USER_ID", "eval-user"),
         "guid": "",
         "at_bot": has_mention,
-    })
+    }
+    if suite == "intent":
+        # CI 的 mock backend 提供与生产 Java 输入同形的授权参考上下文。
+        client = TickerClientHttpx()
+        for product, field in (("OPTION", "option_counterparties"), ("TRS", "swap_counterparties")):
+            rows = await client.list_counterparty(
+                inputs["roomId"], user_id=inputs["userId"], business_type=product,
+                message_id=inputs["messageId"],
+            )
+            inputs[field] = json.dumps(rows, ensure_ascii=False)
+    state = inputs_to_state(inputs)
     state["conversation_id"] = config["configurable"]["thread_id"]
     result = await graph.ainvoke(state, config=config)
     return result
@@ -225,14 +242,19 @@ async def run_langgraph_pipeline(*, item, suite: str = DEFAULT_SUITE, **kwargs):
             )
             or None
         )
+        raw_content = t.get("send_text", "")
         try:
+            raw_content = resolve_order_reference(
+                raw_content, results[-1].get("reply_text", "") if results else "",
+            )
             rs = await _run_graph_once(
                 graph,
                 config,
-                raw_content=t.get("send_text", ""),
+                raw_content=raw_content,
                 has_mention=bool(t.get("at_bot", not results)),
                 turn=len(results) + 1,
                 quote_content=quote,
+                suite=suite,
             )
             # tickers 简化（保留 windCode + 中文名 + from_goats）
             tickers_raw = rs.get("tickers") or []
@@ -324,7 +346,7 @@ async def run_langgraph_pipeline(*, item, suite: str = DEFAULT_SUITE, **kwargs):
                 "quote_passed": (quote or "")[:120],
             }
         tr["turn"] = len(results) + 1
-        tr["raw_content"] = t.get("send_text", "")
+        tr["raw_content"] = raw_content
         results.append(tr)
 
         api_code = tr.get("api_code")
@@ -421,12 +443,44 @@ def _parse_judge_json(text: str) -> dict | None:
     return None
 
 
+class JudgeScore(BaseModel):
+    passed: bool = Field(alias="pass", description="实际回复是否满足该测试的业务预期")
+    score: float = Field(ge=0, le=1, description="业务预期满足程度，0 表示失败，1 表示完全满足")
+    reason: str = Field(description="评分依据与实际回复的具体差异")
+
+
 def judge_by_deepseek(*, output, expected_output, metadata=None, **kwargs):
     from anthropic import Anthropic
+
+    provider = os.environ.get("EVAL_JUDGE_PROVIDER", "anthropic")
+    if provider not in {"anthropic", "standard"}:
+        raise ValueError("EVAL_JUDGE_PROVIDER 必须是 anthropic 或 standard")
+    if output.get("failure"):
+        from langfuse.experiment import Evaluation
+
+        failure = output["failure"]
+        kind = failure.get("kind", "unknown") if isinstance(failure, dict) else "unknown"
+        return Evaluation(
+            name="otc-option-judge", value=0.0,
+            comment=f"业务流程未完成（{kind}），不能由宽松 Judge 计为业务成功",
+            metadata={"pass": False, "failure": failure, "provider": "deterministic_precheck"},
+        )
 
     actual = output.get("reply_text", "")
     overview = (metadata or {}).get("overview", "")
     user = f"## 测试用例\n{overview}\n\n## 实际回复\n{actual}\n\n## 期望回复\n{expected_output}\n\n请评分："
+    if provider == "standard":
+        from langfuse.experiment import Evaluation
+
+        from app.llm.clients import get_qwen_standard
+
+        result = JudgeScore.model_validate(
+            get_qwen_standard().with_structured_output(JudgeScore).invoke(
+                [("system", JUDGE), ("user", user)],
+            ),
+        )
+        return Evaluation(name="otc-option-judge", value=result.score, comment=result.reason,
+                          metadata={"pass": result.passed, "provider": provider})
     client = Anthropic()
     request = {
         "model": os.environ.get("ANTHROPIC_MODEL", "deepseek-v4-flash"),
@@ -483,6 +537,8 @@ def code_evaluations(item, output: dict[str, Any]) -> list:
     evaluators = [intent_match.evaluate]
     if getattr(item, "has_instruments", False):
         evaluators.append(instrument_match.evaluate)
+    if getattr(item, "has_rejections", False):
+        evaluators.append(rejection_match.evaluate)
     evaluations = []
     for evaluate in evaluators:
         for score in evaluate(ctx).scores:
@@ -504,6 +560,19 @@ def case_passed(suite: str, evaluations: list) -> bool:
     if suite == "intent":
         return all(float(ev.value) >= 1.0 for ev in evaluations)
     return float(evaluations[0].value) >= _PASS_THRESHOLD
+
+
+def passes_quality_gate(summary: dict[str, Any], threshold: float) -> bool:
+    """正向质量不因加入拒绝样本抬高；已标注的安全拒绝必须全部通过。"""
+    if summary["pass_rate"] < threshold:
+        return False
+    buckets = summary.get("acceptance_buckets", {})
+    executable = buckets.get("executable", {})
+    rejection = buckets.get("expected_rejection", {})
+    return not (
+        executable.get("total", 0) and executable["pass_rate"] < threshold
+        or rejection.get("total", 0) and rejection["passed"] != rejection["total"]
+    )
 
 
 # ── 报告 ──
@@ -658,6 +727,7 @@ class _LocalItem:
         # Dataset 同款 expectedOutput：本地确定性评估器（intent_match / instrument_match）读这份
         self.expected_structured = dataset_expected(case)
         self.has_instruments = any(bool(turn.expected.get("instruments")) for turn in case.turns)
+        self.has_rejections = any(bool(turn.expected.get("rejection")) for turn in case.turns)
 
 
 async def run_local(
@@ -805,6 +875,7 @@ async def run_local(
                 "score": float(evaluations[0].value),
                 "comment": evaluations[0].comment,
                 "passed": case_passed(suite, evaluations),
+                "expected_rejection": r["item"].has_rejections,
                 "evaluations": _evaluation_dicts(evaluations),
                 "reply": r["output"].get("reply_text", ""),
                 "expected": r["item"].expected_output,
@@ -877,6 +948,7 @@ async def run_local(
             {
                 "id": s["id"],
                 "passed": s["passed"],
+                "expected_rejection": s["expected_rejection"],
                 "score": s["score"],
                 "evaluations": s["evaluations"],
                 "turns": s["turns"],
@@ -884,6 +956,15 @@ async def run_local(
             for s in scores
         ],
     }
+    if suite == "intent":
+        buckets = {}
+        for name, is_rejection in (("executable", False), ("expected_rejection", True)):
+            selected = [score for score in scores if score["expected_rejection"] == is_rejection]
+            count = sum(score["passed"] for score in selected)
+            buckets[name] = {"total": len(selected), "passed": count,
+                             "pass_rate": count / len(selected) if selected else None}
+            print(f"验收分桶 {name}: {count}/{len(selected)}")
+        summary["acceptance_buckets"] = buckets
     if report is not None:
         report.parent.mkdir(parents=True, exist_ok=True)
         report.write_text(
@@ -894,6 +975,19 @@ async def run_local(
 
 
 # ── 主流程（LangFuse 云端） ──
+def select_dataset_items(items: list, ids: list[str] | None) -> list:
+    selected = []
+    wanted = set(ids or [])
+    for item in items:
+        status = getattr(item, "status", "ACTIVE")
+        if getattr(status, "value", status) != "ACTIVE":
+            continue
+        metadata = item.metadata if isinstance(item.metadata, dict) else {}
+        if not wanted or item.id in wanted or metadata.get("id") in wanted:
+            selected.append(item)
+    return selected
+
+
 async def run_eval(
     dataset_name,
     filter_func,
@@ -910,10 +1004,10 @@ async def run_eval(
 
     no_judge = not judge_enabled(suite, no_judge=no_judge)
     lf = Langfuse()
-    items = list(lf.get_dataset(dataset_name).items)
+    items = select_dataset_items(list(lf.get_dataset(dataset_name).items), None)
     print(f"加载 {len(items)} 条 (suite={suite})")
     if ids:
-        items = [i for i in items if i.id in ids]
+        items = select_dataset_items(items, ids)
         print(f"按 id 过滤: {len(items)} 条")
     if filter_func:
         items = [i for i in items if filter_func in (i.metadata or {}).get("test_function", "")]
@@ -966,7 +1060,7 @@ def main() -> int:
     p.add_argument(
         "--suite",
         choices=SUITES,
-        help="套件；默认按 --local 路径（intent/）或 --dataset 前缀（intent-）判定。intent 不跑 Judge",
+        help="套件；默认按 --local 路径（intent/）或 --dataset 前缀（intent_ / intent-）判定。intent 不跑 Judge",
     )
     p.add_argument(
         "--fail-under",
@@ -1001,9 +1095,9 @@ def main() -> int:
         if (
             args.fail_under is not None
             and summary is not None
-            and summary["pass_rate"] < args.fail_under
+            and not passes_quality_gate(summary, args.fail_under)
         ):
-            print(f"通过率 {summary['pass_rate']:.1%} 低于门槛 {args.fail_under:.1%}")
+            print(f"质量门未通过：总体/正向通过率要求 {args.fail_under:.1%}，明确拒绝要求 100%")
             return 1
         return 0
     asyncio.run(

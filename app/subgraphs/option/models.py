@@ -114,9 +114,19 @@ class OptionInquiryRawItem(WireModel):
 
     order_id: str | None = Field(default=None, alias="orderId", description="订单号原文片段（Q- 开头）；输入未出现 → null")
     stock_code: str | None = Field(default=None, alias="stockCode", description="标的原文片段（逐字保留，不做代码补全；最终证券识别由后端负责）")
-    option_type: str | None = Field(default=None, alias="optionType", description="期权类型原文片段，逐字保留 call/CALL/Call/看涨等写法；枚举归一化由代码执行；未明确 → null")
+    option_type: str | None = Field(
+        default=None, alias="optionType",
+        description="期权类型原文片段，逐字保留 call/CALL/Call/看涨等写法；"
+        "数字与类型相连时优先分开提取，如100call的类型片段为call，"
+        "数字100另入strikePercentage；不得在候选中改写成中文枚举；未明确 → null",
+    )
     tenor: str | None = Field(default=None, description="期限原文片段，逐字保留不换算（如 \"1M\" / \"1个月\" / \"半年\" / \"1Y\" / \"1M/3M\"）")
-    strike_percentage: str | None = Field(default=None, alias="strikePercentage", description="执行价原文片段，逐字保留不换算（如 \"100%\" / \"100/103%\" / \"平值\"）")
+    strike_percentage: str | None = Field(
+        default=None, alias="strikePercentage",
+        description="执行价原文片段，逐字保留不换算（如100% / 100/103% / 平值）；"
+        "数字与call或看涨相连时提取数字及百分号片段，如100call提取100，"
+        "证据保留支持该数值的连续原文；仅有call不补默认执行价",
+    )
     notional_amount: str | None = Field(default=None, alias="notionalAmount", description="名义本金原文片段，含单位不换算（如 \"100万\" / \"1W\" / \"两千万\"）")
     participation_rate: str | None = Field(default=None, alias="participationRate", description="参与率原文片段（如 \"90%\"）；无参与率关键词 → null")
     short_name: Annotated[str | None, CandidateDescription('用户给出的交易对手名称或选项原文，保留括号和特殊字符，不查表填完整名称')] = Field(default=None, alias="shortName", description="交易对手名称（完整保留括号与特殊字符；用户回复选项字母时取对应完整名称）")

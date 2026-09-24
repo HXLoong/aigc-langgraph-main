@@ -234,12 +234,13 @@ class OptionClientHttpx:
         intent_value = req.type.value if hasattr(req.type, "value") else str(req.type)
         if self._dry_run and intent_value not in self._READ_INTENTS:
             from app.observability.metrics import emit_dry_run_intercept
+            from app.tools.receipts import DRY_RUN_REPLY
 
             emit_dry_run_intercept("option", f"operate:{intent_value}")
             return {
                 "code": 0,
                 "msg": "dry-run intercepted",
-                "data": {"orderId": f"DRY-RUN-{intent_value}"},
+                "data": DRY_RUN_REPLY,
             }
 
         from app.tools.exceptions import translate_httpx_errors

@@ -51,17 +51,17 @@ otc_agent_node_total{node="ingest",status="error"} 0
     assert parsed["otc_agent_node_total"][ingest_ok] == 142.0
 
 
-def test_parse_skips_histogram_derived_metrics() -> None:
-    """_bucket / _sum / _count 不进 snapshot（直方图衍生指标不在 切流决策范围）。"""
+def test_parse_preserves_histogram_samples() -> None:
+    """端到端直方图不能在快照中丢失。"""
     text = """
 otc_agent_intent_latency_ms_bucket{le="100"} 50
 otc_agent_intent_latency_ms_sum 12345
 otc_agent_intent_latency_ms_count 100
 """
     parsed = _parse_metrics(text)
-    assert "otc_agent_intent_latency_ms_bucket" not in parsed
-    assert "otc_agent_intent_latency_ms_sum" not in parsed
-    assert "otc_agent_intent_latency_ms_count" not in parsed
+    assert parsed["otc_agent_intent_latency_ms_bucket"][(("le", "100"),)] == 50
+    assert parsed["otc_agent_intent_latency_ms_sum"][()] == 12345
+    assert parsed["otc_agent_intent_latency_ms_count"][()] == 100
 
 
 def test_parse_handles_no_label_counter() -> None:
@@ -223,3 +223,50 @@ def test_render_fallback_breakdown() -> None:
     text = render_human(snap)
     assert "Fallback 触发: 12" in text
     assert "cascade_fail:8" in text
+
+
+def test_http_section_uses_http_denominator_not_node_calls() -> None:
+    snap = _make_snap(_parse_metrics('''
+otc_agent_http_total{path="/v1/workflows/run",status_class="2xx"} 95
+otc_agent_http_total{path="/v1/workflows/run",status_class="5xx"} 5
+otc_agent_node_total{node="render",status="ok"} 1000
+otc_agent_fallback_total{reason="cascade_fail"} 3
+'''))
+    text = render_human(snap)
+    assert "HTTP 请求累计: 100" in text
+    assert "5xx: 5 (5.00%)" in text
+    assert "cascade_fail: 3 (3.00%)" in text
+    assert "累计" in text
+
+
+def test_histogram_text_and_json_keep_node_and_end_to_end_samples() -> None:
+    import json
+
+    snap = _make_snap(_parse_metrics('''
+otc_agent_intent_latency_ms_bucket{le="100"} 2
+otc_agent_intent_latency_ms_bucket{le="+Inf"} 3
+otc_agent_intent_latency_ms_count 3
+otc_agent_intent_latency_ms_sum 320
+otc_agent_intent_latency_ms_count{node="ingest"} 9
+'''))
+    text = render_human(snap)
+    assert "端到端" in text and "ingest" in text
+    assert "_bucket" in text and "_sum" in text and "_count" in text
+    payload = json.loads(render_json(snap))
+    assert len(payload["counters"]["otc_agent_intent_latency_ms_count"]) == 2
+
+
+def test_absent_http_is_not_a_zero_error_rate() -> None:
+    assert "无 HTTP 请求样本" in render_human(_make_snap({}))
+
+
+def test_http_snapshot_consumes_the_actual_runtime_export(monkeypatch):
+    from app.observability import metrics
+
+    collector = metrics.MetricsCollector()
+    monkeypatch.setattr(metrics, 'get_collector', lambda: collector)
+    metrics.emit_http_response('/v1/workflows/run', '2xx')
+    metrics.emit_http_response('/v1/workflows/run', '5xx')
+    rendered = render_human(_make_snap(_parse_metrics(collector.render_prometheus())))
+    assert 'HTTP 请求累计: 2' in rendered
+    assert '5xx: 1 (50.00%)' in rendered

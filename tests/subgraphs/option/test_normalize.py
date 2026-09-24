@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import pytest
 
+from app.extraction.fields import EvidenceError
 from app.subgraphs.option.models import OptionInquiryRawItem
 from app.subgraphs.option.normalize import (
     expand_inquiry_items,
@@ -185,9 +186,11 @@ class TestExpandInquiryItems:
         assert result["option_type"] == "欧式看涨"
         assert result["strike_percentage"] == 100.0
 
-    def test_call_shorthand_does_not_replace_explicit_strike(self) -> None:
+    def test_call_shorthand_rejects_conflicting_explicit_strike(self) -> None:
         item = OptionInquiryRawItem(optionType="100call", strikePercentage="80%")
-        assert expand_inquiry_items([item])[0]["strike_percentage"] == 80.0
+        # 保留本地已验收的冲突保护，不让两个相互矛盾的执行价静默通过。
+        with pytest.raises(EvidenceError, match="执行价冲突"):
+            expand_inquiry_items([item])
 
     def test_normalizes_all_fields(self) -> None:
         items = [OptionInquiryRawItem(

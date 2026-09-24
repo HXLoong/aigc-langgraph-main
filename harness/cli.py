@@ -53,11 +53,14 @@ def _turn_diffs(
         turn_diffs = check_text_assertions(
             outcome.reply_text, spec, allow_dry_run=backend == "dry-run"
         )
-        turn_diffs.extend(check_structured_assertions(outcome.outputs, spec.expected))
+        turn_diffs.extend(check_structured_assertions(
+            outcome.outputs, spec.expected, quote_content=outcome.quote_content,
+        ))
         diffs[outcome.index] = turn_diffs
     if case.expected_scope == "any_turn":
         case_diffs = check_case_assertions(
-            [outcome.outputs for outcome in result.turns], case.expected
+            [outcome.outputs for outcome in result.turns], case.expected,
+            quote_contents=[outcome.quote_content for outcome in result.turns],
         )
         if case_diffs:
             diffs["case"] = case_diffs
@@ -248,7 +251,9 @@ async def _run(args: argparse.Namespace) -> int:
         )
         return 2
     cases = filter_by_ids(
-        filter_by_category(load_golden(_paths(args.data)), args.category), args.case
+        filter_by_category(
+            load_golden(_paths(args.data), include_unified=args.include_unified), args.category,
+        ), args.case,
     )
     cases, skipped = select_runnable(cases)
     if skipped:
@@ -402,6 +407,10 @@ def build_parser() -> argparse.ArgumentParser:
     subparsers = parser.add_subparsers(dest="command", required=True)
     run = subparsers.add_parser("run")
     run.add_argument("--data", action="append")
+    run.add_argument(
+        "--include-unified", action="store_true",
+        help="显式追加 tests/fixtures/unified_golden.jsonl 历史参考集（默认只读 categories）",
+    )
     run.add_argument("--base-url", default="http://127.0.0.1:8000")
     run.add_argument("--backend", choices=("real", "mock", "dry-run"), default="real")
     run.add_argument("--checkpoint", choices=("none", "mysql"), default="none")

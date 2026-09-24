@@ -25,5 +25,5 @@
 ## 后果
 
 - 通用原则：任何把后端逻辑搬进 LangGraph 的"性能优化"，必须先评估会丢失哪些业务规则。
-- 2026-09-20 起标的识别整体由 Java 负责，LangGraph 只传原文（ADR 0025）；`app/tools/ticker_client.py` 为遗留客户端，已无业务调用方，去留待定。直连相关的配置项已于 2026-09-22 清理。
+- 2026-09-20 起标的识别整体由 Java 负责，LangGraph 只传原文（ADR 0025）；`app/tools/ticker_client.py` 已不参与交易链路，仅保留供本地验收获取授权交易对手列表（ADR 0025）。直连相关的配置项已于 2026-09-22 清理。
 - 原端点与业务规则清单见 [实施记录归档](../archive/history/adr-implementation-log-2026-09.md)。

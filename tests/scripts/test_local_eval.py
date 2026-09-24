@@ -102,3 +102,18 @@ async def test_text_model_probe_checks_every_distinct_configured_model(monkeypat
     with pytest.raises(ValueError, match="unsupported-ocr"):
         await module.probe_text_models()
     assert invoked == ["text-model", "unsupported-ocr"]
+
+
+@pytest.mark.parametrize('dry_run,backend', [(True, 'dry-run'), (False, 'real')])
+async def test_local_eval_preflight_requires_the_actual_configured_backend_mode(monkeypatch, dry_run, backend):
+    module = importlib.import_module('scripts.local_eval')
+    settings = module.get_settings().model_copy(update={
+        'mysql_uri': 'mysql+aiomysql://test:test@localhost/local_eval',
+        'otc_api_base_url': 'http://localhost:48081', 'eval_user_id': 'u', 'eval_room_id': 'r',
+        'dry_run_backend': dry_run,
+    })
+    monkeypatch.setattr(module, 'get_settings', lambda: settings)
+    doctor = AsyncMock(return_value=2)
+    monkeypatch.setattr(module, '_doctor', doctor)
+    assert await module.run(SimpleNamespace(base_url='http://localhost:8201')) == 2
+    doctor.assert_awaited_once_with('http://localhost:8201', checkpoint='mysql', backend=backend)

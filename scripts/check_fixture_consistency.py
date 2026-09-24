@@ -16,6 +16,12 @@ from pathlib import Path
 from typing import Any
 
 ROOT = Path(__file__).resolve().parents[1]
+# Keep the documented `python scripts/check_fixture_consistency.py` entry point usable.
+if __package__ in {None, ""}:
+    sys.path.insert(0, str(ROOT))
+
+from harness.references import validate_expected_references  # noqa: E402
+
 UNIFIED_FIXTURE_NAME = "unified_golden.jsonl"
 #: 运行时 product_type 取值（app/graph/state.py ProductType）；fixture 标了别的值只告警不阻断
 KNOWN_PRODUCT_TYPES = ("swap", "option", "option_close", "unknown")
@@ -318,6 +324,7 @@ def validate(root: Path, verbose: bool = False) -> list[str]:
                     f"{origin}: fields {b_fields} belong to the B dialect ({UNIFIED_FIXTURE_NAME}), not categories/"
                 )
             case_id = obj.get("id") or obj.get("caseNo")
+            errors.extend(f"{origin}: {error}" for error in validate_expected_references(obj.get("expected")))
             if not isinstance(case_id, str) or not case_id.strip():
                 errors.append(f"{origin}: missing id/caseNo")
             else:
@@ -339,6 +346,12 @@ def validate(root: Path, verbose: bool = False) -> list[str]:
                 for index, sub_scene in enumerate(sub_scenes):
                     if not isinstance(sub_scene, dict) or not isinstance(sub_scene.get("send_text"), str) or not sub_scene["send_text"].strip():
                         errors.append(f"{origin}: sub_scenes[{index}] missing send_text")
+                    if isinstance(sub_scene, dict):
+                        errors.extend(
+                            f"{origin}: {error}" for error in validate_expected_references(
+                                sub_scene.get("expected"), f"sub_scenes[{index}].expected",
+                            )
+                        )
     for intent_path in _intent_paths(root):
         errors.extend(validate_intent(intent_path, ids))
         paths.append(intent_path)

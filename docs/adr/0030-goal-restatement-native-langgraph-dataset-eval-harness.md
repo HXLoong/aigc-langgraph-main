@@ -14,7 +14,7 @@
 ### D1 · 目标三主线
 
 1. **原生 LangGraph 重构场外 AI 指令链路**：图即架构（子图原生嵌入、单动作多订单、RetryPolicy、State 分层与 output schema，[ADR 0024](./0024-langgraph-native-rearchitecture.md) D2 / D3、[ADR 0028](./0028-session-entry-and-multi-instruction-send-orchestration.md)）；持久化与可观测契约（0024 D4 / D5、[ADR 0026](./0026-request-idempotency-uncertain-receipts-reconciliation.md)）；提示词即代码与字段证据契约（[ADR 0023](./0023-prompt-as-code-langgraph.md)、[ADR 0027](./0027-field-evidence-contract.md)）；Dify 只作历史参照，标的识别与业务默认值归 Java 后端（[ADR 0025](./0025-instrument-resolution-delegated-to-backend.md)）。
-2. **通过数据集进行评测和评估**：ground truth 是数据集的 `expected`，不是 Dify 输出（沿用 ADR 0016 的核心论点）。数据集 = `tests/fixtures/categories/`（显式验收集）+ `tests/fixtures/unified_golden.jsonl` + `tests/fixtures/nodes/`（节点级 fixture，[ADR 0029](./0029-node-level-debug-api-and-regression-workbench.md)）；评测入口 = harness HTTP 回归（[ADR 0002](./0002-comprehensive-runtime-harness.md) / 0024 D6）+ LLM Judge（[ADR 0005](./0005-annotation-roles-judge-plus-business-spotcheck.md) / [ADR 0014](./0014-langfuse-as-harness-backend.md)）；错例先补 fixture 再修代码。
+2. **通过数据集进行评测和评估**：ground truth 是数据集的 `expected`，不是 Dify 输出（沿用 ADR 0016 的核心论点）。数据集 = `tests/fixtures/categories/`（显式验收集）+ `tests/fixtures/unified_golden.jsonl`（历史参考集，显式选择）+ `tests/fixtures/nodes/`（节点级 fixture，[ADR 0029](./0029-node-level-debug-api-and-regression-workbench.md)）；评测入口 = harness HTTP 回归（[ADR 0002](./0002-comprehensive-runtime-harness.md) / 0024 D6）+ LLM Judge（[ADR 0005](./0005-annotation-roles-judge-plus-business-spotcheck.md) / [ADR 0014](./0014-langfuse-as-harness-backend.md)）；错例先补 fixture 再修代码。
 3. **按 Harness 工程的要求重构**：任何提示词 / 节点 / 契约改动都经同一条门（D3）——TDD RED → GREEN、pytest、四项一致性 lint、ruff / mypy、数据集 PASS 率不低于前值、trace 可归因（[ADR 0004](./0004-trace-granularity-node-level-with-langsmith.md) / 0024 D5）。harness 与 `app/` 解耦，只经 HTTP 入口驱动。
 
 ### D2 · 退役口径
@@ -31,7 +31,7 @@
 | 代码 | pytest 全量 GREEN；ruff / mypy 零错；`sync_agents_md` / 阈值 / fixture / ADR 四项 lint 通过；CI 在 push 与 PR 上跑 | `.github/workflows/ci.yml` |
 | 上线观察 | 5xx < 0.1%、cascade fail < 1%、P95 ≤ 当前基线 × 1.5（7 天滚动）；业务方严重错例（标的错 / 参数错 / 意图大类错）≤ 5 次 / 7 天；故障期间定级与介入见 [ADR 0019](./0019-incident-severity-thresholds.md) | `/metrics` + `app/observability/alerts.py` + `scripts/metrics_snapshot.py` |
 
-阈值取值理由沿用 ADR 0017 原论证（服务器崩溃近零、用户可感知的临界、尾部延迟决定体验、给业务方留可签字的容差）；基线由当前模型口径重测回填。
+阈值取值理由沿用 ADR 0017 原论证（服务器崩溃近零、用户可感知的临界、尾部延迟决定体验、给业务方留可签字的容差）。2026-09-24 已完成当前模型本地 dry-run 参考采样并回填告警默认值（见 [ADR 0019](./0019-incident-severity-thresholds.md)）；业务交易验收与生产同拓扑 7 天观察仍未通过，不由 dry-run 结果替代。
 
 ### D4 · ADR 写法
 
@@ -46,8 +46,9 @@
 ## 后果
 
 - 正面：ADR 只承载决策与契约；评测门只有一套，且与 CI、harness、Judge 的实际入口一一对应。
-- 负面：上线观察层的基线数值在重测前为空；里程碑过程文档已删除（可从 git 历史找回）。
-- 未决：`unified_golden.jsonl` 是否并入统一验收（当前只用显式 `categories`）；节点 fixture 与代码演进的漂移守护；上线观察窗口的正式起点由部署决定。
+- 负面：生产同拓扑基线与观察窗口仍待部署验证；里程碑过程文档已删除（可从 git 历史找回）。
+- 2026-09-23 裁决：统一验收与 `harness run` 默认只加载 `categories`；`unified_golden.jsonl` 保留为历史参考集，经 `--include-unified` 或 `--data` 显式选择，仍参加一致性 lint。
+- 未决：节点 fixture 与代码演进的漂移守护；上线观察窗口的正式起点由部署决定。
 
 ## 关联
 

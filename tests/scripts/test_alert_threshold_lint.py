@@ -86,9 +86,9 @@ def test_parse_alerts_py_returns_5_alerts() -> None:
 
 
 def test_parse_alerts_py_p95_uses_baseline_times_multiplier() -> None:
-    """P95 阈值 = baseline 4200 × multiplier 3 = 12600（AST 静态计算）。"""
+    """P95 阈值 = baseline 8554 × multiplier 3 = 25662（AST 静态计算）。"""
     out = parse_alerts_py()
-    assert out["p95_latency_degraded"].threshold_value == 12600.0
+    assert out["p95_latency_degraded"].threshold_value == 25662.0
 
 
 def test_parse_alerts_py_p0_alerts() -> None:

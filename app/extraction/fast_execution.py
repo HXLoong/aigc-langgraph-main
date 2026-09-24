@@ -12,7 +12,7 @@ FAST_EXECUTION_PHRASES = (
 )
 _PHRASES = re.compile("|".join(
     re.escape(phrase) for phrase in sorted(FAST_EXECUTION_PHRASES, key=len, reverse=True)
-))
+) + r"|(?<![a-z])asap(?![a-z])")
 _NEGATED_PREFIX = re.compile(
     r"(?:不|别|勿|非|禁止|无需|取消)[^，,；;。\n]{0,8}$|\b(?:not|no|never|don't)\s*$"
 )

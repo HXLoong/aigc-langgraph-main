@@ -147,3 +147,14 @@ def test_maximum_rule_does_not_overwrite_explicit_order_parameters():
             opened["twap_end_time"], opened["notional_amount"]) == (
                 "TWAP", 10, "14:30", "14:50", "1000000",
             )
+
+
+@pytest.mark.parametrize(("text", "expected"), [
+    ("ASAP", True), ("尽快 ASAP 执行", True), ("不要 ASAP", False),
+    ("not ASAP", False), ("if ready ASAP", False), ("ASAPer", False),
+    ("ASAP POV5%", False),
+])
+def test_asap_uses_fast_intent_without_overriding_negation_or_ratio(text, expected):
+    from app.extraction.fast_execution import resolve_fast_execution
+
+    assert resolve_fast_execution(text) is expected

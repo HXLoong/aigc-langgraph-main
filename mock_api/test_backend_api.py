@@ -245,9 +245,9 @@ async def test_financial_operate_close_request_renders_contract(
             closeOrderReqVO={
                 "closeOrderList": [
                     {
-                        "contractCode": "OPT-LYAFT20260001",
-                        "closeNotionalAmount": "5000000",
-                        "orderType": "MARKET_PRICE",
+                        "internalTradeId": "OPT-LYAFT20260001",
+                        "closeOrderNotionalDelta": "5000000",
+                        "closeOrderType": "市价单",
                     }
                 ]
             },
@@ -313,20 +313,21 @@ async def test_query_close_orders_by_contract_codes(
     data = r.json()["data"]
     assert len(data) == 1
     assert data[0]["contractCode"] == "OPT-LYAFT20260001"
+    assert data[0]["orderId"] is None
 
 
 @pytest.mark.asyncio
-async def test_query_close_orders_empty_returns_all(
+async def test_query_close_orders_empty_returns_empty(
     client: httpx.AsyncClient,
 ) -> None:
-    """都不传 → 返回全部持仓（mock 行为）。"""
+    """无订单号和合约编号时，真实 Java 不查询任何数据。"""
     r = await client.post(
         "/admin-api/financial-orders/query-close-orders",
         json={},
     )
     assert r.status_code == 200
     data = r.json()["data"]
-    assert len(data) >= 4
+    assert data == []
 
 
 # ============================================================
@@ -391,7 +392,7 @@ async def test_securities_select_multi_keyword_dedup(
 
 
 @pytest.mark.asyncio
-async def test_counterparty_list_returns_3_with_transaction_types(
+async def test_counterparty_list_returns_4_with_transaction_types(
     client: httpx.AsyncClient,
 ) -> None:
     r = await client.get(
@@ -400,7 +401,7 @@ async def test_counterparty_list_returns_3_with_transaction_types(
     )
     assert r.status_code == 200
     data = r.json()["data"]
-    assert len(data) == 3
+    assert len(data) == 4
     for cp in data:
         assert "ctptyId" in cp
         assert "shortName" in cp

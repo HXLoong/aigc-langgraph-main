@@ -8,10 +8,10 @@ F4 灰度上线（F4.2-F4.5）期间，**Tony / 业务方 / on-call** 三方共�
 ```
 infra/grafana/
 └── dashboards/
-    └── otc-agent-overview.json   ← 14 个 panel（按 4 段分行）
+    └── otc-agent-overview.json   ← 20 个指标 panel（按 5 段分行）
 ```
 
-## 4 段结构（与 metrics_snapshot.py 对齐）
+## 5 段结构（与 metrics_snapshot.py 对齐）
 
 | 行 | 段 | Panel | 用途 |
 |---|---|---|---|
@@ -19,6 +19,19 @@ infra/grafana/
 | 2 | 业务指标 | Fallback / HITL / LLM 错误率 / 缓存命中 stat + token 速率 + reason 分布 | F4.6 成本观测 + 业务路径健康 |
 | 3 | 金丝雀 | is_canary=true/false 计数 + 占比 | F4.2-F4.5 切流核心面板 |
 | 4 | 健康检查 | 4 个上游 1h 统计表 + fail 趋势 | D2.6 上游联通性 |
+| 5 | 上线观察退出门 | HTTP 5xx、Cascade fail、端到端 P95，各有 5m / 7d 视图 | 请求级质量与 7 天滚动门槛 |
+
+退出门视图的 HTTP 5xx、cascade 比率分母均为 HTTP 请求数，阈值分别为 0.1%、1%。
+端到端 P95 只使用无 `node` 标签的直方图，原节点 P95 面板只使用 `node` 非空的样本。
+没有请求样本时不显示为零错误率通过。5m 面板用于短期趋势，7d 面板对应 ADR 0030 的滚动窗口。
+
+仪表盘顶部 `baseline_p95_ms` 必须填写当前环境的实测值；初始 `0` 表示未配置，不绘制
+P95 退出门线。配置后显示 `实测基线 × 1.5`，不再用历史 Qwen 的 4200ms 代替本次基线。
+基线测量与回填由 #233 跟踪，添加面板不代表基线已测量或七天观察已完成。
+
+CLI 快照新增 HTTP 累计请求/5xx/cascade 段，保留并渲染 histogram 的 `_sum`、`_count`、
+`_bucket`（JSON 的 `counters` 键保持兼容）。单次累计快照不等于滚动错误率，不能独立作为
+七天退出门的验收证据。
 
 ## Import 步骤
 

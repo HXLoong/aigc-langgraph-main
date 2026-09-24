@@ -1,6 +1,8 @@
 from __future__ import annotations
 
-from harness.golden import GoldenCase, TurnSpec
+from pathlib import Path
+
+from harness.golden import GoldenCase, TurnSpec, load_golden
 from scripts.langfuse.upload_golden_to_langfuse import build_expected, build_input
 
 
@@ -98,3 +100,22 @@ def test_metadata_carries_suite_backend_and_drops_empty_tags() -> None:
     assert metadata["backend"] == "mock"
     assert metadata["tags"] == ["intent/swap", "intent"]
     assert "" not in metadata["tags"]
+
+
+def test_dataset_metadata_binds_instrument_evaluator_only_with_instrument_labels():
+    from scripts.langfuse.upload_golden_to_langfuse import build_dataset_metadata
+
+    root = Path(__file__).resolve().parents[2]
+    option = load_golden(root / 'tests/fixtures/intent/option.jsonl')
+    swap = load_golden(root / 'tests/fixtures/intent/swap_instrument.jsonl')
+    assert build_dataset_metadata(option, suite='intent')['evaluator_names'] == ['intent-match']
+    assert build_dataset_metadata(swap, suite='intent')['evaluator_names'] == [
+        'intent-match', 'instrument-match',
+    ]
+
+
+def test_dataset_item_ids_are_stable_and_do_not_move_items_between_datasets():
+    from scripts.langfuse.upload_golden_to_langfuse import dataset_item_id
+
+    assert dataset_item_id('intent-option', 'case-025') == dataset_item_id('intent-option', 'case-025')
+    assert dataset_item_id('intent-option', 'case-025') != dataset_item_id('business-option', 'case-025')

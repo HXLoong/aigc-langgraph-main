@@ -22,7 +22,7 @@
 | 非 canary 流量 | is_canary=false 计数 ≥ 1 | 即时 | P0 |
 | P95 延迟退化 | P95 ≥ M2 baseline × 3 | 10 分钟 | P1 |
 
-P95 baseline 通过环境变量 M2_BASELINE_P95_MS 配置（默认 4200ms）。
+P95 baseline 通过环境变量 M2_BASELINE_P95_MS 配置（默认 8554ms）。
 """
 from __future__ import annotations
 
@@ -65,8 +65,8 @@ class AlertThreshold:
 
 
 # P95 baseline 从环境变量读，便于 M3 真后端测得新数据后无需改代码即可调整
-# 默认值 4200ms 来自 #29 M2 baseline 测量结果（Qwen + mock backend）
-_P95_BASELINE_MS = float(os.environ.get("M2_BASELINE_P95_MS", "4200"))
+# 2026-09-24 DeepSeek 本地 dry-run 参考值；生产须按同部署拓扑重测并覆盖。
+_P95_BASELINE_MS = float(os.environ.get("M2_BASELINE_P95_MS", "8554"))
 _P95_MULTIPLIER = 3.0  # ADR 0019 P1 阈值
 _P95_THRESHOLD_MS = _P95_BASELINE_MS * _P95_MULTIPLIER
 

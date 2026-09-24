@@ -34,10 +34,10 @@ class EvaluatorDefinition:
 
 
 def resolve_evaluator_suite(suite: str | None, dataset_name: str | None) -> str:
-    """显式 --suite 优先；否则按 dataset 名前缀 intent- 判定，其余（含历史命名）为业务集。"""
+    """显式 --suite 优先；否则按 intent_ / intent- 前缀判定。"""
     if suite:
         return suite
-    if dataset_name and dataset_name.startswith("intent-"):
+    if dataset_name and dataset_name.startswith(("intent_", "intent-")):
         return "intent"
     return DEFAULT_SUITE
 
@@ -235,6 +235,14 @@ def sync_evaluators(
         dataset_id = str(dataset.get("id") or "")
         if not dataset_id:
             raise RuntimeError(f"Dataset 缺少 id：{dataset_name}")
+        metadata = dataset.get("metadata") or {}
+        selected = metadata.get("evaluator_names") if isinstance(metadata, dict) else None
+        if selected is not None:
+            available = {definition.name for definition in definitions}
+            if (not isinstance(selected, list) or not selected
+                    or any(not isinstance(name, str) or name not in available for name in selected)):
+                raise ValueError(f"Dataset Evaluator 选择不属于当前套件：{dataset_name}")
+            definitions = tuple(item for item in definitions if item.name in selected)
 
     remote_evaluators = api.list_evaluators()
     remote_rules = api.list_evaluation_rules()
@@ -314,7 +322,7 @@ def main() -> int:
     parser.add_argument(
         "--suite",
         choices=SUITES,
-        help="只同步该套件的 Evaluator；默认按 --dataset-name 前缀 intent- 判定，其余为 business",
+        help="只同步该套件的 Evaluator；默认按 --dataset-name 前缀 intent_ / intent- 判定，其余为 business",
     )
     mode = parser.add_mutually_exclusive_group(required=True)
     mode.add_argument("--dry-run", action="store_true")
