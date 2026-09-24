@@ -348,7 +348,7 @@ Online Evaluator 异步执行，Experiment 完成后 Score 可能稍后显示。
 | `upload_evaluators.py` | 读取集中定义，按套件（`--suite` 或 dataset 前缀 `intent_` / `intent-`）同步 Code Evaluators 和全局或指定 Dataset 的 Online Rules |
 | `upload_score_configs.py` | 读取集中定义，全量同步人工 Score Configs |
 | `langfuse_eval.py` | 执行 Dataset Experiment 或本地评测（`--suite intent` 不跑 Judge，trace tags 带套件名）|
-| `promote_langfuse_prompt.py` | 将 Langfuse Prompt 拉取到本地 Git |
+| `upload_prompt_to_langfuse.py` | 把 git 的提示词推到 Langfuse（单轮实验用；**不从 Langfuse 拉回**）|
 | `_definitions.py` | 读取并校验本地 JSON 定义，不单独执行 |
 | `_public_api.py` | 上传脚本共用的 Public API 客户端，不单独执行 |
 

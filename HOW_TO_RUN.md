@@ -166,9 +166,6 @@ python scripts/shadow_compare.py            # 含 DRY_RUN_BACKEND 模式（PR #1
 python scripts/canary_status.py
 python scripts/metrics_snapshot.py
 
-# LangFuse Prompt 晋升（staging → production，F4.6）
-python scripts/langfuse/promote_langfuse_prompt.py
-
 # 告警阈值干跑（5xx / cascade / P95 延迟 / LLM 失败率）
 python scripts/run_alerts.py
 

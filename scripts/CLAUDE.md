@@ -31,7 +31,6 @@
 | `rollback_canary.sh` | 一键回切 |
 | `drill_smoke.sh` | 上线 smoke checklist |
 | `shadow_compare.py` | LangGraph vs Dify 双跑对比（`DRY_RUN_BACKEND` 模式可用）|
-| `langfuse/promote_langfuse_prompt.py` | Prompt 晋升（label `production`）|
 | `run_alerts.py` | 告警轮询 |
 | `llm_cost_report.py` | LLM 成本日报 |
 
