@@ -1,60 +1,53 @@
-# ADR 0027 · 字段证据契约：模型只产原文候选，Code 归一化并记录来源与锁定
+# ADR 0027 · 字段来源契约：保留提取证据，业务值由 Java 校验
 
-- 状态：已采纳（追认，落地 commit `58e5650` / `9493cb9`）
-- 日期：2026-09-18
-- 关系：D2 的模型重试规则由 [ADR 0031](./0031-single-model-request-per-message.md) 修订
-- 关系：修订 [ADR 0023](./0023-prompt-as-code-langgraph.md) D2（模型不再直接输出最终值）、[ADR 0024](./0024-langgraph-native-rearchitecture.md) D2（新增 `field_records` 通道）；配合 [ADR 0025](./0025-instrument-resolution-delegated-to-backend.md)
+- 状态：已采纳（不做本地业务归一化与数字校验，现有代码待迁移）
+- 日期：2026-09-24
+- 关系：输出描述见 [ADR 0023](./0023-prompt-as-code-langgraph.md)，标的职责见 [ADR 0025](./0025-instrument-resolution-delegated-to-backend.md)，单次处理见 [ADR 0021](./0021-text-confirm-replaces-interrupt.md)，模型额度见 [ADR 0031](./0031-single-model-request-per-message.md)
 - 作者：图灵科技 + Tony
 
 ## 背景
 
-ADR 0023 让每个 LLM 节点的输出契约收敛为一个 Pydantic 模型，但模型输出的仍是**交易最终值**（数量、价格、期限、订单号）。真实回归暴露三类问题：模型会把授权对手前缀并入名称、把多期限展开后串错执行价、在确认回合把疑问句当确认；这些错误在 HTTP 回执之前没有任何机械可检的信号。金融写路径不能接受"模型说了算"的最终值。
+字段值需要与用户输入、引用和附件建立可追踪关系，但来源记录不等于 LangGraph 要再实现一套交易数值计算与校验。用户表达的提取、现有接口序列化和 Java 的业务处理应分开。
 
 ## 决策
 
-### D1 · 模型输出原文候选（`app/extraction/fields.py::FieldCandidate`）
+### D1 · 一次提取，同时保留原文与来源
 
-每个可抽取字段的模型输出是 `FieldCandidate`：`value`（归一化前的完整原文，未提及为 `null`）、`evidence`（支持该值的原文**连续片段**，不得改写）、`confidence`（0-1，不能替代证据校验）、`origin`（`raw` / `quote` / `history` / `attachment`）、`reference`（历史消息 ID 或附件行列）。候选 schema 由规范模型经 `app/extraction/candidates.py` 自动生成；`CandidateDescription` 定义候选语义，业务 DTO 的 `Field(description=)` 继续定义最终值语义。
+每个字段保留提取值、对应原文、来源类型与定位信息；来源可以是本次消息、用户引用、有效历史上下文或附件位置。模型完成业务语义提取所需的判断，输入与输出含义由 PromptSpec 和 Pydantic 字段描述定义，并遵守 ADR 0031 的单次模型请求上限。
 
-### D2 · Code 校验证据，失败即 E2
+标的名称、代码或月份表达仍按原文或用户明确选择提交（ADR 0025）。其它参数按照既有接口要求表达，但模型输出只是待提交值，不是已验证的交易事实；缺失值不由 LangGraph 补业务默认。
 
-`FieldCandidate.verify(sources)`：`value ⊂ evidence ⊂ 对应来源文本`，数字候选还须在证据中是独立数值（不能是另一个数的一部分）。校验失败抛 `EvidenceError`（错误分类 E2，[ADR 0026](./0026-request-idempotency-uncertain-receipts-reconciliation.md) D6），落 `state["error"]` 并停止本轮提交；按 [ADR 0031](./0031-single-model-request-per-message.md) 不重新请求模型、不降级为"取模型值"（目标规范已采纳，代码待重构）。
+### D2 · 保留结构与来源检查，不做数字校验
 
-### D3 · 归一化与默认值归属
+- LangGraph 检查结构化输出、字段来源是否存在、文本证据与对应来源的关联、引用选择与本次订单范围的一致性。
+- 不做数字边界匹配、金额 / 数量 / 比例范围校验、精度重算或业务合理性校验；不因数字不是原文中一个独立词元而触发本地拒绝。
+- 本阶段附件来源为 Excel 单元格与位置；图片暂不处理，不产生图片字段或 OCR 转写证据。
+- 结构或来源检查失败写入 E2 并停止本次提交，不修复输出或再次请求模型。Java 负责业务数值、权限、可交易性与状态校验。
 
-单位（万 / 亿 / w）、有限枚举、比例（平仓比例按 Java 契约为 (0, 1]）、时间补零等确定性换算由 Code 完成（`swap/normalize.py` / `option/normalize.py` / `option/place_params.py`）；缺失值保持空，**业务默认值由 Java 合并**，LangGraph 不补。
+### D3 · 不设置 LangGraph 业务归一化阶段
 
-### D4 · 字段账本与锁定（`FieldRecord` / `field_records`）
+本阶段不做原 D3 的 Code 归一化：不在业务链增加单位换算、比例计算、时间补全、枚举猜测或业务默认值补齐。提取结果按现有 Java DTO 构造请求，Java 完成业务校验与默认值处理。
 
-- `FieldRecord`：`value`（Code 产出的规范值）、`source ∈ {user, inferred, goats, default}`、`evidence` / `origin`、`confidence`、`locked`、拒绝覆盖次数。
-- `AgentState.field_records` 使用 `merge_fields` reducer：锁定值拒绝被后续更新覆盖；`app/extraction/locks.py::protect_orders` 在 **State 写入** 与 **后端提交前** 两处检查，锁定订单不得在当前指令内被删除或改写。
-- 来源记录与锁定必须在实际后端请求边界生效（子图 `backend.py`），不是提示词承诺。
+JSON 序列化、字段名映射和接口必需的类型装配只负责传输，不得暗中改变数量、价格、单位或含义。既有 DTO 若无法表达目标提取值，应核对并记录契约差异，不能静默把原文塞入不兼容字段、修改 Java DTO 或保留另一套隐藏换算实现。兼容性核对与代码清理统一列入工作计划。
 
-### D5 · 七条最终确认路径的统一校验（`app/domain/confirmation.py`）
+### D4 · 字段来源记录与锁定
 
-swap 三确认、option 确认下单 / 确认撤单、close 确认平仓 / 确认撤销共七条最终确认路径统一要求：
+- `FieldRecord` 保留提取值、来源、原文、置信度与锁定信息；置信度只作诊断，不代替来源或业务校验。
+- 同次指令中，被选中的订单与字段不能被后续节点静默删除或覆盖；审计记录应能关联模型提取与实际提交值。
+- 字段锁定保护输入和选择的一致性，不意味着该值已经业务校验通过，也不依赖 Code 产出归一化值。
 
-1. 明确的动作口令（`确认下单` / `确认撤单` / `确认改单` / `确认平仓` 及别名）；
-2. 引用当前订单（单号 `H-` / `Q-` / `CO-`、序号、或合约编号）且范围与业务对象一致；
-3. 否定、疑问、条件句（"不确认" / "是否" / "吗" / "成交后"）与携带新参数的文本不触发写入。
+### D5 · 本次动作与引用选择
 
-`last_confirmed_params`（ADR 0024 会话记忆）与程序生成的引用**不能替代用户引用**，记忆仅作上下文。
+按 ADR 0021，LangGraph 不建立强制二阶段流程。现有确认类意图作为独立输入处理：用户本次明确表达动作，所提交的订单号与引用、序号或合约选择一致；否定、疑问和条件表达不自动变成确认动作。
+
+历史记忆与程序生成的引用不能代替用户本次选择。LangGraph 提取订单号及适用的显式参数；Java 读取订单、合并参数、校验并处理。本节不要求所有交易先申请再确认，也不把识别到确认口令当成交易成功。
 
 ## 备选方案
 
-- **模型直接输出规范值 + 提示词约束**（ADR 0023 原形态）：错误不可机械检出，提示词规则越写越长。否决。
-- **纯规则抽取不用 LLM**：口语化表达覆盖不了。否决。
-- **模型原文候选 + Code 证据校验 / 归一化 / 账本（已选）**。
+- **模型提取后再由 Code 归一化并校验数字**：本阶段不采用，避免在 LangGraph 重复解释业务数值。
+- **不记录来源，只交模型最终结论**：无法复核误提取与串单，不采用。
+- **提取值 + 原文来源 + Java 业务校验（已选）**：保留可追踪性，业务有效性以 Java 为权威。
 
 ## 后果
 
-- 正面：幻觉值在提交前可检；每个最终值有来源与证据可审计；锁定防止多轮间的静默覆盖；提示词 system 段大幅缩短（以期权询价与互换下单为例，均缩减 90% 以上）。
-- 负面：候选 schema 嵌套增大 function-calling 输入；`history` / `attachment` 来源需要节点提供 `sources` 文本；已接入证据契约的节点与未接入节点并存期间口径不一。
-- 未决：候选 schema 压缩；未接入节点清单（migration README 标"需逐项迁移 / 核对"）的完成时点；`inferred` 来源值是否允许进入写请求。
-
-## 关联
-
-- [ADR 0023](./0023-prompt-as-code-langgraph.md) · PromptSpec 与输出契约
-- [ADR 0025](./0025-instrument-resolution-delegated-to-backend.md) · 标的原文透传
-- [ADR 0026](./0026-request-idempotency-uncertain-receipts-reconciliation.md) · E1–E5 错误分类
-- `.claude/rules/langgraph-patterns.md` · 操作口径（原文候选含 evidence / confidence / source；Code 验证）
+本地不再通过数字与业务归一化规则拦截请求，字段准确性需要确定性数据集断言和真实后端验收保证；不能以减少校验为理由降低断言覆盖。`app/extraction/fields.py`、各产品 normalize / sanitize 及 DTO 校验仍有旧实现，迁移前须逐项核对现有接口，实施与验收见[工作计划](../work-plan.md)。

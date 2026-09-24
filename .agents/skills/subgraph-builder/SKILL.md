@@ -15,27 +15,27 @@ metadata:
 
 - 根 `CLAUDE.md`（核心原则、并行实施规则）
 - `.claude/rules/langgraph-patterns.md`（节点、IO、错误、确认）与 `.claude/rules/prompt-management.md`（PromptSpec）
-- ADR 0007（新场景归属）、ADR 0024（原生子图）、ADR 0031（每消息全链路最多一次模型请求；规范已采纳，代码待重构）
-- 模板：`app/subgraphs/swap/graph.py`（最复杂的组装）、`app/subgraphs/swap/place_order.py`（候选 → 归一化 → 提交）
+- ADR 0007（新场景归属）、ADR 0024（原生子图）、ADR 0031（单次工具调用全链路最多一次模型请求；规范已采纳，代码待重构）
+- 模板：`app/subgraphs/swap/graph.py`（最复杂的组装）、`app/subgraphs/swap/place_order.py`（旧归一化链路，仅用于核对待迁移实现）
 
 ## 目标子图形态（ADR 0031；当前 graph.py 仅用于核对现状）
 
 ```
-START → _route_swap_entry（文本 / 图片 / Excel）
+START → _route_swap_entry（本阶段仅文本 / Excel，图片暂不处理）
       → 复用主图联合解析结果，或执行本轮唯一一次产品联合解析
       → 按意图分发：先检查错误转兜底
-      → 按意图的确定性节点（候选证据校验 → 归一化 → 确认/范围校验）
+      → 按意图的确定性节点（结构与来源检查 → 本次动作/引用选择范围 → 现有接口装配）
       → backend.py 调 Java（OptionClient / SwapClient Protocol，真实响应透传）
       → END（output_schema=SubgraphOutput 限定写回面）
 ```
 
 ## 节点写法（细节以 rules 为准，这里只列要点）
 
-- 本轮唯一的联合解析节点：`PromptSpec` + `with_structured_output(<Output>)` + `@safe_node`，零重试；原文候选契约继续使用 `candidate_model(<Canonical>)`，最终值由 Code 归一化节点决定
+- 本轮唯一的联合解析节点：`PromptSpec` + `with_structured_output(<Output>)` + `@safe_node`，零重试；保留提取值与原文来源，输出契约按 ADR 0027 迁移；不追加 Code 业务归一化或数字校验，业务值由 Java 校验
 - 独立后端只读查询用 `@io_node` + `add_io_node`；其重试不得连带重新调用模型
 - 纯计算节点与写后端节点：`@safe_node`；写接口绝不自动重试
 - 路由函数是同步纯函数，错误优先转兜底（核心原则 9）
-- 写动作的确认走文本二阶段（ADR 0021），范围校验在 `app/domain/confirmation.py`
+- 不做 LangGraph 强制二阶段；现有确认类指令按 ADR 0021 识别本次动作、订单号及本次适用的显式参数，引用范围校验在 `app/domain/confirmation.py`；Java 读取订单、合并参数、校验并执行，不在子图维护待确认订单状态，参数收敛待办见 `docs/work-plan.md`
 - 业务 HTTP 调用只放子图 `backend.py`；标的原文交 Java 识别（ADR 0025），子图不调 `TickerClient`
 
 ## 扩展现有子图：加新意图

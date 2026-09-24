@@ -24,6 +24,6 @@
 
 ## 现状
 
-四个痛点的解法均已建成（见 [ADR 0002](./0002-comprehensive-runtime-harness.md)）：`harness/` 评测台、节点级 trace（MySQL + LangFuse）、按 B / C / D 桶管理的数据集、LLM Judge 自动评分。
+评测与追踪基础能力已建成（见 [ADR 0002](./0002-comprehensive-runtime-harness.md)）：`harness/` 评测台、节点级 trace（MySQL + LangFuse）与业务数据集。自动评分按 ADR 0005 统一为确定性断言，Langfuse 回归闭环按 ADR 0029 逐步迁移，现状与待办见工作计划。
 
 现状：**Dify 已退出上游地位**（[ADR 0024](./0024-langgraph-native-rearchitecture.md) D1）：代码与 git 中的提示词是唯一真源，不再有 Dify 同步链路；Shadow 对照只是可选工具，验收以数据集评测门为准（[ADR 0030](./0030-goal-restatement-native-langgraph-dataset-eval-harness.md) D3）。

@@ -7,7 +7,7 @@
 
 ## 背景
 
-Harness 需要一个后台承载四件套：**Trace**（节点级 LLM 调用）、**Dataset**（数据集版本管理）、**Evaluation**（LLM Judge 评分）、**Annotation**（业务方标注界面）。原选型 LangSmith 是海外 SaaS，客户企微原话与订单参数会出境，与场外衍生品的金融数据合规要求冲突。LangFuse 开源、可自托管、与 LangGraph 原生集成，满足合规与功能要求。
+Harness 需要一个后台承载四件套：**Trace**（节点级 LLM 调用）、**Dataset**（数据集版本管理）、**Evaluation**（确定性断言与字段差异）、**Annotation**（业务方标注界面）。原选型 LangSmith 是海外 SaaS，客户企微原话与订单参数会出境，与场外衍生品的金融数据合规要求冲突。LangFuse 开源、可自托管、与 LangGraph 原生集成，满足合规与功能要求。
 
 ## 决策
 
@@ -31,8 +31,10 @@ trace 只走 LangFuse 一条通道，由请求入口统一注入 CallbackHandler
 |---|---|---|
 | Trace | LangGraph CallbackHandler | LangFuse UI / API |
 | Dataset | `scripts/langfuse/upload_golden_to_langfuse.py` 从 `tests/fixtures/` 同步 | 评测脚本 |
-| Score | `scripts/langfuse/langfuse_eval.py`（LLM Judge） | LangFuse UI / 报告 |
+| Score | 目标为复用 harness 断言的 Code Evaluator / SDK 分数写入，不调用 LLM Judge（ADR 0005） | LangFuse Experiment / UI / 报告 |
 | Annotation | 业务方经 Annotation Queue（线上标注待启动） | 回流脚本（待建） |
+
+目标闭环为 Observation → 人工复核期望 → Dataset → Experiment → 确定性 Score → 错例修复与重跑。Langfuse 管理运行、评分和标注关联，harness 保留执行与断言职责；本地 fixture 与平台数据使用稳定 case ID、版本和单向同步，避免双向覆盖。节点层迁移见 ADR 0029，尚未落地项统一见工作计划。
 
 ### D5 · 安全与保留
 

@@ -18,7 +18,7 @@
 
 ### D1 · 每个 LLM 节点声明一个 `PromptSpec`（`app/prompts/spec.py`）
 
-节点声明不授予额外模型请求额度；同一消息的所有 PromptSpec 共用 [ADR 0031](./0031-single-model-request-per-message.md) 的一次请求上限。
+节点声明不授予额外模型请求额度；同一次工具调用的所有 PromptSpec 共用 [ADR 0031](./0031-single-model-request-per-message.md) 的一次请求上限。
 
 ```python
 SPEC = register(PromptSpec(
@@ -48,7 +48,7 @@ user 消息中若含规则文本，写进 `.md` 的 `[user]` 段并用 `{{var}}`
 ### D5 · 瘦身原则
 
 - 分三档处理：零风险（结构化输出下失效的 JSON 格式要求、未注入的悬空变量、重复陈述）直接删；低风险（few-shot 去重、闭集词表改为语义类加少量例子）经评测与抽样比对后删；涉及业务事实（产品名、名称词典、真实账户）的逐条请业务方确认。
-- 错例回填的规则转为 `tests/fixtures/` 数据集用例，提示词只留通用原则；订单号提取、单位换算等确定性工作下沉到代码。
+- 错例回填的规则转为 `tests/fixtures/` 数据集用例，提示词只留通用原则；订单号与引用选择可以由代码提取；业务单位换算、数值校验与默认值归属遵循 ADR 0027，不再要求下沉到 LangGraph Code。
 
 ## 现状
 

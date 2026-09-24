@@ -13,7 +13,7 @@
 | 脚本 | 用途 |
 |---|---|
 | `local_eval.py` | 本地 HTTP 业务回归（显式 `tests/fixtures/categories`，真 Java 后端）|
-| `langfuse/langfuse_eval.py` | 数据集评估：DeepSeek Judge + per-turn JSON → Langfuse；`--local tests/fixtures/intent` 为 CI 意图集 |
+| `langfuse/langfuse_eval.py` | 数据集实验与 per-turn JSON → Langfuse；评分目标为确定性断言，旧路径使用 `--no-judge`；`--local tests/fixtures/intent` 为 CI 意图集 |
 | `run_with_http_tape.py` | 启动本地应用并录制 / 回放工具层 HTTP（节点回归，ADR 0029）|
 
 ### 真后端探针（联调用）
@@ -26,6 +26,8 @@
 | `probe_close_write_e2e.py` | 平仓下单写后端 |
 | `probe_fast_query.py` | 快速询价 GOATS 解析交互式探针（不调后端询价接口）|
 | `probe_goats/` | GOATS 19 个业务接口逐个 / 一键探针（凭据从 `.env` 读，写类接口需 `--confirm-write`）|
+
+> 证券查询接口禁止被任何本地探针或验收调用；`ticker_client.py` 仅保留授权对手列表用途（ADR 0001 / 0025）。
 
 > 探针**不参与**自动 CI（依赖真后端 + VPN）。本地或客户现场手动跑。
 
@@ -40,7 +42,7 @@
 | `shadow_compare.py` | 可选的 shadow 对照工具（`DRY_RUN_BACKEND` 模式可用，不进评测门）|
 | `run_alerts.py` | 告警轮询 |
 | `llm_cost_report.py` | LLM 成本日报 |
-| `reconcile_requests.py` | 不确定回执的只读对账；`--apply` 只落库已核实的 Java 原始回复（ADR 0026）|
+| `reconcile_requests.py` | 现有不确定回执对账；`--apply` 只落库已核实的 Java 原始回复。按 ADR 0026 职责规范待清理，见工作计划 |
 
 ### 部署与开发
 

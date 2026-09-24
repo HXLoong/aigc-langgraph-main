@@ -16,11 +16,11 @@
 
 ## langfuse_eval.py
 
-跑 LangGraph，DeepSeek Judge 打分，结果写入 Langfuse。
+运行 LangGraph 并关联 Langfuse Experiment；按 ADR 0005，评分只用确定性断言。当前脚本仍保留 Judge 默认路径，过渡期显式 `--no-judge`；字段评分完整性与退出码的迁移见工作计划。
 
 ```bash
 # 从 Langfuse Dataset 跑
-python scripts/langfuse/langfuse_eval.py --dataset golden_option_inquiry_case --ids case-022 --concurrency 1
+python scripts/langfuse/langfuse_eval.py --dataset golden_option_inquiry_case --ids case-022 --concurrency 1 --no-judge
 
 # 从本地 fixture 跑（不走 Langfuse Dataset，可用 --fail-under 做 CI 门槛）
 python scripts/langfuse/langfuse_eval.py --local tests/fixtures/intent --concurrency 3 --fail-under 0.95

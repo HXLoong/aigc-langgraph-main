@@ -62,17 +62,27 @@ private Api adminApi = new Api("/admin-api", "**.controller.admin.**");
 缺失时显式清空，不从 checkpoint 继承。缺少有效消息编号时不提交交易，也不调用
 `/set-intent` 更新上一条消息；顶层 `user` 补充用户身份的规则保持不变。
 
+## 确认指令的参数职责
+
+[ADR 0021](../adr/0021-text-confirm-replaces-interrupt.md) 明确：LangGraph 识别本次动作、订单号及适用的显式增量参数，Java 从数据库读取已有订单、合并参数、校验并执行。普通确认不要求 LangGraph 从历史或引用卡片补齐完整订单；引用用于确定本次操作对象与范围。是否有多轮上下文不改变这项职责。LangGraph 不强制二阶段处理，也不把普通动作自动变成确认；现有确认 type 仅用于用户本次明确输入的动作，后续业务流程由 Java 决定。
+
+互换、期权仍使用既有 `type` 与 `orderList`，平仓使用 `closeOrderReqVO` 内对应的订单号列表；机器人上下文继续按原契约透传。纯确认的订单业务字段只需携带订单号，允许补参的意图按现有契约传递本次明确提供的字段。接口路径、DTO、缺省字段序列化与确认口令均保持现状，不新增接口或补参准入。
+
+当前 Python 期权确认下单仍会结合引用与历史拼装完整 `orderList`，尚未完成上述参数收敛；具体待办见 [工作计划](../work-plan.md#12-确认指令职责收敛规范已采纳代码待调整)。本文的职责说明不代表现有出站参数已完成调整。
+
 ## 1. 标的（Ticker / Instrument）
 
-LangGraph 业务链只在既有订单字段传递原始证券表达。以下查询接口仍为 Java 工具契约，
-不作为 LangGraph 提交前识别或拒绝依据；Java `operate` 内部负责证券解析。
+LangGraph 业务链只在既有订单字段传递标的原始表达或用户对引用候选的明确选择。Java 业务接口
+按业务需要调用对应的标的识别工作流并处理结果，LangGraph 不参与识别工作流的调用或编排。
+以下标的查询接口仅保留为后端内部参考契约，不作为 LangGraph 提交前识别或拒绝依据；
+识别工作流的内部调用关系由后端维护。职责见 [标的识别后端边界](../architecture/backend-instrument-boundary.md)。
 HTTP `outputs.tickers` 保留为空列表的兼容字段，验收检查实际后端回复。
 
-### 1.1 标的查询（核心）
+### 1.1 标的查询（后端内部参考）
 
 - **HTTP**: `GET /admin-api/integration/securities-instrument/select` ⚠️ **GET + RequestBody，不规范但合法**
 - **Controller**: `SecuritiesInstrumentController.selectSecuritiesInstrumentPage()` (`SecuritiesInstrumentController.java:100`)
-- **调用方**: LangGraph（经 Protocol 客户端）
+- **调用边界**: 仅后端内部参考；LangGraph 业务链、测试、验收脚本和探针均不得调用，不据此推定识别工作流的具体调用方式
 - **入参** `SecuritiesInstrumentOpenApiReqVO`:
   - `keywordItems: list[KeywordItem]` — 关键词列表，每项 `{keyword: str, isFull: bool}`
   - 可能含 `transactionTypeList: list[str]` 过滤
@@ -255,6 +265,8 @@ class SwapOrderOpenApiSaveReqVO:
 
 ## 4. 持仓 / 平仓（Goats 配置驱动）
 
+本节说明 Java 内部的 GOATS 集成，不是 LangGraph 新增的直接出站调用；LangGraph 仍经现有期权业务接口提交，出站路径以文末清单为准。
+
 | 功能 | 配置 key | 说明 |
 |------|----------|------|
 | 平仓合约列表 | `GOATS_OPTION_CLOSING_OUT_CONTRACT_QUERY` | Goats 直调 |
@@ -301,7 +313,7 @@ Java DTO 对 `messageId`、`conversationId` 要求非空，对 `productType` 要
 真实实现 `MessageClientHttpx` 复用 `OTC_API_BASE_URL` 和 `OTC_API_SECRET`（`Authorization: Bearer ...`），
 并通过现有 `get_goats_auth_headers()` 生成 GOATS HMAC-SHA256 签名头。
 Java 当前 Controller 标注 `@PermitAll`；客户端仍沿用现有后端鉴权配置。
-默认请求超时为 30 秒，`trust_env=False`，测试可注入 `httpx.MockTransport`。
+默认请求超时取 `backend_timeout_seconds`（5 秒），`trust_env=False`，测试可注入 `httpx.MockTransport`。
 
 - 仅超时、连接失败及 HTTP 5xx：间隔 100ms 重试一次，总计最多两次请求，重试发送同一请求体并重新生成签名。
 - HTTP 4xx（包括 429）、重定向、其他传输错误、业务非零码和无效响应：立即失败，不重试。
@@ -325,9 +337,17 @@ FastAPI lifespan 显式注入 `MessageClientHttpx`，保证真实 HTTP 入口每
 ```
 
 该响应不含正常 `answer` 或 Dify 成功响应数据。图执行失败且无可返回回复时也返回 502。
-全链路超过请求预算返回 504，`code=workflow_timeout`；启用幂等时保存完整响应供同一消息回放，
-不自动再次执行结果不确定的写入。默认 LLM/工具/请求预算为 20/5/60 秒，预留 5 秒完成响应落库；
+当前全链路超过请求预算返回 504，`code=workflow_timeout`，响应带 `idempotency_status=uncertain`。
+启用请求幂等时，图内超时路径尝试保存 504 快照；最外层超时或快照写库失败可能只留下占位，
+不能保证完整响应已经保存。已有快照（含失败）优先回放；无快照的占位返回处理中或待核对提示，
+同一消息不重新执行。默认 LLM/工具/请求预算为 20/5/60 秒，当前预留 5 秒收尾（包括快照写入）；
 请求预算最大 80 秒，早于 Java 的 90 秒。
+
+[ADR 0026](../adr/0026-request-idempotency-uncertain-receipts-reconciliation.md) 已采纳调用端管理消息防重、
+重投和重复通知的职责规范；LangGraph 应每次合法调用独立处理，Java 负责交易执行幂等。
+当前代码仍有上述占位和回放，以及 `retry_origin=XBOT_GET_DIFY_FAIL`、非快速询价且 `api_code=900`
+时的静默回复投影；新调用与回放都会应用该投影。代码清理与 wire 字段调整见 [工作计划](../work-plan.md)，
+本轮规范修订不改变现行 HTTP 响应、Java 配置或 DTO。
 
 入口仍为 `/v1/workflows/run`，支持顶层 `query` 和 `files`，原有 inputs 原文优先；附件冲突为 422。
 正常响应保留 `workflow_run_id/task_id/conversationId/answer/data`，同时返回
@@ -338,18 +358,26 @@ FastAPI lifespan 显式注入 `MessageClientHttpx`，保证真实 HTTP 入口每
 
 ## 7. 其他
 
-- 精度纪律：金额字段一律 `Decimal`，向 Goats 发送前 `truncate(2)`（对齐 `TradePrecisionUtil.truncateOrderScale()`）
+- Java 侧金额精度以其 DTO 与 `TradePrecisionUtil.truncateOrderScale()` 为准。LangGraph 按 ADR 0027 的目标不自行计算或截断业务数值；当前 Python DTO / 归一化仍有旧处理，迁移需核对字段类型与出站值，不能仅改文档就把不兼容原文写入 DTO。
 - 认证：所有 `@PlatformApiAuth` 接口走平台级 token，不依赖用户登录
 - LangGraph tools 层调用时机器人参数（`messageId / conversationId / userId / roomId / ...`）由入口从 Workflow Run inputs 解析后存入 AgentState，再由具体节点透传给 Java 业务 API
 
-## LangGraph 侧客户端
+## LangGraph 出站后端 API 清单
 
-| 客户端 | 对应接口 |
-|---|---|
-| `OptionClient`（`app/tools/option_client.py`） | `POST /admin-api/financial-orders/operate`（type 字段驱动期权各意图）、`POST /admin-api/financial-orders/query-close-orders` |
-| `SwapClient`（`app/tools/swap_client.py`） | `POST /admin-api/swap-order/operate`（type 字段驱动互换各意图）、订单详情与会话订单列表查询 |
-| `MessageClient`（`app/tools/message_client.py`） | `POST /admin-api/openapi/xbot/message/set-intent`，每轮回复前写回会话 ID 和意图（见 §6） |
-| `GoatsAgentClient`（`app/tools/goats_agent_client.py`） | GOATS `/api/internal/agent/*`（快速询价解析与存量兼容） |
-| `TickerClient`（`app/tools/ticker_client.py`） | 交易对手列表等查询；交易链路不调用，仅供本地验收脚本使用（ADR 0025） |
+以下为截至 2026-09-24 应用客户端及后端健康检查的完整固定业务路径，真源为 `app/tools/*_client.py` 与 `app/observability/health_probes.py`。URL 使用配置的服务基址；本表不包括模型、Langfuse、附件下载或 Java 内部调用。独立运维脚本的 GOATS 专项探针另见 `scripts/probe_goats/README.md`，不代表业务图新增出站路径。
+
+| HTTP 方法与路径 | 客户端 / 调用方 | 用途 |
+|---|---|---|
+| `POST /admin-api/financial-orders/operate` | `OptionClient` | 期权 / 平仓动作，按现有 type 与 DTO |
+| `POST /admin-api/financial-orders/query-close-orders` | `OptionClient` | 平仓订单查询 |
+| `POST /admin-api/swap-order/operate` | `SwapClient` | 互换动作 |
+| `GET /admin-api/swap-order/get?orderId=...` | `SwapClient` | 互换订单详情 |
+| `POST /admin-api/swap-order/get-conversation-orders` | `SwapClient` | 会话订单列表 |
+| `POST /admin-api/openapi/xbot/message/set-intent` | `MessageClient` | 消息会话 ID 与意图写回 |
+| `GET /admin-api/counterparty/info/list` | `TickerClient` / `probe_backend` | 本地授权对手查询 / 后端健康检查；交易子图不使用 TickerClient |
+| `POST /api/internal/agent/option_rfq_instrument_parser` | `GoatsAgentClient` | 快速询价入口解析 |
+| `POST /api/internal/agent/instruction/query` | `GoatsAgentClient` | 存量指令兼容查询 |
+
+`app/tools/ticker_client.py` 保留，但证券查询接口 `GET /admin-api/integration/securities-instrument/select` 不属于允许的出站路径：本地业务、测试、验收与探针一律不调用。后端内部参考契约的保留不授予本地调用权限。
 
 Protocol 按 Java 真实 endpoint 边界拆分（期权、互换各一个聚合操作接口），Pydantic 模型与 Java DTO 一一对应（ADR 0001 D2）。

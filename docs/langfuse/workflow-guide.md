@@ -2,6 +2,8 @@
 
 本文说明 `aigc-langgraph` 如何使用 Langfuse 管理黄金数据集、执行评测、自动打分，以及从失败用例追踪到 LangGraph 节点。
 
+> 2026-09-24 决策更新：按 [ADR 0005](../adr/0005-annotation-roles-judge-plus-business-spotcheck.md)，意图 / 业务 / 节点批量评分统一使用确定性断言，不调用 LLM Judge。当前脚本尚有旧默认路径，业务集命令须显式 `--no-judge`；下文旧 Judge 字段仅用于理解现存记录，不能作为新验收依据。节点回归逐步接入 Dataset / Experiment / Score，迁移与评分覆盖见[工作计划](../work-plan.md)。
+
 ## 1. 功能入口
 
 | 功能 | 用途 |
@@ -231,19 +233,16 @@ Score Config 只定义评分口径，不会创建 Annotation Queue、分配人�
 
 ```powershell
 # 预览用例
-python scripts/langfuse/langfuse_eval.py --dataset golden_option_inquiry_case --ids case-022 --concurrency 1 --dry-run
+python scripts/langfuse/langfuse_eval.py --dataset golden_option_inquiry_case --ids case-022 --concurrency 1 --dry-run --no-judge
 
-# 正式执行
-python scripts/langfuse/langfuse_eval.py --dataset golden_option_inquiry_case --ids case-022 --concurrency 1
-
-# 不运行 LLM Judge，仅执行 Experiment；Online Evaluation Rules 仍会异步评分
+# 正式执行，不运行 LLM Judge；Online Code Evaluation Rules 仍会异步评分
 python scripts/langfuse/langfuse_eval.py --dataset golden_option_inquiry_case --ids case-022 --concurrency 1 --no-judge
 ```
 
 不传 `--ids` 时执行 Dataset 中的全部 Item：
 
 ```powershell
-python scripts/langfuse/langfuse_eval.py --dataset golden_option_inquiry_case --concurrency 1
+python scripts/langfuse/langfuse_eval.py --dataset golden_option_inquiry_case --concurrency 1 --no-judge
 ```
 
 常用参数：
@@ -263,7 +262,7 @@ python scripts/langfuse/langfuse_eval.py --dataset golden_option_inquiry_case --
 
 执行后：
 
-- 默认由 `judge_by_deepseek` 产生 `otc-option-judge` Score；指定 `--no-judge` 时不注册该 Evaluator。
+- 按当前规范显式 `--no-judge`，不注册 `judge_by_deepseek`。脚本的旧默认值尚未删除，不能据此继续用 Judge 验收。
 - Online Evaluation Rules 异步产生三个文本断言 Score。
 - 业务人员可补充 `human_business_verdict`，不会覆盖自动 Score。
 
@@ -366,7 +365,7 @@ Online Evaluator 异步执行，Experiment 完成后 Score 可能稍后显示。
 | 运行方式 | 冻结用例只跑意图子链（`harness/intent_runner.py`），不调后端；回放用例走主图 + `mock_api`（`metadata.backend=mock`） | 真后端 / staging |
 | Dataset 命名 | `intent_<文件名>`（历史 `intent-` 仍识别） | 与 JSONL 文件名相同，不含 `.jsonl`（如 `golden_option_close_case`） |
 | 自动评分 | `det_intent_match_pass`（`harness/evaluators/intent_match.py`）+ 标的识别子集 `det_instrument_match_pass`（`harness/evaluators/instrument_match.py`） | `det_required_text_pass` / `det_required_any_text_pass` / `det_forbidden_text_pass` + `otc-option-judge` |
-| LLM Judge | 不跑（脚本强制 `no-judge`） | 跑 |
+| LLM Judge | 不跑（脚本强制 `no-judge`） | 不跑（迁移期显式 `--no-judge`，旧默认路径待清理） |
 | Trace tags | `eval, intent` | `eval, business` |
 
 `upload_evaluators.py` 按套件绑定 Rule：`--dataset-name intent_swap_instrument` 创建意图集 Rule；`intent-` 历史命名仍识别。`--dataset-name golden_*` 按业务集绑定文本断言 Rule。
@@ -400,7 +399,7 @@ python scripts/derive_instrument_fixtures.py --dry-run --ignore-token "11125测�
 python scripts/derive_instrument_fixtures.py --only-reviewed --ignore-token "…" --out tests/fixtures/intent/swap_instrument.jsonl
 python scripts/langfuse/upload_golden_to_langfuse.py --sync-all
 python scripts/langfuse/upload_evaluators.py --dataset-name intent_swap_instrument --apply   # 绑 intent_match + instrument_match
-python scripts/langfuse/langfuse_eval.py --dataset intent_swap_instrument --concurrency 3
+python scripts/langfuse/langfuse_eval.py --dataset intent_swap_instrument --concurrency 3 --no-judge
 ```
 
 抽取规则与人工复核口径见 `tests/fixtures/intent/README.md`；`reference.backend_codes` 保留后端码仅供核对。
@@ -411,13 +410,13 @@ python scripts/langfuse/langfuse_eval.py --dataset intent_swap_instrument --conc
 # 意图集：冻结用例只需 LLM 网关；含回放用例时先起 mock_api，并以 OTC_API_BASE_URL 指向它
 python scripts/langfuse/upload_golden_to_langfuse.py --sync-all
 python scripts/langfuse/upload_evaluators.py --dataset-name intent_option_close --apply
-python scripts/langfuse/langfuse_eval.py --dataset intent_option_close --concurrency 3
+python scripts/langfuse/langfuse_eval.py --dataset intent_option_close --concurrency 3 --no-judge
 # 本地不上传：路径含 intent/ 自动判定套件
-python scripts/langfuse/langfuse_eval.py --local tests/fixtures/intent --concurrency 3
+python scripts/langfuse/langfuse_eval.py --local tests/fixtures/intent --concurrency 3 --no-judge
 
 # 业务集：真后端 / staging，写类流程串行
 python scripts/langfuse/upload_evaluators.py --dataset-name swap_prod_data --apply
-python scripts/langfuse/langfuse_eval.py --dataset swap_prod_data --concurrency 1
+python scripts/langfuse/langfuse_eval.py --dataset swap_prod_data --concurrency 1 --no-judge
 ```
 
 意图集 Experiment 命名为 `intent-eval-YYYYMMDD-HHMMSS`，业务集沿用 `option-eval-YYYYMMDD-HHMMSS`。
@@ -440,8 +439,8 @@ python scripts/langfuse/langfuse_eval.py --dataset swap_prod_data --concurrency 
 - 业务集（`categories/`）依赖 Java 后端与授权账号，只在开发 / staging 环境用 `--dataset business-*` 或
   `scripts/local_eval.py` 跑，不进 CI；依赖矩阵见 `docs/testing/README.md` §一a
 
-### 显式选择 Judge 调用入口
+### 旧 Judge 调用入口（兼容实现待退役）
 
-默认 `EVAL_JUDGE_PROVIDER=anthropic` 保留既有 Anthropic 兼容入口和凭证。若团队只提供已验证的 OpenAI 兼容模型网关，可显式设置 `EVAL_JUDGE_PROVIDER=standard`，使用 `QWEN_API_BASE`、`QWEN_API_KEY`、`QWEN_MODEL_STANDARD` 和同一 Judge 提示词，通过结构化输出返回评分。不会在鉴权或网络失败后自动切换入口；无效配置直接报错。标准入口的 Score metadata 记录 provider，报告应同时记录实际模型。Judge 结果用于业务评估，不能替代确定性断言、HTTP 写回与真实交易状态验收。
+默认 `EVAL_JUDGE_PROVIDER=anthropic` 保留既有 Anthropic 兼容入口和凭证。若团队只提供已验证的 OpenAI 兼容模型网关，可显式设置 `EVAL_JUDGE_PROVIDER=standard`，使用 `QWEN_API_BASE`、`QWEN_API_KEY`、`QWEN_MODEL_STANDARD` 和同一 Judge 提示词，通过结构化输出返回评分。不会在鉴权或网络失败后自动切换入口；无效配置直接报错。标准入口的 Score metadata 记录 provider，报告应同时记录实际模型。以上只说明现存兼容实现；按 ADR 0005 不再用于批量评分或验收，运行时移除见工作计划。确定性断言、HTTP 写回与真实交易状态仍分别验收。
 
 意图数据集的 `metadata.evaluator_names` 来自实际断言：普通意图只绑定 `intent-match`；标的集另绑 `instrument-match`；明确拒绝集另绑 `rejection-match`。不要将不适用的评分器绑定到整个项目。上传器使用数据集命名空间生成稳定 Item ID，原始案例 ID 保留在 metadata，防止不同数据集相互覆盖。

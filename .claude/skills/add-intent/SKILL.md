@@ -8,7 +8,7 @@ allowed-tools: Read, Write, Edit, Glob, Grep, Bash
 # 新增一个业务意图
 
 归属判定与执行清单以 [ADR 0007](../../../docs/adr/0007-subgraph-vs-intent-scope-rule.md) 为准；节点写法以
-`.claude/rules/langgraph-patterns.md` 与 `.claude/rules/prompt-management.md` 为准。新增意图遵守 [ADR 0031](../../../docs/adr/0031-single-model-request-per-message.md) 的每消息一次模型请求上限，现有链路迁移见工作计划。本 skill 只给停顿点和改动清单。
+`.claude/rules/langgraph-patterns.md` 与 `.claude/rules/prompt-management.md` 为准。新增意图遵守 [ADR 0031](../../../docs/adr/0031-single-model-request-per-message.md) 的单次工具调用最多一次模型请求上限，现有链路迁移见工作计划。本 skill 只给停顿点和改动清单。
 
 ## 参数
 - `$1` = 产品类型：swap / option / close（close 子图的提示词目录是 `app/prompts/option_close/`）
@@ -25,7 +25,7 @@ allowed-tools: Read, Write, Edit, Glob, Grep, Bash
 1. 业务含义与典型原话？
 2. 对应后端 API 与 `type` 值是否已存在（对照 `docs/api-contracts/java-backend.md`）？
 3. 要提取哪些字段？哪些能用正则 / 枚举 / 规则确定（归 Code），哪些必须 LLM 抽原文候选？
-4. 是写动作吗？写动作走文本二阶段确认（ADR 0021），范围校验由 `app/domain/confirmation.py` 执行
+4. 本次动作对应哪个 Java type / DTO？按 ADR 0021 单次识别提交，不在 LangGraph 强制二阶段或自动提升为确认；LangGraph 识别动作、订单号及本次适用的显式参数，引用范围由 `app/domain/confirmation.py` 校验，订单数据与业务状态由 Java 管理
 
 等用户回答后再继续。
 
@@ -35,8 +35,9 @@ allowed-tools: Read, Write, Edit, Glob, Grep, Bash
 
 ### Step 4：参数节点
 - 能由 Code 确定的字段：`@safe_node` 纯计算节点
-- 需要 LLM 的字段纳入本轮唯一联合解析：`PromptSpec` + 原文候选契约 + `@safe_node`，零重试；不得在意图分类后增加参数模型请求。最终值由 Code 归一化节点决定
+- 需要 LLM 的字段纳入本轮唯一联合解析：`PromptSpec` + 原文候选契约 + `@safe_node`，零重试；不得在意图分类后增加参数模型请求。提取值保留来源，业务值交 Java 校验；不增加 Code 业务归一化或数字校验（ADR 0027）
 - 写后端的节点用 `@safe_node`，绝不自动重试；后端响应如实透传
+- 确认意图按 ADR 0021 提取订单号和适用的显式增量参数，已有订单字段由 Java 获取，不依赖本地待确认订单；现有确认参数收敛待办见 `docs/work-plan.md`
 
 ### Step 5：接路由与登记
 - `graph.py`：在 `_INTENT_TO_NODE` 登记新意图 → 节点（条件边由 `app/subgraphs/common.py` 的 `add_intent_dispatch` 自动生成；漏登记会静默走 unknown 兜底），加节点与汇合边
@@ -60,7 +61,7 @@ python scripts/check_fixture_consistency.py
 ### Step 8：交付清单
 - [ ] `models.py`：`<Product>IntentType` + 输出模型字段说明
 - [ ] 联合解析提示词 + 产品/意图/候选契约，`prompt(<scope>)` commit
-- [ ] 参数节点（Code / 候选 + 归一化）
+- [ ] 参数节点（结构 / 来源 / 引用范围与接口装配）
 - [ ] `graph.py`：`_INTENT_TO_NODE` + 节点 + 边
 - [ ] `catalog.py` + `node_labels.py` 登记
 - [ ] 测试 + categories ≥ 2 条 + 意图集标签

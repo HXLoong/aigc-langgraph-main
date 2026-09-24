@@ -44,6 +44,10 @@ for target in (
   ```
 - **后端调用**：单元测试 mock Client Protocol 的使用点；集成测试走 `mock_api`（`tests/integration/`，ASGITransport 内存直连）；真后端联调只用 `scripts/probe_*.py`，不进 pytest
 
+## 评分口径
+
+数据集批量评分只使用确定性断言（ADR 0005），不调用 LLM Judge；旧脚本路径待迁移时显式传 `--no-judge`，关闭 Judge 不代表字段断言覆盖已经完整。平台回归逐步接入 Langfuse Dataset / Experiment / Score，harness 与本地 CLI 共用同一比较逻辑（ADR 0029）。
+
 ## Golden Set
 
 - 所有新增意图必须在 `tests/fixtures/categories/` 加至少 2 条用例，并在 `tests/fixtures/intent/` 补逐轮意图标签（`scripts/check_fixture_consistency.py` 校验一致性）

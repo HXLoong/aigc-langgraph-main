@@ -1,7 +1,7 @@
 # ADR 0029 · 节点级调试接口与节点回归工作台（含私有工具 HTTP 录放）
 
-- 状态：已采纳（追认，落地 commit `e1f373e` / `4f6173a` / `b7915e8`）
-- 日期：2026-09-22
+- 状态：已采纳（节点执行能力已建成，Langfuse 回归闭环待迁移）
+- 日期：2026-09-24
 - 关系：在 [ADR 0024](./0024-langgraph-native-rearchitecture.md) D6 全链路评测门之下增加节点层；沿用 [ADR 0002](./0002-comprehensive-runtime-harness.md)
 - 使用指南：[docs/development/nodes-run.md](../development/nodes-run.md)
 - 作者：图灵科技 + Tony
@@ -28,13 +28,33 @@
 
 - 本地直调（`harness/node_runner.py`）或 `--transport http`（依次调 `/v1/nodes/prepare` 与 `/v1/nodes/run`，HTTP 模式不支持 `--mock`）；两种模式与 `harness run` 复用同一 `differ` 字段级 diff 与 JSON 报告。
 - `--mock` 使用 `harness/node_mocks.py` 的显式外部依赖 mock（当前试点 `swap_place_order`），不在业务代码内置任何"备用实现"开关（CLAUDE.md 禁止项）。
-- 节点回归**不替代**全链路 categories 回归与 LLM Judge（`scripts/langfuse/langfuse_eval.py`）；golden gate 仍是 `harness run`。
+- 节点回归与全链路 categories 回归保持不同覆盖范围，均按确定性断言评分，不调用 LLM Judge（ADR 0005）；Langfuse Experiment 记录回归，统一放行门见 ADR 0030。
 
 ### D4 · 私有工具 HTTP 录制与严格回放（`harness/http_tape.py`）
 
 - 录制对象限私有业务工具 HTTP（operate / GOATS 等）；匹配 method、URL、身份头与去凭据后的 body；同一请求多次出现时按派发顺序回放。
 - 回放**没有网络回退**：无匹配录音抛 `TapeMissError`，不会把请求放行到真实后端；不完整或不支持的录音抛 `TapeFormatError`。
 - 模型 HTTP、数据库访问、附件下载不在录放范围。
+
+### D5 · 逐步迁移到 Langfuse 回归闭环
+
+```mermaid
+flowchart TD
+    A["Trace / Observation"] --> B["业务方复核输入与期望"]
+    B --> C["Dataset Item：稳定 ID 与版本"]
+    C --> D["Experiment：执行节点或全链路"]
+    D --> E["代码断言：Scores 与字段差异"]
+    E --> F["复核错例并修复"]
+    F --> D
+```
+
+- Langfuse 管理 Dataset、Experiment、Score、Trace 与人工标注关联；harness 提供执行器、稳定字段契约、确定性比较和失败退出码，CLI 保留用于本地复现。
+- 迁移期以已审阅的 git fixture 为基线，按稳定 case ID、套件与版本单向同步到 Dataset。平台采集的新标注先导出并经业务复核后合入 fixture，再发布为下一版数据集；不做双向自动覆盖，也不维护两套不同断言。
+- 逐节点迁移：先定义可回放输入与稳定期望，再关联来源 observation、记录 Experiment 与确定性 Scores，最后用同批输入比对本地与平台的字段差异和 PASS / FAIL。迁移通过前保留既有本地回归能力。
+- 写副作用的节点仍仅留存标注，自动节点回放显示 SKIP；平台接入不能绕过此限制。依赖真实 Java 的全链路业务验收继续由主代理在授权环境执行。
+- 回归结果须带数据集版本、代码版本、模型标识、执行模式、断言版本与 trace 关联；失败回到人工复核和修复后重跑，不能通过修改 expected 来掩盖实现错误。
+
+上述设计使用 Langfuse [Datasets](https://langfuse.com/docs/evaluation/experiments/datasets) 与 [Scores](https://langfuse.com/docs/evaluation/evaluation-methods/scores-via-sdk) 关联能力，不依赖 LLM Judge。项目既有 SDK / 自托管部署版本保持不变，实际接入前核对已安装版本能力；本决策不安排平台升级。
 
 ## 备选方案
 
@@ -46,7 +66,7 @@
 
 - 正面：单节点改动秒级回归；业务方可在工作台上标注正确输出；真实后端交互可录制后离线严格回放。
 - 负面：节点 fixture 与代码演进之间需要漂移守护（字段改名、节点拆分时 fixture 失效）；tape 中可能残留业务敏感数据，入库前须脱敏审查；`/v1/nodes/run` 在真实后端上是带副作用的调试面，须限制暴露。
-- 未决：`/v1/nodes/*` 的鉴权与生产环境是否挂载；fixture 漂移的 CI 守护；tape 文件的存放与保留策略。
+- 迁移尚未完成，执行器、数据集同步、Scores 一致性及 fixture 漂移守护的待办见[工作计划](../work-plan.md)。`/v1/nodes/*` 的生产暴露与 tape 保留策略仍须按部署边界核对。
 
 ## 关联
 

@@ -41,7 +41,7 @@ _Avoid_: 测试用例（太泛）、fixture（语义不准）、anchor case（�
 _Avoid_: A/B test（语义不准，不涉及流量切分）；ground truth 验证（Dify 不是 ground truth）
 
 **Ground truth（合格性判定标准）**：
-Golden case 的 expected 字段。LangGraph 输出与 expected 一致 = PASS；不一致 = FAIL。评测门基于 PASS 率（ADR 0030 D3），不基于 shadow diff 率。
+Golden case 的 expected 字段及业务方确认的文本要求。确定性断言比较实际输出并记录 PASS / FAIL 与字段差异；缺少必要期望不能判 PASS。评分不调用 LLM Judge，业务争议交人工复核（ADR 0005 / 0030）。
 _Avoid_: 拿 Dify 输出当 ground truth（Dify 是参考竞品而非真理）
 
 **节点（Node）**：
@@ -71,7 +71,7 @@ _Avoid_: 将产品分类或已退出的多指令编排称为额外的一级入�
 _Avoid_: 将多个订单等同于多个动作；识别到订单就视为交易已确认或已完成
 
 **标的（Ticker / Instrument）**：
-交易指令指向的证券、基金、期货等交易对象。输入表达可以是用户原始名称、代码或月份描述，标准代码及可交易性由 Java 权威识别。用户原文与引用候选选择本身不等于 GOATS 已验证的标的。
+交易指令指向的证券、基金、期货等交易对象。名称、代码或月份描述是标的表达；表达对应的真实标的需经过识别，是否可交易需经过业务校验。
 _Avoid_: stock（仅指股票）、symbol（不准确）、underlying（仅期权语境）
 
 **标的表达**：
@@ -79,12 +79,12 @@ _Avoid_: stock（仅指股票）、symbol（不准确）、underlying（仅期�
 _Avoid_: 把提取到的名称或引用候选直接当作后端已校验结果
 
 **确认动作（expected_action）**：
-写动作二次确认时期望用户确认的动作，写入 AgentState 顶层 `expected_action`（`place` / `modify` / `cancel` / `inquiry` / `close`，ADR 0024 D2）。互换的确认由同一个 `swap_confirm` 节点处理下单 / 撤单 / 改单三种动作，动作由 intent 推导（`_expected_action`）。
-_Avoid_: 三个独立的"确认下单 / 确认撤单 / 确认改单"节点（已合并）
+本次指令对应的业务动作，如下单、撤单、改单或平仓；由 LangGraph 识别并传递给 Java。动作标签描述用户意图，不代表订单已经确认或执行成功；订单状态由 Java 管理（ADR 0021）。
+_Avoid_: 把动作标签当作待确认订单状态或交易成功凭据
 
-**文本二阶段确认**：
-写动作先回复待确认卡片，用户下一条消息明确确认具体动作并引用当前订单后才提交（ADR 0021）。七条最终确认路径的范围校验统一在 `app/domain/confirmation.py`；`last_confirmed_params` 只作上下文，不能替代用户引用。
-_Avoid_: interrupt 确认（已不用）、把历史记忆里的订单当作本轮确认对象
+**单次指令处理 / 确认类指令**：
+LangGraph 每次只识别并提交用户本次动作；是否需要后续业务步骤由 Java 决定。用户明确发送的确认类指令是独立动作，不要求所有交易先走本地申请和等待确认流程（ADR 0021）。
+_Avoid_: LangGraph 强制二阶段、自动把普通动作提升为确认、把历史记忆代替本次选择
 
 **快速询价 / 存量指令**：
 入口路由的两个前置分支。快速询价由请求标志 `fast_query=1` 决定，走 GOATS 解析后以 `optionRfq` 提交；存量指令走 GOATS `instruction/query` 做存量兼容查询。文本里出现"雪球""快速询价"等词不改变入口。
@@ -95,12 +95,20 @@ _Avoid_: 按关键词判断是否快速询价
 _Avoid_: 客户（太泛）、用户（指发消息的人）
 
 **字段证据 / 字段锁定**：
-模型只产原文候选（`FieldCandidate`，含 evidence / confidence / source），Code 归一化后记为 `FieldRecord` 并按来源锁定；交易最终值不由模型直接决定（ADR 0027，`app/extraction/`）。
+提取值与原始表达、引用和附件位置的关联，以及同次指令内防止被选字段或订单静默覆盖的约束。来源可信不等于业务值有效；业务值与默认值由 Java 校验和处理，LangGraph 不承担业务归一化和数字校验（ADR 0027，旧代码待迁移）。
 _Avoid_: 让模型直接输出最终下单参数
 
-**请求幂等 / 不确定回执 / 对账**：
-同一 `message_id` 的请求只执行一次；写后端超时等无法确认结果时记为不确定回执，由运维对账核实 Java 原始回复后落库，写接口绝不自动重试（ADR 0026，`app/api/idempotency.py` / `reconciliation.py`）。
-_Avoid_: 超时后重发写请求、把不确定结果当失败或成功
+**消息 / 工具调用**：
+消息是用户发送的一条指令；工具调用是调用端为处理该指令发起的一次 LangGraph 执行。同一消息可以由调用端多次调用，每次独立计算模型额度；消息标识用于关联这些调用，不代表 LangGraph 只处理一次（ADR 0026 / 0031）。
+_Avoid_: 把消息标识等同于单次调用标识、把内部重试当作新调用
+
+**消息防重 / 交易幂等**：
+消息防重是调用端对重复投递、并发处理和通知的控制；交易幂等是 Java 业务端保证重复业务请求不造成重复交易的职责。LangGraph 返回本次调用结果，不承担跨调用防重或结果回放（ADR 0026）。
+_Avoid_: 把短期防重锁等同于交易执行幂等、让工具替调用端裁决是否重投
+
+**不确定回执 / 对账**：
+不确定回执表示无法确认本次交易执行结果，不代表成功或失败；对账是调用端及 Java 业务端核对请求与权威回执、确认结果的过程。LangGraph 提供本次调用的审计证据（ADR 0026）。
+_Avoid_: 把不确定回执当成消息锁、把缺少回执当成未执行的证明
 
 **业务拒绝（REJECTED）**：
 后端或业务规则如实拒绝了指令（如数量非正、无权限）。评测里单独成桶，不计入 PASS 也不算代码 FAIL（ADR 0024 D6）。
@@ -111,7 +119,7 @@ _Avoid_: 把拒绝改写成成功卡片，或把拒绝当作 LangGraph 缺陷
 _Avoid_: 把意图集与依赖 Java 的业务验收集混跑
 
 **节点级 fixture**：
-单个节点的输入 State 与期望输出，由 `python -m harness node-run` 回放；带写副作用的节点只留标注、不回放（ADR 0029）。
+单个节点的输入与稳定期望，作为本地复现及 Langfuse 节点回归的数据基线。逐步以 Dataset / Experiment / Score 关联来源和结果；带写副作用的节点只留标注、不自动回放（ADR 0029）。
 _Avoid_: 用节点 fixture 代替端到端业务验收
 
 ### 运维与评测术语
@@ -134,6 +142,6 @@ _Avoid_: "按流量百分比分发"（企微不支持单群内流量分流）、
 - 一份 **Golden case** 既被 **Harness** 用作回归基线，也可被 **Shadow compare** 用作双跑输入
 - **Harness** 的失败报告会指向具体的 **节点（Node）**，让 AI 工具知道改哪里
 - 用户原话先经 **入口路由** 分流；LLM 指令分支内按 **product_type** 和 **意图（Intent）** 处理
-- LangGraph 保留 **标的** 原文及用户引用选择，Java 负责权威识别与校验；空 `tickers` 兼容字段不表示零命中，原文不标记为 `from_goats=True`。职责见 [标的识别后端边界](docs/architecture/backend-instrument-boundary.md)
+- LangGraph 提取 **标的表达** 或用户对引用候选的明确选择，Java 调用对应的标的识别工作流并完成业务校验；提取与选择本身不代表识别成功。职责与接口兼容说明见 [标的识别后端边界](docs/architecture/backend-instrument-boundary.md)
 - LangGraph 经 `app/tools/` 的 Client Protocol 调用外部系统：OptionClient / SwapClient（Java 业务）、MessageClient（意图写回）、GoatsAgentClient（快速询价 / 存量指令）；TickerClient 只供本地验收脚本拉授权对手列表。Java 契约见 `docs/api-contracts/java-backend.md`
 - 业务卡片与订单执行结果来自 Java 后端，原始回执是业务核查依据。

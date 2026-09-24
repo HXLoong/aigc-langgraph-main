@@ -17,13 +17,11 @@
 
 ### D2 · 工具层按 Java 真实 endpoint 拆分 Protocol
 
-| Protocol | 覆盖范围 | 后端 endpoint |
-|---|---|---|
-| `OptionClient`（`app/tools/option_client.py`） | 期权全流程 | `POST /financial-orders/operate` 等 |
-| `SwapClient`（`app/tools/swap_client.py`） | 互换全流程 | `POST /swap-order/operate` 等 |
-| `TickerClient`（`app/tools/ticker_client.py`） | 授权交易对手列表（仅本地验收脚本使用，交易链路不调用，见 ADR 0025） | `GET /securities-instrument/select` 等 |
+后端调用清单的唯一维护处为 [Java / GOATS 出站 API 清单](../api-contracts/java-backend.md#langgraph-出站后端-api-清单)，列出完整 HTTP 方法、路径、客户端和用途，区分业务调用与本地验收 / 健康检查。调用方依赖 OptionClient、SwapClient、MessageClient、GoatsAgentClient 的 Protocol。
 
-纪律：入参出参用 Pydantic 模型并严格匹配 Java DTO 字段名；枚举用 `Literal` 约束；金额用 `Decimal`；调用方只依赖 Protocol；业务代码禁止直接 `httpx.AsyncClient` 调后端。契约详见 `docs/api-contracts/java-backend.md`。
+`TickerClient`（`app/tools/ticker_client.py`）保留用于授权交易对手列表查询，不提供 LangGraph 标的识别职责。`GET /admin-api/integration/securities-instrument/select`（简称 `/securities-instrument/select`）禁止被任何 LangGraph 本地流程调用，包括业务链、测试、验收脚本和探针；标的识别由 Java 内部工作流完成（ADR 0025）。
+
+入参出参匹配 Java DTO 字段名，保留结构类型约束；业务归一化与数字校验按 ADR 0027 交由 Java。节点不直接创建 `httpx.AsyncClient` 调后端，统一经 Client Protocol 与连接池。
 
 ### D3 · 对 Java 暴露 Dify 兼容协议
 
@@ -31,11 +29,11 @@
 
 ### D4 · 标的识别归 Java 后端
 
-LangGraph 只提取证券表达原文，识别与校验由 Java 调标的工具完成（[ADR 0025](./0025-instrument-resolution-delegated-to-backend.md)）。
+LangGraph 提取标的原始表达或用户对引用候选的明确选择，通过业务接口提交；Java 调用对应的标的识别工作流并完成业务校验（[ADR 0025](./0025-instrument-resolution-delegated-to-backend.md)）。
 
 ### D5 · 节点策略：一次解析，确定性处理分层
 
-每条消息全链路最多一次模型请求，产品、意图与必要候选共用一次解析结果（[ADR 0031](./0031-single-model-request-per-message.md)，目标规范已采纳，代码待重构）。产品子图、字段证据校验、归一化、确认及后端执行保持独立职责，只做订单号提取的步骤继续由代码处理。
+每次工具调用全链路最多一次模型请求，产品、意图与必要候选共用一次解析结果（[ADR 0031](./0031-single-model-request-per-message.md)，目标规范已采纳，代码待重构）。产品子图、结构与来源检查、引用选择及后端执行保持独立职责，只做订单号提取的步骤继续由代码处理。
 
 用 PromptSpec、按产品与意图组织的输出契约和数据集回归控制联合解析复杂度；业务节点数量不作为模型请求次数的替代指标。
 
