@@ -9,7 +9,7 @@
 
 | 脚本 | 用途 |
 |---|---|
-| `local_eval.py` | 本地 HTTP 业务回归（显式 `tests/fixtures/categories`，真 Java 后端）|
+| `local_eval.py` | 本地 HTTP 业务回归（显式 `tests/fixtures/biz`，真 Java 后端）|
 | `langfuse/langfuse_eval.py` | 数据集评估：DeepSeek Judge + per-turn JSON → Langfuse；`--local tests/fixtures/intent` 为 CI 意图集 |
 | `run_with_http_tape.py` | 启动本地应用并录制 / 回放工具层 HTTP（节点回归，ADR 0029）|
 
@@ -52,7 +52,7 @@
 | 脚本 | 用途 |
 |---|---|
 | `check_alert_threshold_consistency.py` | 告警阈值一致性 lint |
-| `check_fixture_consistency.py` | fixture 一致性 lint（categories 业务集 + intent 意图集 + unified）|
+| `check_fixture_consistency.py` | fixture 一致性 lint（biz 业务集 + intent 意图集 + unified）|
 | `check_adr_refs.py` | ADR 互引虚悬 + 代码路径与 Markdown 链接存在性 lint（跳过删除线段）|
 | `check_docs_layout.py` | docs/ 存放规则 lint：目录白名单、kebab-case 命名、带日期报告只进 `reports/`、相对链接与全仓 `docs/...` 引用有效 |
 
@@ -63,10 +63,10 @@
 | `convert_csv_to_excel.py` | CSV 测试集 → 单个 Excel 工作簿（每 CSV 一个 sheet）|
 | `convert_jsonl_to_csv.py` | JSONL 测试集 → 逐步中文 CSV（仅标准库）|
 | `convert_excel_to_jsonl.py` | 黄金 Excel → 期权/互换 JSONL；严格匹配 10/13 列表头顺序，同用例多步合并为一行，支持 `--dry-run` |
-| `convert_jsonl_to_excel.py` | categories JSONL → 黄金 Excel，便于人工查看和维护 |
-| `derive_intent_fixtures.py` | categories 业务集 → 意图集草稿（只搬 product_type/intent 标签，未标注轮标 review.pending；`--only-labeled` 写入 `tests/fixtures/intent/`）|
+| `convert_jsonl_to_excel.py` | biz JSONL → 黄金 Excel，便于人工查看和维护 |
+| `derive_intent_fixtures.py` | biz 业务集 → 意图集草稿（只搬 product_type/intent 标签，未标注轮标 review.pending；`--only-labeled` 写入 `tests/fixtures/intent/`）|
 | `derive_instrument_fixtures.py` | swap 业务集 → 标的识别意图集草稿（订单数以卡片 `标的代码` 行为准，原文表达任一候选 + 市场限定 → `expected.instruments`；`--dry-run` 出复核表，`--only-reviewed` 写入）|
-| `langfuse/upload_golden_to_langfuse.py` | 本地 categories / intent fixture → Langfuse Dataset（`--sync-all` 全量同步；`--suite` 默认按路径判定）|
+| `langfuse/upload_golden_to_langfuse.py` | 递归扫描本地 fixtures JSONL → Langfuse Dataset（`--sync-all` 按相对路径命名；`--suite` 默认按路径判定）|
 | `langfuse/upload_prompt_to_langfuse.py` | git 提示词单向推送到 Langfuse 演练区（不拉回，ADR 0014）|
 | `langfuse/upload_evaluators.py` / `langfuse/upload_score_configs.py` | 同步 Langfuse Code Evaluators 与人工标注 Score Configs |
 | `cleanup_checkpoints.py` | checkpoint 三表按线程清理（客户现场运维）|

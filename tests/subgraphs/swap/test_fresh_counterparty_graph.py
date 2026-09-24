@@ -113,7 +113,7 @@ async def test_fresh_all_holdings_reaches_backend_with_completed_counterparty(
 async def test_current_dev_case_7_broadcasts_name_to_both_orders(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    fixture = Path(__file__).resolve().parents[2] / "fixtures/categories/swap_prod_acceptance_data.jsonl"
+    fixture = Path(__file__).resolve().parents[2] / "fixtures/biz/swap_prod_acceptance.jsonl"
     original_fixture = fixture.read_bytes()
     case = next(json.loads(line) for line in original_fixture.decode("utf-8").splitlines()
                 if line.strip() and json.loads(line).get("caseNo")

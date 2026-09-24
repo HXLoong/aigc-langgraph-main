@@ -4,9 +4,9 @@
 
 | 方式 | 入口 | 执行 | 数据 |
 |---|---|---|---|
-| HTTP 回归 | `python -m harness run` | 经本地 `/v1/workflows/run` 驱动 LangGraph，与 `app/` 解耦 | `tests/fixtures/categories/`（依赖 Java） |
+| HTTP 回归 | `python -m harness run` | 经本地 `/v1/workflows/run` 驱动 LangGraph，与 `app/` 解耦 | `tests/fixtures/biz/`（依赖 Java） |
 | 意图级 | `scripts/langfuse/langfuse_eval.py --local tests/fixtures/intent` | 冻结用例进程内只跑意图子链（`intent_runner.py`）；拒绝验收（及回放）用例走主图 + `mock_api` | `tests/fixtures/intent/` |
-| 节点回归 | `python -m harness node-run` | 默认 `--transport direct` 进程内调单个节点；`http` 调 `/v1/nodes/*` | `tests/fixtures/nodes/` |
+| 节点回归 | `python -m harness node-run` | 默认 `--transport direct` 进程内调单个节点；`http` 调 `/v1/nodes/*` | 节点级 fixture 已退役（`--data` 自备目录） |
 
 ## 模块
 
@@ -30,10 +30,10 @@
 python -m harness doctor          # 环境体检（/health /ready）
 # HTTP 回归：必须提供授权测试身份（--user-id / --room-id 或 EVAL_USER_ID / EVAL_ROOM_ID），默认端口 8000
 python -m harness run --help      # --backend real|mock|dry-run、--checkpoint none|mysql、--include-unified
-python -m harness node-run --data tests/fixtures/nodes
+python -m harness node-run --data <节点 fixture 目录>
 # 调已启动后端的受保护接口（密钥只通过环境变量传入；HTTP 模式不支持 --mock）
 NODE_RUN_API_KEY='<key>' python -m harness node-run --transport http \
-  --base-url http://127.0.0.1:8000 --data tests/fixtures/nodes
+  --base-url http://127.0.0.1:8000 --data <节点 fixture 目录>
 ```
 
 节点回归：带写副作用或 fixture 里 `replay.enabled != true` 的节点显示 `SKIP`，不计入失败；

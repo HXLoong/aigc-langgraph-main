@@ -5,7 +5,7 @@ name: intent-eval
 # - 回放用例（quote_previous / {{previous_*}} 引用上一轮真实回复）：主图 + 仓库内 mock_api
 #   （GOATS 21 + Java 10 端点的假实现）在 runner 上顶替后端；多轮用例已全部冻结，拒绝验收用例仍需 mock_api
 # 评分用 harness/evaluators 的确定性评估器在本地算，不需要 Langfuse。
-# 业务集（tests/fixtures/categories/）依赖真实后端与授权账号，只在开发环境跑，绝不进这里。
+# 业务集（tests/fixtures/biz/）依赖真实后端与授权账号，只在开发环境跑，绝不进这里。
 #
 # 仅手动触发：Actions → intent-eval → Run workflow（可改 fixture / limit / fail_under）。
 # 不随 PR 自动运行——全量约 14 分钟且消耗 LLM 额度；改提示词 / 路由 / 意图节点后按需手动跑。

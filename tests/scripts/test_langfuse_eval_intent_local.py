@@ -37,7 +37,7 @@ def _instrument_case() -> GoldenCase:
 
 
 def test_dataset_shape_helpers_live_in_harness() -> None:
-    """上传脚本与本地评分共用同一份 categories 结构投影。"""
+    """上传脚本与本地评分共用同一份 biz 结构投影。"""
     case = GoldenCase(
         id="c",
         category="intent/option_close",

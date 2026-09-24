@@ -2,7 +2,7 @@
 
 设计原则：
 - 数据**接近生产**而非一两条占位（让 LangGraph 跑时拿到真实样貌）
-- 与 `tests/fixtures/categories/` 常用 case 对齐（如 700.HK / 600519.SH / OPT-LYAFT…）
+- 与 `tests/fixtures/biz/` 常用 case 对齐（如 700.HK / 600519.SH / OPT-LYAFT…）
 """
 from __future__ import annotations
 
@@ -113,7 +113,7 @@ SECURITIES_DICT: list[dict[str, Any]] = [
 # ============================================================
 
 POSITIONS: list[dict[str, Any]] = [
-    # 显式 mock 前置：categories 的平仓生命周期种子使用 OPT-AAAA1，且引用序号 1。
+    # 显式 mock 前置：biz 的平仓生命周期种子使用 OPT-AAAA1，且引用序号 1。
     # 仅此测试持仓有效；未列入 POSITIONS 的合约仍按未知合约拒绝。
     {"orderId": "CO-20260506-AAAA0001", "contractCode": "OPT-AAAA1",
      "notional": 10_000_000, "availableNotional": 10_000_000,

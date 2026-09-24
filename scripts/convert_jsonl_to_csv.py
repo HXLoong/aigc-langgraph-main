@@ -2,15 +2,15 @@
 
 用法（默认路径相对于仓库，显式参数相对于当前工作目录）：
     python scripts/convert_jsonl_to_csv.py
-    python scripts/convert_jsonl_to_csv.py --input tests/fixtures/categories/example.jsonl
-    python scripts/convert_jsonl_to_csv.py --input tests/fixtures/categories --output-dir out
+    python scripts/convert_jsonl_to_csv.py --input tests/fixtures/biz/example.jsonl
+    python scripts/convert_jsonl_to_csv.py --input tests/fixtures/biz --output-dir out
     python scripts/convert_jsonl_to_csv.py --dry-run
 
 每个 JSONL 输出一个同名 CSV，默认放在输入目录的 csv/ 下，重复执行覆盖输出。
 目录模式只扫描直接子级。空文件生成仅有表头的 CSV；空白行不作为用例。
 
 原始 Excel 的“测试数据”对应 send_text/raw_content，不等同于含操作说明的
-“操作步骤描述”。categories 的询价、开仓用例已改为场景和响应断言，部分输入
+“操作步骤描述”。biz 的询价、开仓用例已改为场景和响应断言，部分输入
 也已调整；平仓仍使用 conversation，并在 expected.output 中保留汇总预期。
 无输入的等待通知步骤可能只存在于该汇总文本中，不能按“第 N 轮”猜测拆分。
 
@@ -32,7 +32,7 @@ from pathlib import Path
 from typing import Any
 
 logger = logging.getLogger(__name__)
-DEFAULT_INPUT = Path(__file__).resolve().parents[1] / "tests" / "fixtures" / "categories"
+DEFAULT_INPUT = Path(__file__).resolve().parents[1] / "tests" / "fixtures" / "biz"
 SOURCE_PREFIX = "json/golden_case_raw/"
 CASE_COLUMNS = {
     "id": "用例ID",

@@ -6,7 +6,7 @@ from pathlib import Path
 
 from harness.scenario_inputs import resolve_order_reference
 
-DATASET = Path(__file__).resolve().parents[1] / "fixtures/categories/golden_option_close_case.jsonl"
+DATASET = Path(__file__).resolve().parents[1] / "fixtures/biz/option_close.jsonl"
 
 
 def _cases() -> dict[str, dict]:

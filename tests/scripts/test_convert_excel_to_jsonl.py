@@ -253,7 +253,7 @@ def test_dry_run_group_order_and_loader_compatibility(tmp_path: Path) -> None:
     from scripts.check_fixture_consistency import validate
 
     source = tmp_path / "input.xlsx"
-    output = tmp_path / "fixtures/categories"
+    output = tmp_path / "fixtures/biz"
     write_book(
         source,
         [

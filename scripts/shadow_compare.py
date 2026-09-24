@@ -33,7 +33,7 @@ python scripts/shadow_compare.py ... --max-cases 5
 
     {"id": "s-001", "raw_content": "600519.SH 询价 3 个月平值看涨"}
 
-注意：`tests/fixtures/categories/` 的两种方言（`send_text` / `conversation`）不是该格式，需先转换；
+注意：`tests/fixtures/biz/` 的两种方言（`send_text` / `conversation`）不是该格式，需先转换；
 灰度期直接用导出的真实流量样本。
 
 ## 响应归一化

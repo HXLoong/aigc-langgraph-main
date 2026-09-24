@@ -105,7 +105,7 @@ def test_migrated_golden_case_still_rejects_the_wrong_backend_security():
     from harness.differ import check_text_assertions
     from harness.golden import normalize_case
 
-    rows = Path("tests/fixtures/categories/golden_option_inquiry_case.jsonl").read_text().splitlines()
+    rows = Path("tests/fixtures/biz/option_inquiry.jsonl").read_text().splitlines()
     case = next(json.loads(row) for row in rows if json.loads(row).get("caseNo") == "case-021")
     turn = normalize_case(case, origin="golden_option_inquiry_case.jsonl:1").turns[0]
     reply = case["response_contains"]

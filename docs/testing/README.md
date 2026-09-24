@@ -34,7 +34,7 @@
 | 数据集 | 目录 | 外部依赖 | 在哪跑 | 评分 |
 |---|---|---|---|---|
 | **意图集**（路由 + 意图 + 标的原文提取） | `tests/fixtures/intent/` | 只有 LLM 网关；后端由仓库内 `mock_api/` 顶替，**不碰 Java / GOATS** | GitHub Actions `intent-eval`（仅手动 Run workflow）+ 本地 | `det_intent_match_pass` / `det_instrument_match_pass` 确定性评估器，本地算，不需要 Langfuse；`--fail-under` 给退出码 |
-| **业务集**（询价 / 下单 / 平仓卡片与后端联动） | `tests/fixtures/categories/`；`unified_golden.jsonl` 为显式选择的历史参考集 | Java 后端 + GOATS + 授权测试账号 / 群 / 对手 / 持仓 | **只在开发 / staging 环境**手动跑（`scripts/local_eval.py` / `langfuse_eval.py --dataset business-*`），绝不进 CI | 三个文本断言 + `otc-option-judge` Judge |
+| **业务集**（询价 / 下单 / 平仓卡片与后端联动） | `tests/fixtures/biz/` | Java 后端 + GOATS + 授权测试账号 / 群 / 对手 / 持仓 | **只在开发 / staging 环境**手动跑（`scripts/local_eval.py` / `langfuse_eval.py --dataset biz/*`），绝不进 CI | 三个文本断言 + `otc-option-judge` Judge |
 
 ```bash
 # 意图集本地（与 CI 同一条命令；终端 1 起 mock_api）
@@ -81,8 +81,8 @@ curl -X POST http://localhost:8000/v1/workflows/run \
        "response_mode": "blocking", "user": "t-1"}'
 
 # 层 4 · fixture 批量评估（DeepSeek Judge 打分）
-python scripts/langfuse/langfuse_eval.py --local tests/fixtures/categories --limit 20 --concurrency 5
-python scripts/langfuse/langfuse_eval.py --local tests/fixtures/categories --ids case-025 --no-judge  # 单 case 冒烟
+python scripts/langfuse/langfuse_eval.py --local tests/fixtures/biz --limit 20 --concurrency 5
+python scripts/langfuse/langfuse_eval.py --local tests/fixtures/biz --ids case-025 --no-judge  # 单 case 冒烟
 
 # 层 4a · 意图集（只调 LLM + mock 后端，确定性 product_type/intent 比对，不跑 Judge；见 docs/langfuse/workflow-guide.md §8）
 python scripts/langfuse/langfuse_eval.py --local tests/fixtures/intent --concurrency 3

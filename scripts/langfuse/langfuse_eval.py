@@ -84,12 +84,12 @@ INTENT_DIR_NAME = "intent"
 def resolve_suite(
     suite: str | None, local_paths: list[Path] | None, dataset_name: str | None
 ) -> str:
-    """显式 --suite 优先；--local 路径或 intent_ / intent- Dataset 名判断套件。"""
+    """显式 --suite 优先；--local 路径或 intent 数据集名前缀判断套件。"""
     if suite:
         return suite
     if local_paths and any(INTENT_DIR_NAME in path.parts for path in local_paths):
         return "intent"
-    if dataset_name and dataset_name.startswith(("intent_", "intent-")):
+    if dataset_name and dataset_name.startswith(("intent/", "intent_", "intent-")):
         return "intent"
     return DEFAULT_SUITE
 
@@ -618,7 +618,7 @@ def reply_check(output: dict[str, Any]):
 
 def code_evaluations(item, output: dict[str, Any]) -> list:
     """意图集本地评分：直接跑 harness/evaluators 里的确定性评估器（与 Langfuse Online Rule
-    同一份源码），不依赖 Langfuse、Java、GOATS。expected 用 Dataset 同款 categories 结构。"""
+    同一份源码），不依赖 Langfuse、Java、GOATS。expected 用 Dataset 同款 biz 结构。"""
     from langfuse.experiment import Evaluation
 
     ctx = SimpleNamespace(
@@ -1149,12 +1149,12 @@ def main() -> int:
         "--local",
         action="append",
         default=None,
-        help="本地 categories / intent JSONL 文件或目录，可重复传入（不走 LangFuse Dataset）",
+        help="本地 biz / intent JSONL 文件或目录，可重复传入（不走 LangFuse Dataset）",
     )
     p.add_argument(
         "--suite",
         choices=SUITES,
-        help="套件；默认按 --local 路径（intent/）或 --dataset 前缀（intent_ / intent-）判定。intent 不跑 Judge",
+        help="套件；默认按 --local 路径（intent/）或 --dataset 前缀（intent/、intent_、intent-）判定。intent 不跑 Judge",
     )
     p.add_argument(
         "--fail-under",

@@ -54,8 +54,8 @@ def fresh_state(names: list[str | None] | None = None) -> AgentState:
 @pytest.mark.parametrize("case", [
     json.loads(line)
     for line in (
-        Path(__file__).resolve().parents[2]
-        / "fixtures/golden_swap_fresh_counterparty.jsonl"
+        Path(__file__).resolve().parents[0]
+        / "fresh_counterparty_cases.jsonl"
     ).read_text(encoding="utf-8").splitlines()
     if line.strip()
 ], ids=lambda case: case["id"])

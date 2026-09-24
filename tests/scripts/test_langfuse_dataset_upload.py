@@ -81,8 +81,8 @@ def test_detect_suite_from_source_path() -> None:
 
     assert detect_suite(Path("tests/fixtures/intent/swap.jsonl")) == "intent"
     assert detect_suite(Path("tests/fixtures/intent")) == "intent"
-    assert detect_suite(Path("tests/fixtures/categories/swap_prod_data.jsonl")) == "business"
-    assert detect_suite(Path("tests/fixtures/categories")) == "business"
+    assert detect_suite(Path("tests/fixtures/biz/swap_prod.jsonl")) == "business"
+    assert detect_suite(Path("tests/fixtures/biz")) == "business"
 
 
 def test_metadata_carries_suite_backend_and_drops_empty_tags() -> None:
@@ -131,7 +131,7 @@ def test_manual_upload_defaults_dataset_name_and_passes_base_url(monkeypatch) ->
     import scripts.langfuse.upload_golden_to_langfuse as mod
 
     assert "base_url" in inspect.signature(mod._clear_dataset).parameters
-    source = Path("tests/fixtures/categories/golden_option_inquiry_case.jsonl")
+    source = Path("tests/fixtures/biz/option_inquiry.jsonl")
     cleared: list[tuple[str, str | None]] = []
     monkeypatch.setattr(
         mod, "_clear_dataset",

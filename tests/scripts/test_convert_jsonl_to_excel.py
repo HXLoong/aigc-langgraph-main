@@ -20,7 +20,7 @@ def test_default_export_contains_every_current_case(tmp_path: Path) -> None:
     assert result.returncode == 0, result.stderr
     expected = {
         row["caseNo"]: row
-        for path in (ROOT / "tests/fixtures/categories").glob("*.jsonl")
+        for path in (ROOT / "tests/fixtures/biz").glob("*.jsonl")
         for line in path.read_text().splitlines() if line.strip()
         for row in [json.loads(line)]
     }

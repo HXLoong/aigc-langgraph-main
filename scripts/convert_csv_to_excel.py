@@ -2,11 +2,11 @@
 
 用法：
     python scripts/convert_csv_to_excel.py
-    python scripts/convert_csv_to_excel.py --input tests/fixtures/categories/csv --output out.xlsx
+    python scripts/convert_csv_to_excel.py --input tests/fixtures/biz/csv --output out.xlsx
     python scripts/convert_csv_to_excel.py --input example.csv
     python scripts/convert_csv_to_excel.py --dry-run
 
-默认读取仓库 tests/fixtures/categories/csv，输出该目录下的“黄金数据集.xlsx”。
+默认读取仓库 tests/fixtures/biz/csv，输出该目录下的“黄金数据集.xlsx”。
 单文件输入默认输出同目录同名 .xlsx。显式路径相对于当前工作目录，重复执行
 覆盖同名输出。目录模式只读取直接子级 CSV，按文件名排序。
 

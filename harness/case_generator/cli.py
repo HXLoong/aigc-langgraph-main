@@ -59,7 +59,7 @@ def cmd_generate_seeds(out_dir: Path, num_slots: int = 8) -> int:
             "",
             "- 每个文件含 8 个 case 槽位，至少填 6 条",
             "- 只标 `expected.product_type` + `expected.intent`，参数细节不标",
-            "- 写完后由工程师审核并合入 `tests/fixtures/categories/`",
+            "- 写完后由工程师审核并合入 `tests/fixtures/biz/`",
             "- 所有种子标 `source: business_seed`（B 桶 PASS 阈值 ≥ 90%）",
             "",
         ]
@@ -162,9 +162,9 @@ def main(argv: list[str] | None = None) -> int:
     )
     p_para.add_argument(
         "--golden",
-        default="tests/fixtures/categories",
+        default="tests/fixtures/biz",
         type=Path,
-        help="种子来源 categories 目录或 JSONL 路径",
+        help="种子来源 biz 目录或 JSONL 路径",
     )
 
     args = parser.parse_args(argv)

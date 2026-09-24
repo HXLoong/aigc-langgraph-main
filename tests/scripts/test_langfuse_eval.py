@@ -201,11 +201,13 @@ def test_resolve_suite_from_local_paths_dataset_name_or_override() -> None:
 
     assert resolve_suite(None, [Path("tests/fixtures/intent")], None) == "intent"
     assert resolve_suite(None, [Path("tests/fixtures/intent/swap.jsonl")], None) == "intent"
-    assert resolve_suite(None, [Path("tests/fixtures/categories")], None) == "business"
+    assert resolve_suite(None, [Path("tests/fixtures/biz")], None) == "business"
     assert resolve_suite(None, None, "intent-swap") == "intent"
     assert resolve_suite(None, None, "intent_swap") == "intent"
+    assert resolve_suite(None, None, "intent/option_close") == "intent"
+    assert resolve_suite("business", None, "intent/option_close") == "business"
     assert resolve_suite(None, None, "golden_option_inquiry_case") == "business"
-    assert resolve_suite("intent", [Path("tests/fixtures/categories")], None) == "intent"
+    assert resolve_suite("intent", [Path("tests/fixtures/biz")], None) == "intent"
 
 
 def test_intent_suite_never_runs_llm_judge() -> None:

@@ -11,7 +11,7 @@
 |---|---|---|
 | 1 | [功能与评测链路使用指南](./workflow-guide.md) | 建立对象模型：Dataset / Experiment / Evaluator / Score 的关系，以及本项目怎么用 |
 | 2 | [WebUI 操作手册（面向非开发人员）](./web-ui-operation-manual.md) | 同一批对象在 Langfuse v4 界面上长什么样、点哪里（含侧栏导航截图） |
-| 3 | [Git 文件同步到 Langfuse（手动触发）](./auto-sync.md) | 同步范围、更新规则、GitHub 网页操作和本地验证 |
+| 3 | [Git 文件同步到 Langfuse](./auto-sync.md) | 自动触发范围、更新规则、GitHub 网页操作和本地验证 |
 | 4 | [Agent Skill 与 CLI](./agent-skill-and-cli.md) | 把手动点击换成智能体或命令行：两条自动化路径的作用、关系、安装与使用 |
 | 5 | [Langfuse Workshop 学习指南](./langfuse-workshop-intro.md) | 系统补方法论：从 tracing 走到 evaluation |
 | 6 | [私有化部署](./self-hosted-deployment.md) | 在客户内网部署、备份、升级和排查自托管 Langfuse |

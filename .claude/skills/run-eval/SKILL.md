@@ -1,6 +1,6 @@
 ---
 name: run-eval
-description: 通过本地 HTTP 入口评估显式 categories 用例，保存字段差异与报告；全量仅在用户要求时运行。
+description: 通过本地 HTTP 入口评估显式 biz 用例，保存字段差异与报告；全量仅在用户要求时运行。
 argument-hint: '[--case case-id] [--limit N] [--out dir]'
 allowed-tools: Read, Bash, Grep
 ---
@@ -11,7 +11,7 @@ allowed-tools: Read, Bash, Grep
 
 使用 scripts/local_eval.py，经 HTTP 调本地 /v1/workflows/run，并准备 Java 消息与真实授权上下文。
 应用服务与数据库只用 localhost/127.0.0.1；Java 源码不修改。数据库读取 MYSQL_URI，初始化为 sql/init.sql；不存在独立 Compose mysql 服务。
-显式数据源 tests/fixtures/categories（条数以 harness.golden.load_golden 实时统计为准）；不并入 unified。保留全部业务断言与真实后端响应。
+显式数据源 tests/fixtures/biz（条数以 harness.golden.load_golden 实时统计为准）；不并入已退役的 unified_golden.jsonl。保留全部业务断言与真实后端响应。
 
 ## 执行
 
@@ -20,7 +20,7 @@ allowed-tools: Read, Bash, Grep
 3. 用少量明确用例验证；失败先归类为代码、数据/权限、模型或环境。外部阻塞记录后继续独立工作，不弱化断言。
 
 ```bash
-python scripts/local_eval.py --base-url http://127.0.0.1:8201 --data tests/fixtures/categories --case case-025 --concurrency 1 --out tmp/eval
+python scripts/local_eval.py --base-url http://127.0.0.1:8201 --data tests/fixtures/biz --case case-025 --concurrency 1 --out tmp/eval
 # 用户启动最终验收时再去掉 --case；全量不是每次修复的默认动作。
 ```
 

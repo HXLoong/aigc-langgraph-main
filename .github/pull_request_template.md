@@ -28,7 +28,7 @@
 - [ ] 受影响测试通过（`USE_MYSQL_CHECKPOINTER=false REQUEST_IDEMPOTENCY=false ENABLE_LANGFUSE=false pytest <路径> -q`）；CI 全量 pytest 绿
 - [ ] `ruff check app/ tests/` 零警告；`mypy app/` 无错
 - [ ] 改了提示词：`prompt(<scope>)` commit；已跑对应数据集评估，PASS 率不低于上一版
-- [ ] 新增节点 / 意图：子图 `_INTENT_TO_NODE` 已登记（条件边由 `add_intent_dispatch` 自动生成）；`app/node_execution/catalog.py` 已登记；categories 每意图 ≥ 2 条
+- [ ] 新增节点 / 意图：子图 `_INTENT_TO_NODE` 已登记（条件边由 `add_intent_dispatch` 自动生成）；`app/node_execution/catalog.py` 已登记；biz 每意图 ≥ 2 条
 - [ ] 改了 State：`app/api/turn_state.py::inputs_to_state` 与 `app/nodes/ingest.py` 的 per-turn 重置同步；改业务参数字段时同步 `app/graph/business_params.py`
 - [ ] 改了告警阈值：按 ADR 0019 §5 五步同步
 - [ ] 改了 `CLAUDE.md` / `.claude/**`：已跑 `python scripts/sync_agents_md.py` 并提交生成物

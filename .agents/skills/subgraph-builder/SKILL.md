@@ -55,7 +55,7 @@ START → _route_swap_entry（文本 / 图片 / Excel）
    - 加入 `for sub in (...)` 汇合到 `persist_intent` 的循环
 5. 节点契约：`app/node_execution/catalog.py` 登记（`tests/test_node_catalog_contract.py` 断言注册表与主图节点一致）
 6. 提示词：`app/prompts/<name>/`，git 是唯一真源
-7. 测试：路由 / 节点 / 图路由 + `tests/fixtures/categories/` 与 `tests/fixtures/intent/` 用例
+7. 测试：路由 / 节点 / 图路由 + `tests/fixtures/biz/` 与 `tests/fixtures/intent/` 用例
 
 ## 禁止
 

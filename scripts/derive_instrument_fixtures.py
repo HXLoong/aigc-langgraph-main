@@ -28,7 +28,7 @@ from typing import Any
 logger = logging.getLogger(__name__)
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-DEFAULT_SOURCES = sorted((REPO_ROOT / "tests" / "fixtures" / "categories").glob("swap*.jsonl"))
+DEFAULT_SOURCES = sorted((REPO_ROOT / "tests" / "fixtures" / "biz").glob("swap*.jsonl"))
 DEFAULT_OUT = REPO_ROOT / "tmp" / "intent_drafts" / "swap_instrument.jsonl"
 
 #: 市场限定词 → 交易品种；只说港股严格为 HK_STOCK，港股通须明确指定。
@@ -395,7 +395,7 @@ def _print_review_table(sources: list[Path], ignore_tokens: tuple[str, ...]) -> 
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("--source", type=Path, action="append", help="swap 业务集 JSONL，可重复；默认 categories/swap*.jsonl")
+    parser.add_argument("--source", type=Path, action="append", help="swap 业务集 JSONL，可重复；默认 biz/swap*.jsonl")
     parser.add_argument("--out", type=Path, default=DEFAULT_OUT)
     parser.add_argument(
         "--ignore-token", action="append", default=[],
