@@ -1,15 +1,10 @@
 #!/usr/bin/env python3
-"""把 git 里的提示词 .md 推到 Langfuse 演练区（ADR 0014 D3 的反方向）。
+"""推送提示词到 Langfuse（单向：git → Langfuse，不拉回）。
 
-ADR 0014 D3 的完整闭环：
-    1. **本脚本** 把 app/prompts/{category}/{name}.md 推到 Langfuse（label=staging）
-    2. 在 Langfuse UI / Playground 里改 + 试跑
-    3. staging 跑 harness golden set 验证
-    4. promote_langfuse_prompt.py 拉回 app/prompts/{category}/{name}_v{N+1}.md
-    5. git commit + PR + review + merge（金融审计屏障）
-    6. 生产按 ADR 0003 灰度切换（app/prompts/_versions.yaml）
+无 [user] 段补一条 chat user 消息（UI Prompt Experiment 只支持单轮，要求 prompt 变量名与
+dataset item 键同名）；system 段一字不改。它不跑 LangGraph 图，链路回归用 langfuse_eval.py。
 
-真源永远是 git 的 .md；本脚本只做单向推送，不读 Langfuse。
+真源永远是 git 的 .md；批量同步读取 staging 仅用于跳过未变内容。
 
 ## 关于 UI Prompt Experiment
 
@@ -37,23 +32,33 @@ Langfuse UI 的 Prompt Experiment 要求「prompt 里的变量名与 dataset ite
     python scripts/langfuse/upload_prompt_to_langfuse.py option_close.intent --dry-run
     python scripts/langfuse/upload_prompt_to_langfuse.py option_close.intent
     python scripts/langfuse/upload_prompt_to_langfuse.py option_close.intent --plain
+    python scripts/langfuse/upload_prompt_to_langfuse.py --sync-all --dry-run
+    python scripts/langfuse/upload_prompt_to_langfuse.py --sync-all
 
 退出码：
     0 成功
     1 目标不存在 / 内容无效
     2 配置缺失 / 网络问题
 """
+
 from __future__ import annotations
 
 import argparse
 import json
+import os
+import re
 import sys
+from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(PROJECT_ROOT))
 
 from app.prompts import _langfuse_name, _parse_prompt_md  # noqa: E402
+from scripts.langfuse._public_api import load_dotenv  # noqa: E402
+
+load_dotenv()
 
 PROMPTS_ROOT = PROJECT_ROOT / "app" / "prompts"
 
@@ -61,11 +66,25 @@ PROMPTS_ROOT = PROJECT_ROOT / "app" / "prompts"
 #: 所以打 staging 不会劫持应用行为——要生效必须显式 --label production。
 DEFAULT_LABEL = "staging"
 
-#: 无 [user] 段的提示词补这条 user 消息，形状与 blocks.source_payload() 首轮输出一致。
-#: {{send_text}} 是给 Langfuse 解析的占位符，对应 dataset item input 的 send_text 键。
+#: 无 [user] 段的提示词补这条 user 消息。两个理由：
+#: 1. 为什么补 —— UI Prompt Experiment 要求 prompt 里有变量、且名字与 dataset item 的键
+#:    相同，而本项目提示词的 system 段没有任何占位符（用户输入是运行时由
+#:    blocks.source_payload() 拼出来的）。
+#: 2. 为什么是这个形状 —— 必须与 source_payload() 的首轮输出同形，否则提示词里
+#:    「evidence 取自 sources.raw」「sources.quote 只能补充上下文」那类规则会失效。
+#: {{send_text}} 是给 Langfuse 解析的占位符，对应 dataset item input 的顶层键 send_text。
 EXPERIMENT_USER_TEMPLATE = (
     '{"context": {}, "sources": {"quote": "", "raw": "{{send_text}}"}, "source_roles": {}}'
 )
+
+SYNC_CATEGORIES = ("option", "option_close", "swap")
+
+
+@dataclass(frozen=True)
+class SyncPrompt:
+    name: str
+    path: Path
+    body: list[dict[str, str]]
 
 
 def _parse_target(arg: str) -> tuple[str, str]:
@@ -80,8 +99,8 @@ def _parse_target(arg: str) -> tuple[str, str]:
     return category, name
 
 
-def _read_git_prompt(category: str, name: str) -> tuple[str, str, Path]:
-    """直接从 git 的 .md 读取（不经过 load_prompt，避免被 Langfuse 侧内容反向污染）。"""
+def _read_workspace_prompt(category: str, name: str) -> tuple[str, str, Path]:
+    """直接读工作区的 .md（不经过 load_prompt，避免被 Langfuse 侧内容反向污染）。"""
     path = PROMPTS_ROOT / category / f"{name}.md"
     if not path.exists():
         available = sorted(
@@ -101,89 +120,223 @@ def _read_git_prompt(category: str, name: str) -> tuple[str, str, Path]:
     return system, user_template, path
 
 
-def _build_prompt_body(system: str, user_template: str, experiment: bool):
-    """决定上传类型与内容。
+def _build_prompt_body(system: str, user_template: str) -> list[dict[str, str]]:
+    """拼 chat 消息：有 [user] 段用 git 的模板，否则补 EXPERIMENT_USER_TEMPLATE。
 
-    - `.md` 自带 [user] 段 → chat，用 git 的 user 模板（实验与演练一致，无需替换）
-    - 无 [user] 段 + experiment → chat，user 用 EXPERIMENT_USER_TEMPLATE
-    - 无 [user] 段 + --plain → text，纯 system（UI experiment 会报 no variables）
-
-    与 app/prompts/__init__.py::_load_from_langfuse 的反序列化契约一一对应。
+    system 段始终是 git 原文。与 app/prompts/__init__.py::_load_from_langfuse 的
+    反序列化契约（list → 按 role 取 system / user）一一对应。
     """
     if user_template:
-        return "chat", [
-            {"role": "system", "content": system},
-            {"role": "user", "content": user_template},
-        ], "git 的 [user] 段"
+        return (
+            "chat",
+            [
+                {"role": "system", "content": system},
+                {"role": "user", "content": user_template},
+            ],
+            "git 的 [user] 段",
+        )
     if experiment:
-        return "chat", [
-            {"role": "system", "content": system},
-            {"role": "user", "content": EXPERIMENT_USER_TEMPLATE},
-        ], "实验用 user 模板（source_payload 首轮形状）"
+        return (
+            "chat",
+            [
+                {"role": "system", "content": system},
+                {"role": "user", "content": EXPERIMENT_USER_TEMPLATE},
+            ],
+            "实验用 user 模板（source_payload 首轮形状）",
+        )
     return "text", system, "纯 system（无 user 段）"
+
+
+def _collect_sync_prompts(root: Path) -> list[SyncPrompt]:
+    """扫描三个业务目录并在任何远端写入之前校验所有内容与名称。"""
+    prompts: list[SyncPrompt] = []
+    names: dict[str, Path] = {}
+    for category in SYNC_CATEGORIES:
+        for path in sorted((root / category).glob("*.md")):
+            source = path.read_text(encoding="utf-8")
+            system, user = _parse_prompt_md(source)
+            if not system:
+                raise ValueError(f"{path} 未找到 [system] 段或内容为空")
+            if re.search(r"^##\s*\[user\]", source, flags=re.MULTILINE) and not user:
+                raise ValueError(f"{path} 的 [user] 段无法解析或内容为空")
+            name = _langfuse_name(category, path.stem)
+            if name in names:
+                raise ValueError(f"Langfuse 名称冲突 {name}: {names[name]} 与 {path}")
+            names[name] = path
+            prompt_type, body, _ = _build_prompt_body(system, user, experiment=True)
+            if prompt_type != "chat" or not isinstance(body, list):
+                raise ValueError(f"{path} 无法生成 chat Prompt")
+            prompts.append(SyncPrompt(name=name, path=path, body=body))
+    if not prompts:
+        raise ValueError(f"{root} 下未找到可同步的提示词")
+    return prompts
+
+
+def _remote_type(remote: Any) -> str:
+    """SDK PromptClient 没有统一的 type 属性，由 prompt 形态判断。"""
+    if isinstance(remote.prompt, list):
+        return "chat"
+    if isinstance(remote.prompt, str):
+        return "text"
+    raise ValueError(f"Langfuse 返回了未知 Prompt 内容类型: {type(remote.prompt).__name__}")
+
+
+def _comparable_chat_body(body: list[Any]) -> list[Any]:
+    """SDK 4.15.0 在 chat 消息上补 type=message；比较时去掉这一层包装。"""
+    return [
+        {"role": msg["role"], "content": msg["content"]}
+        if isinstance(msg, dict)
+        and set(msg) == {"type", "role", "content"}
+        and msg["type"] == "message"
+        else msg
+        for msg in body
+    ]
+
+
+def _sync_prompt(lf: Any, prompt: SyncPrompt) -> str:
+    """用无缓存的 staging 版本做内容比较；只有明确的 404 才视作缺失。"""
+    from langfuse.api.commons.errors.not_found_error import NotFoundError
+
+    try:
+        existing = lf.get_prompt(prompt.name, label=DEFAULT_LABEL, cache_ttl_seconds=0)
+    except NotFoundError:
+        # staging 缺失时还要检查同名最新版本的类型；Langfuse 不允许跨类型建新版。
+        try:
+            existing = lf.get_prompt(prompt.name, label="latest", cache_ttl_seconds=0)
+        except NotFoundError:
+            existing = None
+        if existing is not None and _remote_type(existing) != "chat":
+            raise ValueError(
+                f"{prompt.name} type 冲突：远端为 {_remote_type(existing)}，Git 为 chat"
+            ) from None
+        action = "created" if existing is None else "updated"
+    else:
+        if _remote_type(existing) != "chat":
+            raise ValueError(
+                f"{prompt.name} type 冲突：远端为 {_remote_type(existing)}，Git 为 chat"
+            )
+        if _comparable_chat_body(existing.prompt) == prompt.body:
+            return "skipped"
+        action = "updated"
+
+    lf.create_prompt(name=prompt.name, type="chat", prompt=prompt.body, labels=[DEFAULT_LABEL])
+    return action
+
+
+def _sync_all(lf: Any, root: Path) -> dict[str, int]:
+    prompts = _collect_sync_prompts(root)
+    counts = {"created": 0, "updated": 0, "skipped": 0}
+    for prompt in prompts:
+        action = _sync_prompt(lf, prompt)
+        counts[action] += 1
+        print(f"{action}: {prompt.name} ({prompt.path})")
+    return counts
+
+
+def _new_client(base_url: str | None):
+    from langfuse import Langfuse
+
+    return Langfuse(base_url=base_url)
 
 
 def main() -> int:
     parser = argparse.ArgumentParser(
         description="ADR 0014 D3 · git 提示词 → Langfuse 演练区（单向推送）"
     )
-    parser.add_argument("target", help="格式 `category.name`，如 option_close.intent")
+    parser.add_argument("target", nargs="?", help="格式 `category.name`，如 option_close.intent")
+    parser.add_argument(
+        "--sync-all", action="store_true", help="同步三个业务目录的顶层 .md 到 staging"
+    )
+    parser.add_argument("--base-url", help="覆盖 LANGFUSE_BASE_URL / LANGFUSE_HOST")
     parser.add_argument(
         "--label",
         default=DEFAULT_LABEL,
         help=f"部署标签（默认 {DEFAULT_LABEL}；运行时读 production，慎用）",
     )
-    parser.add_argument(
-        "--plain",
-        action="store_true",
-        help="不补实验用 user 消息，上传成纯 system 的 text 提示词（UI experiment 将不可用）",
-    )
     parser.add_argument("--dry-run", action="store_true", help="不推送，只打印将上传的内容摘要")
     args = parser.parse_args()
 
-    category, name = _parse_target(args.target)
-    system, user_template, path = _read_git_prompt(category, name)
-    lf_name = _langfuse_name(category, name)
-    prompt_type, body, origin = _build_prompt_body(system, user_template, not args.plain)
+    if args.sync_all:
+        if args.target or args.plain or args.label != DEFAULT_LABEL:
+            parser.error("--sync-all 不能与 target、--plain 或非 staging 的 --label 同用")
+        try:
+            prompts = _collect_sync_prompts(PROMPTS_ROOT)
+        except (OSError, ValueError) as exc:
+            print(f"ERROR: {exc}", file=sys.stderr)
+            return 1
+        print(f"已校验 {len(prompts)} 个提示词，目标标签 [{DEFAULT_LABEL}]")
+        if args.dry_run:
+            for prompt in prompts:
+                print(f"[dry-run] {prompt.name}: {prompt.path}")
+            return 0
+    elif not args.target:
+        parser.error("需要 target 或 --sync-all")
 
-    rel = path.relative_to(PROJECT_ROOT)
-    print(f"源文件    : {rel}")
-    print(f"Langfuse  : name={lf_name}  type={prompt_type}  label={args.label}")
-    print(f"内容      : system {len(system)} 字符（原文不改）；user 来自 {origin}")
-    if prompt_type == "text":
-        print("            ⚠️  text 类型无变量，Langfuse UI 的 Prompt Experiment 会报")
-        print("               `Selected prompt has no variables or placeholders`")
+    if not args.sync_all:
+        category, name = _parse_target(args.target)
+        system, user_template, path = _read_git_prompt(category, name)
+        lf_name = _langfuse_name(category, name)
+        prompt_type, body, origin = _build_prompt_body(system, user_template, not args.plain)
 
-    if args.dry_run:
-        print("[dry-run] 未推送。system 段前 200 字符:")
-        print("-" * 60)
-        print(system[:200])
-        print("-" * 60)
-        if prompt_type == "chat":
-            print("[dry-run] user 消息:")
-            print(json.dumps(body[1]["content"], ensure_ascii=False))
-        return 0
+        rel = path.relative_to(PROJECT_ROOT)
+        print(f"源文件    : {rel}")
+        print(f"Langfuse  : name={lf_name}  type={prompt_type}  label={args.label}")
+        print(f"内容      : system {len(system)} 字符（原文不改）；user 来自 {origin}")
+        if prompt_type == "text":
+            print("            ⚠️  text 类型无变量，Langfuse UI 的 Prompt Experiment 会报")
+            print("               `Selected prompt has no variables or placeholders`")
 
-    try:
-        from langfuse import Langfuse
-    except ImportError:
-        print("ERROR: 未安装 langfuse SDK；pip install -e .", file=sys.stderr)
-        return 2
+        if args.dry_run:
+            print("[dry-run] 未推送。system 段前 200 字符:")
+            print("-" * 60)
+            print(system[:200])
+            print("-" * 60)
+            if prompt_type == "chat":
+                print("[dry-run] user 消息:")
+                print(json.dumps(body[1]["content"], ensure_ascii=False))
+            return 0
 
-    try:
-        lf = Langfuse()
-    except Exception as exc:  # noqa: BLE001
-        print(
-            f"ERROR: Langfuse 客户端初始化失败（检查 LANGFUSE_HOST / 密钥）: "
-            f"{type(exc).__name__}: {exc}",
-            file=sys.stderr,
+    base_url = (
+        args.base_url or os.environ.get("LANGFUSE_BASE_URL") or os.environ.get("LANGFUSE_HOST")
+    )
+    missing = [
+        key
+        for key, value in (
+            ("LANGFUSE_PUBLIC_KEY", os.environ.get("LANGFUSE_PUBLIC_KEY")),
+            ("LANGFUSE_SECRET_KEY", os.environ.get("LANGFUSE_SECRET_KEY")),
         )
+        if not value
+    ]
+    if args.sync_all and not base_url:
+        missing.insert(0, "LANGFUSE_BASE_URL (or --base-url)")
+    if missing:
+        print(f"ERROR: 缺少配置: {', '.join(missing)}", file=sys.stderr)
         return 2
+
+    try:
+        lf = _new_client(base_url)
+    except Exception as exc:  # noqa: BLE001
+        print(f"ERROR: Langfuse 客户端初始化失败: {type(exc).__name__}: {exc}", file=sys.stderr)
+        return 2
+
+    if args.sync_all:
+        try:
+            counts = _sync_all(lf, PROMPTS_ROOT)
+        except ValueError as exc:
+            print(f"ERROR: 批量同步失败: {type(exc).__name__}: {exc}", file=sys.stderr)
+            return 1
+        except Exception as exc:  # noqa: BLE001
+            print(f"ERROR: 批量同步失败: {type(exc).__name__}: {exc}", file=sys.stderr)
+            return 2
+        print(
+            f"同步完成：新建 {counts['created']}，更新 {counts['updated']}，跳过 {counts['skipped']}"
+        )
+        return 0
 
     try:
         created = lf.create_prompt(
             name=lf_name,
-            type=prompt_type,
+            type="chat",
             prompt=body,
             labels=[args.label],
         )
@@ -197,25 +350,20 @@ def main() -> int:
     version = getattr(created, "version", "?")
     print(f"\n✅ 已推送：{lf_name} 版本 v{version}，标签 [{args.label}]")
 
-    if prompt_type == "chat":
-        experiment_help = f"""
+    experiment_help = f"""
   在 UI 里跑 Prompt Experiment（对应 dataset 需含 send_text 键）：
     1. Datasets → 选数据集 → Start Experiment
     2. Prompt 选 {lf_name}
     3. 变量 {{send_text}} 会自动映射到 dataset item 的 send_text
     4. 结构化输出：打开开关，挂 CloseIntentOutput 的 JSON schema（在 Playground 存过就能选）
     5. 注意：只跑首轮；不跑 LangGraph 图，链路回归仍用 langfuse_eval.py"""
-    else:
-        experiment_help = """
-  （--plain：无变量，UI Prompt Experiment 不可用。需要实验请去掉 --plain 重推）"""
 
     print(
         f"""
 下一步：
   1. Langfuse UI → Prompts → {lf_name}，确认内容
-  2. 验证通过后拉回 git：
-       python scripts/langfuse/promote_langfuse_prompt.py {category}.{name}
-  3. git commit + PR review（不要跳过——Langfuse 侧不是生产真源）{experiment_help}
+  2. 在 Playground 或 Prompt Experiment 里试跑验证
+  3. 要落回代码：直接在 app/prompts/ 里改并走 PR —— 不从 Langfuse 拉取{experiment_help}
 
 注意：
   - 标签是 {args.label}，运行时 load_prompt 读的是 production，应用行为不受影响

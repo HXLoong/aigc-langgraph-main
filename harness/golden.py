@@ -344,6 +344,8 @@ def _dataset_turn_input(turn: TurnSpec) -> dict[str, Any]:
     result: dict[str, Any] = {"send_text": turn.send_text, "at_bot": turn.at_bot}
     if turn.quote_previous is not None:
         result["quote_previous"] = turn.quote_previous
+    if turn.wait_before_seconds:
+        result["wait_before_seconds"] = turn.wait_before_seconds
     return result
 
 

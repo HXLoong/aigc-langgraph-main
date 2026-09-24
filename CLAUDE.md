@@ -90,7 +90,7 @@ harness/                     # 评测台（经 HTTP 调本地 /v1/workflows/run�
 └── cli.py                   # python -m harness <doctor|run> + 报告渲染
 
 scripts/                     # langfuse/langfuse_eval.py（Judge 评估） / probe_*.py
-                             # upload_golden_to_langfuse.py / promote_langfuse_prompt.py / canary_status.py
+                             # upload_golden_to_langfuse.py / upload_prompt_to_langfuse.py / canary_status.py
                              # rollback_canary.sh / run_alerts.py / llm_cost_report.py / shadow_compare.py 等
 
 infra/langfuse/              # LangFuse self-hosted Docker Compose（PG + ClickHouse + Redis + MinIO + Web + Worker）

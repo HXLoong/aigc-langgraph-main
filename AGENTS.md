@@ -94,7 +94,7 @@ harness/                     # 评测台（经 HTTP 调本地 /v1/workflows/run�
 └── cli.py                   # python -m harness <doctor|run> + 报告渲染
 
 scripts/                     # langfuse/langfuse_eval.py（Judge 评估） / probe_*.py
-                             # upload_golden_to_langfuse.py / promote_langfuse_prompt.py / canary_status.py
+                             # upload_golden_to_langfuse.py / upload_prompt_to_langfuse.py / canary_status.py
                              # rollback_canary.sh / run_alerts.py / llm_cost_report.py / shadow_compare.py 等
 
 infra/langfuse/              # LangFuse self-hosted Docker Compose（PG + ClickHouse + Redis + MinIO + Web + Worker）
@@ -351,7 +351,7 @@ result = await model.with_structured_output(SwapIntentOutput).ainvoke(messages)
 
 ## 来源优先级（ADR 0014 D3-2）
 
-生产真源永远是 git 里的 `app/prompts/**/*.md`；`USE_LANGFUSE_PROMPTS=true` 只允许开发/staging 演练，生产开启即 fail-fast。LangFuse 演练稿用 `scripts/langfuse/promote_langfuse_prompt.py` 晋升为 `_v{N+1}.md`，再走 PR。
+生产真源永远是 git 里的 `app/prompts/**/*.md`；`USE_LANGFUSE_PROMPTS=true` 只允许开发/staging 演练，生产开启即 fail-fast。提示词改动直接在 git 里改、走 PR；**不从远程 Langfuse 拉取**。
 
 ## 改提示词的三条路
 
