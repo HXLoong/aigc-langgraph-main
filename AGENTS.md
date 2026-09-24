@@ -98,7 +98,7 @@ scripts/                     # langfuse/langfuse_eval.py（Judge 评估） / pro
                              # rollback_canary.sh / run_alerts.py / llm_cost_report.py / shadow_compare.py 等
 
 infra/langfuse/              # LangFuse self-hosted Docker Compose（PG + ClickHouse + Redis + MinIO + Web + Worker）
-docs/adr/                    # 架构决定 ADR 0000-0030（共 31 篇）+ README 索引
+docs/adr/                    # 架构决定 ADR 现行 23 篇（编号 0000-0030，已取代的已删除）+ README 索引
 docs/api-contracts/          # Java 后端真实业务 API 契约
 docs/work-plan.md            # 三条主线的现状与待办（取代 m3-m4-roadmap）
 docs/on-call-runbook.md      # 上线 on-call SOP
@@ -280,7 +280,7 @@ tests/fixtures/              # categories/（A 方言业务集，6 文件 / 389 
 详见：
 
 - 领域语言：`@CONTEXT.md`
-- 架构决定：`@docs/adr/`（ADR 0000-0030 共 31 篇，索引见 `docs/adr/README.md`）
+- 架构决定：`@docs/adr/`（现行 23 篇，编号 0000-0030，索引见 `docs/adr/README.md`）
 - LangGraph 原生重构评估与路线：`@docs/langgraph-architecture-assessment.md` + ADR 0024
 - Java 契约：`@docs/api-contracts/java-backend.md`
 - 工作计划：`@docs/work-plan.md`
@@ -370,11 +370,10 @@ result = await model.with_structured_output(SwapIntentOutput).ainvoke(messages)
 
 ## 相关 ADR
 
-- ADR 0001 D5：改写决定登记表
+- ADR 0001 D5：节点策略（保守路线 A+；历次改写登记已归档到 `docs/archive/history/adr-implementation-log-2026-09.md`）
 - ADR 0003：同目录并存 + `_versions.yaml` 灰度（唯一版本化形态）
 - ADR 0014：LangFuse 作为演练区，git 为真源
-- ADR 0022：代码迁移完成后的提示词治理模型（**已废弃**）
-- ADR 0023：提示词即代码（PromptSpec / AgentState inputs / Pydantic description 输出契约）
+- ADR 0023：提示词即代码（PromptSpec / AgentState inputs / Pydantic description 输出契约；D5 瘦身原则）
 
 
 <!-- 来源：.claude/rules/testing.md -->

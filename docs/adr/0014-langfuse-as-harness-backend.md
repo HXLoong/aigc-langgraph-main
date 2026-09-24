@@ -13,8 +13,7 @@ Harness 需要一个后台承载四件套：**Trace**（节点级 LLM 调用）�
 
 ### D1 · 部署模式：生产自托管，数据不出境
 
-- **客户现场强制自托管**：`infra/langfuse/docker-compose.yml`（PostgreSQL + ClickHouse + Redis + MinIO + Web + Worker），trace、数据集、标注数据均留在内网。
-- **开发 / 评测期例外**：允许使用 LangFuse Cloud，出境数据限定为测试数据集（业务方手写种子与 LLM 改写样本，非生产客户流量）与提示词文本；此风险显式接受并向业务方说明。现场配置严禁指向 Cloud。
+- **客户现场强制自托管**：`infra/langfuse/docker-compose.yml`（PostgreSQL + ClickHouse + Redis + MinIO + Web + Worker），trace、数据集、标注数据均留在内网；现场配置严禁指向 LangFuse Cloud。
 
 ### D2 · 取代 LangSmith，不双跑
 
@@ -50,4 +49,4 @@ trace 只走 LangFuse 一条通道，由请求入口统一注入 CallbackHandler
 ## 后果
 
 - 四件套统一，业务方可独立操作，AI 工具可通过 REST API 读取。
-- 合规口径：开发期 Cloud 仅承载测试数据，现场强制自托管。
+- 合规口径：现场强制自托管，trace 与数据不出境。

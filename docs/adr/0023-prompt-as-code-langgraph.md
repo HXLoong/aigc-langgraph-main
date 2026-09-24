@@ -2,7 +2,7 @@
 
 - 状态：已采纳
 - 日期：2026-09-15
-- 关系：输出契约由 [ADR 0027](./0027-field-evidence-contract.md) 进一步收敛为"原文候选"；承接已废弃的 [ADR 0022](./0022-prompt-governance-after-code-migration.md)
+- 关系：输出契约由 [ADR 0027](./0027-field-evidence-contract.md) 进一步收敛为"原文候选"；取代早期的 manifest 清单治理方案（原 0022 号，已删除）
 - 作者：图灵科技 + Tony
 
 ## 背景
@@ -42,6 +42,11 @@ result = await llm.with_structured_output(SPEC.output_model).ainvoke(messages)
 ### D4 · 规则文本只住在 `.md`，代码只供变量
 
 user 消息中若含规则文本，写进 `.md` 的 `[user]` 段并用 `{{var}}` 占位，由 `render_user()` 渲染；禁止在代码里后置追加 system 文本（测试守护）。
+
+### D5 · 瘦身原则
+
+- 分三档处理：零风险（结构化输出下失效的 JSON 格式要求、未注入的悬空变量、重复陈述）直接删；低风险（few-shot 去重、闭集词表改为语义类加少量例子）经评测与抽样比对后删；涉及业务事实（产品名、名称词典、真实账户）的逐条请业务方确认。
+- 错例回填的规则转为 `tests/fixtures/` 数据集用例，提示词只留通用原则；订单号提取、单位换算等确定性工作下沉到代码。
 
 ## 现状
 

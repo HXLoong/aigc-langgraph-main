@@ -2,7 +2,7 @@
 
 - 状态：已采纳（追认：2026-09-20 落地于 commit `2f9ce65`，2026-09-22 补记）
 - 日期：2026-09-20
-- 关系：取代 [ADR 0008](./0008-ticker-resolution-as-react-agent.md)；修订 [ADR 0001](./0001-rewrite-app-with-harness-first.md) D4、[ADR 0012](./0012-restore-backend-http-for-securities-instrument.md)、[ADR 0023](./0023-prompt-as-code-langgraph.md)、[ADR 0024](./0024-langgraph-native-rearchitecture.md) D2 / D3
+- 关系：取代早期"LangGraph 本地识别标的"方案（原 0008 号，已删除）；修订 [ADR 0001](./0001-rewrite-app-with-harness-first.md) D4、[ADR 0012](./0012-restore-backend-http-for-securities-instrument.md)、[ADR 0023](./0023-prompt-as-code-langgraph.md)、[ADR 0024](./0024-langgraph-native-rearchitecture.md) D2 / D3
 - 执行说明：[docs/backend-instrument-boundary.md](../backend-instrument-boundary.md)
 - 作者：图灵科技 + Tony
 

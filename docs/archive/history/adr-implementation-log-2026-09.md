@@ -3,6 +3,7 @@
 > 2026-09-24 ADR 精简时，把各篇正文里的实施过程、落地流水与历史实现细节原样迁到此处（仅做标题降级与去重），
 > ADR 正文只保留决策、理由、后果与一行现状（ADR 0030 D4）。**本文只读、不再维护**，内容反映写作时点，
 > 与当前代码可能不一致；现行口径以 `docs/adr/` 为准。更早的完整原文见 git 历史。
+> 2026-09-24 已删除 0006 / 0008 / 0010 / 0013 / 0016 / 0017 / 0018 / 0022 号历史存根，本文中指向它们的链接已改为纯文本，对照表见 `docs/adr/README.md`。
 
 ## ADR 0001 · 推倒重写 app/
 
@@ -21,8 +22,8 @@
 | **瘦身** | `app/prompts/swap/place_order.md`：Dify 原版 3059 行 / 152,546 字符 → **2249 行 / 126,171 字符**（删冗余示例、压缩重复规则，保留语义；原版存为 `place_order.dify_original.md`）。注：DSL v2（2026-08）Dify 侧已自行重写该提示词，旧瘦身版随迁移被替换 | 2026-05-12 grill 授权，M2/M3 执行，本次补登记 |
 | **瘦身 P0 批（2026-08-28）** | 客户反馈提示词冗长/规则写死损害泛化性，全量评估见 `docs/swap-prompt-slimming-assessment.md`。P0 零风险档产出 4 个 v2 共存文件：`swap/{intent,image_extract,excel_extract,image_ocr}_v2.md`——只删死重（JSON 格式禁令，structured output 已强制）、悬空规则（bot_name_list/shortname_list/序号/total 等未注入变量）、重复陈述（同一规则 2~9 遍收敛为 1 处权威表述）、自相矛盾的补丁修订史（"POV 空格"）；**业务规则语义不变**。灰度经 `_versions.yaml`/env 控制，默认 0 流量，eval PASS ≥ v1 基线后方可放量（ADR 0003） | 本 ADR + 评估报告 |
 | **去 LLM 化（2026-08-28 瘦身 P1）** | swap 撤单/查单/三确认共 5 个节点的唯一任务是提取 `H-` 订单号，改为确定性提取（`app/subgraphs/swap/order_id.py`，来源优先级 1:1 对照原提示词规约）；省 5 次 LLM 调用（≈4.8K tokens/请求）与幻觉面。5 个提示词转非活跃资产保留。二次校验/后端调用/输出形状不变 | 本 ADR + 评估报告 |
-| **治理机制（2026-09-15）** | 客户反馈提示词臃肿 → 全域可维护性评估（`docs/prompt-maintainability-assessment.md`）；资产状态（active / gray / inactive）改由 ~~`app/prompts/_manifest.yaml`~~ + `scripts/prompt_inventory.py --check` 机器守护（2026-09-16 已废弃移除），本表只登记改写决定；删除零调用点的 `compose_prompt` 形态 | [ADR 0022](../../adr/0022-prompt-governance-after-code-migration.md) |
-| **零风险瘦身批（2026-09-15，ADR 0022 D1 拍板后直接落 v1）** | 烘焙 Dify 常量节点 17797951842080 的 keywords / output（5 处悬空占位符）；删 structured output 节点的 JSON 格式禁令（swap 4 文件 + holding_query）；删 option 7 个 extract 的机器人过滤块与 query/bot_name_list 声明（代码不注入）；`ticker/infer_code.md` 删从未注入的范围限制段、名称→windCode 事实清单改格式占位（C-01 红线）；删 `swap/intent_v2` / `place_order_v2`。逐文件记录曾见 ~~`_manifest.yaml`~~ 的 `changelog`（已随 ADR 0022 废弃移除，2026-09-16） | [ADR 0022](../../adr/0022-prompt-governance-after-code-migration.md) D4 |
+| **治理机制（2026-09-15）** | 客户反馈提示词臃肿 → 全域可维护性评估（`docs/prompt-maintainability-assessment.md`）；资产状态（active / gray / inactive）改由 ~~`app/prompts/_manifest.yaml`~~ + `scripts/prompt_inventory.py --check` 机器守护（2026-09-16 已废弃移除），本表只登记改写决定；删除零调用点的 `compose_prompt` 形态 | ADR 0022（已删除） |
+| **零风险瘦身批（2026-09-15，ADR 0022 D1 拍板后直接落 v1）** | 烘焙 Dify 常量节点 17797951842080 的 keywords / output（5 处悬空占位符）；删 structured output 节点的 JSON 格式禁令（swap 4 文件 + holding_query）；删 option 7 个 extract 的机器人过滤块与 query/bot_name_list 声明（代码不注入）；`ticker/infer_code.md` 删从未注入的范围限制段、名称→windCode 事实清单改格式占位（C-01 红线）；删 `swap/intent_v2` / `place_order_v2`。逐文件记录曾见 ~~`_manifest.yaml`~~ 的 `changelog`（已随 ADR 0022 废弃移除，2026-09-16） | ADR 0022（已删除） D4 |
 | **回归副作用补齐（2026-09-15）** | 09-11 回归把 Dify 靠 code 节点前置分流的「确认下单」从 `swap/intent.md` 枚举中移除，app 未移植分流 → 确认下单链路不可达；已在 `app/subgraphs/swap/intent.py` 移植同款 `has_confirmation_keyword` 前置（不调 LLM）。同批：`select_counterparty.md` 把简写唯一性交给代码 → `aggregate.shortname_from_pick` 改「精确 → 唯一子串 → None」；ticker / holding_query 补齐 Dify 上游注入的 日期 / 对手列表 占位符渲染 | 评估 SW-INC-01 / SW-INC-06 / TRJ-01 / OC-01 |
 | **保持** | 其他 Dify LLM 节点 1:1 复刻，提示词照搬 | — |
 
@@ -75,7 +76,7 @@ tokenize（本地候选提取，暂代 P5 路由域的"候选标的提取"节点
 - `_pick_winner` / `_pick_within_a_share` / `tools.pick_best` 三套互不一致的私有选优逻辑已删除，统一由 `rank_candidates`（LLM，对齐「大模型排序并过滤」提示词）承担排序 + 过滤职责。
 - `infer_code` 从"单 keyword 同步线程调用 + 动态 prompt HTTP 拉取拼接"（ADR 0013）改为"全候选批量 async 调用 + 纯静态 `load_prompt()` 加载"，删除 5 分钟 LRU 缓存与 `_get_dynamic_prompt_cached` 链路。
 - `from_goats=True` 硬约束**保持不变**——新管线在 GOATS 之后才产出 `TickerCandidate`，是本项目对 Dify DSL（本身不含 GOATS 校验步骤）的有意增强，详见下方「后果」段。
-- 运行时约束 a/c（hard cap 8 步 / HITL 消歧）随死代码一并移除，未来若要接真 HITL 应走 [ADR 0006](../../adr/0006-hitl-interrupt-boundary.md) 的 interrupt 机制，而非复活 ReAct cap。
+- 运行时约束 a/c（hard cap 8 步 / HITL 消歧）随死代码一并移除，未来若要接真 HITL 应走 ADR 0006（已删除） 的 interrupt 机制，而非复活 ReAct cap。
 
 ### 实际演进（历史）
 
