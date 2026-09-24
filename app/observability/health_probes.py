@@ -14,6 +14,7 @@ from typing import Any, Literal
 logger = logging.getLogger(__name__)
 
 ProbeStatus = Literal["ok", "fail", "disabled"]
+ProbeTarget = Literal["mysql", "langfuse", "llm", "java_backend"]
 
 # 单个依赖的探测上限；3 秒可容纳冷启动时的首次连接、握手和查询开销。
 PROBE_TIMEOUT_SECONDS = 3
@@ -23,7 +24,7 @@ READY_TOTAL_TIMEOUT_SECONDS = 8
 
 @dataclass(frozen=True)
 class ProbeResult:
-    target: Literal["mysql", "langfuse", "llm", "java_backend"]
+    target: ProbeTarget
     status: ProbeStatus
     error: str | None = None
     latency_ms: int | None = None
@@ -173,9 +174,10 @@ async def run_all_probes() -> list[ProbeResult]:
             timeout=READY_TOTAL_TIMEOUT_SECONDS,
         )
     except TimeoutError:
+        targets: tuple[ProbeTarget, ...] = ("mysql", "langfuse", "llm", "java_backend")
         return [
-            ProbeResult(target=t, status="fail", error="total_timeout")  # type: ignore[arg-type]
-            for t in ("mysql", "langfuse", "llm", "java_backend")
+            ProbeResult(target=t, status="fail", error="total_timeout")
+            for t in targets
         ]
     return list(results)
 
