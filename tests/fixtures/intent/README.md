@@ -10,7 +10,7 @@
 | 冻结 `intent_chain` | 每轮上下文都写在 fixture（首轮以外 `quote_previous: false` 或带 `quote_content`） | `harness/intent_runner.py` 只跑 `ingest → pre_route → intent_route → {swap\|option\|close}_intent` | 只有 LLM |
 | 主图 `main_graph` | 回放：任一子轮引用上一轮真实回复（`quote_previous` 非 false 且无 `quote_content`）或正文含 `{{previous_*}}`；或拒绝验收（`expected.rejection`，需检查用户可见的拒绝回复与未提交） | 主图，上一轮回复作引用 | LLM + `mock_api` |
 
-目标是逐步把回放用例冻结；冻结后该用例即不再需要 `mock_api`（拒绝验收用例始终走主图）。报告里每条用例的 `mode` 字段标明走了哪条路。
+多轮用例已全部冻结（2026-09-24），当前走主图的只有拒绝验收子集 `swap_rejection.jsonl`（需要用户可见的拒绝回复，始终走主图 + `mock_api`）。回放模式保留，供新增用例暂用。报告里每条用例的 `mode` 字段标明走了哪条路。
 
 ### 冻结上下文
 
@@ -26,9 +26,14 @@
 - 同一用例不能混用冻结字段与回放（回放模式下冻结字段会被忽略，lint 报错）；要冻结就冻结每一轮
 - 交易对手列表取仓库内 mock 授权上下文（`mock_api/backend/fixtures.py`，与回放模式在 CI 拉到的同源），进程内读取
 - 不早停：前一轮识别错不影响后一轮输入，每轮按自己的期望独立计分
-- `option_close.jsonl` 的 case-030 / 032 / 033 已冻结；冻结引用按 Java 真实卡片格式（持仓列表 / 平仓详情 / 参数需要完善 / 只能全部平仓 /
-  已收到下单、撤单请求，格式样本见 `../unified_golden.jsonl` opt-092、opt-093 与 close 子图测试）编写，
-  合约与金额取值和 `../categories/golden_option_close_case.jsonl` 的卡片断言一致；标的信息为示意值
+- 冻结引用来源：
+  - `option.jsonl`：询价 / 补参 / 下单卡片逐字取自 `../categories/golden_option_{inquiry,open}_case.jsonl` 的 Java 卡片断言；
+    确认下单、撤单提示、确认撤单按 Java 原文格式（「期权订单Q-…：已收到您的下单请求，待交易员审核。」等），单号统一 `Q-20260918-2768122880`
+  - `option_close.jsonl`：按 Java 真实卡片格式（持仓列表 / 平仓详情 / 参数需要完善 / 只能全部平仓 / 已收到下单、撤单请求，
+    格式样本见 `../unified_golden.jsonl` opt-092、opt-093 与 close 子图测试）编写，合约与金额取值和
+    `../categories/golden_option_close_case.jsonl` 的卡片断言一致；标的信息为示意值
+  - 业务集里的动态引用（`{{previous_holding_contract_id:1}}`、`{{previous_order_id}}`）在意图集中冻结为具体值
+    （持仓序号 1 的 `OPT-AAAA1`、上述单号），业务集仍按真实持仓回放
 
 ```jsonl
 {"caseNo":"intent-swap-001","name":"互换市价下单","category":"intent/swap","type":"positive","source":"derived:swap_prod_data#case_1",
