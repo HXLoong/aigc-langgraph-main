@@ -8,10 +8,10 @@ Harness 的后台服务，承载 trace / dataset / eval / annotation 四件套�
 # 1. 准备 .env（首次）
 cp infra/langfuse/.env.example infra/langfuse/.env
 
-# 2. 生成 3 个必填密钥
-echo "SALT=$(openssl rand -base64 32)" >> infra/langfuse/.env
-echo "ENCRYPTION_KEY=$(openssl rand -hex 32)" >> infra/langfuse/.env
-echo "NEXTAUTH_SECRET=$(openssl rand -base64 32)" >> infra/langfuse/.env
+# 2. 编辑 infra/langfuse/.env，填入 3 个必填密钥（模板里已有空的 SALT= / ENCRYPTION_KEY= / NEXTAUTH_SECRET=）
+openssl rand -base64 32   # → SALT
+openssl rand -hex 32      # → ENCRYPTION_KEY
+openssl rand -base64 32   # → NEXTAUTH_SECRET
 
 # 3. 启动
 docker compose -f infra/langfuse/docker-compose.yml --env-file infra/langfuse/.env up -d
@@ -24,16 +24,16 @@ open http://localhost:3000
 
 ## API Key 注入到应用
 
-把生成的 API Key 写到 `.env`（或 shell export）：
+把生成的 API Key 写到仓库根目录 `.env`（或 shell export）：
 
 ```bash
-LANGFUSE_HOST=http://localhost:3000
+LANGFUSE_BASE_URL=http://localhost:3000
 LANGFUSE_PUBLIC_KEY=pk-lf-...
 LANGFUSE_SECRET_KEY=sk-lf-...
 ENABLE_LANGFUSE=true
 ```
 
-应用内通过 `app.config.get_settings()` 读取（ADR 0014 D8）。
+应用内通过 `app.config.get_settings()` 读取（ADR 0014 D5）。
 
 ## 关停 / 清理
 
@@ -58,11 +58,7 @@ langfuse-minio (9090)      ← S3 兼容存储（trace 大块归档）
 
 LangFuse v3 起强制要求 ClickHouse + Redis + S3 存储，参考 [LangFuse 自托管文档](https://langfuse.com/self-hosting)。
 
-## 数据保留策略（ADR 0014 D6）
+## 数据保留与客户内网部署
 
-| 类型 | 保留期 | 备注 |
-|------|--------|------|
-| Trace | 90 天 | 定期清理 ClickHouse 旧表 |
-| Dataset | 永久 | 真理来源 |
-| Score | 永久 | 评估趋势分析 |
-| Annotation | 永久 | 业务方稀缺资产 |
+保留策略见 [ADR 0014](../../docs/adr/0014-langfuse-as-harness-backend.md) D5；客户内网部署、备份、升级见
+[docs/langfuse/self-hosted-deployment.md](../../docs/langfuse/self-hosted-deployment.md)。

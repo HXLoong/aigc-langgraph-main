@@ -8,8 +8,9 @@ from typing import Any, cast
 
 from pydantic import BaseModel
 
+from app.domain.fast_execution import resolve_fast_execution
+from app.domain.numerals import chinese_int, ordinal_int
 from app.extraction.candidates import candidate_model, verify_candidates
-from app.extraction.fast_execution import resolve_fast_execution
 from app.extraction.fields import EvidenceError, FieldCandidate, FieldRecord
 from app.subgraphs.close.models import (
     CloseOrderItem,
@@ -17,13 +18,12 @@ from app.subgraphs.close.models import (
     ClosePriceType,
     HoldingQueryParams,
 )
-from app.subgraphs.close.order_id import CONTRACT_CODE_RE, ORDER_ID_RE, _ordinal_value
+from app.subgraphs.close.order_id import CONTRACT_CODE_RE, ORDER_ID_RE
 from app.subgraphs.close.order_type import (
     is_fast_execution_phrase,
     normalize_close_order_type,
 )
 from app.subgraphs.close.reference_parser import ReferenceParseResult
-from app.subgraphs.option.normalize import _cn_number
 
 _SEQ = re.compile(r"序号\s*[:：]?\s*(\d+)|第\s*([零〇一二两三四五六七八九十百\d]+)\s*笔")
 _FULL = re.compile(r"全部平仓|确认全部平仓|全平|全部平掉")
@@ -59,7 +59,7 @@ def _number(text: str) -> Decimal:
         value = Decimal(raw)
     else:
         # 中文数字解析失败必须报错，不能编造成 0 发给 Java
-        cn_value = _cn_number(raw)
+        cn_value = chinese_int(raw)
         if cn_value is None:
             raise ValueError("平仓金额或比例无法解析")
         value = Decimal(cn_value)
@@ -149,7 +149,7 @@ def _identity(selector: str, parsed: ReferenceParseResult, data: list[dict[str, 
         if quoted_orders:
             target["orderId"] = quoted_orders.pop()
     elif match := _SEQ.fullmatch(selector):
-        ordinal = _ordinal_value(match[1] or match[2]) or 0
+        ordinal = ordinal_int(match[1] or match[2]) or 0
         holdings = parsed["holdingMap"]
         # 序号 is a displayed label; 第 X 笔 is an ordinal position in the quote.
         quoted = next((h for h in holdings if h["seq"] == ordinal), None) if match[1] else (

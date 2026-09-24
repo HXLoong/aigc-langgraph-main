@@ -22,10 +22,10 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Any
 
-from app.execution.confirmation import ALIASES
-from app.extraction.fast_execution import resolve_fast_execution
+from app.domain.confirmation import ALIASES
+from app.domain.fast_execution import resolve_fast_execution
+from app.domain.tenor import TenorError, monthly_tenor
 from app.extraction.fields import FieldRecord
-from app.extraction.tenor import TenorError, monthly_tenor
 from app.subgraphs.option.normalize import normalize_notional
 from app.subgraphs.option.order_id import ORDER_ID_RE, extract_order_ids
 from app.subgraphs.option.order_scope import OrderScopeError, selectors
@@ -205,10 +205,6 @@ def _short_name_source(raw: str, contexts: Sequence[SourceText]) -> tuple[str | 
     return None, original, None
 
 
-def _extract_short_name(raw: str, context: str) -> str | None:
-    return _short_name_source(raw, [SourceText(context, "context")])[0]
-
-
 def _a_class_params(
     text: str, context: str, *, lineage: dict[str, FieldRecord] | None = None,
     contexts: Sequence[SourceText] | None = None,
@@ -360,11 +356,6 @@ def history_sources(messages: Sequence[Any] | None) -> list[SourceText]:
         if isinstance(content, str) and content:
             sources.append(SourceText(content, f"history:{ident}" if ident else f"history:index:{index}"))
     return sources
-
-
-def history_texts(messages: Sequence[Any] | None) -> list[str]:
-    """兼容旧调用；需要来源的节点直接传历史消息对象。"""
-    return [source.text for source in history_sources(messages)]
 
 
 def quote_blocks_for_order(quote: str, order_id: str | None) -> list[str]:
@@ -532,4 +523,4 @@ def parse_confirm_place_params(
     return parse_place_params_with_lineage(raw, quote, history_texts, confirm=True).orders
 
 
-__all__ = ["OrderScopeError", "history_texts", "parse_confirm_place_params", "parse_place_params", "parse_place_params_with_lineage"]
+__all__ = ["OrderScopeError", "parse_confirm_place_params", "parse_place_params", "parse_place_params_with_lineage"]

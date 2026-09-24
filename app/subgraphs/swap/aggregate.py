@@ -15,14 +15,6 @@ def _as_int(x: Any) -> int | None:
         return None
 
 
-def build_id_to_seq(candidate_list: list[dict[str, Any]]) -> dict[str, Any]:
-    mapping: dict[str, Any] = {}
-    for blk in candidate_list:
-        if blk.get("orderId") is not None:
-            mapping[blk["orderId"]] = blk.get("orderSeq")
-    return mapping
-
-
 def match_order_index(
     pick: dict[str, Any],
     order_list: list[dict[str, Any]],
@@ -111,65 +103,6 @@ def shortname_from_pick(pick: dict[str, Any], trs_list: list[dict[str, Any]]) ->
     return next(iter(agreed)) if len(agreed) == 1 else None
 
 
-def apply_underlying(
-    order_list: list[dict[str, Any]],
-    a_picks: list[dict[str, Any]],
-    candidate_list: list[dict[str, Any]],
-) -> None:
-    """标的覆盖(非破坏)：LLM-A 解析到非空 windCode 才覆盖该订单；解析为空/未选中 → 保留原值，绝不置 None。
-
-    就地修改 order_list（与 Dify code 节点行为一致）。candidate_list 为空时直接跳过。
-    """
-    if not candidate_list:
-        return
-    single = len(order_list) == 1
-    id_to_seq = build_id_to_seq(candidate_list)
-    grouped: dict[int, list[dict[str, Any]]] = {}
-    for p in a_picks:
-        i = match_order_index(p, order_list, id_to_seq, single)
-        if i >= 0:
-            grouped.setdefault(i, []).append(p)
-    for i, picks in grouped.items():
-        code = None
-        for p in picks:
-            v = windcode_from_pick(p, candidate_list)
-            if v is not None:
-                code = v
-                break
-        if code is not None:
-            order_list[i]["placeOrderWindCode"] = code
-
-
-def apply_counterparty(
-    order_list: list[dict[str, Any]],
-    b_has_signal: bool,
-    b_picks: list[dict[str, Any]],
-    trs_list: list[dict[str, Any]],
-) -> None:
-    """对手覆盖(非破坏)：LLM-B 解析到非空 shortName 才覆盖该订单；无信号/解析空 → 保留原值，不清空。
-
-    就地修改 order_list（与 Dify code 节点行为一致）。
-    """
-    if not b_has_signal or not order_list:
-        return
-    single = len(order_list) == 1
-    id_to_seq = build_id_to_seq([])  # 对手覆盖不依赖候选标的块，仅靠 orderId/idx
-    grouped: dict[int, list[dict[str, Any]]] = {}
-    for p in b_picks:
-        i = match_order_index(p, order_list, id_to_seq, single)
-        if i >= 0:
-            grouped.setdefault(i, []).append(p)
-    for i, picks in grouped.items():
-        sn = None
-        for p in picks:
-            v = shortname_from_pick(p, trs_list)
-            if v is not None:
-                sn = v
-                break
-        if sn is not None:
-            order_list[i]["placeOrderShortname"] = sn
-
-
 def unique_fresh_counterparty(
     fresh_res: dict[str, Any], trs_list: list[dict[str, Any]], raw_content: str,
 ) -> tuple[str | None, str]:
@@ -226,13 +159,10 @@ def apply_fresh_counterparty(order_list: list[dict[str, Any]], shortname: str | 
 
 
 __all__ = [
-    "build_id_to_seq",
     "match_order_index",
     "resolve_candidate_block",
     "windcode_from_pick",
     "shortname_from_pick",
-    "apply_underlying",
-    "apply_counterparty",
     "unique_fresh_counterparty",
     "apply_fresh_counterparty",
 ]

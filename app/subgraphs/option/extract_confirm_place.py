@@ -18,8 +18,8 @@ from __future__ import annotations
 
 from typing import Any
 
-from app.execution.confirmation import parse_confirmation
-from app.extraction.tenor import TenorError
+from app.domain.confirmation import parse_confirmation
+from app.domain.tenor import TenorError
 from app.graph.business_params import validated_confirm
 from app.graph.safe_node import safe_node
 from app.graph.state import AgentState, TraceEntry

@@ -1,7 +1,7 @@
 """兼容互换确认协议入口；七条确认共用同一个确定性校验器。"""
 import re
 
-from app.execution.confirmation import (
+from app.domain.confirmation import (
     ALIASES,
     Confirmation,
     confirmation_action,

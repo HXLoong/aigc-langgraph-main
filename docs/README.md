@@ -55,7 +55,7 @@
 ### 2. 硬性约束（lint 强制）
 
 - `docs/` 根目录只放 `README.md` 与 `work-plan.md`，其余文档一律进主题目录
-- 主题目录只用上表白名单；每个主题目录必须有 `README.md` 作索引，新增文档同时登记到该索引
+- 主题目录只用上表白名单；每个主题目录必须有 `README.md` 作索引
 - 文件与目录名一律小写 kebab-case（`on-call-runbook.md`），`README.md` 例外；不用大写、下划线、空格或中文文件名
 - 文件名带日期的文档只能进 `reports/`，且必须以日期开头：`reports/2026-09-24-intent-dataset-assessment.md`
 - 链接必须有效：`docs/` 内的 Markdown / HTML 相对链接，以及全仓代码、脚本、配置里写的 `docs/...` 路径
@@ -63,6 +63,7 @@
 
 ### 3. 约定（评审把关）
 
+- **新增文档登记到所在目录的 `README.md` 索引**
 - **现行文档只写现状**：过时内容直接改或删，历史从 git 找回；不保留"旧版 / v2 / 备份"并存文件
 - **报告是快照**：`reports/` 里的文档写完不再维护；结论要长期生效时，提炼进 ADR、`architecture/` 或 `work-plan.md`，
   报告可在结论被吸收后删除

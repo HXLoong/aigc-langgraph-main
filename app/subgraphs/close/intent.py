@@ -4,7 +4,7 @@ from __future__ import annotations
 import re
 from typing import Any
 
-from app.execution.confirmation import (
+from app.domain.confirmation import (
     confirmation_action,
     confirmation_attempt,
     has_execution_parameters,

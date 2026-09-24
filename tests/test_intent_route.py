@@ -21,7 +21,7 @@ class TestIntentRouteNode:
     async def test_rule_hit_no_llm(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """规则命中时绝不触发 LLM 兜底。"""
 
-        async def boom(text, quote):  # pragma: no cover - 不应被调用
+        async def boom(text, quote, history=None):  # pragma: no cover - 不应被调用
             raise AssertionError("规则命中不应调 LLM")
 
         monkeypatch.setattr(intent_route_module, "_classify_with_llm", boom)
@@ -63,7 +63,7 @@ class TestIntentRouteNode:
     ) -> None:
         """混合文件 → 无法识别文件类型 → 直接 unknown,不走 LLM(DSL 同语义)。"""
 
-        async def boom(text, quote):  # pragma: no cover
+        async def boom(text, quote, history=None):  # pragma: no cover
             raise AssertionError("文件无法识别不应调 LLM")
 
         monkeypatch.setattr(intent_route_module, "_classify_with_llm", boom)
@@ -79,7 +79,7 @@ class TestIntentRouteNode:
     async def test_llm_fallback_label_mapped(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        async def fake(text, quote):
+        async def fake(text, quote, history=None):
             return route_reply('期权-文本', text)
 
         monkeypatch.setattr(intent_route_module, "_classify_with_llm", fake)
@@ -91,7 +91,7 @@ class TestIntentRouteNode:
     async def test_llm_unknown_falls_through(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        async def fake(text, quote):
+        async def fake(text, quote, history=None):
             return route_reply('unknown', text)
 
         monkeypatch.setattr(intent_route_module, "_classify_with_llm", fake)
@@ -100,7 +100,7 @@ class TestIntentRouteNode:
 
     @pytest.mark.asyncio
     async def test_empty_input(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        async def fake(text, quote):
+        async def fake(text, quote, history=None):
             return route_reply('unknown', text)
 
         monkeypatch.setattr(intent_route_module, "_classify_with_llm", fake)
@@ -133,7 +133,7 @@ class TestQuoteContentRouting:
         """quote_content 含 '场外期权询价详情' → 路由 option，不调 LLM。"""
         llm_called = []
 
-        async def fake_classify(text: str, quote_content: str | None = None) -> str:
+        async def fake_classify(text: str, quote_content: str | None = None, history_messages: object = None) -> str:
             llm_called.append(text)
             return route_reply('互换-文本', text)  # LLM 若被调用会返回错误结果
 
@@ -155,7 +155,7 @@ class TestQuoteContentRouting:
         """quote_content 含后端互换下单卡 → 路由 swap，不调 LLM。"""
         llm_called = []
 
-        async def fake_classify(text: str, quote_content: str | None = None) -> str:
+        async def fake_classify(text: str, quote_content: str | None = None, history_messages: object = None) -> str:
             llm_called.append(text)
             return route_reply('期权-文本', text)
 
@@ -177,7 +177,7 @@ class TestQuoteContentRouting:
         """quote_content 无明确产品标记 → 正常走 LLM。"""
         llm_called = []
 
-        async def fake_classify(text: str, quote_content: str | None = None) -> str:
+        async def fake_classify(text: str, quote_content: str | None = None, history_messages: object = None) -> str:
             llm_called.append(text)
             return route_reply('期权-文本', text)
 

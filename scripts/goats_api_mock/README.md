@@ -3,7 +3,7 @@
 在仓库根目录运行（使用项目现有 FastAPI / Uvicorn 依赖）：
 
 ```bash
-.venv/bin/python scripts/goats_api_mock/server.py --port 20000
+python scripts/goats_api_mock/server.py --port 20000
 ```
 
 启动和停止提示使用中文，并统一标注“GOATS 期权 Mock 服务”；启动日志会显示数据文件、
@@ -131,7 +131,7 @@ Java 的 `optionOrderJob`、`optionCloseOrderJob`、`optionCloseCancelOrderJob` 
 订单号会明确失败，不回退到历史订单。两个测试入口均支持这些字段。
 
 ```bash
-.venv/bin/python -m scripts.local_eval --base-url http://127.0.0.1:8201 \
+python -m scripts.local_eval --base-url http://127.0.0.1:8201 \
   --data tests/fixtures/categories --case case-029-lifecycle --case case-034-lifecycle \
   --concurrency 1 --turn-interval 10 --out tmp/option-lifecycle
 ```

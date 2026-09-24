@@ -3,7 +3,6 @@
 覆盖 `app/subgraphs/swap/models.py`：
 - `SwapIntentOutput` / `SwapIntentType`：7 个合法意图
 - `SwapOrderItem` / `SwapPlaceOrderParams`：下单参数（含 DSL v2 新增枚举）
-- `SwapOrderRefItem` / `SwapConfirmParams` / `SwapCancelParams` / `SwapQueryParams`
 - `SwapTickerPick` / `SwapSelectTickerOutput`（互换-选择标的指针）
 - `SwapCounterpartyPick` / `SwapSelectCounterpartyOutput`（互换-选择交易对手指针）
 
@@ -17,15 +16,11 @@ import pytest
 from pydantic import ValidationError
 
 from app.subgraphs.swap.models import (
-    SwapCancelParams,
-    SwapConfirmParams,
     SwapCounterpartyPick,
     SwapIntentOutput,
     SwapIntentType,
     SwapOrderItem,
-    SwapOrderRefItem,
     SwapPlaceOrderParams,
-    SwapQueryParams,
     SwapSelectCounterpartyOutput,
     SwapSelectTickerOutput,
     SwapTickerPick,
@@ -242,35 +237,6 @@ class TestSwapPlaceOrderParams:
             ]
         )
         assert len(p.order_list) == 2
-
-
-# ============================================================
-# 确认 / 撤单 / 查询 共享 schema
-# ============================================================
-
-
-class TestOrderRefSchemas:
-    def test_order_ref_item_allows_null_order_id(self) -> None:
-        assert SwapOrderRefItem().order_id is None
-
-    def test_confirm_params_default_empty(self) -> None:
-        assert SwapConfirmParams().order_list == []
-
-    def test_cancel_params_default_empty(self) -> None:
-        assert SwapCancelParams().order_list == []
-
-    def test_query_params_default_empty(self) -> None:
-        assert SwapQueryParams().order_list == []
-
-    def test_confirm_params_parses_order_ids(self) -> None:
-        p = SwapConfirmParams.model_validate(
-            {"orderList": [{"orderId": "H-1"}, {"orderId": None}]}
-        )
-        assert [i.order_id for i in p.order_list] == ["H-1", None]
-
-    def test_extra_fields_ignored(self) -> None:
-        p = SwapCancelParams.model_validate({"orderList": [], "operate": "交易"})
-        assert p.order_list == []
 
 
 # ============================================================

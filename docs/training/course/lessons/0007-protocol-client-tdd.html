@@ -86,10 +86,10 @@ monkeypatch.setattr(<span class="st">"app.subgraphs.swap.intent.get_qwen_thinkin
 
 <pre><code><span class="cm"># 1. 写最小复现测试（体现 bug 或新需求的期望行为）</span>
 <span class="cm"># 2. 跑到 RED —— 必须亲眼看到它失败</span>
-.venv/bin/python -m pytest tests/subgraphs/swap/test_yyy.py -v
+python -m pytest tests/subgraphs/swap/test_yyy.py -v
 <span class="cm"># 3. 写最小修复代码</span>
 <span class="cm"># 4. 跑到 GREEN + 全量回归</span>
-.venv/bin/python -m pytest tests/ -q --tb=line 2>&1 | tail -5</code></pre>
+python -m pytest tests/ -q --tb=line 2>&1 | tail -5</code></pre>
 
 <div class="callout warn">
 <span class="callout-title">为什么 RED 这一步不能省</span>

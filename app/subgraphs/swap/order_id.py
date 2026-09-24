@@ -12,8 +12,11 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass, field
 
+from app.domain.numerals import require_ordinal
+from app.domain.order_ids import SWAP_ORDER_ID_RE
+
 #: H-YYYYMMDD-XXXXXXXXXX(8 位日期 + 10 位数字,与后端 SwapOrderIdGenerator 一致)
-ORDER_ID_RE = re.compile(r"H-\d{8}-\d{10}")
+ORDER_ID_RE = SWAP_ORDER_ID_RE
 
 _NUMBER = r"[零〇一二两三四五六七八九十百\d]+"
 _ORDINAL = re.compile(rf"(?:第\s*({_NUMBER})\s*[笔个条单]|序号\s*[:：]?\s*({_NUMBER}))")
@@ -23,21 +26,6 @@ _FIELDS = re.compile(rf"({_LABELS})\s*[:：]\s*(.*?)(?=(?:{_LABELS})\s*[:：]|[\
 
 class CancelScopeError(ValueError):
     """当前撤单限定无法由引用中的订单信息唯一确定。"""
-
-
-def _number(value: str) -> int:
-    if value.isdigit():
-        return int(value)
-    digits = {char: index for index, char in enumerate("零一二三四五六七八九")}
-    digits.update({"〇": 0, "两": 2})
-    total = current = 0
-    for char in value:
-        if char in "十百":
-            total += (current or 1) * (10 if char == "十" else 100)
-            current = 0
-        else:
-            current = digits[char]
-    return total + current
 
 
 @dataclass
@@ -77,7 +65,7 @@ def _quoted_orders(quote: str) -> list[_QuotedOrder]:
             if ordinal is None:
                 ordinal = re.match(rf"\s*({_NUMBER})[.、)）]\s", block)
             if ordinal:
-                order.ordinals.add(_number(ordinal.group(1)))
+                order.ordinals.add(require_ordinal(ordinal.group(1)))
             for label, value in _FIELDS.findall(block):
                 key = "合约编号" if label == "大合约编号" else label
                 if value.strip():
@@ -112,7 +100,7 @@ def extract_for_cancel(raw: str | None, quote: str | None) -> list[str | None]:
     if explicit_ids:
         constraints.append(set(explicit_ids))
 
-    ordinals = {_number(a or b) for a, b in _ORDINAL.findall(remaining)}
+    ordinals = {require_ordinal(a or b) for a, b in _ORDINAL.findall(remaining)}
     remaining = _ORDINAL.sub(" ", remaining)
     if ordinals:
         numbered = any(order.ordinals for order in orders)
@@ -169,25 +157,10 @@ def extract_for_query(raw: str | None, quote: str | None) -> list[str | None]:
     return _first_nonempty(extract_order_ids(raw), extract_order_ids(quote))
 
 
-def extract_for_confirm_order(raw: str | None, quote: str | None) -> list[str | None]:
-    """兼容提取入口；引用及选择范围由统一确认协议校验。"""
-    from app.subgraphs.swap.confirmation import parse_confirmation
-
-    result = parse_confirmation(raw, quote)
-    return list(result.order_ids) if not result.error else [None]
-
-
-def extract_for_confirm_single(raw: str | None, quote: str | None) -> list[str | None]:
-    """确认撤单/确认改单:quote 优先,否则 raw。"""
-    return _first_nonempty(extract_order_ids(quote), extract_order_ids(raw))
-
-
 __all__ = [
     "CancelScopeError",
     "ORDER_ID_RE",
     "extract_order_ids",
     "extract_for_cancel",
     "extract_for_query",
-    "extract_for_confirm_order",
-    "extract_for_confirm_single",
 ]

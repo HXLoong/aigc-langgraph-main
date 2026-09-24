@@ -9,7 +9,7 @@
 生产使用 **TDSQL for MySQL**（腾讯云 MySQL 协议分布式数据库），这是客户基础设施的外部约束：
 
 1. 全栈使用 **MySQL 协议**：业务表与 LangGraph checkpoint（`AIOMySQLSaver`）均按 MySQL 8.0.19+ 编写。
-2. 开发与 CI 使用原生 MySQL，版本范围 **8.0.19 ≤ v < 9.6.0**。
+2. 开发与联调环境使用原生 MySQL（CI 不连数据库，真实 MySQL 用例本地 opt-in），版本范围 **8.0.19 ≤ v < 9.6.0**。
 3. 业务 / checkpoint 数据栈**禁止**使用 PostgreSQL 等非 MySQL 协议数据库（LangFuse 自托管栈自带的 PostgreSQL 不在此列）。
 
 版本边界依据（升级依赖时复核）：

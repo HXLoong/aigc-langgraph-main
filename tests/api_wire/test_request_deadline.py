@@ -6,9 +6,9 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app.api import routes
-from app.api.idempotency import InMemoryIdempotencyStore
 from app.config import get_settings
 from app.main import app
+from app.storage.idempotency import InMemoryIdempotencyStore
 
 
 def test_deadline_cancels_graph_and_duplicate_never_reexecutes(monkeypatch):
@@ -41,7 +41,7 @@ def test_deadline_cancels_graph_and_duplicate_never_reexecutes(monkeypatch):
         client.app.state.idempotency_store = None
 
 
-@pytest.mark.parametrize("factory", ["get_qwen_standard", "get_qwen_thinking", "get_qwen_structured", "get_qwen_complex", "get_qwen_vl", "make_qwen_thinking"])
+@pytest.mark.parametrize("factory", ["get_qwen_standard", "get_qwen_thinking", "get_qwen_structured", "get_qwen_complex", "get_qwen_vl"])
 def test_graph_is_the_only_owner_of_llm_retries(factory):
     from app.llm import clients
     function = getattr(clients, factory)

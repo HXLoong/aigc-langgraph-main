@@ -10,73 +10,70 @@ metadata:
 
 # 新增一个业务意图
 
+归属判定与执行清单以 [ADR 0007](../../../docs/adr/0007-subgraph-vs-intent-scope-rule.md) 为准；节点写法以
+`.claude/rules/langgraph-patterns.md` 与 `.claude/rules/prompt-management.md` 为准。本 skill 只给停顿点和改动清单。
+
 ## 参数
-- `$1` = 产品类型：swap / option / close
+- `$1` = 产品类型：swap / option / close（close 子图的提示词目录是 `app/prompts/option_close/`）
 - `$2` = 新意图名（snake_case，如 `adjust_hedge`）
 
 ## 执行流程
 
 ### Step 1：审查现状
-- 读 `app/subgraphs/$1/` 包（`graph.py` / `models.py` / `intent.py` / 各意图节点文件）
-- 列出当前已有的意图和路由
+- 读 `app/subgraphs/$1/`：`graph.py`（`_INTENT_TO_NODE` 与条件边）、`models.py`（`<Product>IntentType`）、`intent.py`、各意图节点
+- 按 ADR 0007 四条规则确认它确实归现有子图；命中任一条就改走 `subgraph-builder`
 
 ### Step 2：跟用户确认（停顿点）
-**在改任何代码前，问用户**：
-1. 新意图的业务含义是什么？
-2. 对应的后端 API 是否已经有了？用什么 `type` 值？
-3. 参数提取的字段是什么？
-4. 是否需要独立的 Pydantic 输出模型，还是复用现有？
-5. 是否需要 `interrupt_before`（需要人工确认）？
+**改任何代码前，问用户**：
+1. 业务含义与典型原话？
+2. 对应后端 API 与 `type` 值是否已存在（对照 `docs/api-contracts/java-backend.md`）？
+3. 要提取哪些字段？哪些能用正则 / 枚举 / 规则确定（归 Code），哪些必须 LLM 抽原文候选？
+4. 是写动作吗？写动作走文本二阶段确认（ADR 0021），范围校验由 `app/domain/confirmation.py` 执行
 
 等用户回答后再继续。
 
-### Step 3：改 `app/subgraphs/<product>/models.py`
-- 在 `IntentType` Literal 加新值
-- 若需要新输出模型，加一个 `<Intent>Output` Pydantic 类
+### Step 3：意图识别
+- `app/subgraphs/<product>/models.py`：`<Product>IntentType` 加枚举值，意图输出模型的 `Field(description=)` 同步说明
+- 更新该产品的意图提示词 `app/prompts/<dir>/intent.md`（新意图不写进提示词就识别不出来）
 
-### Step 4：在 `app/subgraphs/<product>/` 加节点文件并接路由
-- 新增 `@safe_node` 装饰的提取函数 `extract_<intent>`
-  - 用 `load_prompt("<product>", "<intent>")` 加载提示词
-  - 用 `with_structured_output(<Intent>Output)`
-- 更新 `graph.py` 的 `_INTENT_TO_NODE` 路由表 **和** `add_conditional_edges` 的 path_map（两处都要改，漏一处会静默走 unknown 兜底）
-- 更新 `build_<product>_graph()`：`g.add_node` + `g.add_conditional_edges` + 合流边
+### Step 4：参数节点
+- 能由 Code 确定的字段：`@safe_node` 纯计算节点
+- 需要 LLM 的：`PromptSpec` + `candidate_model(<Canonical>)`（`app/extraction/candidates.py`）抽原文候选，
+  `@io_node` + `add_io_node` 注册；最终值由 Code 归一化节点决定（先例：`app/subgraphs/swap/place_order.py`
+  的 `swap_extract_candidates` → `swap_normalize`）
+- 写后端的节点用 `@safe_node`，绝不自动重试；后端响应如实透传
 
-### Step 5：提示词
-若有对应 Dify 提示词：
-- 用 `/migrate-prompt <dify-yaml> <node-title> <product>` 导入
+### Step 5：接路由与登记
+- `graph.py`：在 `_INTENT_TO_NODE` 登记新意图 → 节点（条件边由 `app/subgraphs/common.py` 的 `add_intent_dispatch` 自动生成；漏登记会静默走 unknown 兜底），加节点与汇合边
+- 节点契约登记：`app/node_execution/catalog.py`；trace 中文名：`app/observability/node_labels.py`
 
-若无：
-- **停下来问用户**是否要临时手写一段
-- 不要擅自硬编码提示词到代码
+### Step 6：测试（先 RED 再 GREEN，见 `test-driven-development` skill）
+- `tests/subgraphs/<product>/test_graph_routing.py`：新意图的路由用例
+- 节点单测：放在对应 `tests/subgraphs/<product>/test_<node>.py`
+- 数据集：`tests/fixtures/categories/` 至少 2 条（`scripts/check_fixture_consistency.py` 守护）；意图集
+  `tests/fixtures/intent/` 补对应逐轮标签
+- 需要批量生成测试且用户已授权子代理时，可派 `test-generator`
 
-### Step 6：测试
-调用 `test-generator` subagent（或直接补测试）：
-- `tests/subgraphs/<product>/test_models.py`：新 Pydantic 模型字段 + 路由函数映射测试
-- `tests/subgraphs/<product>/test_graph_routing.py`：1-2 条图路由用例（mock LLM）
-- `tests/fixtures/categories/`：2 条端到端 case（现役数据源）
-
-### Step 7：跑验证
+### Step 7：跑验证（轻量）
 ```bash
-pytest tests/ -v -k "$1"     # 只跑相关子图测试
+USE_MYSQL_CHECKPOINTER=false REQUEST_IDEMPOTENCY=false ENABLE_LANGFUSE=false \
+  pytest tests/subgraphs/$1/ tests/test_node_catalog_contract.py -q
+python scripts/check_fixture_consistency.py
 ```
+全量 pytest 与真实业务回归按根 `CLAUDE.md`「并行实施与验证范围」留到统一验收。
 
-全部通过才算完成。
-
-### Step 8：最终清单
-给用户一份改动清单：
-- [ ] `app/subgraphs/<product>/models.py`: 加 `IntentType` + `<Intent>Output`
-- [ ] `app/subgraphs/<product>/<node>.py`: 加 `extract_<intent>` 节点 + `PromptSpec`
-- [ ] 子图 `graph.py`: 路由 + edges
-- [ ] `app/prompts/<product>/<intent>.md`: 提示词（源自 Dify 或新写）
-- [ ] `tests/subgraphs/<product>/test_models.py`: 模型和路由测试
-- [ ] `tests/subgraphs/<product>/test_graph_routing.py`: 图路由测试
-- [ ] `tests/fixtures/categories/`: end-to-end case
-- [ ] `pytest tests/ -v` 全通过
-- [ ] （可选）`app/graph/state.py`：若需要新的 State 字段
+### Step 8：交付清单
+- [ ] `models.py`：`<Product>IntentType` + 输出模型字段说明
+- [ ] 意图提示词 + 参数提示词（如需 LLM），`prompt(<scope>)` commit
+- [ ] 参数节点（Code / 候选 + 归一化）
+- [ ] `graph.py`：`_INTENT_TO_NODE` + 节点 + 边
+- [ ] `catalog.py` + `node_labels.py` 登记
+- [ ] 测试 + categories ≥ 2 条 + 意图集标签
+- [ ] 已运行 / 未运行的检查写明
 
 ## 禁止
 
 - 跳过"跟用户确认"步骤
-- 用 mock 提示词掩盖真实需求
 - 复用现有意图但改其语义（要新加，不要改旧）
-- 忘了更新 `route_by_intent`
+- 让模型直接决定交易最终值，或把提示词正文写进 Python
+- 在代码 / 配置里维护标的等业务数据字典（根 `CLAUDE.md` P0）

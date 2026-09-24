@@ -3,9 +3,9 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from app.api.idempotency import InMemoryIdempotencyStore
 from app.api.turn_state import INPUT_FIELD_ALIASES, inputs_to_state
 from app.nodes.persist_intent import make_persist_intent
+from app.storage.idempotency import InMemoryIdempotencyStore
 from tests.test_inquiry_continuation import inquiry_workflow  # noqa: F401
 
 

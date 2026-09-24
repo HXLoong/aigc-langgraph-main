@@ -7,17 +7,14 @@
 
 工程纪律：
 - 字段名严格 1:1 匹配 Java DTO（保留 placeOrderWindCode 等 camelCase）
-- 金额一律 Decimal；向 Goats 发送前 truncate(2)
+- 金额一律 Decimal
 - 调用方依赖 Protocol 不依赖具体实现
 """
 from app.tools.models import (
     GoatsAlgoType,
-    GoatsCurrency,
     GoatsOrderDirection,
-    GoatsOrderStatus,
     GoatsPriceType,
     GoatsTransactionType,
-    MachineContext,
 )
 from app.tools.option_client import (
     FinancialOrderOpenApiBaseSaveReqVO,
@@ -41,12 +38,9 @@ from app.tools.ticker_client import (
 __all__ = [
     # models
     "GoatsAlgoType",
-    "GoatsCurrency",
     "GoatsOrderDirection",
-    "GoatsOrderStatus",
     "GoatsPriceType",
     "GoatsTransactionType",
-    "MachineContext",
     # option
     "FinancialOrderOpenApiBaseSaveReqVO",
     "FinancialOrderOpenApiSaveReqVO",

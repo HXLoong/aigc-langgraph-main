@@ -9,6 +9,7 @@ import json
 from collections.abc import Mapping, Sequence
 from typing import Any
 
+from app.extraction.candidates import evidence_sources
 from app.graph.state import Message
 
 
@@ -39,8 +40,6 @@ def source_payload(
     attachments: dict[str, str] | None = None, include_history: bool = True,
 ) -> str:
     """One copy per evidence source, retaining IDs and roles without generated metadata."""
-    from app.extraction.candidates import evidence_sources
-
     selected = state if include_history else {**state, "history_messages": []}
     sources = evidence_sources(selected, attachments)
     ordered = {key: value for key, value in sources.items() if key not in {"raw", "quote"}}

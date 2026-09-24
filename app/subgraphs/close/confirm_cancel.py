@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from app.execution.confirmation import parse_confirmation
+from app.domain.confirmation import parse_confirmation
 from app.extraction.identity import prepare_identity_scope
 from app.graph.business_params import validated_confirm
 from app.graph.safe_node import safe_node

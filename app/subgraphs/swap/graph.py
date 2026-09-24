@@ -16,7 +16,7 @@ ADR 0001 D5/D6 + grill-with-docs 第 1 决策 + DSL v2「主干工作流」互�
         → swap_unknown      (unknown_intent + cascade 错误兜底)
         → END
 
-cascade 防御（CLAUDE.md 核心原则第 8 条）：place_order 分支每一段 conditional
+cascade 防御（CLAUDE.md 核心原则第 9 条）：place_order 分支每一段 conditional
 都检查 `has_error`，任一环节（下单 / 全新对手识别 / 选择交易对手 / 选择标的）失败即跳
 swap_unknown，不让错误 cascade 到后端提交。
 
@@ -34,15 +34,13 @@ P2 辅助节点（不对应 intent，是 swap.place_order 的工具，按线上�
 """
 from __future__ import annotations
 
-from typing import Any
-
 from langgraph.graph import END, START, StateGraph
 from langgraph.graph.state import CompiledStateGraph
 
 from app.graph.cascade import has_error
 from app.graph.retry import add_io_node
-from app.graph.safe_node import safe_node
-from app.graph.state import AgentState, SubgraphOutput, TraceEntry
+from app.graph.state import AgentState, SubgraphOutput
+from app.subgraphs.common import add_intent_dispatch, intent_router, make_unknown_node
 from app.subgraphs.swap.apply_picks import swap_apply_picks
 from app.subgraphs.swap.cancel import swap_cancel
 from app.subgraphs.swap.confirm import swap_confirm
@@ -54,20 +52,8 @@ from app.subgraphs.swap.query_order import swap_query_order
 from app.subgraphs.swap.select_counterparty import swap_select_counterparty
 from app.subgraphs.swap.select_ticker import swap_select_ticker
 
-
-@safe_node
-async def swap_unknown(state: AgentState) -> dict[str, Any]:
-    """unknown_intent + cascade 错误兜底节点（替代原 swap_todo）。"""
-    intent = state.get("intent") or "unknown_intent"
-    return {
-        "trace": [
-            TraceEntry(
-                node="swap_unknown",
-                decision=f"unhandled_intent={intent}",
-            )
-        ]
-    }
-
+#: unknown_intent + cascade 错误兜底节点
+swap_unknown = make_unknown_node("swap_unknown")
 
 #: intent → 真节点 key 路由表（swap 子图 6 个真实意图全覆盖，unknown_intent 走兜底）
 _INTENT_TO_NODE: dict[str, str] = {
@@ -107,12 +93,8 @@ def _route_after_multimodal(state: AgentState) -> str:
     return "swap_unknown" if has_error(state) else "swap_place_order_submit"
 
 
-def _route_after_swap_intent(state: AgentState) -> str:
-    """swap.intent 后路由：cascade 防御 + intent 分发。"""
-    if has_error(state):
-        return "swap_unknown"
-    intent = state.get("intent") or "unknown_intent"
-    return _INTENT_TO_NODE.get(intent, "swap_unknown")
+#: swap.intent 后路由：cascade 防御 + intent 分发
+_route_after_swap_intent = intent_router(_INTENT_TO_NODE, "swap_unknown")
 
 
 def _route_after_place_order(state: AgentState) -> str | list[str]:
@@ -174,17 +156,7 @@ def build_swap_graph() -> CompiledStateGraph[AgentState, None, AgentState, Subgr
                 "swap_unknown": "swap_unknown",
             },
         )
-    g.add_conditional_edges(
-        "swap_intent",
-        _route_after_swap_intent,
-        {
-            "swap_place_order": "swap_place_order",
-            "swap_confirm": "swap_confirm",
-            "swap_cancel": "swap_cancel",
-            "swap_query_order": "swap_query_order",
-            "swap_unknown": "swap_unknown",
-        },
-    )
+    add_intent_dispatch(g, "swap_intent", _route_after_swap_intent, _INTENT_TO_NODE, "swap_unknown")
     g.add_conditional_edges(
         "swap_place_order",
         _route_after_place_order,

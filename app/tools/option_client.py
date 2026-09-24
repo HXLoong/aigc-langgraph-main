@@ -11,7 +11,7 @@ from typing import Any, Protocol
 import httpx
 from pydantic import ConfigDict, Field, field_validator
 
-from app.extraction.tenor import normalize_request_tenors
+from app.domain.tenor import normalize_request_tenors
 from app.tools.http_pool import acquire_http_client
 from app.tools.models import (
     GoatsOrderDirection,
@@ -119,7 +119,7 @@ class GoatsOptionRfqReqVO(WireModel):
 class FinancialOrderOpenApiSaveReqVO(WireModel):
     """`POST /admin-api/financial-orders/operate` 请求体（Java DTO 1:1）。
 
-    字段对齐 Dify DSL v2 code 节点「期权开仓」（spec/code_nodes/期权开仓.py）
+    字段对齐 Dify DSL v2 code 节点「期权开仓」（Dify 资产已冻结于 tag dify-assets-frozen-20260917，ADR 0024 D1）
     组装的 payload：conversationId / messageId / messageContent / quoteAppinfo /
     roomId / guid / userId / type / operate / operatorUserId / orderList /
     rawContent / quoteContent。
@@ -134,7 +134,7 @@ class FinancialOrderOpenApiSaveReqVO(WireModel):
     close_order_req_vo: CloseOrderReqVO | None = Field(default=None, alias="closeOrderReqVO")
     option_rfq: GoatsOptionRfqReqVO | None = Field(default=None, alias="optionRfq")
 
-    # 机器人上下文（9 个，由 MachineContext 提供，必填）
+    # 机器人上下文（9 个，由 BotContext 提供，必填）
     conversation_id: str = Field(alias="conversationId")
     message_id: int = Field(alias="messageId")
     message_content: str = Field(alias="messageContent")

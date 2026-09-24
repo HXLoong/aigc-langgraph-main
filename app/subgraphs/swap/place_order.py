@@ -25,10 +25,6 @@ from app.subgraphs.swap.normalize import normalize_candidates
 from app.subgraphs.swap.quote_hints import refine_quote_hints
 
 
-def _format_counterparty_list(counterparties: list[dict[str, Any]] | None) -> str:
-    return ", ".join(c.get("shortName", "") for c in counterparties or [] if isinstance(c, dict))
-
-
 def _build_user_message(
     state: AgentState, hints: Mapping[str, Any], prompt_name: str | None = None,
 ) -> str:

@@ -125,7 +125,7 @@ async def test_main_graph_e2e_unknown_routes_to_fallback(
     """ADR 0015 第 3 层 + cascade：无关键词 + LLM 判 unknown → fallback。"""
     from app.nodes import intent_route as intent_route_module
 
-    async def fake_classify(text: str, quote_content: str | None = None) -> str:
+    async def fake_classify(text: str, quote_content: str | None = None, history_messages: object = None) -> str:
         return route_reply('unknown', text)
 
     monkeypatch.setattr(intent_route_module, "_classify_with_llm", fake_classify)
@@ -158,7 +158,7 @@ async def test_main_graph_trace_is_isolated_per_turn(
 
     from app.nodes import intent_route as intent_route_module
 
-    async def fake_classify(text: str, quote_content: str | None = None) -> str:
+    async def fake_classify(text: str, quote_content: str | None = None, history_messages: object = None) -> str:
         return route_reply('unknown', text)
 
     monkeypatch.setattr(intent_route_module, "_classify_with_llm", fake_classify)

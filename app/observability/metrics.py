@@ -25,7 +25,6 @@ from __future__ import annotations
 import logging
 import threading
 from collections import defaultdict
-from time import perf_counter
 from typing import Any
 
 logger = logging.getLogger(__name__)
@@ -292,10 +291,10 @@ def emit_llm_cache(model: str, node: str | None, status: str, hit: int, miss: in
 def emit_canary_traffic(is_canary: bool) -> None:
     """金丝雀流量计数。
 
-    灰度期间企微管理员只切了部分群的 Webhook 到 LangGraph。LangGraph 收到
+    灰度期间只有部分群的 Java 侧 `agentUrl` 指向 LangGraph。LangGraph 收到
     的每条请求都该按 roomId 判定是否在 canary allowlist 内：
     - is_canary=True：合规进入，正常处理
-    - is_canary=False：可能是企微管理员误切非测试群 → 告警 + Tony 回切
+    - is_canary=False：可能误切了非测试群的 `agentUrl` → 告警 + 回切
 
     全量上线后 allowlist 含 ALL，所有流量都计为 canary（指标可继续保留）。
     """
@@ -365,35 +364,10 @@ def emit_llm_tokens(
     coll.inc_counter(METRIC_LLM_TOKENS, labels_completion, value=completion_tokens)
 
 
-# ============================================================
-# 计时上下文（用于细粒度延迟测量）
-# ============================================================
-
-
-class Timer:
-    """with Timer() as t: ... ; t.elapsed_ms  → int
-
-    用法:
-        with Timer() as t:
-            do_work()
-        emit_intent_latency("swap", "place_order", t.elapsed_ms)
-    """
-
-    def __init__(self) -> None:
-        self._start: float = 0.0
-        self.elapsed_ms: int = 0
-
-    def __enter__(self) -> Timer:
-        self._start = perf_counter()
-        return self
-
-    def __exit__(self, exc_type: object, exc_val: object, exc_tb: object) -> None:
-        self.elapsed_ms = int((perf_counter() - self._start) * 1000)
 
 
 __all__ = [
     "MetricsCollector",
-    "Timer",
     "emit_node_completed",
     "emit_intent_latency",
     "emit_fallback",

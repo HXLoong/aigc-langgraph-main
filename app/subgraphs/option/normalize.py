@@ -19,9 +19,9 @@ import re
 from collections.abc import Sequence
 from typing import Any
 
+from app.domain.numerals import chinese_int
+from app.domain.tenor import normalize_tenor
 from app.extraction.fields import EvidenceError
-from app.extraction.tenor import _cn_number as _cn_number
-from app.extraction.tenor import normalize_tenor
 from app.subgraphs.option.models import OptionInquiryRawItem
 
 # ============================================================
@@ -73,7 +73,7 @@ def normalize_notional(
         return _format_amount(float(match.group(1)) * _AMOUNT_MULTIPLIERS[match.group(2).lower()])
     cn_match = _CN_AMOUNT_RE.search(value)
     if cn_match:
-        number = _cn_number(cn_match.group(1))
+        number = chinese_int(cn_match.group(1))
         if number:
             unit = 100_000_000 if cn_match.group(2) == "亿" else 10_000
             return _format_amount(number * unit)

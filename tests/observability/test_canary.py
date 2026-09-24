@@ -124,7 +124,7 @@ async def test_ingest_emits_canary_metric_canary_room(
 async def test_ingest_emits_metric_for_non_canary_room(
     restore_canary_state, monkeypatch
 ) -> None:
-    """切流期间企微管理员误切非测试群 Webhook → ingest 应记 is_canary=false。"""
+    """切流期间误切非测试群的 agentUrl → ingest 应记 is_canary=false。"""
     from app.nodes.ingest import ingest
 
     monkeypatch.setenv("CANARY_ROOM_IDS", "r-canary-1")

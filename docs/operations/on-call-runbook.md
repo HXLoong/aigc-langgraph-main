@@ -3,7 +3,7 @@
 > **版本**：v0.3 草稿（2026-09-24）
 > **状态**：草稿；真实回切演练完成后基于实测更新到 v1.0（演练计划见 §8）
 > **适用范围**：客户现场生产环境的 LangGraph + 后台依赖（Java 后端 / DeepSeek-v4-pro / LangFuse / MySQL）
-> **维护**：图灵科技工程团队 + 客户企微管理员
+> **维护**：图灵科技工程团队 + 客户侧 Java 配置管理员
 
 ---
 
@@ -24,11 +24,11 @@
 | **图灵科技 on-call 值班工程师** | 第一响应（监控告警 → 诊断 → 决策）；非工作时间随叫随到 | 待填：手机 / 企微 |
 | **图灵科技工程负责人** | 升级响应（P0/P1 故障 30 分钟内介入） | 待填：手机 / 企微 |
 | **项目负责人 Tony** | 业务方沟通 + 客户协调 + 回切授权 | 待填：手机 / 企微 |
-| **客户企微管理员** | 执行紧急回切（改 Webhook 地址） | 待填：企微 ID / 备用电话 |
+| **客户侧 Java 配置管理员** | 执行切流 / 紧急回切（改 Java 侧 `agentUrl`） | 待填：企微 ID / 备用电话 |
 | **客户 IT 联系人** | LangFuse / 服务器 / 网络层故障 | 待填：手机 / 邮箱 |
 | **客户业务方 sign-off 人** | 业务级判定（"严重错例"标注） | 待填：邮箱 |
 
-**联系优先级**：值班工程师 → 工程负责人 → Tony → 客户企微管理员/IT。**不绕级直接找客户 IT**——避免重复打扰。
+**联系优先级**：值班工程师 → 工程负责人 → Tony → 客户侧 Java 配置管理员 / IT。**不绕级直接找客户 IT**——避免重复打扰。
 
 ---
 
@@ -138,7 +138,7 @@
 | 步骤 | 动作 |
 |---|---|
 | 1 | 立即通知 Tony + 业务方负责人 |
-| 2 | 立即停 shadow 双跑（停 LangGraph 实例 / 把 Webhook 切回 Dify）|
+| 2 | 立即停 shadow 双跑（停 LangGraph 实例 / 把 Java 侧 `agentUrl` 切回 Dify）|
 | 3 | 拉取 LangGraph trace + GOATS 订单日志，列出"误下单"清单 |
 | 4 | 业务方协调撤单（如还能撤）+ 客户书面致歉 |
 | 5 | 事后必须 postmortem：为什么 deploy 时 step2 advisory 没拦住 |
@@ -177,14 +177,17 @@
 | P1 风险评估后决定回切 | 工程负责人 + Tony 双确认 |
 | 业务方主动要求回切 | Tony 拍板 |
 
-### 7.2 执行步骤（企微管理员侧）
+### 7.2 执行步骤（Java 配置管理员侧）
 
-1. **企微管理员登录** 企微管理后台
-2. **进入** 应用管理 → 自建应用 → 找到 otc-agent 机器人
-3. **修改 Webhook URL**：
-   - 当前：`https://<langgraph-host>/v1/workflows/run`（LangGraph endpoint）
-   - 改为：`https://<dify-host>/v1/workflows/run`（Dify endpoint，**部署前由 Tony 提供完整 URL 填入本手册附录 A**）
-4. **保存配置**
+切换只改 Java 侧 `agentUrl`（Java Worker 调用的 AI 服务地址，ADR 0001），企微回调入口与 LangGraph 代码都不动：
+
+1. **Java 配置管理员** 按客户侧 Java 配置变更流程打开 `agentUrl` 配置
+2. **修改 `agentUrl`**：
+   - 当前：`https://<langgraph-host>/v1/workflows/run`（LangGraph）
+   - 改为：`https://<dify-host>/v1/workflows/run`（Dify，**部署前由 Tony 提供完整 URL 填入本手册附录 A**）
+   - 金丝雀期间若 `agentUrl` 按群配置，只改 `CANARY_ROOM_IDS` 白名单内的群；配置粒度与生效方式（热更新 / 需重启 Java）以部署前环境调研为准
+3. **保存并按 Java 侧流程生效**
+4. **服务侧善后**：值班工程师执行 `bash scripts/rollback_canary.sh --reason "..."`（备份 `.env`、验证 canary 流量停止、清空 `CANARY_ROOM_IDS`、写审计日志）
 5. **验证**：5 分钟内在测试群发一条已知 case，确认回复来自 Dify（可对比文案风格判断；Dify 回复通常更格式化）
 
 ### 7.3 通知动作（值班工程师侧，并行执行）
@@ -202,9 +205,9 @@
 
 修复完成后切回 LangGraph：
 
-1. 在测试群（非生产）先切回 LangGraph Webhook，跑 ≥ 30 条 smoke
+1. 在测试群（非生产）先把 `agentUrl` 切回 LangGraph，跑 ≥ 30 条 smoke
 2. 全绿 → 工程负责人 + Tony 双确认
-3. 企微管理员把生产群的 Webhook 切回 LangGraph
+3. Java 配置管理员把生产群的 `agentUrl` 切回 LangGraph
 4. 告警群通报"已切回 LangGraph"
 5. **持续观察 24 小时**——确认指标恢复正常
 
@@ -216,13 +219,13 @@
 
 | 演练点 | 验证内容 | 通过标准 |
 |---|---|---|
-| 企微管理员能在 5 分钟内完成 Webhook 切换 | 实测从决策到生效全程时间 | ≤ 5 分钟 |
+| Java 配置管理员能在 5 分钟内完成 `agentUrl` 切换并生效 | 实测从决策到生效全程时间 | ≤ 5 分钟 |
 | 切换后流量真的到 Dify | Dify 侧日志看到新请求 | ✅ |
 | 工程团队通知链路通畅 | 告警群 → 负责人 → Tony 的通知到达延迟 | ≤ 3 分钟 |
 | 回归流程可执行 | 演练后能干净切回 LangGraph | ✅ |
 | 演练发现的失败模式 | 补充进本手册 §5 / §7 | 形成 v1.0 正式版 |
 
-演练负责人：Tony + 企微管理员；图灵科技值班工程师全程旁观+记录。
+演练负责人：Tony + 客户侧 Java 配置管理员；图灵科技值班工程师全程旁观+记录。
 
 ---
 
@@ -243,13 +246,13 @@
 
 | 项目 | 真实值 |
 |---|---|
-| LangGraph 生产 Webhook URL | 待填 |
-| Dify 生产 Webhook URL | 待填 |
-| 企微管理后台访问地址 | 待填 |
+| `agentUrl` 生产值（LangGraph） | 待填 |
+| `agentUrl` 回切值（Dify） | 待填 |
+| `agentUrl` 配置入口与生效方式 | 待填 |
 | LangFuse 管理后台访问地址 | 待填 |
 | Java 后端基础 URL | 待填 |
 | 监控告警群企微群号 | 待填 |
-| 客户企微管理员姓名 + 联系方式 | 待填 |
+| 客户侧 Java 配置管理员姓名 + 联系方式 | 待填 |
 | 客户 IT 联系人 + 备用电话 | 待填 |
 | 业务方 sign-off 邮箱 | 待填 |
 

@@ -42,9 +42,9 @@ def test_legacy_connections_cannot_replace_required_mysql_uri(monkeypatch):
 async def test_persist_connects_using_single_mysql_uri(monkeypatch):
     import aiomysql
 
-    from app.nodes.persist import _write_to_mysql
+    from app.storage.node_trace import write_node_trace
 
-    monkeypatch.setattr("app.nodes.persist.get_settings", lambda: SimpleNamespace(
+    monkeypatch.setattr("app.storage.node_trace.get_settings", lambda: SimpleNamespace(
         mysql_uri=URI, persist_timeout_seconds=5,
     ))
     cursor = MagicMock(executemany=AsyncMock())
@@ -56,7 +56,7 @@ async def test_persist_connects_using_single_mysql_uri(monkeypatch):
     connection = MagicMock(cursor=cursor_context)
     connect = AsyncMock(return_value=connection)
     monkeypatch.setattr(aiomysql, "connect", connect)
-    await _write_to_mysql([{"node": "render"}], "message", "conversation")
+    await write_node_trace([{"node": "render"}], "message", "conversation")
     assert connect.call_args.kwargs["db"] == "shared_java"
     assert connect.call_args.kwargs["port"] == 3308
     assert "INSERT INTO langgraph_node_trace" in cursor.executemany.call_args.args[0]
@@ -73,7 +73,10 @@ async def test_lifespan_wires_idempotency_using_single_mysql_uri(monkeypatch):
     ))
     async with app_main.lifespan(app_main.app):
         store = app_main.app.state.idempotency_store
-        assert store._conn_args == ("localhost", 3308, "user", "pass", "shared_java")
+        args = store._conn_args
+        assert (args["host"], args["port"], args["user"], args["password"], args["db"]) == (
+            "localhost", 3308, "user", "pass", "shared_java",
+        )
 
 
 def test_instrument_lookup_settings_are_gone(monkeypatch):

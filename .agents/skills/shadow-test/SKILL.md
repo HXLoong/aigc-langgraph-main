@@ -43,7 +43,7 @@ python scripts/shadow_compare.py \
 - `product_type` 不一致 → 一级路由（`app/nodes/intent_route.py`，ADR 0015）
 - `intent` 不一致 → 子图意图提示词
 - 参数不一致 → 子图 extract 节点与 Pydantic 模型
-- 标的不一致 → 标的识别归 Java（ADR 0025），核对传给后端的原文
+- `tickers[i].*` 差异 → 结构性差异：LangGraph 的 `tickers` 是恒为空的兼容字段（标的识别归 Java，ADR 0025），无需排查；标的问题核对传给后端的原文
 
 差异确认是 LangGraph 的问题时，先在 `tests/fixtures/categories/` 补 case，再按 TDD 修复。
 

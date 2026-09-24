@@ -15,7 +15,7 @@ from typing import Any, Literal, Protocol
 
 import aiomysql
 
-from app.api.idempotency import IdempotencyRecord, IdempotencyStore
+from app.storage.idempotency import IdempotencyRecord, IdempotencyStore
 from app.storage.mysql import connection_args
 
 _ENDPOINTS = ("/admin-api/swap-order/operate", "/admin-api/financial-orders/operate")

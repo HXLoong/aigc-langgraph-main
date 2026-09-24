@@ -32,7 +32,7 @@ def isolated_workflow(monkeypatch: pytest.MonkeyPatch) -> AsyncMock:
     llm.with_structured_output.return_value.ainvoke = mock_ainvoke(intent_reply(UnknownIntentOutput, label="unknown"))
     monkeypatch.setattr("app.nodes.intent_route.get_qwen_thinking", lambda: llm)
     write_trace = AsyncMock()
-    monkeypatch.setattr("app.nodes.persist._write_to_mysql", write_trace)
+    monkeypatch.setattr("app.nodes.persist.write_node_trace", write_trace)
     return write_trace
 
 

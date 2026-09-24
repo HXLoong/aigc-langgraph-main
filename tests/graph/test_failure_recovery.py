@@ -6,7 +6,7 @@ import pytest
 from app.checkpointer.factory import build_checkpoint_serde
 from app.graph.retry import io_node
 from app.graph.state import Message, TraceEntry, merge_by_id
-from app.nodes.persist import _trace_entry_to_row
+from app.storage.node_trace import trace_entry_to_row as _trace_entry_to_row
 
 
 @pytest.mark.parametrize("item", [Message(role="user", content="original"), TraceEntry(node="original")])

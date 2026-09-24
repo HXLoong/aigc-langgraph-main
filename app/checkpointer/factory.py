@@ -27,7 +27,7 @@ from app.storage.mysql import connection_args
 logger = logging.getLogger(__name__)
 
 #: checkpoint 里允许反序列化的本项目模型（ADR 0024 D4）。langgraph-checkpoint 4.x 的
-#: permissive 默认会在未来版本 block 未登记类型；与 tests/test_api_turn_inputs.py 白名单一致。
+#: permissive 默认会在未来版本 block 未登记类型；与 tests/api_wire/test_api_turn_inputs.py 白名单一致。
 CHECKPOINT_ALLOWED_MODELS: tuple[tuple[str, str], ...] = (
     ("app.graph.state", "TickerCandidate"),
     ("app.graph.state", "Message"),

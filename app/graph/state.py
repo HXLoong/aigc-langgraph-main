@@ -133,7 +133,7 @@ def _truncate_trace_value(value: Any) -> Any:
 
 
 class TraceEntry(_Identified):
-    """每节点决策痕迹（供 harness 失败定位 + ADR 0014 D7 失败报告）。
+    """每节点决策痕迹（供 harness 失败定位）。
 
     llm_output / llm_input_excerpt 在写入时统一截断(TRACE_TEXT_LIMIT),
     防止累积 trace 撑大 checkpoint;完整 LLM I/O 由 LangFuse 侧保留。
@@ -210,7 +210,8 @@ class AgentState(TypedDict, total=False):
     """LangGraph 主图共享的 State Schema。
 
     字段分层：
-    - 入口：解析 Dify Workflow Run inputs 后由 ingest 节点写入（9 个机器人上下文字段）
+    - 入口：API 唯一入口 app/api/turn_state.py::inputs_to_state 写入（9 个机器人上下文字段），
+      ingest 只做一轮边界重置与会话检查
     - 历史：history_messages（reducer 累加）
     - 业务路由：product_type 一级 + intent 二级
     - 业务对象：聚合的参数字典（多节点共享同字段；dict 形态，写入经 Pydantic 校验）
@@ -238,7 +239,7 @@ class AgentState(TypedDict, total=False):
     retry_attempt: str | None
 
     # -------- 对手方与引用候选（路由前置提取，DSL v2「交易对手、候选标的提取」）--------
-    # 入口原始 JSON 串（Java 侧 option/trs 预查结果，ingest 透传，pre_route 解析）
+    # 入口原始 JSON 串（Java 侧 option/trs 预查结果，inputs_to_state 透传，pre_route 解析）
     option_counterparties_raw: str | None
     swap_counterparties_raw: str | None
     # 后端预查对手精简列表：[{ctptyId, shortName, longName, sort}]
@@ -254,7 +255,8 @@ class AgentState(TypedDict, total=False):
     # -------- 历史 / ConversationMemory（跨轮持久化，ingest 不重置）--------
     history_messages: Annotated[list[Message], merge_history]
     #: 上一轮已确认业务对象（ADR 0024 D4）：{product_type, intent, expected_action, order_ids, message_id}
-    #: 由主图 remember_confirmed_params 写入；确认链路裸确认时优先读它，显式引用 / 单号仍优先
+    #: 由主图 remember_confirmed_params 写入；仅作跨轮上下文，七条最终确认路径只认用户当前引用
+    #: （app/domain/confirmation.py），不从记忆补订单号
     last_confirmed_params: dict[str, Any] | None
     #: 兼容平仓撤单链的最近会话订单；内容由上游提供，节点只读取最后一笔订单号
     conversation_orders: list[dict[str, Any]]

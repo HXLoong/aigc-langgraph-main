@@ -12,7 +12,7 @@ metadata:
 
 1. 从任务记录、已有报告或指定trace确定一个根因，区分代码缺陷与授权对手/持仓/模型配置缺失。
 2. 写最小失败测试并观察RED；实现后跑GREEN及少量相关测试。用户要求轻量验证时不逐轮跑全套或全量真实回归。
-3. 代码与提示词遵循根AGENTS及PromptSpec契约；自然语言仅抽候选，Code归一化，GOATS验证最终标的，保留字段证据。
+3. 代码与提示词遵循根 CLAUDE.md（Codex 读生成的 AGENTS.md）及 PromptSpec 契约；自然语言仅抽候选，Code归一化，标的原文交 Java 后端识别与校验（ADR 0025），保留字段证据。
 4. 专项通过后本地提交并记录SHA、用例与未验收项。禁止push/创建PR，不修改Java源码，不伪造后端响应或降低断言。
 5. 需要真实业务复验时按run-eval技能，由主代理使用scripts/local_eval.py、明确case和本地服务调度。只使用tests/fixtures/categories，不包含unified。
 6. 完成任务后继续下一项。缺少外部条件则记录证据、所需条件并推进其他独立任务；全部被阻塞时明确交接，不把未验证项标为完成。
@@ -28,7 +28,7 @@ metadata:
 ## 验证命令
 
 ```bash
-USE_MYSQL_CHECKPOINTER=false REQUEST_IDEMPOTENCY=false ENABLE_LANGFUSE=false .venv/bin/python -m pytest <本次专项测试文件> -q
+USE_MYSQL_CHECKPOINTER=false REQUEST_IDEMPOTENCY=false ENABLE_LANGFUSE=false python -m pytest <本次专项测试文件> -q
 ```
 
 当前.env显式启用持久化；纯单测以命令级覆盖隔离依赖，不能在全局fixture绕过业务路径。

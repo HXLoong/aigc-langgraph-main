@@ -1,6 +1,6 @@
 """close 子图后端调用。
 
-对齐 Dify `期权平仓`[code] 节点（spec/code_nodes/期权平仓.py）：POST
+对齐 Dify `期权平仓`[code] 节点（Dify 资产已冻结于 tag dify-assets-frozen-20260917，ADR 0024 D1）：POST
 `/admin-api/financial-orders/operate`，payload 固定 `orderList: []` +
 `closeOrderReqVO: {...}`（不像 option 子图那样把订单参数塞进 orderList）。
 
@@ -19,7 +19,7 @@ from app.extraction.identity import protect_identity_lists
 from app.extraction.locks import protect_orders
 from app.graph.state import AgentState
 from app.subgraphs.close.aggregate import sanitize_close_order_req_vo
-from app.tools.bot_context import BotContext, normalize_message_id
+from app.tools.bot_context import BotContext
 from app.tools.exceptions import MissingBackendContextError
 from app.tools.option_client import (
     CloseOrderReqVO,
@@ -28,16 +28,6 @@ from app.tools.option_client import (
     OptionIntentionType,
 )
 from app.tools.receipts import receipt_guard, receipt_update
-
-
-def _message_id(value: Any) -> int:
-    return normalize_message_id(value)
-
-
-def _context(state: AgentState) -> dict[str, Any]:
-    """机器人上下文 → Java ReqVO 字段；唯一定义在 app/tools/bot_context.py。"""
-    wire = BotContext.from_state(state).to_wire()
-    return wire
 
 
 async def call_close_backend(
@@ -71,7 +61,7 @@ async def call_close_backend(
         orderList=[],
         closeOrderReqVO=CloseOrderReqVO.model_validate(sanitized),
         optionRfq=None,
-        **_context(state),
+        **BotContext.from_state(state).to_wire(),
     )
     async with receipt_guard("close"):
         result = await OptionClientHttpx().operate(req)

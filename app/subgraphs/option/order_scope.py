@@ -4,7 +4,10 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 
-ORDER_ID_RE = re.compile(r"(?<![A-Za-z0-9-])Q-\d{8}-[A-Za-z0-9]{4,16}(?![A-Za-z0-9-])")
+from app.domain.numerals import require_ordinal
+from app.domain.order_ids import OPTION_ORDER_ID_RE
+
+ORDER_ID_RE = OPTION_ORDER_ID_RE
 _NUMBER = r"[+-]?\d+|[零〇一二两三四五六七八九十百]+"
 _SELECTOR = re.compile(
     rf"{ORDER_ID_RE.pattern}|序号\s*[:：]?\s*(?P<label>{_NUMBER})|"
@@ -19,21 +22,6 @@ class OrderScopeError(ValueError):
 
 def extract_order_ids(text: str | None) -> list[str]:
     return list(dict.fromkeys(m[0] for m in ORDER_ID_RE.finditer(text or "")))
-
-
-def _number(token: str) -> int:
-    if token.lstrip("+-").isdigit():
-        return int(token)
-    digits = dict(zip("零一二三四五六七八九", range(10), strict=True))
-    digits.update({"〇": 0, "两": 2})
-    total = current = 0
-    for char in token:
-        if char in "十百":
-            total += (current or 1) * (10 if char == "十" else 100)
-            current = 0
-        else:
-            current = digits[char]
-    return total + current
 
 
 def quote_sequence_map(quote: str) -> dict[int, str]:
@@ -56,7 +44,7 @@ def quote_sequence_map(quote: str) -> dict[int, str]:
             if re.search(r"请引用|例如|如只确认|如所有订单|如订单无误", line):
                 continue
             raise OrderScopeError("引用订单序号无法唯一对应，请重新引用订单消息。")
-        number = _number(marker[1])
+        number = require_ordinal(marker[1])
         if number < 1 or (number in mapping and mapping[number] != target[0]):
             raise OrderScopeError("引用订单序号冲突，请重新引用订单消息。")
         mapping[number] = target[0]
@@ -78,7 +66,7 @@ def selectors(raw: str, quote: str) -> list[OrderSelector]:
     for match in _SELECTOR.finditer(raw):
         label, position = match.group("label"), match.group("position")
         if label is not None or position is not None:
-            number = _number(label or position or "0")
+            number = require_ordinal(label or position or "0")
             if label is not None:
                 if mapping is None:
                     mapping = quote_sequence_map(quote) or dict(enumerate(ids, 1))

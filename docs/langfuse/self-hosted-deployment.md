@@ -163,7 +163,7 @@ redis (健康) ──────┘
 把上一步的 API Key 写到 LangGraph 应用的 `.env`（参考根目录 `.env.customer.template`）：
 
 ```bash
-LANGFUSE_HOST=http://<langfuse-host>:3000
+LANGFUSE_BASE_URL=http://<langfuse-host>:3000
 LANGFUSE_PUBLIC_KEY=pk-lf-xxxx
 LANGFUSE_SECRET_KEY=sk-lf-xxxx
 ENABLE_LANGFUSE=true
@@ -208,7 +208,7 @@ server {
 
 ### 5.1 备份策略
 
-ADR 0014 D6 数据保留策略：
+ADR 0014 D5 数据保留策略：
 
 | 类型 | 保留期 | 备份频率 | 备份目标 |
 |---|---|---|---|
@@ -337,7 +337,7 @@ deploy:
 LANGFUSE_PORT=13000
 ```
 
-注意：改了 `LANGFUSE_PORT` 后，应用的 `LANGFUSE_HOST` 也要同步改成 `http://host:13000`。
+注意：改了 `LANGFUSE_PORT` 后，应用的 `LANGFUSE_BASE_URL` 也要同步改成 `http://host:13000`。
 
 ### 8.4 ClickHouse migration 失败
 
@@ -358,7 +358,7 @@ docker compose -f infra/langfuse/docker-compose.yml --env-file infra/langfuse/.e
 grep -i "langfuse" /var/log/otc-agent/*.log
 
 # 2. 测试连接
-curl -u $LANGFUSE_PUBLIC_KEY:$LANGFUSE_SECRET_KEY $LANGFUSE_HOST/api/public/health
+curl -u $LANGFUSE_PUBLIC_KEY:$LANGFUSE_SECRET_KEY $LANGFUSE_BASE_URL/api/public/health
 
 # 3. 期望返回 200 + JSON {"status": "OK"}
 ```

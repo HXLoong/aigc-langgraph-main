@@ -1,7 +1,8 @@
 # scripts/langfuse
 
 与 Langfuse 交互的脚本。真源与推送方向见 [ADR 0014 D3](../../docs/adr/0014-langfuse-as-harness-backend.md)：
-提示词 / 数据集 / 评分口径都以 git 为准，本目录只做同步，或在演练后把结果拉回 git。
+提示词 / 数据集 / 评分口径都以 git 为准，本目录只做 git → Langfuse 的单向同步，不从 Langfuse 拉回。
+各脚本的完整参数与使用场景见 [docs/langfuse/workflow-guide.md](../../docs/langfuse/workflow-guide.md) §7。
 
 ## 脚本
 
@@ -30,6 +31,10 @@ python scripts/langfuse/langfuse_eval.py --local tests/fixtures/intent --concurr
 把 fixture 上传成 Langfuse Dataset。默认源是 `tests/fixtures/categories`。
 
 ```bash
+# 同步所有现役 JSONL（每个文件一个 Dataset）
+python scripts/langfuse/upload_golden_to_langfuse.py --sync-all
+
+# 单个文件（--suite / --backend 可覆盖按路径自动判定的套件）
 python scripts/langfuse/upload_golden_to_langfuse.py --dataset-name golden_option_close_case \
   --source tests/fixtures/categories/golden_option_close_case.jsonl --mode append
 ```
@@ -46,8 +51,8 @@ python scripts/langfuse/upload_prompt_to_langfuse.py option_close.intent --dry-r
 python scripts/langfuse/upload_prompt_to_langfuse.py option_close.intent
 ```
 
-> 读的是**工作区**的 `.md`（未提交的改动也会被推上去）；默认打 `staging` 标签，
-> 不影响运行时（运行时读 `production`）。
+> 读的是**工作区**的 `.md`（未提交的改动也会被推上去）；默认打 `staging` 标签。
+> 运行时提示词始终从 git 加载，不读 Langfuse Prompts（生产开启 `USE_LANGFUSE_PROMPTS` 会直接报错）。
 
 ## upload_evaluators.py / upload_score_configs.py
 
@@ -64,7 +69,7 @@ python scripts/langfuse/upload_evaluators.py --apply
 |---|---|
 | `_public_api.py` | Langfuse Public API 的最小同步客户端 |
 | `_definitions.py` | 读取 `definitions/` 下的资源定义 |
-| `definitions/` | Evaluator 与 Score Config 的定义（JSON + 分目录） |
+| `definitions/` | Evaluator 与 Score Config 的定义（`evaluators.json` / `score-configs.json`） |
 
 ## 约定
 

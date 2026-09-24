@@ -19,7 +19,7 @@ CLAUDE.md P0 纪律"业务代码不能掩盖后端真实响应"约束所有回�
 
 ### D1 · 消息级幂等：以企微 `message_id` 占位、回放完整响应，不确定写入永不重跑
 
-- 幂等键 = 企微 `message_id`，与 `langgraph_message_log.uk_message_id` 对齐（`app/api/idempotency.py`）；无 `message_id` 的请求不做幂等。
+- 幂等键 = 企微 `message_id`，与 `langgraph_message_log.uk_message_id` 对齐（`app/storage/idempotency.py`）；无 `message_id` 的请求不做幂等。
 - 状态机 `in_progress → done | uncertain`：首次占位 → 跑图 → 回填完整 HTTP 响应（`reply_text` / `response` / `http_status`）。
 - 重投处理：`done` → 原样回放（`outputs.replayed=true`、`idempotency_status`）；`in_progress` → 固定文案"该消息正在处理中，请勿重复提交"；占位超过 `processing_timeout_seconds`（默认 120s）未完成 → 视为 `uncertain`，回复"执行结果待核对，请勿重复提交"，**不重新执行**；上次以错误结束 → HTTP 502。
 - 同一 `message_id` 出现在不同用户 / 群 → `IdempotencyConflictError`，拒绝回放。
@@ -50,7 +50,7 @@ CLAUDE.md P0 纪律"业务代码不能掩盖后端真实响应"约束所有回�
 
 ### D5 · 运维对账：只读 Java 回执，显式应用，不做交易写
 
-`app/api/reconciliation.py`：
+`app/storage/reconciliation.py`：
 
 - 只读取 Java 访问日志中 `/swap-order/operate` 与 `/financial-orders/operate` 的记录（`SELECT` only），按 `message_id` 精确关联，**禁止**旧的"末 18 位归一化"匹配。
 - 结论枚举：`response_found` / `unknown` / `changed` / `already_done` / `in_progress` / `missing`；缺少回执 = `unknown`，订单行存在或日志缺失都不构成证明。

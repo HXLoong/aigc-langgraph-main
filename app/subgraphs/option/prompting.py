@@ -12,10 +12,6 @@ from app.prompts import blocks
 EXTRACT_INPUTS: tuple[str, ...] = ("raw_text", "quote_content", "history_messages")
 
 
-def extract_user(state: AgentState) -> str:
-    return blocks.source_payload(state)
-
-
 INTENT_INPUTS: tuple[str, ...] = (
     "raw_text", "quote_content", "history_messages", "option_counterparties",
 )

@@ -20,7 +20,7 @@ from typing import Any
 from app.extraction.locks import protect_orders
 from app.graph.state import AgentState
 from app.subgraphs.swap.prewash import sanitize_order_list
-from app.tools.bot_context import BotContext, normalize_message_id
+from app.tools.bot_context import BotContext
 from app.tools.exceptions import MissingBackendContextError
 from app.tools.receipts import receipt_guard, receipt_update
 from app.tools.swap_client import (
@@ -33,26 +33,12 @@ from app.tools.swap_client import (
 logger = logging.getLogger(__name__)
 
 
-def _message_id(value: Any) -> int:
-    return normalize_message_id(value)
-
-
 def _context(state: AgentState) -> dict[str, Any]:
     """机器人上下文 → Java ReqVO 字段；唯一定义在 app/tools/bot_context.py。"""
     wire = BotContext.from_state(state).to_wire()
     # 互换 operate 未填操作者透传空串（ReqVO extra="allow"）
     wire["operatorUserId"] = wire["operatorUserId"] or ""
     return wire
-
-
-def _is_empty_backend_result(value: Any) -> bool:
-    if value is None:
-        return True
-    if isinstance(value, str):
-        return not value.strip()
-    if isinstance(value, (dict, list, tuple, set)):
-        return not value
-    return False
 
 
 async def call_swap_backend(

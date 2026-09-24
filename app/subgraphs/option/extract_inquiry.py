@@ -13,7 +13,6 @@ from langgraph.graph.state import CompiledStateGraph
 from app.extraction.candidates import (
     candidate_model,
     evidence_sources,
-    evidence_user,
     unpack_candidates,
 )
 from app.extraction.fields import EvidenceError, FieldRecord, merge_fields
@@ -29,6 +28,7 @@ from app.graph.state import (
     merge_by_id,
 )
 from app.llm.clients import get_qwen_thinking
+from app.prompts import blocks
 from app.prompts.spec import PromptSpec, register
 from app.subgraphs.option.backend import call_option_backend
 from app.subgraphs.option.models import (
@@ -56,7 +56,7 @@ SPEC = register(PromptSpec(
     name="extract_inquiry",
     output_model=CANDIDATE_MODEL,
     inputs=EXTRACT_INPUTS,
-    user_builder=evidence_user,
+    user_builder=blocks.source_payload,
 ))
 
 

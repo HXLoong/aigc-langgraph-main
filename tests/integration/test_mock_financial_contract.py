@@ -9,7 +9,7 @@ from uuid import uuid4
 import httpx
 import pytest
 
-from app.execution.confirmation import parse_confirmation
+from app.domain.confirmation import parse_confirmation
 from app.subgraphs.close.reference_parser import parse_reference_message
 from app.tools.option_client import FinancialOrderOpenApiSaveReqVO, OptionClientHttpx
 from mock_api.server import app

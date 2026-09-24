@@ -102,15 +102,6 @@ def test_emit_llm_call() -> None:
     assert coll.get_counter(metrics.METRIC_LLM_TOTAL, {"model": "deepseek-v4-pro", "status": "ok"}) == 1
 
 
-def test_timer_records_elapsed() -> None:
-    import time
-
-    with metrics.Timer() as t:
-        time.sleep(0.05)  # 50ms
-    # 允许 ±20ms 抖动
-    assert 30 <= t.elapsed_ms <= 200
-
-
 def test_prometheus_render_includes_counters_and_histograms() -> None:
     metrics.emit_node_completed("swap.intent", "ok", 100)
     metrics.emit_fallback("cascade_fail")

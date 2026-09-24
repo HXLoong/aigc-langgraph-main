@@ -654,7 +654,7 @@ main() {
     echo "💓 健康检查:        http://localhost:8000/health"
     echo "📈 监控指标:        http://localhost:8000/metrics"
     echo
-    echo "📖 接入企微 Webhook 见 docs/deploy/customer-private.md §8"
+    echo "📖 接入 Java 侧 agentUrl 见 docs/deploy/customer-private.md §8"
     echo "📖 故障处理 见 docs/operations/on-call-runbook.md"
     echo
 }

@@ -1,4 +1,4 @@
-"""FastAPI 入口（ADR 0001 D6 + ADR 0014 D8）。
+"""FastAPI 入口（ADR 0001 D6 + ADR 0014 D5）。
 
 启动时编译主图并挂载到 app.state。**LangFuse 回调不在本层注入**：所有环境统一由
 `app/api/routes.py` 走请求级 trace（ADR 0024 D5），`config.metadata` 携带
@@ -18,7 +18,6 @@ from starlette.middleware.base import BaseHTTPMiddleware
 
 from app.api.errors import workflow_http_error, workflow_validation_error
 from app.api.health import router as health_router
-from app.api.idempotency import MySQLIdempotencyStore
 from app.api.nodes import router as nodes_router
 from app.api.routes import router as api_router
 from app.checkpointer.factory import close_checkpointer, init_checkpointer
@@ -29,6 +28,7 @@ from app.node_execution.registry import build_registry
 from app.observability import tracing
 from app.observability.logs import configure_logging_from_settings
 from app.observability.metrics import emit_http_response, get_collector
+from app.storage.idempotency import MySQLIdempotencyStore
 from app.tools.http_pool import close_shared_http_client, open_shared_http_client
 from app.tools.message_client import MessageClientHttpx
 

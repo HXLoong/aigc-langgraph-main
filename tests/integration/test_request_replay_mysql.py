@@ -5,8 +5,8 @@ from urllib.parse import urlsplit
 
 import pytest
 
-from app.api.idempotency import MySQLIdempotencyStore
 from app.config import get_settings
+from app.storage.idempotency import MySQLIdempotencyStore
 
 
 @pytest.mark.skipif(os.getenv("RUN_LOCAL_MYSQL_TESTS") != "1", reason="requires local MySQL")

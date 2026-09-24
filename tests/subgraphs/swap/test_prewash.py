@@ -4,7 +4,7 @@
 `app/subgraphs/swap/backend.py:98` 由 `call_swap_backend` 对 6 个意图统一调用一次
 （「模型数据聚合 → 前置清洗 → 互换开仓」链路上的单一清洗落点）。
 
-对齐参考：`tests/subgraphs/option/test_sanitize.py`（同一清洗语义的另一份实现）。
+递归核心在 `app/domain/sanitize.py`（与 option/close 前置清洗共用）。
 测试方法：G1 纯函数确定性。
 """
 from __future__ import annotations

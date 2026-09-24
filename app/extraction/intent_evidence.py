@@ -23,13 +23,6 @@ class IntentEvidenceOutput(BaseModel):
     evidence: list[IntentEvidence] = Field(min_length=1, description="支持意图的原文证据；必须包含本轮用户消息，引用和历史只能补充上下文")
 
 
-def source_payload(state: Mapping[str, Any]) -> str:
-    """Only input data; prompt assets own the extraction instructions."""
-    from app.prompts import blocks
-
-    return blocks.source_payload(state)
-
-
 def intent_records(
     result: IntentEvidenceOutput, state: Mapping[str, Any], *, scope: str, value: str,
 ) -> dict[str, FieldRecord]:

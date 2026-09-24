@@ -2,10 +2,10 @@
 
 验证：
 - 空 trace 不写 MySQL（return 早退）
-- 非空 trace 调用 _write_to_mysql 一次
+- 非空 trace 调用 storage.node_trace.write_node_trace 一次
 - MySQL 写失败被 catch（不抛、不阻塞）
-- TraceEntry / dict / 其他对象都能正确转 row
-- mysql URI 解析正确
+- TraceEntry / dict / 其他对象都能正确转 row（app/storage/node_trace.py）
+- mysql URI 解析正确（app/storage/mysql.py::connection_args）
 """
 from __future__ import annotations
 
@@ -14,12 +14,15 @@ from unittest.mock import AsyncMock, patch
 import pytest
 
 from app.graph.state import TraceEntry
-from app.nodes.persist import (
-    _parse_mysql_uri,
-    _trace_entry_to_row,
-    _truncate,
-    persist,
-)
+from app.nodes.persist import persist
+from app.storage.mysql import connection_args
+from app.storage.node_trace import trace_entry_to_row as _trace_entry_to_row
+from app.storage.node_trace import truncate_preview as _truncate
+
+
+def _parse_mysql_uri(uri: str) -> tuple[str, int, str, str, str]:
+    args = connection_args(uri)
+    return args["host"], args["port"], args["user"], args["password"], args["db"]
 
 
 def test_truncate_short_string_unchanged() -> None:
@@ -112,7 +115,7 @@ def test_trace_entry_to_row_with_llm_output() -> None:
 @pytest.mark.asyncio
 async def test_persist_empty_trace_skips_mysql() -> None:
     """空 trace 不应调 MySQL。"""
-    with patch("app.nodes.persist._write_to_mysql", new=AsyncMock()) as mock_write:
+    with patch("app.nodes.persist.write_node_trace", new=AsyncMock()) as mock_write:
         result = await persist({"trace": []})
     # safe_node 装饰器会附加 persist 自己的 trace 条目，所以 result 含 trace 但无 error
     assert "error" not in result
@@ -123,7 +126,7 @@ async def test_persist_empty_trace_skips_mysql() -> None:
 async def test_persist_writes_to_mysql_on_success() -> None:
     """非空 trace 应调一次 MySQL。"""
     trace = [TraceEntry(node="intent_route", decision="swap")]
-    with patch("app.nodes.persist._write_to_mysql", new=AsyncMock()) as mock_write:
+    with patch("app.nodes.persist.write_node_trace", new=AsyncMock()) as mock_write:
         result = await persist({
             "trace": trace,
             "message_id": "m1",
@@ -138,7 +141,7 @@ async def test_persist_mysql_failure_does_not_break() -> None:
     """MySQL 写失败不抛、不影响业务返回（业务路径正常完成）。"""
     trace = [TraceEntry(node="swap.intent")]
     with patch(
-        "app.nodes.persist._write_to_mysql",
+        "app.nodes.persist.write_node_trace",
         new=AsyncMock(side_effect=RuntimeError("DB down")),
     ):
         result = await persist({"trace": trace, "message_id": "m1", "conversation_id": "c1"})
@@ -150,7 +153,7 @@ async def test_persist_mysql_failure_does_not_break() -> None:
 async def test_persist_missing_mysql_uri_does_not_crash() -> None:
     """MYSQL_URI 未配置时也不应崩。"""
     trace = [TraceEntry(node="swap.intent")]
-    with patch("app.nodes.persist.get_settings") as mock_settings:
+    with patch("app.storage.node_trace.get_settings") as mock_settings:
         mock_settings.return_value.mysql_uri = ""
         result = await persist({"trace": trace, "message_id": "m1", "conversation_id": "c1"})
     # 业务流程仍然正常

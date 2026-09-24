@@ -13,14 +13,17 @@ from app.api.nodes import router
 from app.config import get_settings
 from app.node_execution.executor import NodeExecutor
 from app.node_execution.registry import build_registry
-from app.nodes.persist import NODE_TRACE, _parse_mysql_uri
+from app.storage.mysql import NODE_TRACE, connection_args
 
 
 @pytest.mark.skipif(os.getenv("RUN_LOCAL_MYSQL_TESTS") != "1", reason="requires local MySQL")
 async def test_persist_endpoint_really_inserts_node_trace() -> None:
     import aiomysql
 
-    host, port, user, password, database = _parse_mysql_uri(get_settings().mysql_uri)
+    args = connection_args(get_settings().mysql_uri)
+    host, port, user, password, database = (
+        args["host"], args["port"], args["user"], args["password"], args["db"]
+    )
     assert host in {"localhost", "127.0.0.1", "::1"}, "local acceptance only"
     trace_id = "node-api-" + uuid.uuid4().hex
     app = FastAPI()

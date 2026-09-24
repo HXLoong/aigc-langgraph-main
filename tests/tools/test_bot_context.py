@@ -52,13 +52,16 @@ def test_to_wire_matches_legacy_context_shape_byte_for_byte() -> None:
 
 
 def test_backends_build_context_from_bot_context() -> None:
+    """option / close 直接用 BotContext.to_wire()；swap 只多一条操作者空串兜底。"""
+    import inspect
+
     from app.subgraphs.close import backend as close_backend
     from app.subgraphs.option import backend as option_backend
     from app.subgraphs.swap import backend as swap_backend
 
     state = _state()
     wire = BotContext.from_state(state).to_wire()
-    assert option_backend._context(state) == wire
+    for module in (option_backend, close_backend):
+        assert "BotContext.from_state(state).to_wire()" in inspect.getsource(module)
     assert swap_backend._context(state) == wire
-    assert close_backend._context(state) == wire
     assert swap_backend._context({"raw_text": "x"})["operatorUserId"] == "", "swap 未填操作者透传空串"

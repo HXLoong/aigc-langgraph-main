@@ -13,17 +13,15 @@ import json
 import logging
 from typing import Any
 
-from app.extraction.tenor import TenorError, normalize_request_tenors
+from app.domain.tenor import TenorError, normalize_request_tenors
 from app.graph.retry import io_node
 from app.graph.safe_node import safe_node
 from app.graph.state import AgentState, TraceEntry
 from app.tools.bot_context import BotContext
 from app.tools.exceptions import MissingBackendContextError
 from app.tools.goats_agent_client import GoatsAgentClient, make_goats_agent_client
-from app.tools.option_client import FinancialOrderOpenApiSaveReqVO, OptionClient
+from app.tools.option_client import FinancialOrderOpenApiSaveReqVO, OptionClient, OptionClientHttpx
 from app.tools.receipts import receipt_guard, receipt_text, receipt_update
-
-_SERVICE_UNAVAILABLE = "交易指令服务暂不可用"
 
 logger = logging.getLogger(__name__)
 
@@ -35,8 +33,6 @@ def _make_agent_client() -> GoatsAgentClient:
 
 def _make_option_client() -> OptionClient:
     """工厂间接层(测试 patch 此名)。"""
-    from app.tools.option_client import OptionClientHttpx
-
     return OptionClientHttpx()
 
 

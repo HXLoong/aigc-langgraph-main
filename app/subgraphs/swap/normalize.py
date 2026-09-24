@@ -8,10 +8,10 @@ from typing import Any
 
 from pydantic import BaseModel
 
+from app.domain.fast_execution import resolve_fast_execution
+from app.domain.numerals import chinese_int
 from app.extraction.candidates import unpack_candidates
-from app.extraction.fast_execution import resolve_fast_execution
 from app.extraction.fields import FieldCandidate, FieldRecord
-from app.subgraphs.option.normalize import _cn_number
 from app.subgraphs.swap.errors import NonPositiveQuantityError
 from app.subgraphs.swap.models import SwapOrderItem, SwapPlaceOrderParams
 
@@ -208,7 +208,7 @@ def _number(text: str) -> Decimal:
         chinese = re.fullmatch(r"([零〇一二两三四五六七八九十百千]+)(万|亿)?", value)
         if not chinese:
             raise ValueError("无法解析数值")
-        amount = _cn_number(chinese[1])
+        amount = chinese_int(chinese[1])
         if amount is None:
             raise ValueError("无法解析中文数值")
         number = Decimal(amount) * _SCALES[chinese[2] or ""]

@@ -6,42 +6,7 @@ from copy import deepcopy
 from decimal import Decimal
 from typing import Any
 
-#: 中文数字（≤ 万级组合，如 三千五百 → 3500）
-_CN_DIGITS = {
-    "零": 0,
-    "〇": 0,
-    "一": 1,
-    "二": 2,
-    "两": 2,
-    "三": 3,
-    "四": 4,
-    "五": 5,
-    "六": 6,
-    "七": 7,
-    "八": 8,
-    "九": 9,
-}
-
-def _cn_number(text: str) -> int | None:
-    """解析中文数字（≤ 千级组合），如 两千 → 2000、三千五百 → 3500。"""
-    total = 0
-    current = 0
-    for char in text:
-        if char in _CN_DIGITS:
-            current = _CN_DIGITS[char]
-        elif char == "十":
-            total += (current or 1) * 10
-            current = 0
-        elif char == "百":
-            total += (current or 1) * 100
-            current = 0
-        elif char == "千":
-            total += (current or 1) * 1000
-            current = 0
-        else:
-            return None
-    return total + current
-
+from app.domain.numerals import chinese_int
 
 _TENOR_YEAR_RE = re.compile(r"^(\d+(?:\.\d+)?)\s*[Yy年]$")
 _TENOR_MONTH_RE = re.compile(r"^(\d+(?:\.\d+)?)\s*(?:个?月|[Mm])$")
@@ -66,11 +31,11 @@ def normalize_tenor(text: str | None) -> str | None:
         return "6M"
     cn_year = _TENOR_CN_YEAR_RE.fullmatch(value)
     if cn_year:
-        number = _cn_number(cn_year.group(1))
+        number = chinese_int(cn_year.group(1))
         return _months_to_tenor(number * 12) if number else None
     cn_month = _TENOR_CN_MONTH_RE.fullmatch(value)
     if cn_month:
-        number = _cn_number(cn_month.group(1))
+        number = chinese_int(cn_month.group(1))
         return _months_to_tenor(number) if number else None
     year = _TENOR_YEAR_RE.fullmatch(value)
     if year:

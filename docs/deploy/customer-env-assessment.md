@@ -79,7 +79,7 @@
 | `api.deepseek.com`（或客户指定 endpoint） | DeepSeek-v4-pro API 调用 | ✅ | 待填 | `curl -I https://api.deepseek.com -m 5` |
 | `hub.docker.com` | Docker 镜像拉取 | 推荐 | 待填 | `docker pull hello-world` |
 | `pypi.org` | pip 依赖安装 | 推荐 | 待填 | `pip install --dry-run langchain` |
-| 客户企微回调地址 | 企微机器人 → LangGraph webhook | ✅ | 待填 | 企微管理员侧测试 |
+| Java Worker → LangGraph | Java 按 `agentUrl` 调用 `/v1/workflows/run` | ✅ | 待填 | Java 侧发起测试请求 |
 
 **若上述任一不通**：标"阻塞 / 需走客户企业代理 / 走离线包"。
 
@@ -182,17 +182,19 @@
 
 ---
 
-## 8. 企微机器人配置
+## 8. 企微与切流配置
 
 | 项 | 实际值 | 备注 |
 |---|---|---|
 | 企微企业 ID（corp_id） | 待填（不写完整，仅末 4 位 + 描述）| 保密 |
 | 应用 ID（agent_id） | 待填 | — |
 | 应用 Secret | 待填（存保险库）| — |
-| 当前 Webhook URL（指向 Dify） | 待填 | 紧急回滚目标 |
-| 部署后切换 Webhook URL（指向 LangGraph） | 待填 | 含完整 HTTPS 入口 |
+| 当前 `agentUrl`（指向 Dify） | 待填 | 紧急回滚目标 |
+| 部署后 `agentUrl`（指向 LangGraph） | 待填 | 含完整 HTTPS 入口 |
+| `agentUrl` 配置粒度（按群 / 全局） | 待填 | 决定金丝雀能否按群切流 |
+| `agentUrl` 生效方式（热更新 / 需重启 Java） | 待填 | 决定回切耗时是否满足 runbook §7 的 5 分钟目标 |
 | 加密通道 | 必须 HTTPS | 企微强制要求 |
-| 企微管理员 | 待填（姓名 + 企微 ID） | runbook 联系人 |
+| Java 配置管理员 | 待填（姓名 + 企微 ID） | runbook 联系人（执行切流 / 回切） |
 
 ---
 
@@ -241,7 +243,7 @@
 
 | 角色 | 姓名 | 企微 / 电话 | 备用联系 |
 |---|---|---|---|
-| 客户企微管理员 | 待填 | 待填 | — |
+| 客户侧 Java 配置管理员 | 待填 | 待填 | — |
 | 客户 IT 负责人 | 待填 | 待填 | — |
 | 客户业务方负责人（sign-off 人） | 待填 | 待填 | — |
 | 客户 DBA | 待填 | 待填 | — |
@@ -258,7 +260,7 @@
 | Java 后端 token 频繁过期 | 中 | 高 | 接 OAuth refresh 或长有效期 token |
 | LangFuse 内网部署 OOM | 中 | 中 | 拆机或缩配置（disable ClickHouse 用 PG 备选）|
 | 客户数据出境合规未明确 | 中 | 高 | sign-off 前必须有书面 OK |
-| Webhook HTTPS 证书过期 | 低 | 高 | 监控证书有效期 |
+| LangGraph 入口（`agentUrl` 指向的 HTTPS）证书过期 | 低 | 高 | 监控证书有效期 |
 
 ---
 

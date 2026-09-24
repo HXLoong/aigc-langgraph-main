@@ -53,11 +53,6 @@ def extract_for_cancel_place(raw: str | None, quote: str | None) -> list[str | N
     return result
 
 
-def extract_for_confirm_cancel(raw: str | None, quote: str | None) -> list[str | None]:
-    """确认撤单：仅从 quote 提取（机器人撤单确认消息，可多单）；均无 → [None]。"""
-    return _first_nonempty(extract_order_ids(quote))
-
-
 def extract_for_query(raw: str | None, quote: str | None) -> list[str | None]:
     """查单：raw 优先，否则 quote；均无 → [None]。"""
     return _first_nonempty(extract_order_ids(raw), extract_order_ids(quote))
@@ -68,6 +63,5 @@ __all__ = [
     "extract_order_ids",
     "extract_for_request_cancel",
     "extract_for_cancel_place",
-    "extract_for_confirm_cancel",
     "extract_for_query",
 ]

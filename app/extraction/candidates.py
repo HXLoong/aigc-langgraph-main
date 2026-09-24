@@ -95,13 +95,6 @@ def evidence_sources(state: Mapping[str, Any], attachments: Mapping[str, str] | 
     return sources
 
 
-def evidence_user(state: Mapping[str, Any]) -> str:
-    """Runtime data only; extraction rules live in the prompt asset."""
-    from app.prompts.blocks import source_payload
-
-    return source_payload(state)
-
-
 def unpack_candidates(
     canonical: type[Canonical], candidates: BaseModel, sources: Mapping[str, str], *, scope: str,
     normalizers: Mapping[str, Callable[[str, FieldCandidate], Any]] | None = None,

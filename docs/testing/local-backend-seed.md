@@ -7,7 +7,7 @@
 ```bash
 MYSQL_URI=mysql+aiomysql://root@127.0.0.1:13308/otc_goal_seed \
 GOATS_BASE_URL=http://127.0.0.1:1 \
-.venv/bin/python -m scripts.local_backend_seed --apply
+python -m scripts.local_backend_seed --apply
 ```
 
 数据库须先导入与本地 Java 对应的纯 DDL；LangGraph 表使用 `sql/init.sql`。工具只接受本机 `otc_goal_` / `local_eval_` 前缀数据库和本机端口 1 的 GOATS 地址。默认只显示计划，`--apply` 执行事务；已有行不覆盖，身份/权限/证券校验有冲突则整批回滚。

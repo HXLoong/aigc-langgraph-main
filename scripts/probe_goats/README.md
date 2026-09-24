@@ -9,7 +9,8 @@
 ## 一键运行
 
 ```bash
-python scripts/probe_goats/run_all.py            # 只跑读类；加 --confirm-write 才跑写类
+python scripts/probe_goats/run_all.py            # 不加 --confirm-write 时写类探针以 SKIP-WRITE 退出并计为 FAIL
+python scripts/probe_goats/probe_all_endpoints.py # 单进程逐接口探测（链式：下单→拿 ID→撤单 / 改单 / 查状态）
 ```
 
 ## 单个接口
@@ -47,18 +48,19 @@ python scripts/probe_goats/probe_15_trs_withdraw.py --confirm-write  # 互换撤
 ## 文件结构
 
 ```
-tests/api/
-├── _utils.py          # 共享模块（签名、请求、校验）
-├── run_all.py         # 一键运行入口
-├── README.md
-├── test_01_option_rfq.py
+scripts/probe_goats/
+├── _utils.py                # 共享模块（签名、请求、校验、写类拦截）
+├── run_all.py               # 一键运行入口（逐个子进程跑 probe_NN_*.py）
+├── probe_all_endpoints.py   # 单进程逐接口探测
+├── probe_01_option_rfq.py
 ├── ...
+└── README.md
 ```
 
 ## 依赖
 
-- Python 3.11+
-- `requests`（标准库之外唯一依赖）
+- Python 3.11+，项目依赖已包含的 `httpx`
+- 凭据经 `app.config.get_settings()` 读 `.env`
 
 ## 说明
 

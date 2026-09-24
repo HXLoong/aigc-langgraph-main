@@ -189,7 +189,7 @@ def _route_after_intent(state: AgentState) -> str:
     return "fallback" if pt == "unknown" else pt
 ```
 
-`fallback` 节点输出友好回复（"我没完全理解你的意思，能换种说法重新告诉我吗"），trace 里记录是哪个节点触发的。`app/graph/cascade.py` 提供了 `has_error()` / `with_cascade_guard()` 两个工具。
+`fallback` 节点输出友好回复（"我没完全理解你的意思，能换种说法重新告诉我吗"），trace 里记录是哪个节点触发的。`app/graph/cascade.py` 提供 `has_error()`，各路由函数先用它判断再分流。
 
 **这是 CLAUDE.md 核心原则第 8 条，review 必查。**
 
