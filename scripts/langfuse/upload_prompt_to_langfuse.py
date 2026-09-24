@@ -45,7 +45,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import os
 import re
 import sys
 from dataclasses import dataclass
@@ -56,7 +55,11 @@ PROJECT_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(PROJECT_ROOT))
 
 from app.prompts import _langfuse_name, _parse_prompt_md  # noqa: E402
-from scripts.langfuse._public_api import load_dotenv  # noqa: E402
+from scripts.langfuse._public_api import (  # noqa: E402
+    load_dotenv,
+    missing_langfuse_config,
+    resolve_base_url,
+)
 
 load_dotenv()
 
@@ -307,19 +310,8 @@ def main() -> int:
                 print(json.dumps(body[1]["content"], ensure_ascii=False))
             return 0
 
-    base_url = (
-        args.base_url or os.environ.get("LANGFUSE_BASE_URL") or os.environ.get("LANGFUSE_HOST")
-    )
-    missing = [
-        key
-        for key, value in (
-            ("LANGFUSE_PUBLIC_KEY", os.environ.get("LANGFUSE_PUBLIC_KEY")),
-            ("LANGFUSE_SECRET_KEY", os.environ.get("LANGFUSE_SECRET_KEY")),
-        )
-        if not value
-    ]
-    if args.sync_all and not base_url:
-        missing.insert(0, "LANGFUSE_BASE_URL (or --base-url)")
+    base_url = resolve_base_url(args.base_url)
+    missing = missing_langfuse_config(base_url, require_base_url=args.sync_all)
     if missing:
         print(f"ERROR: 缺少配置: {', '.join(missing)}", file=sys.stderr)
         return 2

@@ -190,3 +190,23 @@ def test_syntax_error_in_shell_tool_fails(tmp_path: Path) -> None:
     assert "工具语法可加载" in r.stdout
     # 应能定位到哪个文件
     assert "rollback_canary.sh" in r.stdout
+
+
+def test_import_time_name_error_in_python_tool_fails(tmp_path: Path) -> None:
+    """语法合法但加载即 NameError 的 py 工具（合并遗留的典型形态）→ Check 2 应失败。
+
+    只做 ast.parse 会放过这类错误；必须真正执行 `--help`。
+    """
+    proj = _make_minimal_project(tmp_path)
+    (proj / "scripts" / "metrics_snapshot.py").write_text(
+        "import argparse\nparser = argparse.ArgumentParser()\nundefined_helper()\n",
+        encoding="utf-8",
+    )
+
+    r = _run("--skip-deploy-check",
+             "--metrics-url", "http://127.0.0.1:1/nope",
+             "--ready-url", "http://127.0.0.1:1/nope",
+             project_dir=proj)
+    assert r.returncode == 1
+    # 服务不可达也会让其它检查失败，这里只看 Check 2 的汇总行
+    assert "· 工具语法可加载 — scripts/metrics_snapshot.py" in r.stdout

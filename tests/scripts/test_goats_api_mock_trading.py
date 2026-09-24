@@ -72,6 +72,11 @@ def test_orders_are_scoped_by_group_and_optional_user(client: TestClient) -> Non
         reply = client.post(BASE + "/withdraw", headers=headers, json={"keyStockOrderId": identifier})
         assert reply.json()["errCode"]["code"] != 200
     assert query(client, {"agentid": HEADERS["agentid"]})["total"] == 1
+    # 群级读取可省略用户；撤单是写操作，缺 agentsubid 不能撤掉他人的订单
+    reply = client.post(BASE + "/withdraw", headers={"agentid": HEADERS["agentid"]},
+                        json={"keyStockOrderId": identifier})
+    assert reply.json()["errCode"]["code"] != 200
+    assert query(client)["queryResults"][0]["stockOrderStatus"] == "OTC_VERIFYING"
 
 
 def test_order_ids_are_unique_and_queries_support_filters_and_paging(client: TestClient) -> None:

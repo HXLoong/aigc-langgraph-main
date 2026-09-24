@@ -1,4 +1,4 @@
-# GOATS 期权 Mock（持仓、开仓、平仓、撤单）
+# GOATS Mock（期权持仓、开仓、平仓、撤单及互换）
 
 在仓库根目录运行（使用项目现有 FastAPI / Uvicorn 依赖）：
 
@@ -31,6 +31,39 @@ Java 管理页面中，将以下 5 个接口配置为本地 mock：
 
 该地址适用于 Java 与 mock 运行在同一主机的情况。继续使用现有 runner 和 JSONL
 测试流程；runner 启动会显示上述提示，mock 需另开终端运行。
+
+### 兼容直接拼接基础地址的 Java 调用
+
+部分 Java 调用仍直接拼接 `goats.api.base-url + request_url`。此时基础地址非空、接口
+配置又是完整 URL，会产生重复拼接，开仓或互换请求无法到达 Mock。无需修改 Java：
+在本地启动覆盖中将 `goats.api.base-url` 设为空字符串，并将 GOATS 系统各接口配置为
+完整 URL。模拟的交易、持仓和状态接口指向本机；继续使用真实测试对手/询价时，相应
+读取接口指向原测试服务。不能只把部分接口改为完整 URL、同时保留非空基础地址。
+
+本地测试建议使用独立数据库和 Redis database，避免混入旧的真实订单与接口缓存。
+切换配置后需清理该专用 Redis database 的接口缓存，并重启本地 Java。报告分别记录
+Java 和 GOATS 的模式：真实 Java + Mock GOATS 通过，不等于真实 GOATS 已受理交易。
+
+## 互换模拟接口
+
+| Java 配置项 | 方法 | 地址 |
+| --- | --- | --- |
+| `GOATS_AGENT_SWAP_ORDER` | POST | `http://127.0.0.1:20000/api/internal/agent/trs/order` |
+| `GOATS_AGENT_SWAP_ORDER_STATUS` | POST | `http://127.0.0.1:20000/api/internal/agent/trs/order/status` |
+| `GOATS_AGENT_SWAP_ORDER_QUERY` | POST | `http://127.0.0.1:20000/api/internal/agent/trs/order/query` |
+| `GOATS_AGENT_SWAP_ORDER_WITHDRAW` | POST | `http://127.0.0.1:20000/api/internal/agent/trs/order/withdraw` |
+
+提交支持 Java 的数量/名义金额、标的原文、品种、方向和价格字段，返回 Integer 范围内的
+模拟 `keyOrderId` 与 `result=true, async=true`。状态查询接收 `[{"keyOrderId": ...}]`，
+返回审核完成及同一模拟订单标识。结果查询接受空 body（当前 Java 的调用方式）或
+`keyOrderIdList`，仅返回当前群/用户的模拟记录。
+
+撤单接收 `{"orderList": [...]}`，状态从 `NEW` 变为 `CANCELED`；重复撤单返回同一结果。
+未知或跨群/用户的编号被拒绝，缺 `agentsubid` 的群级撤单同样被拒绝，混合无效编号的批次
+不会部分撤单。成交数量始终为 0；撤单后 `withdrawQty` 取原委托数量，金额单没有委托股数，
+`withdrawQty` 与 `quantity` 同为 `null`（Mock 不把金额换算为股数），金额口径的剩余/撤单量
+须在真实 GOATS 上核对。不模拟真实成交、权限、额度、交易时段或改单。需要本地 `swapOrderJob` 正常轮询，才能
+验证 Java 的状态落库与终态查询，不能只凭 Mock 接口返回成功判定闭环通过。
 
 `option_positions.json` 基于用户提供的完整 GOATS 响应，原 12 条持仓保持原顺序，
 末尾追加一条供平仓数据集使用的测试合约 `OPT-AAAA1`，当前共 13 条。
@@ -81,7 +114,8 @@ algoStartTime / algoEndTime`，成功返回数值 `keyStockOrderId`。查询支�
 不存在的合约/订单/回执、超过可平本金等返回 GOATS 失败包装，不伪造成功。
 
 订单在内存中按群标识隔离，提供 `agentsubid` 时再按用户过滤；不传用户标识可查询本群
-模拟订单。重启服务清空模拟订单，固定持仓不变。为便于独立用例重复回归，每个平仓请求
+模拟订单。撤单是写操作，期权开仓、平仓与互换都要求群和用户与下单时一致，缺
+`agentsubid` 的撤单一律拒绝。重启服务清空模拟订单，固定持仓不变。为便于独立用例重复回归，每个平仓请求
 创建独立模拟订单，不扣减持仓，不模拟成交、额度、交易时段或真实 GOATS 的活跃单限制。
 这套服务仅验证本地调用及状态流转，模拟回执不代表真实交易已受理。
 
@@ -106,7 +140,7 @@ python -m scripts.local_eval --base-url http://127.0.0.1:8201 \
 
 ```bash
 USE_MYSQL_CHECKPOINTER=false REQUEST_IDEMPOTENCY=false ENABLE_LANGFUSE=false \
-  python -m pytest tests/scripts/test_goats_api_mock.py \
-  tests/scripts/test_goats_api_mock_trading.py \
+  .venv/bin/python -m pytest tests/scripts/test_goats_api_mock.py \
+  tests/scripts/test_goats_api_mock_trading.py tests/scripts/test_goats_api_mock_swap.py \
   tests/test_goats_api_mock_open.py tests/test_option_lifecycle_cases.py -q
 ```

@@ -124,7 +124,11 @@ async def probe_llm() -> ProbeResult:
 
 
 async def probe_java_backend() -> ProbeResult:
-    """调最轻量的 read endpoint counterparty/info/instrument-inference-prompt."""
+    """调运行时真实依赖的只读接口 counterparty/info/list，要求业务 code==0.
+
+    ADR 0025 后 instrument-inference-prompt 已无运行时调用方，不能再作为就绪门：
+    该接口单独报错会让全部 Pod 同时 503 摘流，而对手/交易接口其实正常。
+    """
     from app.config import get_settings
     from app.tools.auth import get_goats_auth_headers
 
@@ -136,7 +140,7 @@ async def probe_java_backend() -> ProbeResult:
     async def _check() -> None:
         import httpx
 
-        url = f"{base}/admin-api/counterparty/info/instrument-inference-prompt"
+        url = f"{base}/admin-api/counterparty/info/list"
         headers = {"Content-Type": "application/json"}
         if settings.otc_api_secret:
             headers["Authorization"] = f"Bearer {settings.otc_api_secret}"
@@ -148,6 +152,8 @@ async def probe_java_backend() -> ProbeResult:
             payload = r.json()
             if not isinstance(payload, dict) or "code" not in payload:
                 raise RuntimeError("bad_envelope")
+            if type(payload["code"]) is not int or payload["code"] != 0:
+                raise RuntimeError("business_error")
 
     status, err, lat = await _timed("java_backend", _check())
     return ProbeResult(target="java_backend", status=status, error=err, latency_ms=lat)

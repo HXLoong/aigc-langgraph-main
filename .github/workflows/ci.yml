@@ -47,7 +47,7 @@ jobs:
           pip install -e ".[dev]"
 
       - name: Lint (ruff)
-        run: ruff check app/ tests/ harness/ scripts/probe_goats/
+        run: ruff check app/ tests/ harness/ scripts/probe_goats/ scripts/langfuse/ scripts/goats_api_mock/
 
       - name: Type check (mypy)
         run: python -m mypy app/ harness/

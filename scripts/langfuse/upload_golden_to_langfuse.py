@@ -15,17 +15,6 @@ from pathlib import Path
 from typing import Any
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
-DOTENV = PROJECT_ROOT / ".env"
-if DOTENV.exists():
-    for line in DOTENV.read_text(encoding="utf-8").splitlines():
-        line = line.strip()
-        if not line or line.startswith("#") or "=" not in line:
-            continue
-        key, _, value = line.partition("=")
-        key = key.strip()
-        if key and key not in os.environ:
-            os.environ[key] = value.strip()
-
 sys.path.insert(0, str(PROJECT_ROOT))
 
 from harness.golden import (
@@ -36,6 +25,14 @@ from harness.golden import (
     load_golden,
     normalize_case,
 )
+from scripts.langfuse._public_api import (
+    LangfusePublicApi,
+    load_dotenv,
+    missing_langfuse_config,
+    resolve_base_url,
+)
+
+load_dotenv()
 
 GOLDEN_PATH = PROJECT_ROOT / "tests" / "fixtures" / "categories"
 FIXTURE_ROOT = PROJECT_ROOT / "tests" / "fixtures"
@@ -77,48 +74,28 @@ def build_dataset_metadata(cases: list[GoldenCase], *, suite: str) -> dict[str, 
     return {"suite": suite, "evaluator_names": names}
 
 
-def _clear_dataset(dataset_name: str, *, base_url: str | None = None) -> None:
-    import httpx
+def _clear_dataset(dataset_name: str, *, base_url: str) -> None:
+    """删除数据集全部 Item；base_url 必填，不回落到任何默认地址，避免误删其它项目。"""
+    with LangfusePublicApi(
+        base_url=base_url,
+        public_key=os.environ.get("LANGFUSE_PUBLIC_KEY", ""),
+        secret_key=os.environ.get("LANGFUSE_SECRET_KEY", ""),
+    ) as api:
+        item_ids = api.list_dataset_item_ids(dataset_name)
+        if not item_ids:
+            print(f"Dataset {dataset_name} 当前为空或不存在")
+            return
+        print(f"清空旧 Dataset：删除 {len(item_ids)} 个 Item")
+        for item_id in item_ids:
+            api.delete_dataset_item(item_id)
 
-    public_key = os.environ.get("LANGFUSE_PUBLIC_KEY", "")
-    secret_key = os.environ.get("LANGFUSE_SECRET_KEY", "")
-    base_url = base_url or os.environ.get(
-        "LANGFUSE_BASE_URL",
-        os.environ.get("LANGFUSE_HOST", "http://127.0.0.1:3000"),
-    ).rstrip("/")
-    auth = (public_key, secret_key)
 
-    item_ids: list[str] = []
-    page = 1
-    while True:
-        response = httpx.get(
-            f"{base_url}/api/public/dataset-items",
-            auth=auth,
-            params={"datasetName": dataset_name, "limit": 100, "page": page},
-            timeout=30,
-        )
-        if response.status_code != 200:
-            raise RuntimeError(
-                f"列出 Dataset Items 失败：{response.status_code} {response.text[:200]}"
-            )
-        data = response.json().get("data", [])
-        item_ids.extend(str(item["id"]) for item in data if item.get("id"))
-        if len(data) < 100:
-            break
-        page += 1
-
-    if not item_ids:
-        print(f"Dataset {dataset_name} 当前为空或不存在")
-        return
-
-    print(f"清空旧 Dataset：删除 {len(item_ids)} 个 Item")
-    for item_id in item_ids:
-        response = httpx.delete(
-            f"{base_url}/api/public/dataset-items/{item_id}",
-            auth=auth,
-            timeout=30,
-        )
-        response.raise_for_status()
+def _require_base_url(override: str | None) -> str:
+    base_url = resolve_base_url(override)
+    missing = missing_langfuse_config(base_url, require_base_url=True)
+    if missing or base_url is None:
+        raise RuntimeError(f"缺少 Langfuse 配置: {', '.join(missing)}")
+    return base_url
 
 
 @dataclass(frozen=True)
@@ -277,9 +254,7 @@ def main() -> int:
                     source_file.dataset_name, len(source_file.items), source_file.path,
                 )
             return 0
-        base_url = args.base_url or os.environ.get("LANGFUSE_BASE_URL") or os.environ.get("LANGFUSE_HOST")
-        if not base_url or not os.environ.get("LANGFUSE_PUBLIC_KEY") or not os.environ.get("LANGFUSE_SECRET_KEY"):
-            raise RuntimeError("LANGFUSE_BASE_URL (or --base-url), LANGFUSE_PUBLIC_KEY and LANGFUSE_SECRET_KEY are required")
+        base_url = _require_base_url(args.base_url)
         from langfuse import Langfuse
 
         sync_prepared_files(Langfuse(base_url=base_url), files)
@@ -310,9 +285,7 @@ def main() -> int:
         print(f"目标 Dataset：{dataset_name} (mode={mode})")
         return 0
 
-    base_url = args.base_url or os.environ.get("LANGFUSE_BASE_URL") or os.environ.get("LANGFUSE_HOST")
-    if not base_url or not os.environ.get("LANGFUSE_PUBLIC_KEY") or not os.environ.get("LANGFUSE_SECRET_KEY"):
-        raise RuntimeError("LANGFUSE_BASE_URL (or --base-url), LANGFUSE_PUBLIC_KEY and LANGFUSE_SECRET_KEY are required")
+    base_url = _require_base_url(args.base_url)
     if mode == "overwrite":
         _clear_dataset(dataset_name, base_url=base_url)
 

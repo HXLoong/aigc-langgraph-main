@@ -190,7 +190,6 @@ curl -sf -m 5 "$OTC_API_BASE_URL/admin-api/integration/securities-instrument/sel
 # 2. 多 endpoint 同时检查（找出哪些挂了）
 for path in \
   "integration/securities-instrument/select" \
-  "counterparty/info/instrument-inference-prompt" \
   "counterparty/info/list"; do
   printf "%-50s " "$path"
   curl -sf -m 5 -o /dev/null -w "%{http_code}\n" \
