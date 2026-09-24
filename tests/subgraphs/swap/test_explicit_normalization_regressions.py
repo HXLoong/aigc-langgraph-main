@@ -147,3 +147,45 @@ def test_conditional_or_alternative_sell_all_is_not_an_unconditional_action(
 ) -> None:
     with pytest.raises(ValueError):
         normalize_field(field, value)
+
+
+# ── 2026-09-24 intent-eval 标的子集失败：业务卡片证实的别名与多空减仓 ──
+
+
+def test_bare_short_marker_is_short_open() -> None:
+    """京东集团-sw  空29万股：业务卡片「委托方向：卖空」。"""
+    assert normalize_field("placeOrderOrderDirection", "空") == "SHORT_OPEN"
+
+
+def test_bare_follow_marker_is_pov_algorithm() -> None:
+    """兆易创新 3个亿 跟10%：业务卡片「算法类型：POV」。"""
+    assert normalize_field("placeOrderAlgorithmType", "跟") == "POV"
+
+
+def _reduce_order(raw: str) -> tuple:
+    values = {"placeOrderWindCode": "HTIF2706", "placeOrderOrderDirection": "减仓",
+              "placeOrderQuantity": "5手"}
+    candidates = candidate_model(SwapPlaceOrderParams).model_validate({"orderList": [{
+        field: {"value": value, "evidence": value, "confidence": .95}
+        for field, value in values.items()
+    }]})
+    return normalize_candidates(candidates, {"raw": raw})
+
+
+@pytest.mark.parametrize(
+    ("raw", "expected"),
+    [("麻烦挂单4725元减仓5手HTIF2706多头 聚鸣价值精选", "SELL"),
+     ("减仓5手HTIF2706空头", "SHORT_CLOSE"),
+     ("减仓5手HTIF2706多頭", "SELL")],
+)
+def test_reduce_with_long_or_short_side_on_same_line_has_a_direction(raw: str, expected: str) -> None:
+    """减仓只有同一行写明多头 / 空头时才有方向：多头减仓=卖出，空头减仓=买入平仓。"""
+    params, records = _reduce_order(raw)
+    assert params.order_list[0].place_order_order_direction == expected
+    assert records["swap/place_order.orderList.0.placeOrderOrderDirection"].evidence == "减仓"
+
+
+@pytest.mark.parametrize("raw", ["减仓5手HTIF2706", "减仓5手HTIF2706 多头空头都减"])
+def test_reduce_without_a_single_side_still_needs_clarification(raw: str) -> None:
+    with pytest.raises(ValueError):
+        _reduce_order(raw)

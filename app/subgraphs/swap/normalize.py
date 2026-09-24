@@ -31,7 +31,7 @@ _ENUMS: dict[str, dict[str, tuple[str, ...]]] = {
                  "卖出全部", "全部卖掉", "全部卖出", "全部賣出", "清仓卖出", "賣出平倉",
                  "卖平", "多头平仓", "SELL"),
         "SHORT_OPEN": ("卖空", "賣空", "做空", "空头开仓", "卖开", "卖出开仓", "賣出開倉",
-                       "沽空", "SHORT_OPEN"),
+                       "沽空", "空", "SHORT_OPEN"),
         "SHORT_CLOSE": ("平空", "买入平仓", "買入平倉", "买平", "買平", "空头平仓", "SHORT_CLOSE"),
     },
     "placeOrderPriceType": {
@@ -41,7 +41,7 @@ _ENUMS: dict[str, dict[str, tuple[str, ...]]] = {
                        "LMT", "LIMIT", "LimitOrder"),
     },
     "placeOrderAlgorithmType": {
-        "POV": ("POV", "跟量", "占比"), "TWAP": ("TWAP", "全天均价", "全天均價", "时间均价", "均价"),
+        "POV": ("POV", "跟量", "跟", "占比"), "TWAP": ("TWAP", "全天均价", "全天均價", "时间均价", "均价"),
         "VWAP": ("VWAP", "成交量均价"), "ICEBERG": ("ICEBERG", "冰山"), "SNIPER": ("SNIPER", "狙击"),
     },
     "placeOrderTransactionType": {
@@ -61,6 +61,19 @@ _DIRECTION_TOKEN = re.compile(
     r"(?<![A-Za-z0-9_.-])(?:BUY|SELL|SHORT_OPEN|SHORT_CLOSE|[BSL])(?![A-Za-z0-9_.-])"
     r"|买入|卖出|買入|賣出|平空|平多|做多|做空|卖空|买|卖|買|賣|沽|[多空][头頭]平[仓倉]", re.I,
 )
+
+
+#: 减仓本身不是方向；只有同一行写明持仓多空时才能确定：多头减仓=卖出，空头减仓=买入平仓
+_REDUCE_WORDS = {"减仓", "減倉"}
+_LONG_SIDE = re.compile(r"多[头頭单單仓倉]")
+_SHORT_SIDE = re.compile(r"空[头頭单單仓倉]")
+
+
+def _reduce_direction(context: str) -> str:
+    long_side, short_side = bool(_LONG_SIDE.search(context)), bool(_SHORT_SIDE.search(context))
+    if long_side == short_side:
+        raise ValueError("减仓未唯一写明多头或空头，无法确定方向")
+    return "SELL" if long_side else "SHORT_CLOSE"
 
 
 _HOLDING_DESCRIPTION = re.compile(
@@ -259,6 +272,8 @@ def normalize_field(field: str, value: str, evidence: str | None = None) -> Any:
             text = next(iter(compounds))
     if field == "placeOrderOrderDirection" and text.upper() in {"B", "S", "L"}:
         return _direction_shorthand(text, evidence)
+    if field == "placeOrderOrderDirection" and text in _REDUCE_WORDS:
+        return _reduce_direction(evidence)
     if field == "placeOrderAlgorithmType":
         composite = _algorithm_suffix(text)
         if composite is not None:
@@ -365,7 +380,9 @@ def normalize_candidates(
             if alias == "placeOrderQuantity" and quantity_unit(value) == "AMOUNT":
                 return None  # the linked notional field is derived below from the same evidence
             context = candidate.evidence
-            if alias == "placeOrderOrderDirection" and value.upper() in {"B", "S", "L"}:
+            if alias == "placeOrderOrderDirection" and (
+                value.upper() in {"B", "S", "L"} or value.strip() in _REDUCE_WORDS
+            ):
                 context = _direction_context(candidate, sources)
             try:
                 return normalize_field(alias, value, context)
