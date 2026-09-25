@@ -18,7 +18,7 @@
 | `differ.py` / `references.py` / `scenario_inputs.py` | 字段级 diff、文本 / 结构化断言；断言与输入里的订单引用只从实际卡片解析 |
 | `intent_context.py` / `intent_runner.py` | 意图集冻结 / 回放模式判定；只跑意图子链的 runner |
 | `evaluators/` | Langfuse Code Evaluator（文本断言、意图、标的、拒绝），清单见 `scripts/langfuse/definitions/evaluators.json` |
-| `node_registry.py` / `node_annotations.py` | 节点展示与回放策略；节点契约真源是 `app/node_execution/catalog.py`，Langfuse 只用于取标注 |
+| `node_registry.py` / `node_annotations.py` | 节点展示与回放策略；节点契约真源是 `app/node_execution/catalog.py`，目前 Langfuse 用于取标注；Dataset / Experiment 回归闭环按 ADR 0029 待迁移 |
 | `node_fixtures.py` / `node_runner.py` / `node_mocks.py` | 节点 fixture 持久化与执行；`--mock` 目前只支持 `swap_place_order` |
 | `http_tape.py` | 私有工具 HTTP 录放（`scripts/run_with_http_tape.py`），回放不回退到真实网络 |
 | `langfuse_client.py` / `token_tracker.py` / `report_history.py` | Langfuse SDK 封装、token 成本、本地历史报告索引 |
@@ -29,7 +29,7 @@
 ```bash
 python -m harness doctor          # 环境体检（/health /ready）
 # HTTP 回归：必须提供授权测试身份（--user-id / --room-id 或 EVAL_USER_ID / EVAL_ROOM_ID），默认端口 8000
-python -m harness run --help      # --backend real|mock|dry-run、--checkpoint none|mysql、--include-unified
+python -m harness run --help      # --backend real|mock|dry-run、--checkpoint none|mysql
 python -m harness node-run --data <节点 fixture 目录>
 # 调已启动后端的受保护接口（密钥只通过环境变量传入；HTTP 模式不支持 --mock）
 NODE_RUN_API_KEY='<key>' python -m harness node-run --transport http \
@@ -39,4 +39,4 @@ NODE_RUN_API_KEY='<key>' python -m harness node-run --transport http \
 节点回归：带写副作用或 fixture 里 `replay.enabled != true` 的节点显示 `SKIP`，不计入失败；
 未在注册表中的节点报错并计为 FAIL。
 
-LLM Judge 评估主入口是 `scripts/langfuse/langfuse_eval.py`（见根 `CLAUDE.md`「关键命令」）。
+评测目标为 Langfuse Dataset / Experiment / Score 闭环，harness 保留执行与确定性比较（ADR 0005 / 0029）。`scripts/langfuse/langfuse_eval.py` 仍有旧 Judge 路径，过渡期显式 `--no-judge`；迁移前不要把仅关闭 Judge 当成全部字段已评分。

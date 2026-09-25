@@ -34,13 +34,13 @@
 | 数据集 | 目录 | 外部依赖 | 在哪跑 | 评分 |
 |---|---|---|---|---|
 | **意图集**（路由 + 意图 + 标的原文提取） | `tests/fixtures/intent/` | 只有 LLM 网关；后端由仓库内 `mock_api/` 顶替，**不碰 Java / GOATS** | GitHub Actions `intent-eval`（仅手动 Run workflow）+ 本地 | `det_intent_match_pass` / `det_instrument_match_pass` 确定性评估器，本地算，不需要 Langfuse；`--fail-under` 给退出码 |
-| **业务集**（询价 / 下单 / 平仓卡片与后端联动） | `tests/fixtures/biz/` | Java 后端 + GOATS + 授权测试账号 / 群 / 对手 / 持仓 | **只在开发 / staging 环境**手动跑（`scripts/local_eval.py` / `langfuse_eval.py --dataset biz/*`），绝不进 CI | 三个文本断言 + `otc-option-judge` Judge |
+| **业务集**（询价 / 下单 / 平仓卡片与后端联动） | `tests/fixtures/biz/` | Java 后端 + GOATS + 授权测试账号 / 群 / 对手 / 持仓 | **只在开发 / staging 环境**手动跑（`scripts/local_eval.py` / `langfuse_eval.py --dataset biz/option_close`），绝不进 CI | 确定性字段 / 文本断言；迁移期 `--no-judge`，旧评分路径待清理 |
 
 ```bash
 # 意图集本地（与 CI 同一条命令；终端 1 起 mock_api）
 uvicorn mock_api.server:app --port 8099
 OTC_API_BASE_URL=http://127.0.0.1:8099 GOATS_BASE_URL=http://127.0.0.1:8099 \
-  python scripts/langfuse/langfuse_eval.py --local tests/fixtures/intent --fail-under 0.95 --report .harness-runs/intent-eval.json
+  python scripts/langfuse/langfuse_eval.py --local tests/fixtures/intent --fail-under 0.95 --report .harness-runs/intent-eval.json --no-judge
 ```
 
 CI 用到的环境变量（全部指向 mock、只有 `QWEN_API_BASE` / `QWEN_API_KEY` 是 secrets）见 `.github/workflows/intent-eval.yml`。
@@ -80,12 +80,12 @@ curl -X POST http://localhost:8000/v1/workflows/run \
   -d '{"inputs": {"rawContent": "600519.SH 询价 3 个月平值看涨", "conversationId": "t-1"},
        "response_mode": "blocking", "user": "t-1"}'
 
-# 层 4 · fixture 批量评估（DeepSeek Judge 打分）
-python scripts/langfuse/langfuse_eval.py --local tests/fixtures/biz --limit 20 --concurrency 5
+# 层 4 · fixture 批量评估（确定性断言，旧 Judge 路径待移除）
+python scripts/langfuse/langfuse_eval.py --local tests/fixtures/biz --limit 20 --concurrency 5 --no-judge
 python scripts/langfuse/langfuse_eval.py --local tests/fixtures/biz --ids case-025 --no-judge  # 单 case 冒烟
 
 # 层 4a · 意图集（只调 LLM + mock 后端，确定性 product_type/intent 比对，不跑 Judge；见 docs/langfuse/workflow-guide.md §8）
-python scripts/langfuse/langfuse_eval.py --local tests/fixtures/intent --concurrency 3
+python scripts/langfuse/langfuse_eval.py --local tests/fixtures/intent --concurrency 3 --no-judge
 
 # 层 5 · 真后端探针（需 VPN）
 python scripts/probe_real_backend_e2e.py     # 写路径探针 runner（--target）
@@ -132,7 +132,7 @@ GOATS_BASE_URL=http://127.0.0.1:8099
 按根 `CLAUDE.md`"排查与修复流程"执行，速记：
 
 1. **层 1-2 失败**：普通 TDD——先写复现测试（RED）→ 最小修复（GREEN）→ 全量回归
-2. **层 3-4 失败**：看 Langfuse 富 output（score / judge_comment / turns[i] 逐字段定位），
+2. **层 3-4 失败**：看 Langfuse 富 output（确定性 Scores / 字段 diff / turns[i] 逐字段定位；旧 Judge 字段不作为验收依据），
    或 stdout 的 per-turn trace；按 `product_type` → `intent` → `place_params`
    → `api_result` 的顺序锁定错误层（标的问题核对传给后端的原文与后端工具日志）
 3. **层 5-6 失败**：先分清是契约问题（对照 `docs/api-contracts/java-backend.md`）还是

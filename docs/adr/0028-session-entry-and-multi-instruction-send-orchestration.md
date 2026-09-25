@@ -26,14 +26,14 @@ render → remember_confirmed_params → record_history → persist → END
 
 - 会话空闲超过 `conversation_idle_timeout_seconds`（默认 30 分钟）直接返回会话过期提示。
 - 入口选择由纯函数 `app/nodes/entry_route.py::select_entry_branch` 决定，图边与 trace 共用。
-- 仅 `fast_query=1` 进入快速询价；普通询价固定走"抽取 → 归一化 → 提交"，产品关键词不改变入口。
+- 仅 `fast_query=1` 进入快速询价；普通询价目标为"联合提取 → 结构与来源检查 → 提交"（ADR 0027 / 0031，代码待迁移），产品关键词不改变入口。
 
 ### D2 · 单动作多订单
 
 - 每条消息按既有产品与意图优先级执行**一个**业务动作，该动作可携带多笔订单（例如识别为撤单申请后，A、B 两笔都按撤单处理）。
 - 多动作拆分、依赖编排、批量调度已删除；节点执行接口与评测目录不暴露退役节点。
-- 逐单的身份、状态与最终确认校验保持不变；七条最终确认仍要求明确口令与当前订单引用，不从记忆补足授权（[ADR 0027](./0027-field-evidence-contract.md) D5）。
-- 历史幂等回执可原样重放，不重新执行业务（[ADR 0026](./0026-request-idempotency-uncertain-receipts-reconciliation.md)）。
+- 每笔订单保留本次动作与引用范围；LangGraph 不强制拆分申请与确认。已有确认类输入按 ADR 0021 独立处理，权限、状态与后续流程由 Java 校验（[ADR 0027](./0027-field-evidence-contract.md) D5）。
+- 调用端管理消息防重与重投，LangGraph 每次合法调用独立完成一个业务动作，不按消息 ID 回放历史响应（[ADR 0026](./0026-request-idempotency-uncertain-receipts-reconciliation.md)，现有回放代码待清理）。
 
 ## 备选方案
 

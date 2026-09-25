@@ -32,5 +32,5 @@
 ## 后果与风险
 
 - **协议兼容 ≠ SQL 特性 100% 兼容**：TDSQL 上的首次真实验证点是"现场执行 `sql/init.sql` + 首次启动校验"，已列入部署 checklist；DBA 升级 TDSQL 或项目升级 checkpoint 依赖前，须在测试环境回归。
-- CI 的 slow job 已包含 MySQL service 并运行真实数据库用例；本地开发的真实数据库用例通过 `RUN_LOCAL_MYSQL_TESTS=1` 显式开启。
+- CI 不启动 MySQL service，真实数据库用例不进入 CI；本地 / 联调环境通过 `RUN_LOCAL_MYSQL_TESTS=1` 显式开启。
 - 生产 TDSQL 的确切版本待现场 `SELECT VERSION()` 实测确认落在上述区间内。

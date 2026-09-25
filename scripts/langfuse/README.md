@@ -16,11 +16,11 @@
 
 ## langfuse_eval.py
 
-跑 LangGraph，DeepSeek Judge 打分，结果写入 Langfuse。
+运行 LangGraph 并关联 Langfuse Experiment；按 ADR 0005，评分只用确定性断言。当前脚本仍保留 Judge 默认路径，过渡期显式 `--no-judge`；字段评分完整性与退出码的迁移见工作计划。
 
 ```bash
 # 从 Langfuse Dataset 跑
-python scripts/langfuse/langfuse_eval.py --dataset biz/option_inquiry --ids case-022 --concurrency 1
+python scripts/langfuse/langfuse_eval.py --dataset biz/option_inquiry --ids case-022 --concurrency 1 --no-judge
 
 # 从本地 fixture 跑（不走 Langfuse Dataset，可用 --fail-under 做 CI 门槛）
 python scripts/langfuse/langfuse_eval.py --local tests/fixtures/intent --concurrency 3 --fail-under 0.95
@@ -28,9 +28,7 @@ python scripts/langfuse/langfuse_eval.py --local tests/fixtures/intent --concurr
 
 ## upload_golden_to_langfuse.py
 
-把 fixture 上传成 Langfuse Dataset。手动模式默认源是 `tests/fixtures/biz`；`--sync-all`
-递归扫描 `tests/fixtures/` 下所有 JSONL，按相对路径去掉扩展名命名（如
-`biz/option_close.jsonl` → `biz/option_close`）。路径中的 `/` 会在 Langfuse 中形成文件夹。
+把 fixture 上传成 Langfuse Dataset。手动模式默认源是 `tests/fixtures/biz`；`--sync-all` 递归扫描整个 `tests/fixtures/` 的 JSONL，以去掉扩展名的相对路径命名，例如 `biz/option_close`、`intent/option_close`。
 
 ```bash
 # 同步所有现役 JSONL（每个文件一个 Dataset）

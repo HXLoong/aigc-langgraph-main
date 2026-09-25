@@ -23,7 +23,7 @@ pip install "langgraph-checkpoint-mysql[aiomysql]"
 **解决**：降级到 8.0.x 或 9.5.x。测试可用 `InMemorySaver`。
 
 ### Q: LLM API 不通
-**原因**：`QWEN_API_BASE` 配置错 / 内网访问受限（变量沿用 `QWEN_*` 前缀，实际模型为 DeepSeek-V4-pro，ADR 0020）。
+**原因**：`QWEN_API_BASE` 配置错 / 内网访问受限（变量沿用 `QWEN_*` 前缀，目标模型为 deepseek-v4-pro，实际配置与迁移状态按 ADR 0020 / 工作计划核对）。
 **解决**：
 ```bash
 curl $QWEN_API_BASE/models -H "Authorization: Bearer $QWEN_API_KEY"
@@ -46,10 +46,10 @@ curl $QWEN_API_BASE/models -H "Authorization: Bearer $QWEN_API_KEY"
    - 平仓单号正则 > 附件 > 关键词（平仓 > 互换 > 期权）
 
 ### Q: 标的识别结果不对
-标的识别归 Java 后端（ADR 0025），LangGraph 只传原文。
+标的识别由 Java 调用对应工作流完成（ADR 0025），LangGraph 提取并提交标的原始表达或用户引用选择。
 **排查**：
-1. trace 里看提交给后端的 `placeOrderWindCode` / `stockCode` 是否是用户原文
-2. 原文正确 → 查 Java 标的工具日志；原文提取错 → 查子图 extract 节点与提示词
+1. trace 里看提交给后端的 `placeOrderWindCode` / `stockCode` 是否对应用户原文或本次引用选择
+2. 表达或选择提取错误 → 查 LangGraph 的提取、选择节点与提示词；提交正确而识别错误 → 查 Java 调用记录及对应识别工作流
 3. HTTP 输出的 `tickers` 恒为空列表，不代表零命中
 
 ### Q: LLM 结构化输出校验失败

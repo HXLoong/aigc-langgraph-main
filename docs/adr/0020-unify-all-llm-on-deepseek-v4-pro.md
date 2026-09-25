@@ -1,48 +1,49 @@
-# ADR 0020 · 全量统一 DeepSeek-V4-pro
+# ADR 0020 · 全量统一 deepseek-v4-pro
 
-- 状态：已采纳（图片 / Excel 链路另配视觉模型，见 §3）
-- 日期：2026-08-27
+- 状态：已采纳（统一模型已确定，配置核对与链路验收待实施）
+- 日期：2026-09-24
+- 关系：模型请求额度与附件边界见 [ADR 0031](./0031-single-model-request-per-message.md)，评测断言见 [ADR 0005](./0005-annotation-roles-judge-plus-business-spotcheck.md)
 - 作者：图灵科技 + Tony
 
 ## 背景
 
-此前"开发用 Qwen、现场用 DeepSeek"的双轨制，使评测基线只对 Qwen 有效、提示词适配要做两遍、开发结论无法外推现场。客户现场只认 DeepSeek 上的表现，评测结论必须与现场同口径。
+开发、评测与现场使用不同模型会造成行为和基线漂移。统一使用 `deepseek-v4-pro`，由不同产品的提示词与结构化输出契约区分解析职责；输入类型必须符合该模型的实际能力。
 
 ## 决策
 
 ### 1. 模型统一
 
-开发、测试、评测与现场生产的所有文本 LLM 调用统一使用 `deepseek-v4-pro`，并统一**关闭思考模式**。切换只通过 `.env`，代码不硬编码 vendor（环境变量前缀为 `QWEN_*`）：
+所有业务 LLM 请求统一使用 API 模型名 `deepseek-v4-pro`，关闭思考模式。开发、测试、评测中的被测模型与现场生产保持同一型号；数据集评分使用确定性断言，不另配 Judge 模型。官方模型表将 Pro 的 Vision 能力标为不支持，因此当前只支持文本及代码读取后的 Excel 内容；不能沿用其它型号的图片能力说明。[官方模型表](https://api-docs.deepseek.com/quick_start/pricing/)（核对日期：2026-09-24）。
+
+以下为统一配置要求，实际环境仍需核对；凭据从环境变量读取：
 
 ```dotenv
 QWEN_API_BASE=https://api.deepseek.com/v1
 QWEN_MODEL_STANDARD=deepseek-v4-pro
 QWEN_MODEL_THINKING=deepseek-v4-pro
-QWEN_MODEL_COMPLEX=deepseek-v4-pro   # 必须显式设置，默认值不是 DeepSeek 模型名
+QWEN_MODEL_COMPLEX=deepseek-v4-pro
 ```
 
-### 2. vendor 适配集中在一处（`app/llm/clients.py`）
+现有 `QWEN_*` 名称与工厂函数仅作为配置兼容入口。`QWEN_MODEL_VL` 是待清理的旧配置，不为本阶段另配视觉模型；不能把它改成 Pro 就认定图片已可用。实际网关的模型标识、文本与结构化输出能力须独立验证。
 
-DeepSeek 的 OpenAI 兼容接口与 Qwen 有两处硬差异，统一在工厂层适配，**节点层不得重复处理**（回归测试 `tests/test_llm_clients.py`）：
+### 2. 适配集中在模型工厂
 
-| 差异 | 现象 | 适配 |
-|---|---|---|
-| 关闭思考的参数不同 | DeepSeek 忽略 Qwen 的 `enable_thinking=False`，默认仍思考，延迟不可控 | DeepSeek 传 `{"thinking": {"type": "disabled"}}` |
-| 不支持 `response_format=json_schema` | 结构化输出默认走 json_schema，直接 400 | 模型为 DeepSeek 且未显式指定时，自动改用 `function_calling`（`json_mode` 会漂移字段名，不采用） |
+- `app/llm/clients.py` 统一处理端点、思考模式、结构化输出与输入能力边界；节点通过 `with_structured_output(PydanticModel)` 获取输出，不自行解析 JSON。
+- 沿用项目已有的 function-calling 结构化契约，验证文本、Excel 提取和目标网关的兼容性；输入能力按官方模型说明与部署契约核对。
+- SDK、图层与外层封装的模型重试均关闭。产品分类、意图、参数和有歧义的候选共用一次请求，失败不切换模型重试（ADR 0031）。
 
-### 3. 视觉模型例外
+### 3. 本阶段只处理文本与 Excel，图片暂不处理
 
-DeepSeek 暂无视觉模型。互换图片 / Excel 链路（`app/subgraphs/swap/multimodal.py`）经 `QWEN_MODEL_VL` 单独配置视觉模型；现场未配置时该链路不可用，部署 checklist 须明确此项。
+- 按本阶段范围决定，图片暂不处理，不安排图片解析或图片准确率验收；收到图片时在请求模型前明确提示改用文本或 Excel；混合输入不得静默忽略图片后只处理剩余内容，也不调用其它模型 OCR 或降级解析。
+- Excel 由代码读取单元格及来源，再通过同一次请求批量解析，不把 Excel 读取当作视觉模型调用，也不逐行请求模型。
+- 本阶段不建设独立 VL 模型接线或按 VL 型号拆分告警。图片能力待后续另行决定，本阶段不开展对应实施与验收。容量超限或输出无法承载全部订单时，同样停止并提示调整输入。
 
 ## 备选方案
 
-- **维持双轨制**：双口径评估成本不可接受。
-- **开发期用更便宜的 DeepSeek 非 pro 型号**：引入新的行为漂移维度，与"同口径"目标矛盾。
+- **文本与图片分配不同型号**：增加配置和评测口径，本阶段不采用。
+- **所有产品使用一个大提示词**：模型统一不要求提示词合并；保留产品专用解析器和跨产品解析器，代码四选一。
+- **统一模型 + 独立解析契约（已选）**：保持部署口径一致与产品职责清晰。
 
 ## 后果
 
-- 正面：开发 / 评测 / 现场单一口径，数据集回归结论可直接外推现场；vendor 差异集中在一处，节点代码零改动。
-- 负面：旧 Qwen 口径的评测与延迟基线作废，需在当前模型上重建（ADR 0030 D3）；开发环境依赖公网 DeepSeek API 的可用性与计费安排。
-- 回退：`.env` 切回 §1 四行即可，适配层按模型名分支，双 vendor 兼容，无需改代码。
-- 分化前置纪律：工厂函数（`get_qwen_standard` / `get_qwen_thinking` / `get_qwen_structured` / `get_qwen_complex`）保留为未来按节点分化模型的挂载点；真要让不同工厂指向不同模型之前，须先把 structured output 调用点归位到语义正确的工厂，否则多数节点会静默跟随 thinking 工厂。函数名与环境变量的 `qwen` 前缀只是命名，不代表模型厂商。
-- 教训：早期曾以"OpenAI 兼容接口、风险低"为由跳过 DeepSeek 冒烟验证，全量切换时才暴露 §2 两处硬差异。接口兼容不等于行为兼容，换模型须先跑数据集评测。
+须按统一 Pro、关闭思考与零重试口径重测准确率、失败率、成本与延迟，不能直接继承多次请求或重试后的基线。配置、模型工厂、图片能力拦截及验收仍需核对和迁移；本轮不修改 `.env`、运行时代码或部署环境，实施项统一见[工作计划](../work-plan.md)。
