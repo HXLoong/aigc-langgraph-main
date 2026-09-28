@@ -559,7 +559,7 @@ async def test_cli_runs_only_explicitly_selected_suites(
 
     from harness import multi_turn
 
-    fixtures = tmp_path / "tests/fixtures"
+    fixtures = tmp_path / "tests/datasets"
     biz = fixtures / "biz"
     biz.mkdir(parents=True)
     _write(biz, {"caseNo": "a", "send_text": "现役询价"})

@@ -28,7 +28,7 @@ _Avoid_: 仅凭 Java 已尝试调用 GOATS、集成日志存在或 mock 返回�
 _Avoid_: 混沌工程（Chaos Engineering，不同概念）、可观测性平台（trace 只是 harness 的副产品之一）、单元测试（harness 跑的是数据集而非代码单元）
 
 **Golden case**：
-一条 harness 输入：用户原话 + 期望输出。集合（golden set）是 harness 的回归基线；业务验收集 `tests/fixtures/biz/` 以 Java 卡片文本断言为主、可选结构化 `expected`，意图集 `tests/fixtures/intent/` 逐轮断言 product_type / intent。按来源分三个桶（目标口径；现役 biz 与 intent 的来源分桶待完善；B 方言历史参考集已退役）：
+一条 harness 输入：用户原话 + 期望输出。集合（golden set）是 harness 的回归基线；业务验收集 `tests/datasets/biz/` 以 Java 卡片文本断言为主、可选结构化 `expected`，意图集 `tests/datasets/intent/` 逐轮断言 product_type / intent。按来源分三个桶（目标口径；现役 biz 与 intent 的来源分桶待完善；B 方言历史参考集已退役）：
 - **B 桶**：业务方手写种子——主动构造、意图均衡的典型句式，expected 字段由业务方直接填写
 - **C 桶**：LLM paraphrase——以 B 桶为种子做对抗式改写（换说法 / 边界 case），业务方 review pass 后合入
 - **D 桶**：客户历史真实输入——从企微群抄录的原话，反映真实分布（含拼写错误、缩写、上下文依赖）；expected 字段**必须由业务方人工标注后才能合入**数据集，是持续增长的集合
@@ -115,7 +115,7 @@ _Avoid_: 把不确定回执当成消息锁、把缺少回执当成未执行的�
 _Avoid_: 把拒绝改写成成功卡片，或把拒绝当作 LangGraph 缺陷
 
 **意图集 / 冻结上下文 / 回放**：
-意图集（`tests/fixtures/intent/`）只评产品与意图，不依赖 Java。冻结用例把每轮上下文写在 fixture 里、只跑意图子链；走主图 + `mock_api` 的是拒绝验收用例和引用上一轮真实回复的回放用例（当前多轮用例已全部冻结，`harness/intent_context.py` 判定）。
+意图集（`tests/datasets/intent/`）只评产品与意图，不依赖 Java。冻结用例把每轮上下文写在 fixture 里、只跑意图子链；走主图 + `mock_api` 的是拒绝验收用例和引用上一轮真实回复的回放用例（当前多轮用例已全部冻结，`harness/intent_context.py` 判定）。
 _Avoid_: 把意图集与依赖 Java 的业务验收集混跑
 
 **节点级样本**：

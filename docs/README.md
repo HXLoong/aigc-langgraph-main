@@ -76,6 +76,6 @@
 - 项目纪律：根 `CLAUDE.md` + `.claude/rules/`（Codex 读生成的 `AGENTS.md`）
 - 领域语言：根 `CONTEXT.md`
 - 提示词资产：`app/prompts/**/*.md`（git 唯一真源，见 `.claude/rules/prompt-management.md`）
-- 测试数据集：`tests/fixtures/`（说明见 `tests/fixtures/README.md`）
+- 测试数据集：`tests/datasets/`（说明见 `tests/datasets/README.md`）
 - 脚本目录页：`scripts/CLAUDE.md`；基础设施：`infra/langfuse/README.md`
 - 子目录陷阱页：`app/prompts/CLAUDE.md`、`tests/CLAUDE.md`、`scripts/CLAUDE.md`

@@ -1,14 +1,14 @@
 # tests · 目录布局与局部陷阱
 
-> 测试规范（金字塔 / Mock 陷阱 / E2E / Golden / 验证范围）只在 `.claude/rules/testing.md` 维护；TDD 纪律见根 `CLAUDE.md` 核心原则 5。
-> 测试体系总入口与分层实操（mock 环境 / 真后端切换 / 排查路径）见 `docs/testing/README.md`；数据集说明见 `tests/fixtures/README.md`。
+> 测试规范（三层 TDD 准则 / Mock 陷阱 / E2E / Golden / 验证范围）只在 `.claude/rules/testing.md` 维护；TDD 纪律见根 `CLAUDE.md` 核心原则 5。
+> 测试体系总入口与分层实操（mock 环境 / 真后端切换 / 排查路径）见 `docs/testing/README.md`；数据集说明见 `tests/datasets/README.md`。
 
 ## 目录布局
 
 ```
 tests/
 ├── conftest.py            # 全局 pytest 配置（仅占位；根纪律禁止用 autouse 绕过真实业务路径）
-├── fixtures/              # 数据集：intent/（意图集）、biz/（业务验收集）等，见其 README
+├── datasets/              # 数据集：intent/（意图集）、biz/（业务验收集）等，见其 README
 ├── intent_fixtures.py / evidence_support.py / llm_guard.py   # 共享 mock 工厂与守卫（证据必须来自真实输入；去 LLM 化模块不得持有 LLM 工厂）
 ├── graph/                 # 主图：拓扑 / reducer / 路由纯函数 / 入口分流 / RetryPolicy 读写清单 / 子图契约 / 确认路径
 ├── nodes/                 # 主图节点：ingest / pre_route / route_rules / render / persist / record_history ...

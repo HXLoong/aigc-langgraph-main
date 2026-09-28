@@ -1,8 +1,8 @@
 # 期权 / 互换意图识别数据集评估（2026-09-24）
 
 > 目标：意图识别（一级 `product_type` + 子图 `intent`）只调大模型即可测试，不对接 Java / GOATS 后端与业务 API。
-> 范围：`tests/fixtures/intent/`（意图集）、`tests/fixtures/categories/`（业务集，意图集派生来源）、
-> `tests/fixtures/unified_golden.jsonl`（B 方言，921 条）、`scripts/langfuse/langfuse_eval.py --suite intent` 执行链路。
+> 范围：`tests/datasets/intent/`（意图集）、`tests/datasets/categories/`（业务集，意图集派生来源）、
+> `tests/datasets/unified_golden.jsonl`（B 方言，921 条）、`scripts/langfuse/langfuse_eval.py --suite intent` 执行链路。
 > 本次未调用真实 LLM（环境无模型网关凭据），结论基于数据统计、代码走读与离线 PoC。
 
 ## 一、结论

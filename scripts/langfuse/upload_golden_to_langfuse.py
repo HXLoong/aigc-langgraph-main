@@ -34,8 +34,8 @@ from scripts.langfuse._public_api import (
 
 load_dotenv()
 
-GOLDEN_PATH = PROJECT_ROOT / "tests" / "fixtures" / "biz"
-FIXTURE_ROOT = PROJECT_ROOT / "tests" / "fixtures"
+GOLDEN_PATH = PROJECT_ROOT / "tests" / "datasets" / "biz"
+FIXTURE_ROOT = PROJECT_ROOT / "tests" / "datasets"
 logger = logging.getLogger(__name__)
 DATASET_NAME = "otc-option-golden"
 #: 套件：intent（评路由/意图：冻结用例只调 LLM，回放用例配 mock 后端）/ business（真后端 + 卡片断言 + Judge）
@@ -46,7 +46,7 @@ DEFAULT_BACKEND = {"intent": "mock", "business": "real"}
 
 
 def detect_suite(source: Path) -> str:
-    """tests/fixtures/intent/ 下的 fixture 是意图集，其余按业务集。"""
+    """tests/datasets/intent/ 下的 fixture 是意图集，其余按业务集。"""
     return "intent" if INTENT_DIR_NAME in source.parts else "business"
 
 
@@ -224,7 +224,7 @@ def main() -> int:
     parser.add_argument(
         "--suite",
         choices=SUITES,
-        help="套件；默认按 --source 路径判定（tests/fixtures/intent/ → intent，其余 business）",
+        help="套件；默认按 --source 路径判定（tests/datasets/intent/ → intent，其余 business）",
     )
     parser.add_argument(
         "--backend",

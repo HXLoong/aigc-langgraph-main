@@ -4,8 +4,8 @@
 
 | 方式 | 入口 | 执行 | 数据 |
 |---|---|---|---|
-| HTTP 回归 | `python -m harness run` | 经本地 `/v1/workflows/run` 驱动 LangGraph，与 `app/` 解耦 | `tests/fixtures/biz/`（依赖 Java） |
-| 意图级 | `scripts/langfuse/langfuse_eval.py --local tests/fixtures/intent` | 冻结用例进程内只跑意图子链（`intent_runner.py`）；拒绝验收（及回放）用例走主图 + `mock_api` | `tests/fixtures/intent/` |
+| HTTP 回归 | `python -m harness run` | 经本地 `/v1/workflows/run` 驱动 LangGraph，与 `app/` 解耦 | `tests/datasets/biz/`（依赖 Java） |
+| 意图级 | `scripts/langfuse/langfuse_eval.py --local tests/datasets/intent` | 冻结用例进程内只跑意图子链（`intent_runner.py`）；拒绝验收（及回放）用例走主图 + `mock_api` | `tests/datasets/intent/` |
 | 节点回归 | `python -m harness node-run` | 默认 `--transport direct` 进程内调单个节点；`http` 调 `/v1/nodes/*` | 节点级 fixture 已退役（`--data` 自备目录） |
 
 ## 模块

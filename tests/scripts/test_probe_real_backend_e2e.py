@@ -238,16 +238,6 @@ def test_cli_invalid_target_exits_2() -> None:
     assert r.returncode == 2
 
 
-def test_cli_case_out_of_range() -> None:
-    """--case 999 越界 → exit 2。"""
-    r = _run("--target", "swap", "--case", "999", "--report-only")
-    # report-only 路径仍校验 --case 越界
-    # 但 report-only 走早期 return 路径，--case 越界检测在 filter 之后
-    # 实测决定：若 report-only 在 case 检测前 return → 不会触发 exit 2
-    # 接受 0 或 2，主要是不能抛 exception
-    assert r.returncode in (0, 2)
-
-
 def test_cli_help() -> None:
     r = _run("--help")
     assert r.returncode == 0

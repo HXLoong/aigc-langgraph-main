@@ -29,7 +29,7 @@ USE_MYSQL_CHECKPOINTER=false REQUEST_IDEMPOTENCY=false ENABLE_LANGFUSE=false pyt
 # 完整 pytest / biz 业务集全量 / 性能测试按用户统一验收安排执行，不逐批重复。
 
 # 本地 HTTP 业务回归（仅在准备好授权测试账号和数据后，由主代理或用户执行）
-python scripts/local_eval.py --base-url http://127.0.0.1:8201 --data tests/fixtures/biz --case case-025 --concurrency 1
+python scripts/local_eval.py --base-url http://127.0.0.1:8201 --data tests/datasets/biz --case case-025 --concurrency 1
 # 全量验收时去掉 --case；只跑显式 biz。
 # 本地真实联调：ENVIRONMENT=staging uvicorn app.main:app --host 127.0.0.1 --port 8201
 
@@ -38,7 +38,7 @@ python scripts/langfuse/langfuse_eval.py --dataset biz/option_inquiry --ids case
 # 意图集（不依赖 Java/GOATS；冻结上下文的用例由 harness/intent_runner.py 只跑意图子链、只调 LLM，
 # 拒绝验收（及引用上一轮回复的回放）用例走主图 + mock_api；确定性评分本地算，--fail-under 给退出码；
 # CI：.github/workflows/intent-eval.yml 仅手动触发；业务集 biz/ 依赖 Java 后端只在开发环境跑；docs/langfuse/workflow-guide.md §8）
-python scripts/langfuse/langfuse_eval.py --local tests/fixtures/intent --concurrency 3 --fail-under 0.95 --report .harness-runs/intent-eval.json
+python scripts/langfuse/langfuse_eval.py --local tests/datasets/intent --concurrency 3 --fail-under 0.95 --report .harness-runs/intent-eval.json
 
 # Harness CLI（备用 / 本地快速 smoke，无 Judge；run 需授权测试身份，见 harness/README.md）
 python -m harness doctor
@@ -90,7 +90,7 @@ scripts/                     # 评估入口、真后端探针、灰度与运维�
 infra/                       # langfuse/（self-hosted Compose）+ grafana/（面板模板）
 docs/                        # 文档地图与存放规则见 docs/README.md（lint 强制）
 tests/                       # 3500+ 条，布局见 tests/CLAUDE.md
-tests/fixtures/              # intent/（意图集，只调 LLM）+ biz/（业务验收集，6 文件，依赖 Java），见 tests/fixtures/README.md
+tests/datasets/              # intent/（意图集，只调 LLM）+ biz/（业务验收集，6 文件，依赖 Java），见 tests/datasets/README.md
                              # 旧节点 fixture、B 方言历史参考集及派生 CSV / Excel 已退役；节点调试 API 和 node-run 保留
 ```
 
@@ -112,7 +112,7 @@ tests/fixtures/              # intent/（意图集，只调 LLM）+ biz/（业�
 - 每个任务指定文件所有者与验收用例；公共 State、配置、数据库结构及服务生命周期由主代理统一处理。子代理提出公共契约需求，不互相覆盖共享文件。
 - Java 源码不修改；本地 Java 48080 → 48081，LangGraph 使用本地端口，禁止使用 10.49.91.229:8201；应用持久化统一 MYSQL_URI。
 - 当前重构采用轻量验证：业务改动先最小 RED，再 GREEN 与相关关键测试；用户要求最终统一测试时，不逐批跑全套 pytest、biz 全量真实回归或压测。
-- 真实写入测试仅由主代理调度；先确认授权测试账号、群、对手及持仓。业务回归使用 scripts/local_eval.py 和显式 tests/fixtures/biz。
+- 真实写入测试仅由主代理调度；先确认授权测试账号、群、对手及持仓。业务回归使用 scripts/local_eval.py 和显式 tests/datasets/biz。
 - 新建或移动文档先按 `.claude/rules/docs.md` 判定归属目录（一次性报告进 `docs/reports/YYYY-MM-DD-<topic>.md`），跑 `python scripts/check_docs_layout.py`。
 - 任务和证据记录在 tmp；区分实现完成、专项通过、待用户验收、外部阻塞。外部阻塞不可写成已完成；全量结果未经运行不得宣称通过。
 - 不 push、不创建 PR；保留用户原有未提交改动。新 worktree 显式准备依赖与所需本地配置，禁止输出或提交密钥。
@@ -132,7 +132,7 @@ tests/fixtures/              # intent/（意图集，只调 LLM）+ biz/（业�
 2. **LLM 输出用 `with_structured_output(PydanticModel)`** —— 绝不手工解析 JSON；输出模型每个字段写 `Field(description=)`，这是输出语义的唯一真源（经 function calling schema 下发），提示词正文不再维护 JSON 骨架 / 字段表
 3. **节点错误与重试分界** —— 纯计算、LLM 与写类节点用 `@safe_node`，异常落 `state['error']`；独立后端只读查询用 `@io_node` + `add_io_node` 挂 `RetryPolicy`。LLM 与写类节点不自动重试，后端查询重试不得重跑模型（ADR 0031，现有链路待重构）。
 4. **State 字段只通过 TypedDict 约定** —— 新增字段必须先在 `app/graph/state.py` 中声明
-5. **TDD 强制** —— 任何 bug fix / 新功能必须先写失败测试：
+5. **TDD 强制** —— 任何 bug fix / 新功能必须先写失败测试（契约层纯数据容器除外，分层判据见 `.claude/rules/testing.md`「三层 TDD 准则」）：
    - 写测试 → 跑到 RED（测试失败） → 写最小修复代码 → 跑到 GREEN → 受影响测试回归（全量按统一验收，见 testing.md「验证范围」）
    - 禁止先改代码再补测试，也禁止跳过 RED 验证
    - 完整步骤见 `test-driven-development` skill（用户显式调用 `/test-driven-development` 或说"用tdd"时加载）
@@ -225,7 +225,7 @@ USE_MYSQL_CHECKPOINTER=false REQUEST_IDEMPOTENCY=false ENABLE_LANGFUSE=false pyt
 修完跑对应 case 确认：
 
 ```bash
-python scripts/langfuse/langfuse_eval.py --local tests/fixtures/biz --ids case-025,case-026 --concurrency 2 --no-judge   # 依赖 Java，由主代理调度
+python scripts/langfuse/langfuse_eval.py --local tests/datasets/biz --ids case-025,case-026 --concurrency 2 --no-judge   # 依赖 Java，由主代理调度
 ```
 
 ## 绝对禁止
@@ -348,15 +348,23 @@ result = await model.with_structured_output(SwapIntentOutput).ainvoke(messages)
 
 # 测试规范
 
-## 三层测试金字塔
+## 三层 TDD 准则
 
-```
-   E2E 集成测试 (tests/integration/ + tests/test_cascade_e2e.py)   ← 慢，少，Mock LLM + Mock 后端
-   ─────────────────────────────
-   子图 / 节点测试 (tests/subgraphs/ · tests/nodes/ · tests/graph/) ← 中等，覆盖关键路径
-   ─────────────────────────────
-   模型与路由测试 (tests/subgraphs/*/test_models.py · tests/test_intent_route.py) ← 快，多，纯函数单测
-```
+判据是**被测代码属于哪一层**，先定层再决定测试写法：
+
+| 层 | 判据 | 测试方式 | TDD |
+|---|---|---|---|
+| **核心需求层** | 业务规则、状态机、路由、cascade 兜底、参数提取、回执契约 | 单元测试 | **严格先 RED** |
+| **支撑层** | DB 访问、外部 API 客户端、文件 IO、评测台 | 集成测试（真 DB / 真 HTTP） | 不强制 |
+| ↳ 纯计算函数 | 正则、中文数字、diff 引擎、AST 分析 | 单元测试 | **严格 TDD** |
+| **契约层** | DTO、枚举、Pydantic 模型、配置常量 | —— | **不写测试** |
+
+- **核心需求层**：删代码必须立刻让测试变红（证明受保护），再补新实现转绿。
+- **契约层**只有状态没有行为，手写 getter/setter 式断言无价值；字段名与类型交 Pydantic 与 Java 契约保证。这里的"不写测试"**仅指纯数据容器**（只有字段声明和框架默认行为）；含自定义 `field_validator` / `field_serializer` / `model_validator` / factory 分支的模型已有行为，属**核心需求层或支撑层**，仍需测试。
+- **支撑层**强行先写测试会陷入 Mock 地狱：Mock 掉 DB 与 HTTP 后无法证明真实环境可跑，且与实现强耦合；改用集成测试（如 `mock_api` ASGITransport、真 MySQL opt-in 用例）。
+- **多层归属**：一段代码同时符合多层判据时，按 **TDD 要求最高**的层归类，优先级 `纯计算函数 > 核心需求层 > 支撑层 > 契约层`。例如 `differ.py` 既像"评测台支撑"又是纯计算，按纯计算处理；`has_error()` 既像工具又是路由兜底判据，按核心需求层处理。
+
+测试放置（参考）：E2E `tests/integration/` + `tests/test_cascade_e2e.py`；子图 / 节点 `tests/subgraphs/` · `tests/nodes/` · `tests/graph/`；纯函数 `tests/domain/` · `tests/nodes/test_route_rules.py`；`/v1/workflows/run` 对 Java 的 wire 契约 `tests/api_wire/`。
 
 ## pytest 约定
 
@@ -398,9 +406,9 @@ for target in (
 
 ## Golden Set
 
-- 所有新增意图必须在 `tests/fixtures/biz/` 加至少 2 条用例，并在 `tests/fixtures/intent/` 补逐轮意图标签（`scripts/check_fixture_consistency.py` 校验一致性）
-- case 格式沿用对应文件既有方言（详见 `tests/fixtures/README.md`）
-- 跑评估：意图集 `python scripts/langfuse/langfuse_eval.py --local tests/fixtures/intent`；依赖 Java 的业务集按 `run-eval` skill 由主代理调度
+- 所有新增意图必须在 `tests/datasets/biz/` 加至少 2 条用例，并在 `tests/datasets/intent/` 补逐轮意图标签（`scripts/check_fixture_consistency.py` 校验一致性）
+- case 格式沿用对应文件既有方言（详见 `tests/datasets/README.md`）
+- 跑评估：意图集 `python scripts/langfuse/langfuse_eval.py --local tests/datasets/intent`；依赖 Java 的业务集按 `run-eval` skill 由主代理调度
 
 ## 验证范围
 
@@ -422,10 +430,13 @@ python scripts/sync_agents_md.py --check
 
 ## 何时写测试
 
-- ✅ 新增节点函数 → 加路由测试
-- ✅ 新增 Pydantic 模型 → 加字段校验测试
-- ✅ 新增业务逻辑分支 → 加 E2E 覆盖
+- ✅ 新增节点函数、路由规则、业务分支 → 单元测试（先 RED）
+- ✅ 新增纯计算工具函数（正则 / 数字解析 / diff / AST 分析） → 单元测试（先 RED）
 - ✅ 修 bug → 先写复现测试，再修
+- ❌ 新增 / 修改 DTO、枚举、Pydantic 模型 → **不写测试**（契约层）
+- ❌ 修改 CI / 配置文件 → 不写测试（由 CI 自身与 lint 保证）
+- ❌ 只断言 CLI `--help` 文案、参数解析退出码或恒真条件 → 不写
+- 🔄 代码从低 TDD 层升到高 TDD 层时（容器加 `field_validator`、支撑模块被核心依赖、纯函数被路由直接调用）→ **补对应层级的测试**，删除的旧断言不豁免新行为
 - ⚠️ 改活跃提示词 → 直接改 `.md` + 普通 PR review，`prompt(<scope>)` commit；需要时自行跑 `scripts/langfuse/langfuse_eval.py` 验证
 
 ## 选择性运行

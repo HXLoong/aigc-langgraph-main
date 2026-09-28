@@ -74,15 +74,15 @@ def test_dataset_projection_keeps_categories_shape() -> None:
 
 
 def test_detect_suite_from_source_path() -> None:
-    """意图集放 tests/fixtures/intent/，其余按业务集处理。"""
+    """意图集放 tests/datasets/intent/，其余按业务集处理。"""
     from pathlib import Path
 
     from scripts.langfuse.upload_golden_to_langfuse import detect_suite
 
-    assert detect_suite(Path("tests/fixtures/intent/swap.jsonl")) == "intent"
-    assert detect_suite(Path("tests/fixtures/intent")) == "intent"
-    assert detect_suite(Path("tests/fixtures/biz/swap_prod.jsonl")) == "business"
-    assert detect_suite(Path("tests/fixtures/biz")) == "business"
+    assert detect_suite(Path("tests/datasets/intent/swap.jsonl")) == "intent"
+    assert detect_suite(Path("tests/datasets/intent")) == "intent"
+    assert detect_suite(Path("tests/datasets/biz/swap_prod.jsonl")) == "business"
+    assert detect_suite(Path("tests/datasets/biz")) == "business"
 
 
 def test_metadata_carries_suite_backend_and_drops_empty_tags() -> None:
@@ -106,8 +106,8 @@ def test_dataset_metadata_binds_instrument_evaluator_only_with_instrument_labels
     from scripts.langfuse.upload_golden_to_langfuse import build_dataset_metadata
 
     root = Path(__file__).resolve().parents[2]
-    option = load_golden(root / 'tests/fixtures/intent/option.jsonl')
-    swap = load_golden(root / 'tests/fixtures/intent/swap_instrument.jsonl')
+    option = load_golden(root / 'tests/datasets/intent/option.jsonl')
+    swap = load_golden(root / 'tests/datasets/intent/swap_instrument.jsonl')
     assert build_dataset_metadata(option, suite='intent')['evaluator_names'] == ['intent-match']
     assert build_dataset_metadata(swap, suite='intent')['evaluator_names'] == [
         'intent-match', 'instrument-match',
@@ -131,7 +131,7 @@ def test_manual_upload_defaults_dataset_name_and_passes_base_url(monkeypatch) ->
     import scripts.langfuse.upload_golden_to_langfuse as mod
 
     assert "base_url" in inspect.signature(mod._clear_dataset).parameters
-    source = Path("tests/fixtures/biz/option_inquiry.jsonl")
+    source = Path("tests/datasets/biz/option_inquiry.jsonl")
     cleared: list[tuple[str, str | None]] = []
     monkeypatch.setattr(
         mod, "_clear_dataset",

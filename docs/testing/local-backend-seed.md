@@ -1,6 +1,6 @@
 # 本地合成身份种子与验收边界
 
-对应 #169。`scripts/local_backend_seed.py` 向已初始化的本机隔离库导入合成群、成员、用户配置、授权各 1 行，以及贵州茅台/腾讯控股两条公共证券记录。数据在 `tests/fixtures/local_backend/identity_seed.sql`，没有真实人员、真实授权关系、密码、token 或业务订单；应用代码没有增加标的数据字典。
+对应 #169。`scripts/local_backend_seed.py` 向已初始化的本机隔离库导入合成群、成员、用户配置、授权各 1 行，以及贵州茅台/腾讯控股两条公共证券记录。数据在 `tests/datasets/local_backend/identity_seed.sql`，没有真实人员、真实授权关系、密码、token 或业务订单；应用代码没有增加标的数据字典。
 
 在现有本地配置基础上执行：
 

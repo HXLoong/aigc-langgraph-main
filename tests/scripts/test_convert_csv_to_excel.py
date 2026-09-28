@@ -265,7 +265,7 @@ def test_default_input_is_relative_to_repository(tmp_path: Path) -> None:
     # 派生 CSV 目录已退役、不再随仓；默认输入仍相对仓库解析（biz/csv），而非当前工作目录
     result = run_cli("--dry-run", cwd=tmp_path)
     assert result.returncode != 0
-    assert str(ROOT / "tests" / "fixtures" / "biz" / "csv") in result.stderr
+    assert str(ROOT / "tests" / "datasets" / "biz" / "csv") in result.stderr
     assert not list(tmp_path.iterdir())
 
 
