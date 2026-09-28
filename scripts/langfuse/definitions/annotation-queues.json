@@ -1,0 +1,11 @@
+{
+  "annotation_queues": [
+    {
+      "name": "业务人工复核",
+      "description": "业务方复核 Experiment Item 是否符合用例预期；用 human_business_verdict 记录结论。",
+      "score_configs": [
+        "human_business_verdict"
+      ]
+    }
+  ]
+}

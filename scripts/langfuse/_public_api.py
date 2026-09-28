@@ -13,6 +13,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[2]
 
 
 def load_dotenv() -> None:
+    """只以 .env 为准。"""
     dotenv = PROJECT_ROOT / ".env"
     if not dotenv.exists():
         return
@@ -22,7 +23,7 @@ def load_dotenv() -> None:
             continue
         key, _, value = line.partition("=")
         key = key.strip()
-        if key and key not in os.environ:
+        if key:
             os.environ[key] = value.strip().split("#", 1)[0].strip()
 
 
@@ -210,3 +211,22 @@ class LangfusePublicApi:
             f"/api/public/score-configs/{quote(config_id, safe='')}",
             json=payload,
         )
+
+    def list_annotation_queues(self) -> list[dict[str, Any]]:
+        items: list[dict[str, Any]] = []
+        page = 1
+        while True:
+            payload = self._request(
+                "GET",
+                "/api/public/annotation-queues",
+                params={"page": page, "limit": 100},
+            )
+            data = [item for item in payload.get("data", []) if isinstance(item, dict)]
+            items.extend(data)
+            meta = payload.get("meta", {})
+            if page >= int(meta.get("totalPages") or page) or not data:
+                return items
+            page += 1
+
+    def create_annotation_queue(self, payload: dict[str, Any]) -> dict[str, Any]:
+        return self._request("POST", "/api/public/annotation-queues", json=payload)

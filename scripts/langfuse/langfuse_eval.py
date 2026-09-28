@@ -19,7 +19,6 @@ import sys
 import time
 import uuid
 from pathlib import Path
-from types import SimpleNamespace
 from typing import Any
 from urllib.parse import urlsplit
 
@@ -58,7 +57,6 @@ from app.graph.main import build_main_graph
 from app.prompts import load_prompt
 from app.api.turn_state import inputs_to_state
 from harness import intent_runner
-from harness.evaluators import instrument_match, intent_match, rejection_match
 from harness.golden import (
     GoldenCase,
     build_overview,
@@ -604,68 +602,6 @@ def judge_by_deepseek(*, output, expected_output, metadata=None, **kwargs):
     )
 
 
-def reply_check(output: dict[str, Any]):
-    """--no-judge 的兜底评分：只检查有没有回复。"""
-    from langfuse.experiment import Evaluation
-
-    reply = (output.get("reply_text") or "").strip()
-    return Evaluation(
-        name="reply-check",
-        value=1.0 if reply else 0.0,
-        comment="有回复" if reply else "reply_text 为空",
-    )
-
-
-def code_evaluations(item, output: dict[str, Any]) -> list:
-    """意图集本地评分：直接跑 harness/evaluators 里的确定性评估器（与 Langfuse Online Rule
-    同一份源码），不依赖 Langfuse、Java、GOATS。expected 用 Dataset 同款 biz 结构。"""
-    from langfuse.experiment import Evaluation
-
-    ctx = SimpleNamespace(
-        experiment=SimpleNamespace(item_expected_output=item.expected_structured),
-        observation=SimpleNamespace(output=output),
-    )
-    evaluators = [intent_match.evaluate]
-    if getattr(item, "has_instruments", False):
-        evaluators.append(instrument_match.evaluate)
-    if getattr(item, "has_rejections", False):
-        evaluators.append(rejection_match.evaluate)
-    evaluations = []
-    for evaluate in evaluators:
-        for score in evaluate(ctx).scores:
-            evaluations.append(
-                Evaluation(
-                    name=score.name,
-                    value=1.0 if score.value else 0.0,
-                    comment=score.comment,
-                    metadata=score.metadata,
-                )
-            )
-    return evaluations
-
-
-def case_passed(suite: str, evaluations: list) -> bool:
-    """意图集：全部确定性评估器为真；业务集：首个评分（Judge / reply-check）≥ 阈值。"""
-    if not evaluations:
-        return False
-    if suite == "intent":
-        return all(float(ev.value) >= 1.0 for ev in evaluations)
-    return float(evaluations[0].value) >= _PASS_THRESHOLD
-
-
-def passes_quality_gate(summary: dict[str, Any], threshold: float) -> bool:
-    """正向质量不因加入拒绝样本抬高；已标注的安全拒绝必须全部通过。"""
-    if summary["pass_rate"] < threshold:
-        return False
-    buckets = summary.get("acceptance_buckets", {})
-    executable = buckets.get("executable", {})
-    rejection = buckets.get("expected_rejection", {})
-    return not (
-        executable.get("total", 0) and executable["pass_rate"] < threshold
-        or rejection.get("total", 0) and rejection["passed"] != rejection["total"]
-    )
-
-
 # ── 报告 ──
 def _report_text(value) -> str:
     if isinstance(value, str):
@@ -833,9 +769,12 @@ async def run_local(
     dry_run,
     no_judge=False,
     suite: str = DEFAULT_SUITE,
-    report: Path | None = None,
-) -> dict[str, Any] | None:
-    """本地评估；返回摘要（dry-run 返回 None）。意图集用确定性评估器，业务集用 Judge。"""
+) -> None:
+    """本地 fixture 直接跑 Experiment；确定性断言由 Langfuse Evaluation Rule 异步评分。
+
+    与 `--dataset` 同一条路径，只差数据源（本地 fixture vs Langfuse Dataset）。
+    因此本地不再算分，也没有 `--fail-under` / `--report`。
+    """
     no_judge = not judge_enabled(suite, no_judge=no_judge)
     cases = load_golden(golden_paths)
     print(f"加载 {len(cases)} 条 (local, suite={suite})")
@@ -863,209 +802,33 @@ async def run_local(
             print(f"  {item.id}: {raw}")
         return None
 
-    # 启用 Langfuse 时，把 pipeline 调用包到 outer span 里，使 CallbackHandler 的
-    # per-node trace 自动嵌套（OTel context propagation），并能拿到稳定 trace_id 挂 score。
-    # 双 key 不齐（CI / 纯本地）就不构造客户端：SDK 无 key 时静默 no-op，会误报"写入成功"
-    lf: object | None = None
-    if _langfuse_enabled():
-        try:
-            from langfuse import Langfuse  # type: ignore[import-not-found]
+    if not _langfuse_enabled():
+        print("本地评估已改为推送 Langfuse Experiment；缺少 LANGFUSE_PUBLIC_KEY / SECRET_KEY")
+        return None
 
-            lf = Langfuse()
-        except Exception:
-            lf = None
-    run_name = f"local-{time.strftime('%Y%m%d-%H%M%S')}"
+    from functools import partial
 
-    sem = asyncio.Semaphore(max_concurrency)
+    from langfuse import Langfuse
 
-    def _evaluate(item, output: dict[str, Any]) -> list:
-        if suite == "intent":
-            return code_evaluations(item, output)
-        if no_judge:
-            return [reply_check(output)]
-        return [
-            judge_by_deepseek(
-                output=output, expected_output=item.expected_output, metadata=item.metadata
-            )
-        ]
-
-    def _turns_out(output: dict[str, Any]) -> list[dict[str, Any]]:
-        return [
-            {
-                "turn": t.get("turn"),
-                "raw": t.get("raw_content", ""),
-                "reply": t.get("reply_text", ""),
-                "product_type": t.get("product_type"),
-                "intent": t.get("intent"),
-                "tickers": t.get("tickers"),
-                "place_params": t.get("place_params"),
-                "api_result": t.get("api_result"),
-                "api_code": t.get("api_code"),
-                "error": t.get("error"),
-                "trace": t.get("trace", ""),
-                "quote_passed": t.get("quote_passed", ""),
-            }
-            for t in output.get("turns", [])
-        ]
-
-    def _evaluation_dicts(evaluations: list) -> list[dict[str, Any]]:
-        return [
-            {"name": ev.name, "value": float(ev.value), "comment": ev.comment}
-            for ev in evaluations
-        ]
-
-    async def _run_one(item):
-        async with sem:
-            trace_id: str | None = None
-            if lf is not None:
-                with lf.start_as_current_observation(  # type: ignore[union-attr]
-                    name=item.id,
-                    as_type="chain",
-                    input=item.input,
-                    metadata={**item.metadata, "run_name": run_name},
-                ) as span:
-                    trace_id = span.trace_id
-                    output = await run_langgraph_pipeline(item=item, suite=suite)
-                    # 在 span 内完成评分，把分数 / 期望 / 评价理由也写到 output，AI 一处可读全部
-                    evaluations = _evaluate(item, output)
-                    ev = evaluations[0]
-                    turns_out = _turns_out(output)
-                    # 富 output：顶层 expected/score/comment + 每轮 turn/raw/reply/trace + 抽取详情
-                    span_output: dict[str, Any] = {
-                        "expected": item.expected_output,
-                        "score": float(ev.value),
-                        "judge_comment": ev.comment,
-                        "evaluations": _evaluation_dicts(evaluations),
-                    }
-                    if turns_out:
-                        span_output["turns"] = turns_out
-                    else:
-                        span_output["reply"] = output.get("reply_text", "")
-                    span.update(output=span_output)
-            else:
-                output = await run_langgraph_pipeline(item=item, suite=suite)
-                evaluations = _evaluate(item, output)
-                ev = evaluations[0]
-            return {
-                "item": item,
-                "output": output,
-                "eval": ev,
-                "evals": evaluations,
-                "trace_id": trace_id,
-            }
-
-    mode = "code-evaluators" if suite == "intent" else ("no-judge" if no_judge else "with judge")
-    print(f"开始实验 ({len(items)} 条, 并行 {max_concurrency}, {mode})...\n")
-    t0 = time.time()
-    results = await asyncio.gather(*[_run_one(it) for it in items])
-    elapsed = time.time() - t0
-
-    scores = []
-    for r in results:
-        evaluations = r["evals"]
-        scores.append(
-            {
-                "id": r["item"].id,
-                "score": float(evaluations[0].value),
-                "comment": evaluations[0].comment,
-                "passed": case_passed(suite, evaluations),
-                "expected_rejection": r["item"].has_rejections,
-                "evaluations": _evaluation_dicts(evaluations),
-                "reply": r["output"].get("reply_text", ""),
-                "expected": r["item"].expected_output,
-                "turns": r["output"].get("turns", []),
-                "trace_log": r["output"].get("trace_log", ""),
-            }
-        )
-
-    passed = sum(1 for s in scores if s["passed"])
-    avg = sum(s["score"] for s in scores) / len(scores) if scores else 0
-    pass_rate = passed / len(scores) if scores else 0.0
-    print(f"\n{'=' * 60}")
-    print(
-        f"套件: {suite}  用例数: {len(scores)}  通过率: {passed}/{len(scores)} ({pass_rate * 100:.1f}%)"
-        f"  平均分: {avg:.2f}  耗时: {elapsed:.1f}s"
-    )
-    failed = [s for s in scores if not s["passed"]]
-    if failed:
-        print(f"\n失败 case ({len(failed)}):")
-        for s in failed:
-            print(f"  [{s['score']}] {s['id']}: {s['comment']}")
-            for ev in s["evaluations"]:
-                print(f"    [{ev['name']}={ev['value']}] {ev['comment']}")
-            print(f"    期望: {str(s['expected'])[:100]}")
-            for tr in s.get("turns", []):
-                n = tr.get("turn", "?")
-                pt = tr.get("product_type", "?")
-                intent = tr.get("intent") or "?"
-                reply = (tr.get("reply_text") or "")[:80]
-                trace = tr.get("trace") or "(无 trace)"
-                qpassed = tr.get("quote_passed") or ""
-                quote_info = (
-                    f" | quote={len(qpassed)}c {qpassed[:50]!r}" if qpassed else " | quote=无"
-                )
-                err_info = f" | ERROR: {tr['error']}" if tr.get("error") else ""
-                print(f"    第{n}轮 [{pt}/{intent}]{quote_info}{err_info}")
-                print(f"      trace : {trace}")
-                print(f"      reply : {reply or '(无回复)'}")
-    else:
-        print("\n全部通过")
-
-    # LangFuse 评分写回：每个评估器一个 score，挂到 _run_one 里 outer span 的 trace_id 上。
-    # 这样 per-node trace（CallbackHandler 写的）和 score 在同一个 trace 里。
-    if lf is not None:
-        try:
-            for r in results:
-                if not r.get("trace_id"):
-                    continue
-                for ev in r["evals"]:
-                    lf.create_score(  # type: ignore[union-attr]
-                        trace_id=r["trace_id"],
-                        name=ev.name,
-                        value=float(ev.value),
-                        comment=ev.comment,
-                    )
-            lf.flush()  # type: ignore[union-attr]
-            host = os.environ.get("LANGFUSE_HOST", "http://127.0.0.1:3000")
-            print(f"\nLangFuse 写入成功  run={run_name}  host={host}")
-        except Exception as e:
-            print(f"\nLangFuse 写入失败（不影响本地结果）: {e}")
-
-    summary: dict[str, Any] = {
-        "suite": suite,
-        "run_name": run_name,
-        "total": len(scores),
-        "passed": passed,
-        "pass_rate": pass_rate,
-        "elapsed_seconds": round(elapsed, 1),
-        "cases": [
-            {
-                "id": s["id"],
-                "passed": s["passed"],
-                "expected_rejection": s["expected_rejection"],
-                "score": s["score"],
-                "evaluations": s["evaluations"],
-                "turns": s["turns"],
-            }
-            for s in scores
-        ],
+    lf = Langfuse()
+    experiment_options = {
+        "name": f"local-{time.strftime('%Y%m%d-%H%M%S')}",
+        "data": items,
+        "task": partial(run_langgraph_pipeline, suite=suite),
+        "max_concurrency": max_concurrency,
     }
-    if suite == "intent":
-        buckets = {}
-        for name, is_rejection in (("executable", False), ("expected_rejection", True)):
-            selected = [score for score in scores if score["expected_rejection"] == is_rejection]
-            count = sum(score["passed"] for score in selected)
-            buckets[name] = {"total": len(selected), "passed": count,
-                             "pass_rate": count / len(selected) if selected else None}
-            print(f"验收分桶 {name}: {count}/{len(selected)}")
-        summary["acceptance_buckets"] = buckets
-    if report is not None:
-        report.parent.mkdir(parents=True, exist_ok=True)
-        report.write_text(
-            json.dumps(summary, ensure_ascii=False, indent=2, default=str), encoding="utf-8"
-        )
-        print(f"报告已写入 {report}")
-    return summary
+    if not no_judge:
+        experiment_options["evaluators"] = [judge_by_deepseek]
+    mode = "with judge" if not no_judge else "no-judge（确定性断言由 Langfuse Evaluation Rule 异步评分）"
+    print(f"开始实验 ({len(items)} 条, 并行 {max_concurrency}, {mode})...\n")
+    result = lf.run_experiment(**experiment_options)
+    print(f"\n实验完成: {result.name}")
+    _print_report(result.name, result)
+    print(
+        f"\nLangfuse: {os.environ.get('LANGFUSE_HOST', 'http://127.0.0.1:3000')}"
+        f"/project/{os.environ.get('LANGFUSE_PROJECT', 'otc-agent')}"
+    )
+    return None
 
 
 # ── 主流程（LangFuse 云端） ──
@@ -1156,24 +919,12 @@ def main() -> int:
         choices=SUITES,
         help="套件；默认按 --local 路径（intent/）或 --dataset 前缀（intent/、intent_、intent-）判定。intent 不跑 Judge",
     )
-    p.add_argument(
-        "--fail-under",
-        type=float,
-        default=None,
-        help="通过率低于该值时退出码 1（CI 门槛；仅 --local 生效）",
-    )
-    p.add_argument(
-        "--report",
-        type=Path,
-        default=None,
-        help="把本地评估摘要写成 JSON（仅 --local 生效）",
-    )
     args = p.parse_args()
     id_list = [x.strip() for x in args.ids.split(",")] if args.ids else None
     local_paths = [Path(value) for value in args.local] if args.local else None
     suite = resolve_suite(args.suite, local_paths, None if args.local else args.dataset)
     if local_paths:
-        summary = asyncio.run(
+        asyncio.run(
             run_local(
                 local_paths,
                 args.filter,
@@ -1183,16 +934,8 @@ def main() -> int:
                 args.dry_run,
                 args.no_judge,
                 suite=suite,
-                report=args.report,
             )
         )
-        if (
-            args.fail_under is not None
-            and summary is not None
-            and not passes_quality_gate(summary, args.fail_under)
-        ):
-            print(f"质量门未通过：总体/正向通过率要求 {args.fail_under:.1%}，明确拒绝要求 100%")
-            return 1
         return 0
     asyncio.run(
         run_eval(

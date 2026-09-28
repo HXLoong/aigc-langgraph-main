@@ -33,18 +33,19 @@
 
 | 数据集 | 目录 | 外部依赖 | 在哪跑 | 评分 |
 |---|---|---|---|---|
-| **意图集**（路由 + 意图 + 标的原文提取） | `tests/fixtures/intent/` | 只有 LLM 网关；后端由仓库内 `mock_api/` 顶替，**不碰 Java / GOATS** | GitHub Actions `intent-eval`（仅手动 Run workflow）+ 本地 | `det_intent_match_pass` / `det_instrument_match_pass` 确定性评估器，本地算，不需要 Langfuse；`--fail-under` 给退出码 |
+| **意图集**（路由 + 意图 + 标的原文提取） | `tests/fixtures/intent/` | 只有 LLM 网关；后端由仓库内 `mock_api/` 顶替，**不碰 Java / GOATS** | 本地手动（原 CI `intent-eval` 已删，见下） | `det_intent_match_pass` / `det_instrument_match_pass` 确定性评估器，由 Langfuse 异步评分 |
 | **业务集**（询价 / 下单 / 平仓卡片与后端联动） | `tests/fixtures/biz/` | Java 后端 + GOATS + 授权测试账号 / 群 / 对手 / 持仓 | **只在开发 / staging 环境**手动跑（`scripts/local_eval.py` / `langfuse_eval.py --dataset biz/option_close`），绝不进 CI | 确定性字段 / 文本断言；迁移期 `--no-judge`，旧评分路径待清理 |
 
 ```bash
-# 意图集本地（与 CI 同一条命令；终端 1 起 mock_api）
+# 意图集本地（终端 1 起 mock_api）
 uvicorn mock_api.server:app --port 8099
 OTC_API_BASE_URL=http://127.0.0.1:8099 GOATS_BASE_URL=http://127.0.0.1:8099 \
-  python scripts/langfuse/langfuse_eval.py --local tests/fixtures/intent --fail-under 0.95 --report .harness-runs/intent-eval.json --no-judge
+  python scripts/langfuse/langfuse_eval.py --local tests/fixtures/intent --concurrency 3
 ```
 
-CI 用到的环境变量（全部指向 mock、只有 `QWEN_API_BASE` / `QWEN_API_KEY` 是 secrets）见 `.github/workflows/intent-eval.yml`。
-未配置这两个 secrets 时手动触发会失败。
+> 本地只推送 Experiment，**不算分**——确定性断言由 Langfuse 的 Evaluation Rule 异步执行。
+> 因此没有 `--fail-under` / `--report`，结果在 Langfuse UI 的 Dataset Experiments 页查看。
+> `intent-eval` workflow 已删除：它的 fixture lint 步骤与 `ci.yml` 重复，LLM 评估步骤依赖的本地评分路径已移除。
 
 ## 二、命令速查
 

@@ -1,4 +1,4 @@
-# LangFuse self-hosted (v3) — ADR 0014 D1
+# LangFuse self-hosted (v4) — ADR 0014 D1
 #
 # 部署组件：
 #   - postgres: 主元数据库（trace 索引、用户、项目、dataset、score）
@@ -86,7 +86,7 @@ services:
       retries: 10
 
   langfuse-worker:
-    image: langfuse/langfuse-worker:3
+    image: langfuse/langfuse-worker:4
     restart: always
     depends_on:
       langfuse-postgres:
@@ -127,9 +127,14 @@ services:
       REDIS_AUTH: ${REDIS_AUTH:-myredissecret}
       TELEMETRY_ENABLED: ${TELEMETRY_ENABLED:-false}
       LANGFUSE_ENABLE_EXPERIMENTAL_FEATURES: ${LANGFUSE_ENABLE_EXPERIMENTAL_FEATURES:-false}
+      # Code Evaluator 执行器：默认关闭，不影响 Langfuse 启动，只关闭该项功能。
+      # 未设 dispatcher 时建 evaluator 返回 412；实际取值放在 .env（见 .env.example）。
+      # insecure-local 只支持 JS/TS；Python evaluator 需 aws-lambda dispatcher。
+      LANGFUSE_CODE_EVAL_DISPATCHER: ${LANGFUSE_CODE_EVAL_DISPATCHER:-}
+      QUEUE_CONSUMER_CODE_EVAL_EXECUTION_QUEUE_IS_ENABLED: ${QUEUE_CONSUMER_CODE_EVAL_EXECUTION_QUEUE_IS_ENABLED:-false}
 
   langfuse-web:
-    image: langfuse/langfuse:3
+    image: langfuse/langfuse:4
     restart: always
     depends_on:
       langfuse-postgres:

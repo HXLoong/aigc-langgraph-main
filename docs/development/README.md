@@ -47,7 +47,7 @@ ruff format app/ tests/                # 格式化
 mypy app/                              # 类型
 
 # 评估
-python scripts/langfuse/langfuse_eval.py --local tests/fixtures/intent --concurrency 3 --fail-under 0.95
+python scripts/langfuse/langfuse_eval.py --local tests/fixtures/intent --concurrency 3
 python scripts/local_eval.py --base-url http://127.0.0.1:8201 --data tests/fixtures/biz --case case-025
 
 # 一致性检查（提交前）
