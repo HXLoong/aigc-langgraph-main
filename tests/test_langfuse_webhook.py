@@ -99,10 +99,10 @@ class TestVerifySignature:
 # ── payload 配置 ──
 class TestParseConfig:
     def test_accepts_json_string(self) -> None:
-        assert langfuse_webhook.parse_config('{"suite":"intent"}') == {"suite": "intent"}
+        assert langfuse_webhook.parse_config('{"concurrency":2}') == {"concurrency": 2}
 
     def test_accepts_object(self) -> None:
-        assert langfuse_webhook.parse_config({"suite": "intent"}) == {"suite": "intent"}
+        assert langfuse_webhook.parse_config({"concurrency": 2}) == {"concurrency": 2}
 
     @pytest.mark.parametrize("raw", [None, ""])
     def test_empty_means_no_overrides(self, raw: Any) -> None:
@@ -118,6 +118,11 @@ class TestParseConfig:
         with pytest.raises(ValueError, match="未知字段"):
             langfuse_webhook.parse_config('{"concurrancy": 3}')
 
+    def test_rejects_suite(self) -> None:
+        """套件由 dataset 名前缀自动判定，不接受 suite 覆盖。"""
+        with pytest.raises(ValueError, match="未知字段"):
+            langfuse_webhook.parse_config('{"suite": "intent"}')
+
 
 # ── 命令行拼装 ──
 class TestBuildEvalArgs:
@@ -127,19 +132,25 @@ class TestBuildEvalArgs:
 
     def test_always_disables_judge(self) -> None:
         """ADR 0005：批量评分只用确定性断言，不调用 LLM Judge。"""
-        for config in ({}, {"suite": "business"}, {"concurrency": 3}):
+        for config in ({}, {"concurrency": 3}, {"ids": ["a"]}):
             assert "--no-judge" in langfuse_webhook.build_eval_args(
                 dataset_name="biz/option_inquiry", config=config
+            )
+
+    def test_never_passes_suite(self) -> None:
+        """套件由 dataset 名前缀自动判定，命令行不出现 --suite。"""
+        for dataset in ("intent/option_close", "biz/option_inquiry"):
+            assert "--suite" not in langfuse_webhook.build_eval_args(
+                dataset_name=dataset, config={"concurrency": 1}
             )
 
     def test_full_config(self) -> None:
         args = langfuse_webhook.build_eval_args(
             dataset_name="intent/option_inquiry",
-            config={"suite": "intent", "ids": ["a", "b"], "limit": 5, "concurrency": 3},
+            config={"ids": ["a", "b"], "limit": 5, "concurrency": 3},
         )
         assert args[1:] == [
             "--dataset", "intent/option_inquiry",
-            "--suite", "intent",
             "--ids", "a,b",
             "--limit", "5",
             "--concurrency", "3",
@@ -153,7 +164,6 @@ class TestBuildEvalArgs:
     @pytest.mark.parametrize(
         "config",
         [
-            {"suite": "wrong"},
             {"ids": "a,b"},  # 必须是数组
             {"ids": [1]},
             {"limit": 0},
@@ -234,7 +244,7 @@ async def test_accepts_and_spawns_child_process(
 ) -> None:
     monkeypatch.setattr(langfuse_webhook, "get_settings", lambda: _settings())
     body = json.dumps(
-        {"datasetName": "intent/option_inquiry", "payload": '{"suite":"intent","concurrency":2}'}
+        {"datasetName": "intent/option_inquiry", "payload": '{"ids":["case-023"],"concurrency":2}'}
     ).encode()
     response = await _post(body=body, headers={"x-langfuse-signature": _sign(body)})
 
@@ -243,7 +253,7 @@ async def test_accepts_and_spawns_child_process(
     assert spawned == [[
         str(langfuse_webhook._EVAL_SCRIPT),
         "--dataset", "intent/option_inquiry",
-        "--suite", "intent",
+        "--ids", "case-023",
         "--concurrency", "2",
         "--no-judge",
     ]]
@@ -253,7 +263,7 @@ async def test_rejects_bad_config_with_400(
     monkeypatch: pytest.MonkeyPatch, spawned: list[list[str]]
 ) -> None:
     monkeypatch.setattr(langfuse_webhook, "get_settings", lambda: _settings())
-    body = json.dumps({"datasetName": "d", "payload": '{"suite":"nope"}'}).encode()
+    body = json.dumps({"datasetName": "d", "payload": '{"concurrency":0}'}).encode()
     response = await _post(body=body, headers={"x-langfuse-signature": _sign(body)})
     assert response.status_code == 400
     assert spawned == []

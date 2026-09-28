@@ -6,7 +6,7 @@ Langfuse 侧配置（Dataset → Start Experiment → ⚡ Custom Experiment）::
                     （Langfuse 跑在 Docker 里时 localhost 指向容器自身，改用 host.docker.internal）
     Sign requests   打开（密钥由 Langfuse 生成并只显示一次，填进 LANGFUSE_WEBHOOK_SECRET）
     Default config  {"ids": ["case-025", "case-026"], "concurrency": 1}
-                    # 可选项 suite / ids / limit / concurrency，见 _ALLOWED_CONFIG_KEYS；
+                    # 可选项 ids / limit / concurrency，见 _ALLOWED_CONFIG_KEYS；
                     # ids 填 golden case id（也接受 dataset item 的 UUID），留空跑整个数据集
 
 Langfuse 发来的请求::
@@ -52,9 +52,9 @@ _RUN_LOG_DIR = PROJECT_ROOT / ".harness-runs"
 #: 签名时间戳容忍窗口（秒）。触发是同步请求，正常秒级到达；窗口只用于挡重放。
 _SIGNATURE_TOLERANCE_SECONDS = 300
 
-#: 允许的 suite，与 scripts/langfuse/langfuse_eval.py 的 SUITES 对齐
-_SUITES = ("intent", "business")
-_ALLOWED_CONFIG_KEYS = frozenset({"suite", "ids", "limit", "concurrency"})
+#: payload 允许的键。suite 不在此列：脚本按 dataset 名前缀自动判定，与上传脚本的
+#: 相对路径命名一致，见 build_eval_args。
+_ALLOWED_CONFIG_KEYS = frozenset({"ids", "limit", "concurrency"})
 
 #: dataset 名 → 在跑的任务；同一 dataset 同时只允许一个 run，避免 UI 连点打爆后端
 _running: dict[str, asyncio.Task[None]] = {}
@@ -121,16 +121,13 @@ def parse_config(raw: Any) -> dict[str, Any]:
 def build_eval_args(*, dataset_name: str, config: dict[str, Any]) -> list[str]:
     """拼 langfuse_eval.py 的命令行。
 
+    不传 --suite：脚本按 dataset 名前缀判定套件（`intent/`、`intent_`、`intent-` 为意图集，
+    其余为业务集），而数据集由上传脚本按相对路径命名，两者天然一致。
+    dataset 同理以 Langfuse 传来的 datasetName 为准，不从 config 取。
+
     批量评分固定 --no-judge：ADR 0005 规定评测只用确定性断言，不调用 LLM Judge。
-    dataset 以 Langfuse 传来的 datasetName 为准，不从 config 取。
     """
     args = [str(_EVAL_SCRIPT), "--dataset", dataset_name]
-
-    suite = config.get("suite")
-    if suite is not None:
-        if suite not in _SUITES:
-            raise ValueError(f"suite 只能是 {' / '.join(_SUITES)}")
-        args += ["--suite", str(suite)]
 
     ids = config.get("ids")
     if ids is not None:
