@@ -27,6 +27,7 @@
 | 跑一次 Experiment、查看失败用例 | `workflow-guide.md` § 5–6 |
 | 知道有哪些脚本可用 | `workflow-guide.md` § 7 与 [`scripts/langfuse/README.md`](../../scripts/langfuse/README.md) |
 | 分清意图集与业务集两套件 | `workflow-guide.md` § 8 |
+| 从 Langfuse 界面点 Run 触发本机跑实验 | [`remote-experiment-webhook.md`](./remote-experiment-webhook.md) |
 | 让智能体或命令行替我操作 Langfuse | [`agent-skill-and-cli.md`](./agent-skill-and-cli.md) |
 | 从零学 Langfuse 方法论 | [`langfuse-workshop-intro.md`](./langfuse-workshop-intro.md) |
 | 在客户内网部署 | [`self-hosted-deployment.md`](./self-hosted-deployment.md) |
