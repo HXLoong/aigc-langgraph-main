@@ -16,8 +16,8 @@ _ERR = ErrorInfo(node="n", type="RuntimeError", message="x")
 @pytest.mark.parametrize(
     ("state", "expected"),
     [
-        ({}, "entry_route"),
-        ({"session_status": "active"}, "entry_route"),
+        ({}, "prepare_input"),
+        ({"session_status": "active"}, "prepare_input"),
         ({"session_status": "expired"}, "render"),
         ({"error": _ERR}, "render"),
         ({"error": _ERR, "session_status": "active"}, "render"),

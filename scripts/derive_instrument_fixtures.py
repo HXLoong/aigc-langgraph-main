@@ -2,7 +2,7 @@
 
 用法：
     python scripts/derive_instrument_fixtures.py --dry-run            # 逐条打印抽取结果供人工复核
-    python scripts/derive_instrument_fixtures.py --out tmp/intent_drafts/swap_instrument.jsonl
+    python scripts/derive_instrument_fixtures.py --out /opt/work-file/code-tmp/aigc-langgraph-tmp/intent_drafts/swap_instrument.jsonl
     python scripts/derive_instrument_fixtures.py --only-reviewed --out tests/datasets/intent/swap_instrument.jsonl
 
 口径（docs/architecture/backend-instrument-boundary.md）：LangGraph 只把用户原文里的标的表达逐字送给后端，
@@ -29,7 +29,7 @@ logger = logging.getLogger(__name__)
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_SOURCES = sorted((REPO_ROOT / "tests" / "datasets" / "biz").glob("swap*.jsonl"))
-DEFAULT_OUT = REPO_ROOT / "tmp" / "intent_drafts" / "swap_instrument.jsonl"
+DEFAULT_OUT = Path("/opt/work-file/code-tmp/aigc-langgraph-tmp") / "intent_drafts" / "swap_instrument.jsonl"
 
 #: 市场限定词 → 交易品种；只说港股严格为 HK_STOCK，港股通须明确指定。
 _MARKET_HINTS: tuple[tuple[str, tuple[str, ...]], ...] = (

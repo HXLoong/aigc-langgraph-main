@@ -10,6 +10,7 @@ from app.nodes.render import render
 from app.subgraphs.swap import backend
 from app.subgraphs.swap.cancel import swap_cancel
 from app.tools.swap_client import SwapClientHttpx
+from tests.request_support import run_request_nodes
 
 FIRST = "H-20260915-0000000001"
 SECOND = "H-20260915-0000000002"
@@ -54,7 +55,7 @@ def cancel_state(raw, quote=QUOTE):
 
 async def test_cancel_first_order_only(cancel_requests):
     state = cancel_state("撤第一笔")
-    result = await swap_cancel(state)
+    result = await run_request_nodes(swap_cancel, state, "swap")
     assert not result.get("error")
     assert result["cancel_params"]["orderList"] == [{"orderId": FIRST}]
     assert len(cancel_requests) == 1
@@ -87,7 +88,7 @@ async def test_cancel_first_order_only(cancel_requests):
     ("撤单", "", [None]),
 ])
 async def test_cancel_scope_reaches_backend_without_expanding(cancel_requests, raw, quote, expected):
-    result = await swap_cancel(cancel_state(raw, quote))
+    result = await run_request_nodes(swap_cancel, cancel_state(raw, quote), "swap")
     assert not result.get("error"), result.get("error")
     orders = [{"orderId": value} for value in expected]
     assert result["cancel_params"]["orderList"] == orders
@@ -114,7 +115,7 @@ async def test_cancel_scope_reaches_backend_without_expanding(cancel_requests, r
 ])
 async def test_unresolved_cancel_scope_clears_params_and_never_calls_backend(cancel_requests, raw, quote):
     state = cancel_state(raw, quote)
-    result = await swap_cancel(state)
+    result = await run_request_nodes(swap_cancel, state, "swap")
     assert cancel_requests == []
     assert result["cancel_params"] is None
     assert not result.get("error"), result.get("error")

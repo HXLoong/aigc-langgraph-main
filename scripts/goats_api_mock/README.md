@@ -133,7 +133,7 @@ Java 的 `optionOrderJob`、`optionCloseOrderJob`、`optionCloseCancelOrderJob` 
 ```bash
 python -m scripts.local_eval --base-url http://127.0.0.1:8201 \
   --data tests/datasets/biz --case case-029-lifecycle --case case-034-lifecycle \
-  --concurrency 1 --turn-interval 10 --out tmp/option-lifecycle
+  --concurrency 1 --turn-interval 10 --out /opt/work-file/code-tmp/aigc-langgraph-tmp/option-lifecycle
 ```
 
 离线验证：

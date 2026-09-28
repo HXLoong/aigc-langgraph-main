@@ -8,7 +8,7 @@ Dify DSL v2 迁移新增节点（对应 `期权-节点-取消下单`，node_id=1
 指定范围无法解析或不在引用中时拒绝；无引用 → orderId: null。
 
 输入：raw_text + quote_content
-输出：state['expected_action'] = "cancel" + state['cancel_params'] = {orderList} + 后端调用结果
+输出：state['expected_action'] = "cancel" + state['cancel_params'] = {orderList} + 待清洗请求
 """
 from __future__ import annotations
 
@@ -18,7 +18,7 @@ from app.extraction.identity import prepare_identity_scope
 from app.graph.business_params import validated_cancel_params
 from app.graph.safe_node import safe_node
 from app.graph.state import AgentState, TraceEntry
-from app.subgraphs.option.backend import call_option_backend
+from app.subgraphs.option.backend import prepare_option_request
 from app.subgraphs.option.order_id import extract_for_cancel_place
 from app.subgraphs.option.order_scope import OrderScopeError
 
@@ -43,7 +43,7 @@ async def option_extract_cancel_place(state: AgentState) -> dict[str, Any]:
     order_list = [{"orderId": order_id} for order_id in order_ids]
     order_count = sum(1 for item in order_list if item["orderId"])
 
-    backend = await call_option_backend(
+    request_update = await prepare_option_request(
         prepared_state,
         intent="cancel_order_request",
         order_list=order_list,
@@ -53,7 +53,7 @@ async def option_extract_cancel_place(state: AgentState) -> dict[str, Any]:
         "field_records": records,
         "expected_action": "cancel",
         "cancel_params": validated_cancel_params(orderList=order_list),
-        **backend,
+        **request_update,
         "trace": [
             TraceEntry(
                 node="option_extract_cancel_place",

@@ -34,7 +34,7 @@ def _make_env(tmp_path: Path, canary_value: str) -> Path:
     env = tmp_path / ".env"
     env.write_text(
         f"""# minimal env for rollback test
-QWEN_API_KEY=sk-fake
+LLM_API_KEY=sk-fake
 CANARY_ROOM_IDS={canary_value}
 SOMETHING_ELSE=preserved
 """,
@@ -170,7 +170,7 @@ def test_real_run_disables_canary_and_writes_audit(tmp_path: Path) -> None:
     # 原值应该被注释保留
     assert "# CANARY_ROOM_IDS=r-test-1,r-test-2" in new_content
     # 其他字段未动
-    assert "QWEN_API_KEY=sk-fake" in new_content
+    assert "LLM_API_KEY=sk-fake" in new_content
     assert "SOMETHING_ELSE=preserved" in new_content
 
     # audit log 写了
@@ -192,7 +192,7 @@ def test_real_run_preserves_other_env_fields(tmp_path: Path) -> None:
     """回切只动 CANARY_ROOM_IDS，绝不动其他字段（生产 .env 含敏感密钥）。"""
     env = tmp_path / ".env"
     env.write_text(
-        """QWEN_API_KEY=sk-very-secret
+        """LLM_API_KEY=sk-very-secret
 OTC_API_SECRET=do-not-touch
 CANARY_ROOM_IDS=r1,r2
 ENABLE_LANGFUSE=true
@@ -210,7 +210,7 @@ ENABLE_LANGFUSE=true
         "http://127.0.0.1:1/nope",
     )
     after = env.read_text(encoding="utf-8")
-    assert "QWEN_API_KEY=sk-very-secret" in after
+    assert "LLM_API_KEY=sk-very-secret" in after
     assert "OTC_API_SECRET=do-not-touch" in after
     assert "ENABLE_LANGFUSE=true" in after
 

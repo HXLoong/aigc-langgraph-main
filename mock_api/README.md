@@ -69,7 +69,6 @@ python mock_api/test_all_endpoints.py --port 8080 --host 192.168.1.100
 | `/admin-api/swap-order/get-conversation-orders` | POST | 会话历史订单 | `SwapOrderOpenApiController.getConversationOrders` |
 | `/admin-api/financial-orders/operate` | POST | 期权/平仓操作聚合（16 个意图）| `FinancialOrdersOpenApiController.operate` |
 | `/admin-api/financial-orders/query-close-orders` | POST | 批量查询平仓订单 | `FinancialOrdersOpenApiController.queryCloseOrders` |
-| `/admin-api/integration/securities-instrument/select` | GET / POST | 标的查询（关键词匹配 + relevanceScore）| `SecuritiesInstrumentController.selectSecuritiesInstrumentPage` |
 | `/admin-api/counterparty/info/list` | GET | 交易对手列表 | `CounterpartyInfoController.list` |
 | `/admin-api/counterparty/info/instrument-inference-prompt` | GET | 推断 prompt 配置 | `CounterpartyInfoController.getInstrumentInferencePrompt` |
 | `/admin-api/business/config/bot/name/list` | POST | Bot 名称（data 是 JSON 字符串）| 业务配置 |

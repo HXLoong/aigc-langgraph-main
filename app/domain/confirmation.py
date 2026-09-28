@@ -33,6 +33,7 @@ _ALL = re.compile(r"全部|所有|订单|单号|合约编号|和|及|与")
 
 
 def confirmation_action(raw: str | None) -> str | None:
+    """只识别本次明确确认动作，否定、疑问和条件表达不授予执行。"""
     text = (raw or "").strip()
     if _UNSAFE.search(text):
         return None
@@ -43,6 +44,7 @@ def confirmation_action(raw: str | None) -> str | None:
 
 
 def confirmation_attempt(raw: str | None) -> bool:
+    """判断本次文本是否需要进入确认协议检查。"""
     text = (raw or "").strip()
     return text in {"确认", "好的", "可以", "没问题", "-"} or any(
         alias in text for aliases in ALIASES.values() for alias in aliases
@@ -50,10 +52,12 @@ def confirmation_attempt(raw: str | None) -> bool:
 
 
 def has_execution_parameters(raw: str) -> bool:
+    """检测本次文本是否携带执行参数线索。"""
     return _PARAMETERS.search(raw) is not None
 
 
 def only_execution_parameters(text: str, *, allow_choice: bool = False) -> bool:
+    """检查确认后的剩余文字仅描述参数，不夹带其它动作。"""
     if _UNSAFE.search(text) or re.search(
         r"撤单|撤销|取消|改单|确认|确定|查询|询价|然后|平仓|再执行", text
     ):
@@ -89,6 +93,7 @@ class Confirmation:
             raise EvidenceError("确认订单范围与锁定字段冲突，本次未提交，请重新引用订单消息。")
 
     def correction(self) -> str:
+        """依据当前可确定的订单范围生成明确的确认格式提示。"""
         if not self.error:
             return ""
         command = ALIASES[self.action][0]
@@ -118,8 +123,10 @@ def parse_confirmation(
     action: str = "place",
     allow_parameters: bool = False,
 ) -> Confirmation:
+    """检查明确动作与本次身份；无引用时接受原文明确写出的订单号。"""
     text = re.sub(r"^(?:@\S+\s+)+", "", (raw or "").strip())
-    reference = quote or ""
+    # 引用存在时仍严格检查引用范围；没有引用时只使用本次原文单号。
+    reference = quote or "\n".join(match[0] for match in _IDS.finditer(text))
     prefix = {"swap": "H-", "option": "Q-", "close": "CO-"}[product]
     positions = list(_IDS.finditer(reference))
     ids = tuple(dict.fromkeys(m[0].upper() for m in positions if m[0].startswith(prefix)))
@@ -127,6 +134,7 @@ def parse_confirmation(
     has_marker = False
 
     def fail(reason: str) -> Confirmation:
+        """保留已解析的引用映射并返回失败原因。"""
         return Confirmation(error=reason, mapping=dict(mapping), action=action)
 
     if not ids:

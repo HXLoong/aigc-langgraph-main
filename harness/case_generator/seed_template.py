@@ -10,7 +10,7 @@
 生成方式：
     from harness.case_generator import render_seed_template
     md = render_seed_template("swap.place_order")
-    # 写到 <out-dir>/swap-place-order.md（默认 tmp/case_generator/seeds/）
+    # 写到 <out-dir>/swap-place-order.md（默认 /opt/work-file/code-tmp/aigc-langgraph-tmp/case_generator/seeds/）
 """
 from __future__ import annotations
 

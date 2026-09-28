@@ -18,6 +18,7 @@ Langfuse 是**可选依赖**：本模块是它唯一的接入点，`app/` 下其
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import logging
 import re
 from dataclasses import dataclass
@@ -38,6 +39,13 @@ _TRACEPARENT_RE = re.compile(
 
 #: 进程级 LangFuse client 单例（懒惰创建）
 _langfuse_client: Any | None = None
+
+
+def session_identifier(conversation_id: str) -> str:
+    """只映射不符合 SDK 属性约束的观测 ID，业务会话 ID 始终由调用方保留。"""
+    if conversation_id and conversation_id.isascii() and len(conversation_id) <= 200:
+        return conversation_id
+    return "conversation:" + hashlib.sha256(conversation_id.encode("utf-8")).hexdigest()
 
 
 def report_handled_error(state: dict[str, Any], observation: Any | None = None) -> None:
@@ -68,9 +76,11 @@ class HandledErrorCallback(BaseCallbackHandler):
     run_inline = True
 
     def __init__(self, handler: Any | None = None) -> None:
+        """保存本次请求的观测上下文，避免跨请求共享可变状态。"""
         self._handler = handler
 
     def on_chain_end(self, outputs: Any, *, run_id: UUID, **kwargs: Any) -> None:
+        """按当前运行身份转交 on_chain_end 回调，保持父子关联并在结束时清理上下文。"""
         if isinstance(outputs, dict) and outputs.get("error"):
             # LangGraph child callbacks can leave an ended child in the current context.
             # Langfuse 4.5 keeps active observations by LangChain run ID; use that identity
@@ -96,6 +106,12 @@ class RequestTrace:
     handler: Any | None = None
     langfuse_trace_id: str | None = None
     url: str | None = None
+
+    @property
+    def observation_id(self) -> str | None:
+        """返回本次服务端图的根 ID，即使 Callback 已结束该 Observation 也可读取。"""
+        value = getattr(self.handler, "root_observation_id", None)
+        return value if isinstance(value, str) else None
 
 
 def parse_traceparent(value: str | None) -> tuple[str, str] | None:
@@ -142,6 +158,8 @@ def _ensure_client() -> Any | None:
             secret_key=settings.langfuse_secret_key,
             host=settings.langfuse_base_url,
             environment=getattr(settings, "environment", None) or "default",
+            timeout=getattr(settings, "langfuse_timeout_seconds", 15),
+            flush_at=getattr(settings, "langfuse_flush_at", 32),
             mask=mask_sensitive,
         )
     except ImportError as exc:
@@ -163,14 +181,17 @@ def create_callback_handler(
         run_inline = True
 
         def __init__(self, **kwargs: Any) -> None:
+            """保存本次请求的观测上下文，避免跨请求共享可变状态。"""
             super().__init__(**kwargs)
             self._name_contexts: dict[UUID, tuple[str | None, UUID | None]] = {}
+            self.root_observation_id: str | None = None
 
         def _named_start(
             self, method: str, kind: str, serialized: Any, value: Any, *,
             run_id: UUID, parent_run_id: UUID | None = None,
             metadata: dict[str, Any] | None = None, **kwargs: Any,
         ) -> Any:
+            """为当前回调记录独立命名上下文，并转交 SDK 建立观测。"""
             original = self.get_langchain_run_name(serialized, **kwargs)
             parent_node = self._name_contexts.get(parent_run_id, (None, None))[0] if parent_run_id else None
             try:
@@ -182,13 +203,20 @@ def create_callback_handler(
                 # Display projection must never remove a trace or block a business call.
                 logger.warning("Langfuse name projection unavailable: %s", type(exc).__name__)
             try:
-                return getattr(super(), method)(serialized, value, run_id=run_id,
+                result = getattr(super(), method)(serialized, value, run_id=run_id,
                     parent_run_id=parent_run_id, metadata=metadata, **kwargs)
+                if parent_run_id is None:
+                    # 与 HandledErrorCallback 共用 SDK 4.5 的 run 映射；真实 SDK 测试守护此接缝。
+                    observation = self._runs.get(run_id)
+                    if observation is not None:
+                        self.root_observation_id = observation.id
+                return result
             except BaseException:
                 self._clear_name_context(run_id)
                 raise
 
         def _clear_name_context(self, run_id: UUID) -> None:
+            """清理结束或失败的回调上下文，防止并发节点串用。"""
             pending = {run_id}
             while pending:
                 children = {key for key, (_, parent) in list(self._name_contexts.items()) if parent in pending}
@@ -197,48 +225,62 @@ def create_callback_handler(
                 pending = children
 
         def _named_finish(self, method: str, value: Any, *, run_id: UUID, **kwargs: Any) -> Any:
+            """按当前运行身份结束观测，并保证清理本地上下文。"""
             try:
                 return getattr(super(), method)(value, run_id=run_id, **kwargs)
             finally:
                 self._clear_name_context(run_id)
 
         def on_chain_start(self, serialized: Any, inputs: Any, **kwargs: Any) -> Any:
+            """按当前运行身份转交 on_chain_start 回调，保持父子关联并在结束时清理上下文。"""
             return self._named_start("on_chain_start", "chain", serialized, inputs, **kwargs)
 
         def on_chat_model_start(self, serialized: Any, messages: Any, **kwargs: Any) -> Any:
+            """按当前运行身份转交 on_chat_model_start 回调，保持父子关联并在结束时清理上下文。"""
             return self._named_start("on_chat_model_start", "llm", serialized, messages, **kwargs)
 
         def on_llm_start(self, serialized: Any, prompts: Any, **kwargs: Any) -> Any:
+            """按当前运行身份转交 on_llm_start 回调，保持父子关联并在结束时清理上下文。"""
             return self._named_start("on_llm_start", "llm", serialized, prompts, **kwargs)
 
         def on_tool_start(self, serialized: Any, input_str: str, **kwargs: Any) -> Any:
+            """按当前运行身份转交 on_tool_start 回调，保持父子关联并在结束时清理上下文。"""
             return self._named_start("on_tool_start", "tool", serialized, input_str, **kwargs)
 
         def on_retriever_start(self, serialized: Any, query: str, **kwargs: Any) -> Any:
+            """按当前运行身份转交 on_retriever_start 回调，保持父子关联并在结束时清理上下文。"""
             return self._named_start("on_retriever_start", "retriever", serialized, query, **kwargs)
 
         def on_chain_end(self, outputs: Any, **kwargs: Any) -> Any:
+            """按当前运行身份转交 on_chain_end 回调，保持父子关联并在结束时清理上下文。"""
             return self._named_finish("on_chain_end", outputs, **kwargs)
 
         def on_chain_error(self, error: BaseException, **kwargs: Any) -> Any:
+            """按当前运行身份转交 on_chain_error 回调，保持父子关联并在结束时清理上下文。"""
             return self._named_finish("on_chain_error", error, **kwargs)
 
         def on_llm_end(self, response: Any, **kwargs: Any) -> Any:
+            """按当前运行身份转交 on_llm_end 回调，保持父子关联并在结束时清理上下文。"""
             return self._named_finish("on_llm_end", response, **kwargs)
 
         def on_llm_error(self, error: BaseException, **kwargs: Any) -> Any:
+            """按当前运行身份转交 on_llm_error 回调，保持父子关联并在结束时清理上下文。"""
             return self._named_finish("on_llm_error", error, **kwargs)
 
         def on_tool_end(self, output: Any, **kwargs: Any) -> Any:
+            """按当前运行身份转交 on_tool_end 回调，保持父子关联并在结束时清理上下文。"""
             return self._named_finish("on_tool_end", output, **kwargs)
 
         def on_tool_error(self, error: BaseException, **kwargs: Any) -> Any:
+            """按当前运行身份转交 on_tool_error 回调，保持父子关联并在结束时清理上下文。"""
             return self._named_finish("on_tool_error", error, **kwargs)
 
         def on_retriever_end(self, documents: Any, **kwargs: Any) -> Any:
+            """按当前运行身份转交 on_retriever_end 回调，保持父子关联并在结束时清理上下文。"""
             return self._named_finish("on_retriever_end", documents, **kwargs)
 
         def on_retriever_error(self, error: BaseException, **kwargs: Any) -> Any:
+            """按当前运行身份转交 on_retriever_error 回调，保持父子关联并在结束时清理上下文。"""
             return self._named_finish("on_retriever_error", error, **kwargs)
 
     return LocalizedCallbackHandler(public_key=public_key, trace_context=trace_context)

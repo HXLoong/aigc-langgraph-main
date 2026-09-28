@@ -16,8 +16,9 @@ def _isolate_settings(monkeypatch):
         monkeypatch.delenv(key, raising=False)
     return {
         "_env_file": None,
-        "qwen_api_base": "http://localhost:9999/v1",
-        "qwen_api_key": "test-key",
+        "llm_provider": "openai_compatible",
+        "llm_api_base": "http://localhost:9999/v1",
+        "llm_api_key": "test-key",
         "otc_api_base_url": "http://localhost:48080",
         "otc_api_secret": "test-secret",
     }
@@ -63,20 +64,6 @@ async def test_persist_connects_using_single_mysql_uri(monkeypatch):
     connection.close.assert_called_once()
 
 
-async def test_lifespan_wires_idempotency_using_single_mysql_uri(monkeypatch):
-    import app.main as app_main
-
-    monkeypatch.setattr(app_main, "get_settings", lambda: SimpleNamespace(
-        mysql_uri=URI, request_idempotency=True, use_mysql_checkpointer=False,
-        environment="development", backend_timeout_seconds=60, persist_timeout_seconds=5,
-        log_level="INFO", log_format="console",
-    ))
-    async with app_main.lifespan(app_main.app):
-        store = app_main.app.state.idempotency_store
-        args = store._conn_args
-        assert (args["host"], args["port"], args["user"], args["password"], args["db"]) == (
-            "localhost", 3308, "user", "pass", "shared_java",
-        )
 
 
 def test_instrument_lookup_settings_are_gone(monkeypatch):

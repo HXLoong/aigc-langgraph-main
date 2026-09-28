@@ -1,198 +1,112 @@
-"""互换下单候选与确定性归一化的原生子图；提交由外层节点完成。"""
+"""互换下单内部图读取联合结果；候选选择与 Java 提交在外层确定性执行。"""
 from __future__ import annotations
 
-import re
-from collections.abc import Callable, Mapping
 from functools import lru_cache
 from typing import Any
 
 from langgraph.graph import END, START, StateGraph
 from langgraph.graph.state import CompiledStateGraph
 
-from app.extraction.candidates import candidate_model, evidence_sources, verify_candidates
+from app.extraction.fields import EvidenceError
 from app.graph.business_params import validated_place_params
-from app.graph.cascade import has_error
-from app.graph.retry import add_io_node, io_node
 from app.graph.safe_node import safe_node
 from app.graph.state import AgentState, ExpectedAction, SubgraphOutput, TraceEntry
-from app.llm.clients import get_qwen_complex
-from app.prompts import blocks
-from app.prompts.spec import PromptSpec, register
-from app.subgraphs.swap.backend import call_swap_backend
-from app.subgraphs.swap.candidate_scope import constrain_candidates
-from app.subgraphs.swap.models import SwapPlaceOrderParams
-from app.subgraphs.swap.normalize import normalize_candidates
-from app.subgraphs.swap.quote_hints import refine_quote_hints
-
-
-def _build_user_message(
-    state: AgentState, hints: Mapping[str, Any], prompt_name: str | None = None,
-) -> str:
-    return blocks.source_payload(state, context={
-        "counterparties": state.get("swap_counterparties") or [],
-        "quote_hints": hints.get("quote_param_hints", ""),
-    })
-
-
-def _user_from_state(state: AgentState) -> str:
-    hints = refine_quote_hints(state.get("quote_content"), state.get("raw_text") or "")
-    return _build_user_message(state, hints)
-
-
-CANDIDATE_MODEL = candidate_model(SwapPlaceOrderParams)
-SPEC = register(PromptSpec(
-    category="swap", name="place_order", output_model=CANDIDATE_MODEL,
-    inputs=("raw_text", "quote_content", "history_messages", "swap_counterparties", "conversation_id"),
-    user_builder=_user_from_state, gray=True,
-))
+from app.parsing.evidence import verify_instruction
+from app.parsing.models import SwapInstruction
+from app.subgraphs.swap.backend import prepare_swap_request
+from app.subgraphs.swap.order_id import extract_order_ids
 
 
 class SwapPlaceState(AgentState, total=False):
-    sp_candidates: dict[str, Any]
+    """内部图只暂存本次请求参数，不保存旧订单副本。"""
+
     sp_params: dict[str, Any]
-    sp_prompt_name: str
 
 
-def _expected_action(params: SwapPlaceOrderParams) -> ExpectedAction:
-    return "modify" if any(item.order_id for item in params.order_list) else "place"
+class SwapPlaceOutput(SubgraphOutput, total=False):
+    """内部准备图把选择指针交给互换父图；主图仍使用更窄的 SubgraphOutput。"""
+
+    swap_ticker_picks: list[dict[str, Any]] | None
+    swap_counterparty_picks: dict[str, Any] | None
 
 
-@io_node
-async def swap_extract_candidates(state: SwapPlaceState) -> dict[str, Any]:
-    messages, prompt_name = SPEC.build_messages(state)
-    candidates = CANDIDATE_MODEL.model_validate(
-        await get_qwen_complex().with_structured_output(CANDIDATE_MODEL).ainvoke(messages)
-    )
-    verify_candidates(candidates, evidence_sources(state))
-    before = candidates.model_dump(by_alias=True)
-    candidates = constrain_candidates(candidates, evidence_sources(state))
-    after = candidates.model_dump(by_alias=True)
-    changes = []
-    if len(before["orderList"]) != len(after["orderList"]):
-        changes.append({"field": "orderList", "change": "scope_restricted"})
-    else:
-        for index, (old, new) in enumerate(zip(before["orderList"], after["orderList"], strict=True)):
-            for field, value in new.items():
-                if old.get(field) != value:
-                    changes.append({"field": f"orderList.{index}.{field}",
-                                    "change": "omitted" if value is None else "evidence_scoped"})
-    return {
-        "sp_candidates": after, "sp_prompt_name": prompt_name,
-        "trace": [TraceEntry(node="swap_extract_candidates", decision=f"constraints={len(changes)}",
-                             llm_output={"prompt_name": prompt_name, "candidate_changes": changes})],
-    }
+def _expected_action(orders: list[dict[str, Any]]) -> ExpectedAction:
+    """Java 使用同一接口区分新建和补参，审计按是否带订单号记录动作。"""
+    return "modify" if any(order.get("orderId") for order in orders) else "place"
 
 
 @safe_node
-async def swap_normalize(state: SwapPlaceState) -> dict[str, Any]:
-    candidates = CANDIDATE_MODEL.model_validate(state.get("sp_candidates") or {})
-    params, records = normalize_candidates(candidates, evidence_sources(state))
-    if not params.order_list:
-        return {
-            "place_params": validated_place_params(orderList=[]),
-            "reply_text": "未识别到有效订单，请提供标的、数量和操作。",
-        }
-    return {
-        "sp_params": params.model_dump(), "field_records": records,
-        "trace": [TraceEntry(node="swap_normalize", decision=f"orders={len(params.order_list)}")],
-    }
+async def swap_prepare(state: SwapPlaceState) -> dict[str, Any]:
+    """读取参数和候选选择指针，所有语义来自本次唯一解析。"""
+    parsed = SwapInstruction.model_validate(state.get("parsed_instruction") or {})
+    if parsed.intent != "place_order_request":
+        raise EvidenceError("互换下单节点收到其它业务动作")
+    orders = [order.model_dump(exclude_none=True, exclude_unset=True) for order in parsed.orders]
+    return {"sp_params": {"orderList": orders},
+            "swap_ticker_picks": [pick.model_dump() for pick in parsed.ticker_picks],
+            "swap_counterparty_picks": {"hasSignal": bool(parsed.counterparty_picks),
+                "picks": [pick.model_dump() for pick in parsed.counterparty_picks]},
+            "trace": [TraceEntry(node="swap_prepare", decision=f"orders={len(orders)}")]}
+
+
+@safe_node
+async def swap_validate(state: SwapPlaceState) -> dict[str, Any]:
+    """验证字段来源与已有订单身份，不重算数量、金额或业务默认值。"""
+    parsed = SwapInstruction.model_validate(state.get("parsed_instruction") or {})
+    records = verify_instruction(parsed, state)
+    allowed = set(extract_order_ids(state.get("raw_text")) + extract_order_ids(state.get("quote_content")))
+    for order in parsed.orders:
+        if order.order_id and order.order_id not in allowed:
+            raise EvidenceError("互换订单号超出本次消息或引用范围")
+    return {"field_records": records}
 
 
 @safe_node
 async def swap_place_result(state: SwapPlaceState) -> dict[str, Any]:
-    params = SwapPlaceOrderParams.model_validate(state.get("sp_params") or {})
-    action = _expected_action(params)
-    return {
-        "expected_action": action,
-        "place_params": validated_place_params(orderList=[item.model_dump() for item in params.order_list]),
-        "trace": [TraceEntry(
-            node="swap_place_order",
-            decision=f"action={action}, orders={len(params.order_list)},instrument_resolution=backend",
-            llm_output={"prompt_name": state.get("sp_prompt_name"), "params": params.model_dump()},
-        )],
-    }
+    """将准备好的接口参数写入业务对象，供候选选择和提交读取。"""
+    orders = (state.get("sp_params") or {}).get("orderList") or []
+    return {"expected_action": _expected_action(orders),
+            "place_params": validated_place_params(orderList=orders),
+            "trace": [TraceEntry(node="swap_place_result", decision=f"orders={len(orders)}")]}
 
 
-def _next_stage(next_node: str) -> Callable[[SwapPlaceState], str]:
-    def route(state: SwapPlaceState) -> str:
-        return END if has_error(state) or state.get("reply_text") else next_node
-    return route
+def _after_prepare(state: SwapPlaceState) -> str:
+    """参数错误时不继续验证或提交。"""
+    return END if state.get("error") else "swap_validate"
 
 
-def build_place_graph() -> CompiledStateGraph[SwapPlaceState, None, AgentState, SubgraphOutput]:
-    graph: StateGraph[SwapPlaceState, None, AgentState, SubgraphOutput] = StateGraph(SwapPlaceState, input_schema=AgentState, output_schema=SubgraphOutput)
-    add_io_node(graph, "swap_extract_candidates", swap_extract_candidates)
-    graph.add_node("swap_normalize", swap_normalize)
+def _after_validate(state: SwapPlaceState) -> str:
+    """来源错误时停止写入业务对象。"""
+    return END if state.get("error") else "swap_place_result"
+
+
+def build_place_graph() -> CompiledStateGraph[SwapPlaceState, None, AgentState, SwapPlaceOutput]:
+    """互换参数图只包含三个确定性阶段。"""
+    graph = StateGraph(SwapPlaceState, input_schema=AgentState, output_schema=SwapPlaceOutput)
+    graph.add_node("swap_prepare", swap_prepare)
+    graph.add_node("swap_validate", swap_validate)
     graph.add_node("swap_place_result", swap_place_result)
-    graph.add_edge(START, "swap_extract_candidates")
-    for current, next_node in (
-        ("swap_extract_candidates", "swap_normalize"),
-        ("swap_normalize", "swap_place_result"),
-    ):
-        graph.add_conditional_edges(current, _next_stage(next_node), [next_node, END])
+    graph.add_edge(START, "swap_prepare")
+    graph.add_conditional_edges("swap_prepare", _after_prepare, ["swap_validate", END])
+    graph.add_conditional_edges("swap_validate", _after_validate, ["swap_place_result", END])
     graph.add_edge("swap_place_result", END)
     return graph.compile(name="swap_place_order")
 
 
 @lru_cache(maxsize=1)
-def get_place_graph() -> CompiledStateGraph[SwapPlaceState, None, AgentState, SubgraphOutput]:
+def get_place_graph() -> CompiledStateGraph[SwapPlaceState, None, AgentState, SwapPlaceOutput]:
+    """调试入口复用编译图，业务会话由主图统一维护。"""
     return build_place_graph()
 
 
 async def swap_place_order(state: AgentState) -> dict[str, Any]:
+    """独立执行内部参数图，只返回子图契约允许的字段。"""
     return await get_place_graph().ainvoke(state)
-
-
-_ORDER_ID_PATTERN = re.compile(r"H-\d{8}-\d+")
 
 
 @safe_node
 async def swap_place_order_submit(state: AgentState) -> dict[str, Any]:
-    """swap.place_order_submit 节点（互换开仓-前置清洗 → 互换开仓）。
-
-    汇总 swap_place_order（+ 可选 swap_select_counterparty / swap_select_ticker
-    覆盖后）的 state['place_params']，调真后端 POST
-    /admin-api/swap-order/operate，并把后端返回的真实订单号回写到
-    orderList[i].orderId，供结构化 state、trace 和输出观测使用。用户可见回复始终
-    原样透传 api_result，不使用回写后的参数重新渲染。
-    """
-    place_params = state.get("place_params") or {}
-    order_list = [dict(item) for item in (place_params.get("orderList") or [])]
-
-    backend = await call_swap_backend(
-        state,
-        intent="place_order_request",
-        order_list=order_list,
-    )
-
-    if backend.get("api_code") == 0:
-        data = backend.get("api_result")
-        oids: list[str] = []
-        if isinstance(data, dict) and data.get("orderId"):
-            oids = [data["orderId"]]
-        elif isinstance(data, list):
-            oids = [
-                item["orderId"]
-                for item in data
-                if isinstance(item, dict) and item.get("orderId")
-            ]
-        elif isinstance(data, str):
-            # backend 返回文本如 "下单成功 H-20260514-XXX" → regex 抓 H-YYYYMMDD-NNNN
-            oids = _ORDER_ID_PATTERN.findall(data)
-        for i, oid in enumerate(oids):
-            if i < len(order_list) and oid:
-                order_list[i]["orderId"] = oid
-
-    return {
-        "place_params": validated_place_params(orderList=order_list),
-        **backend,
-        "trace": [
-            TraceEntry(
-                node="swap_place_order_submit",
-                decision=f"orders={len(order_list)},api_code={backend.get('api_code')}",
-            )
-        ],
-    }
-
-
-__all__ = ["swap_place_order", "swap_place_order_submit"]
+    """准备经过选择检查的原始请求，交父图独立清洗和提交。"""
+    orders = (state.get("place_params") or {}).get("orderList") or []
+    request_update = await prepare_swap_request(state, intent="place_order_request", order_list=orders)
+    return {**request_update, "trace": [TraceEntry(node="swap_place_order_submit", decision=f"orders={len(orders)}")]}

@@ -228,46 +228,31 @@ Score Config 只定义评分口径，不会创建 Annotation Queue、分配人�
 
 ## 5. 执行 Experiment
 
-以 `case-022` 为例：
+先启动同版本 LangGraph HTTP 服务。可信本地回归开启 `TRUST_INBOUND_TRACEPARENT=true`，并确保评测端和服务端连接同一 Langfuse 项目；生产入口不能无条件信任外部追踪头。
 
-```powershell
-# 预览用例
-python scripts/langfuse/langfuse_eval.py --dataset biz/option_inquiry --ids case-022 --concurrency 1 --dry-run --no-judge
-
-# 正式执行，不运行 LLM Judge；Online Code Evaluation Rules 仍会异步评分
-python scripts/langfuse/langfuse_eval.py --dataset biz/option_inquiry --ids case-022 --concurrency 1 --no-judge
+```bash
+ENVIRONMENT=staging TRUST_INBOUND_TRACEPARENT=true LLM_OUTPUT_MAX_TOKENS=8192 \
+  uvicorn app.main:app --host 127.0.0.1 --port 8201
+# 按当前 git 意图集执行；只经节点 HTTP，不调用 Java 交易接口
+ENVIRONMENT=staging python -m scripts.langfuse.langfuse_eval \
+  --local tests/datasets/intent/option.jsonl --base-url http://127.0.0.1:8201 \
+  --concurrency 2 --report /opt/work-file/code-tmp/aigc-langgraph-tmp/intent-report.json
+# 平台 Dataset 可固定版本；真实写类仍需授权账号和本地依赖
+python -m scripts.langfuse.langfuse_eval --dataset biz/option_inquiry --ids case-022 \
+  --base-url http://127.0.0.1:8201 --concurrency 1 --prepare-java --report /opt/work-file/code-tmp/aigc-langgraph-tmp/dataset-report.json
 ```
 
-不传 `--ids` 时执行 Dataset 中的全部 Item：
+平台读取可用 `--dataset-version <带时区ISO时间>`；本地 fixture 按内容指纹记录版本。`--dry-run` 只预览，`--ids` / `--filter` / `--limit` 控制范围，`--fail-under` 决定退出门。`--no-judge` 仅保留命令兼容，所有套件都不调用 Judge，也没有“只要有回复就通过”的降级评分。
 
-```powershell
-python scripts/langfuse/langfuse_eval.py --dataset biz/option_inquiry --concurrency 1 --no-judge
-```
+SDK Experiment 直接保存确定性 Scores：业务为 `det_business_pass`，意图及标的使用同源 Code Evaluator。Online Rule 可作补充观察，批次退出码不依赖尚未完成的异步评分。缺少断言、执行结果或轮次必须失败；写类参数标注不完整单列 `parameter_assertion_coverage`，不等同于完整业务验收。
 
-常用参数：
+`local_eval.py` 准备授权 Java 测试消息，执行同一 HTTP runner 和字段比较器，把 `det_business_pass` 关联到原有用例 Trace。报告保留代码/模型/断言/数据版本、Trace/Observation ID、每轮参数和差异；`score_status=enqueued` 不是已入库证明。
 
-| 参数 | 含义 |
-|---|---|
-| `--ids case-022` | 只执行一个 Item |
-| `--ids case-021,case-022` | 执行多个指定 Item，使用逗号分隔 |
-| 不传 `--ids` | 执行过滤后的全部 Item |
-| `--concurrency 1` | 最多同时执行一个 Item，即串行执行 |
-| `--concurrency 3` | 最多同时执行三个 Item；单个多轮用例内部仍顺序执行 |
-| `--limit 10` | 只执行过滤后的前十个 Item |
-| `--dry-run` | 只预览选中的 Item，不执行 LangGraph 和评分 |
-| `--no-judge` | 不注册 `judge_by_deepseek`；仍执行 Experiment 和 Online Evaluation Rules |
+### 节点标注与回归
 
-调试、写操作、后端容易限流或模型配额较小时使用 `--concurrency 1`；只读评测可根据后端与模型容量逐步提高。
+从真实 observation 审阅输入和正确输出，再用 `scripts/langfuse/node_dataset.py publish` 发布节点 Dataset。稳定 ID 包含数据集和来源身份，重复发布不会覆盖其它 Dataset。来源 Trace/Observation 与审阅者必须保留；空期望不允许发布。
 
-执行后：
-
-- 按当前规范显式 `--no-judge`，不注册 `judge_by_deepseek`。脚本的旧默认值尚未删除，不能据此继续用 Judge 验收。
-- Online Evaluation Rules 异步产生三个文本断言 Score。
-- 业务人员可补充 `human_business_verdict`，不会覆盖自动 Score。
-
-在 Dataset 的 `Experiments` 页签打开名称类似 `option-eval-YYYYMMDD-HHMMSS` 的记录。
-
-> **截图位置 3（待补）**：Experiment 列表和 `case-022` 的 Experiment Item。
+`export` 固定版本导出待复核快照，不能自动覆盖 git 的 biz/intent 基线；`run` 经节点 HTTP 比较同一字段断言并写 Experiment。写节点只留标注并 SKIP，即使平台误标可回放也不能执行；没有有效样本或全 SKIP 时为待验收。命令见 [脚本说明](../../scripts/langfuse/README.md)。当前没有已审阅节点基线时，不宣称节点 Dataset 验收通过。
 
 ### 5.1 Environment 与评分查看位置
 
@@ -275,8 +260,8 @@ Environment 用于区分数据来源。部分名称由 Langfuse SDK 固定使用
 
 | Environment | 含义 | 默认是否出现在 Scores 主列表 |
 |---|---|---|
-| `default` | 未显式配置环境的普通 Trace；当前 `--local` 评测通常也在这里 | 是 |
-| `production` / `staging` / `development` | 应用通过 `LANGFUSE_TRACING_ENVIRONMENT` 配置的业务环境 | 是 |
+| `default` | 未显式配置环境的普通 Trace；本项目客户端显式提供当前环境 | 是 |
+| `production` / `staging` / `development` | 应用与评测客户端通过 `ENVIRONMENT` 配置的业务环境 | 是 |
 | `sdk-experiment` | Langfuse SDK 执行 Dataset Experiment 时使用的官方内部环境 | 否 |
 | `langfuse-code-eval` | Langfuse-managed Code Evaluator 自身的执行 Trace | 否 |
 | `langfuse-llm-as-a-judge` | Langfuse-managed LLM Judge 自身的执行 Trace | 否 |
@@ -360,11 +345,11 @@ Online Evaluator 异步执行，Experiment 完成后 Score 可能稍后显示。
 |---|---|---|
 | fixture 目录 | `tests/datasets/intent/<product>.jsonl` | `tests/datasets/biz/*.jsonl` |
 | 用例形态 | A 方言子集：逐轮 `expected.{product_type, intent}`，**不写** `response_*` | A 方言：卡片文本断言（`response_contains` 等） |
-| 期望值来源 | 各子图 `models.py` 的意图枚举（lint 校验） | Java 真实回复 |
-| 运行方式 | 冻结用例只跑意图子链（`harness/intent_runner.py`），不调后端；回放用例走主图 + `mock_api`（`metadata.backend=mock`） | 真后端 / staging |
+| 期望值来源 | 业务方审阅的逐轮产品/意图标签，枚举由 lint 校验 | 业务方审阅的参数与卡片断言，不用实际回复自评分 |
+| 运行方式 | 冻结用例经 `/v1/nodes/run` 执行联合解析，不调 Java 后端；回放用例走主图 + `mock_api`（`metadata.backend=mock`） | 真后端 / staging |
 | Dataset 命名 | fixtures 相对路径去掉 `.jsonl`（如 `intent/option_close`；兼容历史 `intent_` / `intent-`） | fixtures 相对路径去掉 `.jsonl`（如 `biz/option_close`） |
-| 自动评分 | `det_intent_match_pass`（`harness/evaluators/intent_match.py`）+ 标的识别子集 `det_instrument_match_pass`（`harness/evaluators/instrument_match.py`） | `det_required_text_pass` / `det_required_any_text_pass` / `det_forbidden_text_pass`；按 `--no-judge` 执行，旧 Judge Score 不作为验收依据 |
-| LLM Judge | 不跑（脚本强制 `no-judge`） | 不跑（迁移期显式 `--no-judge`，旧默认路径待清理） |
+| 自动评分 | `det_intent_match_pass`（`harness/evaluators/intent_match.py`）+ 标的识别子集 `det_instrument_match_pass`（`harness/evaluators/instrument_match.py`） | `det_business_pass` 比较全部显式字段和文本断言；Online 文本评分只作补充 |
+| LLM Judge | 不跑，确定性评分 | 不跑，已删除 Judge 运行入口 |
 | Trace tags | `eval, intent` | `eval, business` |
 
 `upload_evaluators.py` 按套件绑定 Rule：`--dataset-name intent/swap_instrument` 创建意图集 Rule；`intent_` / `intent-` 历史命名仍识别。`--dataset-name biz/option_close` 按业务集绑定文本断言 Rule。
@@ -375,10 +360,10 @@ Online Evaluator 异步执行，Experiment 完成后 Score 可能稍后显示。
 ```bash
 # 统计：哪些 case 缺逐轮 intent 标注
 python scripts/derive_intent_fixtures.py --dry-run
-# 写草稿到 tmp/intent_drafts/<product>.jsonl（未标注轮 intent 为空并带 review.pending）
-python scripts/derive_intent_fixtures.py --out tmp/intent_drafts
+# 写草稿到 /opt/work-file/code-tmp/aigc-langgraph-tmp/intent_drafts/<product>.jsonl（未标注轮 intent 为空并带 review.pending）
+python scripts/derive_intent_fixtures.py --out /opt/work-file/code-tmp/aigc-langgraph-tmp/intent_drafts
 # 业务方 review 补齐 intent 后，只把已完整标注的 case 写进意图集
-python scripts/derive_intent_fixtures.py --source tmp/intent_drafts --only-labeled --out tests/datasets/intent
+python scripts/derive_intent_fixtures.py --source /opt/work-file/code-tmp/aigc-langgraph-tmp/intent_drafts --only-labeled --out tests/datasets/intent
 python scripts/check_fixture_consistency.py --verbose
 ```
 
@@ -427,19 +412,14 @@ python scripts/langfuse/langfuse_eval.py --dataset biz/swap_prod --concurrency 1
 - 意图集的评分逻辑与 Langfuse Online Rule 是同一份源码（`harness/evaluators/`），`langfuse_eval.py --local`
   对 `suite=intent` 直接在本地执行 `intent_match` / `instrument_match`，不需要 Langfuse、Java、GOATS；
   `--fail-under 0.95` 低于门槛退出码 1，`--report` 写 JSON 摘要
-- `.github/workflows/intent-eval.yml`：两种模式并存（`harness/intent_context.py`）——冻结用例只跑意图子链、不调后端；
+- `.github/workflows/intent-eval.yml`：两种模式并存（`harness/intent_context.py`）——冻结用例经已启动的 LangGraph 节点 HTTP 执行，不调 Java 后端；
   回放用例（`quote_previous` / `{{previous_*}}`）与拒绝验收走主图，runner 上起仓库内 `mock_api` 顶替后端。
-  LLM 网关走 secrets `QWEN_API_BASE` / `QWEN_API_KEY`。**仅手动触发**（不随 PR 自动跑，全量约 14 分钟并消耗 LLM 额度）：
+  LLM 网关走 secrets `LLM_API_BASE` / `LLM_API_KEY`。**仅手动触发**（不随 PR 自动跑，全量约 14 分钟并消耗 LLM 额度）：
   改提示词 / 路由意图节点 / 评估器 / 意图集后，在 Actions 页 Run workflow，可改 `fixture` / `limit` / `fail_under`
   （首次可用 `fail_under=0` 只出基线报告，再定门槛）
 - 未配置 secrets 时手动触发直接失败，避免误以为跑过
-- 启用 Langfuse 时 `--local` 也会把每个评估器的 score（`det_*`）写回 trace；`--no-judge` 的兜底评分现在按
-  `reply-check` 名写回（此前误用 `otc-option-judge`）
+- 启用 Langfuse 时 `--local` 也创建 SDK Experiment 并保存确定性 Scores；没有 reply-check 或 Judge 兜底。
 - 业务集（`biz/`）依赖 Java 后端与授权账号，只在开发 / staging 环境用 `--dataset biz/option_close` 或
   `scripts/local_eval.py` 跑，不进 CI；依赖矩阵见 `docs/testing/README.md` §一a
-
-### 旧 Judge 调用入口（兼容实现待退役）
-
-默认 `EVAL_JUDGE_PROVIDER=anthropic` 保留既有 Anthropic 兼容入口和凭证。若团队只提供已验证的 OpenAI 兼容模型网关，可显式设置 `EVAL_JUDGE_PROVIDER=standard`，使用 `QWEN_API_BASE`、`QWEN_API_KEY`、`QWEN_MODEL_STANDARD` 和同一 Judge 提示词，通过结构化输出返回评分。不会在鉴权或网络失败后自动切换入口；无效配置直接报错。标准入口的 Score metadata 记录 provider，报告应同时记录实际模型。以上只说明现存兼容实现；按 ADR 0005 不再用于批量评分或验收，运行时移除见工作计划。确定性断言、HTTP 写回与真实交易状态仍分别验收。
 
 意图数据集的 `metadata.evaluator_names` 来自实际断言：普通意图只绑定 `intent-match`；标的集另绑 `instrument-match`；明确拒绝集另绑 `rejection-match`。不要将不适用的评分器绑定到整个项目。上传器使用数据集命名空间生成稳定 Item ID，原始案例 ID 保留在 metadata，防止不同数据集相互覆盖。

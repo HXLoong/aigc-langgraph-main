@@ -147,20 +147,21 @@
 
 ---
 
-## 6. 大模型 API · DeepSeek-v4-pro
+## 6. 大模型 API · 通用配置与当前基线
 
-> 见 ADR 0020 · 全环境统一 DeepSeek-V4-pro
+> 见 ADR 0020 · 通用模型配置与 DeepSeek Pro 当前基线
 
 | 项 | 实际值 | 验证步骤 | 备注 |
 |---|---|---|---|
-| API endpoint | 待填（默认 `https://api.deepseek.com/v1`）| — | 客户若走企业代理需填代理地址 |
+| 厂商适配 | 待填（`LLM_PROVIDER`）| deepseek / qwen / openai_compatible | 不按模型名猜测协议 |
+| API endpoint | 待填（`LLM_API_BASE`）| — | 与所选接口适配匹配 |
 | API key 提供方 | 待填（客户 / 我方）| — | 与 ADR 0020 一致 |
 | API key 实际值 | 待填（**存保险库，不写本文档**）| — | — |
 | 网络可达性 | 必须公网或代理可通 | `curl -H "Authorization: Bearer $KEY" $URL/chat/completions -d '...'` | 阻塞项 |
-| 模型可用性 | `deepseek-v4-pro` 实际可调 | 用 curl 跑一条最简 chat completion | 验证模型名称无误 |
+| 业务模型可用性 | `LLM_MODEL_STANDARD` 实际可调 | 跑结构化能力探针与业务验收 | 当前基线 deepseek-v4-pro；切换模型重新验收 |
 | 上下文窗口 | ≥ 128K（假设值） | 跑一条 50K tokens 输入测试 | swap.place_order 40K prompt 安全余量 |
 | 结构化输出（function calling） | 支持 OpenAI 风格 tool calling | 跑一条带 tools 的 chat completion | 全部 LLM 节点的结构化输出依赖（ADR 0020 §2） |
-| 视觉模型 | 待填（`QWEN_MODEL_VL`） | 跑一条图片输入请求 | 互换图片 / Excel 下单依赖；未配置则该链路不可用 |
+| 输入范围 | 文本与 Excel | Excel 先代码读取，再一次批量解析 | 图片暂不处理，不配置 VL 工厂或 OCR |
 | 计费方 | 待填 | — | — |
 | 月度 token 配额 | 待填 | — | 影响成本预算 |
 | 流式输出 | 默认不用 | — | 不依赖 streaming |
@@ -279,7 +280,7 @@
 - **`docs/work-plan.md`** §2 客户现场部署 —— 本调研是其输入
 - **ADR 0009** · MySQL 版本兼容性硬约束（§4 依据）
 - **ADR 0025** · 标的识别由 Java 后端负责（§5 依据）
-- **ADR 0020** · 全环境统一 DeepSeek-V4-pro（§6 依据）
+- **ADR 0020** · 通用模型配置与 DeepSeek Pro 当前基线（§6 依据）
 - **`docs/api-contracts/java-backend.md`** · Java 业务 API 完整契约
 - **`docs/operations/on-call-runbook.md`** · 附录 A 联系人由本调研 §12 回填
 - **CONTEXT.md** · 项目术语

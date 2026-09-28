@@ -15,10 +15,9 @@ from app.graph.state import AgentState
 from app.nodes import fast_query
 from app.subgraphs.option import extract_inquiry
 from app.subgraphs.option import graph as option_graph
-from app.subgraphs.option.models import OptionInquiryRawItem, OptionInquiryRawParams
 from app.tools.goats_agent_client import GoatsAgentClientHttpx
 from app.tools.option_client import OptionClientHttpx
-from tests.evidence_support import candidate_output
+from tests.joint_support import joint_model
 
 CONTEXT = {
     "conversation_id": "inquiry-entry", "message_id": 123,
@@ -75,13 +74,11 @@ async def test_ordinary_inquiry_keywords_never_call_goats(
         return {"intent": "new_inquiry"}
 
     monkeypatch.setattr(option_graph, "option_intent", classify)
-    model = MagicMock()
-    model.with_structured_output.return_value.ainvoke = AsyncMock(return_value=candidate_output(
-        OptionInquiryRawParams(orderList=[OptionInquiryRawItem(
-            stockCode="600519.SH", tenor="1M", strikePercentage="100%",
-        )]),
-    ))
-    monkeypatch.setattr(extract_inquiry, "get_qwen_thinking", lambda: model)
+    calls = []
+    model = joint_model("option", "new_inquiry", orders=[{
+        "stockCode": "600519.SH", "tenor": "1M", "strikePercentage": 100,
+    }], calls=calls)
+    monkeypatch.setattr("app.nodes.parse_instruction.get_llm_standard", lambda: model)
     result = await main.build_main_graph().ainvoke({
         **CONTEXT, **flags, "raw_text": text, "message_content": text,
     })
@@ -93,9 +90,9 @@ async def test_ordinary_inquiry_keywords_never_call_goats(
     assert "optionRfq" not in body
     assert len(body["orderList"]) == 1 and body["orderList"][0]["stockCode"] == "600519.SH"
     assert body["rawContent"] == text
-    model.with_structured_output.return_value.ainvoke.assert_awaited_once()
+    assert len(calls) == 1
     stages = [entry.node for entry in result["trace"] if entry.node.startswith("inquiry_")]
-    assert stages == ["inquiry_extract", "inquiry_normalize", "inquiry_submit"]
+    assert stages == ["inquiry_prepare", "inquiry_validate", "inquiry_submit"]
     assert result["reply_text"] == "Java 询价回执"
 
 
@@ -104,7 +101,7 @@ async def test_fast_flag_uses_goats_without_keyword_or_ordinary_inquiry(
     monkeypatch: pytest.MonkeyPatch, wire: list[httpx.Request], existing: bool,
 ) -> None:
     model = MagicMock(side_effect=AssertionError("fast entry must not enter ordinary inquiry"))
-    monkeypatch.setattr(extract_inquiry, "get_qwen_thinking", model)
+    monkeypatch.setattr("app.nodes.parse_instruction.get_llm_standard", model)
     result = await main.build_main_graph().ainvoke({
         **CONTEXT, "raw_text": "600519.SH 1M", "fast_query": "1",
         "existing_command": "1" if existing else "0", "at_bot": "0",
@@ -126,6 +123,6 @@ async def test_fast_flag_uses_goats_without_keyword_or_ordinary_inquiry(
 def test_ordinary_inquiry_graph_has_only_three_stages() -> None:
     graph = extract_inquiry.build_inquiry_graph().get_graph()
     assert set(graph.nodes) == {
-        "__start__", "inquiry_extract", "inquiry_normalize", "inquiry_submit", "__end__",
+        "__start__", "inquiry_prepare", "inquiry_validate", "inquiry_submit", "__end__",
     }
     assert len(graph.edges) == 6

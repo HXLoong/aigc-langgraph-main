@@ -17,8 +17,9 @@ def _settings(**overrides):
     return Settings(
         _env_file=None,
         mysql_uri="mysql+aiomysql://test:test@localhost/test",
-        qwen_api_base="http://localhost:9999/v1",
-        qwen_api_key="test-key",
+        llm_provider="openai_compatible",
+        llm_api_base="http://localhost:9999/v1",
+        llm_api_key="test-key",
         otc_api_base_url="http://localhost:48080",
         otc_api_secret="test-secret",
         **overrides,

@@ -22,7 +22,7 @@ def test_compiled_entry_has_exactly_three_business_edges():
         "quick_inquiry", "existing_command_query", "pre_route",
     }
     assert {edge.target for edge in graph.edges if edge.source == "ingest"} == {
-        "entry_route", "render",
+        "prepare_input", "render",
     }
 
 
@@ -121,6 +121,8 @@ async def test_valid_session_records_choice(monkeypatch, flags, chosen):
     monkeypatch.setattr(main, "quick_inquiry", quick)
     monkeypatch.setattr(main, "existing_command_query", existing)
     monkeypatch.setattr(main, "intent_route", intent)
+    from tests.joint_support import joint_model
+    monkeypatch.setattr("app.nodes.parse_instruction.get_llm_standard", lambda: joint_model("unknown", "unknown_intent"))
     monkeypatch.setattr(main, "pre_route", AsyncMock(return_value={}))
     monkeypatch.setattr(main, "persist", AsyncMock(return_value={}))
     result = await main.build_main_graph().ainvoke({**flags, "raw_text": "业务输入"})
@@ -147,5 +149,5 @@ async def test_router_trace_resets_between_turns_without_erasing_ingest(monkeypa
             "trace": [TraceEntry(node="previous_turn")],
         }, config=config)
         nodes = [e.node for e in result["trace"]]
-        assert nodes[:2] == ["ingest", "entry_route"]
+        assert nodes[:3] == ["ingest", "prepare_input", "entry_route"]
         assert nodes.count("entry_route") == 1 and "previous_turn" not in nodes

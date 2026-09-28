@@ -105,15 +105,11 @@ HTTP `outputs.tickers` 保留为空列表的兼容字段，验收检查实际后
 
 ## 2. 期权操作（FinancialOrders）
 
-Python 出站约定：`orderList[].tenor` 与 `optionRfq.tenor[]` 的非空值统一为
-正整数月份格式，例如 `半年 → 6M`、`1Y/1年 → 12M`、`0.5Y → 6M`、`3个月 → 3M`。
-当前输入、引用旧值和快速询价解析结果使用同一换算规则，HTTP 提交前再次检查；
-无法换算、非整月及冲突期限提示纠正，不回填旧期限、不静默丢弃列表元素。
-`rawContent`、`quoteContent` 和原文证据保持原样；Java 源码、配置和 DTO 不变。
+Python 出站只做现有 DTO 的类型装配，模型按字段契约提取值并保留原文来源。LangGraph 不再把期限换算为月份，不补时间日期，不重算金额、比例或业务默认值（ADR 0027）。Java 负责业务值校验；不兼容字段须明确核对，不能隐藏换算。
 
 期权请求下单与确认下单按订单绑定各自参数；序号按引用标签、"第N笔"按引用顺序。
 请求撤单存在明确范围时只选择指定订单，范围无法解析时停止提交；引用多单的裸"撤单"
-继续默认全选。最终确认仍须满足明确口令与当前引用范围协议。
+继续默认全选。最终确认须满足本次明确动作和订单选择；单号可来自本次原文或用户引用，不从历史重建订单。
 
 ### 2.1 操作聚合接口
 
@@ -170,7 +166,7 @@ class FinancialOrderOpenApiSaveReqVO:
   - `placeOrderOrderType: Literal["BY_QTY", "BY_AMOUNT"]`
   - `placeOrderOrderDirection: GoatsOrderDirection`
   - `placeOrderPriceType: GoatsPriceType`
-  - `notionalAmount: Decimal`（精度截断 2 位）
+  - `notionalAmount: Decimal`（Java 处理精度，LangGraph 不截断）
 
 ### 询价补参与提取字段
 
@@ -358,7 +354,7 @@ FastAPI lifespan 显式注入 `MessageClientHttpx`，保证真实 HTTP 入口每
 
 ## 7. 其他
 
-- Java 侧金额精度以其 DTO 与 `TradePrecisionUtil.truncateOrderScale()` 为准。LangGraph 按 ADR 0027 的目标不自行计算或截断业务数值；当前 Python DTO / 归一化仍有旧处理，迁移需核对字段类型与出站值，不能仅改文档就把不兼容原文写入 DTO。
+- Java 侧金额精度以其 DTO 与 `TradePrecisionUtil.truncateOrderScale()` 为准。LangGraph 按 ADR 0027 的目标不自行计算或截断业务数值；请求前清洗核对 Java 字段类型及自定义反序列化兼容，仅省略不可接收值，不重算业务值。
 - 认证：所有 `@PlatformApiAuth` 接口走平台级 token，不依赖用户登录
 - LangGraph tools 层调用时机器人参数（`messageId / conversationId / userId / roomId / ...`）由入口从 Workflow Run inputs 解析后存入 AgentState，再由具体节点透传给 Java 业务 API
 
@@ -374,10 +370,19 @@ FastAPI lifespan 显式注入 `MessageClientHttpx`，保证真实 HTTP 入口每
 | `GET /admin-api/swap-order/get?orderId=...` | `SwapClient` | 互换订单详情 |
 | `POST /admin-api/swap-order/get-conversation-orders` | `SwapClient` | 会话订单列表 |
 | `POST /admin-api/openapi/xbot/message/set-intent` | `MessageClient` | 消息会话 ID 与意图写回 |
-| `GET /admin-api/counterparty/info/list` | `TickerClient` / `probe_backend` | 本地授权对手查询 / 后端健康检查；交易子图不使用 TickerClient |
+| `GET /admin-api/counterparty/info/list` | `TickerClient` | 本地授权对手查询（需要 type、roomId、userId）；就绪探针只检查 TCP，交易子图不使用 TickerClient |
 | `POST /api/internal/agent/option_rfq_instrument_parser` | `GoatsAgentClient` | 快速询价入口解析 |
 | `POST /api/internal/agent/instruction/query` | `GoatsAgentClient` | 存量指令兼容查询 |
 
 `app/tools/ticker_client.py` 保留，但证券查询接口 `GET /admin-api/integration/securities-instrument/select` 不属于允许的出站路径：本地业务、测试、验收与探针一律不调用。后端内部参考契约的保留不授予本地调用权限。
 
 Protocol 按 Java 真实 endpoint 边界拆分（期权、互换各一个聚合操作接口），Pydantic 模型与 Java DTO 一一对应（ADR 0001 D2）。
+
+
+## 请求前类型清洗
+
+普通期权、互换和平仓经各产品 `clean_request` 节点后提交 Java。`notionalAmount` 与 `placeOrderNotional` 对应 BigDecimal；互换数量、可见数量、总量对应 Long；平仓 `closeOrderNotionalDelta` 对应内容为数字的 String。带单位的 `100万` 省略字段，纯数字字符串允许无损装配；0、false、负数保留，数值范围与业务默认值由 Java 决定。不会把省略字段补成 0 或从旧卡片补回。
+
+原始参数与字段证据保留；`backend_request` 是 DTO 实际序列化请求，`cleaning_records` 记录省略/转换原因。HTTP outputs 的业务参数信封投影实际出站值，Harness 沿用现有字段断言。
+
+Dify 兼容只在清洗入口处理参数字符串 JSON 失败：期权 `type=null / operate=null / orderList=[]`，互换 `type=null / orderList=[]`，平仓保留外部 type 并发送 `closeOrderReqVO={} / operate="" / orderList=[] / optionRfq={}`。这些请求继续发送，HTTP 异常按 Dify 显示“交易指令服务暂不可用”，原始状态与响应留节点审计。不补 unknown_intent，也不重试模型或交易。

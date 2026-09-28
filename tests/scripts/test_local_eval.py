@@ -83,7 +83,7 @@ def test_empirical_percentiles_include_tail_for_small_samples():
     }
 
 
-async def test_text_model_probe_checks_every_distinct_configured_model(monkeypatch):
+async def test_text_model_probe_only_checks_business_standard_role(monkeypatch):
     module = importlib.import_module("scripts.local_eval")
     from app.llm import clients
 
@@ -96,12 +96,12 @@ async def test_text_model_probe_checks_every_distinct_configured_model(monkeypat
             return {"status": "ready"}
         return SimpleNamespace(model_name=name, openai_api_base="http://model.invalid",
                                with_structured_output=lambda schema: SimpleNamespace(ainvoke=invoke))
-    for name in ("get_qwen_standard", "get_qwen_thinking"):
+    for name in ("get_llm_standard", "get_llm_thinking"):
         monkeypatch.setattr(clients, name, lambda: factory("text-model"))
-    monkeypatch.setattr(clients, "get_qwen_complex", lambda: factory("unsupported-ocr"))
-    with pytest.raises(ValueError, match="unsupported-ocr"):
-        await module.probe_text_models()
-    assert invoked == ["text-model", "unsupported-ocr"]
+    monkeypatch.setattr(clients, "get_llm_complex", lambda: factory("unsupported-ocr"))
+    result = await module.probe_text_models()
+    assert invoked == ["text-model"]
+    assert [item["factory"] for item in result] == ["get_llm_standard"]
 
 
 @pytest.mark.parametrize('dry_run,backend', [(True, 'dry-run'), (False, 'real')])

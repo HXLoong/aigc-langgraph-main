@@ -140,7 +140,7 @@ chmod 600 .env  # 限制读权限
 参考 `.env.customer.template` 11 节注释。最少必填：
 
 - `MYSQL_URI`（§2）
-- `QWEN_API_BASE` / `QWEN_API_KEY` / `QWEN_MODEL_STANDARD`（DeepSeek）
+- `LLM_PROVIDER` / `LLM_API_BASE` / `LLM_API_KEY` / `LLM_MODEL_STANDARD`（显式选择适配与业务模型；THINKING / COMPLEX 为独立角色，详见 ADR 0020）
 - `OTC_API_BASE_URL` / `OTC_API_SECRET`
 - `LANGFUSE_BASE_URL` / `LANGFUSE_PUBLIC_KEY` / `LANGFUSE_SECRET_KEY`（§3）
 
@@ -347,5 +347,5 @@ curl ... -d '{"inputs":{"raw_text":"完全不存在的标的xyz 询价"...}'
 - [`docs/api-contracts/java-backend.md`](../api-contracts/java-backend.md) · Java 后端契约
 - ADR 0009 · MySQL 版本兼容性
 - ADR 0014 · LangFuse 后端
-- ADR 0020 · 全量 DeepSeek-V4-pro
+- ADR 0020 · 通用模型配置与 DeepSeek Pro 当前基线
 - `scripts/deploy-customer.sh`

@@ -15,13 +15,25 @@ class NodeLabel:
 
 
 NODE_LABELS: dict[str, NodeLabel] = {
+    "close_clean_request": NodeLabel("平仓请求参数清洗"),
+    "close_submit": NodeLabel("平仓业务请求提交", "io"),
+    "close_query_backend": NodeLabel("平仓只读请求提交", "io"),
+    "swap_clean_request": NodeLabel("互换请求参数清洗"),
+    "swap_submit": NodeLabel("互换业务请求提交", "io"),
+    "swap_query_backend": NodeLabel("互换只读请求提交", "io"),
+    "option_clean_request": NodeLabel("期权请求参数清洗"),
+    "option_submit": NodeLabel("期权业务请求提交", "io"),
+    "option_query_backend": NodeLabel("期权只读请求提交", "io"),
+    "parse_instruction": NodeLabel("业务指令联合解析", "llm"),
+    "prepare_input": NodeLabel("文本与Excel输入准备", "io"),
+    "prepare_parse_context": NodeLabel("解析前只读上下文", "io"),
     "main_graph": NodeLabel("交易指令处理", "graph"),
     "ingest": NodeLabel("消息接收与状态初始化"),
     "entry_route": NodeLabel("业务入口分流"),
     "quick_inquiry": NodeLabel("期权快速询价", "io"),
     "existing_command_query": NodeLabel("存量交易指令查询", "io"),
     "pre_route": NodeLabel("交易对手与候选信息整理"),
-    "intent_route": NodeLabel("业务类型识别", "hybrid"),
+    "intent_route": NodeLabel("业务类型规则判断"),
     "swap": NodeLabel("互换业务", "graph"),
     "option": NodeLabel("期权开仓与订单操作", "graph"),
     "option_close": NodeLabel("期权平仓", "graph"),
@@ -31,49 +43,40 @@ NODE_LABELS: dict[str, NodeLabel] = {
     "persist": NodeLabel("节点执行记录入库", "io"),
     "remember_confirmed_params": NodeLabel("保存已确认订单信息"),
     "record_history": NodeLabel("记录会话历史"),
-    "swap_intent": NodeLabel("互换意图识别", "hybrid"),
+    "swap_intent": NodeLabel("互换解析结果检查"),
     "swap_place_order": NodeLabel("互换下单处理", "graph"),
-    "swap_extract_candidates": NodeLabel("互换订单候选抽取", "llm"),
-    "swap_normalize": NodeLabel("互换订单参数归一化"),
+    "swap_prepare": NodeLabel("互换参数准备"),
+    "swap_validate": NodeLabel("互换来源检查"),
     "swap_place_result": NodeLabel("互换下单参数汇总"),
-    "swap_recognize_fresh_counterparty": NodeLabel("互换新单交易对手识别", "hybrid"),
-    "swap_select_counterparty": NodeLabel("互换交易对手选择", "hybrid"),
-    "swap_select_ticker": NodeLabel("互换标的选择", "hybrid"),
     "swap_apply_picks": NodeLabel("互换候选选择结果合并"),
-    "swap_place_order_submit": NodeLabel("互换订单提交", "io"),
-    "swap_confirm": NodeLabel("互换确认协议处理", "io"),
-    "swap_cancel": NodeLabel("互换撤单", "io"),
-    "swap_query_order": NodeLabel("互换订单查询", "io"),
+    "swap_place_order_submit": NodeLabel("互换原始请求准备"),
+    "swap_confirm": NodeLabel("互换确认协议处理"),
+    "swap_cancel": NodeLabel("互换撤单"),
+    "swap_query_order": NodeLabel("互换订单查询"),
     "swap_unknown": NodeLabel("互换未知意图与错误出口"),
-    "swap_image_order": NodeLabel("互换图片订单识别", "llm"),
-    "swap_excel_order": NodeLabel("互换Excel订单识别", "llm"),
-    "option_intent": NodeLabel("期权意图识别", "hybrid"),
+    "option_intent": NodeLabel("期权解析结果检查"),
     "option_extract_inquiry": NodeLabel("期权询价处理", "graph"),
-    "option_extract_place": NodeLabel("期权开仓补参与下单", "io"),
-    "option_extract_confirm_place": NodeLabel("期权确认下单", "io"),
-    "option_extract_cancel_place": NodeLabel("期权取消下单", "io"),
-    "option_extract_cancel": NodeLabel("期权撤单申请", "io"),
-    "option_extract_confirm_cancel": NodeLabel("期权确认撤单", "io"),
-    "option_extract_query": NodeLabel("期权订单查询", "io"),
+    "option_extract_place": NodeLabel("期权开仓补参与下单"),
+    "option_extract_confirm_place": NodeLabel("期权确认下单"),
+    "option_extract_cancel_place": NodeLabel("期权取消下单"),
+    "option_extract_cancel": NodeLabel("期权撤单申请"),
+    "option_extract_confirm_cancel": NodeLabel("期权确认撤单"),
+    "option_extract_query": NodeLabel("期权订单查询"),
     "option_unknown": NodeLabel("期权未知意图与错误出口"),
-    "inquiry_extract": NodeLabel("期权询价要素抽取", "llm"),
-    "inquiry_normalize": NodeLabel("期权询价参数归一化"),
-    "inquiry_submit": NodeLabel("期权询价提交", "io"),
-    "close_intent": NodeLabel("期权平仓意图识别", "hybrid"),
-    "close_holding_query": NodeLabel("期权持仓查询要素处理", "llm"),
+    "inquiry_prepare": NodeLabel("期权询价参数准备"),
+    "inquiry_validate": NodeLabel("期权询价来源检查"),
+    "inquiry_submit": NodeLabel("期权询价请求准备"),
+    "close_intent": NodeLabel("期权平仓解析结果检查"),
+    "close_holding_query": NodeLabel("期权持仓查询"),
     "close_place_close": NodeLabel("期权平仓申请", "graph"),
-    "close_confirm_close": NodeLabel("期权确认平仓", "io"),
-    "close_cancel_close": NodeLabel("期权平仓撤单申请", "io"),
-    "close_confirm_cancel": NodeLabel("期权平仓确认撤单", "io"),
-    "close_query_status": NodeLabel("期权平仓订单查询", "io"),
+    "close_confirm_close": NodeLabel("期权确认平仓"),
+    "close_cancel_close": NodeLabel("期权平仓撤单申请"),
+    "close_confirm_cancel": NodeLabel("期权平仓确认撤单"),
+    "close_query_status": NodeLabel("期权平仓订单查询"),
     "close_unknown": NodeLabel("期权平仓未知意图与错误出口"),
-    "place_close_parse": NodeLabel("期权平仓引用解析"),
-    "place_close_fetch_orders": NodeLabel("查询平仓关联订单", "io"),
-    "place_close_extract": NodeLabel("期权平仓要素抽取", "llm"),
-    "place_close_normalize": NodeLabel("期权平仓参数归一化"),
+    "place_close_prepare": NodeLabel("期权平仓参数准备"),
     "place_close_validate": NodeLabel("期权平仓参数校验"),
-    "place_close_submit": NodeLabel("期权平仓申请提交", "io"),
-    "place_close_reject": NodeLabel("期权平仓拒绝处理"),
+    "place_close_submit": NodeLabel("期权平仓请求准备"),
 }
 
 _FRAMEWORK_STEPS = {
@@ -116,6 +119,7 @@ def label_observation(
     name = original_name
 
     def stage(title: str, suffix: str, *, llm: bool = False) -> str:
+        """将框架步骤映射为中文展示名，保留原始节点身份。"""
         description = f"{zh} · {title}" if zh else title
         identity = f"{node}/{suffix}" if node else original_name
         return f"{'[LLM] ' if llm else ''}{description} [{identity}]"
@@ -135,8 +139,8 @@ def label_observation(
     elif original_name in _FRAMEWORK_STEPS:
         name = stage(*_FRAMEWORK_STEPS[original_name])
     elif (
-        original_name.startswith(("_route", "route_", "fan_out_", "dispatch_"))
-        or original_name in {"route", "select_entry_branch"}
+        original_name.startswith(("_route", "_after_", "route_", "fan_out_", "dispatch_"))
+        or original_name in {"route", "select_entry_branch", "after_prepare", "after_clean"}
     ):
         name = stage("路由判断", original_name)
 

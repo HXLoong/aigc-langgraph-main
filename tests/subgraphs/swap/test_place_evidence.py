@@ -1,31 +1,16 @@
-"""Swap extraction separates raw evidence, deterministic values and GOATS resolution."""
-from unittest.mock import AsyncMock, MagicMock
-
-from app.extraction.candidates import candidate_model
-from app.subgraphs.swap import place_order as place
-from app.subgraphs.swap.models import SwapPlaceOrderParams
+"""互换准备图保留模型数值对应的原始单位证据。"""
+from app.subgraphs.swap.place_order import build_place_graph, swap_place_order
+from tests.joint_support import instruction_data
 
 
-async def test_swap_raw_quantity_is_normalized_and_records_keep_evidence(monkeypatch):
-    def field(value):
-        return {"value": value, "evidence": value, "confidence": .9, "origin": "raw"}
-    raw = candidate_model(SwapPlaceOrderParams).model_validate({"orderList": [{
-        "placeOrderWindCode": field("甲证券"), "placeOrderQuantity": field("1.5万股"),
-        "placeOrderOrderDirection": field("买入"), "placeOrderPriceType": field("市价"),
-    }]})
-    model = MagicMock()
-    model.with_structured_output.return_value.ainvoke = AsyncMock(return_value=raw)
-    monkeypatch.setattr(place, "get_qwen_complex", lambda: model)
-    result = await place.swap_place_order({"raw_text": "甲证券买入1.5万股，市价"})
-    assert not result.get("error")
-    order = result["place_params"]["orderList"][0]
-    assert order["placeOrderQuantity"] == 15000 and order["placeOrderQuantityUnit"] == "SHARE"
-    assert order["placeOrderOrderDirection"] == "BUY" and order["placeOrderWindCode"] == "甲证券"
-    record = result["field_records"]["swap/place_order.orderList.0.placeOrderQuantity"]
+async def test_interface_quantity_keeps_original_unit_evidence():
+    """接口值由模型给出，图内没有单位换算阶段。"""
+    raw = "甲证券买入1.5万股"
+    parsed = instruction_data("swap", "place_order_request", raw,
+        orders=[{"placeOrderWindCode": "甲证券", "placeOrderQuantity": 15000}])
+    parsed["fields"][1]["text"] = "1.5万股"
+    result = await swap_place_order({"raw_text": raw, "parsed_instruction": parsed})
+    assert not result.get("error"), result
+    record = result["field_records"]["swap/parse.orderList.0.placeOrderQuantity"]
     assert record.value == 15000 and record.evidence == "1.5万股" and record.locked
-    assert "swap_normalize" in [entry.node for entry in result["trace"]]
-
-
-def test_swap_place_is_a_native_stage_graph():
-    graph = place.build_place_graph()
-    assert {"swap_extract_candidates", "swap_normalize", "swap_place_result"} <= set(graph.builder.nodes)
+    assert set(build_place_graph().get_graph().nodes) == {"__start__", "swap_prepare", "swap_validate", "swap_place_result", "__end__"}

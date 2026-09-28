@@ -14,30 +14,22 @@ import asyncio
 import logging
 import time
 import uuid
-from copy import deepcopy
 from typing import Any, Literal
 
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict, Field, computed_field
 
-from app.api.notifications import project_retry_notification
 from app.api.turn_state import inputs_to_state
 from app.config import get_settings
 from app.graph.state import AgentState, ErrorInfo, TraceEntry
+from app.llm.budget import model_request_scope
 from app.nodes.persist import persist
 from app.observability.diagnostics import failure_diagnostic
 from app.observability.llm_metrics import LLMMetricsCallback
 from app.observability.logs import bound_request_context
 from app.observability.metrics import emit_intent_latency
-from app.observability.tracing import HandledErrorCallback, attach_request_trace
-from app.storage.idempotency import (
-    PROCESSING_NOTICE,
-    UNCERTAIN_NOTICE,
-    IdempotencyConflictError,
-    IdempotencyStore,
-    response_is_uncertain,
-)
+from app.observability.tracing import HandledErrorCallback, attach_request_trace, session_identifier
 from app.tools.bot_context import normalize_message_id
 
 router = APIRouter()
@@ -99,16 +91,19 @@ class DifyWorkflowRunResponse(BaseModel):
     @computed_field(alias="conversation_id")  # type: ignore[prop-decorator]
     @property
     def canonical_conversation_id(self) -> str:
+        """读取并检查兼容字段中的同一业务会话身份。"""
         return self.conversation_id
 
     @computed_field  # type: ignore[prop-decorator]
     @property
     def message_id(self) -> str:
+        """读取当前消息身份，避免借用历史消息编号。"""
         return self.id
 
     @computed_field  # type: ignore[prop-decorator]
     @property
     def created_at(self) -> int:
+        """提供本次响应的创建时间。"""
         return self.data.created_at
 
 
@@ -129,17 +124,18 @@ async def run_workflow(
     settings = get_settings()
     deadline = time.monotonic() + settings.request_timeout_seconds
     try:
-        async with asyncio.timeout(settings.request_timeout_seconds):
-            return await _execute_workflow(req, request, deadline=deadline)
+        with model_request_scope():
+            async with asyncio.timeout(settings.request_timeout_seconds):
+                return await _execute_workflow(req, request, deadline=deadline)
     except TimeoutError:
-        # An unfinished idempotency claim remains reserved; a duplicate must never reexecute it.
+        # 超时仅说明本次结果未知；调用端自行决定是否重投。
         return _timeout_response()
 
 
 def _timeout_response() -> JSONResponse:
+    """保留本次超时的明确状态，不回放旧响应或推定交易结果。"""
     return JSONResponse(status_code=504, content={
         "code": "workflow_timeout", "status": 504,
-        "idempotency_status": "uncertain",
         "message": "指令处理超时，执行结果待核对，请勿重复提交。",
     })
 
@@ -173,7 +169,7 @@ async def _execute_workflow(
             inputs["files"] = req.files
         initial_state = inputs_to_state(inputs)
         conversation_id = _resolve_conversation_id(req)
-        message_number = normalize_message_id(initial_state.get("message_id"))
+        normalize_message_id(initial_state.get("message_id"))
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
@@ -197,37 +193,8 @@ async def _execute_workflow(
     request_trace_id = uuid.uuid4().hex
     initial_state["trace_id"] = request_trace_id
 
-    # ADR 0024 D4：请求级幂等——同一企微 message_id 重投不重跑整图（重跑 = 重复下单）
-    store: IdempotencyStore | None = getattr(request.app.state, "idempotency_store", None)
+    # 消息 ID 只用于传递与审计，调用方重投仍独立执行本次图。
     message_id = initial_state.get("message_id")
-    idem_key = str(message_id) if message_number > 0 else None
-    if store is not None and idem_key is not None:
-        existing = await _idempotency_begin(store, idem_key, initial_state)
-        if existing is not None:
-            if existing.response is not None:
-                replay = deepcopy(existing.response)
-                if "data" in replay:
-                    replay["data"]["outputs"]["replayed"] = True
-                    replay["data"]["outputs"]["idempotency_status"] = existing.status
-                return JSONResponse(status_code=existing.http_status,
-                                    content=project_retry_notification(replay, initial_state))
-            if existing.error:
-                raise HTTPException(status_code=502, detail="上次指令处理失败，请核对执行结果。")
-            answer = existing.reply_text if existing.status == "done" else (
-                UNCERTAIN_NOTICE if existing.status == "uncertain" else PROCESSING_NOTICE
-            )
-            return DifyWorkflowRunResponse(
-                workflow_run_id=workflow_run_id,
-                task_id=task_id,
-                conversation_id=conversation_id,
-                answer=answer or "",
-                data=DifyWorkflowRunData(
-                    id=workflow_run_id, status="succeeded" if existing.status == "done" else "stopped",
-                    outputs={"replayed": True, "trace_id": request_trace_id,
-                             "idempotency_status": existing.status},
-                    created_at=created_at, finished_at=int(time.time()),
-                ),
-            )
 
     config = _build_run_config(
         conversation_id=conversation_id,
@@ -269,7 +236,7 @@ async def _execute_workflow(
                 "trace": [TraceEntry(node="workflow_deadline", decision="error:E5:timeout")],
             }
             status = "failed"
-            error_msg = "workflow_timeout: execution result requires reconciliation"
+            error_msg = "workflow_timeout: execution result is unknown"
             timed_out = True
         except Exception as exc:  # noqa: BLE001
             final_state = {}
@@ -288,12 +255,6 @@ async def _execute_workflow(
 
     if timed_out:
         timeout_response = _timeout_response()
-        body = {"code": "workflow_timeout", "status": 504,
-                "idempotency_status": "uncertain",
-                "message": "指令处理超时，执行结果待核对，请勿重复提交。"}
-        if store is not None and idem_key is not None:
-            await _idempotency_complete(store, idem_key, final_state, error_msg,
-                                        int(elapsed * 1000), body, 504)
         await persist(final_state)
         return timeout_response
 
@@ -307,21 +268,17 @@ async def _execute_workflow(
         failure_message = "指令处理失败，请稍后重试。"
     if failure_message:
         failed_body = {"code": "internal_server_error", "message": failure_message, "status": 502}
-        if response_is_uncertain({"data": {"outputs": _state_to_outputs(final_state)}}):
-            failed_body["idempotency_status"] = "uncertain"
-        if store is not None and idem_key is not None:
-            await _idempotency_complete(store, idem_key, final_state, error_msg,
-                                        int(elapsed * 1000), failed_body, 502)
         return JSONResponse(status_code=502, content=failed_body)
 
     outputs = _state_to_outputs(final_state)
-    if response_is_uncertain({"data": {"outputs": outputs}}):
-        outputs["idempotency_status"] = "uncertain"
     # 业务审计 ID：与 node_trace.trace_id / config.metadata.trace_id 同源，恒定暴露
     outputs["trace_id"] = request_trace_id
+    outputs["session_id"] = session_identifier(conversation_id)
     # LangFuse 侧信息：仅在接入成功时存在
     if trace.langfuse_trace_id is not None:
         outputs["langfuse_trace_id"] = trace.langfuse_trace_id
+    if trace.observation_id is not None:
+        outputs["observation_id"] = trace.observation_id
     if trace.url is not None:
         outputs["trace_url"] = trace.url
 
@@ -342,57 +299,12 @@ async def _execute_workflow(
         answer=final_state.get("reply_text") or "",
         data=data,
     )
-    if store is not None and idem_key is not None:
-        await _idempotency_complete(store, idem_key, final_state, error_msg,
-                                    int(elapsed * 1000), response.model_dump(by_alias=True), 200)
-    snapshot = response.model_dump(by_alias=True)
-    projected = project_retry_notification(snapshot, initial_state)
-    if projected is not snapshot:
-        return JSONResponse(status_code=200, content=projected)
     return response
 
 
 # ============================================================
 # Helpers
 # ============================================================
-
-
-async def _idempotency_begin(store: IdempotencyStore, key: str, state: AgentState):  # type: ignore[no-untyped-def]
-    """启用幂等后必须先拿到占位；存储故障不能放行业务写入。"""
-    try:
-        return await store.begin(
-            key,
-            conversation_id=str(state.get("conversation_id") or ""),
-            user_id=str(state.get("user_id") or ""),
-            room_id=str(state.get("room_id") or ""),
-            raw_text=str(state.get("raw_text") or ""),
-        )
-    except IdempotencyConflictError as exc:
-        raise HTTPException(status_code=409, detail="消息标识与用户或群不匹配。") from exc
-    except Exception as exc:  # noqa: BLE001
-        logger.warning("idempotency begin failed: %s", type(exc).__name__)
-        raise HTTPException(status_code=503, detail="消息去重服务暂时不可用，请稍后重试。") from exc
-
-
-async def _idempotency_complete(
-    store: IdempotencyStore, key: str, final_state: AgentState, error_msg: str | None, latency_ms: int,
-    response: dict[str, Any], http_status: int,
-) -> None:
-    try:
-        await store.complete(
-            key,
-            reply_text=final_state.get("reply_text"),
-            product_type=final_state.get("product_type"),
-            intent=final_state.get("intent"),
-            api_code=final_state.get("api_code"),
-            api_result=final_state.get("api_result"),
-            error=error_msg,
-            latency_ms=latency_ms,
-            response=response,
-            http_status=http_status,
-        )
-    except Exception as exc:  # noqa: BLE001
-        logger.warning("idempotency complete 失败：%s", exc)
 
 
 #: 图递归上限(架构体检 2026-08 改进 A):现图均为 DAG,50 为防御纵深上限;
@@ -413,7 +325,7 @@ def _build_run_config(
     """
     metadata: dict[str, Any] = {
         "trace_id": trace_id,
-        "langfuse_session_id": conversation_id,
+        "langfuse_session_id": session_identifier(conversation_id),
         "langfuse_tags": [environment or "unknown"],
     }
     if user_id:
@@ -494,8 +406,10 @@ def _state_to_outputs(state: AgentState) -> dict[str, Any]:
         "api_code",
         "api_result",
         "session_status",
+        "backend_request",
+        "cleaning_records",
     ):
-        v = state.get(key)
+        v = (state.get("submitted_params") or {}).get(key, state.get(key))
         if v is None:
             continue
         if key in ("place_params", "cancel_params") and expected_action is not None and isinstance(v, dict):

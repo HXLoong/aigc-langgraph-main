@@ -15,7 +15,7 @@ from tests.llm_guard import forbid_llm
 
 def _patch(monkeypatch: pytest.MonkeyPatch) -> AsyncMock:
     backend = AsyncMock(return_value={"api_code": 0, "api_result": "backend reply"})
-    monkeypatch.setattr(cancel_place_module, "call_option_backend", backend)
+    monkeypatch.setattr(cancel_place_module, "prepare_option_request", backend)
 
     forbid_llm(monkeypatch, cancel_place_module)
     return backend

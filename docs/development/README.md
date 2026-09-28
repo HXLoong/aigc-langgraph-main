@@ -77,9 +77,10 @@ python scripts/check_alert_threshold_consistency.py && python scripts/sync_agent
 
 ### LLM 调用
 - 用 `with_structured_output(PydanticModel)`，不要手工解析 JSON
-- 统一从 `app/llm/clients.py` 取工厂（全量 DeepSeek-V4-pro，ADR 0020；函数名沿用 `get_qwen_*`）
-- 意图 / 参数提取节点用 `get_qwen_thinking()`（先例：swap/intent、option/extract_*）；swap 复杂提取用 `get_qwen_complex()`
-- 图片 OCR 用 `get_qwen_vl()`
+- 统一从 `app/llm/clients.py` 取 `get_llm_*` 工厂；`LLM_PROVIDER` 显式选择 deepseek / qwen / openai_compatible，`LLM_MODEL_*` 选择模型（ADR 0020）。
+- 业务只有 `parse_instruction` 调 `get_llm_standard()`；`get_llm_structured()` 复用 STANDARD，THINKING 供离线生成，COMPLEX 保留但当前业务不用。角色名称不自动开启思考。
+- 每次工具调用最多一次真实模型请求、零重试。仅支持文本与 Excel，图片在模型前拒绝。
+- 修改配置后重启；换模型需重新验收，当前基线为 deepseek-v4-pro。
 
 ### HTTP 调用
 - 统一走 `OptionClient` / `SwapClient` / `TickerClient` Protocol（ADR 0001 D2），连接走 `app/tools/http_pool.py` 单例池
@@ -115,7 +116,7 @@ async def my_node(state: AgentState) -> dict[str, Any]:
 ```python
 from app.graph.safe_node import safe_node
 from app.graph.state import AgentState
-from app.llm.clients import get_qwen_thinking
+from app.llm.clients import get_llm_thinking
 from app.prompts.spec import PromptSpec, register
 from app.subgraphs.swap.models import MyOutput
 
@@ -133,7 +134,7 @@ SPEC = register(PromptSpec(
 @safe_node
 async def extract_something(state: AgentState) -> dict[str, Any]:
     messages, prompt_name = SPEC.build_messages(state)
-    llm = get_qwen_thinking().with_structured_output(MyOutput)
+    llm = get_llm_thinking().with_structured_output(MyOutput)
     result: MyOutput = await llm.ainvoke(messages)
     return {"...": result.xxx, "trace": [...]}
 ```

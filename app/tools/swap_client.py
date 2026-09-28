@@ -11,15 +11,9 @@ from enum import StrEnum
 from typing import Any, Protocol
 
 import httpx
-from pydantic import ConfigDict, Field, field_serializer, field_validator
+from pydantic import ConfigDict, Field, field_serializer
 
 from app.tools.http_pool import acquire_http_client
-from app.tools.models import (
-    GoatsAlgoType,
-    GoatsOrderDirection,
-    GoatsPriceType,
-    GoatsTransactionType,
-)
 from app.wire_model import WireModel
 
 # ============================================================
@@ -50,44 +44,21 @@ class SwapOrderOpenApiBaseSaveReqVO(WireModel):
     model_config = ConfigDict(extra="allow")
 
     place_order_wind_code: str | None = Field(default=None, alias="placeOrderWindCode")
-    place_order_transaction_type: GoatsTransactionType | None = Field(default=None, alias="placeOrderTransactionType")
+    place_order_transaction_type: str | None = Field(default=None, alias="placeOrderTransactionType")
     place_order_quantity: int | None = Field(default=None, alias="placeOrderQuantity")
     place_order_quantity_hand: int | None = Field(default=None, alias="placeOrderQuantityHand")
-    place_order_order_direction: GoatsOrderDirection | None = Field(default=None, alias="placeOrderOrderDirection")
-    place_order_price_type: GoatsPriceType | None = Field(default=None, alias="placeOrderPriceType")
+    place_order_order_direction: str | None = Field(default=None, alias="placeOrderOrderDirection")
+    place_order_price_type: str | None = Field(default=None, alias="placeOrderPriceType")
     place_order_price: Decimal | None = Field(default=None, alias="placeOrderPrice")
-    place_order_algorithm_type: GoatsAlgoType | None = Field(default=None, alias="placeOrderAlgorithmType")
-    place_order_start_time: datetime | None = Field(default=None, alias="placeOrderStartTime")
-    place_order_end_time: datetime | None = Field(default=None, alias="placeOrderEndTime")
+    place_order_algorithm_type: str | None = Field(default=None, alias="placeOrderAlgorithmType")
+    place_order_start_time: str | datetime | None = Field(default=None, alias="placeOrderStartTime")
+    place_order_end_time: str | datetime | None = Field(default=None, alias="placeOrderEndTime")
     order_id: str | None = Field(default=None, alias="orderId")  # 改单时填
 
     @field_serializer("place_order_start_time", "place_order_end_time", when_used="json")
-    def _serialize_order_time(self, value: datetime | None) -> str | None:
-        """后端要求秒级本地时间字符串；保留输入时刻的钟面值，不换算时区。"""
-        return value.strftime("%Y-%m-%d %H:%M:%S") if value is not None else None
-
-    @field_validator('place_order_start_time', 'place_order_end_time', mode="before")
-    @classmethod
-    def _coerce_short_time(cls, v):  # type: ignore[no-untyped-def]
-        """LLM 常输出"HH:MM"/"HH:MM:SS"短时间（算法窗口） → 补今天日期为 datetime。
-
-        完整 ISO 字符串 / datetime 对象 / None 不动，交给 pydantic 默认逻辑。
-        """
-        if not isinstance(v, str):
-            return v
-        s = v.strip()
-        # "HH:MM" 或 "HH:MM:SS"，且不含日期（无 "-" / "T" / 空格分隔）
-        if len(s) <= 8 and ":" in s and "-" not in s and "T" not in s:
-            from datetime import date, time
-            try:
-                parts = [int(x) for x in s.split(":")]
-                while len(parts) < 3:
-                    parts.append(0)
-                t = time(parts[0], parts[1], parts[2])
-                return datetime.combine(date.today(), t)
-            except (ValueError, IndexError):
-                pass
-        return v
+    def _serialize_order_time(self, value: str | datetime | None) -> str | None:
+        """字符串时间原样发送；已有 datetime 只按接口格式序列化。"""
+        return value.strftime("%Y-%m-%d %H:%M:%S") if isinstance(value, datetime) else value
 
 
 class SwapOrderOpenApiSaveReqVO(WireModel):
@@ -95,7 +66,7 @@ class SwapOrderOpenApiSaveReqVO(WireModel):
 
     model_config = ConfigDict(extra="allow")
 
-    type: SwapIntentionType  # 意图（必填，互换无 operate 字段）
+    type: SwapIntentionType | None  # 意图（必填，互换无 operate 字段）
 
     order_list: list[SwapOrderOpenApiBaseSaveReqVO] = Field(alias="orderList", default_factory=list)
 
@@ -109,6 +80,13 @@ class SwapOrderOpenApiSaveReqVO(WireModel):
     quote_content: str | None = Field(default=None, alias="quoteContent")
     quote_appinfo: str | None = Field(default=None, alias="quoteAppinfo")
     guid: str | None = None
+
+    def model_dump(self, **kwargs: Any) -> dict[str, Any]:
+        """Dify 空对象兼容请求必须保留显式 null 意图，其它可选字段仍省略。"""
+        payload = super().model_dump(**kwargs)
+        if self.type is None:
+            payload["type"] = None
+        return payload
 
 
 # ============================================================
@@ -124,13 +102,19 @@ class SwapClient(Protocol):
 
     async def operate(
         self, req: SwapOrderOpenApiSaveReqVO
-    ) -> dict[str, Any]: ...
+    ) -> dict[str, Any]:
+        """通过现有操作接口提交 DTO，写类调用不自动重试。"""
+        ...
 
-    async def get(self, order_id: str) -> dict[str, Any]: ...
+    async def get(self, order_id: str) -> dict[str, Any]:
+        """读取指定订单的后端结果，不在本地补业务字段。"""
+        ...
 
     async def get_conversation_orders(
         self, conversation_id: str
-    ) -> dict[str, Any]: ...
+    ) -> dict[str, Any]:
+        """读取当前会话已有订单，保持后端响应语义。"""
+        ...
 
 
 # ============================================================
@@ -168,6 +152,7 @@ class SwapClientHttpx:
 
     @property
     def _headers(self) -> dict[str, str]:
+        """按当前配置构造鉴权头，不在日志中输出凭据。"""
         from app.tools.auth import get_goats_auth_headers
         h = {"Content-Type": "application/json"}
         if self._token:
@@ -185,7 +170,8 @@ class SwapClientHttpx:
     async def operate(
         self, req: SwapOrderOpenApiSaveReqVO
     ) -> dict[str, Any]:
-        intent_value = req.type.value if hasattr(req.type, "value") else str(req.type)
+        """通过现有操作接口提交 DTO，写类调用不自动重试。"""
+        intent_value = req.type.value if req.type is not None else None
         if self._dry_run and intent_value not in self._READ_INTENTS:
             from app.observability.metrics import emit_dry_run_intercept
             from app.tools.receipts import DRY_RUN_REPLY
@@ -211,6 +197,7 @@ class SwapClientHttpx:
             return response_body
 
     async def get(self, order_id: str) -> dict[str, Any]:
+        """读取指定订单的后端结果，不在本地补业务字段。"""
         from app.tools.exceptions import translate_httpx_errors
 
         url = f"{self._base_url}/admin-api/swap-order/get"
@@ -226,6 +213,7 @@ class SwapClientHttpx:
     async def get_conversation_orders(
         self, conversation_id: str
     ) -> dict[str, Any]:
+        """读取当前会话已有订单，保持后端响应语义。"""
         from app.tools.exceptions import translate_httpx_errors
 
         url = f"{self._base_url}/admin-api/swap-order/get-conversation-orders"

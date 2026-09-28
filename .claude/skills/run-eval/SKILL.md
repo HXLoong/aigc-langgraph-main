@@ -16,11 +16,11 @@ allowed-tools: Read, Bash, Grep
 ## 执行
 
 1. 读取用户指定的测试范围。若用户保留最终统一测试，默认仅做离线专项；不要自动启动真实回归。
-2. 真实回归由主代理统一调度：检查本地 /health /ready、MYSQL_URI、授权 EVAL_USER_ID/EVAL_ROOM_ID 和模型能力。脚本会预检模型并拒绝远程应用目标。
+2. 真实回归由主代理统一调度：检查本地 /health /ready、MYSQL_URI、授权 EVAL_USER_ID/EVAL_ROOM_ID 和模型能力。脚本只预检业务实际使用的 STANDARD 模型，不调用离线 THINKING 或备用 COMPLEX；拒绝远程应用目标。
 3. 用少量明确用例验证；失败先归类为代码、数据/权限、模型或环境。外部阻塞记录后继续独立工作，不弱化断言。
 
 ```bash
-python scripts/local_eval.py --base-url http://127.0.0.1:8201 --data tests/datasets/biz --case case-025 --concurrency 1 --out tmp/eval
+python scripts/local_eval.py --base-url http://127.0.0.1:8201 --data tests/datasets/biz --case case-025 --concurrency 1 --out /opt/work-file/code-tmp/aigc-langgraph-tmp/eval
 # 用户启动最终验收时再去掉 --case；全量不是每次修复的默认动作。
 ```
 
@@ -28,4 +28,4 @@ python scripts/local_eval.py --base-url http://127.0.0.1:8201 --data tests/datas
 
 输出目录下 manifest.json、cases.jsonl、summary.json、report.md、message_ids.json。
 记录提交号、用例范围、PASS/FAIL/REJECTED、失败节点与字段差异、P50/P95/P99；小样本不能证明全量准确率或性能达标。
-Langfuse 使用当前配置的部署，不固定 Cloud 地址；保留 trace_id/链接。报告与恢复点留 tmp，不提交原始日志或密钥。
+Langfuse 使用当前配置的部署，不固定 Cloud 地址；保留 trace_id/链接。报告与恢复点留 `/opt/work-file/code-tmp/aigc-langgraph-tmp/`，不提交原始日志或密钥。

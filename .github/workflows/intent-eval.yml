@@ -9,9 +9,9 @@ name: intent-eval
 #
 # 仅手动触发：Actions → intent-eval → Run workflow（可改 fixture / limit / fail_under）。
 # 不随 PR 自动运行——全量约 14 分钟且消耗 LLM 额度；改提示词 / 路由 / 意图节点后按需手动跑。
-# 前置：仓库 secrets 配置 QWEN_API_BASE / QWEN_API_KEY（LLM 网关）；可选 variables
-#       QWEN_MODEL_STANDARD / QWEN_MODEL_THINKING / QWEN_MODEL_COMPLEX 覆盖默认模型
-# 未配置 secrets：直接失败，避免误以为跑过
+# 前置：仓库 secrets 配置 LLM_API_BASE / LLM_API_KEY，必填 variable LLM_PROVIDER；可选 variables
+#       LLM_MODEL_STANDARD / LLM_MODEL_THINKING / LLM_MODEL_COMPLEX 覆盖默认模型
+# 缺少连接 secrets 或 provider variable：直接失败，避免误以为跑过
 
 on:
   workflow_dispatch:
@@ -46,7 +46,6 @@ jobs:
       ENVIRONMENT: development
       ENABLE_LANGFUSE: "false"
       USE_MYSQL_CHECKPOINTER: "false"
-      REQUEST_IDEMPOTENCY: "false"
       # 未启用持久化；persist 节点写库失败只打 warning，不影响评分
       MYSQL_URI: mysql://ci:ci@127.0.0.1:3306/ci_unused
       # 全部指向 runner 上的 mock_api，绝不指向 Java / GOATS
@@ -56,23 +55,23 @@ jobs:
       GOATS_CLIENT_ID: mock-client-id
       GOATS_CLIENT_SECRET: mock-client-secret
       GOATS_EXTAPP_SALT: mock-salt
-      SECURITIES_INSTRUMENT_URL: http://127.0.0.1:8099/admin-api/integration/securities-instrument/select
       # LLM 网关（唯一外部依赖）
-      QWEN_API_BASE: ${{ secrets.QWEN_API_BASE }}
-      QWEN_API_KEY: ${{ secrets.QWEN_API_KEY }}
+      LLM_PROVIDER: ${{ vars.LLM_PROVIDER }}
+      LLM_API_BASE: ${{ secrets.LLM_API_BASE }}
+      LLM_API_KEY: ${{ secrets.LLM_API_KEY }}
       # secrets 上下文不能直接用于 step 的 if，先折算成布尔 env
-      HAS_LLM_SECRETS: ${{ secrets.QWEN_API_BASE != '' && secrets.QWEN_API_KEY != '' }}
+      HAS_LLM_SECRETS: ${{ secrets.LLM_API_BASE != '' && secrets.LLM_API_KEY != '' && vars.LLM_PROVIDER != '' }}
 
     steps:
       - uses: actions/checkout@v4
 
-      - name: 检查 LLM secrets
+      - name: 检查 LLM 连接与 provider 配置
         run: |
           if [ "$HAS_LLM_SECRETS" = "true" ]; then
-            echo "LLM secrets 已配置，执行完整评估"
+            echo "LLM 连接与 provider 已配置，执行完整评估"
             exit 0
           fi
-          echo "::error::缺少 QWEN_API_BASE / QWEN_API_KEY secrets：意图集只依赖 LLM（不依赖 Java/GOATS），但必须配置模型网关"
+          echo "::error::缺少 LLM_API_BASE / LLM_API_KEY secrets 或 LLM_PROVIDER variable：意图集只依赖 LLM（不依赖 Java/GOATS），但必须配置模型网关"
           exit 1
 
       - name: Set up Python 3.11
@@ -92,13 +91,13 @@ jobs:
       - name: 可选模型覆盖（仓库 variables，未设置则用 app/config.py 默认）
         if: env.HAS_LLM_SECRETS == 'true'
         env:
-          STANDARD: ${{ vars.QWEN_MODEL_STANDARD }}
-          THINKING: ${{ vars.QWEN_MODEL_THINKING }}
-          COMPLEX: ${{ vars.QWEN_MODEL_COMPLEX }}
+          STANDARD: ${{ vars.LLM_MODEL_STANDARD }}
+          THINKING: ${{ vars.LLM_MODEL_THINKING }}
+          COMPLEX: ${{ vars.LLM_MODEL_COMPLEX }}
         run: |
-          if [ -n "$STANDARD" ]; then echo "QWEN_MODEL_STANDARD=$STANDARD" >> "$GITHUB_ENV"; fi
-          if [ -n "$THINKING" ]; then echo "QWEN_MODEL_THINKING=$THINKING" >> "$GITHUB_ENV"; fi
-          if [ -n "$COMPLEX" ]; then echo "QWEN_MODEL_COMPLEX=$COMPLEX" >> "$GITHUB_ENV"; fi
+          if [ -n "$STANDARD" ]; then echo "LLM_MODEL_STANDARD=$STANDARD" >> "$GITHUB_ENV"; fi
+          if [ -n "$THINKING" ]; then echo "LLM_MODEL_THINKING=$THINKING" >> "$GITHUB_ENV"; fi
+          if [ -n "$COMPLEX" ]; then echo "LLM_MODEL_COMPLEX=$COMPLEX" >> "$GITHUB_ENV"; fi
 
       - name: 启动 mock_api（仓库内假后端，顶替 Java + GOATS）
         if: env.HAS_LLM_SECRETS == 'true'
@@ -110,6 +109,15 @@ jobs:
           done
           curl -sf http://127.0.0.1:8099/ > /dev/null || { echo "::error::mock_api 未就绪"; cat mock_api.log; exit 1; }
 
+      - name: 启动 LangGraph HTTP 入口
+        run: |
+          nohup python -m uvicorn app.main:app --host 127.0.0.1 --port 8201 > langgraph.log 2>&1 &
+          for i in $(seq 1 30); do
+            curl -sf http://127.0.0.1:8201/health > /dev/null && break
+            sleep 1
+          done
+          curl -sf http://127.0.0.1:8201/health > /dev/null || { cat langgraph.log; exit 1; }
+
       - name: 运行意图集评估（确定性评分，无 Judge）
         if: env.HAS_LLM_SECRETS == 'true'
         env:
@@ -118,7 +126,7 @@ jobs:
           LIMIT: ${{ github.event.inputs.limit || '' }}
           FAIL_UNDER: ${{ github.event.inputs.fail_under || '0.95' }}
         run: |
-          python scripts/langfuse/langfuse_eval.py \
+          python -m scripts.langfuse.langfuse_eval \
             --local "$FIXTURE" --suite intent \
             --concurrency "$CONCURRENCY" ${LIMIT:+--limit "$LIMIT"} \
             --fail-under "$FAIL_UNDER" \
@@ -166,4 +174,5 @@ jobs:
           path: |
             .harness-runs/intent-eval.json
             mock_api.log
+            langgraph.log
           if-no-files-found: warn

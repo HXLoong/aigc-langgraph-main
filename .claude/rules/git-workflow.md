@@ -31,7 +31,7 @@ test(eval): 新增 2 条雪球询价的 golden case
 适用于 AI agent（Claude Code / Codex）驱动的长任务与自驱动循环：
 
 - **每绿即提交**：完成一个绿色里程碑（RED → GREEN → 相关测试通过）即本地 commit；checkpoint 是恢复点，不是发布
-- **记录恢复点**：长任务在 `tmp/` 的任务记录里写 checkpoint 短 sha（`git rev-parse --short HEAD`），跨会话 / 换工具恢复时从最近 checkpoint 起
+- **记录恢复点**：长任务在 `/opt/work-file/code-tmp/aigc-langgraph-tmp/` 的任务记录里写 checkpoint 短 sha（`git rev-parse --short HEAD`），跨会话 / 换工具恢复时从最近 checkpoint 起
 - **会话结束不留脏树**：要么提交、要么 `git stash` 并在任务记录说明 WIP
 
 ## PR 标题与内容语言
@@ -53,7 +53,7 @@ test(eval): 新增 2 条雪球询价的 golden case
 
 ## 敏感文件
 
-**绝对不提交**：`.env`、`CLAUDE.local.md`、`tmp/` 下的输出、`__pycache__/` / `.pytest_cache/`、任何含真实 API Key / Password
+**绝对不提交**：`.env`、`CLAUDE.local.md`、`/opt/work-file/code-tmp/aigc-langgraph-tmp/` 下的输出、`__pycache__/` / `.pytest_cache/`、任何含真实 API Key / Password
 的文件、生产日志导出（即使脱敏过也要先 review）。多数已在 `.gitignore`，提交前仍需自查。
 
 ## 冲突解决

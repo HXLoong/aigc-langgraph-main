@@ -1,49 +1,79 @@
-# ADR 0020 · 全量统一 deepseek-v4-pro
+# ADR 0020 · 通用模型配置与 DeepSeek Pro 当前基线
 
-- 状态：已采纳（统一模型已确定，配置核对与链路验收待实施）
-- 日期：2026-09-24
+- 状态：已采纳（通用配置与工厂已实现；切换模型后的真实链路验收单独执行）
+- 日期：2026-09-24；修订：2026-09-28
 - 关系：模型请求额度与附件边界见 [ADR 0031](./0031-single-model-request-per-message.md)，评测断言见 [ADR 0005](./0005-annotation-roles-judge-plus-business-spotcheck.md)
 - 作者：图灵科技 + Tony
 
 ## 背景
 
-开发、评测与现场使用不同模型会造成行为和基线漂移。统一使用 `deepseek-v4-pro`，由不同产品的提示词与结构化输出契约区分解析职责；输入类型必须符合该模型的实际能力。
+模型可以随部署需要更换。配置变量和工厂函数使用厂商名称会误导维护者，也不能可靠地根据网关模型别名判断接口协议。采用通用名称与显式厂商适配；`deepseek-v4-pro` 保留为当前业务验收基线，切换模型需要重新验收，不能沿用旧模型结果。
 
 ## 决策
 
-### 1. 模型统一
+### 1. 通用配置与三个模型角色
 
-所有业务 LLM 请求统一使用 API 模型名 `deepseek-v4-pro`，关闭思考模式。开发、测试、评测中的被测模型与现场生产保持同一型号；数据集评分使用确定性断言，不另配 Judge 模型。官方模型表将 Pro 的 Vision 能力标为不支持，因此当前只支持文本及代码读取后的 Excel 内容；不能沿用其它型号的图片能力说明。[官方模型表](https://api-docs.deepseek.com/quick_start/pricing/)（核对日期：2026-09-24）。
-
-以下为统一配置要求，实际环境仍需核对；凭据从环境变量读取：
+凭据从环境变量读取，三个角色共用地址、密钥与厂商适配，各自独立配置模型标识：
 
 ```dotenv
-QWEN_API_BASE=https://api.deepseek.com/v1
-QWEN_MODEL_STANDARD=deepseek-v4-pro
-QWEN_MODEL_THINKING=deepseek-v4-pro
-QWEN_MODEL_COMPLEX=deepseek-v4-pro
+LLM_PROVIDER=deepseek
+LLM_API_BASE=https://your-openai-compatible-gateway/v1
+LLM_API_KEY=your-llm-api-key
+LLM_MODEL_STANDARD=deepseek-v4-pro
+LLM_MODEL_THINKING=deepseek-v4-pro
+LLM_MODEL_COMPLEX=deepseek-v4-pro
 ```
 
-现有 `QWEN_*` 名称与工厂函数仅作为配置兼容入口。`QWEN_MODEL_VL` 是待清理的旧配置，不为本阶段另配视觉模型；不能把它改成 Pro 就认定图片已可用。实际网关的模型标识、文本与结构化输出能力须独立验证。
+| 角色 / 工厂 | 当前用途 |
+|---|---|
+| `LLM_MODEL_STANDARD` / `get_llm_standard()` | 业务唯一解析器：一次联合识别产品、意图与候选 |
+| `get_llm_structured()` | 复用 STANDARD 配置，不增加第四个角色 |
+| `LLM_MODEL_THINKING` / `get_llm_thinking()` | 离线改写生成工具；角色名称不自动开启思考 |
+| `LLM_MODEL_COMPLEX` / `get_llm_complex()` | 保留独立角色，当前业务链不使用 |
 
-### 2. 适配集中在模型工厂
+不建设运行时多模型编排或失败后切换模型。开发、评测和生产应使用待验收的同一业务模型与适配配置；数据集评分使用确定性断言，不另配 Judge 模型。业务回归能力预检只验证实际使用的 STANDARD，未使用角色不可用不应阻塞该回归。
 
-- `app/llm/clients.py` 统一处理端点、思考模式、结构化输出与输入能力边界；节点通过 `with_structured_output(PydanticModel)` 获取输出，不自行解析 JSON。
-- 沿用项目已有的 function-calling 结构化契约，验证文本、Excel 提取和目标网关的兼容性；输入能力按官方模型说明与部署契约核对。
-- SDK、图层与外层封装的模型重试均关闭。产品分类、意图、参数和有歧义的候选共用一次请求，失败不切换模型重试（ADR 0031）。
+### 2. 显式适配集中在模型工厂
 
-### 3. 本阶段只处理文本与 Excel，图片暂不处理
+`LLM_PROVIDER` 必填，可选值如下；厂商选择不读取模型名称或 URL 的特征。
 
-- 按本阶段范围决定，图片暂不处理，不安排图片解析或图片准确率验收；收到图片时在请求模型前明确提示改用文本或 Excel；混合输入不得静默忽略图片后只处理剩余内容，也不调用其它模型 OCR 或降级解析。
-- Excel 由代码读取单元格及来源，再通过同一次请求批量解析，不把 Excel 读取当作视觉模型调用，也不逐行请求模型。
-- 本阶段不建设独立 VL 模型接线或按 VL 型号拆分告警。图片能力待后续另行决定，本阶段不开展对应实施与验收。容量超限或输出无法承载全部订单时，同样停止并提示调整输入。
+| `LLM_PROVIDER` | 请求扩展 | 默认结构化输出方式 |
+|---|---|---|
+| `deepseek` | `thinking: {type: disabled}` | `function_calling` |
+| `qwen` | `enable_thinking: false` | 保留当前 LangChain 默认方式 |
+| `openai_compatible` | 不附加厂商私有字段 | `function_calling` |
+
+调用方显式指定 `method` 时保留该选择。通用适配不会猜测网关的私有开关，部署时须核对目标接口能力与默认行为。
+
+`app/llm/clients.py` 统一处理连接、结构化输出和厂商扩展；节点通过 `with_structured_output(PydanticModel)` 获取输出，不自行解析模型 JSON。SDK、图层与外层封装的模型重试均关闭；产品、意图和候选共用一次真实请求，失败不切换模型重试（ADR 0031）。
+
+### 3. 直接迁移，不保留旧变量别名
+
+| 旧变量 | 新变量 |
+|---|---|
+| `QWEN_API_BASE` | `LLM_API_BASE` |
+| `QWEN_API_KEY` | `LLM_API_KEY` |
+| `QWEN_MODEL_STANDARD` | `LLM_MODEL_STANDARD` |
+| `QWEN_MODEL_THINKING` | `LLM_MODEL_THINKING` |
+| `QWEN_MODEL_COMPLEX` | `LLM_MODEL_COMPLEX` |
+
+删除已退役的 `QWEN_MODEL_VL`，另行填写 `LLM_PROVIDER`。旧工厂名也同步替换为 `get_llm_*`，不提供兼容别名。配置加载检测到任意 `QWEN_*` 键即失败，包括新旧同时存在的情况；错误只显示键名，不显示配置值。
+
+迁移覆盖本地、部署模板和 CI。意图评测 CI 使用 secrets `LLM_API_BASE` / `LLM_API_KEY`、必填 variable `LLM_PROVIDER`，三个 `LLM_MODEL_*` variables 可选。远程配置由维护者迁移，修改工作流文件不代表远程密钥已经迁移。配置与模型工厂有缓存，更改环境变量后重启服务；不支持热切换。
+
+### 4. 本阶段只处理文本与 Excel
+
+- 图片暂不处理，不安排图片解析、OCR 或多模态接线。收到图片时在请求模型前提示改用文本或 Excel；混合输入不静默丢弃图片后处理其余内容。
+- Excel 由代码读取单元格及来源，再通过同一次请求批量解析，不逐行请求模型。
+- 不建设独立 VL 模型接线或按 VL 型号拆分告警。容量超限或输出无法承载全部订单时停止并提示调整输入；切换厂商不会自动扩大输入范围。
 
 ## 备选方案
 
-- **文本与图片分配不同型号**：增加配置和评测口径，本阶段不采用。
-- **所有产品使用一个大提示词**：模型统一不要求提示词合并；保留产品专用解析器和跨产品解析器，代码四选一。
-- **统一模型 + 独立解析契约（已选）**：保持部署口径一致与产品职责清晰。
+- **保留厂商前缀与兼容别名**：容易出现新旧配置冲突和隐式回退，不采用。
+- **只保留一个模型变量**：会丢失已保留的离线角色配置，本次不采用。
+- **由模型名称推断厂商**：网关可能使用任意别名，不采用。
+- **通用三角色配置 + 显式适配（已选）**：业务保持一次解析，独立配置模型标识与协议。
 
 ## 后果
 
-须按统一 Pro、关闭思考与零重试口径重测准确率、失败率、成本与延迟，不能直接继承多次请求或重试后的基线。配置、模型工厂、图片能力拦截及验收仍需核对和迁移；本轮不修改 `.env`、运行时代码或部署环境，实施项统一见[工作计划](../work-plan.md)。
+既有部署必须同步迁移变量后再启动新版本。更换业务模型、厂商适配或网关后，重新验证结构化输出、准确率、失败率、成本与延迟，记录模型和 provider，不能直接继承旧基线。当前代码与离线专项验证状态、真实验收和远程配置待办统一见[工作计划](../work-plan.md)。

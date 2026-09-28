@@ -9,12 +9,10 @@
 ## 易错点
 
 - **目录名是 `option_close/`，不是 `close/`**（历史命名）；子图代码侧是 `app/subgraphs/close/`，两边不对称
-- **`judge/` 与 `system/` 不是 PromptSpec**：`judge/option_judge.md` 由 `scripts/langfuse/langfuse_eval.py`、
-  `system/capability_probe.md` 由 `scripts/local_eval.py` 直接 `load_prompt`；14 个 PromptSpec 只覆盖业务节点
+- **四个互斥 PromptSpec** 在 `app/parsing/prompts.py`：option / swap / option_close / router 的 `parse_instruction`；`system/capability_probe.md` 仅供本地验收预检，不参与业务解析。
 - **`_versions.yaml`** 是 ADR 0003 灰度的真源，loader 只读其中 `overrides:` 段；不要在 Python 里写死版本。
   当前无灰度位，需要时新建 `<name>_v{N}.md` 并登记
-- **候选抽取的字段描述**用字段上的 `CandidateDescription` 元数据（`app/extraction/fields.py`），与最终 DTO 语义分离，
-  不要写进 `.md`
+- **字段描述**由 `app/parsing/*_fields.py` 与 `models.py` 的 `Field(description=...)` 定义。字段值和证据分别表达；提示词不复制字段表或 JSON 骨架。
 - Dify YAML 快照只作历史证据（commit `fddd94e`，ADR 0024 D1），不再同步
 
 ## .md 文件格式（4-backtick 外层 fence 才不会被内层 ``` 提前闭合）
@@ -27,7 +25,7 @@
 <system 提示词内容；由代码渲染的 {{var}} 须在 PromptSpec.injects 登记>
 ```
 
-## [user]        ← 仅当 user 含规则文本时才有（现仅 swap/fresh_counterparty.md）
+## [user]        ← 仅当 user 含规则文本时才有（当前四套解析器不使用）
 ```
 <user 模板，{{var}} 经 render_user() 渲染>
 ```

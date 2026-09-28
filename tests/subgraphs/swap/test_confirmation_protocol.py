@@ -3,16 +3,13 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from unittest.mock import MagicMock
 
 import pytest
 
-from app.subgraphs.swap import intent as intent_module
 from app.subgraphs.swap.confirm import swap_confirm
 from app.subgraphs.swap.graph import build_swap_graph
-from app.subgraphs.swap.models import SwapIntentOutput
 from app.tools.swap_client import SwapClientHttpx
-from tests.intent_fixtures import intent_reply, mock_ainvoke
+from tests.joint_support import instruction_data
 
 CASES = json.loads(
     (Path(__file__).parents[0] / "confirmation_cases.json").read_text()
@@ -27,11 +24,6 @@ def capture_backend(monkeypatch: pytest.MonkeyPatch) -> list[dict]:
         return {"code": 0, "data": "OFFLINE_CONFIRMATION_RESULT"}
 
     monkeypatch.setattr(SwapClientHttpx, "operate", operate)
-    # A classifier must not bypass the deterministic confirmation guard.
-    structured = MagicMock(ainvoke=mock_ainvoke(intent_reply(SwapIntentOutput, type="confirm_order")))
-    model = MagicMock()
-    model.with_structured_output.return_value = structured
-    monkeypatch.setattr(intent_module, "get_qwen_thinking", lambda: model)
     return calls
 
 
@@ -40,6 +32,7 @@ async def test_shared_confirmation_contract(monkeypatch, case) -> None:
     calls = capture_backend(monkeypatch)
     result = await build_swap_graph().ainvoke({
         "raw_text": case["raw"], "quote_content": case["quote"],
+        "parsed_instruction": instruction_data("swap", ("confirm_cancel_order" if case["raw"] == "确认撤单" else "confirm_modify_order" if case["raw"] == "确认改单" else "confirm_order"), case["raw"]),
         "product_type": "swap", "swap_input_mode": "text",
         "conversation_id": "protocol-test", "message_id": 123,
         "user_id": "test-user", "room_id": "test-room",

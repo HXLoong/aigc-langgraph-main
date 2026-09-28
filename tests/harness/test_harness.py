@@ -399,7 +399,7 @@ def _result(case: GoldenCase, turns: list, failure: dict | None = None):
 
 def test_report_buckets_business_reject_separately() -> None:
     """D6：业务拒绝不算 PASS，单独成桶 REJECTED；有 diff 的仍是 FAIL。"""
-    case = GoldenCase(id="opt-1", category="option/inquiry", turns=[{"send_text": "a"}])
+    case = GoldenCase(id="opt-1", category="option/inquiry", turns=[{"send_text": "a", "expected": {"intent": "new_inquiry"}}])
     reject = {"turn": 1, "kind": "business_reject", "api_code": 400, "api_result": "参数缺失"}
     result = _result(case, [_outcome(1, "option", "new_inquiry")], failure=reject)
     report = cli_module._report_case(case, result, cli_module._turn_diffs(case, result))
@@ -421,7 +421,7 @@ def test_unexecuted_turns_after_early_stop_are_explicit_failures() -> None:
     """D6：早停后未执行的轮次逐轮记 runtime 失败，多轮 case 不能因早停而静默通过。"""
     case = GoldenCase(
         id="opt-3", category="option/place_from_quote",
-        turns=[{"send_text": "a"}, {"send_text": "b", "quote_previous": True}, {"send_text": "c", "quote_previous": True}],
+        turns=[{"send_text": "a", "expected": {"intent": "new_inquiry"}}, {"send_text": "b", "quote_previous": True}, {"send_text": "c", "quote_previous": True}],
     )
     reject = {"turn": 1, "kind": "business_reject", "api_code": 400, "api_result": "x"}
     result = _result(case, [_outcome(1, "option", "new_inquiry")], failure=reject)
@@ -562,8 +562,8 @@ async def test_cli_runs_only_explicitly_selected_suites(
     fixtures = tmp_path / "tests/datasets"
     biz = fixtures / "biz"
     biz.mkdir(parents=True)
-    _write(biz, {"caseNo": "a", "send_text": "现役询价"})
-    _write(fixtures, {"id": "b", "conversation": [{"raw_content": "历史下单"}]}).rename(
+    _write(biz, {"caseNo": "a", "send_text": "现役询价", "expected": {"api_code": 0}})
+    _write(fixtures, {"id": "b", "conversation": [{"raw_content": "历史下单"}], "expected": {"api_code": 0}}).rename(
         fixtures / "unified_golden.jsonl"
     )
     monkeypatch.chdir(tmp_path)

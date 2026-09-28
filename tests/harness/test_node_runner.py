@@ -6,6 +6,8 @@ from unittest.mock import AsyncMock
 import httpx
 import pytest
 
+from tests.joint_support import instruction_data
+
 
 def _candidate(value: str, evidence: str | None = None) -> dict:
     return {
@@ -18,52 +20,17 @@ def _candidate(value: str, evidence: str | None = None) -> dict:
 
 
 def _swap_place_order_mock_fixture() -> dict:
-    return {
-        "schema_version": 1,
-        "id": "swap-place-order-pilot",
-        "product_type": "swap",
-        "node_name": "swap_place_order",
-        "input": {
-            "raw_text": "聚鸣价值精选长飞光纤清仓 市价跟量9%",
-            "quote_content": "",
-            "swap_counterparties": [
-                {
-                    "ctptyId": 23971,
-                    "shortName": "聚鸣价值精选",
-                    "longName": "聚鸣价值精选私募证券投资基金",
-                    "sort": "D",
-                }
-            ],
-            "conversation_id": "node-pilot",
-        },
-        "expected": {
-            "mode": "fields",
-            "fields": {
-                "/expected_action": "place",
-                "/place_params/orderList/0/placeOrderWindCode": "长飞光纤",
-                "/place_params/orderList/0/placeOrderPriceType": "MarketOrder",
-                "/place_params/orderList/0/placeOrderAlgorithmType": "POV",
-                "/place_params/orderList/0/placeOrderPovPercent": 9,
-                "/place_params/orderList/0/placeOrderCloseIntent": True,
-            },
-        },
+    """当前 mock 入口仅替换联合解析器的模型响应。"""
+    from tests.joint_support import instruction_data
+    raw = "聚鸣价值精选长飞光纤清仓 市价跟量9%"
+    return {"schema_version": 1, "id": "joint-parse-pilot", "product_type": "main",
+        "node_name": "parse_instruction", "input": {"raw_text": raw, "product_type": "swap"},
+        "expected": {"mode": "fields", "fields": {
+            "/intent": "place_order_request", "/parsed_instruction/orders/0/placeOrderWindCode": "长飞光纤",
+            "/parsed_instruction/orders/0/placeOrderPovPercent": 9}},
         "replay": {"enabled": True, "side_effect": "read"},
-        "mocks": {
-            "llm_output": {
-                "orderList": [
-                    {
-                        "placeOrderWindCode": _candidate("长飞光纤"),
-                        "placeOrderPriceType": _candidate("市价"),
-                        "placeOrderAlgorithmType": _candidate("跟量"),
-                        "placeOrderPovPercent": _candidate("9", "9%"),
-                        "placeOrderShortname": _candidate("聚鸣价值精选"),
-                        "placeOrderEntrustRatio": _candidate("清仓"),
-                        "placeOrderCloseIntent": _candidate("清仓"),
-                    }
-                ]
-            },
-        },
-    }
+        "mocks": {"llm_output": instruction_data("swap", "place_order_request", raw, orders=[{
+            "placeOrderWindCode": "长飞光纤", "placeOrderPovPercent": 9}])}}
 
 
 @pytest.mark.asyncio
@@ -78,6 +45,7 @@ async def test_run_node_fixture_executes_only_the_registered_node() -> None:
         "node_name": "option_intent",
         "input": {
             "raw_text": "确认下单",
+                    "parsed_instruction": instruction_data("option", "confirm_order", "确认下单"),
             "quote_content": "",
             "history_messages": [],
         },
@@ -111,7 +79,7 @@ async def test_run_swap_place_order_fixture_with_mocked_external_dependencies() 
         pytest.fail(f"节点 runner 尚未支持 mock 模式：{exc}")
 
     assert result.passed is True
-    order = result.actual["place_params"]["orderList"][0]
+    order = result.actual["parsed_instruction"]["orders"][0]
     assert order["placeOrderWindCode"] == "长飞光纤"
     assert order["placeOrderPovPercent"] == 9
 
@@ -187,6 +155,7 @@ def test_node_run_cli_executes_fixture_file(tmp_path, capsys) -> None:
                 "node_name": "option_intent",
                 "input": {
                     "raw_text": "确认下单",
+                    "parsed_instruction": instruction_data("option", "confirm_order", "确认下单"),
                     "quote_content": "",
                     "history_messages": [],
                 },
@@ -235,11 +204,11 @@ def test_node_run_cli_supports_mock_mode_for_swap_place_order(tmp_path, capsys) 
         pytest.fail(f"mock 节点报告不是合法 JSON：{exc}")
 
     assert exit_code == 0
-    assert "[PASS] swap-place-order-pilot (swap_place_order)" in capsys.readouterr().out
+    assert "[PASS] joint-parse-pilot (parse_instruction)" in capsys.readouterr().out
     report = json.loads(report_path.read_text(encoding="utf-8"))
     assert report["summary"] == {"total": 1, "passed": 1, "failed": 0}
     assert (
-        report["reports"][0]["actual"]["place_params"]["orderList"][0]["placeOrderWindCode"]
+        report["reports"][0]["actual"]["parsed_instruction"]["orders"][0]["placeOrderWindCode"]
         == "长飞光纤"
     )
 
@@ -268,7 +237,7 @@ def test_node_run_cli_skips_non_replayable_fixtures(tmp_path, capsys) -> None:
 
     exit_code = main(["node-run", "--data", str(path), "--out", str(report_path)])
 
-    assert exit_code == 0
+    assert exit_code == 2  # 全部跳过仍是待验收，不能成为通过门。
     assert "[SKIP] swap-confirm-write (swap_confirm)" in capsys.readouterr().out
     report = json.loads(report_path.read_text(encoding="utf-8"))
     assert report["summary"] == {"total": 1, "passed": 0, "failed": 0, "skipped": 1}
@@ -424,3 +393,18 @@ def test_node_run_cli_supports_authenticated_http_transport(
     assert "[PASS] ingest-http (ingest)" in capsys.readouterr().out
     assert run_http.await_count == 1
     assert run_http.await_args.kwargs["api_key"] == "test-key"
+
+
+async def test_local_replay_decodes_json_field_locks_like_http():
+    """本地 JSON 样本的字段锁同样生效，不能因没有模型实例而忽略锁。"""
+    from harness.node_registry import DEFAULT_NODE_REGISTRY
+    from harness.node_runner import run_node_fixture
+    from tests.joint_support import instruction_data
+
+    fixture = {"id": "json-lock", "node_name": "swap_place_order", "replay": {"enabled": True},
+        "input": {"raw_text": "甲证券限价2", "parsed_instruction": instruction_data("swap", "place_order_request", "甲证券限价2",
+            orders=[{"placeOrderWindCode": "甲证券", "placeOrderPrice": 2}]),
+            "field_records": {"swap/parse.orderList.0.placeOrderPrice": {"value": 1, "source": "user", "locked": True}}},
+        "expected": {"mode": "fields", "fields": {"/place_params/orderList/0/placeOrderPrice": 1}}}
+    result = await run_node_fixture(fixture, registry=DEFAULT_NODE_REGISTRY)
+    assert result.passed, result.diffs

@@ -2,12 +2,10 @@
 
 from __future__ import annotations
 
-import importlib
-import inspect
 import json
 from collections.abc import Mapping, Sequence
 from contextlib import nullcontext
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any
 
@@ -39,20 +37,13 @@ class NodeRunResult:
     passed: bool
     actual: dict[str, Any]
     diffs: list[NodeFieldDiff] = field(default_factory=list)
+    tracing: dict[str, Any] = field(default_factory=dict)
 
 
-def _load_callable(path: str) -> Any:
-    module_name, separator, attribute = path.partition(":")
-    if not separator or not module_name or not attribute:
-        raise NodeRunnerError(f"节点 callable_path 不合法：{path}")
-    module = importlib.import_module(module_name)
-    function = getattr(module, attribute, None)
-    if not callable(function):
-        raise NodeRunnerError(f"节点函数不存在：{path}")
-    return function
 
 
 def _resolve_pointer(value: Any, pointer: str) -> Any:
+    """读取字段断言指定的 JSON Pointer，缺失路径明确报错。"""
     if pointer in {"", "/"}:
         return value
     if not pointer.startswith("/"):
@@ -89,6 +80,7 @@ def _jsonable(value: Any) -> Any:
 def _replayable_definition(
     fixture: Mapping[str, Any], registry: Mapping[str, NodeDefinition]
 ) -> tuple[str, NodeDefinition]:
+    """核对节点与样本的回放许可，拒绝未登记或写副作用节点。"""
     node_name = str(fixture.get("node_name") or "")
     replay = fixture.get("replay")
     if not isinstance(replay, Mapping) or replay.get("enabled") is not True:
@@ -97,13 +89,14 @@ def _replayable_definition(
     if definition is None:
         raise NodeRunnerError(f"节点未注册：{node_name}")
     if not definition.replayable or definition.side_effect == "write":
-        raise NodeRunnerError(f"节点存在写副作用，禁止回放：{node_name}")
+        raise NodeFixtureSkipError(f"节点存在写副作用或仅供查看，禁止回放：{node_name}")
     return node_name, definition
 
 
 def _compare_output(
     fixture: Mapping[str, Any], definition: NodeDefinition, actual: dict[str, Any]
 ) -> NodeRunResult:
+    """按已审阅的稳定字段或对象比较实际节点输出。"""
     expected = fixture.get("expected")
     if not isinstance(expected, Mapping):
         raise NodeRunnerError("节点 fixture expected 必须是对象")
@@ -161,15 +154,24 @@ async def run_node_fixture(
     state = fixture.get("input")
     if not isinstance(state, Mapping):
         raise NodeRunnerError("节点 fixture input 必须是对象")
-    node = _load_callable(definition.callable_path)
-    context = (
-        mock_node_dependencies(node_name, fixture.get("mocks")) if mock_external else nullcontext()
-    )
+    from pydantic import ValidationError
+
+    from app.node_execution.executor import MissingNodeContextError, NodeExecutor
+    from app.node_execution.registry import build_registry
+
+    # 本地复现和 HTTP 使用同一状态适配器，尤其不能把 JSON 字段锁当普通字典忽略。
+    product = "main" if definition.product_type == "common" else definition.product_type
+    registration = next((item for item in build_registry()
+                         if item.product == product and item.name == node_name), None)
+    if registration is None:
+        raise NodeRunnerError(f"节点没有已登记的执行契约：{node_name}")
+    context = mock_node_dependencies(node_name, fixture.get("mocks")) if mock_external else nullcontext()
     try:
         with context:
-            invoked = node(dict(state))
-            actual_value = await invoked if inspect.isawaitable(invoked) else invoked
-    except NodeMockError as exc:
+            executor = NodeExecutor([registration])
+            validated = executor.validate(product, node_name, dict(state))
+            actual_value = await executor.run(product, node_name, validated)
+    except (NodeMockError, MissingNodeContextError, ValidationError) as exc:
         raise NodeRunnerError(str(exc)) from exc
     if not isinstance(actual_value, Mapping):
         raise NodeRunnerError(f"节点输出必须是对象：{node_name}")
@@ -184,6 +186,7 @@ async def run_node_fixture_http(
     registry: Mapping[str, NodeDefinition],
     client: httpx.AsyncClient,
     api_key: str,
+    trace_headers: dict[str, str] | None = None,
 ) -> NodeRunResult:
     """通过受保护的 FastAPI 节点执行面回放 fixture。"""
     node_name, definition = _replayable_definition(fixture, registry)
@@ -191,7 +194,7 @@ async def run_node_fixture_http(
     if not isinstance(state, Mapping):
         raise NodeRunnerError("节点 fixture input 必须是对象")
     product = "main" if definition.product_type == "common" else definition.product_type
-    headers = {"X-Node-Run-Key": api_key}
+    headers = {"X-Node-Run-Key": api_key, **(trace_headers or {})}
     try:
         prepare = await client.post(
             "/v1/nodes/prepare",
@@ -223,10 +226,12 @@ async def run_node_fixture_http(
     actual_value = response.json().get("output")
     if not isinstance(actual_value, Mapping):
         raise NodeRunnerError(f"节点输出必须是对象：{node_name}")
-    return _compare_output(fixture, definition, _jsonable(dict(actual_value)))
+    result = _compare_output(fixture, definition, _jsonable(dict(actual_value)))
+    return replace(result, tracing=response.json().get("tracing") or {})
 
 
 def _response_detail(response: httpx.Response) -> str:
+    """提取接口失败的有限诊断信息。"""
     try:
         body = response.json()
     except ValueError:

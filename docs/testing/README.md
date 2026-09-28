@@ -43,7 +43,7 @@ OTC_API_BASE_URL=http://127.0.0.1:8099 GOATS_BASE_URL=http://127.0.0.1:8099 \
   python scripts/langfuse/langfuse_eval.py --local tests/datasets/intent --fail-under 0.95 --report .harness-runs/intent-eval.json --no-judge
 ```
 
-CI 用到的环境变量（全部指向 mock、只有 `QWEN_API_BASE` / `QWEN_API_KEY` 是 secrets）见 `.github/workflows/intent-eval.yml`。
+CI 用到的环境变量（全部指向 mock、只有 `LLM_API_BASE` / `LLM_API_KEY` 是 secrets）见 `.github/workflows/intent-eval.yml`。
 未配置这两个 secrets 时手动触发会失败。
 
 ## 二、命令速查

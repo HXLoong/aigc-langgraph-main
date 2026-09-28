@@ -20,7 +20,7 @@
 ### D2 · 退役口径
 
 - 里程碑、任务码、roadmap 阶段表、issue / PR 编号不再出现在 ADR 正文与状态行；ADR 只写现行结论，被取代的决策直接删除（仍有效的规则先并入取代它的 ADR），编号不复用。现状与待办统一见 [docs/work-plan.md](../work-plan.md)。
-- 由里程碑定义的退出门全部改写为 D3 的评测门；旧基线数值不能直接作为单次请求、零重试口径的验收结果，以目标模型 deepseek-v4-pro（[ADR 0020](./0020-unify-all-llm-on-deepseek-v4-pro.md)）重测报告为准。
+- 由里程碑定义的退出门全部改写为 D3 的评测门；旧基线数值不能直接作为单次请求、零重试口径的验收结果，以所配置的业务模型（当前基线 deepseek-v4-pro，[ADR 0020](./0020-unify-all-llm-on-deepseek-v4-pro.md)）重测报告为准。
 
 ### D3 · 统一评测门
 

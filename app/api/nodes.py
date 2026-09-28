@@ -3,13 +3,17 @@
 from __future__ import annotations
 
 from typing import Any
+from uuid import uuid4
 
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
+from langchain_core.runnables import RunnableConfig
 from pydantic import BaseModel, ConfigDict, ValidationError
 
 from app.node_execution.executor import MissingNodeContextError, NodeExecutor
 from app.node_execution.prepare import prepare_state
+from app.observability.llm_metrics import LLMMetricsCallback
+from app.observability.tracing import HandledErrorCallback, attach_request_trace, session_identifier
 
 router = APIRouter(prefix="/v1/nodes", tags=["nodes"])
 
@@ -58,8 +62,8 @@ _PREPARE_EXAMPLES = {
     "normal_pruning": {
         "summary": "裁剪节点不会读取的字段",
         "value": {
-            "product": "option_close",
-            "node": "close_intent",
+            "product": "main",
+            "node": "parse_instruction",
             "langfuse_input": {
                 "raw_text": "我要平仓",
                 "quote_content": "",
@@ -100,8 +104,8 @@ _PREPARE_SUCCESS_EXAMPLES = {
         "summary": "裁剪成功",
         "value": {
             "request": {
-                "product": "option_close",
-                "node": "close_intent",
+                "product": "main",
+                "node": "parse_instruction",
                 "state": {
                     "raw_text": "我要平仓",
                     "quote_content": "",
@@ -198,6 +202,7 @@ _PREPARE_FAILURE_EXAMPLES = {
     },
 )
 async def prepare_node(body: NodePrepareRequest, request: Request) -> JSONResponse:
+    """裁剪并校验调试输入，返回可直接审阅的节点请求，不执行业务。"""
     executor: NodeExecutor = request.app.state.node_executor
     identity = {"product": body.product, "node": body.node}
     registration = executor.registrations.get((body.product, body.node))
@@ -221,6 +226,7 @@ async def prepare_node(body: NodePrepareRequest, request: Request) -> JSONRespon
 
 @router.post("/run")
 async def run_node(body: NodeRunRequest, request: Request) -> JSONResponse:
+    """校验并执行独立节点，以 HTTP 父上下文关联调试回归。"""
     executor: NodeExecutor = request.app.state.node_executor
     identity = {"product": body.product, "node": body.node}
     if (body.product, body.node) not in executor.registrations:
@@ -250,8 +256,18 @@ async def run_node(body: NodeRunRequest, request: Request) -> JSONResponse:
                 ],
             },
         )
+    # 观测上下文独立于节点 State，不污染目标节点的输入输出契约。
+    trace_id = uuid4().hex
+    conversation_id = str(state.get("conversation_id") or uuid4().hex)
+    trace = await attach_request_trace(request_trace_id=trace_id, traceparent=request.headers.get("traceparent"))
+    config: RunnableConfig = {
+        "callbacks": [LLMMetricsCallback()] + (
+            [HandledErrorCallback(trace.handler), trace.handler] if trace.handler is not None else []
+        ),
+        "metadata": {"trace_id": trace_id, "langfuse_session_id": session_identifier(conversation_id)},
+    }
     try:
-        output = await executor.run(body.product, body.node, state)
+        output = await executor.run(body.product, body.node, state, config=config)
     except Exception as exc:  # noqa: BLE001 - HTTP 执行边界，ticker 异常按原策略穿透至此
         return JSONResponse(
             status_code=500,
@@ -261,5 +277,8 @@ async def run_node(body: NodeRunRequest, request: Request) -> JSONResponse:
             },
         )
     return JSONResponse(
-        status_code=500 if output.get("error") else 200, content={**identity, "output": output}
+        status_code=500 if output.get("error") else 200, content={**identity, "output": output,
+            "tracing": {"trace_id": trace_id, "langfuse_trace_id": trace.langfuse_trace_id,
+                        "observation_id": trace.observation_id,
+                        "session_id": session_identifier(conversation_id)}},
     )

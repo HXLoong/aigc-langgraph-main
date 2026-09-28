@@ -27,21 +27,25 @@ def test_inputs_to_state_is_the_single_turn_entry() -> None:
     assert state["input_files"] == []
 
 
-def test_eval_pipeline_uses_production_turn_state(monkeypatch) -> None:
-    import asyncio
+async def test_eval_pipeline_uses_production_turn_state(monkeypatch) -> None:
+    """评测 HTTP 穿过真实 routes 输入适配，测试不另造状态初始化函数。"""
+    import httpx
 
-    from scripts.langfuse import langfuse_eval
+    from app.main import app
+    from harness.golden import GoldenCase
+    from harness.multi_turn import run_case_multi
 
-    captured: dict = {}
-
-    class _Graph:
-        async def ainvoke(self, state, config, **kwargs):  # type: ignore[no-untyped-def]
+    captured = {}
+    class Graph:
+        async def ainvoke(self, state, **kwargs):
+            """只替换图执行，保留 HTTP 和生产输入映射。"""
             captured.update(state)
-            return {**state, "trace": []}
-
-    asyncio.run(langfuse_eval._run_graph_once(
-        _Graph(), {"configurable": {"thread_id": "t"}}, "询价", has_mention=True, quote_content="Q",
-    ))
+            return {**state, "reply_text": "ok", "trace": []}
+    monkeypatch.setattr(app.state, "main_graph", Graph(), raising=False)
+    case = GoldenCase(id="adapter", category="test", turns=[{"send_text": "询价", "at_bot": True, "quote_content": "Q"}])
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app)) as client:
+        result = await run_case_multi(case, base_url="http://test", user_id="u", room_id="r", client=client)
+    assert not result.failure
     assert captured["raw_text"] == "询价" and captured["quote_content"] == "Q"
-    assert captured["conversation_id"] == "t" and captured["at_bot"] is True
+    assert captured["conversation_id"] == result.conversation_id and captured["at_bot"] is True
     assert "place_params" not in captured and "bot_name_list" not in captured

@@ -258,15 +258,16 @@ def test_store_rejects_field_not_present_in_actual_output(tmp_path) -> None:
 
 
 def test_store_allows_write_node_annotation_but_marks_it_non_replayable(tmp_path) -> None:
+    """真实写入已集中到 submit；保存标注也不得把该节点标成可回放。"""
     from harness.node_fixtures import NodeFixtureStore
     from harness.node_registry import DEFAULT_NODE_REGISTRY
 
-    definition = DEFAULT_NODE_REGISTRY["swap_confirm"]
+    definition = DEFAULT_NODE_REGISTRY["swap_submit"]
     observation = NodeObservation(
         observation_id="obs-write",
         trace_id="trace-write",
         turn=2,
-        name="swap_confirm",
+        name="swap_submit",
         product_type="swap",
         category="后端写入",
         replayable=False,
@@ -274,27 +275,25 @@ def test_store_allows_write_node_annotation_but_marks_it_non_replayable(tmp_path
         output_fields=definition.output_fields,
         input={"raw_text": "确认下单"},
         output={
-            "expected_action": "place",
-            "confirm": {"action": "place", "orderList": [{"orderId": "H-1"}]},
             "api_code": 0,
             "api_result": "成功",
             "reply_text": "成功",
         },
     )
-    store = NodeFixtureStore(tmp_path, registry={"swap_confirm": definition})
+    store = NodeFixtureStore(tmp_path, registry={"swap_submit": definition})
 
     path = store.save(
         observation,
         case_id="case-write",
         annotator="LLW",
         mode="fields",
-        expected_fields={"/api_code": 0, "/expected_action": "place"},
+        expected_fields={"/api_code": 0, "/reply_text": "成功"},
     )
 
     record = json.loads(path.read_text(encoding="utf-8"))
     assert record["expected"]["fields"] == {
         "/api_code": 0,
-        "/expected_action": "place",
+        "/reply_text": "成功",
     }
     assert record["replay"] == {"enabled": False, "side_effect": "write"}
 
@@ -371,7 +370,7 @@ def test_store_saves_auto_discovered_node_without_registry_entry(tmp_path) -> No
 @pytest.mark.parametrize(
     "sensitive_input",
     [
-        {"raw_text": "QWEN_API_KEY=sk-dummy-secret-value"},
+        {"raw_text": "LLM_API_KEY=sk-dummy-secret-value"},
         {"raw_text": "Authorization: Bearer dummy-access-token"},
         {"raw_text": "正常输入", "cookie": "session=dummy-cookie"},
     ],

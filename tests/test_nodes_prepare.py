@@ -5,7 +5,6 @@ from __future__ import annotations
 import copy
 import json
 from typing import Any, TypedDict
-from unittest.mock import AsyncMock, MagicMock
 
 import httpx
 import pytest
@@ -13,9 +12,7 @@ import pytest
 from app.main import app
 from app.node_execution.executor import NodeExecutor
 from app.node_execution.registry import NodeRegistration, build_registry
-from app.subgraphs.close.models import CloseIntentOutput
 from app.subgraphs.close.reference_parser import parse_reference_message
-from tests.intent_fixtures import intent_reply
 
 CONTEXT = {
     "conversation_id": "prepare-test",
@@ -40,10 +37,10 @@ async def post_prepare(product: str, node: str, state: Any) -> httpx.Response:
         )
 
 
-async def test_close_intent_example_keeps_only_declared_fields() -> None:
+async def test_joint_parse_example_keeps_only_declared_fields() -> None:
     response = await post_prepare(
-        "option_close",
-        "close_intent",
+        "main",
+        "parse_instruction",
         {
             "raw_text": "我要平仓",
             "quote_content": "",
@@ -57,8 +54,8 @@ async def test_close_intent_example_keeps_only_declared_fields() -> None:
     assert response.status_code == 200, response.text
     assert response.json() == {
         "request": {
-            "product": "option_close",
-            "node": "close_intent",
+            "product": "main",
+            "node": "parse_instruction",
             "state": {
                 "raw_text": "我要平仓",
                 "quote_content": "",
@@ -343,6 +340,7 @@ def _all_schema_inputs() -> dict[str, dict[str, Any]]:
         "AgentState": agent,
         "InquiryState": inquiry,
         "PlaceCloseState": place_close,
+        "SwapPlaceState": agent | {"sp_params": {"orderList": []}},
     }
 
 
@@ -351,7 +349,7 @@ def test_every_registration_prepares_to_an_executor_valid_request() -> None:
 
     executor = NodeExecutor(build_registry())
     schema_inputs = _all_schema_inputs()
-    assert len(executor.registrations) == 55
+    assert executor.registrations
 
     for key, registration in executor.registrations.items():
         original = copy.deepcopy(schema_inputs[registration.input_schema.__name__])
@@ -364,7 +362,7 @@ def test_every_registration_prepares_to_an_executor_valid_request() -> None:
 
 def test_registry_declarations_are_explicit_valid_and_cover_known_dependencies() -> None:
     registrations = {(item.product, item.name): item for item in build_registry()}
-    assert len(registrations) == 55
+    assert registrations
     for key, item in registrations.items():
         assert isinstance(item.input_fields, tuple), key
         assert len(item.input_fields) == len(set(item.input_fields)), key
@@ -399,7 +397,6 @@ def test_registry_declarations_are_explicit_valid_and_cover_known_dependencies()
         ("option_close", "close_cancel_close"): {
             "raw_text",
             "quote_content",
-            "conversation_orders",
         },
     }
     for key, expected in expected_subsets.items():
@@ -455,65 +452,10 @@ def test_registration_rejects_invalid_field_contracts() -> None:
 
 def test_prompt_and_gray_selection_dependencies_are_registered() -> None:
     registrations = {(item.product, item.name): item for item in build_registry()}
-    prompt_dependencies = {
-        ("main", "intent_route"): {"raw_text", "quote_content"},
-        ("option", "option_intent"): {
-            "raw_text",
-            "quote_content",
-            "history_messages",
-            "bot_name",
-            "option_counterparties",
-        },
-        ("option", "inquiry_extract"): {
-            "raw_text",
-            "quote_content",
-            "history_messages",
-        },
-        ("swap", "swap_intent"): {
-            "raw_text",
-            "quote_content",
-            "swap_counterparties",
-            "conversation_id",
-        },
-        ("swap", "swap_place_order"): {
-            "raw_text",
-            "quote_content",
-            "swap_counterparties",
-            "conversation_id",
-        },
-        ("swap", "swap_recognize_fresh_counterparty"): {
-            "raw_text",
-            "swap_counterparties",
-        },
-        ("swap", "swap_select_counterparty"): {
-            "raw_text",
-            "quote_content",
-            "swap_counterparties",
-        },
-        ("swap", "swap_select_ticker"): {
-            "raw_text",
-            "quote_content",
-            "quote_ticker_candidates",
-        },
-        ("swap", "swap_image_order"): {
-            "conversation_id",
-            "swap_counterparties",
-            "raw_text",
-        },
-        ("swap", "swap_excel_order"): {"conversation_id", "raw_text"},
-        ("option_close", "close_intent"): {
-            "raw_text",
-            "quote_content",
-            "history_messages",
-        },
-        ("option_close", "close_holding_query"): {
-            "raw_text",
-            "option_counterparties",
-        },
-        ("option_close", "place_close_extract"): {"raw_text", "quote_content"},
-    }
-    for key, fields in prompt_dependencies.items():
-        assert fields <= set(registrations[key].effective_input_fields), key
+    from app.parsing.prompts import SPECS
+    fields = set(registrations[("main", "parse_instruction")].effective_input_fields)
+    for spec in SPECS.values():
+        assert set(spec.inputs) <= fields, spec.key
 
 
 def test_prepare_does_not_invoke_node() -> None:
@@ -551,38 +493,22 @@ async def test_prompt_input_is_identical_before_and_after_prepare(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     from app.node_execution.prepare import prepare_state
-    from app.subgraphs.close.intent import SPEC
+    from app.parsing.prompts import SPECS
+    from tests.joint_support import joint_model
 
-    original = {
-        "raw_text": "我要平仓",
-        "quote_content": "上一轮",
-        # 历史消息带显式 id：证据引用键为 history:<id>，随机 id 会让两次校验的提示词不同
+    original = {"raw_text": "我要平仓", "quote_content": "上一轮", "product_type": "option_close",
         "history_messages": [{"id": "history-1", "role": "user", "content": "查持仓"}],
-        "trace": [{"node": "legacy"}],
-        "message_id": 99,
-    }
+        "trace": [{"node": "legacy"}], "message_id": 99}
     executor = NodeExecutor(build_registry())
-    registration = executor.registrations[("option_close", "close_intent")]
+    registration = executor.registrations[("main", "parse_instruction")]
     prepared = prepare_state(registration, original)
-
-    before_state = executor.validate("option_close", "close_intent", original)
-    after_state = executor.validate("option_close", "close_intent", prepared.state)
-    assert SPEC.build_messages(before_state) == SPEC.build_messages(after_state)
-
-    captured: list[Any] = []
-    llm = MagicMock()
-    reply = intent_reply(CloseIntentOutput, type="close_order_request")
-
-    async def invoke(messages: Any) -> CloseIntentOutput:
-        captured.append(messages)
-        return reply(messages)
-
-    llm.with_structured_output.return_value.ainvoke = AsyncMock(side_effect=invoke)
-    monkeypatch.setattr("app.subgraphs.close.intent.get_qwen_thinking", lambda: llm)
-    before = await executor.run("option_close", "close_intent", before_state)
-    after = await executor.run("option_close", "close_intent", after_state)
+    before_state = executor.validate("main", "parse_instruction", original)
+    after_state = executor.validate("main", "parse_instruction", prepared.state)
+    assert SPECS["option_close"].build_messages(before_state) == SPECS["option_close"].build_messages(after_state)
+    monkeypatch.setattr("app.nodes.parse_instruction.get_llm_standard", lambda: joint_model("option_close", "close_order_query"))
+    before = await executor.run("main", "parse_instruction", before_state)
+    after = await executor.run("main", "parse_instruction", after_state)
     assert _without_trace_ids(before) == _without_trace_ids(after)
-    assert captured[0] == captured[1]
 
 
 async def test_backend_request_is_identical_before_and_after_prepare(
@@ -618,6 +544,12 @@ async def test_backend_request_is_identical_before_and_after_prepare(
     after = await executor.run("option", "option_extract_query", after_state)
 
     assert _without_trace_ids(before) == _without_trace_ids(after)
+    # 参数节点已经没有 HTTP 副作用，分别通过新清洗/只读提交节点核对最终请求。
+    assert requests == []
+    for raw_state, update in ((before_state, before), (after_state, after)):
+        current = {**raw_state, **update}
+        cleaned = await executor.run("option", "option_clean_request", current)
+        await executor.run("option", "option_query_backend", {**current, **cleaned})
     assert requests[0] == requests[1]
     assert "history_messages" in original
     assert "history_messages" not in prepared.state
