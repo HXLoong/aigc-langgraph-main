@@ -4,10 +4,10 @@
 
 | 同步任务 | 读取哪些文件 | 同步到 Langfuse |
 |---|---|---|
-| `langfuse-dataset-sync` | `tests/fixtures/**/*.jsonl` | 一个 JSONL 文件对应一个 Dataset |
+| `langfuse-dataset-sync` | `tests/datasets/**/*.jsonl` | 一个 JSONL 文件对应一个 Dataset |
 | `langfuse-prompt-sync` | `app/prompts/option/*.md`、`option_close/*.md`、`swap/*.md` | Chat Prompt，标签为 `staging` |
 
-数据集同步会递归扫描 `tests/fixtures/` 下的 JSONL；提示词同步只扫描表中的三个业务目录的顶层 Markdown 文件。两个任务运行时都检出最新的 `main`，因此上传的是主分支内容。
+数据集同步会递归扫描 `tests/datasets/` 下的 JSONL；提示词同步只扫描表中的三个业务目录的顶层 Markdown 文件。两个任务运行时都检出最新的 `main`，因此上传的是主分支内容。
 
 ## 数据集会怎样更新
 

@@ -18,7 +18,7 @@ from app.graph.state import Message
 from harness import intent_runner
 from harness.golden import load_golden
 
-INTENT_FIXTURES = Path(__file__).resolve().parents[1] / "fixtures" / "intent"
+INTENT_FIXTURES = Path(__file__).resolve().parents[1] / "datasets" / "intent"
 
 
 def test_intent_graph_only_contains_intent_chain_nodes() -> None:

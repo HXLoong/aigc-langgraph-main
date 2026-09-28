@@ -30,7 +30,7 @@ trace 只走 LangFuse 一条通道，由请求入口统一注入 CallbackHandler
 | 数据 | 写入 | 读取 |
 |---|---|---|
 | Trace | LangGraph CallbackHandler | LangFuse UI / API |
-| Dataset | `scripts/langfuse/upload_golden_to_langfuse.py` 从 `tests/fixtures/` 同步 | 评测脚本 |
+| Dataset | `scripts/langfuse/upload_golden_to_langfuse.py` 从 `tests/datasets/` 同步 | 评测脚本 |
 | Score | 目标为复用 harness 断言的 Code Evaluator / SDK 分数写入，不调用 LLM Judge（ADR 0005） | LangFuse Experiment / UI / 报告 |
 | Annotation | 业务方经 Annotation Queue（线上标注待启动） | 回流脚本（待建） |
 

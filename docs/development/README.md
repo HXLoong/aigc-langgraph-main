@@ -47,8 +47,8 @@ ruff format app/ tests/                # 格式化
 mypy app/                              # 类型
 
 # 评估
-python scripts/langfuse/langfuse_eval.py --local tests/fixtures/intent --concurrency 3
-python scripts/local_eval.py --base-url http://127.0.0.1:8201 --data tests/fixtures/biz --case case-025
+python scripts/langfuse/langfuse_eval.py --local tests/datasets/intent --concurrency 3
+python scripts/local_eval.py --base-url http://127.0.0.1:8201 --data tests/datasets/biz --case case-025
 
 # 一致性检查（提交前）
 python scripts/check_fixture_consistency.py && python scripts/check_adr_refs.py
@@ -173,7 +173,7 @@ ORDER BY step_index;
 
 ### 当准确率下降
 - 跑 `scripts/langfuse/langfuse_eval.py --local <fixture>` 定位失败 category
-- 先在 `tests/fixtures/biz/` 补失败 case，再按 TDD 修复
+- 先在 `tests/datasets/biz/` 补失败 case，再按 TDD 修复
 - 检查是否提示词被意外改动：`git log app/prompts/`
 
 ## 发布流程

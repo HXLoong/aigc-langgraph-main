@@ -1,14 +1,14 @@
-"""从 biz 业务集派生意图集草稿（tests/fixtures/intent/ 的输入来源）。
+"""从 biz 业务集派生意图集草稿（tests/datasets/intent/ 的输入来源）。
 
 用法：
     python scripts/derive_intent_fixtures.py --dry-run
     python scripts/derive_intent_fixtures.py --out tmp/intent_drafts
-    python scripts/derive_intent_fixtures.py --only-labeled --out tests/fixtures/intent
+    python scripts/derive_intent_fixtures.py --only-labeled --out tests/datasets/intent
 
 只做确定性搬运，不猜标签：
 - product_type 优先沿用原 expected，否则按 category / 文件名前缀派生（option_close / option / swap）
 - intent 只沿用原 expected.intent；未标注的轮 intent 留空并写 review.pending，草稿需业务方
-  review 后才能进 tests/fixtures/intent/（lint 会拒绝空 intent）
+  review 后才能进 tests/datasets/intent/（lint 会拒绝空 intent）
 - 卡片文本断言（response_*）一律丢弃：那是业务集的职责
 """
 
@@ -24,7 +24,7 @@ from typing import Any
 logger = logging.getLogger(__name__)
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-DEFAULT_SOURCE = REPO_ROOT / "tests" / "fixtures" / "biz"
+DEFAULT_SOURCE = REPO_ROOT / "tests" / "datasets" / "biz"
 DEFAULT_OUT = REPO_ROOT / "tmp" / "intent_drafts"
 
 INTENT_ID_PREFIX = "intent-"

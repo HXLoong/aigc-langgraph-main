@@ -13,7 +13,7 @@ description: >
 
 **核心原则：** 没亲眼看到测试失败，就不知道它测的是不是对的东西。
 
-TDD 是根 `CLAUDE.md` 核心原则 5 的强制纪律；本 skill 给出完整步骤。测试规范（金字塔、Mock 陷阱、E2E 写法）
+TDD 是根 `CLAUDE.md` 核心原则 5 的强制纪律；本 skill 给出完整步骤。测试规范（三层 TDD 准则、Mock 陷阱、E2E 写法）
 以 `.claude/rules/testing.md` 为准，本文不重复。
 
 ## 铁律

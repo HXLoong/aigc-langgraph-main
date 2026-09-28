@@ -9,7 +9,7 @@
 > | [local-backend-seed.md](./local-backend-seed.md) | 本地合成身份种子与验收边界 |
 >
 > 纪律真源（本文不重复，冲突时以它们为准）：
-> - `.claude/rules/testing.md` — 测试金字塔 / Mock 陷阱 / TDD / Golden 规范
+> - `.claude/rules/testing.md` — 三层 TDD 准则 / Mock 陷阱 / Golden 规范
 > - `tests/CLAUDE.md` — tests/ 目录布局 + 局部命令
 > - 根 `CLAUDE.md`"排查与修复流程" — bug 定位 SOP
 
@@ -33,14 +33,14 @@
 
 | 数据集 | 目录 | 外部依赖 | 在哪跑 | 评分 |
 |---|---|---|---|---|
-| **意图集**（路由 + 意图 + 标的原文提取） | `tests/fixtures/intent/` | 只有 LLM 网关；后端由仓库内 `mock_api/` 顶替，**不碰 Java / GOATS** | 本地手动（原 CI `intent-eval` 已删，见下） | `det_intent_match_pass` / `det_instrument_match_pass` 确定性评估器，由 Langfuse 异步评分 |
-| **业务集**（询价 / 下单 / 平仓卡片与后端联动） | `tests/fixtures/biz/` | Java 后端 + GOATS + 授权测试账号 / 群 / 对手 / 持仓 | **只在开发 / staging 环境**手动跑（`scripts/local_eval.py` / `langfuse_eval.py --dataset biz/option_close`），绝不进 CI | 确定性字段 / 文本断言；迁移期 `--no-judge`，旧评分路径待清理 |
+| **意图集**（路由 + 意图 + 标的原文提取） | `tests/datasets/intent/` | 只有 LLM 网关；后端由仓库内 `mock_api/` 顶替，**不碰 Java / GOATS** | 本地手动（原 CI `intent-eval` 已删，见下） | `det_intent_match_pass` / `det_instrument_match_pass` 确定性评估器，由 Langfuse 异步评分 |
+| **业务集**（询价 / 下单 / 平仓卡片与后端联动） | `tests/datasets/biz/` | Java 后端 + GOATS + 授权测试账号 / 群 / 对手 / 持仓 | **只在开发 / staging 环境**手动跑（`scripts/local_eval.py` / `langfuse_eval.py --dataset biz/option_close`），绝不进 CI | 确定性字段 / 文本断言；迁移期 `--no-judge`，旧评分路径待清理 |
 
 ```bash
 # 意图集本地（终端 1 起 mock_api）
 uvicorn mock_api.server:app --port 8099
 OTC_API_BASE_URL=http://127.0.0.1:8099 GOATS_BASE_URL=http://127.0.0.1:8099 \
-  python scripts/langfuse/langfuse_eval.py --local tests/fixtures/intent --concurrency 3
+  python scripts/langfuse/langfuse_eval.py --local tests/datasets/intent --concurrency 3
 ```
 
 > 本地只推送 Experiment，**不算分**——确定性断言由 Langfuse 的 Evaluation Rule 异步执行。
@@ -82,11 +82,11 @@ curl -X POST http://localhost:8000/v1/workflows/run \
        "response_mode": "blocking", "user": "t-1"}'
 
 # 层 4 · fixture 批量评估（确定性断言，旧 Judge 路径待移除）
-python scripts/langfuse/langfuse_eval.py --local tests/fixtures/biz --limit 20 --concurrency 5 --no-judge
-python scripts/langfuse/langfuse_eval.py --local tests/fixtures/biz --ids case-025 --no-judge  # 单 case 冒烟
+python scripts/langfuse/langfuse_eval.py --local tests/datasets/biz --limit 20 --concurrency 5 --no-judge
+python scripts/langfuse/langfuse_eval.py --local tests/datasets/biz --ids case-025 --no-judge  # 单 case 冒烟
 
 # 层 4a · 意图集（只调 LLM + mock 后端，确定性 product_type/intent 比对，不跑 Judge；见 docs/langfuse/workflow-guide.md §8）
-python scripts/langfuse/langfuse_eval.py --local tests/fixtures/intent --concurrency 3 --no-judge
+python scripts/langfuse/langfuse_eval.py --local tests/datasets/intent --concurrency 3 --no-judge
 
 # 层 5 · 真后端探针（需 VPN）
 python scripts/probe_real_backend_e2e.py     # 写路径探针 runner（--target）
@@ -143,4 +143,4 @@ GOATS_BASE_URL=http://127.0.0.1:8099
 
 本目录只放仍在使用的测试说明（如 `local-backend-seed.md`）。一次性的评估、测试报告按 `YYYY-MM-DD-<topic>.md`
 放 [../reports/](../reports/README.md)，结论吸收后删除；评测运行输出写 `.harness-runs/`，不进 `docs/`；
-golden case 放 `tests/fixtures/`，测试代码放 `tests/`，含真实密钥的配置严禁入库。总规则见 [../README.md](../README.md#存放规则)。
+golden case 放 `tests/datasets/`，测试代码放 `tests/`，含真实密钥的配置严禁入库。总规则见 [../README.md](../README.md#存放规则)。

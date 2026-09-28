@@ -65,7 +65,7 @@
 <pre><code>pytest tests/ -v                        <span class="cm"># 全套测试（约 2 分钟）</span>
 ruff check app/ tests/ && mypy app/     <span class="cm"># lint + 类型</span>
 python -m harness run --backend mock    <span class="cm"># 业务集快速 smoke</span>
-python scripts/langfuse/langfuse_eval.py --local tests/fixtures/categories --ids case-025 --concurrency 1
+python scripts/langfuse/langfuse_eval.py --local tests/datasets/categories --ids case-025 --concurrency 1
                                         <span class="cm"># DeepSeek Judge 正式评估</span>
 uvicorn app.main:app --reload           <span class="cm"># 启动 FastAPI</span></code></pre>
 

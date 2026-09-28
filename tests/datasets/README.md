@@ -48,7 +48,7 @@ python scripts/check_fixture_consistency.py --verbose   # 现役 biz / intent；
 
 与 `biz/` 业务集分离：只评一级路由 `product_type` 与子图 `intent`（标的子集另评标的原文），不依赖 Java / GOATS，
 不写任何 `response_*` 卡片断言。`discover_fixtures()` 默认**不**纳入该目录，需显式
-`langfuse_eval.py --local tests/fixtures/intent`。文件清单、冻结 / 回放两种模式、字段规则与运行方式见
+`langfuse_eval.py --local tests/datasets/intent`。文件清单、冻结 / 回放两种模式、字段规则与运行方式见
 [`docs/langfuse/workflow-guide.md` §8](../../docs/langfuse/workflow-guide.md)。
 
 ## 5. Excel 导出

@@ -311,7 +311,7 @@ mypy app/                             # 类型检查
 
 # 评估
 python -m harness run --backend mock  # biz 业务集快速 smoke
-python scripts/langfuse/langfuse_eval.py --local tests/fixtures/biz --ids case-025 --concurrency 1
+python scripts/langfuse/langfuse_eval.py --local tests/datasets/biz --ids case-025 --concurrency 1
                                       # 带 DeepSeek Judge 的正式评估
 
 # 服务

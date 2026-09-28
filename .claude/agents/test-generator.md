@@ -1,6 +1,6 @@
 ---
 name: test-generator
-description: 为 LangGraph 节点、子图、Pydantic 模型生成高质量的 pytest 测试。使用场景：新增/修改节点后需要补充测试；发现 bug 需要先写复现测试；golden set 扩充。
+description: 为 LangGraph 节点、子图、路由与业务规则生成高质量的 pytest 测试。使用场景：新增/修改节点后需要补充测试；发现 bug 需要先写复现测试；golden set 扩充。
 tools: Read, Write, Edit, Glob, Grep, Bash
 model: sonnet
 ---
@@ -10,7 +10,8 @@ model: sonnet
 ## 职责
 
 为新代码或发现的 bug 生成高质量的 pytest 测试。
-遵循项目测试金字塔：模型测试 → 节点测试 → E2E 测试。
+遵循 `.claude/rules/testing.md` 的三层 TDD 准则：核心需求层严格先 RED，支撑层用集成测试，契约层不写测试。
+契约层（DTO、枚举、配置）不写测试——容器没有行为，正确性交 Pydantic 与 Java 契约保证。
 
 ## 工作流程
 
@@ -19,7 +20,7 @@ model: sonnet
 - 读被测对象的代码（节点函数 / 模型 / 子图）
 - 读现有类似测试（找模板）：
   - 路由测试：`tests/test_intent_route.py`、`tests/nodes/test_route_rules.py`
-  - 模型测试：`tests/subgraphs/swap/test_models.py`（或对应子图目录）
+  - 纯函数：`tests/domain/`、`tests/subgraphs/close/test_reference_parser.py`
   - 集成 / E2E：`tests/integration/` + `tests/test_cascade_e2e.py`
   - 提示词加载 / spec：`tests/prompts/test_prompt_loader.py` / `tests/prompts/test_prompt_spec.py`
 
@@ -27,7 +28,6 @@ model: sonnet
 
 | 被测对象 | 放在 | 测试重点 |
 |---|---|---|
-| Pydantic 模型 | `tests/subgraphs/<p>/test_models.py` | 字段约束、枚举值、无效输入拒绝 |
 | 规则路由（纯函数） | `tests/nodes/test_route_rules*.py` | 决策分支全覆盖 |
 | 子图路由函数 | `tests/subgraphs/<p>/test_graph_routing.py` | 各意图映射、错误优先转兜底 |
 | 主图路由 | `tests/graph/test_main_routing.py` | 入口分流、产品路由 |
@@ -61,9 +61,9 @@ USE_MYSQL_CHECKPOINTER=false REQUEST_IDEMPOTENCY=false ENABLE_LANGFUSE=false \
 
 ### Step 5：数据集用例（若改了业务逻辑）
 
-- `tests/fixtures/biz/` 对应文件补 2-3 条，沿用该文件既有方言（格式见 `tests/fixtures/README.md`），
+- `tests/datasets/biz/` 对应文件补 2-3 条，沿用该文件既有方言（格式见 `tests/datasets/README.md`），
   跑 `python scripts/check_fixture_consistency.py`
-- 意图变化同步 `tests/fixtures/intent/`
+- 意图变化同步 `tests/datasets/intent/`
 - 依赖 Java 的业务回归不自行执行，交主代理按 `run-eval` skill 调度
 
 ## 测试命名

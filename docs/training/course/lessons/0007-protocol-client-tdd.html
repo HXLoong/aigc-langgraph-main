@@ -42,7 +42,7 @@
 <table>
 <tr><th>层</th><th>职责</th><th>测试策略</th></tr>
 <tr><td><code>Protocol</code></td><td>接口契约（Python 结构化鸭子类型，实现类无需显式继承）</td><td>单测塞 FakeClient——一个实现了同名 async 方法的普通类</td></tr>
-<tr><td>Pydantic ReqVO</td><td>与 Java DTO 1:1（如 <code>SwapOrderOpenApiSaveReqVO</code>：type + orderList + 9 个机器人上下文）</td><td>模型校验测试（tests/subgraphs/swap/test_models.py）</td></tr>
+<tr><td>Pydantic ReqVO</td><td>与 Java DTO 1:1（如 <code>SwapOrderOpenApiSaveReqVO</code>：type + orderList + 9 个机器人上下文）</td><td>容器无行为，不写测试——字段名与类型交 Pydantic 与 Java 契约保证</td></tr>
 <tr><td><code>SwapClientHttpx</code></td><td>真 HTTP：认证头、tenacity 重试、dry_run 拦截</td><td>注入 <code>transport</code> mock HTTP 层——<strong>测试慢就 mock 这里，绝不改业务代码路径</strong>（P0 红线）</td></tr>
 </table>
 </div>
@@ -93,7 +93,7 @@ python -m pytest tests/ -q --tb=line 2>&1 | tail -5</code></pre>
 
 <div class="callout warn">
 <span class="callout-title">为什么 RED 这一步不能省</span>
-没见过测试失败，你就不知道它<strong>是否真的在测你以为在测的东西</strong>——一个从写出来就绿的测试，很可能 mock 错了位置（比如 patch 了定义处），改什么都绿。RED 是测试自身的测试。三层金字塔（模型/路由单测 → 子图节点测 → E2E）与更多技巧见 <code>.claude/rules/testing.md</code>。
+没见过测试失败，你就不知道它<strong>是否真的在测你以为在测的东西</strong>——一个从写出来就绿的测试，很可能 mock 错了位置（比如 patch 了定义处），改什么都绿。RED 是测试自身的测试。三层 TDD 准则（核心需求层单测 → 子图节点测 → E2E；契约层不写测试）与更多技巧见 <code>.claude/rules/testing.md</code>。
 </div>
 
 <h2>4. 动手练习：完整走一遍红绿（8 分钟）</h2>
@@ -149,7 +149,7 @@ python -m pytest tests/ -q --tb=line 2>&1 | tail -5</code></pre>
 
 <h2>6. 延伸与下一课</h2>
 <ul>
-<li><strong>本课首选一手资料</strong>：<code>tests/CLAUDE.md</code> + <code>.claude/rules/testing.md</code>（mock 陷阱与测试金字塔的项目权威出处）</li>
+<li><strong>本课首选一手资料</strong>：<code>tests/CLAUDE.md</code> + <code>.claude/rules/testing.md</code>（mock 陷阱与三层 TDD 准则的项目权威出处）</li>
 <li>工具：修 bug 时可用 <code>/test-driven-development</code> skill 走完整 TDD workflow</li>
 <li>下一课：<a href="0008-harness-golden-pr.html">第 08 课 · harness 与 golden case：你的第一个 PR</a>——最后一课，把一切串成上线标准</li>
 </ul>

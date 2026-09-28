@@ -25,7 +25,7 @@ USE_MYSQL_CHECKPOINTER=false REQUEST_IDEMPOTENCY=false ENABLE_LANGFUSE=false pyt
 # 完整 pytest / biz 业务集全量 / 性能测试按用户统一验收安排执行，不逐批重复。
 
 # 本地 HTTP 业务回归（仅在准备好授权测试账号和数据后，由主代理或用户执行）
-python scripts/local_eval.py --base-url http://127.0.0.1:8201 --data tests/fixtures/biz --case case-025 --concurrency 1
+python scripts/local_eval.py --base-url http://127.0.0.1:8201 --data tests/datasets/biz --case case-025 --concurrency 1
 # 全量验收时去掉 --case；只跑显式 biz。
 # 本地真实联调：ENVIRONMENT=staging uvicorn app.main:app --host 127.0.0.1 --port 8201
 
@@ -34,7 +34,7 @@ python scripts/langfuse/langfuse_eval.py --dataset biz/option_inquiry --ids case
 # 意图集（不依赖 Java/GOATS；冻结上下文的用例由 harness/intent_runner.py 只跑意图子链、只调 LLM，
 # 拒绝验收（及引用上一轮回复的回放）用例走主图 + mock_api；本地只推送 Experiment、不算分，
 # 评分由 Langfuse Evaluation Rule 异步完成；不进 CI；业务集 biz/ 依赖 Java 后端只在开发环境跑）
-python scripts/langfuse/langfuse_eval.py --local tests/fixtures/intent --concurrency 3
+python scripts/langfuse/langfuse_eval.py --local tests/datasets/intent --concurrency 3
 
 # Harness CLI（备用 / 本地快速 smoke，无 Judge；run 需授权测试身份，见 harness/README.md）
 python -m harness doctor
@@ -86,7 +86,7 @@ scripts/                     # 评估入口、真后端探针、灰度与运维�
 infra/                       # langfuse/（self-hosted Compose）+ grafana/（面板模板）
 docs/                        # 文档地图与存放规则见 docs/README.md（lint 强制）
 tests/                       # 3500+ 条，布局见 tests/CLAUDE.md
-tests/fixtures/              # intent/（意图集，只调 LLM）+ biz/（业务验收集，6 文件，依赖 Java），见 tests/fixtures/README.md
+tests/datasets/              # intent/（意图集，只调 LLM）+ biz/（业务验收集，6 文件，依赖 Java），见 tests/datasets/README.md
                              # 旧节点 fixture、B 方言历史参考集及派生 CSV / Excel 已退役；节点调试 API 和 node-run 保留
 ```
 
@@ -108,7 +108,7 @@ tests/fixtures/              # intent/（意图集，只调 LLM）+ biz/（业�
 - 每个任务指定文件所有者与验收用例；公共 State、配置、数据库结构及服务生命周期由主代理统一处理。子代理提出公共契约需求，不互相覆盖共享文件。
 - Java 源码不修改；本地 Java 48080 → 48081，LangGraph 使用本地端口，禁止使用 10.49.91.229:8201；应用持久化统一 MYSQL_URI。
 - 当前重构采用轻量验证：业务改动先最小 RED，再 GREEN 与相关关键测试；用户要求最终统一测试时，不逐批跑全套 pytest、biz 全量真实回归或压测。
-- 真实写入测试仅由主代理调度；先确认授权测试账号、群、对手及持仓。业务回归使用 scripts/local_eval.py 和显式 tests/fixtures/biz。
+- 真实写入测试仅由主代理调度；先确认授权测试账号、群、对手及持仓。业务回归使用 scripts/local_eval.py 和显式 tests/datasets/biz。
 - 新建或移动文档先按 `.claude/rules/docs.md` 判定归属目录（一次性报告进 `docs/reports/YYYY-MM-DD-<topic>.md`），跑 `python scripts/check_docs_layout.py`。
 - 任务和证据记录在 tmp；区分实现完成、专项通过、待用户验收、外部阻塞。外部阻塞不可写成已完成；全量结果未经运行不得宣称通过。
 - 不 push、不创建 PR；保留用户原有未提交改动。新 worktree 显式准备依赖与所需本地配置，禁止输出或提交密钥。
@@ -128,7 +128,7 @@ tests/fixtures/              # intent/（意图集，只调 LLM）+ biz/（业�
 2. **LLM 输出用 `with_structured_output(PydanticModel)`** —— 绝不手工解析 JSON；输出模型每个字段写 `Field(description=)`，这是输出语义的唯一真源（经 function calling schema 下发），提示词正文不再维护 JSON 骨架 / 字段表
 3. **节点错误与重试分界** —— 纯计算、LLM 与写类节点用 `@safe_node`，异常落 `state['error']`；独立后端只读查询用 `@io_node` + `add_io_node` 挂 `RetryPolicy`。LLM 与写类节点不自动重试，后端查询重试不得重跑模型（ADR 0031，现有链路待重构）。
 4. **State 字段只通过 TypedDict 约定** —— 新增字段必须先在 `app/graph/state.py` 中声明
-5. **TDD 强制** —— 任何 bug fix / 新功能必须先写失败测试：
+5. **TDD 强制** —— 任何 bug fix / 新功能必须先写失败测试（契约层纯数据容器除外，分层判据见 `.claude/rules/testing.md`「三层 TDD 准则」）：
    - 写测试 → 跑到 RED（测试失败） → 写最小修复代码 → 跑到 GREEN → 受影响测试回归（全量按统一验收，见 testing.md「验证范围」）
    - 禁止先改代码再补测试，也禁止跳过 RED 验证
    - 完整步骤见 `test-driven-development` skill（用户显式调用 `/test-driven-development` 或说"用tdd"时加载）
@@ -221,7 +221,7 @@ USE_MYSQL_CHECKPOINTER=false REQUEST_IDEMPOTENCY=false ENABLE_LANGFUSE=false pyt
 修完跑对应 case 确认：
 
 ```bash
-python scripts/langfuse/langfuse_eval.py --local tests/fixtures/biz --ids case-025,case-026 --concurrency 2 --no-judge   # 依赖 Java，由主代理调度
+python scripts/langfuse/langfuse_eval.py --local tests/datasets/biz --ids case-025,case-026 --concurrency 2 --no-judge   # 依赖 Java，由主代理调度
 ```
 
 ## 绝对禁止

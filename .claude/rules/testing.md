@@ -1,14 +1,22 @@
 # 测试规范
 
-## 三层测试金字塔
+## 三层 TDD 准则
 
-```
-   E2E 集成测试 (tests/integration/ + tests/test_cascade_e2e.py)   ← 慢，少，Mock LLM + Mock 后端
-   ─────────────────────────────
-   子图 / 节点测试 (tests/subgraphs/ · tests/nodes/ · tests/graph/) ← 中等，覆盖关键路径
-   ─────────────────────────────
-   模型与路由测试 (tests/subgraphs/*/test_models.py · tests/test_intent_route.py) ← 快，多，纯函数单测
-```
+判据是**被测代码属于哪一层**，先定层再决定测试写法：
+
+| 层 | 判据 | 测试方式 | TDD |
+|---|---|---|---|
+| **核心需求层** | 业务规则、状态机、路由、cascade 兜底、参数提取、回执契约 | 单元测试 | **严格先 RED** |
+| **支撑层** | DB 访问、外部 API 客户端、文件 IO、评测台 | 集成测试（真 DB / 真 HTTP） | 不强制 |
+| ↳ 纯计算函数 | 正则、中文数字、diff 引擎、AST 分析 | 单元测试 | **严格 TDD** |
+| **契约层** | DTO、枚举、Pydantic 模型、配置常量 | —— | **不写测试** |
+
+- **核心需求层**：删代码必须立刻让测试变红（证明受保护），再补新实现转绿。
+- **契约层**只有状态没有行为，手写 getter/setter 式断言无价值；字段名与类型交 Pydantic 与 Java 契约保证。这里的"不写测试"**仅指纯数据容器**（只有字段声明和框架默认行为）；含自定义 `field_validator` / `field_serializer` / `model_validator` / factory 分支的模型已有行为，属**核心需求层或支撑层**，仍需测试。
+- **支撑层**强行先写测试会陷入 Mock 地狱：Mock 掉 DB 与 HTTP 后无法证明真实环境可跑，且与实现强耦合；改用集成测试（如 `mock_api` ASGITransport、真 MySQL opt-in 用例）。
+- **多层归属**：一段代码同时符合多层判据时，按 **TDD 要求最高**的层归类，优先级 `纯计算函数 > 核心需求层 > 支撑层 > 契约层`。例如 `differ.py` 既像"评测台支撑"又是纯计算，按纯计算处理；`has_error()` 既像工具又是路由兜底判据，按核心需求层处理。
+
+测试放置（参考）：E2E `tests/integration/` + `tests/test_cascade_e2e.py`；子图 / 节点 `tests/subgraphs/` · `tests/nodes/` · `tests/graph/`；纯函数 `tests/domain/` · `tests/nodes/test_route_rules.py`；`/v1/workflows/run` 对 Java 的 wire 契约 `tests/api_wire/`。
 
 ## pytest 约定
 
@@ -50,9 +58,9 @@ for target in (
 
 ## Golden Set
 
-- 所有新增意图必须在 `tests/fixtures/biz/` 加至少 2 条用例，并在 `tests/fixtures/intent/` 补逐轮意图标签（`scripts/check_fixture_consistency.py` 校验一致性）
-- case 格式沿用对应文件既有方言（详见 `tests/fixtures/README.md`）
-- 跑评估：意图集 `python scripts/langfuse/langfuse_eval.py --local tests/fixtures/intent`；依赖 Java 的业务集按 `run-eval` skill 由主代理调度
+- 所有新增意图必须在 `tests/datasets/biz/` 加至少 2 条用例，并在 `tests/datasets/intent/` 补逐轮意图标签（`scripts/check_fixture_consistency.py` 校验一致性）
+- case 格式沿用对应文件既有方言（详见 `tests/datasets/README.md`）
+- 跑评估：意图集 `python scripts/langfuse/langfuse_eval.py --local tests/datasets/intent`；依赖 Java 的业务集按 `run-eval` skill 由主代理调度
 
 ## 验证范围
 
@@ -74,10 +82,13 @@ python scripts/sync_agents_md.py --check
 
 ## 何时写测试
 
-- ✅ 新增节点函数 → 加路由测试
-- ✅ 新增 Pydantic 模型 → 加字段校验测试
-- ✅ 新增业务逻辑分支 → 加 E2E 覆盖
+- ✅ 新增节点函数、路由规则、业务分支 → 单元测试（先 RED）
+- ✅ 新增纯计算工具函数（正则 / 数字解析 / diff / AST 分析） → 单元测试（先 RED）
 - ✅ 修 bug → 先写复现测试，再修
+- ❌ 新增 / 修改 DTO、枚举、Pydantic 模型 → **不写测试**（契约层）
+- ❌ 修改 CI / 配置文件 → 不写测试（由 CI 自身与 lint 保证）
+- ❌ 只断言 CLI `--help` 文案、参数解析退出码或恒真条件 → 不写
+- 🔄 代码从低 TDD 层升到高 TDD 层时（容器加 `field_validator`、支撑模块被核心依赖、纯函数被路由直接调用）→ **补对应层级的测试**，删除的旧断言不豁免新行为
 - ⚠️ 改活跃提示词 → 直接改 `.md` + 普通 PR review，`prompt(<scope>)` commit；需要时自行跑 `scripts/langfuse/langfuse_eval.py` 验证
 
 ## 选择性运行

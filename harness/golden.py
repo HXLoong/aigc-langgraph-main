@@ -1,8 +1,8 @@
 """现役 fixture 加载器：三种方言归一化为 GoldenCase（ADR 0024 D6）。
 
-- A 方言（`tests/fixtures/biz/*.jsonl`）：`name/caseNo + send_text + sub_scenes[]`，
+- A 方言（`tests/datasets/biz/*.jsonl`）：`name/caseNo + send_text + sub_scenes[]`，
   每轮可带独立断言；case 级 `expected` 落到首轮。
-- B 方言（历史 `tests/fixtures/unified_golden.jsonl`）：`id + conversation[{raw_content, quote_desc}]`
+- B 方言（历史 `tests/datasets/unified_golden.jsonl`）：`id + conversation[{raw_content, quote_desc}]`
   + case 级 `expected{product_type, intent, output}`。单轮时 expected 落到首轮；多轮时
   expected 描述的是整段对话中的焦点轮（swap/confirm 是末轮、option/place_from_quote 是中间轮），
   不落到任何一轮，改为 `expected_scope="any_turn"`：任一已执行轮命中即通过。
@@ -246,7 +246,7 @@ UNIFIED_FIXTURE_NAME = "unified_golden.jsonl"
 
 
 def discover_fixtures(
-    root: Path = Path("tests/fixtures"), *, include_unified: bool = False,
+    root: Path = Path("tests/datasets"), *, include_unified: bool = False,
 ) -> list[Path]:
     """默认只读 biz；include_unified 显式纳入同级历史参考集。"""
     if root.name in ("biz", "categories"):
@@ -265,7 +265,7 @@ def discover_fixtures(
 def load_golden(
     paths: Sequence[Path] | Path | None = None,
     *,
-    root: Path = Path("tests/fixtures"),
+    root: Path = Path("tests/datasets"),
     include_unified: bool = False,
 ) -> list[GoldenCase]:
     """加载所选文件；include_unified 追加 root 下的参考集，同一路径只追加一次。"""
