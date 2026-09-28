@@ -68,7 +68,7 @@ Dataset Item 的三个字段全部由 `scripts/langfuse/upload_golden_to_langfus
 | `reference` / `description` | fixture 原文 | 自动同步时保留来源依据和用例说明 |
 | `fixture_path` / `source_line` | 文件相对路径与行号 | 自动同步时定位 Git 中的真源 |
 
-> A 方言现位于 `tests/fixtures/biz/*.jsonl` 和 `tests/fixtures/intent/*.jsonl`；B 方言历史文件原位于 `tests/fixtures/unified_golden.jsonl`，只有 B 方言带 `type` / `source` / `scene`。另外，早期用旧版脚本上传的 Dataset（如 `otc-option-golden`，350 条，2026-05 创建）只有 8 个字段，没有 `name` / `caseNo` / `scene`，需要当前字段集就用当前脚本重新上传。
+> A 方言现位于 `tests/datasets/biz/*.jsonl` 和 `tests/datasets/intent/*.jsonl`；B 方言历史文件原位于 `tests/datasets/unified_golden.jsonl`，只有 B 方言带 `type` / `source` / `scene`。另外，早期用旧版脚本上传的 Dataset（如 `otc-option-golden`，350 条，2026-05 创建）只有 8 个字段，没有 `name` / `caseNo` / `scene`，需要当前字段集就用当前脚本重新上传。
 
 下面是一条旧版手动上传后的 Item（取自 Dataset `golden_option_inquiry_case` 的 `case-024`，`response_contains` 已截断）。自动同步会补入上表的来源字段和 `suite` / `backend`：
 
@@ -102,9 +102,9 @@ Dataset Item 的三个字段全部由 `scripts/langfuse/upload_golden_to_langfus
 
 多轮用例通过 `input.sub_scenes[n]` 与 `expectedOutput.sub_scenes[n]` 按下标对应。上传脚本不转换成另一套 `turns` 或 `expected_scope` 结构。
 
-上传结果的字段值取决于 `--source` 指向的方言：`tests/fixtures/biz/*.jsonl`（A 方言）的 `category` 形如 `option_inquiry_case`；历史 B 方言的 `category` 形如 `option/inquiry`，并会带上 `type` 与 `source`。
+上传结果的字段值取决于 `--source` 指向的方言：`tests/datasets/biz/*.jsonl`（A 方言）的 `category` 形如 `option_inquiry_case`；历史 B 方言的 `category` 形如 `option/inquiry`，并会带上 `type` 与 `source`。
 
-旧节点 fixture 目录已退役。批量同步递归扫描现有 `tests/fixtures/` 下全部 JSONL；新增任何子目录的 JSONL 都会成为独立 Dataset，不能假设节点样本会被自动排除。
+旧节点 fixture 目录已退役。批量同步递归扫描现有 `tests/datasets/` 下全部 JSONL；新增任何子目录的 JSONL 都会成为独立 Dataset，不能假设节点样本会被自动排除。
 
 ## 4. 首次配置
 
@@ -112,7 +112,7 @@ Dataset Item 的三个字段全部由 `scripts/langfuse/upload_golden_to_langfus
 
 ### 4.1 上传 Dataset
 
-`.github/workflows/langfuse-dataset-sync.yml` 在 `main` 收到包含 `tests/fixtures/**/*.jsonl` 的 push 时自动触发；受分支保护时，这对应合并含数据集变更的 PR。Actions 页仍可手动运行重跑。它检出运行时最新 `main`，在 `ubuntu-latest` 上用 Langfuse Python SDK `4.15.0` 串行同步。仓库变量 `LANGFUSE_BASE_URL`（自托管实例地址）和 Secrets `LANGFUSE_PUBLIC_KEY` / `LANGFUSE_SECRET_KEY` 都是必需的；缺失时 workflow 失败。
+`.github/workflows/langfuse-dataset-sync.yml` 在 `main` 收到包含 `tests/datasets/**/*.jsonl` 的 push 时自动触发；受分支保护时，这对应合并含数据集变更的 PR。Actions 页仍可手动运行重跑。它检出运行时最新 `main`，在 `ubuntu-latest` 上用 Langfuse Python SDK `4.15.0` 串行同步。仓库变量 `LANGFUSE_BASE_URL`（自托管实例地址）和 Secrets `LANGFUSE_PUBLIC_KEY` / `LANGFUSE_SECRET_KEY` 都是必需的；缺失时 workflow 失败。
 
 ```bash
 python scripts/langfuse/upload_golden_to_langfuse.py --sync-all --dry-run
@@ -121,16 +121,16 @@ python scripts/langfuse/upload_golden_to_langfuse.py --sync-all
 python scripts/langfuse/upload_golden_to_langfuse.py --sync-all --base-url http://127.0.0.1:3000
 ```
 
-`--sync-all` 递归扫描 `tests/fixtures/` 下全部 `.jsonl`，忽略其他文件。每个文件独立成 Dataset，名称是相对路径去掉扩展名：`intent/option_close.jsonl` → `intent/option_close`，`biz/option_close.jsonl` → `biz/option_close`；`/` 在 Langfuse 中呈现为文件夹。上传前检查 Dataset 名称冲突和全局用例 ID 重复；Item ID 固定为 `<dataset_name>:<case_id>`（Langfuse 要求项目内唯一），原始 ID 保存在 metadata。每次 upsert 设为 `ACTIVE`。所有文件上传成功后，才归档各 Dataset 中已经从对应文件移除的 Item；空文件或上传失败时不归档。改名后的路径作为新 Dataset 同步，远端旧 Dataset 和实验历史保留。
+`--sync-all` 递归扫描 `tests/datasets/` 下全部 `.jsonl`，忽略其他文件。每个文件独立成 Dataset，名称是相对路径去掉扩展名：`intent/option_close.jsonl` → `intent/option_close`，`biz/option_close.jsonl` → `biz/option_close`；`/` 在 Langfuse 中呈现为文件夹。上传前检查 Dataset 名称冲突和全局用例 ID 重复；Item ID 固定为 `<dataset_name>:<case_id>`（Langfuse 要求项目内唯一），原始 ID 保存在 metadata。每次 upsert 设为 `ACTIVE`。所有文件上传成功后，才归档各 Dataset 中已经从对应文件移除的 Item；空文件或上传失败时不归档。改名后的路径作为新 Dataset 同步，远端旧 Dataset 和实验历史保留。
 
 手动指定来源和 Dataset 的旧用法仍可使用：
 
 ```powershell
 # 预览
-python scripts/langfuse/upload_golden_to_langfuse.py --source tests/fixtures/biz/option_inquiry.jsonl --dataset-name biz/option_inquiry --mode overwrite --dry-run
+python scripts/langfuse/upload_golden_to_langfuse.py --source tests/datasets/biz/option_inquiry.jsonl --dataset-name biz/option_inquiry --mode overwrite --dry-run
 
 # 上传
-python scripts/langfuse/upload_golden_to_langfuse.py --source tests/fixtures/biz/option_inquiry.jsonl --dataset-name biz/option_inquiry --mode overwrite
+python scripts/langfuse/upload_golden_to_langfuse.py --source tests/datasets/biz/option_inquiry.jsonl --dataset-name biz/option_inquiry --mode overwrite
 ```
 
 `overwrite` 会先删除该 Dataset 的现有 Items，适合首次替换旧格式；仅新增或更新用例时使用 `--mode append`。
@@ -358,7 +358,7 @@ Online Evaluator 异步执行，Experiment 完成后 Score 可能稍后显示。
 
 | 维度 | 意图集（intent） | 业务集（business） |
 |---|---|---|
-| fixture 目录 | `tests/fixtures/intent/<product>.jsonl` | `tests/fixtures/biz/*.jsonl` |
+| fixture 目录 | `tests/datasets/intent/<product>.jsonl` | `tests/datasets/biz/*.jsonl` |
 | 用例形态 | A 方言子集：逐轮 `expected.{product_type, intent}`，**不写** `response_*` | A 方言：卡片文本断言（`response_contains` 等） |
 | 期望值来源 | 各子图 `models.py` 的意图枚举（lint 校验） | Java 真实回复 |
 | 运行方式 | 冻结用例只跑意图子链（`harness/intent_runner.py`），不调后端；回放用例走主图 + `mock_api`（`metadata.backend=mock`） | 真后端 / staging |
@@ -378,14 +378,14 @@ python scripts/derive_intent_fixtures.py --dry-run
 # 写草稿到 tmp/intent_drafts/<product>.jsonl（未标注轮 intent 为空并带 review.pending）
 python scripts/derive_intent_fixtures.py --out tmp/intent_drafts
 # 业务方 review 补齐 intent 后，只把已完整标注的 case 写进意图集
-python scripts/derive_intent_fixtures.py --source tmp/intent_drafts --only-labeled --out tests/fixtures/intent
+python scripts/derive_intent_fixtures.py --source tmp/intent_drafts --only-labeled --out tests/datasets/intent
 python scripts/check_fixture_consistency.py --verbose
 ```
 
 脚本只做确定性搬运：`product_type` 沿用原标签或按 category 前缀推导，`intent` 只沿用已有标注，
 不用模型猜；lint 会拒绝空 intent、非法枚举、文本断言和非 `intent-` 前缀的 id。
 
-### 8.1a 标的识别子集（`tests/fixtures/intent/swap_instrument.jsonl`）
+### 8.1a 标的识别子集（`tests/datasets/intent/swap_instrument.jsonl`）
 
 标的识别是意图集里的独立数据集：LangGraph 只提取用户原文里的标的表达（`placeOrderWindCode` 逐字保留）
 和市场限定（`placeOrderTransactionType`），权威识别由 Java 完成，所以它同样只调 LLM：单轮用例走意图子链，
@@ -395,7 +395,7 @@ runner 在 swap `place_order_request` 之后追加参数抽取子图（候选抽
 ```bash
 # 从三份 swap 业务集派生（订单数以卡片 标的代码 行为准；--ignore-token 只影响抽取，不改 send_text）
 python scripts/derive_instrument_fixtures.py --dry-run --ignore-token "11125测试短名（张天琪专用）" --ignore-token "聚鸣价值精选" --ignore-token "临沂阿凡提"
-python scripts/derive_instrument_fixtures.py --only-reviewed --ignore-token "…" --out tests/fixtures/intent/swap_instrument.jsonl
+python scripts/derive_instrument_fixtures.py --only-reviewed --ignore-token "…" --out tests/datasets/intent/swap_instrument.jsonl
 python scripts/langfuse/upload_golden_to_langfuse.py --sync-all
 python scripts/langfuse/upload_evaluators.py --dataset-name intent/swap_instrument --apply   # 绑 intent_match + instrument_match
 python scripts/langfuse/langfuse_eval.py --dataset intent/swap_instrument --concurrency 3 --no-judge
@@ -411,7 +411,7 @@ python scripts/langfuse/upload_golden_to_langfuse.py --sync-all
 python scripts/langfuse/upload_evaluators.py --dataset-name intent/option_close --apply
 python scripts/langfuse/langfuse_eval.py --dataset intent/option_close --concurrency 3 --no-judge
 # 本地不上传：路径含 intent/ 自动判定套件
-python scripts/langfuse/langfuse_eval.py --local tests/fixtures/intent --concurrency 3 --no-judge
+python scripts/langfuse/langfuse_eval.py --local tests/datasets/intent --concurrency 3 --no-judge
 
 # 业务集：真后端 / staging，写类流程串行
 python scripts/langfuse/upload_evaluators.py --dataset-name biz/swap_prod --apply

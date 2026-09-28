@@ -11,7 +11,7 @@ import aiomysql
 from pymysql.constants import CLIENT
 
 logger = logging.getLogger(__name__)
-SEED = Path(__file__).resolve().parents[1] / 'tests/fixtures/local_backend/identity_seed.sql'
+SEED = Path(__file__).resolve().parents[1] / 'tests/datasets/local_backend/identity_seed.sql'
 
 
 def validate_seed_target(mysql_uri: str, goats_base_url: str) -> None:

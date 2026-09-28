@@ -2,8 +2,8 @@
 
 用法（默认路径相对于仓库，显式参数相对于当前工作目录）：
     python scripts/convert_jsonl_to_csv.py
-    python scripts/convert_jsonl_to_csv.py --input tests/fixtures/biz/example.jsonl
-    python scripts/convert_jsonl_to_csv.py --input tests/fixtures/biz --output-dir out
+    python scripts/convert_jsonl_to_csv.py --input tests/datasets/biz/example.jsonl
+    python scripts/convert_jsonl_to_csv.py --input tests/datasets/biz --output-dir out
     python scripts/convert_jsonl_to_csv.py --dry-run
 
 每个 JSONL 输出一个同名 CSV，默认放在输入目录的 csv/ 下，重复执行覆盖输出。
@@ -32,7 +32,7 @@ from pathlib import Path
 from typing import Any
 
 logger = logging.getLogger(__name__)
-DEFAULT_INPUT = Path(__file__).resolve().parents[1] / "tests" / "fixtures" / "biz"
+DEFAULT_INPUT = Path(__file__).resolve().parents[1] / "tests" / "datasets" / "biz"
 SOURCE_PREFIX = "json/golden_case_raw/"
 CASE_COLUMNS = {
     "id": "用例ID",

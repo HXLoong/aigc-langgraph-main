@@ -8,7 +8,7 @@
 | 主线 | 已落地（截至 2026-09-24） | 未完成 |
 |---|---|---|
 | **原生 LangGraph 重构** | 子图原生嵌入、单动作多订单、RetryPolicy、State 分层与 output schema（ADR 0024 / 0028）；会话持久化与回执处理；现有字段来源记录（0027 的归一化与数字校验新边界待迁移）；标的识别移交 Java（0025）；Dify 资产冻结（0024 D1） | 单次工具调用一次模型请求重构（ADR 0031，见 §1.1）；取消本地二阶段要求及确认参数收敛（ADR 0021，见 §1.2）；请求幂等、回放、重投静默与对账代码清理（ADR 0026，见 §1.3）；字段归一化与数字校验清理（§1.4）；deepseek-v4-pro 统一配置与输入能力核对（§1.5）；协议原生化暂缓，保留现行 Java wire 契约（#222）；Store（按诉求） |
-| **数据集评测与评估** | 显式业务验收集 `tests/fixtures/biz/` + 意图集 `tests/fixtures/intent/`（A 方言；Excel 导出共用 biz）；REJECTED 单独成桶、早停记失败；既有评测脚本（Judge 路径待移除）；节点调试 API 与 `harness node-run`（0029，旧 git 节点 fixture 已退役） | 统一确定性断言、Langfuse 回归闭环（§1.6）；目标模型生产同拓扑基线与 7 天观察仍待验收，现有默认值只是原有 dry-run 参考；D 桶（客户真实输入）回流与标注运营（#236）；写类 case `expected.place_params` 补齐（#220） |
+| **数据集评测与评估** | 显式业务验收集 `tests/datasets/biz/` + 意图集 `tests/datasets/intent/`（A 方言；Excel 导出共用 biz）；REJECTED 单独成桶、早停记失败；既有评测脚本（Judge 路径待移除）；节点调试 API 与 `harness node-run`（0029，旧 git 节点 fixture 已退役） | 统一确定性断言、Langfuse 回归闭环（§1.6）；目标模型生产同拓扑基线与 7 天观察仍待验收，现有默认值只是原有 dry-run 参考；D 桶（客户真实输入）回流与标注运营（#236）；写类 case `expected.place_params` 补齐（#220） |
 | **Harness 工程** | CI 在 push / PR 上跑 fast + slow 两个 job（ruff、mypy、五项一致性 lint、全量 pytest；真实 MySQL 用例不进 CI）；PromptSpec（0023）；trace_id 贯穿与结构化日志（0004 / 0024 D5） | 真实数据库回归按本地环境 opt-in；节点 fixture 漂移守护；deepseek-v4-pro 零重试基线重测；本阶段不处理独立 VL 接线及拆分阈值 |
 
 评测门只有一套，见 ADR 0030 D3：数据集 PASS 率不低于前值 → 节点 fixture 回归 → CI 全绿 → 上线观察指标。

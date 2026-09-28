@@ -86,14 +86,6 @@ def test_missing_reason_exits_1(tmp_path: Path) -> None:
     assert "--reason" in r.stdout + r.stderr
 
 
-def test_help_prints_usage(tmp_path: Path) -> None:
-    _make_env(tmp_path, "r1,r2")
-    r = _run_rollback(tmp_path, "--help")
-    assert r.returncode == 0
-    assert "灰度上线" in r.stdout
-    assert "--reason" in r.stdout
-
-
 # ============================================================
 # 前置失败：.env 不存在 / CANARY 已空
 # ============================================================

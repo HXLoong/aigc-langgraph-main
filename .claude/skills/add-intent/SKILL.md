@@ -46,8 +46,8 @@ allowed-tools: Read, Write, Edit, Glob, Grep, Bash
 ### Step 6：测试（先 RED 再 GREEN，见 `test-driven-development` skill）
 - `tests/subgraphs/<product>/test_graph_routing.py`：新意图的路由用例
 - 节点单测：放在对应 `tests/subgraphs/<product>/test_<node>.py`；补全链路调用次数断言，模型失败后请求次数仍不超过一次
-- 数据集：`tests/fixtures/biz/` 至少 2 条（`scripts/check_fixture_consistency.py` 守护）；意图集
-  `tests/fixtures/intent/` 补对应逐轮标签
+- 数据集：`tests/datasets/biz/` 至少 2 条（`scripts/check_fixture_consistency.py` 守护）；意图集
+  `tests/datasets/intent/` 补对应逐轮标签
 - 需要批量生成测试且用户已授权子代理时，可派 `test-generator`
 
 ### Step 7：跑验证（轻量）

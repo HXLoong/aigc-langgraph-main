@@ -63,7 +63,7 @@ def test_market_hints_map_to_enum_candidates() -> None:
 
 def test_reviewed_hong_kong_cases_require_direct_hk_market() -> None:
     """用户裁决：只说港股不接受沪港通/深港通作为替代品种。"""
-    fixture = Path(__file__).resolve().parents[1] / "fixtures/intent/swap_instrument.jsonl"
+    fixture = Path(__file__).resolve().parents[1] / "datasets/intent/swap_instrument.jsonl"
     checked = 0
     for line in fixture.read_text().splitlines():
         case = json.loads(line)

@@ -193,7 +193,7 @@ def test_well_formed_place_params_passes_silently(tmp_path: Path) -> None:
     assert not any("swap-w-3" in w for w in _warnings(tmp_path, [good]))
 
 
-# ── 意图集（tests/fixtures/intent/）────────────────────────────────────────
+# ── 意图集（tests/datasets/intent/）────────────────────────────────────────
 
 
 def _intent_case(**overrides: object) -> dict:

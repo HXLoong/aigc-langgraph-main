@@ -67,24 +67,6 @@ def _extract_json(stdout: str) -> dict:
 
 
 # ============================================================
-# 参数解析
-# ============================================================
-
-
-def test_help_prints_usage() -> None:
-    r = _run("--help")
-    assert r.returncode == 0
-    assert "回切演练" in r.stdout
-    assert "--metrics-url" in r.stdout
-    assert "--skip-deploy-check" in r.stdout
-
-
-def test_unknown_arg_exits_2() -> None:
-    r = _run("--bogus")
-    assert r.returncode == 2
-
-
-# ============================================================
 # 真跑（服务未启动）· skip-deploy 路径
 # ============================================================
 

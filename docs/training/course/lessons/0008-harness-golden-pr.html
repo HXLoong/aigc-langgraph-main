@@ -22,7 +22,7 @@
 </div>
 
 <h2>1. golden case：期望行为的数据化（7 分钟）</h2>
-<p><code>tests/fixtures/categories/*.jsonl</code> 每行一条 case，真实样例（case-030 节选）：</p>
+<p><code>tests/datasets/categories/*.jsonl</code> 每行一条 case，真实样例（case-030 节选）：</p>
 
 <pre><code>{
   <span class="st">"caseNo"</span>: <span class="st">"case-030"</span>,
@@ -35,7 +35,7 @@
     {<span class="st">"send_text"</span>: <span class="st">"第一笔，限价10，全平"</span>, <span class="st">"quote_previous"</span>: <span class="st">true</span>, ……}
   ]
 }</code></pre>
-<span class="src">tests/fixtures/categories/golden_option_close_case.jsonl（sub_scenes 即后续轮次）</span>
+<span class="src">tests/datasets/categories/golden_option_close_case.jsonl（sub_scenes 即后续轮次）</span>
 
 <p>case 分三桶维护，退出门不同：</p>
 <div class="table-wrap">
@@ -52,9 +52,9 @@
 
 <h3>入口一：langfuse_eval.py —— 带 DeepSeek Judge</h3>
 <pre><code><span class="cm"># 意图集（只调 LLM + 仓库内 mock 后端，CI 同款）</span>
-python scripts/langfuse/langfuse_eval.py --local tests/fixtures/intent --concurrency 3 --fail-under 0.95
+python scripts/langfuse/langfuse_eval.py --local tests/datasets/intent --concurrency 3 --fail-under 0.95
 <span class="cm"># 只跑受影响的 case（日常迭代）</span>
-python scripts/langfuse/langfuse_eval.py --local tests/fixtures/categories --ids case-025,case-026 --concurrency 2</code></pre>
+python scripts/langfuse/langfuse_eval.py --local tests/datasets/categories --ids case-025,case-026 --concurrency 2</code></pre>
 <p>每条 case 由 DeepSeek Judge 打分（score + judge_comment），并把 <strong>per-turn 富集 JSON</strong> 写入 Langfuse——排查失败的首选数据源（下一节）。</p>
 
 <h3>入口二（本地快速）：harness CLI —— 无 Judge 的 smoke</h3>

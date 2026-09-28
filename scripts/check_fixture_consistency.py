@@ -3,7 +3,7 @@
 + intent/*.jsonl (意图集，A 方言子集).
 
 ADR 0024 D6：现役数据源同受 lint；一个文件只放一种方言，id 跨文件唯一。
-意图集（tests/fixtures/intent/）只评路由与意图：逐轮必须标 expected.product_type / intent
+意图集（tests/datasets/intent/）只评路由与意图：逐轮必须标 expected.product_type / intent
 且取运行时枚举值，禁止出现卡片文本断言（那是 biz/ 业务集的职责）。
 """
 from __future__ import annotations
@@ -429,7 +429,7 @@ def validate(root: Path, verbose: bool = False) -> list[str]:
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--root", type=Path, default=ROOT / "tests" / "fixtures")
+    parser.add_argument("--root", type=Path, default=ROOT / "tests" / "datasets")
     parser.add_argument("--verbose", action="store_true")
     args = parser.parse_args(argv)
     errors = validate(args.root, args.verbose)
