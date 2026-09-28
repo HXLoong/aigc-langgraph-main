@@ -84,6 +84,10 @@ class Settings(BaseSettings):
     langfuse_public_key: str = ""
     langfuse_secret_key: str = ""
     langfuse_base_url: str = "http://127.0.0.1:3000"
+    # Langfuse Remote Experiment webhook：Langfuse UI 点 Run 触发本机数据集实验。
+    # 默认关闭（评测入口不随业务上线）；开启但 secret 为空时端点返回 503
+    enable_langfuse_webhook: bool = False
+    langfuse_webhook_secret: str = ""
     # 是否信任入站 W3C traceparent（把请求挂到调用方父 Trace）。仅可信网络（测试工作台）开启；
     # 与 environment 解耦（ADR 0024 D5）
     trust_inbound_traceparent: bool = False

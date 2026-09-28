@@ -127,6 +127,12 @@ services:
       REDIS_AUTH: ${REDIS_AUTH:-myredissecret}
       TELEMETRY_ENABLED: ${TELEMETRY_ENABLED:-false}
       LANGFUSE_ENABLE_EXPERIMENTAL_FEATURES: ${LANGFUSE_ENABLE_EXPERIMENTAL_FEATURES:-false}
+      # Remote Experiment webhook 的 SSRF 白名单：默认拒绝私网/回环地址，
+      # 容器要回调宿主机的 POST /v1/webhooks/langfuse 就必须放行 host.docker.internal。
+      # 80/443 之外的端口不在此白名单可放宽范围内（见 infra/langfuse/.env.example）
+      LANGFUSE_WEBHOOK_WHITELISTED_HOST: ${LANGFUSE_WEBHOOK_WHITELISTED_HOST:-}
+      LANGFUSE_WEBHOOK_WHITELISTED_IPS: ${LANGFUSE_WEBHOOK_WHITELISTED_IPS:-}
+      LANGFUSE_WEBHOOK_WHITELISTED_IP_SEGMENTS: ${LANGFUSE_WEBHOOK_WHITELISTED_IP_SEGMENTS:-}
       # Code Evaluator 执行器：默认关闭，不影响 Langfuse 启动，只关闭该项功能。
       # 未设 dispatcher 时建 evaluator 返回 412；实际取值放在 .env（见 .env.example）。
       # insecure-local 只支持 JS/TS；Python evaluator 需 aws-lambda dispatcher。

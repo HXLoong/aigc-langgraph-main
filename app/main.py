@@ -18,6 +18,7 @@ from starlette.middleware.base import BaseHTTPMiddleware
 
 from app.api.errors import workflow_http_error, workflow_validation_error
 from app.api.health import router as health_router
+from app.api.langfuse_webhook import router as langfuse_webhook_router
 from app.api.nodes import router as nodes_router
 from app.api.routes import router as api_router
 from app.checkpointer.factory import close_checkpointer, init_checkpointer
@@ -135,6 +136,10 @@ app.add_middleware(HTTPMetricsMiddleware)
 app.include_router(api_router)
 app.include_router(nodes_router)
 app.include_router(health_router)
+# webhook 无条件挂载，由处理函数按 ENABLE_LANGFUSE_WEBHOOK 判定（关闭时 404）：
+# 本模块 import 期不能读 settings —— tests/test_import_without_env.py 要求 app.main
+# 在没有任何环境变量的环境里也能 import
+app.include_router(langfuse_webhook_router)
 
 
 @app.get("/metrics", response_class=PlainTextResponse, include_in_schema=False)
