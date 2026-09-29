@@ -74,7 +74,7 @@
 | `derive_instrument_fixtures.py` | swap 业务集 → 标的识别意图集草稿（订单数以卡片 `标的代码` 行为准，原文表达任一候选 + 市场限定 → `expected.instruments`；`--dry-run` 出复核表，`--only-reviewed` 写入）|
 | `langfuse/upload_golden_to_langfuse.py` | 递归扫描本地 fixtures JSONL → Langfuse Dataset（`--sync-all` 按相对路径命名；`--suite` 默认按路径判定）|
 | `langfuse/upload_prompt_to_langfuse.py` | git 提示词单向推送到 Langfuse 演练区（不拉回，ADR 0014）|
-| `langfuse/upload_evaluators.py` / `langfuse/upload_score_configs.py` | 同步 Langfuse Code Evaluators 与人工标注 Score Configs |
+| `langfuse/upload_evaluators.py` / `langfuse/upload_score_configs.py` | 同步 Langfuse Code Evaluators、人工标注 Score Configs 与 Annotation Queues |
 | `cleanup_checkpoints.py` | checkpoint 三表按线程清理（客户现场运维）|
 | `sync_agents_md.py` | CLAUDE.md + .claude/{rules,skills,agents} → AGENTS.md + .agents/skills/（Codex 读取；`--check` 供提交前自检，产物禁止手改）|
 

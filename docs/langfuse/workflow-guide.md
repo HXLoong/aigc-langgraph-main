@@ -2,7 +2,7 @@
 
 本文说明 `aigc-langgraph` 如何使用 Langfuse 管理黄金数据集、执行评测、自动打分，以及从失败用例追踪到 LangGraph 节点。
 
-> 2026-09-24 决策更新：按 [ADR 0005](../adr/0005-annotation-roles-judge-plus-business-spotcheck.md)，意图 / 业务 / 节点批量评分统一使用确定性断言，不调用 LLM Judge。当前脚本尚有旧默认路径，业务集命令须显式 `--no-judge`；下文旧 Judge 字段仅用于理解现存记录，不能作为新验收依据。节点回归逐步接入 Dataset / Experiment / Score，迁移与评分覆盖见[工作计划](../work-plan.md)。
+> 按 [ADR 0005](../adr/0005-annotation-roles-judge-plus-business-spotcheck.md)，意图 / 业务 / 节点批量评分统一使用确定性断言，不调用 LLM Judge。`--no-judge` 仅保留为旧命令兼容参数。节点回归逐步接入 Dataset / Experiment / Score，迁移与评分覆盖见[工作计划](../work-plan.md)。
 
 ## 1. 功能入口
 
@@ -183,6 +183,33 @@ python scripts/langfuse/upload_prompt_to_langfuse.py option_close.intent --plain
 
 ### 4.2 配置 Online 自动评分
 
+> **前置：自托管实例必须配置 code evaluator dispatcher**，否则 `--apply` 返回
+> `412 Code evaluations are not enabled for this deployment.`，功能整体关闭。在
+> `infra/langfuse/.env` 填两个开关（`docker-compose.yml` 已预留）后重启生效：
+>
+> ```bash
+> LANGFUSE_CODE_EVAL_DISPATCHER=insecure-local
+> QUEUE_CONSUMER_CODE_EVAL_EXECUTION_QUEUE_IS_ENABLED=true
+> ```
+>
+> | Dispatcher | 用途 | 语言支持 |
+> |---|---|---|
+> | `insecure-local` | 本地开发；worker 进程内执行 | **只有 TypeScript/JavaScript** |
+> | `aws-lambda` | 生产自托管；派发到 Lambda 执行器 | Python + TypeScript/JavaScript |
+>
+> worker 镜像只有 Node，Python evaluator 在本地无解（`insecure-local` 返回 `412 ... not supported by
+> the configured dispatcher`），必须部署 `aws-lambda`（本地可用 LocalStack 模拟，需挂 Docker socket）。
+> 参见[自托管 code evaluator 配置](https://langfuse.com/self-hosting/configuration/code-evaluators)。
+>
+> **本仓库**：Langfuse 托管版使用 `harness/evaluators/*.js`，`upload_evaluators.py` 以
+> `SOURCE_LANGUAGE = "TYPESCRIPT"` 上传（Langfuse 只收 `PYTHON` / `TYPESCRIPT`，TS 是 JS 超集），
+> 因此 `insecure-local` 可执行。Python 脚本只执行用例并上传 Experiment 输出，不在本地复制评分逻辑。
+>
+> **坑：源码必须是裸 `function evaluate`，不能带 `export`** —— 带 `export` 的 evaluator 在
+> v4.46.0 + `insecure-local` 下**静默不执行**：不出分、日志无报错、无任何提示，只能靠"分数没出现"
+> 发现（与[官方 Function contract 示例](https://langfuse.com/docs/evaluation/evaluation-methods/code-evaluators)一致）。
+> 本地 `import` 时（如写 TS 测试）读源码后临时补 `export`，不改原文件。
+
 对所有 Dataset 生效：
 
 ```powershell
@@ -219,12 +246,20 @@ python scripts/langfuse/upload_score_configs.py --dry-run
 python scripts/langfuse/upload_score_configs.py --apply
 ```
 
-脚本读取 `scripts/langfuse/definitions/score-configs.json`。当前包含用例级人工指标
-`human_business_verdict`，取值为 `正确`、`错误`、`待确认`。
+脚本读取两份定义：`definitions/score-configs.json` 同步 Score Config，`definitions/annotation-queues.json`
+同步 Annotation Queue。当前包含用例级人工指标 `human_business_verdict`（取值 `正确`、`错误`、`待确认`），
+以及绑定了该指标的队列 `业务人工复核`。
+
+Annotation Queue 的定义里 `score_configs` 写 **Score Config 名称**而不是 id，脚本在同步完 config 后解析成
+远端 id 再绑定，因此换实例（本地 / 云端 / 客户内网）不需要改定义文件。
+
+> **Langfuse 没有 queue 级的 update 或 delete 接口**，只开放 items / assignments 的操作。
+> 绑定不一致时脚本报 `drift` 并提示在 UI 重建该 queue，**不会自动改**。改名会新建 queue，旧队列需手工删。
 
 当前人工标注采用“分类结论 + Score Comment”：分类值用于统计，Comment 用于补充判断依据。Comment 在 Langfuse UI 中是可选字段，Score Config 的描述只能提示、不能强制填写。若需要独立、可查询的文本评分维度，可再增加 `TEXT` Score Config；文本值限制为 1–500 个字符。参见 Langfuse 官方的 [UI 人工评分](https://langfuse.com/docs/evaluation/evaluation-methods/scores-via-ui) 和 [Score 数据模型](https://langfuse.com/docs/evaluation/scores/data-model)。
 
-Score Config 只定义评分口径，不会创建 Annotation Queue、分配人员或把 Experiment 结果入队。
+仍未覆盖：**分配标注人员**、**按 Experiment 的 trace_id 把待复核结果入队**。前者在 UI 的
+`Annotation Queues → Members` 手工分配，后者需要按 Experiment 结果批量调用 `create-item`。
 
 ## 5. 执行 Experiment
 
@@ -236,13 +271,13 @@ ENVIRONMENT=staging TRUST_INBOUND_TRACEPARENT=true LLM_OUTPUT_MAX_TOKENS=8192 \
 # 按当前 git 意图集执行；只经节点 HTTP，不调用 Java 交易接口
 ENVIRONMENT=staging python -m scripts.langfuse.langfuse_eval \
   --local tests/datasets/intent/option.jsonl --base-url http://127.0.0.1:8201 \
-  --concurrency 2 --report /opt/work-file/code-tmp/aigc-langgraph-tmp/intent-report.json
+  --concurrency 2
 # 平台 Dataset 可固定版本；真实写类仍需授权账号和本地依赖
 python -m scripts.langfuse.langfuse_eval --dataset biz/option_inquiry --ids case-022 \
-  --base-url http://127.0.0.1:8201 --concurrency 1 --prepare-java --report /opt/work-file/code-tmp/aigc-langgraph-tmp/dataset-report.json
+  --base-url http://127.0.0.1:8201 --concurrency 1 --prepare-java
 ```
 
-平台读取可用 `--dataset-version <带时区ISO时间>`；本地 fixture 按内容指纹记录版本。`--dry-run` 只预览，`--ids` / `--filter` / `--limit` 控制范围，`--fail-under` 决定退出门。`--no-judge` 仅保留命令兼容，所有套件都不调用 Judge，也没有“只要有回复就通过”的降级评分。
+平台读取可用 `--dataset-version <带时区ISO时间>`。`--dry-run` 只预览，`--ids` / `--filter` / `--limit` 控制范围。`--no-judge` 仅保留命令兼容，所有套件都不调用 Judge；Score 由 Langfuse 的 JS Evaluation Rule 自动生成。
 
 SDK Experiment 直接保存确定性 Scores：业务为 `det_business_pass`，意图及标的使用同源 Code Evaluator。Online Rule 可作补充观察，批次退出码不依赖尚未完成的异步评分。缺少断言、执行结果或轮次必须失败；写类参数标注不完整单列 `parameter_assertion_coverage`，不等同于完整业务验收。
 
@@ -330,7 +365,7 @@ Online Evaluator 异步执行，Experiment 完成后 Score 可能稍后显示。
 |---|---|
 | `upload_golden_to_langfuse.py` | `--sync-all` 按 fixtures 相对路径同步全部 JSONL；也支持手动指定来源和 Dataset |
 | `upload_evaluators.py` | 读取集中定义，按套件（`--suite` 或 dataset 前缀 `intent/` / `intent_` / `intent-`）同步 Code Evaluators 和全局或指定 Dataset 的 Online Rules |
-| `upload_score_configs.py` | 读取集中定义，全量同步人工 Score Configs |
+| `upload_score_configs.py` | 读取集中定义，全量同步人工 Score Configs 与 Annotation Queues（queue 定义里按名称引用 config，脚本解析成 id 后绑定）|
 | `langfuse_eval.py` | 执行 Dataset Experiment 或本地评测（`--suite intent` 不跑 Judge，trace tags 带套件名）|
 | `upload_prompt_to_langfuse.py` | 把 git 的提示词推到 Langfuse（单轮实验用；**不从 Langfuse 拉回**）|
 | `_definitions.py` | 读取并校验本地 JSON 定义，不单独执行 |
@@ -403,22 +438,13 @@ python scripts/langfuse/upload_evaluators.py --dataset-name biz/swap_prod --appl
 python scripts/langfuse/langfuse_eval.py --dataset biz/swap_prod --concurrency 1 --no-judge
 ```
 
-意图集 Experiment 命名为 `intent-eval-YYYYMMDD-HHMMSS`，业务集沿用 `option-eval-YYYYMMDD-HHMMSS`。
-`--local` 模式下 A 方言用例没有 `expected.output`，Judge 期望由逐轮 `expected` + 文本断言拼成
-（`build_expected_text`），不再是空串。
+本地与平台 Dataset 都按结构化 `expected` 和文本断言直接评分；缺失断言、执行结果或轮次都记为失败。
 
-### 8.3 CI 集成：意图集不依赖后端，业务集只在开发环境跑
+### 8.3 运行方式：意图集本地运行，不进 CI
 
-- 意图集的评分逻辑与 Langfuse Online Rule 是同一份源码（`harness/evaluators/`），`langfuse_eval.py --local`
-  对 `suite=intent` 直接在本地执行 `intent_match` / `instrument_match`，不需要 Langfuse、Java、GOATS；
-  `--fail-under 0.95` 低于门槛退出码 1，`--report` 写 JSON 摘要
-- `.github/workflows/intent-eval.yml`：两种模式并存（`harness/intent_context.py`）——冻结用例经已启动的 LangGraph 节点 HTTP 执行，不调 Java 后端；
-  回放用例（`quote_previous` / `{{previous_*}}`）与拒绝验收走主图，runner 上起仓库内 `mock_api` 顶替后端。
-  LLM 网关走 secrets `LLM_API_BASE` / `LLM_API_KEY`。**仅手动触发**（不随 PR 自动跑，全量约 14 分钟并消耗 LLM 额度）：
-  改提示词 / 路由意图节点 / 评估器 / 意图集后，在 Actions 页 Run workflow，可改 `fixture` / `limit` / `fail_under`
-  （首次可用 `fail_under=0` 只出基线报告，再定门槛）
-- 未配置 secrets 时手动触发直接失败，避免误以为跑过
-- 启用 Langfuse 时 `--local` 也创建 SDK Experiment 并保存确定性 Scores；没有 reply-check 或 Judge 兜底。
+- `langfuse_eval.py --local` 经已启动的 LangGraph HTTP 入口执行用例，并创建 SDK Experiment。
+- Python 脚本不计分；Langfuse 根据 Dataset 和 Evaluation Rule 异步运行 `harness/evaluators/*.js`。
+- `.github/workflows/intent-eval.yml` 已删除；该批量评测不进 CI。
 - 业务集（`biz/`）依赖 Java 后端与授权账号，只在开发 / staging 环境用 `--dataset biz/option_close` 或
   `scripts/local_eval.py` 跑，不进 CI；依赖矩阵见 `docs/testing/README.md` §一a
 

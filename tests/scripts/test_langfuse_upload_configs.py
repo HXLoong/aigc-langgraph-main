@@ -60,9 +60,11 @@ class FakeEvaluatorApi:
 class FakeScoreConfigApi:
     def __init__(self, configs: list[dict] | None = None) -> None:
         self.configs = configs or []
+        self.queues: list[dict] = []
         self.created: dict | None = None
         self.updated: tuple[str, dict] | None = None
         self.created_configs: list[dict] = []
+        self.created_queues: list[dict] = []
 
     def list_score_configs(self) -> list[dict]:
         return self.configs
@@ -76,20 +78,27 @@ class FakeScoreConfigApi:
         self.updated = (config_id, payload)
         return {"id": config_id, **payload}
 
+    def list_annotation_queues(self) -> list[dict]:
+        return self.queues
+
+    def create_annotation_queue(self, payload: dict) -> dict:
+        self.created_queues.append(payload)
+        return {"id": f"annotation-queue-{payload['name']}", **payload}
+
 
 def test_load_evaluator_definitions_scans_one_json_per_evaluator(tmp_path) -> None:
     definitions_dir = tmp_path / "definitions"
     source_dir = tmp_path / "harness" / "evaluators"
     definitions_dir.mkdir()
     source_dir.mkdir(parents=True)
-    (source_dir / "first.py").write_text("def evaluate(ctx):\n    return ctx\n")
-    (source_dir / "second.py").write_text("def evaluate(ctx):\n    return ctx\n")
+    (source_dir / "first.js").write_text("function evaluate(ctx) {\n    return ctx;\n}\n")
+    (source_dir / "second.js").write_text("function evaluate(ctx) {\n    return ctx;\n}\n")
     (definitions_dir / "02-second.json").write_text(
         json.dumps(
             {
                 "name": "second-check",
                 "description": "second",
-                "source": "harness/evaluators/second.py",
+                "source": "harness/evaluators/second.js",
                 "score_name": "second_score",
                 "rule": {"target": "experiment_item_root"},
             }
@@ -101,7 +110,7 @@ def test_load_evaluator_definitions_scans_one_json_per_evaluator(tmp_path) -> No
             {
                 "name": "first-check",
                 "description": "first",
-                "source": "harness/evaluators/first.py",
+                "source": "harness/evaluators/first.js",
                 "score_name": "first_score",
                 "rule": {"target": "experiment_item_root"},
             }
@@ -118,7 +127,7 @@ def test_load_evaluator_definitions_scans_one_json_per_evaluator(tmp_path) -> No
         "first-check",
         "second-check",
     ]
-    assert definitions[0].source_path == source_dir / "first.py"
+    assert definitions[0].source_path == source_dir / "first.js"
 
 
 def test_load_score_config_definitions_scans_one_json_per_config(tmp_path) -> None:
@@ -153,8 +162,8 @@ def test_load_score_config_definitions_scans_one_json_per_config(tmp_path) -> No
 
 
 def test_upload_evaluator_creates_dataset_scoped_rule(tmp_path) -> None:
-    source = tmp_path / "response_not_contains.py"
-    source.write_text("def evaluate(ctx):\n    return ctx\n", encoding="utf-8")
+    source = tmp_path / "response_not_contains.js"
+    source.write_text("function evaluate(ctx) {\n    return ctx;\n}\n", encoding="utf-8")
     api = FakeEvaluatorApi()
 
     result = sync_evaluator(
@@ -169,8 +178,8 @@ def test_upload_evaluator_creates_dataset_scoped_rule(tmp_path) -> None:
         "name": "response-not-contains",
         "description": "检查 Dataset 用例回复是否包含 response_not_contains 禁止文本。",
         "type": "code",
-        "sourceCode": "def evaluate(ctx):\n    return ctx\n",
-        "sourceCodeLanguage": "PYTHON",
+        "sourceCode": "function evaluate(ctx) {\n    return ctx;\n}\n",
+        "sourceCodeLanguage": "TYPESCRIPT",
     }
     assert api.created_rule is not None
     assert api.created_rule["evaluatorAssignments"] == [
@@ -221,8 +230,8 @@ def test_score_config_remote_difference_is_overwritten() -> None:
 
 
 def test_upload_evaluator_repeated_run_skips_unchanged_remote(tmp_path) -> None:
-    source = tmp_path / "response_not_contains.py"
-    source_code = "def evaluate(ctx):\n    return ctx\n"
+    source = tmp_path / "response_not_contains.js"
+    source_code = "function evaluate(ctx) {\n    return ctx;\n}\n"
     source.write_text(source_code, encoding="utf-8")
     api = FakeEvaluatorApi()
     api.evaluators = [
@@ -232,7 +241,7 @@ def test_upload_evaluator_repeated_run_skips_unchanged_remote(tmp_path) -> None:
             "description": "检查 Dataset 用例回复是否包含 response_not_contains 禁止文本。",
             "type": "code",
             "sourceCode": source_code,
-            "sourceCodeLanguage": "PYTHON",
+            "sourceCodeLanguage": "TYPESCRIPT",
         }
     ]
     api.rules = [
@@ -276,10 +285,10 @@ def test_upload_evaluator_repeated_run_skips_unchanged_remote(tmp_path) -> None:
 
 
 def test_upload_evaluators_syncs_every_explicit_definition(tmp_path) -> None:
-    first_source = tmp_path / "first.py"
-    second_source = tmp_path / "second.py"
-    first_source.write_text("def evaluate(ctx):\n    return ctx\n", encoding="utf-8")
-    second_source.write_text("def evaluate(ctx):\n    return ctx\n", encoding="utf-8")
+    first_source = tmp_path / "first.js"
+    second_source = tmp_path / "second.js"
+    first_source.write_text("function evaluate(ctx) {\n    return ctx;\n}\n", encoding="utf-8")
+    second_source.write_text("function evaluate(ctx) {\n    return ctx;\n}\n", encoding="utf-8")
     definitions = (
         EvaluatorDefinition(
             name="first-check",
@@ -320,8 +329,8 @@ def test_upload_evaluators_syncs_every_explicit_definition(tmp_path) -> None:
 
 
 def test_upload_evaluator_without_dataset_creates_global_rule(tmp_path) -> None:
-    source = tmp_path / "response_contains.py"
-    source.write_text("def evaluate(ctx):\n    return ctx\n", encoding="utf-8")
+    source = tmp_path / "response_contains.ts"
+    source.write_text("function evaluate(ctx) {\n    return ctx;\n}\n", encoding="utf-8")
     definition = EvaluatorDefinition(
         name="response-contains",
         description="required text",
@@ -409,6 +418,13 @@ def test_upload_score_config_cli_prints_readable_summary(monkeypatch, capsys) ->
         "  Type: CATEGORICAL",
         "  Categories: 3",
         "  Action: would_create",
+        "",
+        "Configured Annotation Queues: 1",
+        "",
+        "[1/1] Annotation Queue:",
+        "  Name: 业务人工复核",
+        "  Score Configs: human_business_verdict",
+        "  Action: would_create",
     ]
 
 
@@ -455,10 +471,10 @@ def test_real_definitions_declare_suites() -> None:
 
 
 def test_sync_evaluators_filters_by_suite(tmp_path) -> None:
-    business_source = tmp_path / "business.py"
-    intent_source = tmp_path / "intent.py"
-    business_source.write_text("def evaluate(ctx):\n    return ctx\n", encoding="utf-8")
-    intent_source.write_text("def evaluate(ctx):\n    return ctx\n", encoding="utf-8")
+    business_source = tmp_path / "business.ts"
+    intent_source = tmp_path / "intent.ts"
+    business_source.write_text("function evaluate(ctx) {\n    return ctx;\n}\n", encoding="utf-8")
+    intent_source.write_text("function evaluate(ctx) {\n    return ctx;\n}\n", encoding="utf-8")
     definitions = (
         EvaluatorDefinition(
             name="business-check",

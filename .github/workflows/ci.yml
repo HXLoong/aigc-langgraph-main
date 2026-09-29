@@ -49,6 +49,9 @@ jobs:
       - name: Lint (ruff)
         run: ruff check app/ tests/ harness/ scripts/probe_goats/ scripts/langfuse/ scripts/goats_api_mock/
 
+      - name: 评测器测试（Langfuse code evaluators，纯 JS）
+        run: node --test harness/evaluators/evaluators.test.js
+
       - name: Type check (mypy)
         run: python -m mypy app/ harness/
 

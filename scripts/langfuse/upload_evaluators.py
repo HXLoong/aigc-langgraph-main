@@ -12,6 +12,10 @@ from typing import Any, Protocol
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 DEFINITIONS_FILE = Path(__file__).with_name("definitions") / "evaluators.json"
+# Langfuse 只接受 PYTHON / TYPESCRIPT 两种；自托管只有 insecure-local dispatcher（仅支持 JS/TS），
+# Python 需要 aws-lambda 执行器。源码是纯 JS（`harness/evaluators/*.js`），TS 是 JS 的超集，
+# 按 TYPESCRIPT 提交即可执行。
+SOURCE_LANGUAGE = "TYPESCRIPT"
 
 sys.path.insert(0, str(PROJECT_ROOT))
 
@@ -142,7 +146,8 @@ def _evaluator_payload(
         "description": definition.description,
         "type": "code",
         "sourceCode": source,
-        "sourceCodeLanguage": "PYTHON",
+        # 必须与 harness/evaluators/*.js 一致：insecure-local dispatcher 只支持 JS/TS
+        "sourceCodeLanguage": SOURCE_LANGUAGE,
     }
 
 

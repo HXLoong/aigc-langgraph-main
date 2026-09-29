@@ -88,6 +88,10 @@ class Settings(BaseSettings):
     langfuse_public_key: str = ""
     langfuse_secret_key: str = ""
     langfuse_base_url: str = "http://127.0.0.1:3000"
+    # Langfuse Remote Experiment webhook：Langfuse UI 点 Run 触发本机数据集实验。
+    # 默认关闭（评测入口不随业务上线）；开启但 secret 为空时端点返回 503
+    enable_langfuse_webhook: bool = False
+    langfuse_webhook_secret: str = ""
     # 联合解析输入较大，导出采用小批次和独立超时；不增加业务模型重试。
     langfuse_timeout_seconds: int = Field(default=15, ge=1)
     langfuse_flush_at: int = Field(default=32, ge=1)

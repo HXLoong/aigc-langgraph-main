@@ -1,4 +1,4 @@
-"""业务与意图评测必须执行服务端入口，并使用真实返回值评分。"""
+"""Experiment 执行必须走服务端入口，并输出完整评分素材。"""
 from __future__ import annotations
 
 import importlib
@@ -34,8 +34,9 @@ async def test_business_evaluation_uses_http_and_all_field_assertions() -> None:
     async with httpx.AsyncClient(transport=httpx.MockTransport(response)) as client:
         result = await module.run_case(case, suite="business", base_url="http://test", user_id="u", room_id="r", client=client)
     assert paths == ["/v1/workflows/run"]
-    assert not result["passed"] and result["evaluations"][0]["value"] == 0
+    assert not result["passed"]
     assert "notionalAmount" in str(result["turns"][0]["diff"])
+    assert "evaluations" not in result, "Python 执行器不应生成 Langfuse Score"
 
 
 async def test_frozen_intent_uses_node_http_without_business_submission() -> None:
@@ -61,4 +62,6 @@ async def test_frozen_intent_uses_node_http_without_business_submission() -> Non
     assert len(requests) == 1 and requests[0][0] == "/v1/nodes/run"
     assert requests[0][1]["node"] == "parse_instruction"
     assert "expected" not in requests[0][1]["state"]
-    assert result["passed"] and result["evaluations"][0]["name"] == "det_intent_match_pass"
+    assert result["turns"][0]["product_type"] == "option"
+    assert result["turns"][0]["intent"] == "new_inquiry"
+    assert "evaluations" not in result, "意图 Score 由 Langfuse JS Evaluation Rule 生成"
