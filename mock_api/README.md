@@ -168,7 +168,7 @@ mock_api/
 ```bash
 uvicorn mock_api.server:app --port 8099 &
 OTC_API_BASE_URL=http://127.0.0.1:8099 GOATS_BASE_URL=http://127.0.0.1:8099 \
-  python scripts/langfuse/langfuse_eval.py --local tests/datasets/intent --fail-under 0.95
+  python scripts/langfuse/langfuse_eval.py --local tests/datasets/intent
 ```
 
 业务验收集 `tests/datasets/biz/` 依赖真 Java 后端，不用 mock 跑。接口 OpenAPI 可用 `app.openapi()` 现场生成。

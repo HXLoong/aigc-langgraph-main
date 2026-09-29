@@ -58,6 +58,30 @@ langfuse-minio (9090)      ← S3 兼容存储（trace 大块归档）
 
 LangFuse v3 起强制要求 ClickHouse + Redis + S3 存储，参考 [LangFuse 自托管文档](https://langfuse.com/self-hosting)。
 
+## Code Evaluator dispatcher
+
+v4 的 Code Evaluators 需要一个执行器，**不配置则功能整体关闭**（建 evaluator 返回
+`412 Code evaluations are not enabled for this deployment.`）。在 `infra/langfuse/.env` 填写后重启：
+
+```bash
+LANGFUSE_CODE_EVAL_DISPATCHER=insecure-local
+QUEUE_CONSUMER_CODE_EVAL_EXECUTION_QUEUE_IS_ENABLED=true
+```
+
+| Dispatcher | 用途 | 运行时支持 |
+|---|---|---|
+| `insecure-local` | 本地开发；在 worker 进程内用 Node 执行 | **只有 TypeScript/JavaScript** |
+| `aws-lambda` | 生产自托管；派发到 Lambda 执行器 | Python + TypeScript/JavaScript |
+
+**worker 镜像只有 Node，没有 Python 解释器**，所以 Python evaluator 在本地跑不了 —— 会返回
+`412 This code evaluator language is not supported by the configured dispatcher.`。
+
+`insecure-local` 不是安全边界（evaluator 代码能碰到 worker 的数据库、队列与凭证），只在
+"所有能建 evaluator 的人都被信任"时使用；生产自托管应部署 `aws-lambda` 执行器。
+
+云端能跑 Python 是因为云端用官方部署的 Lambda 执行器，私有化部署拿不到。
+仓库的 evaluator 是纯 JS（`harness/evaluators/*.js`），在 `insecure-local` 下可执行。
+
 ## 数据保留与客户内网部署
 
 保留策略见 [ADR 0014](../../docs/adr/0014-langfuse-as-harness-backend.md) D5；客户内网部署、备份、升级见

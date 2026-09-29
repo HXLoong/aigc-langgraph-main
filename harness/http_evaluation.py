@@ -1,32 +1,16 @@
-"""统一 HTTP 执行及确定性评分，CLI 和 Langfuse Experiment 共用。"""
+"""统一 HTTP 执行及业务差异诊断，平台 JS Rule 使用同一份完整输出。"""
 from __future__ import annotations
 
 from collections.abc import Awaitable, Callable
-from types import SimpleNamespace
 from typing import Any
 
 import httpx
 
 from harness.evaluation import report_case, turn_diffs
-from harness.evaluators import instrument_match, intent_match, rejection_match
-from harness.golden import GoldenCase, dataset_expected
+from harness.golden import GoldenCase
 from harness.intent_context import requires_replay
 from harness.intent_runner import run_frozen_case
 from harness.multi_turn import run_case_multi
-
-
-def intent_evaluations(case: GoldenCase, output: dict[str, Any]) -> list[dict[str, Any]]:
-    """复用平台同源代码评分；没有标签时不能产生默认通过分数。"""
-    context = SimpleNamespace(experiment=SimpleNamespace(item_expected_output=dataset_expected(case)),
-                              observation=SimpleNamespace(output=output))
-    evaluators: list[Callable[[Any], Any]] = [intent_match.evaluate]
-    if any(turn.expected.get("instruments") for turn in case.turns):
-        evaluators.append(instrument_match.evaluate)
-    if any(turn.expected.get("rejection") for turn in case.turns):
-        evaluators.append(rejection_match.evaluate)
-    return [{"name": score.name, "value": float(bool(score.value)), "comment": score.comment,
-             "metadata": score.metadata}
-            for evaluator in evaluators for score in evaluator(context).scores]
 
 
 async def run_case(
@@ -36,7 +20,7 @@ async def run_case(
     timeout: float = 90, turn_interval: float = 1,
     trace_metadata: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    """执行入口与评分入口只各有一份，结果包含字段差异和关联 ID。"""
+    """统一 HTTP 执行入口，输出供 Langfuse JS Evaluation Rule 评分。"""
     # 1. 冻结意图只执行解析节点；业务、多轮回放和可见拒绝走主图 HTTP。
     frozen = suite == "intent" and not requires_replay([turn.model_dump() for turn in case.turns])
     frozen = frozen and not any(turn.expected.get("rejection") for turn in case.turns)
@@ -48,21 +32,12 @@ async def run_case(
             client=client, before_turn=before_turn, timeout=timeout, turn_interval=turn_interval,
             trace_metadata=trace_metadata)
 
-    # 2. 业务比较所有明确字段；意图集按各自的稳定语义投影比较。
+    # 保留完整轮次与诊断字段；正式 Score 由 Langfuse 中的 JS Rule 生成。
     report = report_case(case, result, turn_diffs(case, result) if suite == "business" else {})
     report["mode"] = "intent_node" if frozen else "main_graph_http"
+    # 快速样例只执行入口规则，报告不能把它标成普通模型解析。
     if frozen and all(turn.fast_query == "1" for turn in case.turns):
         report["mode"] = "entry_node"
-    if suite == "intent":
-        evaluations = intent_evaluations(case, report)
-        if result.failure and not any(turn.expected.get("rejection") for turn in case.turns):
-            evaluations.append({"name": "det_execution_pass", "value": 0.0, "comment": "解析执行失败"})
-        report["passed"] = bool(evaluations) and all(item["value"] == 1 for item in evaluations)
-        report["status"] = "PASS" if report["passed"] else "FAIL"
-    else:
-        evaluations = [{"name": "det_business_pass", "value": float(report["passed"]),
-                        "comment": "全部明确断言通过" if report["passed"] else str(report["failure"] or "存在字段或文本差异")}]
-    report["evaluations"] = evaluations
     report["expected_rejection"] = any(turn.expected.get("rejection") for turn in case.turns)
     report["reply_text"] = "\n".join(turn.reply_text for turn in result.turns)
     return report

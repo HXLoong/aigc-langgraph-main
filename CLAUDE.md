@@ -32,9 +32,9 @@ python scripts/local_eval.py --base-url http://127.0.0.1:8201 --data tests/datas
 # Langfuse Dataset Experiment（确定性断言；HTTP 执行，SDK Experiment / Score）
 python scripts/langfuse/langfuse_eval.py --dataset biz/option_inquiry --ids case-022 --concurrency 1
 # 意图集（不依赖 Java/GOATS；冻结上下文的用例由 harness/intent_runner.py 经节点 HTTP 调唯一解析器，
-# 拒绝验收（及引用上一轮回复的回放）用例走主图 + mock_api；确定性评分本地算，--fail-under 给退出码；
-# CI：.github/workflows/intent-eval.yml 仅手动触发；业务集 biz/ 依赖 Java 后端只在开发环境跑；docs/langfuse/workflow-guide.md §8）
-python scripts/langfuse/langfuse_eval.py --local tests/datasets/intent --concurrency 3 --fail-under 0.95 --report .harness-runs/intent-eval.json
+# 拒绝验收（及引用上一轮回复的回放）用例走主图 + mock_api；执行结果上传 Langfuse，
+# 评分由 JS Evaluation Rule 异步完成；不进 CI；业务集 biz/ 依赖 Java 后端只在开发环境跑）
+python scripts/langfuse/langfuse_eval.py --local tests/datasets/intent --concurrency 3
 
 # Harness CLI（备用 / 本地快速 smoke，无 Judge；run 需授权测试身份，见 harness/README.md）
 python -m harness doctor

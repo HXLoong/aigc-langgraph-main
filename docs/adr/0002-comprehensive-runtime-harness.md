@@ -15,7 +15,7 @@
 |---|---|---|
 | 开发期 | 节点 / 子图 / 模型单元测试；节点级回归工作台 | `tests/`；`python -m harness node-run`（ADR 0029） |
 | 运行期 | 每节点结构化 trace；延迟与错误率告警 | `langgraph_node_trace` 表 + LangFuse（[ADR 0004](./0004-trace-granularity-node-level.md) / [0014](./0014-langfuse-as-harness-backend.md)）；`/metrics` + `app/observability/alerts.py` |
-| 调优期 | 提示词版本化与灰度；数据集自动评分 | `_versions.yaml`（[ADR 0003](./0003-prompt-versioning-by-file-coexistence.md)）；`scripts/langfuse/langfuse_eval.py`（确定性断言目标，[ADR 0005](./0005-annotation-roles-judge-plus-business-spotcheck.md)） |
+| 调优期 | 提示词版本化与灰度；数据集自动评分 | git 分支 + 单文件 + 按群 `agentUrl` 双部署灰度（[ADR 0003](./0003-prompt-versioning-by-git-branch.md)）；`scripts/langfuse/langfuse_eval.py`（确定性断言目标，[ADR 0005](./0005-annotation-roles-judge-plus-business-spotcheck.md)） |
 
 ## 现状
 
@@ -23,7 +23,7 @@
 |---|---|
 | 数据集（`tests/datasets/`，B / C / D 三桶）+ 全链路回归 | 已建成 |
 | 节点级 trace 落库 + LangFuse 后台 | 已建成 |
-| 提示词版本化 + 自动评分 + 按会话稳定分流 | 已建成（当前无在跑灰度） |
+| 提示词版本化 + 自动评分 | 已建成（git 分支 + 单文件；当前无在跑灰度） |
 | 节点级回归 + HTTP 录放 | 已建成 |
 | 线上 trace → 人工标注 → 数据集反哺 | 平台已定为 LangFuse，标注运营待启动 |
 

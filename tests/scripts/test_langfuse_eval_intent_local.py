@@ -1,17 +1,12 @@
-"""意图集本地确定性评分：不依赖 Langfuse / Java / GOATS，可在 CI 里给出退出码。"""
+"""意图 fixture 与 Langfuse Dataset 投影保持一致。"""
 
 from __future__ import annotations
 
 import json
-import sys
 from pathlib import Path
-from types import SimpleNamespace
-
-import pytest
 
 from harness.golden import GoldenCase, TurnSpec, dataset_expected, dataset_input, load_golden
-from scripts.langfuse import langfuse_eval
-from scripts.langfuse.langfuse_eval import _LocalItem, case_passed, code_evaluations
+from scripts.langfuse.langfuse_eval import _LocalItem
 
 
 def _instrument_case() -> GoldenCase:
@@ -61,139 +56,6 @@ def test_local_item_carries_structured_expected_for_code_evaluators() -> None:
     assert _LocalItem(GoldenCase(id="x", category="intent/swap", turns=[TurnSpec(send_text="x")])).has_instruments is False
 
 
-def test_code_evaluations_run_intent_and_instrument_match_locally() -> None:
-    item = _LocalItem(_instrument_case(), suite="intent")
-    output = {
-        "turns": [
-            {
-                "product_type": "swap",
-                "intent": "place_order_request",
-                "place_params": {
-                    "orderList": [{"placeOrderWindCode": "京东", "placeOrderTransactionType": "HK_STOCK"}]
-                },
-            }
-        ]
-    }
-    evaluations = code_evaluations(item, output)
-    assert [ev.name for ev in evaluations] == ["det_intent_match_pass", "det_instrument_match_pass"]
-    assert [ev.value for ev in evaluations] == [1.0, 1.0]
-
-    wrong = {"turns": [{"product_type": "swap", "intent": "confirm_order", "place_params": {"orderList": []}}]}
-    evaluations = code_evaluations(item, wrong)
-    assert [ev.value for ev in evaluations] == [0.0, 0.0]
-    assert "intent 不符" in (evaluations[0].comment or "")
-
-    plain = _LocalItem(
-        GoldenCase(id="p", category="intent/swap", turns=[TurnSpec(send_text="x", expected={"product_type": "swap", "intent": "confirm_order"})]),
-        suite="intent",
-    )
-    assert [ev.name for ev in code_evaluations(plain, wrong)] == ["det_intent_match_pass"]
-
-
-def test_case_passed_semantics_per_suite() -> None:
-    ok = SimpleNamespace(name="det_intent_match_pass", value=1.0)
-    bad = SimpleNamespace(name="det_instrument_match_pass", value=0.0)
-    assert case_passed("intent", [ok, ok]) is True
-    assert case_passed("intent", [ok, bad]) is False
-    assert case_passed("business", [SimpleNamespace(name="det_business_pass", value=0.7)]) is False
-    assert case_passed("business", [SimpleNamespace(name="det_business_pass", value=0.5)]) is False
-
-
-
-
-
-
-
-
-def _write_intent_fixture(path: Path) -> None:
-    rows = [
-        {
-            "caseNo": "intent-swap-1",
-            "name": "京东",
-            "category": "intent/swap",
-            "type": "positive",
-            "send_text": "港股市价买一百万京东",
-            "at_bot": True,
-            "expected": {
-                "product_type": "swap",
-                "intent": "place_order_request",
-                "instruments": [{"expression": ["京东"], "transaction_type": ["HK_STOCK"]}],
-            },
-            "sub_scenes": [],
-        },
-        {
-            "caseNo": "intent-swap-2",
-            "name": "确认",
-            "category": "intent/swap",
-            "type": "positive",
-            "send_text": "确认下单",
-            "at_bot": True,
-            "expected": {"product_type": "swap", "intent": "confirm_order"},
-            "sub_scenes": [],
-        },
-    ]
-    path.write_text("".join(json.dumps(r, ensure_ascii=False) + "\n" for r in rows), encoding="utf-8")
-
-
-@pytest.mark.asyncio
-async def test_run_local_intent_suite_scores_without_langfuse_and_writes_report(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: pytest.CaptureFixture[str]
-) -> None:
-    fixture = tmp_path / "swap.jsonl"
-    _write_intent_fixture(fixture)
-    import httpx
-    real_client = httpx.AsyncClient
-    def response(request):
-        """服务端第一条正确、第二条错误，评分器不能忽略失败项。"""
-        text = json.loads(request.content)["state"]["raw_text"]
-        output = {"product_type": "swap", "intent": "place_order_request" if "京东" in text else "query_order_status",
-            "parsed_instruction": {"product_type": "swap", "orders": [
-                {"placeOrderWindCode": "京东", "placeOrderTransactionType": "HK_STOCK"}]}}
-        return httpx.Response(200, json={"output": output})
-    monkeypatch.setattr(langfuse_eval, "get_client", lambda: None)
-    monkeypatch.setattr(httpx, "AsyncClient", lambda **kw: real_client(transport=httpx.MockTransport(response), **kw))
-    report = tmp_path / "intent-eval.json"
-
-    summary = await langfuse_eval.run_local(
-        [fixture], None, None, 1, None, False, False, suite="intent", report=report
-    )
-
-    assert summary["suite"] == "intent"
-    assert (summary["total"], summary["passed"]) == (2, 1)
-    assert summary["pass_rate"] == 0.5
-    failed = [case for case in summary["cases"] if not case["passed"]]
-    assert [case["case_id"] for case in failed] == ["intent-swap-2"]
-    assert failed[0]["evaluations"][0]["name"] == "det_intent_match_pass"
-    assert "期望 confirm_order，实际 query_order_status" in failed[0]["evaluations"][0]["comment"]
-
-    written = json.loads(report.read_text(encoding="utf-8"))
-    assert written["pass_rate"] == 0.5
-    assert [case["case_id"] for case in written["cases"]] == ["intent-swap-1", "intent-swap-2"]
-
-    out = capsys.readouterr().out
-    assert "PASS 1/2" in out
-
-
-def test_main_fail_under_turns_pass_rate_into_exit_code(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
-    async def fake_run_local(*args, **kwargs):  # type: ignore[no-untyped-def]
-        return {"suite": kwargs.get("suite"), "total": 2, "passed": 1, "pass_rate": 0.5, "cases": []}
-
-    monkeypatch.setattr(langfuse_eval, "run_local", fake_run_local)
-    fixture = tmp_path / "intent"
-    fixture.mkdir()
-
-    monkeypatch.setattr(sys, "argv", ["langfuse_eval.py", "--local", str(fixture), "--fail-under", "0.9"])
-    assert langfuse_eval.main() == 1
-    monkeypatch.setattr(sys, "argv", ["langfuse_eval.py", "--local", str(fixture), "--fail-under", "0.5"])
-    assert langfuse_eval.main() == 0
-    monkeypatch.setattr(sys, "argv", ["langfuse_eval.py", "--local", str(fixture)])
-    assert langfuse_eval.main() == 1
-
-
-
-
-
-
 def test_frozen_context_round_trips_through_loader_and_dataset_projection(tmp_path: Path) -> None:
     fixture = tmp_path / "option_close.jsonl"
     row = {
@@ -231,29 +93,3 @@ def test_frozen_context_round_trips_through_loader_and_dataset_projection(tmp_pa
     assert (local["quote_content"], local["history"], local["prev_product_type"]) == (
         turn.quote_content, turn.history, "option_close"
     )
-
-
-def test_labeled_rejection_requires_rejection_score_in_addition_to_intent():
-    case = GoldenCase(id='reject', category='intent/swap', type='negative', turns=[
-        TurnSpec(send_text='甲证券已买100股', expected={
-            'product_type': 'swap', 'intent': 'place_order_request', 'rejection': 'ambiguous_action',
-        }),
-    ])
-    item = _LocalItem(case, suite='intent')
-    output = {'turns': [{'product_type': 'swap', 'intent': 'place_order_request',
-                        'error': None, 'reply_text': '错误地接受委托'}]}
-    evaluations = code_evaluations(item, output)
-    assert [e.name for e in evaluations] == ['det_intent_match_pass', 'det_rejection_match_pass']
-    assert not case_passed('intent', evaluations)
-
-
-def test_quality_gate_does_not_hide_unsafe_rejection_failure_in_high_total():
-    summary = {'total': 127, 'suite': 'intent', 'pass_rate': .99, 'acceptance_buckets': {
-        'executable': {'total': 100, 'passed': 99, 'pass_rate': .99},
-        'expected_rejection': {'total': 27, 'passed': 26, 'pass_rate': 26/27},
-    }}
-    assert not langfuse_eval.passes_quality_gate(summary, .95)
-    summary['acceptance_buckets']['expected_rejection'].update(passed=27, pass_rate=1.0)
-    assert langfuse_eval.passes_quality_gate(summary, .95)
-    summary['acceptance_buckets']['executable']['pass_rate'] = .94
-    assert not langfuse_eval.passes_quality_gate(summary, .95)

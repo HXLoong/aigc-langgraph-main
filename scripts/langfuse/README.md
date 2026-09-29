@@ -13,7 +13,7 @@
 | `upload_golden_to_langfuse.py` | fixture → Langfuse Dataset |
 | `upload_prompt_to_langfuse.py` | git 提示词 → Langfuse Prompts |
 | `upload_evaluators.py` | 同步 Code Evaluators 及其 Online Evaluation Rules |
-| `upload_score_configs.py` | 同步人工标注用的 Score Configs |
+| `upload_score_configs.py` | 同步人工标注用的 Score Configs 与 Annotation Queues |
 
 ## langfuse_eval.py
 
@@ -23,8 +23,8 @@
 # 从 Langfuse Dataset 跑
 python scripts/langfuse/langfuse_eval.py --dataset biz/option_inquiry --ids case-022 --concurrency 1 --no-judge
 
-# 从本地 fixture 跑（不走 Langfuse Dataset，可用 --fail-under 做 CI 门槛）
-python scripts/langfuse/langfuse_eval.py --local tests/datasets/intent --concurrency 3 --fail-under 0.95
+# 从本地 fixture 跑（输出上传后由 Langfuse JS Evaluation Rule 自动评分）
+python scripts/langfuse/langfuse_eval.py --local tests/datasets/intent --concurrency 3
 ```
 
 ## node_dataset.py
@@ -79,6 +79,13 @@ python scripts/langfuse/upload_prompt_to_langfuse.py option_close.parse_instruct
 python scripts/langfuse/upload_evaluators.py --dry-run
 python scripts/langfuse/upload_evaluators.py --apply
 ```
+
+`upload_score_configs.py` 先同步 `definitions/score-configs.json` 的 Score Configs，再按
+`definitions/annotation-queues.json` 同步 Annotation Queues（`score_configs` 字段写名称，
+脚本解析成远端 id 后绑定）。
+
+Langfuse 只开放 queue 的 items / assignments 操作，**没有 queue 级 update 或 delete**：
+绑定不一致时脚本报 `drift` 并提示人工在 UI 重建，不会自动改。
 
 ## 非入口模块
 

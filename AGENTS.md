@@ -36,9 +36,9 @@ python scripts/local_eval.py --base-url http://127.0.0.1:8201 --data tests/datas
 # Langfuse Dataset Experiment（确定性断言；HTTP 执行，SDK Experiment / Score）
 python scripts/langfuse/langfuse_eval.py --dataset biz/option_inquiry --ids case-022 --concurrency 1
 # 意图集（不依赖 Java/GOATS；冻结上下文的用例由 harness/intent_runner.py 经节点 HTTP 调唯一解析器，
-# 拒绝验收（及引用上一轮回复的回放）用例走主图 + mock_api；确定性评分本地算，--fail-under 给退出码；
-# CI：.github/workflows/intent-eval.yml 仅手动触发；业务集 biz/ 依赖 Java 后端只在开发环境跑；docs/langfuse/workflow-guide.md §8）
-python scripts/langfuse/langfuse_eval.py --local tests/datasets/intent --concurrency 3 --fail-under 0.95 --report .harness-runs/intent-eval.json
+# 拒绝验收（及引用上一轮回复的回放）用例走主图 + mock_api；执行结果上传 Langfuse，
+# 评分由 JS Evaluation Rule 异步完成；不进 CI；业务集 biz/ 依赖 Java 后端只在开发环境跑）
+python scripts/langfuse/langfuse_eval.py --local tests/datasets/intent --concurrency 3
 
 # Harness CLI（备用 / 本地快速 smoke，无 Judge；run 需授权测试身份，见 harness/README.md）
 python -m harness doctor
@@ -259,7 +259,7 @@ Single-context 布局：根目录 `CONTEXT.md` + `docs/adr/`。详见 `docs/agen
 
 # 提示词管理规则
 
-> 真源与契约：ADR 0023（`docs/adr/0023-prompt-as-code-langgraph.md`，PromptSpec）；版本化 / 灰度：ADR 0003（`docs/adr/0003-prompt-versioning-by-file-coexistence.md`）。
+> 真源与契约：ADR 0023（`docs/adr/0023-prompt-as-code-langgraph.md`，PromptSpec）；版本化 / 灰度：ADR 0003（`docs/adr/0003-prompt-versioning-by-git-branch.md`）。
 > 局部陷阱：`app/prompts/CLAUDE.md`。本文件只写"怎么做"。
 
 ## 占位符纪律
@@ -284,7 +284,6 @@ SPEC = register(PromptSpec(
     output_model=SwapInstruction,                    # 输出契约唯一真源：每个字段写 Field(description=)
     inputs=("raw_text", "history_messages", "conversation_id"),   # 必须是 AgentState 字段，构造期校验
     user_builder=_build_user_message,
-    gray=True,                                        # 走 _versions.yaml 灰度（resolve_prompt_version）
 ))
 
 messages, prompt_name = SPEC.build_messages(state)    # [("system", ...), ("user", ...)]
@@ -296,7 +295,7 @@ result = await model.with_structured_output(SwapInstruction).ainvoke(messages)
 - 共享拼装（历史、对手列表、JSON 列表）只在 `app/prompts/blocks.py` 定义一次，不在子图里复制
 - `injects` 登记的占位符必须在 `.md` system 段里真实存在，`build_messages` 构造期校验（`tests/prompts/test_prompt_spec.py`）
 - 灰度节点必须把 `build_messages` 返回的 `prompt_name` 写进 `TraceEntry.llm_output["prompt_name"]`（ADR 0003 硬前置：进 `_versions.yaml` 前必须先写 trace，否则版本对比失真）
-- 当前 4 个互斥的业务 PromptSpec；标的识别工作流由 Java 调用，LangGraph 在标的方面只提取原始表达或用户选择（ADR 0025）。system 使用固定资产，历史和参考数据经 `blocks.source_payload` 放入 user。一次请求只执行所选产品或跨产品契约，不再有独立意图、参数、选择或 OCR 模型链。
+- 当前 14 个业务 PromptSpec；标的识别工作流由 Java 调用，LangGraph 在标的方面只提取原始表达或用户选择（ADR 0025）。system 使用固定资产，历史和参考数据经 `blocks.source_payload` 放入 user。`fresh_counterparty` 的 `[user]` 模板继续经 `render_user` 渲染。
 
 ## 来源优先级（ADR 0014 D3）
 
