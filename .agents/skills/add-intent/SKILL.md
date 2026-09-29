@@ -10,7 +10,7 @@ metadata:
 
 # 新增一个业务意图
 
-归属判定与执行清单以 [ADR 0007](../../../docs/adr/0007-subgraph-vs-intent-scope-rule.md) 为准；节点写法以
+归属判定：命中任一条 → 新建独立子图（改走 `subgraph-builder`）；否则归现有子图作为新意图——后端 API 集合与现有子图重叠 < 30%；有独立的前置查询流程；业务方在 PRD 中作为独立产品线介绍；意图数量预计 ≥ 4 个。同一判定在 PR 模板「子图归属判定」逐次勾选。节点写法以
 `.claude/rules/langgraph-patterns.md` 与 `.claude/rules/prompt-management.md` 为准。新增意图遵守 [ADR 0031](../../../docs/adr/0031-single-model-request-per-message.md) 的单次工具调用最多一次模型请求上限，现有链路迁移见工作计划。本 skill 只给停顿点和改动清单。
 
 ## 参数
@@ -21,7 +21,7 @@ metadata:
 
 ### Step 1：审查现状
 - 读 `app/subgraphs/$1/`：`graph.py`（`_INTENT_TO_NODE` 与条件边）、`models.py`（`<Product>IntentType`）、`intent.py`、各意图节点
-- 按 ADR 0007 四条规则确认它确实归现有子图；命中任一条就改走 `subgraph-builder`
+- 按上面的四条规则确认它确实归现有子图；命中任一条就改走 `subgraph-builder`
 
 ### Step 2：跟用户确认（停顿点）
 **改任何代码前，问用户**：

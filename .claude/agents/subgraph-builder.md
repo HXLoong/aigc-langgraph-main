@@ -11,7 +11,7 @@ model: sonnet
 
 - 根 `CLAUDE.md`（核心原则、并行实施规则）
 - `.claude/rules/langgraph-patterns.md`（节点、IO、错误、确认）与 `.claude/rules/prompt-management.md`（PromptSpec）
-- ADR 0007（新场景归属）、ADR 0024（原生子图）、ADR 0031（单次工具调用全链路最多一次模型请求；规范已采纳，代码待重构）
+- ADR 0024（原生子图）、ADR 0031（单次工具调用全链路最多一次模型请求；规范已采纳，代码待重构）
 - 模板：`app/subgraphs/swap/graph.py`（最复杂的组装）、`app/subgraphs/swap/place_order.py`（旧归一化链路，仅用于核对待迁移实现）
 
 ## 目标子图形态（ADR 0031；当前 graph.py 仅用于核对现状）
@@ -34,6 +34,10 @@ START → _route_swap_entry（本阶段仅文本 / Excel，图片暂不处理）
 - 路由函数是同步纯函数，错误优先转兜底（核心原则 9）
 - 不做 LangGraph 强制二阶段；现有确认类指令按 ADR 0021 识别本次动作、订单号及本次适用的显式参数，引用范围校验在 `app/domain/confirmation.py`；Java 读取订单、合并参数、校验并执行，不在子图维护待确认订单状态，参数收敛待办见 `docs/work-plan.md`
 - 业务 HTTP 调用只放子图 `backend.py`；标的原文交 Java 识别（ADR 0025），子图不调 `TickerClient`
+
+## 场景归属判定：新建子图还是加意图
+
+命中任一条 → 新建独立子图；否则归现有子图作为新意图：后端 API 集合与现有子图重叠 < 30%；有独立的前置查询流程；业务方在 PRD 中作为独立产品线介绍；意图数量预计 ≥ 4 个。判定结论写进 PR 概述（PR 模板「子图归属判定」）。
 
 ## 扩展现有子图：加新意图
 
