@@ -259,7 +259,7 @@ Single-context 布局：根目录 `CONTEXT.md` + `docs/adr/`。详见 `docs/agen
 
 # 提示词管理规则
 
-> 真源与契约：ADR 0023（`docs/adr/0023-prompt-as-code-langgraph.md`，PromptSpec）；版本化 / 灰度：ADR 0003（`docs/adr/0003-prompt-versioning-by-file-coexistence.md`）。
+> 真源与契约：ADR 0023（`docs/adr/0023-prompt-as-code-langgraph.md`，PromptSpec）；版本化 / 灰度：ADR 0003（`docs/adr/0003-prompt-versioning-by-git-branch.md`）。
 > 局部陷阱：`app/prompts/CLAUDE.md`。本文件只写"怎么做"。
 
 ## 占位符纪律
@@ -284,7 +284,6 @@ SPEC = register(PromptSpec(
     output_model=SwapInstruction,                    # 输出契约唯一真源：每个字段写 Field(description=)
     inputs=("raw_text", "history_messages", "conversation_id"),   # 必须是 AgentState 字段，构造期校验
     user_builder=_build_user_message,
-    gray=True,                                        # 走 _versions.yaml 灰度（resolve_prompt_version）
 ))
 
 messages, prompt_name = SPEC.build_messages(state)    # [("system", ...), ("user", ...)]
@@ -296,7 +295,7 @@ result = await model.with_structured_output(SwapInstruction).ainvoke(messages)
 - 共享拼装（历史、对手列表、JSON 列表）只在 `app/prompts/blocks.py` 定义一次，不在子图里复制
 - `injects` 登记的占位符必须在 `.md` system 段里真实存在，`build_messages` 构造期校验（`tests/prompts/test_prompt_spec.py`）
 - 灰度节点必须把 `build_messages` 返回的 `prompt_name` 写进 `TraceEntry.llm_output["prompt_name"]`（ADR 0003 硬前置：进 `_versions.yaml` 前必须先写 trace，否则版本对比失真）
-- 当前 4 个互斥的业务 PromptSpec；标的识别工作流由 Java 调用，LangGraph 在标的方面只提取原始表达或用户选择（ADR 0025）。system 使用固定资产，历史和参考数据经 `blocks.source_payload` 放入 user。一次请求只执行所选产品或跨产品契约，不再有独立意图、参数、选择或 OCR 模型链。
+- 当前 14 个业务 PromptSpec；标的识别工作流由 Java 调用，LangGraph 在标的方面只提取原始表达或用户选择（ADR 0025）。system 使用固定资产，历史和参考数据经 `blocks.source_payload` 放入 user。`fresh_counterparty` 的 `[user]` 模板继续经 `render_user` 渲染。
 
 ## 来源优先级（ADR 0014 D3）
 

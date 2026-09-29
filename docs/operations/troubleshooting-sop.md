@@ -67,7 +67,7 @@
 
 | 根因 | 修复 |
 |---|---|
-| LLM 输出格式偏差 | git 里的提示词是唯一真源：`git revert` 对应 `prompt(<scope>)` 提交 + 应用重启；灰度中的版本可改 `_versions.yaml` 权重回退（ADR 0003）。生产禁止从 LangFuse 拉提示词（ADR 0014） |
+| LLM 输出格式偏差 | git 里的提示词是唯一真源：`git revert` 对应 `prompt(<scope>)` 提交 + 应用重启；金丝雀部署可把该群 `agentUrl` 切回稳定部署（ADR 0003）。生产禁止从 LangFuse 拉提示词（ADR 0014） |
 | 后端 5xx 引发 | 见 §3 后端 5xx playbook；本节点的 fallback 路径应已写好降级 |
 | Prompt 漂移 | 检查最近 PR 是否改了相关 prompt；按 ADR 0001 D5 处置表 review；必要时回滚 |
 | 上游字段缺失 | 看 `ingest` 节点是否正常解析；节点入口加防御代码（`if not state.get("xxx"): return fallback`），属于**业务防御性编程**改动，不涉及 ADR |

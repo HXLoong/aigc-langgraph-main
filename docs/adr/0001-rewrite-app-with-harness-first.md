@@ -2,7 +2,7 @@
 
 - 状态：已采纳（重写已完成）
 - 日期：2026-05-10
-- 关系：D5 由 [ADR 0031](./0031-single-model-request-per-message.md) 修订；标的职责见 [ADR 0025](./0025-instrument-resolution-delegated-to-backend.md)；协议演进见 [ADR 0024](./0024-langgraph-native-rearchitecture.md) D7；评测门见 [ADR 0030](./0030-goal-restatement-native-langgraph-dataset-eval-harness.md) D3
+- 关系：D5 与「备选方案」的评估轴由 [ADR 0031](./0031-single-model-request-per-message.md) 修订；标的职责见 [ADR 0025](./0025-instrument-resolution-delegated-to-backend.md)；协议演进见 [ADR 0024](./0024-langgraph-native-rearchitecture.md) D7；评测门见 [ADR 0030](./0030-goal-restatement-native-langgraph-dataset-eval-harness.md) D3
 - 作者：图灵科技 + Tony
 
 ## 背景
@@ -13,7 +13,7 @@
 
 ### D1 · 重写边界
 
-保留提示词资产与 checkpointer 工厂；重写 State、主图、子图、节点、工具层、API 与测试；新增与 `app/` 解耦的 `harness/` 评测台。
+重写 State、主图、子图、节点、工具层、API 与测试；新增与 `app/` 解耦的 `harness/` 评测台。
 
 ### D2 · 工具层按 Java 真实 endpoint 拆分 Protocol
 
@@ -49,9 +49,12 @@ LangGraph 提取标的原始表达或用户对引用候选的明确选择，通�
 
 ## 备选方案
 
+> 评估轴已按 [ADR 0031](./0031-single-model-request-per-message.md) 重述（它修订了 D5）：决定划分的不是节点数量，而是**每次工具调用实际发起的模型请求次数**；合并模型节点本身不是收益，用输出契约与回归数据控制合并后的复杂度才是。
+
 - **增量改造现有 `app/`**：节点划分不对齐、状态扁平、后端调用集中在一个大类中，"边改边背债"抵消收益。
-- **激进合并（约 19 → 5-6 节点）**：提示词大面积重写、信息密度过载、无法与原流程逐节点对比。
-- **保守路线 A+（已选）**：逻辑层 1:1 + 工程层全新（Pydantic 契约 / `@safe_node` / 可回放 / harness），单位时间收益最大。
+- **按节点数激进合并（约 19 → 5-6 节点）**：以"少写节点"为目标，提示词大面积重写、信息密度过载、无法与原流程逐节点对比。0031 之后这条轴已被否——业务节点数量不作为模型请求次数的替代指标，且不要求把所有产品合成一套大提示词。
+- **保守路线 A+（已选）**：**确定性**分层保持逻辑层 1:1（结构与来源检查、引用选择、后端执行各守其责）+ 工程层全新（Pydantic 契约 / `@safe_node` / 可回放 / harness），单位时间收益最大。
+- **模型解析层收敛（0031 现行方案，已采纳、代码待重构）**：同一次调用最多一次请求且零重试，因此产品分类、意图识别、候选选择与参数提取合并为**互斥的四选一联合解析器**（互换 / 期权 / 平仓 / 跨产品），产品不明确时由跨产品解析器在同一次请求内一并判断；禁止用合并函数、逐订单 / 逐附件处理或 Agent 循环规避额度。合并后同步迁移 PromptSpec、harness 注册、节点 fixture 与流程文档。
 
 ## 后果（均已兑现）
 

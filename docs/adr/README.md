@@ -9,13 +9,13 @@
 | 主题 | 决策 | 带来的价值 | ADR |
 |---|---|---|---|
 | 为什么迁移 | 从 Dify 迁到 LangGraph + FastAPI，Dify 已完全退出上游 | 业务逻辑回到代码，可 review、可测试、可监测、可评估 | [0000](./0000-migrate-from-dify-to-langgraph.md) · [0024](./0024-langgraph-native-rearchitecture.md) |
-| 图架构 | 原生子图、State 分层；后端只读查询可重试，LLM 与写节点不重试 | 结构清晰，失败可归因到具体节点，杜绝"重试导致重复下单" | [0024](./0024-langgraph-native-rearchitecture.md) · [0007](./0007-subgraph-vs-intent-scope-rule.md) |
+| 图架构 | 原生子图、State 分层；后端只读查询可重试，LLM 与写节点不重试 | 结构清晰，失败可归因到具体节点，杜绝"重试导致重复下单" | [0024](./0024-langgraph-native-rearchitecture.md) |
 | 解析与路由 | 每次工具调用全链路最多一次模型请求；规则优先，歧义一次联合解析，调用内零 LLM 重试 | 产品、意图与候选共用解析结果；调用端重试独立计数；覆盖文本 / Excel，图片暂不处理（代码待重构） | [0031](./0031-single-model-request-per-message.md) · [0028](./0028-session-entry-and-multi-instruction-send-orchestration.md) |
 | 单次指令处理 | LangGraph 不强制二阶段，识别提交本次动作；Java 决定业务流程 | 现有确认 type 保留，普通动作不自动提升为确认；代码待收敛 | [0021](./0021-text-confirm-replaces-interrupt.md) |
 | 调用与回执职责 | 消息防重与重投归调用端，交易幂等归 Java；LangGraph 返回本次真实结果 | 不确定回执不推断成败；占位、回放、重投静默与对账代码待清理 | [0026](./0026-request-idempotency-uncertain-receipts-reconciliation.md) |
 | 字段来源 | 保留提取值、原文与来源；Code 清洗接口类型，Java 校验业务值 | 接口类型不兼容字段有记录地省略，业务数值和默认值归 Java | [0027](./0027-field-evidence-contract.md) |
 | 标的识别 | LangGraph 提取表达或用户选择，Java 调用对应的识别工作流 | 识别职责集中在后端，LangGraph 无需维护证券清单或识别逻辑 | [0025](./0025-instrument-resolution-delegated-to-backend.md) |
-| 提示词 | git 是唯一真源；每个 LLM 节点声明 PromptSpec；同目录文件并存做灰度 | 提示词改动走 PR 审计，输入输出契约由测试守护 | [0023](./0023-prompt-as-code-langgraph.md) · [0003](./0003-prompt-versioning-by-file-coexistence.md) |
+| 提示词 | git 是唯一真源；每个 LLM 节点声明 PromptSpec；版本化用 git 分支 + 单文件，灰度按群切部署 | 提示词改动走 PR 审计，输入输出契约由测试守护 | [0023](./0023-prompt-as-code-langgraph.md) · [0003](./0003-prompt-versioning-by-git-branch.md) |
 | 模型 | 通用三角色配置、显式厂商适配，当前基线为 deepseek-v4-pro | 通用配置已实现；切换模型需重新验收，图片暂不处理 | [0020](./0020-unify-all-llm-on-deepseek-v4-pro.md) |
 | 数据与合规 | MySQL 协议 / TDSQL 与 Java 共库；LangFuse 生产自托管 | 符合客户基础设施，trace 与数据不出境 | [0009](./0009-mysql-version-and-tdsql-compatibility.md) · [0014](./0014-langfuse-as-harness-backend.md) |
 | 评测与运维 | 数据集 + 节点级 + CI + 上线观察四层统一评测门；P0/P1/P2 量化告警 | 每次改动有同一套可量化的放行标准 | [0030](./0030-goal-restatement-native-langgraph-dataset-eval-harness.md) · [0002](./0002-comprehensive-runtime-harness.md) · [0019](./0019-incident-severity-thresholds.md) |
@@ -25,7 +25,7 @@
 **一、原生 LangGraph 重构**
 
 - [0000](./0000-migrate-from-dify-to-langgraph.md) 迁移动机 → [0001](./0001-rewrite-app-with-harness-first.md) 重写方式 → [0024](./0024-langgraph-native-rearchitecture.md) 目标架构（已冻结）
-- 业务结构：[0007](./0007-subgraph-vs-intent-scope-rule.md) 子图扩张规则 · [0031](./0031-single-model-request-per-message.md) 单次工具调用最多一次模型请求 · [0028](./0028-session-entry-and-multi-instruction-send-orchestration.md) 入口分流与单动作多订单
+- 业务结构：[0031](./0031-single-model-request-per-message.md) 单次工具调用最多一次模型请求 · [0028](./0028-session-entry-and-multi-instruction-send-orchestration.md) 入口分流与单动作多订单
 - 交易正确性：[0021](./0021-text-confirm-replaces-interrupt.md) 单次指令处理边界 · [0026](./0026-request-idempotency-uncertain-receipts-reconciliation.md) 调用端幂等职责与单次调用回执 · [0027](./0027-field-evidence-contract.md) 字段证据契约
 - 职责边界：[0025](./0025-instrument-resolution-delegated-to-backend.md) 标的识别由 Java 调用工作流完成
 - 基础设施：[0009](./0009-mysql-version-and-tdsql-compatibility.md) MySQL / TDSQL
@@ -37,7 +37,7 @@
 
 **三、Harness 工程纪律**
 
-- [0023](./0023-prompt-as-code-langgraph.md) 提示词即代码 · [0003](./0003-prompt-versioning-by-file-coexistence.md) 提示词版本化 · [0020](./0020-unify-all-llm-on-deepseek-v4-pro.md) 通用模型配置与当前基线 · [0019](./0019-incident-severity-thresholds.md) 故障升级阈值
+- [0023](./0023-prompt-as-code-langgraph.md) 提示词即代码 · [0003](./0003-prompt-versioning-by-git-branch.md) 提示词版本化 · [0020](./0020-unify-all-llm-on-deepseek-v4-pro.md) 通用模型配置与当前基线 · [0019](./0019-incident-severity-thresholds.md) 故障升级阈值
 
 ## 总表
 
@@ -46,10 +46,9 @@
 | [0000](./0000-migrate-from-dify-to-langgraph.md) | 从 Dify 工作流迁移到 LangGraph | 已采纳（元 ADR） | 现状见 0024 |
 | [0001](./0001-rewrite-app-with-harness-first.md) | 推倒重写 `app/`，Harness-first | 已采纳（重写已完成） | 标的职责见 0025；评测门见 0030 |
 | [0002](./0002-comprehensive-runtime-harness.md) | 综合运行时 Harness 三位一体 | 已采纳（确定性评分与闭环待迁移） | 节点层由 0029 补充 |
-| [0003](./0003-prompt-versioning-by-file-coexistence.md) | 提示词版本化：同目录文件并存 | 已采纳（当前无在跑灰度） | — |
+| [0003](./0003-prompt-versioning-by-git-branch.md) | 提示词版本化：git 分支 + 单文件 | 已采纳（形态为 git 分支 + 单文件；旧代码待迁移） | — |
 | [0004](./0004-trace-granularity-node-level.md) | Trace 颗粒度：节点级入库 + LangFuse 完整 I/O | 已采纳 | 后台见 0014 |
 | [0005](./0005-annotation-roles-judge-plus-business-spotcheck.md) | 标注闭环：确定性断言 + 业务方复核 | 已采纳（评分与闭环待迁移） | 平台由 0014 确定 |
-| [0007](./0007-subgraph-vs-intent-scope-rule.md) | 独立子图 vs 新意图：四条触发规则 | 已采纳 | — |
 | [0009](./0009-mysql-version-and-tdsql-compatibility.md) | MySQL 协议 + TDSQL 生产环境 | 已采纳（TDSQL 待现场实测） | — |
 | [0014](./0014-langfuse-as-harness-backend.md) | LangFuse 作为 Harness 后台 | 已采纳 | 修订 0004 / 0005 |
 | [0019](./0019-incident-severity-thresholds.md) | 故障升级阈值 P0 / P1 / P2 | 已采纳 | 与 0030 D3 互补 |

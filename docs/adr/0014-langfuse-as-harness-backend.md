@@ -11,10 +11,6 @@ Harness 需要一个后台承载四件套：**Trace**（节点级 LLM 调用）�
 
 ## 决策
 
-### D1 · 部署模式：生产自托管，数据不出境
-
-- **客户现场强制自托管**：`infra/langfuse/docker-compose.yml`（PostgreSQL + ClickHouse + Redis + MinIO + Web + Worker），trace、数据集、标注数据均留在内网；现场配置严禁指向 LangFuse Cloud。
-
 ### D2 · 单一 trace 通道
 
 trace 只走 LangFuse 一条通道，由请求入口统一注入 CallbackHandler，子图自然继承。
@@ -39,7 +35,7 @@ trace 只走 LangFuse 一条通道，由请求入口统一注入 CallbackHandler
 ### D5 · 安全与保留
 
 - API Key 经 `get_settings()` 读取环境变量，不硬编码；`ENABLE_LANGFUSE` 可关闭（CI / 本地）。
-- 保留策略（服务端配置，现场部署时核对）：Trace 90 天；Dataset / Score / Annotation 永久。自托管 PostgreSQL / ClickHouse 备份纳入业务库同级。
+- 保留策略（服务端配置，现场部署时核对）：Trace 90 天；Dataset / Score / Annotation 永久。 PostgreSQL / ClickHouse 备份纳入业务库同级。
 
 ## 备选方案
 

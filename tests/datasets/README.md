@@ -10,7 +10,7 @@
 
 已退役（无替代，勿再引用）：
 
-- `nodes/`：节点级 fixture（ADR 0029 的 fixture 部分）；节点级调试 API（`app/node_execution`）仍在
+- `nodes/`：节点级 fixture（ADR 0029 的 fixture 部分）；节点级调试 API（`app/node_execution`）与 `harness node-run` 仍在
 - `unified_golden.jsonl`：B 方言历史参考集
 - `categories/csv/*.csv` 与 `*.xlsx`：旧业务 fixture 的派生格式
 
