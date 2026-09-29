@@ -28,7 +28,7 @@ class EvaluationResult:
     scores: list[Score]
 
 
-_INTENT_KEYS = ("product_type", "intent")
+_INTENT_KEYS = ("product_type", "intent", "entry_branch")
 
 
 def _json_object(value: Any) -> dict[str, Any]:

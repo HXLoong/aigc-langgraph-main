@@ -35,6 +35,28 @@ def test_wire_value_is_retained_without_numeric_recalculation() -> None:
     assert records["option/parse.orderList.0.notionalAmount"].locked
 
 
+def test_close_full_scope_patch_needs_only_current_order_id():
+    """当前只有 CO- 引用时，全平增量可以不携带历史合约；错误声明来源仍被拒绝。"""
+    models, evidence = _modules()
+    raw = "全部平仓"
+    order_id = "CO-20260929-ABCD1234"
+    contract = "OPT-OLD-CONTRACT"
+    state = {"raw_text": raw, "quote_content": f"期权平仓订单{order_id}：只能全部平仓。",
+             "history_messages": [{"role": "assistant", "content": f"旧合约{contract}"}]}
+    data = {"product_type": "option_close", "intent": "close_order_request", "confidence": .9,
+            "evidence": [{"origin": "raw", "text": raw}],
+            "orders": [{"orderId": order_id, "confirmFullClose": True}],
+            "fields": [{"path": "orders.0.orderId", "origin": "quote", "text": order_id},
+                       {"path": "orders.0.confirmFullClose", "origin": "raw", "text": raw}]}
+    records = evidence.verify_instruction(models.CloseInstruction.model_validate(data), state)
+    assert records["close/parse.orderList.0.confirmFullClose"].value is True
+    # 复现原始失败的错误输出；不能通过删掉来源检查让这个结果通过。
+    data["orders"][0]["internalTradeId"] = contract
+    data["fields"].append({"path": "orders.0.internalTradeId", "origin": "quote", "text": contract})
+    with pytest.raises(ValueError, match="字段证据不在指定来源中"):
+        evidence.verify_instruction(models.CloseInstruction.model_validate(data), state)
+
+
 def test_missing_field_evidence_rejects_entire_instruction() -> None:
     """有值而无来源时整体失败，不能漏掉该字段继续提交。"""
     models, evidence = _modules()

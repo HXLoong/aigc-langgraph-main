@@ -143,3 +143,9 @@ GOATS_BASE_URL=http://127.0.0.1:8099
 本目录只放仍在使用的测试说明（如 `local-backend-seed.md`）。一次性的评估、测试报告按 `YYYY-MM-DD-<topic>.md`
 放 [../reports/](../reports/README.md)，结论吸收后删除；评测运行输出写 `.harness-runs/`，不进 `docs/`；
 golden case 放 `tests/datasets/`，测试代码放 `tests/`，含真实密钥的配置严禁入库。总规则见 [../README.md](../README.md#存放规则)。
+
+### 断言版本 deterministic-v2
+
+HTTP 报告中的参数优先来自实际提交投影。对 Java 明确允许数字字符串的十进制字段，评估器使用有限 Decimal 精确比较；百分号仅在已有百分比契约中处理，不做单位或比例换算。整数传输类型、Boolean、证券/订单身份、枚举、时间及普通文本仍严格检查，不能全局字符串转数字。原始值、类型、清洗记录与出站请求继续保留。
+
+快速询价样例同时断言入口、产品/动作和业务结果；入口标记必须经数据集加载与 HTTP runner 实际传递。业务前置条件失败也保留完整分母与未执行轮次，报告不得把环境阻塞当通过。

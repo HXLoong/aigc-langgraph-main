@@ -114,6 +114,8 @@ async def run(args: argparse.Namespace) -> int:
         cases = cases[:args.limit]
     if not cases or any(case.skip_reason for case in cases):
         raise ValueError("selected cases must be nonempty and all executable")
+    # 固定窗口用例先执行；过期由执行器记失败，不从分母移除。
+    cases.sort(key=lambda case: (case.execution_before is None, case.execution_before or ""))
     run_id = f"local-{time.strftime('%Y%m%d-%H%M%S')}"
     directory = Path(args.out or ".harness-runs") / run_id
     directory.mkdir(parents=True, exist_ok=False)
@@ -150,7 +152,7 @@ async def run(args: argparse.Namespace) -> int:
                 logger.error("case=%s preparation=%s", case.id, type(exc).__name__)
             report = _report_case(case, result, _turn_diffs(case, result))
             record_business_score(report, metadata={"run_name": run_id,
-                "code_hash": manifest["code_hash"], "model": manifest["model"],
+                "code_hash": manifest["code_hash"], "model": manifest["model"], "provider": manifest["provider"],
                 "assertion_version": manifest["assertion_version"]})
             reports.append(report)
             latencies.extend(turn.elapsed_ms for turn in result.turns)

@@ -61,6 +61,7 @@ async def ingest(state: AgentState) -> dict[str, Any]:
         "error": None,
         # 意图由本轮子图重算；未知产品或早退不能回写旧意图。产品上下文仍供路由使用。
         "intent": "",
+        "entry_branch": None,
         "parsed_instruction": None,
         "pending_backend_request": None,
         "cleaned_backend_request": None,

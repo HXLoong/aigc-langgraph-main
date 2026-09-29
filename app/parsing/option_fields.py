@@ -52,9 +52,9 @@ class OptionOrderItem(WireModel):
     notional_amount: CandidateScalar | None = Field(default=None, alias="notionalAmount", description="名义本金，字符串数字（如 \"1000000\"）")
     #: 参与率（百分比数字 0-100）
     participation_rate: CandidateScalar | None = Field(default=None, alias="participationRate", description="参与率，百分比数字 0-100")
-    order_type: CandidateScalar | None = Field(default=None, alias="orderType", description="下单方式：市价单 / 限价单 / POV / TWAP")
+    order_type: CandidateScalar | None = Field(default=None, alias="orderType", description="本次明确的下单方式：市价单 / 限价单 / POV / TWAP。本次写出 POV11%、改POV12 等算法词连比例时，必须同时填写 POV，不能只输出比例，也不能因旧订单已经是 POV 而省略。本次未表达方式才为 null，不从旧卡片补齐")
     limit_price: CandidateScalar | None = Field(default=None, alias="limitPrice", description="限价（限价单时的价格数字）")
-    pov_ratio: CandidateScalar | None = Field(default=None, alias="povRatio", description="POV 跟量比例（数字，不带 %）")
+    pov_ratio: CandidateScalar | None = Field(default=None, alias="povRatio", description="本次明确的 POV 跟量比例，使用百分数数字且不带 %；如 POV11% 为 11，改POV12 为 12。算法词本身还需在本次下单方式中表达，比例不能代替方式")
     #: TWAP 起止时间，"HH:MM" 格式（Dify DSL v2 重命名，原 algoStartTime/algoEndTime）
     twap_start_time: CandidateScalar | None = Field(default=None, alias="twapStartTime", description="TWAP 开始时间，HH:MM")
     twap_end_time: CandidateScalar | None = Field(default=None, alias="twapEndTime", description="TWAP 结束时间，HH:MM")

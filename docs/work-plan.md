@@ -74,6 +74,18 @@
 - 正式批次和详细报告保留在 `/opt/work-file/code-tmp/aigc-langgraph-tmp/option-eval-20260928-1837/`；报告修复证据在 `/opt/work-file/code-tmp/aigc-langgraph-tmp/option-report-detail-20260928/`。上述目录与本地旧报告不纳入代码提交。
 - 本地检查点不代表上线放行；以上来源校验、参数评测契约和业务契约问题继续待处理。
 
+### 期权入口与评测修复（2026-09-29）
+
+- 以用户最终定义为准：case-021 保持普通询价，原文、at_bot=true 和原参数期望不变；case-022/023/024 为正常快速询价，显式 fast_query="1"，保留成功卡片预期。
+- 修复 JSONL 加载、派生、Dataset 投影和 HTTP runner 对快速标记的传递；entry_route 输出 entry_branch，快速入口确定性输出 option/new_inquiry，快速节点保留 backend_request。对应意图样例通过真实入口节点 HTTP 评估，不调用普通解析器或业务后端。
+- 确定性断言升级 deterministic-v2：明确数值字段按有限 Decimal 精确比较；整数传输类型、Boolean、身份、枚举、时间和文本保持严格检查，不做单位换算。原值、类型和实际出站请求均保留。
+- 平仓提示词明确区分当前引用含 CO+OPT（两者均提取）和仅含 CO（不补历史合约）。期权字段描述补明确算法词连比例时同时提取本次方式，避免“改POV12”只提比例；旧卡片字段仍不得回填。
+- case-034 按用户要求保留固定 14:30–14:50，增加 execution_before=14:30。开始实施时已为14:33，过期前置条件在任何业务请求前失败，保留完整用例分母和六轮未执行说明；需要下一有效时段补测，不能改成拒绝成功或计PASS。
+- 本轮完整 pytest 2528 passed / 2 skipped；ruff、mypy（179源码文件）、ADR/fixture/文档布局与代理规则同步检查通过。既存两份 .DS_Store 与仅含空目录的 docs/tickets 已无损迁至任务目录 local-artifacts，不删除用户文档或旧测试报告。
+- final-v3 同版本正式复测：意图 16/16 通过，业务 15/16（15 个实际执行用例全部通过，case-034 前置条件未满足、六轮未执行）；实际执行 94/100 轮。开仓/平仓完整生命周期均通过；前面的失败、专项和用户更正前批次分别保留，不拼接为全量通过。
+- 最终 Langfuse 样本父链和 Session 一致，快速分支本项目 Generation=0；16 条业务评分值及目标 Observation 已核对，最后一条因平台导出错误按原始结果补写，未重跑交易。
+- 证据和逐轮报告目录：`/opt/work-file/code-tmp/aigc-langgraph-tmp/option-fix-20260929/`。Java 源码、配置和时间上限未修改，旧批次评分不回写。
+
 ## 2. 客户现场部署与运维（已就绪的能力）
 
 - `scripts/deploy-customer.sh` 一键部署 + smoke 自检；`.env.customer.template`；`infra/langfuse/` self-hosted 栈

@@ -64,6 +64,9 @@ def _turn_markdown(turn: dict[str, Any], *, executed: bool) -> list[str]:
     """一轮并列提供完整输入、引用、标注、回复、结构化输出与错误证据。"""
     lines = [f"### 第 {turn['turn']} 轮 · {turn.get('scene') or ''}", "",
              "#### 用户输入", "", _block(turn.get("raw", ""), "text"), ""]
+    if "fast_query" in turn:
+        lines += [f"入口标记：fast_query={turn['fast_query']}，at_bot={turn.get('at_bot')}；"
+                  f"实际入口：{turn.get('entry_branch') or '未执行入口节点'}", ""]
     if turn.get("source_text") and turn["source_text"] != turn.get("raw"):
         lines += ["数据集原始文本（动态引用替换前）：", "", _block(turn["source_text"], "text"), ""]
     if not executed:

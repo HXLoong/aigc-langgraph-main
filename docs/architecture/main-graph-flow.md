@@ -2,7 +2,7 @@
 
 代码真源：[app/graph/main.py](../../app/graph/main.py)。图按当前编译拓扑核对；产品子图内部流程单独成文。
 
-一次合法 HTTP 调用拥有独立模型额度；规则选择期权、互换、平仓或跨产品 PromptSpec，只有 `parse_instruction` 请求模型。`prepare_parse_context` 的后端只读重试发生在模型之前；模型失败不重试，直接 cascade。图片与含图片输入在入口拒绝；Excel 全量读入后一次解析。快速询价与存量分支沿既有外部工具执行。
+一次合法 HTTP 调用拥有独立模型额度；规则选择期权、互换、平仓或跨产品 PromptSpec，只有 `parse_instruction` 请求模型。`prepare_parse_context` 的后端只读重试发生在模型之前；模型失败不重试，直接 cascade。图片与含图片输入在入口拒绝；Excel 全量读入后一次解析。快速询价与存量分支沿既有外部工具执行。`entry_route` 输出 `entry_branch`；快速入口由 `fast_query="1"` 明确选择，并确定性给出 `option/new_inquiry`，与 `at_bot` 独立，不调用普通联合解析器。
 
 ```mermaid
 ---

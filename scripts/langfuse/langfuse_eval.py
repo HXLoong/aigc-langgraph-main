@@ -26,12 +26,11 @@ from harness.golden import (
 from harness.http_evaluation import intent_evaluations, run_case
 from harness.langfuse_client import experiment_item_trace, flush, get_client
 from harness.reporting import render_markdown
-from harness.version import execution_metadata
+from harness.version import ASSERTION_VERSION, execution_metadata
 
 DATASET_NAME = "biz/option_inquiry"
 SUITES = ("intent", "business")
 DEFAULT_SUITE = "business"
-ASSERTION_VERSION = "deterministic-v1"
 
 
 def resolve_suite(suite: str | None, local_paths: list[Path] | None, dataset_name: str | None) -> str:

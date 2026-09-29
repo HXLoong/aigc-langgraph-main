@@ -51,6 +51,8 @@ async def run_case(
     # 2. 业务比较所有明确字段；意图集按各自的稳定语义投影比较。
     report = report_case(case, result, turn_diffs(case, result) if suite == "business" else {})
     report["mode"] = "intent_node" if frozen else "main_graph_http"
+    if frozen and all(turn.fast_query == "1" for turn in case.turns):
+        report["mode"] = "entry_node"
     if suite == "intent":
         evaluations = intent_evaluations(case, report)
         if result.failure and not any(turn.expected.get("rejection") for turn in case.turns):

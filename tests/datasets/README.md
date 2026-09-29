@@ -72,3 +72,10 @@ python scripts/check_fixture_consistency.py --verbose   # 现役 biz / intent；
 解析只读取实际传入本轮的完整 quote，从“例如”或“示例”起的尾部均不参与绑定，不读取本轮模型输出或未引用的历史。
 缺失、越界、歧义和非法声明均记为失败；fixture lint 在执行前验证声明形状。
 HTTP harness / local_eval 支持这些结构断言；Langfuse Judge 评分不替代该确定性验收。
+
+## 7. 快速入口与固定时段
+
+- `fast_query` 使用字符串 `"0"` / `"1"`，缺省为 `"0"`；与 `at_bot` 独立，加载、HTTP 执行和 Dataset 投影均保留。用例正文不代替入口标记。
+- 期权询价 case-022～024 均为正常快速询价样例，显式 `fast_query="1"`，断言 `entry_branch=quick_inquiry` 及成功回执。case-021 为普通询价，保留原文、`at_bot=true` 及 `place_params.orderList` 参数期望；未配置快速标记时按 `"0"` 处理。
+- 对应意图样例通过节点 HTTP 调入口规则，报告标为 `entry_node`；其它冻结样例仍检验联合模型解析，不把入口规则通过等同于 LLM 解析通过。
+- 业务 case 可声明 `execution_before: "HH:mm"`，按 Asia/Shanghai 检查执行前置条件；意图集不受业务执行窗口约束。case-034 保留原始 14:30–14:50，必须在 14:30 前启动。过期时保留 FAIL 和 `fixture_precondition`，逐轮列出未执行，不能计通过。

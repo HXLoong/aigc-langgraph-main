@@ -13,7 +13,11 @@ import httpx
 
 from harness.golden import GoldenCase, TurnSpec, dataset_expected, dataset_input
 from harness.langfuse_client import case_trace, http_turn_trace
-from harness.scenario_inputs import ScenarioInputError, resolve_order_reference
+from harness.scenario_inputs import (
+    ScenarioInputError,
+    ensure_execution_window,
+    resolve_order_reference,
+)
 
 _BACKEND_ERROR_MARKERS = ("正在处理", "请勿重复", "未授权", "失败：未补充")
 
@@ -159,6 +163,7 @@ async def _run_case_turns(
     http_client = client or httpx.AsyncClient(base_url=base_url.rstrip("/"), timeout=timeout)
     result = MultiTurnResult(case_id=case.id, conversation_id=conversation_id)
     try:
+        ensure_execution_window(case.execution_before)
         for index, spec in enumerate(case.turns):
             resolved_text = resolve_order_reference(
                 spec.send_text, result.turns[-1].reply_text if result.turns else ""
@@ -178,6 +183,7 @@ async def _run_case_turns(
                 "room_id": room_id,
                 "quote_content": quote,
                 "at_bot": spec.at_bot,
+                "fast_query": spec.fast_query,
                 "conversation_id": conversation_id,
             }
             endpoint = f"{base_url.rstrip('/')}/v1/workflows/run"

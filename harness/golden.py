@@ -16,7 +16,7 @@ import json
 from collections import defaultdict
 from collections.abc import Iterable, Sequence
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -27,6 +27,7 @@ class TurnSpec(BaseModel):
     scene: str = ""
     send_text: str
     at_bot: bool = False
+    fast_query: Literal["0", "1"] = "0"
     quote_previous: bool | None = None
     wait_before_seconds: float = Field(default=0, ge=0, le=300)
     #: B 方言的引用说明原文（"用户引用上一条机器人消息"）；首轮标注了引用的上下文依赖 case
@@ -61,6 +62,8 @@ class GoldenCase(BaseModel):
     #: 非空即不可执行（如 B 方言某轮 raw_content 为空——用户文本被写进了 quote_desc）；
     #: 加载与计数照常，runner / eval 用 select_runnable 跳过并显式报数
     skip_reason: str = ""
+    # 固定时段场景的执行前置条件；仅业务回放检查，时区固定为 Asia/Shanghai。
+    execution_before: str | None = Field(default=None, pattern=r"^(?:[01][0-9]|2[0-3]):[0-5][0-9]$")
     turns: list[TurnSpec] = Field(default_factory=list)
     expected: dict[str, Any] = Field(default_factory=dict)
     expected_output: str = ""
@@ -91,6 +94,7 @@ def _turn_from_object(
         scene=str(obj.get("scene") or ""),
         send_text=send_text,
         at_bot=obj.get("at_bot", default_at_bot),
+        fast_query=obj.get("fast_query", "0"),
         quote_previous=obj.get("quote_previous"),
         wait_before_seconds=obj.get("wait_before_seconds", 0),
         quote_content=obj.get("quote_content") or "",
@@ -211,6 +215,7 @@ def normalize_case(obj: dict[str, Any], *, origin: str) -> GoldenCase:
         dialect=dialect,
         expected_scope=expected_scope,
         skip_reason=skip_reason,
+        execution_before=obj.get("execution_before"),
         turns=turns,
         expected=expected,
         expected_output=str(expected.get("output") or ""),
@@ -352,6 +357,8 @@ def filter_by_ids(cases: Iterable[GoldenCase], ids: list[str] | None) -> list[Go
 
 def _dataset_turn_input(turn: TurnSpec) -> dict[str, Any]:
     result: dict[str, Any] = {"send_text": turn.send_text, "at_bot": turn.at_bot}
+    if turn.fast_query != "0":
+        result["fast_query"] = turn.fast_query
     if turn.quote_previous is not None:
         result["quote_previous"] = turn.quote_previous
     if turn.wait_before_seconds:
@@ -380,7 +387,10 @@ def _dataset_turn_expected(turn: TurnSpec) -> dict[str, Any]:
 def dataset_input(case: GoldenCase) -> dict[str, Any]:
     """Dataset Item input：保持 biz 的首轮 + sub_scenes 输入结构。"""
     first, *sub_scenes = case.turns
-    return {**_dataset_turn_input(first), "sub_scenes": [_dataset_turn_input(t) for t in sub_scenes]}
+    result = {**_dataset_turn_input(first), "sub_scenes": [_dataset_turn_input(t) for t in sub_scenes]}
+    if case.execution_before:
+        result["execution_before"] = case.execution_before
+    return result
 
 
 def dataset_expected(case: GoldenCase) -> dict[str, Any]:

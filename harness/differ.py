@@ -8,6 +8,7 @@ from typing import Any
 from pydantic import BaseModel, ConfigDict
 
 from harness.golden import TurnSpec
+from harness.numeric_assertions import values_equal
 from harness.references import ReferenceResolutionError, resolve_expected_references
 
 
@@ -27,6 +28,7 @@ def diff_fields(
     actual: dict[str, Any] | None,
     prefix: str = "",
     exclude: Collection[str] = ASSERT_EXCLUDED_KEYS,
+    *, product: str | None = None,
 ) -> list[FieldDiff]:
     if expected is None:
         return []
@@ -38,7 +40,7 @@ def diff_fields(
         path = f"{prefix}.{key}" if prefix else key
         actual_value = actual.get(key)
         if isinstance(expected_value, dict) and isinstance(actual_value, dict):
-            diffs.extend(diff_fields(expected_value, actual_value, path, exclude))
+            diffs.extend(diff_fields(expected_value, actual_value, path, exclude, product=product))
         elif isinstance(expected_value, list) and isinstance(actual_value, list):
             if len(expected_value) != len(actual_value):
                 diffs.append(FieldDiff(path=f"{path}.length", expected=len(expected_value), actual=len(actual_value)))
@@ -47,10 +49,10 @@ def diff_fields(
             ):
                 item_path = f"{path}[{index}]"
                 if isinstance(expected_item, dict) and isinstance(actual_item, dict):
-                    diffs.extend(diff_fields(expected_item, actual_item, item_path, exclude))
-                elif expected_item != actual_item:
+                    diffs.extend(diff_fields(expected_item, actual_item, item_path, exclude, product=product))
+                elif not values_equal(expected_item, actual_item, path=item_path, product=product):
                     diffs.append(FieldDiff(path=item_path, expected=expected_item, actual=actual_item))
-        elif expected_value != actual_value:
+        elif not values_equal(expected_value, actual_value, path=path, product=product):
             diffs.append(FieldDiff(path=path, expected=expected_value, actual=actual_value))
     return diffs
 
@@ -110,7 +112,7 @@ def check_structured_assertions(
     if not isinstance(remaining, dict):
         return [FieldDiff(path="expected", expected="object", actual=remaining)]
     winners = remaining.pop("winners", None)
-    diffs = diff_fields(remaining, outputs)
+    diffs = diff_fields(remaining, outputs, product=outputs.get("product_type") or expected.get("product_type"))
     if winners is not None:
         actual = sorted(str(t.get("windCode")) for t in outputs.get("tickers") or [])
         if set(winners) != set(actual):

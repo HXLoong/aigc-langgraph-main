@@ -23,3 +23,5 @@ flowchart TD
 普通动作的旧 extract/confirm/cancel/query 叶节点现在只准备 `pending_backend_request`。独立调试业务请求时，按“参数准备 → 产品 clean_request → 产品 submit/query_backend”依次调用，或直接运行整个产品子图。参数与清洗节点可安全回放；三个 submit 节点仍标为 write，不允许 Dataset 自动回放。
 
 清洗输入保留 `field_records`，避免 /prepare 丢弃锁定身份；输出保留十进制数字字符串，节点 HTTP 往返不经过 float 运算。提交入口复核清洗结果与原请求、字段锁一致，不能伪造已清洗请求绕过过滤。
+
+快速询价意图样例通过 `entry_route` 节点 HTTP 验证入口及固定产品/动作，零模型、零业务提交；普通冻结样例仍调用 `parse_instruction`。业务集通过主图验证真实快速解析及 Java 回执。
