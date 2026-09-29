@@ -31,7 +31,7 @@ def _patch_backend(monkeypatch: pytest.MonkeyPatch, module: object) -> list[dict
         calls.append({"intent": intent, "order_list": order_list})
         return {"api_result": "mock", "api_code": 0}
 
-    monkeypatch.setattr(module, "call_swap_backend", fake_backend)
+    monkeypatch.setattr(module, "prepare_swap_request", fake_backend)
     return calls
 
 
@@ -214,7 +214,7 @@ class TestSwapCancelNode:
         async def boom(state, *, intent, order_list):
             raise RuntimeError("backend boom")
 
-        monkeypatch.setattr(cancel_module, "call_swap_backend", boom)
+        monkeypatch.setattr(cancel_module, "prepare_swap_request", boom)
         out = await swap_cancel({"raw_text": f"撤 {ORDER}"})
         assert out["error"] is not None
         assert out["error"].node == "swap_cancel"

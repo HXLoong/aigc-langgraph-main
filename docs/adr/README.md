@@ -13,10 +13,10 @@
 | 解析与路由 | 每次工具调用全链路最多一次模型请求；规则优先，歧义一次联合解析，调用内零 LLM 重试 | 产品、意图与候选共用解析结果；调用端重试独立计数；覆盖文本 / Excel，图片暂不处理（代码待重构） | [0031](./0031-single-model-request-per-message.md) · [0028](./0028-session-entry-and-multi-instruction-send-orchestration.md) |
 | 单次指令处理 | LangGraph 不强制二阶段，识别提交本次动作；Java 决定业务流程 | 现有确认 type 保留，普通动作不自动提升为确认；代码待收敛 | [0021](./0021-text-confirm-replaces-interrupt.md) |
 | 调用与回执职责 | 消息防重与重投归调用端，交易幂等归 Java；LangGraph 返回本次真实结果 | 不确定回执不推断成败；占位、回放、重投静默与对账代码待清理 | [0026](./0026-request-idempotency-uncertain-receipts-reconciliation.md) |
-| 字段来源 | 保留提取值、原文与来源；Java 校验业务值 | 本地业务归一化与数字校验待移除，结构和选择范围检查保留 | [0027](./0027-field-evidence-contract.md) |
+| 字段来源 | 保留提取值、原文与来源；Code 清洗接口类型，Java 校验业务值 | 接口类型不兼容字段有记录地省略，业务数值和默认值归 Java | [0027](./0027-field-evidence-contract.md) |
 | 标的识别 | LangGraph 提取表达或用户选择，Java 调用对应的识别工作流 | 识别职责集中在后端，LangGraph 无需维护证券清单或识别逻辑 | [0025](./0025-instrument-resolution-delegated-to-backend.md) |
 | 提示词 | git 是唯一真源；每个 LLM 节点声明 PromptSpec；同目录文件并存做灰度 | 提示词改动走 PR 审计，输入输出契约由测试守护 | [0023](./0023-prompt-as-code-langgraph.md) · [0003](./0003-prompt-versioning-by-file-coexistence.md) |
-| 模型 | 全量统一 deepseek-v4-pro，适配集中在模型工厂 | 统一 Pro，图片暂不处理；网关兼容与零重试基线待验收 | [0020](./0020-unify-all-llm-on-deepseek-v4-pro.md) |
+| 模型 | 通用三角色配置、显式厂商适配，当前基线为 deepseek-v4-pro | 通用配置已实现；切换模型需重新验收，图片暂不处理 | [0020](./0020-unify-all-llm-on-deepseek-v4-pro.md) |
 | 数据与合规 | MySQL 协议 / TDSQL 与 Java 共库；LangFuse 生产自托管 | 符合客户基础设施，trace 与数据不出境 | [0009](./0009-mysql-version-and-tdsql-compatibility.md) · [0014](./0014-langfuse-as-harness-backend.md) |
 | 评测与运维 | 数据集 + 节点级 + CI + 上线观察四层统一评测门；P0/P1/P2 量化告警 | 每次改动有同一套可量化的放行标准 | [0030](./0030-goal-restatement-native-langgraph-dataset-eval-harness.md) · [0002](./0002-comprehensive-runtime-harness.md) · [0019](./0019-incident-severity-thresholds.md) |
 
@@ -37,7 +37,7 @@
 
 **三、Harness 工程纪律**
 
-- [0023](./0023-prompt-as-code-langgraph.md) 提示词即代码 · [0003](./0003-prompt-versioning-by-file-coexistence.md) 提示词版本化 · [0020](./0020-unify-all-llm-on-deepseek-v4-pro.md) 模型统一 · [0019](./0019-incident-severity-thresholds.md) 故障升级阈值
+- [0023](./0023-prompt-as-code-langgraph.md) 提示词即代码 · [0003](./0003-prompt-versioning-by-file-coexistence.md) 提示词版本化 · [0020](./0020-unify-all-llm-on-deepseek-v4-pro.md) 通用模型配置与当前基线 · [0019](./0019-incident-severity-thresholds.md) 故障升级阈值
 
 ## 总表
 
@@ -53,13 +53,13 @@
 | [0009](./0009-mysql-version-and-tdsql-compatibility.md) | MySQL 协议 + TDSQL 生产环境 | 已采纳（TDSQL 待现场实测） | — |
 | [0014](./0014-langfuse-as-harness-backend.md) | LangFuse 作为 Harness 后台 | 已采纳 | 修订 0004 / 0005 |
 | [0019](./0019-incident-severity-thresholds.md) | 故障升级阈值 P0 / P1 / P2 | 已采纳 | 与 0030 D3 互补 |
-| [0020](./0020-unify-all-llm-on-deepseek-v4-pro.md) | 全量统一 deepseek-v4-pro | 已采纳（配置核对与验收待实施） | — |
+| [0020](./0020-unify-all-llm-on-deepseek-v4-pro.md) | 通用模型配置与 DeepSeek Pro 当前基线 | 已采纳（通用配置已实现，切换模型需验收） | — |
 | [0021](./0021-text-confirm-replaces-interrupt.md) | 单次指令处理：LangGraph 识别提交，Java 决定流程 | 已采纳（不做本地二阶段，代码待收敛） | 本次动作与引用选择见 0027 D5；会话持久化独立保留 |
 | [0023](./0023-prompt-as-code-langgraph.md) | 提示词即代码：PromptSpec | 已采纳 | 输出契约由 0027 收敛 |
 | [0024](./0024-langgraph-native-rearchitecture.md) | LangGraph 原生重构目标架构 | 已采纳（已冻结） | 拆出 0025-0029；D3 由 0031 修订，D4 幂等职责由 0026 修订 |
 | [0025](./0025-instrument-resolution-delegated-to-backend.md) | 标的识别职责边界：Java 调用识别工作流 | 已采纳（追认） | 修订 0001 D4 / 0023 / 0024 |
 | [0026](./0026-request-idempotency-uncertain-receipts-reconciliation.md) | 调用端幂等职责与单次调用回执契约 | 已采纳（职责规范，代码待调整） | 修订 0024 D4；模型额度见 0031 |
-| [0027](./0027-field-evidence-contract.md) | 字段来源契约 | 已采纳（业务归一化与数字校验待清理） | 修订 0023 D2；模型重试见 0031 |
+| [0027](./0027-field-evidence-contract.md) | 字段来源契约 | 已采纳（接口类型清洗，业务数值归 Java） | 修订 0023 D2；模型重试见 0031 |
 | [0028](./0028-session-entry-and-multi-instruction-send-orchestration.md) | 会话保护入口分流与单动作多订单 | 已采纳 | 解析约束见 0031 |
 | [0029](./0029-node-level-debug-api-and-regression-workbench.md) | 节点级调试接口与 Langfuse 回归闭环 | 已采纳（节点执行已建成，闭环待迁移） | 细化 0024 D6 |
 | [0030](./0030-goal-restatement-native-langgraph-dataset-eval-harness.md) | 目标重述与统一评测门 | 已采纳 | 修订 0001 / 0002 / 0005 / 0019 / 0024 D8 |

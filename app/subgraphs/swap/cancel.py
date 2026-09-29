@@ -4,7 +4,7 @@
 范围无法解析时提示补充且不调用后端。
 
 输入：raw_text + quote_content
-输出：state['cancel_params'] = {orderList} + 后端调用结果
+输出：state['cancel_params'] = {orderList} + 待清洗请求
 """
 from __future__ import annotations
 
@@ -14,7 +14,7 @@ from app.extraction.identity import prepare_identity_scope
 from app.graph.business_params import validated_cancel_params
 from app.graph.safe_node import safe_node
 from app.graph.state import AgentState, TraceEntry
-from app.subgraphs.swap.backend import call_swap_backend
+from app.subgraphs.swap.backend import prepare_swap_request
 from app.subgraphs.swap.order_id import CancelScopeError, extract_for_cancel, extract_order_ids
 
 
@@ -39,7 +39,7 @@ async def swap_cancel(state: AgentState) -> dict[str, Any]:
     )
     order_list = [{"orderId": oid} for oid in order_ids]
 
-    backend = await call_swap_backend(
+    request_update = await prepare_swap_request(
         prepared_state,
         intent="cancel_order_request",
         order_list=order_list,
@@ -49,7 +49,7 @@ async def swap_cancel(state: AgentState) -> dict[str, Any]:
         "field_records": records,
         "expected_action": "cancel",
         "cancel_params": validated_cancel_params(orderList=order_list),
-        **backend,
+        **request_update,
         "trace": [
             TraceEntry(
                 node="swap_cancel",

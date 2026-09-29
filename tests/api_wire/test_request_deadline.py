@@ -8,10 +8,9 @@ from fastapi.testclient import TestClient
 from app.api import routes
 from app.config import get_settings
 from app.main import app
-from app.storage.idempotency import InMemoryIdempotencyStore
 
 
-def test_deadline_cancels_graph_and_duplicate_never_reexecutes(monkeypatch):
+def test_deadline_cancels_each_independent_call(monkeypatch):
     settings = get_settings().model_copy(update={
         "request_timeout_seconds": .12, "response_reserve_seconds": .04,
     })
@@ -29,20 +28,18 @@ def test_deadline_cancels_graph_and_duplicate_never_reexecutes(monkeypatch):
         graph = AsyncMock()
         graph.ainvoke.side_effect = slow
         client.app.state.main_graph = graph
-        client.app.state.idempotency_store = InMemoryIdempotencyStore()
         body = {"inputs": {"rawContent": "确认下单", "messageId": 700, "roomId": "r"}, "user": "u"}
         first = client.post("/v1/workflows/run", json=body)
         second = client.post("/v1/workflows/run", json=body)
         assert first.status_code == second.status_code == 504
         assert first.json() == second.json()
         assert first.json()["code"] == "workflow_timeout"
-        assert cancelled == [True]
-        assert graph.ainvoke.await_count == 1
-        client.app.state.idempotency_store = None
+        assert cancelled == [True, True]
+        assert graph.ainvoke.await_count == 2
 
 
-@pytest.mark.parametrize("factory", ["get_qwen_standard", "get_qwen_thinking", "get_qwen_structured", "get_qwen_complex", "get_qwen_vl"])
-def test_graph_is_the_only_owner_of_llm_retries(factory):
+@pytest.mark.parametrize("factory", ["get_llm_standard", "get_llm_thinking", "get_llm_structured", "get_llm_complex"])
+def test_model_factories_disable_llm_retries(factory):
     from app.llm import clients
     function = getattr(clients, factory)
     if hasattr(function, "cache_clear"):

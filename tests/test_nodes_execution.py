@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 import io
 import json
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock
 
 import httpx
 import pytest
@@ -21,9 +21,10 @@ from app.subgraphs.close.place_close import build_place_close_graph
 from app.subgraphs.option.extract_inquiry import build_inquiry_graph
 from app.subgraphs.option.graph import build_option_graph
 from app.subgraphs.swap.graph import build_swap_graph
+from app.subgraphs.swap.place_order import build_place_graph
 from app.tools.message_client import MessageClientHttpx
 from mock_api.server import app as mock_app
-from tests.intent_fixtures import intent_reply, mock_ainvoke
+from tests.joint_support import instruction_data
 
 _QUOTE_CARD = (
     "-----场外期权询价详情-----\r\n"
@@ -45,10 +46,23 @@ async def request(executor: NodeExecutor, product: str, node: str, state: dict) 
         )
 
 
+async def request_business(executor: NodeExecutor, node: str, state: dict) -> httpx.Response:
+    """经真实节点 HTTP 顺序执行参数准备、清洗和提交，保持每个节点的独立接口。"""
+    prepared = await request(executor, "option", node, state)
+    assert prepared.status_code == 200, prepared.text
+    current = {**state, **prepared.json()["output"]}
+    cleaned = await request(executor, "option", "option_clean_request", current)
+    assert cleaned.status_code == 200, cleaned.text
+    current.update(cleaned.json()["output"])
+    submit = "option_query_backend" if current["pending_backend_request"]["intent"] == "query_order_status" else "option_submit"
+    return await request(executor, "option", submit, current)
+
+
 def test_catalog_matches_all_registered_graph_nodes_and_policies() -> None:
     graphs = [
         ("main", build_main_graph()),
         ("swap", build_swap_graph()),
+        ("swap", build_place_graph()),
         ("option", build_option_graph()),
         ("option", build_inquiry_graph()),
         ("option_close", build_close_graph()),
@@ -189,16 +203,14 @@ async def test_io_retries_exactly_configured_attempts_and_exhaustion(
 
 async def test_private_place_close_fields_are_not_filtered() -> None:
     executor = NodeExecutor(build_registry())
-    parse = await request(
-        executor, "option_close", "place_close_parse", {"raw_text": "平仓 OPT-ABC"}
-    )
-    parsed = parse.json()["output"]["pc_parsed"]
-    assert parsed["contractCodes"] == ["OPT-ABC"]
-    normalized = await request(
-        executor, "option_close", "place_close_normalize", {"pc_parsed": parsed}
-    )
-    assert normalized.status_code == 200, normalized.text
-    assert normalized.json()["output"]["pc_close_orders"] == []
+    raw = "平仓 OPT-ABC"
+    parsed = instruction_data("option_close", "close_order_request", raw, orders=[{"internalTradeId": "OPT-ABC"}])
+    prepared = await request(executor, "option_close", "place_close_prepare", {"raw_text": raw, "parsed_instruction": parsed})
+    assert prepared.status_code == 200, prepared.text
+    orders = prepared.json()["output"]["pc_close_orders"]
+    assert orders == [{"internalTradeId": "OPT-ABC"}]
+    checked = await request(executor, "option_close", "place_close_validate", {"raw_text": raw, "pc_close_orders": orders})
+    assert checked.status_code == 200, checked.text
 
 
 async def test_persist_write_failure_keeps_existing_success_output(
@@ -254,7 +266,6 @@ async def test_option_real_client_to_http_mock_and_composite_output(
     composite: bool,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    from app.subgraphs.option.models import OptionIntentOutput
     from app.tools.option_client import OptionClientHttpx
 
     transport = RecordingTransport()
@@ -266,17 +277,11 @@ async def test_option_real_client_to_http_mock_and_composite_output(
             transport=transport,
         ),
     )
-    llm = MagicMock()
-    llm.with_structured_output.return_value.ainvoke = mock_ainvoke(
-        intent_reply(OptionIntentOutput, type="query_order_status"),
-    )
-    monkeypatch.setattr("app.subgraphs.option.intent.get_qwen_structured", lambda: llm)
-    response = await request(
-        NodeExecutor(build_registry()),
-        "main" if composite else "option",
-        "option" if composite else "option_extract_query",
-        CONTEXT | {"raw_text": "查询订单 Q-20260921-1234567890"},
-    )
+    state = CONTEXT | {"raw_text": "查询订单 Q-20260921-1234567890",
+        "parsed_instruction": instruction_data("option", "query_order_status", "查询订单 Q-20260921-1234567890")}
+    executor = NodeExecutor(build_registry())
+    response = (await request(executor, "main", "option", state) if composite
+                else await request_business(executor, "option_extract_query", state))
     assert response.status_code == 200, response.text
     output = response.json()["output"]
     assert output["api_code"] == 0
@@ -306,11 +311,12 @@ async def test_write_node_failure_calls_http_once_and_keeps_error(
             transport=httpx.MockTransport(offline),
         ),
     )
-    response = await request(
+    response = await request_business(
         NodeExecutor(build_registry()),
-        "option",
         "option_extract_confirm_place",
-        CONTEXT | {"raw_text": "确认下单", "quote_content": _QUOTE_CARD},
+        CONTEXT | {"raw_text": "确认下单", "quote_content": _QUOTE_CARD,
+            "parsed_instruction": instruction_data("option", "confirm_order", "确认下单",
+                orders=[{"orderId": "Q-20250616-000011"}], quote=_QUOTE_CARD)},
     )
     assert response.status_code == 500, response.text
     assert calls == 1
@@ -336,81 +342,19 @@ async def test_business_rejection_is_unchanged_output(monkeypatch: pytest.Monkey
             ),
         ),
     )
-    response = await request(
+    response = await request_business(
         NodeExecutor(build_registry()),
-        "option",
         "option_extract_confirm_place",
-        CONTEXT | {"raw_text": "确认下单", "quote_content": _QUOTE_CARD},
+        CONTEXT | {"raw_text": "确认下单", "quote_content": _QUOTE_CARD,
+            "parsed_instruction": instruction_data("option", "confirm_order", "确认下单",
+                orders=[{"orderId": "Q-20250616-000011"}], quote=_QUOTE_CARD)},
     )
     assert response.status_code == 200, response.text
     assert response.json()["output"]["api_code"] == 409
     assert response.json()["output"]["api_result"] == "正在处理，请勿重复提交"
 
 
-@pytest.mark.parametrize("mode", ["image", "excel"])
-async def test_multimodal_stages_use_http_and_llm_boundaries_only(
-    mode: str,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    from openpyxl import Workbook
 
-    from app.extraction.candidates import candidate_model
-    from app.subgraphs.swap.models import SwapPlaceOrderParams
-
-    workbook = Workbook()
-    workbook.active.append(["标的代码", "数量"])
-    workbook.active.append(["600519.SH", 100])
-    buffer = io.BytesIO()
-    workbook.save(buffer)
-    downloads = []
-
-    def asset(req: httpx.Request) -> httpx.Response:
-        downloads.append(req.url.path)
-        return httpx.Response(200, content=buffer.getvalue())
-
-    original_client = httpx.AsyncClient
-
-    def client_factory(*args, **kwargs):
-        kwargs.setdefault("transport", httpx.MockTransport(asset))
-        return original_client(*args, **kwargs)
-
-    monkeypatch.setattr("app.subgraphs.swap.multimodal.httpx.AsyncClient", client_factory)
-    def field(value: str, column: str) -> dict:
-        reference = f"file:0:sheet:0:row:2:column:{column}" if mode == "excel" else "file:0:image"
-        return {
-            "value": value, "evidence": value, "confidence": 0.9,
-            "origin": "attachment", "reference": reference,
-        }
-
-    model = MagicMock()
-    model.with_structured_output.return_value.ainvoke = AsyncMock(
-        return_value=candidate_model(SwapPlaceOrderParams).model_validate({
-            "orderList": [{
-                "placeOrderWindCode": field("600519.SH", "A"),
-                "placeOrderQuantity": field("100", "B"),
-            }]
-        }),
-    )
-    monkeypatch.setattr("app.subgraphs.swap.multimodal.get_qwen_structured", lambda: model)
-    vision = MagicMock()
-    vision.with_structured_output.return_value.ainvoke = AsyncMock(
-        return_value={"text": "600519.SH 100"},
-    )
-    monkeypatch.setattr("app.subgraphs.swap.multimodal.get_qwen_vl", lambda: vision)
-    response = await request(
-        NodeExecutor(build_registry()),
-        "swap",
-        f"swap_{mode}_order",
-        {
-            "input_files": [{"type": mode, "url": f"http://mock/order.{mode}"}],
-        },
-    )
-    assert response.status_code == 200, response.text
-    output = response.json()["output"]
-    assert output["place_params"]["orderList"][0]["placeOrderWindCode"] == "600519.SH"
-    assert output["place_params"]["orderList"][0]["placeOrderQuantity"] == 100
-    assert "api_code" not in output
-    assert downloads == (["/order.excel"] if mode == "excel" else [])
 
 async def test_lifespan_uses_same_message_factory_for_both_apis(
     monkeypatch: pytest.MonkeyPatch,
@@ -421,7 +365,6 @@ async def test_lifespan_uses_same_message_factory_for_both_apis(
     settings = get_settings()
     monkeypatch.setattr(settings, "environment", "staging")
     monkeypatch.setattr(settings, "use_mysql_checkpointer", False)
-    monkeypatch.setattr(settings, "request_idempotency", False)
     transport = RecordingTransport()
 
     def message_factory() -> MessageClientHttpx:
@@ -434,3 +377,37 @@ async def test_lifespan_uses_same_message_factory_for_both_apis(
         await app.state.main_graph.builder.nodes["persist_intent"].runnable.ainvoke(CONTEXT)
     assert len(transport.requests) == 2
     assert all(r.url.host == "mock" for r in transport.requests)
+
+
+async def test_excel_input_node_downloads_and_preserves_all_cells(monkeypatch):
+    """节点 HTTP 入口执行真实 Excel 读取，不进入交易或模型阶段。"""
+    from openpyxl import Workbook
+
+    workbook = Workbook()
+    workbook.active.append(["标的", "数量"])
+    workbook.active.append(["茅台", 100])
+    workbook.active.append(["平安", 200])
+    buffer = io.BytesIO()
+    workbook.save(buffer)
+    downloads = []
+    original = httpx.AsyncClient
+
+    def asset(req):
+        """只替换附件外部 HTTP，记录实际请求。"""
+        downloads.append(req.url.path)
+        return httpx.Response(200, content=buffer.getvalue())
+
+    def factory(*args, **kwargs):
+        """ASGI 测试传输保持原样，其余连接固定为附件响应。"""
+        kwargs.setdefault("transport", httpx.MockTransport(asset))
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(httpx, "AsyncClient", factory)
+    result = await request(NodeExecutor(build_registry()), "main", "prepare_input", {
+        "input_files": [{"type": "document", "url": "http://assets/orders.xlsx"}]})
+    assert result.status_code == 200, result.text
+    output = result.json()["output"]
+    assert downloads == ["/orders.xlsx"] and len(output["attachment_rows"]) == 2
+    assert "茅台" in output["attachment_sources"]["file:0:sheet:0:row:2:column:A"]
+    assert "200" in output["attachment_sources"]["file:0:sheet:0:row:3:column:B"]
+    assert "place_params" not in output

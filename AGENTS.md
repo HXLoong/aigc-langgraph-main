@@ -25,19 +25,19 @@ docker compose -f infra/langfuse/docker-compose.yml --env-file infra/langfuse/.e
 uvicorn app.main:app --reload                # FastAPI（POST /v1/workflows/run，兼容 Dify）
 
 # 轻量测试；当前 .env 开启持久化，单测通过命令级配置隔离数据库依赖
-USE_MYSQL_CHECKPOINTER=false REQUEST_IDEMPOTENCY=false ENABLE_LANGFUSE=false pytest tests/test_smoke.py -q
+USE_MYSQL_CHECKPOINTER=false ENABLE_LANGFUSE=false pytest tests/test_smoke.py -q
 # 完整 pytest / biz 业务集全量 / 性能测试按用户统一验收安排执行，不逐批重复。
 
 # 本地 HTTP 业务回归（仅在准备好授权测试账号和数据后，由主代理或用户执行）
 python scripts/local_eval.py --base-url http://127.0.0.1:8201 --data tests/datasets/biz --case case-025 --concurrency 1
 # 全量验收时去掉 --case；只跑显式 biz。
-# 本地真实联调：ENVIRONMENT=staging uvicorn app.main:app --host 127.0.0.1 --port 8201
+# 本地真实联调：ENVIRONMENT=staging TRUST_INBOUND_TRACEPARENT=true LLM_OUTPUT_MAX_TOKENS=8192 uvicorn app.main:app --host 127.0.0.1 --port 8201
 
-# Langfuse Dataset Experiment（确定性断言；旧 Judge 路径待清理，先显式 --no-judge）
-python scripts/langfuse/langfuse_eval.py --dataset biz/option_inquiry --ids case-022 --concurrency 1 --no-judge
-# 意图集（不依赖 Java/GOATS；冻结上下文的用例由 harness/intent_runner.py 只跑意图子链、只调 LLM，
-# 拒绝验收（及引用上一轮回复的回放）用例走主图 + mock_api；本地只推送 Experiment、不算分，
-# 评分由 Langfuse Evaluation Rule 异步完成；不进 CI；业务集 biz/ 依赖 Java 后端只在开发环境跑）
+# Langfuse Dataset Experiment（确定性断言；HTTP 执行，SDK Experiment / Score）
+python scripts/langfuse/langfuse_eval.py --dataset biz/option_inquiry --ids case-022 --concurrency 1
+# 意图集（不依赖 Java/GOATS；冻结上下文的用例由 harness/intent_runner.py 经节点 HTTP 调唯一解析器，
+# 拒绝验收（及引用上一轮回复的回放）用例走主图 + mock_api；执行结果上传 Langfuse，
+# 评分由 JS Evaluation Rule 异步完成；不进 CI；业务集 biz/ 依赖 Java 后端只在开发环境跑）
 python scripts/langfuse/langfuse_eval.py --local tests/datasets/intent --concurrency 3
 
 # Harness CLI（备用 / 本地快速 smoke，无 Judge；run 需授权测试身份，见 harness/README.md）
@@ -58,30 +58,27 @@ app/
 ├── main.py                  # FastAPI 入口 + lifespan + HTTPMetricsMiddleware + /metrics
 ├── config.py                # pydantic-settings 配置加载
 ├── api/                     # 仅 HTTP 层：routes.py（POST /v1/workflows/run）/ nodes.py（/v1/nodes/*）/ health.py（/health, /ready）
-│                            # / turn_state.py（一轮输入 → State）/ notifications / errors
+│                            # / turn_state.py（一轮输入 → State）/ errors
 ├── graph/                   # state（AgentState）/ main（主图组装；app/graph 内唯一依赖业务节点的模块）/ safe_node
 │                            # / retry（io_node + RetryPolicy）/ cascade / business_params（写入前形状校验）
 ├── nodes/                   # 主图节点：ingest / entry_route / fast_query（快速询价 + 存量指令）/ pre_route
-│                            # / route_rules + intent_route（规则 → LLM → sticky）/ persist_intent / render / fallback
+│                            # / route_rules + intent_route（纯规则产品提示）/ prepare_input / prepare_parse_context / parse_instruction/ persist_intent / render / fallback
 │                            # / remember_confirmed / record_history / persist
 ├── subgraphs/               # 三个业务子图（互不依赖）+ common.py（意图分发路由 + <product>_unknown 兜底）
-│   ├── swap/                # intent / place_order（候选 → normalize → submit）/ select_counterparty / select_ticker
-│   │                        # / fresh_counterparty / apply_picks / confirm（确定性口令与引用校验）/ cancel / query_order
-│   │                        # / multimodal（图片 + Excel）+ backend / graph / models
-│   ├── option/              # intent + extract_inquiry（LLM）+ 其余 extract_*（确定性）+ place_params / sanitize / backend
-│   └── close/               # intent / place_close（引用解析链）/ cancel_close / confirm_close / confirm_cancel
-│                            # / holding_query / query_status + reference_parser / aggregate / backend
-├── domain/                  # 纯业务规则（无 IO）：order_ids（订单号形态单一来源）/ numerals / confirmation
-│                            # （七条最终确认路径的范围校验，ADR 0021）/ tenor / fast_execution / sanitize
-├── extraction/              # 字段证据契约：FieldCandidate / FieldRecord / 锁定（ADR 0027）
+│   ├── swap/                # intent（读取联合结果）/ place_order（准备→来源检查→参数写回）/ apply_picks / confirm / cancel / query_order
+│   ├── option/              # intent + extract_inquiry（准备→来源检查→请求写回；父图清洗→Java）+ 稀疏补参/确认/撤单/查询
+│   └── close/               # intent / place_close（准备→引用选择检查→请求写回；父图清洗→Java）/ holding_query / confirm / cancel / query
+├── parsing/                 # 四套联合契约与 PromptSpec、字段证据、Excel/引用读取；不做业务数值归一化
+├── domain/                  # order_ids / numerals / confirmation：本次身份、序号和明确动作
+├── extraction/              # 字段来源、FieldRecord 和同次调用字段锁（ADR 0027）
 ├── node_execution/          # 节点契约真源 catalog.py + 单节点执行（registry / prepare / executor）
 ├── tools/                   # Client Protocol：option_client / swap_client / message_client / goats_agent_client
 │                            # （ticker_client 只供本地验收脚本）+ http_pool / receipts / bot_context
-├── llm/clients.py           # LLM 工厂（get_qwen_*）：模型由 .env 的 QWEN_MODEL_* 选择，目标按 ADR 0020 统一 deepseek-v4-pro（本阶段图片暂不处理，配置与链路待核对）
+├── llm/clients.py           # LLM 工厂（get_llm_*）：模型由 LLM_MODEL_* 选择，LLM_PROVIDER 显式选择适配；ADR 0020 当前基线为 deepseek-v4-pro（本阶段图片暂不处理）
 ├── checkpointer/factory.py  # AIOMySQLSaver 连接池
-├── storage/                 # MySQL 表与读写：mysql（MYSQL_URI 唯一解析）/ idempotency / reconciliation / node_trace
+├── storage/                 # MySQL 表与读写：mysql（MYSQL_URI 唯一解析）/ node_trace
 ├── observability/           # tracing / metrics / alerts / canary / health_probes / logs / privacy / node_labels
-└── prompts/                 # 提示词资产（git 唯一真源；router / swap / option / option_close + judge / system）
+└── prompts/                 # 提示词资产（git 唯一真源；router / swap / option / option_close 的 parse_instruction + system 能力探测）
 
 # 分层依赖方向见 docs/architecture/README.md §分层，由 tests/test_architecture_layers.py 守护
 
@@ -89,7 +86,7 @@ harness/                     # 评测台：run（HTTP 回归）/ node-run（节�
 scripts/                     # 评估入口、真后端探针、灰度与运维、一致性 lint，目录页见 scripts/CLAUDE.md
 infra/                       # langfuse/（self-hosted Compose）+ grafana/（面板模板）
 docs/                        # 文档地图与存放规则见 docs/README.md（lint 强制）
-tests/                       # 3500+ 条，布局见 tests/CLAUDE.md
+tests/                       # 测试数量以当前收集结果为准，布局见 tests/CLAUDE.md
 tests/datasets/              # intent/（意图集，只调 LLM）+ biz/（业务验收集，6 文件，依赖 Java），见 tests/datasets/README.md
                              # 旧节点 fixture、B 方言历史参考集及派生 CSV / Excel 已退役；节点调试 API 和 node-run 保留
 ```
@@ -114,7 +111,7 @@ tests/datasets/              # intent/（意图集，只调 LLM）+ biz/（业�
 - 当前重构采用轻量验证：业务改动先最小 RED，再 GREEN 与相关关键测试；用户要求最终统一测试时，不逐批跑全套 pytest、biz 全量真实回归或压测。
 - 真实写入测试仅由主代理调度；先确认授权测试账号、群、对手及持仓。业务回归使用 scripts/local_eval.py 和显式 tests/datasets/biz。
 - 新建或移动文档先按 `.claude/rules/docs.md` 判定归属目录（一次性报告进 `docs/reports/YYYY-MM-DD-<topic>.md`），跑 `python scripts/check_docs_layout.py`。
-- 任务和证据记录在 tmp；区分实现完成、专项通过、待用户验收、外部阻塞。外部阻塞不可写成已完成；全量结果未经运行不得宣称通过。
+- 临时文件、任务记录和验证证据统一写入 `/opt/work-file/code-tmp/aigc-langgraph-tmp/`，按任务建子目录；仓库内不再创建 `tmp/` 或同名软链接。区分实现完成、专项通过、待用户验收、外部阻塞。外部阻塞不可写成已完成；全量结果未经运行不得宣称通过。
 - 不 push、不创建 PR；保留用户原有未提交改动。新 worktree 显式准备依赖与所需本地配置，禁止输出或提交密钥。
 - 2026-09-22 issue 裁决：#218 不处理；#219 仅待部署环境核查；#220 biz 标注后续单列；#221 暂不改脱敏默认值与审计原文；#222 协议迁移暂缓，保持 Java 源码、配置、agentUrl、DTO 和现行 wire 契约；#224 的 shadow_compare 保留待 F4.1 裁决。
 
@@ -129,8 +126,8 @@ tests/datasets/              # intent/（意图集，只调 LLM）+ biz/（业�
 ## 核心原则（永远有效）
 
 1. **提示词不硬编码在代码里** —— 从 `app/prompts/**/*.md` 加载；LLM 节点用 `PromptSpec`（`app/prompts/spec.py`，ADR 0023）声明 `inputs`（AgentState 字段）/ `output_model` / `injects` / `user_builder`，`SPEC.build_messages(state)` 拼消息；user 里的规则文本住 `.md` `[user]` 段，代码只供变量；共享拼装用 `app/prompts/blocks.py`，不在子图里复制 `_format_history`
-2. **LLM 输出用 `with_structured_output(PydanticModel)`** —— 绝不手工解析 JSON；输出模型每个字段写 `Field(description=)`，这是输出语义的唯一真源（经 function calling schema 下发），提示词正文不再维护 JSON 骨架 / 字段表
-3. **节点错误与重试分界** —— 纯计算、LLM 与写类节点用 `@safe_node`，异常落 `state['error']`；独立后端只读查询用 `@io_node` + `add_io_node` 挂 `RetryPolicy`。LLM 与写类节点不自动重试，后端查询重试不得重跑模型（ADR 0031，现有链路待重构）。
+2. **LLM 输出用 `with_structured_output(PydanticModel)`** —— 模型响应不手工解析 JSON；业务参数字符串的 Dify 兼容解码仅在清洗入口执行（ADR 0027 D3）；输出模型每个字段写 `Field(description=)`，这是输出语义的唯一真源（经 function calling schema 下发），提示词正文不再维护 JSON 骨架 / 字段表
+3. **节点错误与重试分界** —— 纯计算、LLM 与写类节点用 `@safe_node`，异常落 `state['error']`；独立后端只读查询用 `@io_node` + `add_io_node` 挂 `RetryPolicy`。LLM 与写类节点不自动重试，后端查询重试不得重跑模型（ADR 0031）。
 4. **State 字段只通过 TypedDict 约定** —— 新增字段必须先在 `app/graph/state.py` 中声明
 5. **TDD 强制** —— 任何 bug fix / 新功能必须先写失败测试（契约层纯数据容器除外，分层判据见 `.claude/rules/testing.md`「三层 TDD 准则」）：
    - 写测试 → 跑到 RED（测试失败） → 写最小修复代码 → 跑到 GREEN → 受影响测试回归（全量按统一验收，见 testing.md「验证范围」）
@@ -141,10 +138,10 @@ tests/datasets/              # intent/（意图集，只调 LLM）+ biz/（业�
 8. **标的识别由 Java 调用工作流完成**（ADR 0025）—— LangGraph 提取标的原始表达或用户对引用候选的明确选择，通过现有业务接口提交；Java 负责选择、调用对应的标的识别工作流并处理结果。LangGraph 不调用或编排识别工作流，不承担证券匹配、代码补全、近月计算及可交易性校验；业务、测试、验收脚本和探针均禁止调用证券查询接口，ticker_client.py 仅保留授权对手查询。职责与接口兼容说明见 `docs/architecture/backend-instrument-boundary.md`。
 9. **节点失败必须 cascade 防御** —— 任一节点写入 `state['error']` 后，下游条件路由必须先检查错误并转兜底，禁止 cascade 失败：主图 `_route_after_intent` 等转 `fallback` / `render`，子图 `_route_after_<p>_intent` 先查 `has_error` 转 `<p>_unknown`。兜底输出统一的未知指令引导文案（`Settings.default_reply`）+ trace 记录原 fail 节点名。LLM 网络、结构化输出或证据校验失败直接写入 error，本轮不再请求模型（ADR 0031）。LangGraph 不做强制二阶段，每次识别提交本次动作；现有确认类输入仍按用户明确动作与引用处理，由 Java 决定业务流程；不维护本地待确认订单或 interrupt（ADR 0021，参数收敛待办见 `docs/work-plan.md`）。
 
-10. **单次工具调用最多一次模型请求** —— 本次调用的主图、子图、工具、并行与循环共享额度，允许零次，LLM 零重试；本阶段覆盖互换、期权、平仓的文本与 Excel，图片暂不处理，不安排 OCR 或多模态接线。调用端以相同消息 ID 再次调用时独立计数，总重试预算归调用端。产品、意图、候选一次联合解析，模型节点重构先读 [ADR 0031](./docs/adr/0031-single-model-request-per-message.md)；规范已采纳，代码迁移待办见 `docs/work-plan.md`。
-11. **调用端管理消息生命周期** —— LangGraph 负责单次合法调用的识别、校验、后端调用与结果返回；消息防重、重投及重复通知归调用端，交易执行幂等与结果核查归 Java 业务端。请求占位、响应回放与对账代码待清理；职责规范见 [ADR 0026](./docs/adr/0026-request-idempotency-uncertain-receipts-reconciliation.md)，现状与验收见 `docs/work-plan.md`。
+10. **单次工具调用最多一次模型请求** —— 本次调用的主图、子图、工具、并行与循环共享额度，允许零次，LLM 零重试；本阶段覆盖互换、期权、平仓的文本与 Excel，图片暂不处理，不安排 OCR 或多模态接线。调用端以相同消息 ID 再次调用时独立计数，总重试预算归调用端。产品、意图、候选一次联合解析，模型节点重构先读 [ADR 0031](./docs/adr/0031-single-model-request-per-message.md)；当前拓扑见 `docs/architecture/main-graph-flow.md`，验证待办见 `docs/work-plan.md`。
+11. **调用端管理消息生命周期** —— LangGraph 负责单次合法调用的识别、校验、后端调用与结果返回；消息防重、重投及重复通知归调用端，交易执行幂等与结果核查归 Java 业务端。请求占位、响应回放与对账运行代码已移除，历史表保留；职责规范见 [ADR 0026](./docs/adr/0026-request-idempotency-uncertain-receipts-reconciliation.md)，现状与验收见 `docs/work-plan.md`。
 
-12. **字段来源与业务参数边界** —— 保留结构、来源、字段记录及引用选择检查；LangGraph 不做业务单位 / 比例换算、数字校验或业务默认值补齐，Java 校验业务参数（ADR 0027，旧代码待清理）。现有 DTO 不兼容时先核对契约，不静默修改 wire 语义。
+12. **字段来源与业务参数边界** —— 保留结构、来源、字段记录及引用选择检查；LangGraph 允许 Java 接口类型兼容清洗和有记录的字段省略，参数字符串 JSON 解码失败按 Dify 回退空对象并继续提交；不做业务单位 / 比例换算、业务数值校验或默认值补齐，Java 校验业务参数（ADR 0027）。现有 DTO 不兼容时先核对契约，不静默修改 wire 语义。
 13. **确定性评测与 Langfuse 闭环** —— 意图、业务、节点数据集批量评分只用确定性断言，不调用 LLM Judge；评测数值比较不属于业务数字校验。逐步迁移 Dataset / Experiment / Score 闭环，保留 harness 执行与本地复现、写节点禁止自动回放（ADR 0005 / 0029，迁移待办见工作计划）。
 
 ## 排查与修复流程（Bug Debug Workflow）
@@ -152,44 +149,21 @@ tests/datasets/              # intent/（意图集，只调 LLM）+ biz/（业�
 ### 1. 从 Langfuse 富 output 定位根因（首选）
 
 `scripts/langfuse/langfuse_eval.py` 每跑完一条 case 会把**结构化富集 JSON** 写到自托管 LangFuse
-（地址取 `LANGFUSE_BASE_URL`，本地默认 http://127.0.0.1:3000）。下面为旧评分路径的现存字段示意；按 ADR 0005 批跑使用 `--no-judge`，验收以确定性断言及 diff 为准，旧 Judge 字段不作为通过依据：
-
-```jsonc
-{
-  "expected": "数据集期望输出",
-  "score": 0.0,
-  "judge_comment": "Judge 一句话评语",
-  "turns": [
-    {"turn": 1, "raw": "用户原始输入", "reply": "机器人回复",
-     "product_type": "option", "intent": "new_inquiry",
-     "tickers": [],
-     "place_params": {"action": "...", "orderList": [...]},
-     "api_result": null, "api_code": null,
-     "error": null,
-     "trace": "ingest → intent_route → ...",
-     "quote_passed": ""}
-  ]
-}
-```
+（地址取 `LANGFUSE_BASE_URL`）。用例输入、明确期望、每轮实际输出及确定性差异均保留；`local_eval.py` 把业务评分关联到同一用例 Trace，SDK Experiment 入口同时管理实验记录。
 
 **AI 查错 SOP**：
-1. eval stdout 找 `LangFuse 写入成功  run=local-YYYYMMDD-HHMMSS` 这行
-2. Langfuse UI 按 run name 过滤 → 点开失败 case
-3. 用 expected、确定性 Scores 与字段 diff 锁定差异；旧 score / judge_comment 不替代断言
-4. `turns[i]` 数组按字段定位错误层：
-   - `product_type` 错 → [app/nodes/intent_route.py](app/nodes/intent_route.py)
-   - `intent` 错 → 子图 `intent.py` 提示词
-   - 标的结果错误 → 先核对传给 Java 的原文或引用选择；提取错误查 LangGraph，提交正确而识别错误查 Java 调用记录及对应识别工作流
-   - `place_params` 字段漏 → swap 看 `swap/place_order.md` 提示词与 `normalize`，close 看 `option_close/place_close.md`，option 看 `option/place_params.py`（确定性解析）
-   - `api_result` 含"正在处理"/"请勿重复" → 后端 dedup
-   - `error` 非空 → 看 `error.node` + `error.message`
-5. 左侧子 span 树（CallbackHandler 自动嵌套）看每个 LLM 调用的 prompt / completion / token
+1. 从报告读取 `run_name`、`langfuse_trace_id`、`observation_id` 和逐轮 `diff`。
+2. 核对 Experiment/用例根 → HTTP 轮 → 服务端图 → 模型的父子关系及 Session；本地 `trace_status` 只表示返回的关联信息，不证明数据已成功入库。
+3. 产品、意图或参数错误查 `app/nodes/parse_instruction.py`、`app/parsing/` 和相应 `parse_instruction.md`；结构与来源错误看 `error.node/code/message`，本次不重试模型。
+4. 实际提交的标的表达正确而 Java 识别错误时，查 Java 内部识别工作流；不在 LangGraph 加证券清单。
+5. Java 拒绝、处理中或权限提示原样留审计。字段漏提先补回归，不伪造订单卡、不弱化 expected。
+6. 写类参数标注缺口、节点样本缺口和外部契约冲突单独记录，不能把“有回复”当 PASS。
 
 ### 1b. 备用：stdout per-turn 文本（无 Langfuse 时）
 
 ```
 第N轮 [product_type/intent] | quote=Xc 'preview' | ERROR: ...
-  trace : ingest → intent_route[rule:...→option] → option_intent[...] → render
+  trace : ingest → prepare_input → intent_route → parse_instruction → option_intent → render
   reply : 实际回复内容
 ```
 
@@ -203,9 +177,9 @@ tests/datasets/              # intent/（意图集，只调 LLM）+ biz/（业�
 
 | 现象 | 根因 | 文件 |
 |---|---|---|
-| 第2轮路由走了 LLM 而非规则 / sticky | 规则层未命中或 sticky 继承条件不满足 | `app/nodes/route_rules.py` / `app/nodes/intent_route.py` |
+| 产品提示与联合结果不符 | 核对当前规则、引用和模型结果 | `app/nodes/route_rules.py` / `app/nodes/intent_route.py` |
 | 标的未匹配 | 核对 Java 真实回复与提交的原始证券表达；不根据空 `tickers` 生成本地拒绝 | 子图 `backend.py` |
-| 多轮 tickers/params 丢失 | 业务对象是 per-turn（ingest 清空，ADR 0024 D2）；跨轮上下文只靠 `history_messages` + `last_confirmed_params`（上一轮已确认订单号，仅作上下文；七条最终确认路径均必须引用当前订单并明确确认具体动作，范围校验统一由 `app/domain/confirmation.py` 执行） | `app/nodes/ingest.py` / `app/nodes/remember_confirmed.py` |
+| 多轮 tickers/params 丢失 | 业务对象是 per-turn（ingest 清空，ADR 0024 D2）；跨轮上下文只靠 `history_messages` + `last_confirmed_params`（上一轮已确认订单号，仅作上下文；七条最终确认路径均须由本次明确单号或引用选择确定订单，并明确确认具体动作，范围校验统一由 `app/domain/confirmation.py` 执行） | `app/nodes/ingest.py` / `app/nodes/remember_confirmed.py` |
 | 后端返回"订单不存在" | 参数中 orderId/Q- 单号提取错误 | 子图 extract 节点 + 提示词 |
 
 ### 2. TDD 修复（强制）
@@ -215,7 +189,7 @@ tests/datasets/              # intent/（意图集，只调 LLM）+ biz/（业�
 ```bash
 # 1. 写 tests/xxx/test_yyy.py，体现 bug 的最小复现
 # 2. 确认 RED
-USE_MYSQL_CHECKPOINTER=false REQUEST_IDEMPOTENCY=false ENABLE_LANGFUSE=false python -m pytest tests/xxx/test_yyy.py -v
+USE_MYSQL_CHECKPOINTER=false ENABLE_LANGFUSE=false python -m pytest tests/xxx/test_yyy.py -v
 # 3. 写最小修复
 # 4. 确认 GREEN + 受影响测试回归（全量由 CI / 统一验收跑）
 ```
@@ -293,10 +267,10 @@ Single-context 布局：根目录 `CONTEXT.md` + `docs/adr/`。详见 `docs/agen
 `.md` 里的 `{{var}}` 没有独立渲染层，只有两种合法形态：
 
 - system 段占位符 → 在 `PromptSpec.injects` 登记渲染器（当前业务 system 无动态占位符），`build_messages` 构造期校验存在性
-- `[user]` 段占位符 → 只在 user 含规则文本的节点存在（`swap/fresh_counterparty.md`），经 `render_user()` 渲染；其它节点没有 `[user]` 段，user 消息由 `user_builder` 拼变量
+- `[user]` 段占位符 → 仅供确需 user 规则模板的节点使用；当前四套解析器没有动态 user 规则，经 `render_user()` 渲染；其它节点没有 `[user]` 段，user 消息由 `user_builder` 拼变量
 - 代码不注入的占位符是悬空规则，LLM 看到的是变量名；属零风险删除档，围绕它的整段规则一起删
 
-## 加载方式（ADR 0023：一个 LLM 节点 = 一个 PromptSpec）
+## 加载方式（ADR 0023：每套解析契约一个 PromptSpec，一次调用只选一套）
 
 ```python
 from app.prompts import blocks
@@ -306,23 +280,23 @@ def _build_user_message(state: AgentState) -> str:      # 只拼变量，规则�
     return f"raw_content: {state.get('raw_text', '') or ''}\n\nhistory:\n{blocks.format_history(state.get('history_messages'))}"
 
 SPEC = register(PromptSpec(
-    category="swap", name="intent",
-    output_model=SwapIntentOutput,                    # 输出契约唯一真源：每个字段写 Field(description=)
+    category="swap", name="parse_instruction",
+    output_model=SwapInstruction,                    # 输出契约唯一真源：每个字段写 Field(description=)
     inputs=("raw_text", "history_messages", "conversation_id"),   # 必须是 AgentState 字段，构造期校验
     user_builder=_build_user_message,
     gray=True,                                        # 走 _versions.yaml 灰度（resolve_prompt_version）
 ))
 
 messages, prompt_name = SPEC.build_messages(state)    # [("system", ...), ("user", ...)]
-result = await model.with_structured_output(SwapIntentOutput).ainvoke(messages)
+result = await model.with_structured_output(SwapInstruction).ainvoke(messages)
 ```
 
-- 节点默认只用 system 段 + 代码拼变量的 user；user 里若有**规则文本**，写进 `.md` 的 `[user]` 段用 `{{var}}` 占位，`user_builder` 里用 `load_prompt(...).render_user(**vars)` 渲染（先例 `swap/fresh_counterparty.md`）
+- 节点默认只用 system 段 + 代码拼变量的 user；user 里若有**规则文本**，写进 `.md` 的 `[user]` 段用 `{{var}}` 占位，`user_builder` 里用 `load_prompt(...).render_user(**vars)` 渲染
 - **禁止**把提示词正文硬编码进 Python（含"后置追加一段格式指令"这种写法）；**禁止**在 `.md` 里维护 JSON 骨架 / 字段表——字段语义只写在 Pydantic `Field(description=)`
 - 共享拼装（历史、对手列表、JSON 列表）只在 `app/prompts/blocks.py` 定义一次，不在子图里复制
 - `injects` 登记的占位符必须在 `.md` system 段里真实存在，`build_messages` 构造期校验（`tests/prompts/test_prompt_spec.py`）
 - 灰度节点必须把 `build_messages` 返回的 `prompt_name` 写进 `TraceEntry.llm_output["prompt_name"]`（ADR 0003 硬前置：进 `_versions.yaml` 前必须先写 trace，否则版本对比失真）
-- 当前 14 个业务 PromptSpec；标的识别工作流由 Java 调用，LangGraph 在标的方面只提取原始表达或用户选择（ADR 0025）。system 使用固定资产，历史和参考数据经 `blocks.source_payload` 放入 user。`fresh_counterparty` 的 `[user]` 模板继续经 `render_user` 渲染。
+- 当前 4 个互斥的业务 PromptSpec；标的识别工作流由 Java 调用，LangGraph 在标的方面只提取原始表达或用户选择（ADR 0025）。system 使用固定资产，历史和参考数据经 `blocks.source_payload` 放入 user。一次请求只执行所选产品或跨产品契约，不再有独立意图、参数、选择或 OCR 模型链。
 
 ## 来源优先级（ADR 0014 D3）
 
@@ -402,7 +376,7 @@ for target in (
 
 ## 评分口径
 
-数据集批量评分只使用确定性断言（ADR 0005），不调用 LLM Judge；旧脚本路径待迁移时显式传 `--no-judge`，关闭 Judge 不代表字段断言覆盖已经完整。平台回归逐步接入 Langfuse Dataset / Experiment / Score，harness 与本地 CLI 共用同一比较逻辑（ADR 0029）。
+数据集批量评分只使用确定性断言（ADR 0005），不调用 LLM Judge；`--no-judge` 仅作兼容参数；字段覆盖仍以真实 expected 为准。平台回归逐步接入 Langfuse Dataset / Experiment / Score，harness 与本地 CLI 共用同一比较逻辑（ADR 0029）。
 
 ## Golden Set
 
@@ -459,7 +433,7 @@ agent 新建或移动文档时：
 
 1. **先读 `docs/README.md`「存放规则」判定归属**；能并入已有文档的一节就不新建文件
 2. 一次性的评估 / 审阅 / 调研 / 复盘结论写 `docs/reports/YYYY-MM-DD-<topic>.md`；现状与待办更新 `docs/work-plan.md`
-3. 不在仓库根目录或 `docs/` 根散落分析、计划、方案类 `.md`；生成物写 `.harness-runs/` 或 `tmp/`
+3. 不在仓库根目录或 `docs/` 根散落分析、计划、方案类 `.md`；本机生成物写 `/opt/work-file/code-tmp/aigc-langgraph-tmp/`，按任务建子目录
 4. 文件名小写 kebab-case；新文档登记到所在目录的 `README.md`
 5. 移动 / 改名时全仓更新引用，跑 `python scripts/check_docs_layout.py` 零违规
 
@@ -473,7 +447,7 @@ agent 新建或移动文档时：
 - 共享输入/输出字段在 app/graph/state.py 的 AgentState 声明；子图临时字段可放继承它的私有 TypedDict，output_schema 限制写回范围。
 - 一轮唯一输入入口为 app/api/turn_state.py::inputs_to_state。per-turn 字段在 ingest 重置；跨轮记忆、会话活动时间遵循已实现的过期逻辑。
 - trace 使用 merge_by_id，history_messages 使用 merge_history，field_records 使用 merge_fields；新并行通道选择明确的 reducer，不照搬累加以免重复。
-- 节点返回 partial update，不原地修改输入；LangGraph 保留提取值与来源，不做业务归一化或数字校验；Java 校验业务值与默认值（ADR 0027，代码待迁移）。来源记录及锁定必须在实际后端请求边界生效。
+- 节点返回 partial update，不原地修改输入；LangGraph 保留提取值与来源，独立清洗节点处理 Java 接口类型兼容及字段省略，不做业务归一化或业务数值校验；Java 校验业务值与默认值（ADR 0027）。来源记录及锁定必须在实际后端请求边界生效。
 - 子图已返回 CompiledStateGraph 时直接嵌入，不再次 compile；以 app/subgraphs/*/graph.py 当前函数签名为准。
 
 ## IO 与错误
@@ -487,15 +461,15 @@ agent 新建或移动文档时：
 
 ## 提示词
 
-- 新增或重构模型节点时先读 `docs/adr/0031-single-model-request-per-message.md`：单次工具调用的主图与全部子图共享最多一次真实模型请求额度，产品/意图/候选联合解析，Excel 批量输入；本阶段统一 deepseek-v4-pro，图片暂不处理，不安排 OCR / 多模态链路；保留独立确定性节点，不逐行、逐图、逐订单追加模型调用。
+- 新增或重构模型节点时先读 `docs/adr/0031-single-model-request-per-message.md`：单次工具调用的主图与全部子图共享最多一次真实模型请求额度，产品/意图/候选联合解析，Excel 批量输入；模型由 LLM_MODEL_STANDARD 与 LLM_PROVIDER 配置，当前基线为 deepseek-v4-pro（ADR 0020），图片暂不处理，不安排 OCR / 多模态链路；保留独立确定性节点，不逐行、逐图、逐订单追加模型调用。
 
 - 每个 LLM 节点声明 PromptSpec；模型使用 with_structured_output，字段说明由 Pydantic Field(description=) 提供。
-- 提取值保留原文与 evidence/confidence/source；Code 检查结构、来源和引用选择，按现有 DTO 传输，不做单位换算、数值校验或业务默认值补齐。Java 校验业务参数，不手工 JSON 容错或让模型宣称交易成功。
+- 提取值保留原文与 evidence/confidence/source；Code 检查结构、来源和引用选择，再生成经过类型清洗的出站副本；原字段账本保留，省略字段不得重新回填。不做单位换算、业务数值校验或默认值补齐。Java 校验业务参数。参数清洗入口的字符串 JSON 解码失败按 Dify 回退空对象并继续提交；该例外不适用于 LLM 网络、容量或结构/来源失败，不增加请求。模型不能宣称交易成功。
 - 无新增 ReAct/ToolNode/bind_tools 路线；工具由 Code 节点选择调用。
 
 ## 持久化与运行
 
-- 请求职责遵循 ADR 0026：消息防重、并发调度、重投与重复通知归调用端，交易执行幂等归 Java；LangGraph 每次合法调用独立处理，message_id 仅用于业务传递和审计关联。现有占位、回放与对账实现待清理，见 docs/work-plan.md；checkpointer 和节点审计独立保留。
+- 请求职责遵循 ADR 0026：消息防重、并发调度、重投与重复通知归调用端，交易执行幂等归 Java；LangGraph 每次合法调用独立处理，message_id 仅用于业务传递和审计关联。占位、回放与对账运行代码已移除，历史表未删，见 docs/work-plan.md；checkpointer 和节点审计独立保留。
 - 生产 checkpointer 使用 app/checkpointer/factory.py 的池及表前缀适配，唯一连接配置 MYSQL_URI。
 - 首次通过 sql/init.sql 初始化；启动只读校验，不在节点调用 saver.setup 建表，不使用生产单连接 from_conn_string。
 - 测试使用 InMemorySaver；没有跨轮要求的纯计算子图可显式 checkpointer=False。

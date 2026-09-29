@@ -5,7 +5,6 @@
 - swap-order/get / get-conversation-orders
 - financial-orders/operate × 16 type 分发 + 入参校验
 - financial-orders/query-close-orders
-- integration/securities-instrument/select（GET + POST + 多关键词）
 - counterparty/info/list + instrument-inference-prompt
 - business/config/bot/name/list
 - openapi/xbot/message/set-intent
@@ -328,62 +327,6 @@ async def test_query_close_orders_empty_returns_empty(
     assert r.status_code == 200
     data = r.json()["data"]
     assert data == []
-
-
-# ============================================================
-# /admin-api/integration/securities-instrument/select
-# ============================================================
-
-
-@pytest.mark.asyncio
-async def test_securities_select_exact_match(client: httpx.AsyncClient) -> None:
-    r = await client.request(
-        "GET",
-        "/admin-api/integration/securities-instrument/select",
-        json={"keywordItems": [{"keyword": "0700.HK", "isFull": True}]},
-    )
-    assert r.status_code == 200
-    data = r.json()["data"]
-    assert len(data) == 1
-    assert data[0]["windCode"] == "0700.HK"
-    assert data[0]["insShtDesc"] == "腾讯控股"
-    assert data[0]["relevanceScore"] == 0
-
-
-@pytest.mark.asyncio
-async def test_securities_select_fuzzy_match(client: httpx.AsyncClient) -> None:
-    r = await client.post(
-        "/admin-api/integration/securities-instrument/select",
-        json={"keywordItems": [{"keyword": "茅台", "isFull": False}]},
-    )
-    assert r.status_code == 200
-    data = r.json()["data"]
-    assert any(item["windCode"] == "600519.SH" for item in data)
-
-
-@pytest.mark.asyncio
-async def test_securities_select_multi_keyword_dedup(
-    client: httpx.AsyncClient,
-) -> None:
-    r = await client.post(
-        "/admin-api/integration/securities-instrument/select",
-        json={
-            "keywordItems": [
-                {"keyword": "茅台", "isFull": False},
-                {"keyword": "腾讯", "isFull": False},
-                {"keyword": "TSLA", "isFull": False},
-            ]
-        },
-    )
-    assert r.status_code == 200
-    data = r.json()["data"]
-    codes = {d["windCode"] for d in data}
-    assert "600519.SH" in codes
-    assert "0700.HK" in codes
-    assert "TSLA.O" in codes
-    # relevanceScore 升序
-    scores = [d["relevanceScore"] for d in data]
-    assert scores == sorted(scores)
 
 
 # ============================================================

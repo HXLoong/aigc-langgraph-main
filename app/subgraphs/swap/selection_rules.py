@@ -27,6 +27,7 @@ _NUMERIC_PENDING = re.compile(r"(?:价格|数量|POV比例|可见委托量)[^\n�
 
 
 def _number(text: str) -> int:
+    """读取用户指定的序号，数字转换只用于结构选择，不计算交易数量。"""
     if text.isdigit():
         return int(text)
     digits = "零一二三四五六七八九"
@@ -39,6 +40,7 @@ def _number(text: str) -> int:
 
 
 def order_sequences(state: AgentState) -> dict[str, int]:
+    """从当前引用建立订单号与显示序号的唯一映射。"""
     pairs = [(block.get("orderId"), block.get("orderSeq"))
              for block in state.get("quote_ticker_candidates") or []]
     pairs += [(match[2], int(match[1])) for match in re.finditer(
@@ -60,6 +62,7 @@ def order_sequences(state: AgentState) -> dict[str, int]:
 
 
 def _segments(state: AgentState) -> list[tuple[list[int], str, str]]:
+    """按当前明确订单定位切分选择语句，范围不唯一时拒绝。"""
     raw = (state.get("raw_text") or "").strip()
     orders = (state.get("place_params") or {}).get("orderList") or []
     sequences = order_sequences(state)
@@ -91,6 +94,7 @@ def _segments(state: AgentState) -> list[tuple[list[int], str, str]]:
 
 
 def _literal(token: str, kind: str) -> tuple[str, bool]:
+    """去掉选择动作词，保留候选名称或编号的原文。"""
     noun = _CP if kind == "counterparty" else _TICKER
     explicit = bool(noun.search(token))
     previous = None
@@ -102,6 +106,7 @@ def _literal(token: str, kind: str) -> tuple[str, bool]:
 
 
 def _cp_pick(token: str, candidates: list[dict[str, Any]]) -> dict[str, Any] | None:
+    """在给定授权对手列表中解析明确字母、序号或唯一名称。"""
     literal, explicit = _literal(token, "counterparty")
     pick: dict[str, Any]
     if re.fullmatch(r"[A-Za-z]", literal):
@@ -121,6 +126,7 @@ def _cp_pick(token: str, candidates: list[dict[str, Any]]) -> dict[str, Any] | N
 
 
 def _ticker_pick(token: str, block: dict[str, Any], quote: str) -> dict[str, Any] | None:
+    """只在当前订单的引用候选中解析选择，原始代码交 Java 识别。"""
     if _CP.search(token):
         return None
     literal, explicit = _literal(token, "ticker")
@@ -153,6 +159,7 @@ def _ticker_pick(token: str, block: dict[str, Any], quote: str) -> dict[str, Any
 
 
 def _choices(state: AgentState, kind: str) -> list[dict[str, Any]] | None:
+    """按本次订单范围组合候选选择，拒绝冲突和缺失目标。"""
     orders = (state.get("place_params") or {}).get("orderList") or []
     if not orders:
         return []
@@ -196,15 +203,17 @@ def _choices(state: AgentState, kind: str) -> list[dict[str, Any]] | None:
 
 
 def counterparty_choice(state: AgentState) -> SwapSelectCounterpartyOutput | None:
+    """对明确的对手选择使用代码定位，不额外请求模型。"""
     if not state.get("swap_counterparties"):
         return SwapSelectCounterpartyOutput()
     picks = _choices(state, "counterparty")
     if picks is None:
         return None
-    return SwapSelectCounterpartyOutput(hasSignal=bool(picks), picks=[SwapCounterpartyPick.model_validate(pick) for pick in picks])
+    return SwapSelectCounterpartyOutput(has_signal=bool(picks), picks=[SwapCounterpartyPick.model_validate(pick) for pick in picks])
 
 
 def ticker_choice(state: AgentState) -> SwapSelectTickerOutput | None:
+    """对明确的标的选择使用代码定位，不调用证券查询。"""
     if not state.get("quote_ticker_candidates"):
         return SwapSelectTickerOutput()
     picks = _choices(state, "ticker")

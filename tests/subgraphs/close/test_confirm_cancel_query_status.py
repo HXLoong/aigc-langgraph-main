@@ -21,7 +21,7 @@ _QUOTE_TWO = "1. CO-20260304-4FE9C941\n2. CO-20260304-E2BA7501"
 
 def _patch(monkeypatch: pytest.MonkeyPatch, module: object) -> AsyncMock:
     backend = AsyncMock(return_value={"api_code": 0, "api_result": "backend reply"})
-    monkeypatch.setattr(module, "call_close_backend", backend)
+    monkeypatch.setattr(module, "prepare_close_request", backend)
 
     forbid_llm(monkeypatch, module)
     return backend

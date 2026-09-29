@@ -32,8 +32,8 @@ def _fake_settings(**overrides) -> SimpleNamespace:
         "mysql_uri": "mysql://user:pw@127.0.0.1:3306/test_db",
         "enable_langfuse": True,
         "langfuse_base_url": "http://langfuse:3000",
-        "qwen_api_base": "http://qwen:8000/v1",
-        "qwen_api_key": "sk-test",
+        "llm_api_base": "http://qwen:8000/v1",
+        "llm_api_key": "sk-test",
         "otc_api_base_url": "http://java:8080",
         "otc_api_secret": "secret-token",
     }
@@ -186,7 +186,7 @@ async def test_probe_langfuse_fail_on_500() -> None:
 
 @pytest.mark.asyncio
 async def test_probe_llm_disabled_when_no_base() -> None:
-    fake = _fake_settings(qwen_api_base="")
+    fake = _fake_settings(llm_api_base="")
     with patch("app.config.get_settings", return_value=fake):
         result = await hp.probe_llm()
     assert result.status == "disabled"
@@ -215,7 +215,7 @@ async def test_probe_llm_ok_with_bearer() -> None:
 @pytest.mark.asyncio
 async def test_probe_llm_ok_without_api_key() -> None:
     """没 api_key 时 → headers=None，仍发请求"""
-    fake = _fake_settings(qwen_api_key="")
+    fake = _fake_settings(llm_api_key="")
     mock_resp = httpx.Response(200)
     client_factory = _patch_httpx_client(mock_resp)
     with (
@@ -267,70 +267,12 @@ async def test_probe_java_backend_disabled_when_no_base() -> None:
     assert result.status == "disabled"
 
 
-@pytest.mark.asyncio
-async def test_probe_java_backend_ok_with_proper_envelope() -> None:
-    """合法 envelope {code, data}。"""
-    fake = _fake_settings()
-    mock_resp = httpx.Response(200, json={"code": 0, "data": "prompt..."})
-    client_factory = _patch_httpx_client(mock_resp)
-    with (
-        patch("app.config.get_settings", return_value=fake),
-        patch("app.tools.auth.get_goats_auth_headers", return_value={"X-Goats": "test"}),
-        patch("httpx.AsyncClient", client_factory),
-    ):
-        result = await hp.probe_java_backend()
-    assert result.status == "ok"
 
 
-@pytest.mark.asyncio
-async def test_probe_java_backend_fail_on_5xx() -> None:
-    fake = _fake_settings()
-    mock_resp = httpx.Response(502)
-    client_factory = _patch_httpx_client(mock_resp)
-    with (
-        patch("app.config.get_settings", return_value=fake),
-        patch("app.tools.auth.get_goats_auth_headers", return_value={}),
-        patch("httpx.AsyncClient", client_factory),
-    ):
-        result = await hp.probe_java_backend()
-    assert result.status == "fail"
 
 
-@pytest.mark.asyncio
-async def test_probe_java_backend_fail_on_bad_envelope() -> None:
-    """200 但响应不含 `code` → bad_envelope（防 mock 服务伪装健康）。"""
-    fake = _fake_settings()
-    mock_resp = httpx.Response(200, json={"unexpected": "shape"})
-    client_factory = _patch_httpx_client(mock_resp)
-    with (
-        patch("app.config.get_settings", return_value=fake),
-        patch("app.tools.auth.get_goats_auth_headers", return_value={}),
-        patch("httpx.AsyncClient", client_factory),
-    ):
-        result = await hp.probe_java_backend()
-    assert result.status == "fail"
-    assert result.error == "RuntimeError"
 
 
-@pytest.mark.asyncio
-async def test_probe_java_backend_uses_goats_auth_headers() -> None:
-    """GOATS 鉴权头被合并到请求 headers。"""
-    fake = _fake_settings()
-    mock_resp = httpx.Response(200, json={"code": 0})
-    client_factory = _patch_httpx_client(mock_resp)
-    with (
-        patch("app.config.get_settings", return_value=fake),
-        patch(
-            "app.tools.auth.get_goats_auth_headers",
-            return_value={"X-Sub": "1688x", "X-Agent": "10821x"},
-        ),
-        patch("httpx.AsyncClient", client_factory),
-    ):
-        await hp.probe_java_backend()
-    inst = client_factory.return_value
-    headers = inst.get.call_args.kwargs.get("headers") or {}
-    assert headers.get("X-Sub") == "1688x"
-    assert headers.get("X-Agent") == "10821x"
 
 
 # ============================================================

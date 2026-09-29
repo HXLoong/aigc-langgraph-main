@@ -67,7 +67,7 @@
 - **现行文档只写现状**：过时内容直接改或删，历史从 git 找回；不保留"旧版 / v2 / 备份"并存文件
 - **报告是快照**：`reports/` 里的文档写完不再维护；结论要长期生效时，提炼进 ADR、`architecture/` 或 `work-plan.md`，
   报告可在结论被吸收后删除
-- **不放生成物**：测试报告、评测输出、导出数据写到 `.harness-runs/` 或 `tmp/`（已 gitignore），不进 `docs/`
+- **不放生成物**：本机测试报告、评测输出、导出数据写到仓库外 `/opt/work-file/code-tmp/aigc-langgraph-tmp/`，不进 `docs/`
 - **单一真源**：同一事实只在一处维护，别处链接过去；纪律类规则写在 `CLAUDE.md` / `.claude/rules/`，`docs/` 不复述
 - 移动或改名文档时全仓更新引用，跑 `python scripts/check_docs_layout.py` 确认零违规
 

@@ -11,12 +11,7 @@ from typing import Any, Protocol
 import httpx
 from pydantic import ConfigDict, Field, field_validator
 
-from app.domain.tenor import normalize_request_tenors
 from app.tools.http_pool import acquire_http_client
-from app.tools.models import (
-    GoatsOrderDirection,
-    GoatsPriceType,
-)
 from app.wire_model import WireModel
 
 # ============================================================
@@ -68,8 +63,8 @@ class FinancialOrderOpenApiBaseSaveReqVO(WireModel):
     place_order_price: Decimal | None = Field(default=None, alias="placeOrderPrice")
     place_order_quantity: int | None = Field(default=None, alias="placeOrderQuantity")
     place_order_order_type: str | None = Field(default=None, alias="placeOrderOrderType")  # BY_QTY / BY_AMOUNT
-    place_order_order_direction: GoatsOrderDirection | None = Field(default=None, alias="placeOrderOrderDirection")
-    place_order_price_type: GoatsPriceType | None = Field(default=None, alias="placeOrderPriceType")
+    place_order_order_direction: str | None = Field(default=None, alias="placeOrderOrderDirection")
+    place_order_price_type: str | None = Field(default=None, alias="placeOrderPriceType")
     notional_amount: Decimal | None = Field(default=None, alias="notionalAmount")  # 下单金额（向 Goats 发送前要 truncate(2)）
     order_id: str | None = Field(default=None, alias="orderId")  # 改单/撤单时填
 
@@ -106,6 +101,7 @@ class GoatsOptionRfqReqVO(WireModel):
     @classmethod
     def normalize_numeric_arrays(cls, value: Any) -> Any:
         # 保持 0.8 的比例语义，只转换类型；字符串、空值及扩展字段原样保留。
+        """只把数值数组元素序列化为字符串，不改变比例或单位。"""
         if isinstance(value, list):
             return [
                 str(item)
@@ -128,7 +124,7 @@ class FinancialOrderOpenApiSaveReqVO(WireModel):
     model_config = ConfigDict(extra="allow")
 
     operate: str | None = None  # 操作（不强制，与 type 同义但不全等）
-    type: OptionIntentionType  # 意图（必填）
+    type: OptionIntentionType | None  # 意图（必填）
 
     order_list: list[FinancialOrderOpenApiBaseSaveReqVO] = Field(alias="orderList", default_factory=list)
     close_order_req_vo: CloseOrderReqVO | None = Field(default=None, alias="closeOrderReqVO")
@@ -147,6 +143,14 @@ class FinancialOrderOpenApiSaveReqVO(WireModel):
     #: 人工兜底代客操作人（本人操作时为空）；对齐 Dify `operator_user_id` 变量
     operator_user_id: str | None = Field(default=None, alias="operatorUserId")
 
+    def model_dump(self, **kwargs: Any) -> dict[str, Any]:
+        """Dify 空对象兼容请求必须保留显式 null 意图，其它可选字段仍省略。"""
+        payload = super().model_dump(**kwargs)
+        if self.type is None:
+            payload["type"] = None
+            payload["operate"] = self.operate
+        return payload
+
 
 # ============================================================
 # Protocol
@@ -161,13 +165,17 @@ class OptionClient(Protocol):
 
     async def operate(
         self, req: FinancialOrderOpenApiSaveReqVO
-    ) -> dict[str, Any]: ...
+    ) -> dict[str, Any]:
+        """通过现有操作接口提交 DTO，写类调用不自动重试。"""
+        ...
 
     async def query_close_orders(
         self,
         order_ids: list[str] | None = None,
         contract_codes: list[str] | None = None,
-    ) -> dict[str, Any]: ...
+    ) -> dict[str, Any]:
+        """按明确订单或合约身份读取 Java 上下文。"""
+        ...
 
 
 # ============================================================
@@ -214,6 +222,7 @@ class OptionClientHttpx:
 
     @property
     def _headers(self) -> dict[str, str]:
+        """按当前配置构造鉴权头，不在日志中输出凭据。"""
         from app.tools.auth import get_goats_auth_headers
         h = {"Content-Type": "application/json"}
         if self._token:
@@ -231,7 +240,8 @@ class OptionClientHttpx:
     async def operate(
         self, req: FinancialOrderOpenApiSaveReqVO
     ) -> dict[str, Any]:
-        intent_value = req.type.value if hasattr(req.type, "value") else str(req.type)
+        """通过现有操作接口提交 DTO，写类调用不自动重试。"""
+        intent_value = req.type.value if req.type is not None else None
         if self._dry_run and intent_value not in self._READ_INTENTS:
             from app.observability.metrics import emit_dry_run_intercept
             from app.tools.receipts import DRY_RUN_REPLY
@@ -246,8 +256,8 @@ class OptionClientHttpx:
         from app.tools.exceptions import translate_httpx_errors
 
         url = f"{self._base_url}/admin-api/financial-orders/operate"
-        # 金额精度：向 Goats 发送前 truncate 至 2 位
-        payload = normalize_request_tenors(req.model_dump(mode="json", exclude_none=True))
+        # 序列化保持本次接口值，期限解释和业务默认值由 Java 处理。
+        payload = req.model_dump(mode="json", exclude_none=True)
         async with (
             translate_httpx_errors("option"),
             acquire_http_client(timeout=self._timeout, transport=self._transport) as client,

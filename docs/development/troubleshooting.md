@@ -23,10 +23,10 @@ pip install "langgraph-checkpoint-mysql[aiomysql]"
 **解决**：降级到 8.0.x 或 9.5.x。测试可用 `InMemorySaver`。
 
 ### Q: LLM API 不通
-**原因**：`QWEN_API_BASE` 配置错 / 内网访问受限（变量沿用 `QWEN_*` 前缀，目标模型为 deepseek-v4-pro，实际配置与迁移状态按 ADR 0020 / 工作计划核对）。
+**原因**：`LLM_API_BASE` 配置错 / 内网访问受限（使用通用 `LLM_*` 变量，`LLM_PROVIDER` 按接口协议显式配置；迁移后重启，见 ADR 0020）。
 **解决**：
 ```bash
-curl $QWEN_API_BASE/models -H "Authorization: Bearer $QWEN_API_KEY"
+curl $LLM_API_BASE/models -H "Authorization: Bearer $LLM_API_KEY"
 # 应返回模型列表
 ```
 

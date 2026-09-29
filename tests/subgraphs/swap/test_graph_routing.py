@@ -1,396 +1,49 @@
-"""swap 子图编译 + 路由测试（DSL v2 拓扑，原 test_graph.py 已并入本文件）。
-
-覆盖 `app/subgraphs/swap/graph.py` 的**全部路由函数**与端到端链路：
-
-路由函数（纯函数，直接调用）：
-- `_route_swap_entry`：text / image / excel 三入口分流
-- `_route_after_swap_intent`：6 个真实意图 + unknown 兜底 + cascade
-- `_route_after_place_order`：引用消息判空 → 选择链 / 全新对手识别 / cascade
-- `_route_after_apply_picks`：选对手 ‖ 选标的 并行后汇合 + cascade
-- `_route_after_multimodal`：图片/Excel 提取后 → 提交 / cascade
-- `_has_usable_quote`：quote_content 判空（None / "" / "null" / 空白）
-
-端到端（build_swap_graph().ainvoke，mock LLM + mock backend）：
-- place_order_request 无引用 → swap_place_order → 全新对手识别 → submit
-- place_order_request 有引用 → swap_place_order → 选择对手 → 选择标的 → submit
-- image 入口 → swap_image_order → submit
-- unknown_intent → swap_unknown
-- intent LLM 抛错 → cascade 到 swap_unknown
-
-测试方法：G3 子图路由/集成（patch LLM + backend，断言 trace 节点序列）。
-"""
-from __future__ import annotations
-
+"""互换消费唯一解析结果，全部动作保持单路由和失败停止。"""
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-import app.subgraphs.swap.multimodal as mm_module
-import app.subgraphs.swap.select_counterparty as sc_module
-import app.subgraphs.swap.select_ticker as st_module
-from app.subgraphs.swap import backend as swap_backend_module
-from app.subgraphs.swap import build_swap_graph
-from app.subgraphs.swap import intent as intent_module
-from app.subgraphs.swap import place_order as po_module
+from app.graph.state import ErrorInfo
 from app.subgraphs.swap.graph import (
-    _has_usable_quote,
     _route_after_apply_picks,
-    _route_after_multimodal,
     _route_after_place_order,
     _route_after_swap_intent,
-    _route_swap_entry,
+    build_swap_graph,
 )
-from app.subgraphs.swap.models import (
-    SwapCounterpartyPick,
-    SwapIntentOutput,
-    SwapOrderItem,
-    SwapPlaceOrderParams,
-    SwapSelectCounterpartyOutput,
-    SwapSelectTickerOutput,
-    SwapTickerPick,
-)
-from tests.evidence_support import swap_candidate_output
-from tests.intent_fixtures import intent_reply, mock_ainvoke
-
-
-def _patch(
-    monkeypatch: pytest.MonkeyPatch,
-    module: object,
-    value: object,
-    fn: str = "get_qwen_thinking",
-) -> AsyncMock:
-    fake_llm = MagicMock()
-    fake_llm.ainvoke = mock_ainvoke(swap_candidate_output(value) if module is po_module and isinstance(value, SwapPlaceOrderParams) else value)
-    fake_base = MagicMock()
-    fake_base.with_structured_output = MagicMock(return_value=fake_llm)
-    monkeypatch.setattr(module, fn, lambda: fake_base)
-    return fake_llm.ainvoke
-
-
-def _patch_backend(monkeypatch: pytest.MonkeyPatch) -> MagicMock:
-    fake_client = MagicMock()
-    fake_client.operate = AsyncMock(return_value={"code": 0, "data": "后端原始回复", "msg": ""})
-    monkeypatch.setattr(swap_backend_module, "SwapClientHttpx", lambda: fake_client)
-    return fake_client
-
-
-def _patch_vl_and_extract(
-    monkeypatch: pytest.MonkeyPatch, params: SwapPlaceOrderParams
-) -> None:
-    payload = swap_candidate_output(params).model_dump(by_alias=True)
-    words = []
-    for order in payload["orderList"]:
-        for candidate in order.values():
-            if candidate is not None:
-                candidate.update(origin="attachment", reference="file:0:image")
-                words.append(candidate["value"])
-    ocr_llm = MagicMock()
-    ocr_llm.with_structured_output.return_value.ainvoke = AsyncMock(return_value={"text": " ".join(words)})
-    monkeypatch.setattr(mm_module, "get_qwen_vl", lambda: ocr_llm)
-
-    extract_llm = MagicMock()
-    extract_llm.ainvoke = AsyncMock(return_value=mm_module.CANDIDATE_MODEL.model_validate(payload))
-    factory = MagicMock()
-    factory.with_structured_output = MagicMock(return_value=extract_llm)
-    monkeypatch.setattr(mm_module, "get_qwen_structured", lambda: factory)
-
-
-_BASE_STATE: dict = {
-    "raw_text": "互换下单 腾讯 1000 股",
-    "conversation_id": "t",
-    "user_id": "u",
-    "room_id": "r",
-    "message_id": 1,
-    "message_content": "x",
-}
-
-
-# ============================================================
-# 编译冒烟
-# ============================================================
-
-
-def test_swap_graph_compiles() -> None:
-    """子图能编译，不抛异常。"""
-    graph = build_swap_graph()
-    assert graph is not None
-
-
-# ============================================================
-# _has_usable_quote（互换-引用消息判空）
-# ============================================================
-
-
-class TestHasUsableQuote:
-    def test_none(self) -> None:
-        assert _has_usable_quote({}) is False
-
-    def test_empty_string(self) -> None:
-        assert _has_usable_quote({"quote_content": ""}) is False
-
-    def test_null_literal_case_insensitive(self) -> None:
-        assert _has_usable_quote({"quote_content": "null"}) is False
-        assert _has_usable_quote({"quote_content": "NULL"}) is False
-        assert _has_usable_quote({"quote_content": "  Null  "}) is False
-
-    def test_real_quote_is_usable(self) -> None:
-        assert _has_usable_quote({"quote_content": "订单H-1（序号1）："}) is True
-
-    def test_whitespace_only_is_usable(self) -> None:
-        """仅空白也算「非空」：引用判空只排除空串与 null 字面量（业务规则，不做 strip）。"""
-        assert _has_usable_quote({"quote_content": "   "}) is True
-
-
-# ============================================================
-# _route_swap_entry（text / image / excel 三入口）
-# ============================================================
-
-
-class TestRouteSwapEntry:
-    def test_default_is_text(self) -> None:
-        assert _route_swap_entry({}) == "swap_intent"
-
-    def test_explicit_text(self) -> None:
-        assert _route_swap_entry({"swap_input_mode": "text"}) == "swap_intent"
-
-    def test_image_mode(self) -> None:
-        assert _route_swap_entry({"swap_input_mode": "image"}) == "swap_image_order"
-
-    def test_excel_mode(self) -> None:
-        assert _route_swap_entry({"swap_input_mode": "excel"}) == "swap_excel_order"
-
-
-# ============================================================
-# _route_after_swap_intent（6 意图 + 兜底 + cascade）
-# ============================================================
-
-
-class TestRouteAfterSwapIntent:
-    @pytest.mark.parametrize(
-        ("intent", "expected"),
-        [
-            ("place_order_request", "swap_place_order"),
-            ("cancel_order_request", "swap_cancel"),
-            ("confirm_order", "swap_confirm"),
-            ("confirm_cancel_order", "swap_confirm"),
-            ("confirm_modify_order", "swap_confirm"),
-            ("query_order_status", "swap_query_order"),
-            ("unknown_intent", "swap_unknown"),
-        ],
-    )
-    def test_all_intents_route_to_expected_node(self, intent: str, expected: str) -> None:
-        assert _route_after_swap_intent({"intent": intent}) == expected
-
-    def test_missing_intent_falls_back_to_unknown(self) -> None:
-        assert _route_after_swap_intent({}) == "swap_unknown"
-
-    def test_error_takes_priority(self) -> None:
-        """cascade 防御优先于意图分发。"""
-        state = {"intent": "place_order_request", "error": MagicMock()}
-        assert _route_after_swap_intent(state) == "swap_unknown"
-
-
-# ============================================================
-# _route_after_place_order（引用判空 → 选择链 / 提交）
-# ============================================================
-
-
-class TestRouteAfterPlaceOrder:
-    def test_usable_quote_goes_to_counterparty(self) -> None:
-        state = {"quote_content": "订单H-1（序号1）："}
-        # ADR 0024 重构 3：选对手 ‖ 选标的 并行分支（两个 LLM 调用同一 superstep）
-        assert _route_after_place_order(state) == ["swap_select_counterparty", "swap_select_ticker"]
-
-    def test_no_quote_goes_to_fresh_counterparty(self) -> None:
-        assert _route_after_place_order({}) == "swap_recognize_fresh_counterparty"
-
-    def test_null_quote_goes_to_fresh_counterparty(self) -> None:
-        assert _route_after_place_order({"quote_content": "null"}) == "swap_recognize_fresh_counterparty"
-
-    def test_error_goes_to_unknown(self) -> None:
-        state = {"quote_content": "订单H-1", "error": MagicMock()}
-        assert _route_after_place_order(state) == "swap_unknown"
-
-
-# ============================================================
-# 选择链 / 多模态后的路由
-# ============================================================
-
-
-class TestRouteAfterSelectChain:
-    def test_after_apply_picks_goes_to_submit(self) -> None:
-        assert _route_after_apply_picks({}) == "swap_place_order_submit"
-
-    def test_after_apply_picks_error(self) -> None:
-        assert _route_after_apply_picks({"error": MagicMock()}) == "swap_unknown"
-
-    def test_after_multimodal_goes_to_submit(self) -> None:
-        assert _route_after_multimodal({}) == "swap_place_order_submit"
-
-    def test_after_multimodal_error(self) -> None:
-        assert _route_after_multimodal({"error": MagicMock()}) == "swap_unknown"
-
-
-# ============================================================
-# 端到端（mock LLM + mock backend）
-# ============================================================
-
-
-class TestSwapGraphEndToEnd:
-    @pytest.mark.asyncio
-    async def test_place_order_request_without_quote_runs_place_then_submit(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        """无引用消息 → swap_place_order → 全新对手识别 → submit。"""
-        _patch(monkeypatch, intent_module, intent_reply(SwapIntentOutput, type="place_order_request"))
-        _patch(
-            monkeypatch,
-            po_module,
-            SwapPlaceOrderParams(
-                orderList=[SwapOrderItem(placeOrderWindCode="腾讯", placeOrderQuantity=1000)]
-            ),
-            fn="get_qwen_complex",
-        )
-        _patch_backend(monkeypatch)
-
-        graph = build_swap_graph()
-        final = await graph.ainvoke(dict(_BASE_STATE))
-
-        trace_nodes = [e.node for e in final.get("trace", []) if e.node not in {"swap_extract_candidates", "swap_normalize", "swap_place_result"}]
-        assert trace_nodes == [
-            "swap_intent", "swap_place_order", "swap_recognize_fresh_counterparty",
-            "swap_place_order_submit",
-        ]
-        assert final.get("intent") == "place_order_request"
-        assert final.get("expected_action") == "place"
-        # ticker 集成验证
-        assert final["place_params"]["orderList"][0]["placeOrderWindCode"] == "腾讯"
-
-    @pytest.mark.asyncio
-    async def test_place_order_request_with_quote_runs_full_select_chain(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        """有引用消息 → place_order → select_counterparty → select_ticker → submit。"""
-        _patch(monkeypatch, intent_module, intent_reply(SwapIntentOutput, type="place_order_request"))
-        _patch(
-            monkeypatch,
-            po_module,
-            SwapPlaceOrderParams(
-                orderList=[
-                    SwapOrderItem(
-                        orderId="H-1", placeOrderWindCode="腾讯", placeOrderQuantity=1000
-                    )
-                ]
-            ),
-            fn="get_qwen_complex",
-        )
-        _patch(
-            monkeypatch,
-            sc_module,
-            SwapSelectCounterpartyOutput(
-                hasSignal=True, picks=[SwapCounterpartyPick(orderId="H-1", letter="A")]
-            ),
-            fn="get_qwen_complex",
-        )
-        _patch(
-            monkeypatch,
-            st_module,
-            SwapSelectTickerOutput(picks=[SwapTickerPick(orderId="H-1", seq=2)]),
-            fn="get_qwen_complex",
-        )
-        _patch_backend(monkeypatch)
-
-        graph = build_swap_graph()
-        final = await graph.ainvoke(
-            {
-                **_BASE_STATE,
-                "raw_text": _BASE_STATE["raw_text"] + " H-1，A，标的2",
-                "quote_content": "订单H-1（序号1）：",
-                "swap_counterparties": [{"shortName": "临沂阿凡提", "sort": "A"}],
-                "quote_ticker_candidates": [
-                    {
-                        "orderId": "H-1",
-                        "candidates": [
-                            {"seq": 1, "code": "600519.SH", "name": "贵州茅台"},
-                            {"seq": 2, "code": "00700.HK", "name": "腾讯控股"},
-                        ],
-                    }
-                ],
-            }
-        )
-
-        trace_nodes = [e.node for e in final.get("trace", []) if e.node not in {"swap_extract_candidates", "swap_normalize", "swap_place_result"}]
-        # 选对手 ‖ 选标的 并行，两者顺序不定；其余节点顺序固定
-        assert trace_nodes[:2] == ["swap_intent", "swap_place_order"]
-        assert set(trace_nodes[2:4]) == {"swap_select_counterparty", "swap_select_ticker"}
-        assert trace_nodes[4:] == ["swap_apply_picks", "swap_place_order_submit"]
-        order = final["place_params"]["orderList"][0]
-        assert order["placeOrderShortname"] == "临沂阿凡提"
-        assert order["placeOrderWindCode"] == "00700.HK"
-
-    @pytest.mark.asyncio
-    async def test_image_input_mode_runs_multimodal_chain(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        """swap_input_mode=image → swap_image_order → submit（跳过意图识别）。"""
-        _patch_vl_and_extract(
-            monkeypatch,
-            SwapPlaceOrderParams(
-                orderList=[SwapOrderItem(placeOrderWindCode="600519.SH", placeOrderQuantity=100)]
-            ),
-        )
-        _patch_backend(monkeypatch)
-
-        graph = build_swap_graph()
-        final = await graph.ainvoke(
-            {
-                **_BASE_STATE,
-                "swap_input_mode": "image",
-                "input_files": [{"type": "image", "url": "http://i/1.png"}],
-            }
-        )
-
-        trace_nodes = [e.node for e in final.get("trace", []) if e.node not in {"swap_extract_candidates", "swap_normalize", "swap_place_result"}]
-        assert trace_nodes == ["swap_image_order", "swap_place_order_submit"]
-        assert final["place_params"]["orderList"][0]["placeOrderWindCode"] == "600519.SH"
-
-    @pytest.mark.asyncio
-    async def test_unknown_intent_routes_to_swap_unknown(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        _patch(monkeypatch, intent_module, intent_reply(SwapIntentOutput, type="unknown_intent"))
-
-        graph = build_swap_graph()
-        final = await graph.ainvoke({**_BASE_STATE, "raw_text": "你好啊"})
-
-        trace_nodes = [e.node for e in final.get("trace", []) if e.node not in {"swap_extract_candidates", "swap_normalize", "swap_place_result"}]
-        assert "swap_intent" in trace_nodes
-        assert "swap_unknown" in trace_nodes
-        assert "swap_place_order" not in trace_nodes
-        unknown_entry = next(e for e in final["trace"] if e.node == "swap_unknown")
-        assert "unhandled_intent=unknown_intent" in unknown_entry.decision
-
-    @pytest.mark.asyncio
-    async def test_intent_error_routes_to_swap_unknown(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        """cascade 防御：intent LLM 抛错 → swap_unknown（不 cascade 到下游）。"""
-        fake_base = MagicMock()
-        fake_base.with_structured_output = MagicMock(
-            return_value=MagicMock(ainvoke=AsyncMock(side_effect=RuntimeError("LLM down")))
-        )
-        monkeypatch.setattr(intent_module, "get_qwen_thinking", lambda: fake_base)
-
-        graph = build_swap_graph()
-        final = await graph.ainvoke(dict(_BASE_STATE))
-
-        assert final.get("error") is not None
-        trace_nodes = [e.node for e in final.get("trace", []) if e.node not in {"swap_extract_candidates", "swap_normalize", "swap_place_result"}]
-        assert "swap_unknown" in trace_nodes
-        for unexpected in (
-            "swap_place_order",
-            "swap_confirm",
-            "swap_cancel",
-            "swap_query_order",
-        ):
-            assert unexpected not in trace_nodes
+from tests.joint_support import instruction_data
+
+
+@pytest.mark.parametrize("intent,target", [
+    ("place_order_request", "swap_place_order"), ("cancel_order_request", "swap_cancel"),
+    ("confirm_order", "swap_confirm"), ("confirm_cancel_order", "swap_confirm"),
+    ("confirm_modify_order", "swap_confirm"), ("query_order_status", "swap_query_order"),
+    ("unknown_intent", "swap_unknown"),
+])
+def test_single_action_dispatch(intent, target):
+    """同一消息只选择一个动作节点。"""
+    assert _route_after_swap_intent({"intent": intent}) == target
+
+
+@pytest.mark.parametrize("route", [_route_after_swap_intent, _route_after_place_order, _route_after_apply_picks])
+def test_error_stops_business_dispatch(route):
+    """任一准备阶段错误都不得进入业务提交。"""
+    assert route({"error": ErrorInfo(node="test", type="ValueError", message="invalid", code="E2")}) == "swap_unknown"
+
+
+async def test_graph_preserves_java_receipt_without_models(monkeypatch):
+    """从子图入口到 Java 只消费已给的解析结果。"""
+    from app.llm.clients import _ChatLLM
+
+    model = MagicMock(side_effect=AssertionError("子图不能调用模型"))
+    monkeypatch.setattr(_ChatLLM, "with_structured_output", model)
+    backend = AsyncMock(return_value={"code": 0, "data": "Java raw reply"})
+    monkeypatch.setattr("app.tools.swap_client.SwapClientHttpx.operate", backend)
+    raw = "买茅台1000股"
+    state = {"raw_text": raw, "conversation_id": "test", "room_id": "r", "user_id": "u", "message_id": 1,
+        "parsed_instruction": instruction_data("swap", "place_order_request", raw,
+            orders=[{"placeOrderWindCode": "茅台", "placeOrderQuantity": 1000}])}
+    out = await build_swap_graph().ainvoke(state)
+    assert not out.get("error")
+    assert out["api_result"] == "Java raw reply"
+    assert backend.await_count == 1
+    model.assert_not_called()

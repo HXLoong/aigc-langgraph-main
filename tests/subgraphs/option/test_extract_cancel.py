@@ -17,7 +17,7 @@ from tests.llm_guard import forbid_llm
 def _patch(monkeypatch: pytest.MonkeyPatch) -> AsyncMock:
     """固定后端边界；LLM 工厂若被调用即报错（去 LLM 化硬约束）。"""
     backend = AsyncMock(return_value={"api_code": 0, "api_result": "backend reply"})
-    monkeypatch.setattr(cancel_module, "call_option_backend", backend)
+    monkeypatch.setattr(cancel_module, "prepare_option_request", backend)
 
     forbid_llm(monkeypatch, cancel_module)
     return backend

@@ -1,366 +1,88 @@
-"""close.place_close 节点 · 平仓下单参数提取 + 全部平仓确认（P0 核心）。
-
-ADR 0024 重构 5：原 215 行单节点拆成 LangGraph 子图（`build_place_close_graph`），
-每阶段一个节点、一条 TraceEntry，两处早退做成图边：
-
-    place_close_parse（引用消息解析，纯函数）
-      → place_close_fetch_orders（OptionClient.query_close_orders）
-      → place_close_extract（LLM 原文候选与证据）
-      → place_close_normalize（代码绑定目标、计算金额与比例、锁定字段）
-          ├─ 空列表 → place_close_reject
-          └─ place_close_validate（目标身份检查；业务校验交给 Java）
-                ├─ 身份缺失 → place_close_reject
-                └─ place_close_submit（参数聚合 + 真后端 operate）
-
-私有中间态 `pc_*` 住在 PlaceCloseState，不外泄（output_schema=PlaceCloseOutput）；
-`close_place_close(state)` façade 契约不变（close 图用 `build_place_close_graph()` 原生嵌入）。
-
-业务卡片、补参和业务错误由 Java 返回，render 从 api_result 展示。
-本地仅在无法绑定目标时提示识别问题，不生成业务参数校验话术。
-
-LLM：结构化原文候选；最终业务参数由 normalization.py 生成。
-prompt：app/prompts/option_close/place_close.md。
-
-注：close.place_close **不依赖 ticker resolver**——平仓基于订单号
-（CO- / OPT- / OPTG-），标的代码已在订单中确定。
-"""
+"""平仓下单内部子图：读取联合结果 → 选择范围检查 → Java 提交。"""
 from __future__ import annotations
 
 from functools import lru_cache
-from typing import Annotated, Any, TypedDict, cast
+from typing import Any
 
 from langgraph.graph import END, START, StateGraph
 from langgraph.graph.state import CompiledStateGraph
 
-from app.extraction.candidates import candidate_model, evidence_sources, verify_candidates
-from app.extraction.fields import FieldRecord, merge_fields
 from app.graph.business_params import validated_close_params
-from app.graph.cascade import has_error
-from app.graph.retry import add_io_node, io_node
 from app.graph.safe_node import safe_node
-from app.graph.state import (
-    AgentState,
-    ErrorInfo,
-    ExpectedAction,
-    TickerCandidate,
-    TraceEntry,
-    merge_by_id,
-)
-from app.llm.clients import get_qwen_thinking
-from app.prompts import blocks
-from app.prompts.spec import PromptSpec, register
-from app.subgraphs.close.aggregate import build_close_order_req_vo
-from app.subgraphs.close.backend import call_close_backend
-from app.subgraphs.close.execution_fragments import split_execution_fragments
-from app.subgraphs.close.models import CloseOrderItem, ClosePlaceParams
-from app.subgraphs.close.normalization import CloseAmountError, normalize_place_candidates
-from app.subgraphs.close.reference_parser import ReferenceParseResult, parse_reference_message
-from app.tools.option_client import OptionClientHttpx
-
-
-def _build_user_message(
-    raw_content: str,
-    quote_content: str,
-    parsed: ReferenceParseResult,
-    order_list: list[dict[str, Any]],
-) -> str:
-    """组装可验证原文来源、引用事实及只读查询结果，不注入规则。"""
-
-    return blocks.source_payload(
-        {"raw_text": raw_content, "quote_content": quote_content},
-        context={"reference": parsed, "orderList": order_list}, include_history=False,
-    )
-
-
-def _user_from_state(state: AgentState) -> str:
-    """state 可重建的 user 消息（orderList 由节点运行时经 HTTP 取单后注入）。
-
-    完整消息在节点内用 `_build_user_message(parsed, order_data)` 组装；本函数为
-    注册契约的 state-only 重建（引用解析是纯函数，取单结果为空时的形态），
-    与 swap.place_order 的 `_user_from_state` 同一模式（渲染时机在节点内）。
-    """
-    raw = state.get("raw_text", "") or ""
-    quote = state.get("quote_content") or ""
-    parsed = parse_reference_message(quote, raw)
-    return _build_user_message(raw, quote, parsed, [])
-
-
-CANDIDATE_MODEL = candidate_model(ClosePlaceParams)
-SPEC = register(PromptSpec(
-    category="option_close",
-    name="place_close",
-    output_model=CANDIDATE_MODEL,
-    inputs=("raw_text", "quote_content"),
-    user_builder=_user_from_state,
-))
-
-
-async def _fetch_order_data(
-    order_ids: list[str],
-    contract_codes: list[str],
-    room_id: str | None = None,
-    message_id: int | None = None,
-) -> list[dict[str, Any]]:
-    """获取订单信息[http] + 格式化订单数据[code]（走标准 OptionClient）。
-
-    roomId/messageId 对齐 DSL v2「获取订单信息」payload。
-    """
-    result = await OptionClientHttpx().query_close_orders(
-        order_ids=order_ids, contract_codes=contract_codes,
-        room_id=room_id, message_id=message_id,
-    )
-    if result.get("code") != 0:
-        raise ValueError(f"平仓订单查询失败（code={result.get('code')}）")
-    data = result.get("data")
-    if not isinstance(data, list) or any(not isinstance(item, dict) for item in data):
-        raise ValueError("平仓订单查询响应结构不正确")
-    return data
-
-
-
-# ============================================================
-# 子图 State
-# ============================================================
+from app.graph.state import AgentState, SubgraphOutput, TraceEntry
+from app.parsing.evidence import verify_instruction
+from app.parsing.models import CloseInstruction
+from app.subgraphs.close.backend import prepare_close_request
+from app.subgraphs.close.selection import validate_close_selection
 
 
 class PlaceCloseState(AgentState, total=False):
-    """place_close 子图私有 State：AgentState + `pc_*` 中间态。"""
+    """平仓私有参数不泄漏到父图。"""
 
-    pc_parsed: ReferenceParseResult
-    pc_order_data: list[dict[str, Any]]
-    pc_candidates: dict[str, Any]
-    pc_llm_output: dict[str, Any]
     pc_close_orders: list[dict[str, Any]]
-    pc_reject_reply: str | None
-    pc_reject_decision: str | None
 
 
-class PlaceCloseOutput(TypedDict, total=False):
-    """子图对 close 图 / 父图的写回面。"""
-
-    expected_action: ExpectedAction | None
-    field_records: Annotated[dict[str, FieldRecord], merge_fields]
-    close_params: dict[str, Any] | None
-    reply_text: str | None
-    intent: str
-    api_result: str | dict[str, Any] | list[Any] | None
-    api_code: int | None
-    tickers: list[TickerCandidate]
-    trace: Annotated[list[TraceEntry], merge_by_id]
-    error: ErrorInfo | None
-
-
-# ============================================================
-# 阶段节点
-# ============================================================
+PlaceCloseOutput = SubgraphOutput
 
 
 @safe_node
-async def place_close_parse(state: PlaceCloseState) -> dict[str, Any]:
-    """步骤 1：平仓参数提取-引用消息解析（纯函数）。"""
-    raw = state.get("raw_text", "") or ""
-    quote = state.get("quote_content") or ""
-    parsed = parse_reference_message(quote, raw)
-    return {
-        "pc_parsed": parsed,
-        "trace": [TraceEntry(
-            node="place_close_parse",
-            decision=f"type={parsed['messageType']},orders={len(parsed['orderIds'])},"
-            f"contracts={len(parsed['contractCodes'])}",
-        )],
-    }
-
-
-@io_node
-async def place_close_fetch_orders(state: PlaceCloseState) -> dict[str, Any]:
-    """步骤 2+3：获取订单信息 → 格式化订单数据。"""
-    parsed = state["pc_parsed"]
-    order_data = await _fetch_order_data(
-        parsed["orderIds"],
-        parsed["contractCodes"],
-        room_id=state.get("room_id"),
-        message_id=state.get("message_id"),
-    )
-    return {
-        "pc_order_data": order_data,
-        "trace": [TraceEntry(node="place_close_fetch_orders", decision=f"holdings={len(order_data)}")],
-    }
-
-
-@io_node
-async def place_close_extract(state: PlaceCloseState) -> dict[str, Any]:
-    """步骤 4：原文候选提取并验证证据，不接受模型计算的最终参数。"""
-    raw = state.get("raw_text", "") or ""
-    quote = state.get("quote_content") or ""
-    system, _prompt_name = SPEC.render_system(state)
-    llm = get_qwen_thinking().with_structured_output(CANDIDATE_MODEL)
-    user_message = _build_user_message(raw, quote, state["pc_parsed"], state.get("pc_order_data") or [])
-    candidates = CANDIDATE_MODEL.model_validate(await llm.ainvoke([("system", system), ("user", user_message)]))
-    verify_candidates(candidates, evidence_sources(state))
-    count = len(cast(Any, candidates).close_order_list)
-    return {
-        "pc_candidates": candidates.model_dump(by_alias=True),
-        "pc_llm_output": {"prompt_name": _prompt_name, "candidate_orders": count},
-        "trace": [TraceEntry(node="place_close_extract", decision=f"candidate_orders={count}")],
-    }
-
-
-@safe_node
-async def place_close_normalize(state: PlaceCloseState) -> dict[str, Any]:
-    """步骤 5：合并输出 + 确定性后处理。空列表 → 交给 reject 边。"""
-    parsed = state["pc_parsed"]
-    candidates = CANDIDATE_MODEL.model_validate(state.get("pc_candidates") or {})
-    candidates = split_execution_fragments(candidates)
-    try:
-        params, records = normalize_place_candidates(
-            candidates, evidence_sources(state), parsed, state.get("pc_order_data") or [],
-        )
-    except CloseAmountError as exc:
-        return {
-            "pc_close_orders": [],
-            "pc_reject_reply": str(exc),
-            "pc_reject_decision": "invalid_close_amount",
-            "trace": [TraceEntry(node="place_close_normalize", decision="invalid_close_amount")],
-        }
-    if not params.close_order_list:
-        return {
-            "pc_close_orders": [],
-            "pc_reject_reply": "未能识别平仓参数，请提供订单号或持仓序号。",
-            "pc_reject_decision": "empty_close_order_list",
-            "trace": [TraceEntry(node="place_close_normalize", decision="empty_close_order_list")],
-        }
-    close_list = params.close_order_list
-    return {
-        "pc_close_orders": [item.model_dump() for item in close_list],
-        "field_records": records,
-        "pc_reject_reply": None,
-        "pc_reject_decision": None,
-        "trace": [TraceEntry(node="place_close_normalize", decision=f"orders={len(close_list)}")],
-    }
+async def place_close_prepare(state: PlaceCloseState) -> dict[str, Any]:
+    """读取用户指定的接口值；金额、比例和执行方式不在代码里重算。"""
+    parsed = CloseInstruction.model_validate(state.get("parsed_instruction") or {})
+    if parsed.intent != "close_order_request":
+        raise ValueError("平仓下单节点不能执行其它动作")
+    records = verify_instruction(parsed, state)
+    orders = [item.model_dump(exclude_none=True, exclude_unset=True) for item in parsed.orders]
+    return {"pc_close_orders": orders, "field_records": records,
+            "trace": [TraceEntry(node="place_close_prepare", decision=f"orders={len(orders)}")]}
 
 
 @safe_node
 async def place_close_validate(state: PlaceCloseState) -> dict[str, Any]:
-    """步骤 6：确认目标身份；金额、价格、比例和时间业务规则交给 Java。"""
-    close_list = [CloseOrderItem.model_validate(o) for o in state.get("pc_close_orders") or []]
-    if any(not item.order_id and not item.internal_trade_id for item in close_list):
-        return {
-            "pc_reject_reply": "未能识别平仓目标，请提供合约编号或持仓序号。",
-            "pc_reject_decision": "missing_close_order_identity",
-            "trace": [TraceEntry(node="place_close_validate", decision="missing_close_order_identity")],
-        }
-
-    return {
-        "pc_reject_reply": None,
-        "pc_reject_decision": None,
-        "trace": [TraceEntry(node="place_close_validate", decision="ok")],
-    }
-
-
-@safe_node
-async def place_close_reject(state: PlaceCloseState) -> dict[str, Any]:
-    """早退出口：写 close_params + 引导文案，不调后端。汇总条目沿用 close_place_close 名。"""
-    return {
-        "expected_action": "close",
-        "close_params": validated_close_params(closeOrderList=state.get("pc_close_orders") or []),
-        "reply_text": state.get("pc_reject_reply"),
-        "intent": "close_order_request",
-        "trace": [
-            TraceEntry(node="place_close_reject", decision=state.get("pc_reject_decision")),
-            TraceEntry(
-                node="close_place_close",
-                decision=state.get("pc_reject_decision"),
-                llm_output=state.get("pc_llm_output"),
-            ),
-        ],
-    }
+    """检查订单身份与本次引用范围，证券和业务数值交 Java 验证。"""
+    validate_close_selection(state, state.get("pc_close_orders") or [])
+    return {"trace": [TraceEntry(node="place_close_validate", decision="scope_verified")]}
 
 
 @safe_node
 async def place_close_submit(state: PlaceCloseState) -> dict[str, Any]:
-    """步骤 7：期权平仓-参数聚合 + 前置清洗 + 真后端调用。
-
-    CLAUDE.md P0：严禁本地拼确认卡掩盖后端真实响应——reply_text 由 render 节点从
-    state['api_result']（真后端返回）透传，本节点不拼接文案。
-    """
-    close_order_list_dump = state.get("pc_close_orders") or []
-    close_list = [CloseOrderItem.model_validate(o) for o in close_order_list_dump]
-    req_vo = build_close_order_req_vo(close_order_list=close_order_list_dump)
-    backend = await call_close_backend(state, intent="close_order_request", close_order_req_vo=req_vo)
-
-    types = [item.close_order_type for item in close_list if item.close_order_type]
-    full_closes = sum(1 for item in close_list if item.confirm_full_close)
-    decision = f"orders={len(close_list)}, types={types}, full_close={full_closes}"
-    return {
-        "expected_action": "close",
-        "close_params": validated_close_params(closeOrderList=close_order_list_dump),
-        **backend,
-        "intent": "close_order_request",
-        "trace": [
-            TraceEntry(node="place_close_submit", decision=f"api_code={backend.get('api_code')}"),
-            TraceEntry(node="close_place_close", decision=decision, llm_output=state.get("pc_llm_output")),
-        ],
-    }
+    """准备全部选定订单；父图清洗后一次提交，不重试模型或交易。"""
+    orders = state.get("pc_close_orders") or []
+    payload = {"closeOrderList": orders}
+    request_update = await prepare_close_request(state, intent="close_order_request", close_order_req_vo=payload)
+    return {"expected_action": "close", "close_params": validated_close_params(**payload), **request_update,
+            "trace": [TraceEntry(node="place_close_submit", decision=f"orders={len(orders)}")]}
 
 
-# ============================================================
-# 拓扑
-# ============================================================
+def _after_prepare(state: PlaceCloseState) -> str:
+    """参数结构错误时停止执行。"""
+    return END if state.get("error") else "place_close_validate"
 
 
-def _route_or_end(next_node: str):  # type: ignore[no-untyped-def]
-    def _router(state: PlaceCloseState) -> str:
-        return END if has_error(state) else next_node
-
-    return _router
+def _after_validate(state: PlaceCloseState) -> str:
+    """选择范围不确定时停止业务提交。"""
+    return END if state.get("error") else "place_close_submit"
 
 
-def _route_after_normalize(state: PlaceCloseState) -> str:
-    if has_error(state):
-        return END
-    return "place_close_reject" if state.get("pc_reject_reply") else "place_close_validate"
-
-
-def _route_after_validate(state: PlaceCloseState) -> str:
-    if has_error(state):
-        return END
-    return "place_close_reject" if state.get("pc_reject_reply") else "place_close_submit"
-
-
-def build_place_close_graph() -> CompiledStateGraph[PlaceCloseState, None, AgentState, PlaceCloseOutput]:
-    g: StateGraph[PlaceCloseState, None, AgentState, PlaceCloseOutput] = StateGraph(PlaceCloseState, input_schema=AgentState, output_schema=PlaceCloseOutput)
-    g.add_node("place_close_parse", place_close_parse)
-    add_io_node(g, "place_close_fetch_orders", place_close_fetch_orders)
-    add_io_node(g, "place_close_extract", place_close_extract)
-    g.add_node("place_close_normalize", place_close_normalize)
-    g.add_node("place_close_validate", place_close_validate)
-    g.add_node("place_close_submit", place_close_submit)
-    g.add_node("place_close_reject", place_close_reject)
-
-    g.add_edge(START, "place_close_parse")
-    g.add_conditional_edges("place_close_parse", _route_or_end("place_close_fetch_orders"),
-                            ["place_close_fetch_orders", END])
-    g.add_conditional_edges("place_close_fetch_orders", _route_or_end("place_close_extract"),
-                            ["place_close_extract", END])
-    g.add_conditional_edges("place_close_extract", _route_or_end("place_close_normalize"),
-                            ["place_close_normalize", END])
-    g.add_conditional_edges("place_close_normalize", _route_after_normalize,
-                            ["place_close_reject", "place_close_validate", END])
-    g.add_conditional_edges("place_close_validate", _route_after_validate,
-                            ["place_close_reject", "place_close_submit", END])
-    g.add_edge("place_close_submit", END)
-    g.add_edge("place_close_reject", END)
-    return g.compile(name="close_place_close")
+def build_place_close_graph() -> CompiledStateGraph[PlaceCloseState, None, AgentState, SubgraphOutput]:
+    """三个阶段都为确定性节点，前置只读上下文在主图唯一解析前准备。"""
+    graph = StateGraph(PlaceCloseState, input_schema=AgentState, output_schema=SubgraphOutput)
+    graph.add_node("place_close_prepare", place_close_prepare)
+    graph.add_node("place_close_validate", place_close_validate)
+    graph.add_node("place_close_submit", place_close_submit)
+    graph.add_edge(START, "place_close_prepare")
+    graph.add_conditional_edges("place_close_prepare", _after_prepare, ["place_close_validate", END])
+    graph.add_conditional_edges("place_close_validate", _after_validate, ["place_close_submit", END])
+    graph.add_edge("place_close_submit", END)
+    return graph.compile(name="close_place_close")
 
 
 @lru_cache(maxsize=1)
-def get_place_close_graph() -> CompiledStateGraph[PlaceCloseState, None, AgentState, PlaceCloseOutput]:
+def get_place_close_graph() -> CompiledStateGraph[PlaceCloseState, None, AgentState, SubgraphOutput]:
+    """供调试入口复用无 checkpoint 的编译图。"""
     return build_place_close_graph()
 
 
 async def close_place_close(state: AgentState) -> dict[str, Any]:
-    """façade：跑 place_close 子图并返回写回面（供直接调用 / 测试；close 图原生嵌入编译图）。"""
+    """独立执行平仓内部图并返回限定写回字段。"""
     return await get_place_close_graph().ainvoke(state)
-
-
-__all__ = ["build_place_close_graph", "close_place_close", "get_place_close_graph"]

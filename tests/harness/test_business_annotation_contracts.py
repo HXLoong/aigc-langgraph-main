@@ -2,9 +2,10 @@
 from pathlib import Path
 
 from app.subgraphs.option.models import OptionPlaceParams
-from app.subgraphs.option.place_params import parse_place_params
+from app.subgraphs.option.request_params import request_orders
 from harness.differ import check_structured_assertions
 from harness.golden import load_golden
+from tests.joint_support import instruction_data
 
 
 def test_case028_pov_change_accepts_partial_payload_and_rejects_wrong_ratio():
@@ -18,7 +19,10 @@ def test_case028_pov_change_accepts_partial_payload_and_rejects_wrong_ratio():
         "名义本金：250万\n建仓方式：POV\nPOV比例：11%\n限定价格：10\n"
     )
     params = OptionPlaceParams.model_validate({
-        "orderList": parse_place_params(turn.send_text, quote),
+        "orderList": request_orders({"raw_text": turn.send_text, "quote_content": quote,
+            "parsed_instruction": instruction_data("option", "place_order_from_quote", turn.send_text,
+                orders=[{"orderId": "Q-20260924-0000000001", "povRatio": 12, "orderType": "POV"}], quote=quote)},
+            "place_order_from_quote")[0],
     }).model_dump()
     output = {"product_type": "option", "intent": "place_order_from_quote",
               "place_params": params}

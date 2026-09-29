@@ -21,7 +21,7 @@ def _patch_llm(monkeypatch: pytest.MonkeyPatch, batch: ParaphraseBatch) -> None:
     fake_llm.ainvoke = AsyncMock(return_value=batch)
     fake_base = MagicMock()
     fake_base.with_structured_output = MagicMock(return_value=fake_llm)
-    monkeypatch.setattr(lp_module, "get_qwen_thinking", lambda: fake_base)
+    monkeypatch.setattr(lp_module, "get_llm_thinking", lambda: fake_base)
 
 
 def _seed(text: str = "做一笔互换") -> GoldenCase:

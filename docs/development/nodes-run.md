@@ -23,7 +23,7 @@ python -m venv .venv
 
 - `OTC_API_BASE_URL` 指向可访问的真实业务后端；若配置为 `127.0.0.1`，本机必须有对应服务或端口转发。
 - `GOATS_BASE_URL` 与 `GOATS_CLIENT_*` 指向可访问的 GOATS 测试环境。
-- `QWEN_API_BASE`、`QWEN_API_KEY` 和 `QWEN_MODEL_*` 可用；这些历史变量名也用于当前 DeepSeek/Qwen 兼容网关。
+- `LLM_PROVIDER`、`LLM_API_BASE`、`LLM_API_KEY` 和 `LLM_MODEL_STANDARD` 可用；厂商适配显式配置，模型可用网关别名。三个角色说明与迁移规则见 [ADR 0020](../adr/0020-unify-all-llm-on-deepseek-v4-pro.md)。
 - `DRY_RUN_BACKEND=false`，允许请求实际发往配置的后端。
 
 如果 `.env` 中启用了 `USE_MYSQL_CHECKPOINTER=true`，确认 `MYSQL_URI` 指向的 Java 数据库可连通，且已执行过 [sql/init.sql](../../sql/init.sql)（LangGraph 不自带 MySQL 容器）。

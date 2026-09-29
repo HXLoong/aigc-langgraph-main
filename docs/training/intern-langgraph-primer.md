@@ -36,7 +36,7 @@
 ```
 
 - 业务后端是 Java（下单、查单等真实交易接口），我们通过 HTTP 客户端调它
-- LLM 全环境统一 DeepSeek-V4-pro（`app/llm/clients.py` 统一工厂，ADR 0020）
+- LLM 使用通用三角色配置与显式 `LLM_PROVIDER`，当前业务基线 DeepSeek Pro（`app/llm/clients.py` 统一工厂，切换后重启并重新验收，ADR 0020）
 - 多轮对话状态存 MySQL（LangGraph checkpointer）
 - 可观测用 LangFuse（每个节点的输入输出、耗时都能在 UI 里看到）
 
@@ -193,31 +193,30 @@ def _route_after_intent(state: AgentState) -> str:
 
 **这是 CLAUDE.md 核心原则第 8 条，review 必查。**
 
-### 3.3 LLM 调用三件套：load_prompt + with_structured_output + Pydantic
+### 3.3 LLM 调用三件套：PromptSpec + with_structured_output + Pydantic
 
-本项目每个 LLM 节点都是同一个模板（打开 `app/subgraphs/swap/intent.py` 对照）：
+业务只在 `app/nodes/parse_instruction.py` 请求模型，子图读取同一次解析结果。以下为核心调用片段，完整节点还执行输入容量、来源和附件覆盖检查：
 
 ```python
-from app.prompts import load_prompt
-from app.llm.clients import get_qwen_structured
-from app.subgraphs.swap.models import SwapIntentOutput   # Pydantic 输出模型
+from app.llm.clients import get_llm_standard
+from app.parsing.prompts import SPECS
 
-@safe_node
-async def swap_intent(state: AgentState) -> dict:
-    prompt = load_prompt("swap", "intent")               # ① 提示词从 .md 加载，绝不硬编码
-    llm = get_qwen_structured().with_structured_output(SwapIntentOutput)  # ② 强类型输出
-    result = await llm.ainvoke([
-        ("system", prompt.system),
-        ("user", user_message),
-    ])                                                    # ③ result 直接是 Pydantic 实例
-    return {"intent": result.type, "trace": [...]}
+# 1. 产品已由规则提示确定，歧义输入选跨产品契约；一次只选一套。
+spec = SPECS[product]
+messages, prompt_name = spec.build_messages(state)
+schema = spec.output_model
+assert schema is not None
+
+# 2. 模型与适配分别取 LLM_MODEL_STANDARD / LLM_PROVIDER；只请求一次。
+output = await get_llm_standard().with_structured_output(schema).ainvoke(messages)
+parsed = schema.model_validate(output)
 ```
 
 三条对应的铁律：
 
-- **提示词不进 Python 源码**——`app/prompts/<category>/<name>.md` + `load_prompt()`
-- **LLM 输出不手工 `json.loads`**——`with_structured_output(PydanticModel)`，解析失败自带 1 次重试，最终由 `@safe_node` 兜底
-- **输出模型对齐 Java DTO**——字段名与后端契约 1:1（`docs/api-contracts/java-backend.md`）
+- **提示词不进 Python 源码**——git 中的 `.md` 是唯一真源，PromptSpec 声明输入与输出契约。
+- **LLM 输出不手工 `json.loads`**——用 `with_structured_output(PydanticModel)`；解析失败由 `@safe_node` 兜底，零重试。
+- **解析契约与 Java 请求分工**——模型返回原始候选及证据，确定性节点构造并清洗出站参数，Java 做业务校验。
 
 ### 3.4 后端调用走 Protocol，不直接 httpx
 
@@ -254,7 +253,7 @@ Protocol（接口）+ Httpx 实现分离 = 单测时塞一个 FakeClient 就能 
 git clone https://github.com/GZTL-AI/aigc-langgraph.git    # 用 HTTPS
 cd aigc-langgraph
 pip install -e ".[dev]"
-cp .env.example .env                  # 找导师拿 QWEN_API_KEY 与 MYSQL_URI
+cp .env.example .env                  # 找导师拿 LLM_API_KEY 与 MYSQL_URI
 USE_MYSQL_CHECKPOINTER=false REQUEST_IDEMPOTENCY=false ENABLE_LANGFUSE=false \
     python -m pytest tests/test_smoke.py -q   # 应全绿；跑不通先解决环境再往下
 

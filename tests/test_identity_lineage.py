@@ -7,6 +7,7 @@ from app.subgraphs.option import extract_cancel as cancel
 from app.subgraphs.option import extract_cancel_place as cancel_place
 from app.subgraphs.option import extract_query as query
 from app.subgraphs.swap import confirm as swap
+from tests.request_support import run_request_nodes
 
 Q1, Q2 = "Q-20260918-0000000001", "Q-20260918-0000000002"
 H1, H2 = "H-20260918-0000000001", "H-20260918-0000000002"
@@ -15,7 +16,7 @@ C1, C2 = "CO-20260918-AAAAAAAA", "CO-20260918-BBBBBBBB"
 
 async def test_option_cancel_place_raw_id_cannot_replace_quote(monkeypatch):
     backend = AsyncMock(return_value={"api_code": 0, "api_result": "原样回复"})
-    monkeypatch.setattr(cancel_place, "call_option_backend", backend)
+    monkeypatch.setattr(cancel_place, "prepare_option_request", backend)
     # raw 点名引用外的订单：既不改取该单，也不静默取消引用里的另一单（O5 口径：只取消引用里的订单）
     rejected = await cancel_place.option_extract_cancel_place({"raw_text": f"取消{Q1}", "quote_content": Q2})
     assert rejected.get("cancel_params") is None and rejected["reply_text"]
@@ -28,7 +29,7 @@ async def test_option_cancel_place_raw_id_cannot_replace_quote(monkeypatch):
 
 async def test_swap_confirm_selected_quote_scope_is_recorded_and_memory_cannot_replace_quote(monkeypatch):
     backend = AsyncMock(return_value={"api_code": 0, "api_result": "原样回复"})
-    monkeypatch.setattr(swap, "call_swap_backend", backend)
+    monkeypatch.setattr(swap, "prepare_swap_request", backend)
     result = await swap.swap_confirm({"raw_text": "序号2，确认下单", "quote_content": f"序号1：{H1}\n序号2：{H2}", "intent": "confirm_order"})
     assert result["confirm"]["orderList"] == [{"orderId": H2}]
     assert result["field_records"]["swap/confirm.orderList.0.orderId"].origin == "quote"
@@ -42,7 +43,7 @@ async def test_swap_confirm_selected_quote_scope_is_recorded_and_memory_cannot_r
 
 async def test_close_selected_ids_use_actual_request_array_paths(monkeypatch):
     backend = AsyncMock(return_value={"api_code": 0, "api_result": "原样回复"})
-    monkeypatch.setattr(close, "call_close_backend", backend)
+    monkeypatch.setattr(close, "prepare_close_request", backend)
     result = await close.close_confirm_close({"raw_text": "确认平仓第二笔", "quote_content": f"{C1}\n{C2}"})
     assert result["confirm"]["confirmOrderNoList"] == [C2]
     record = result["field_records"]["close/confirm.confirmOrderNoList.0"]
@@ -57,7 +58,7 @@ async def test_close_selected_ids_use_actual_request_array_paths(monkeypatch):
 
 
 async def test_query_without_id_does_not_invent_provenance_for_java_defaults(monkeypatch):
-    monkeypatch.setattr(query, "call_option_backend", AsyncMock(return_value={"api_code": 0, "api_result": "近期订单"}))
+    monkeypatch.setattr(query, "prepare_option_request", AsyncMock(return_value={"api_code": 0, "api_result": "近期订单"}))
     result = await query.option_extract_query({"raw_text": "查订单"})
     assert result["query_filter"]["orderList"] == [{"orderId": None}]
     assert result.get("field_records", {}) == {}
@@ -67,8 +68,8 @@ async def test_locked_option_identity_protects_wire_and_returned_scope(monkeypat
     client = MagicMock()
     client.operate = AsyncMock(return_value={"code": 0, "data": "原样回复"})
     monkeypatch.setattr("app.subgraphs.option.backend.OptionClientHttpx", lambda: client)
-    result = await cancel.option_extract_cancel({"raw_text": f"撤单{Q2}", "conversation_id": "c", "room_id": "r", "user_id": "u", "message_id": 1,
-        "field_records": {"option/cancel.orderList.0.orderId": FieldRecord(value=Q1, source="user", evidence=Q1, locked=True)}})
+    result = await run_request_nodes(cancel.option_extract_cancel, {"raw_text": f"撤单{Q2}", "conversation_id": "c", "room_id": "r", "user_id": "u", "message_id": 1,
+        "field_records": {"option/cancel.orderList.0.orderId": FieldRecord(value=Q1, source="user", evidence=Q1, locked=True)}}, "option")
     assert client.operate.call_args.args[0].model_dump()["orderList"][0]["orderId"] == Q1
     assert result["cancel_params"]["orderList"][0]["orderId"] == Q1
 async def test_close_backend_protects_named_identity_array(monkeypatch):

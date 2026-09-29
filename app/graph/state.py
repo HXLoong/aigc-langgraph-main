@@ -21,6 +21,7 @@ from app.wire_model import WireModel
 
 
 def _new_id() -> str:
+    """为审计条目生成独立身份。"""
     return uuid.uuid4().hex
 
 
@@ -35,6 +36,7 @@ class _Identified(BaseModel):
     id: str = Field(default_factory=_new_id)
 
     def __eq__(self, other: object) -> bool:
+        """按类型和内容比较，忽略仅用于合并的随机 id。"""
         if not isinstance(other, BaseModel):
             return NotImplemented
         return type(self) is type(other) and self.model_dump(exclude={"id"}) == other.model_dump(exclude={"id"})
@@ -43,6 +45,7 @@ class _Identified(BaseModel):
 
 
 def _merge_key(item: Any) -> Any:
+    """获取条目的稳定合并键，避免父子图重复记录。"""
     ident = getattr(item, "id", None)
     return ident if isinstance(ident, str) and ident else id(item)
 
@@ -65,6 +68,7 @@ DEFAULT_HISTORY_WINDOW = 40
 
 
 def _history_window() -> int:
+    """读取当前会话历史的有界窗口配置。"""
     try:
         from app.config import get_settings
 
@@ -149,6 +153,7 @@ class TraceEntry(_Identified):
     @field_validator("llm_output", "llm_input_excerpt", mode="before")
     @classmethod
     def _truncate_long_text(cls, v: Any) -> Any:
+        """仅裁剪错误诊断文本，业务原文和订单数据不在此修改。"""
         return _truncate_trace_value(v)
 
 
@@ -166,12 +171,13 @@ class ErrorInfo(BaseModel):
     @model_validator(mode="before")
     @classmethod
     def classify(cls, value: Any) -> Any:
+        """按异常类别生成统一错误码，保留原节点和原因。"""
         if isinstance(value, dict) and "code" not in value:
             kind = value.get("type")
             code = "E3"
             if kind in {"APITimeoutError", "APIConnectionError", "RateLimitError", "InternalServerError", "TimeoutError"}:
                 code = "E1"
-            elif kind in {"EvidenceError", "ValidationError", "OutputParserException"}:
+            elif kind in {"EvidenceError", "ValidationError", "OutputParserException", "ModelOutputCapacityError"}:
                 code = "E2"
             elif kind in {"BackendUnreachableError", "EmptyBackendResultError", "SetIntentError", "ConnectError"}:
                 code = "E4"
@@ -206,6 +212,22 @@ ExpectedAction = Literal["place", "modify", "cancel", "inquiry", "close"]
 # ============================================================
 
 
+class PendingBackendRequest(TypedDict):
+    """本次准备好的业务请求；清洗前原值与清洗后副本分开保存。"""
+
+    product: str
+    payload: dict[str, Any] | str
+    intent: str | None
+
+
+class CleanedBackendRequest(TypedDict):
+    """清洗节点的出站业务参数，不包含调用身份和鉴权信息。"""
+
+    product: str
+    payload: dict[str, Any]
+    json_fallback: bool
+
+
 class AgentState(TypedDict, total=False):
     """LangGraph 主图共享的 State Schema。
 
@@ -217,6 +239,12 @@ class AgentState(TypedDict, total=False):
     - 业务对象：聚合的参数字典（多节点共享同字段；dict 形态，写入经 Pydantic 校验）
     - 工程层：trace（reducer 累加）+ error
     """
+
+    pending_backend_request: PendingBackendRequest | None
+    cleaned_backend_request: CleanedBackendRequest | None
+    cleaning_records: list[dict[str, Any]]
+    backend_request: dict[str, Any] | None
+    submitted_params: dict[str, Any]
 
     # -------- 入口（contracts §2.1 §3.1 的 9 个机器人上下文字段）--------
     raw_text: str  # rawContent
@@ -268,6 +296,11 @@ class AgentState(TypedDict, total=False):
     trace_id: str
     product_type: ProductType
     intent: str  # 本轮意图，ingest 清空；对齐 Java SwapIntentionType / stockOptionIntentionType
+    # 联合解析仅保存本轮结果；来源位置与只读上下文供结构校验及审计。
+    parsed_instruction: dict[str, Any] | None
+    parse_context: dict[str, Any]
+    attachment_sources: dict[str, str]
+    attachment_rows: list[str]
 
     # -------- 业务对象（ADR 0001 D6：运行时为 dict，写入必须经
     # app/graph/business_params.py 的 validated_* 校验——形状的唯一权威）--------
@@ -311,6 +344,11 @@ class SubgraphOutput(TypedDict, total=False):
     子图内部仍以 AgentState 运行，但 compile 时 `output_schema=SubgraphOutput` 让其它键
     的写入停在子图内，不再能改写父图。
     """
+
+    cleaning_records: list[dict[str, Any]]
+    backend_request: dict[str, Any] | None
+    submitted_params: dict[str, Any]
+    pending_backend_request: PendingBackendRequest | None
 
     intent: str
     expected_action: ExpectedAction | None

@@ -54,7 +54,7 @@ for target in (
 
 ## 评分口径
 
-数据集批量评分只使用确定性断言（ADR 0005），不调用 LLM Judge；旧脚本路径待迁移时显式传 `--no-judge`，关闭 Judge 不代表字段断言覆盖已经完整。平台回归逐步接入 Langfuse Dataset / Experiment / Score，harness 与本地 CLI 共用同一比较逻辑（ADR 0029）。
+数据集批量评分只使用确定性断言（ADR 0005），不调用 LLM Judge；`--no-judge` 仅作兼容参数；字段覆盖仍以真实 expected 为准。平台回归逐步接入 Langfuse Dataset / Experiment / Score，harness 与本地 CLI 共用同一比较逻辑（ADR 0029）。
 
 ## Golden Set
 

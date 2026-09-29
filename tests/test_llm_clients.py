@@ -1,10 +1,7 @@
-"""app/llm/clients.py 工厂的 vendor 适配测试。
+"""模型工厂按 LLM_PROVIDER 选择协议，与模型名称无关。
 
-背景（ADR 0020）：模型经 .env 切换，适配层兼容 Qwen 与 DeepSeek。
-关闭思考模式的参数两家不同：
-- Qwen (dashscope)：extra_body={"enable_thinking": False}
-- DeepSeek：extra_body={"thinking": {"type": "disabled"}}
-  （DeepSeek 会静默忽略 enable_thinking，导致默认开思考、延迟爆炸）
+DeepSeek 发送 thinking.disabled，Qwen 发送 enable_thinking=false；
+通用接口不发送私有扩展，三个角色均保持 SDK 零重试。
 """
 from __future__ import annotations
 
@@ -17,40 +14,27 @@ from app.llm import clients
 
 
 class TestThinkingOffExtraBody:
-    """_thinking_off_extra_body：按模型名选择关闭思考的参数。"""
+    """显式适配选择厂商参数，通用接口不附带私有扩展。"""
 
-    def test_deepseek_uses_thinking_disabled(self) -> None:
-        assert clients._thinking_off_extra_body("deepseek-v4-pro") == {
-            "thinking": {"type": "disabled"}
-        }
-
-    def test_deepseek_case_insensitive(self) -> None:
-        assert clients._thinking_off_extra_body("DeepSeek-V4-Pro") == {
-            "thinking": {"type": "disabled"}
-        }
-
-    def test_qwen_uses_enable_thinking_false(self) -> None:
-        assert clients._thinking_off_extra_body("qwen3-30b-a3b") == {
-            "enable_thinking": False
-        }
-
-    def test_unknown_vendor_falls_back_to_qwen_style(self) -> None:
-        assert clients._thinking_off_extra_body("qwen-plus") == {
-            "enable_thinking": False
-        }
+    @pytest.mark.parametrize("provider,body", [
+        ("deepseek", {"thinking": {"type": "disabled"}}),
+        ("qwen", {"enable_thinking": False}),
+        ("openai_compatible", {}),
+    ])
+    def test_provider_controls_extra_body(self, provider, body) -> None:
+        assert clients._thinking_off_extra_body(provider) == body
 
 
-def _fake_settings(model: str) -> SimpleNamespace:
+def _fake_settings(model: str, provider: str = "deepseek") -> SimpleNamespace:
     return SimpleNamespace(
-        qwen_api_base="https://api.deepseek.com/v1",
-        qwen_api_key="sk-test",
-        qwen_model_standard=model,
-        qwen_model_thinking=model,
-        qwen_model_complex=model,
-        qwen_model_vl="qwen-vl-max-latest",
+        llm_provider=provider,
+        llm_api_base="https://api.deepseek.com/v1",
+        llm_api_key="sk-test",
+        llm_model_standard=model,
+        llm_model_thinking=model,
+        llm_model_complex=model,
         llm_timeout_seconds=60.0,
         llm_output_max_tokens=800,
-        llm_vision_max_tokens=4096,
         llm_trust_env=True,
     )
 
@@ -59,20 +43,18 @@ def _fake_settings(model: str) -> SimpleNamespace:
 def _clear_factory_caches():
     """工厂是 lru_cache 单例，测试前后都要清掉，避免污染其他用例。"""
     for fn in (
-        clients.get_qwen_standard,
-        clients.get_qwen_thinking,
-        clients.get_qwen_structured,
-        clients.get_qwen_complex,
-        clients.get_qwen_vl,
+        clients.get_llm_standard,
+        clients.get_llm_thinking,
+        clients.get_llm_structured,
+        clients.get_llm_complex,
     ):
         fn.cache_clear()
     yield
     for fn in (
-        clients.get_qwen_standard,
-        clients.get_qwen_thinking,
-        clients.get_qwen_structured,
-        clients.get_qwen_complex,
-        clients.get_qwen_vl,
+        clients.get_llm_standard,
+        clients.get_llm_thinking,
+        clients.get_llm_structured,
+        clients.get_llm_complex,
     ):
         fn.cache_clear()
 
@@ -81,8 +63,8 @@ def _clear_factory_caches():
 @pytest.mark.parametrize(
     "factory_name",
     [
-        "get_qwen_standard", "get_qwen_thinking",
-        "get_qwen_structured", "get_qwen_complex", "get_qwen_vl",
+        "get_llm_standard", "get_llm_thinking",
+        "get_llm_structured", "get_llm_complex",
     ],
 )
 @pytest.mark.parametrize("trust_env", [False, True])
@@ -114,14 +96,14 @@ async def test_rebuilt_factory_does_not_reuse_closed_http_clients(
     monkeypatch.setattr(
         clients, "get_settings", lambda: _fake_settings("external-deepseek-v4-pro")
     )
-    first = clients.get_qwen_structured()
+    first = clients.get_llm_structured()
     first_sync = first.root_client._client
     first_async = first.root_async_client._client
     first.root_client.close()
     await first.root_async_client.close()
-    clients.get_qwen_structured.cache_clear()
+    clients.get_llm_structured.cache_clear()
 
-    second = clients.get_qwen_structured()
+    second = clients.get_llm_structured()
     try:
         assert second.root_client._client is not first_sync
         assert second.root_async_client._client is not first_async
@@ -145,8 +127,9 @@ def test_llm_trust_env_loads_from_dotenv(
         mysql_uri="mysql://test:test@localhost/test",
         checkpoint_mysql_uri="mysql://test:test@localhost/test",
         business_mysql_uri="mysql+aiomysql://test:test@localhost/test",
-        qwen_api_base="https://llm.example/v1",
-        qwen_api_key="test-key",
+        llm_provider="openai_compatible",
+        llm_api_base="https://llm.example/v1",
+        llm_api_key="test-key",
         otc_api_base_url="http://backend.example",
         otc_api_secret="test-secret",
     )
@@ -159,7 +142,7 @@ class TestFactoryExtraBody:
 
     @pytest.mark.parametrize(
         "factory_name",
-        ["get_qwen_standard", "get_qwen_thinking", "get_qwen_structured", "get_qwen_complex"],
+        ["get_llm_standard", "get_llm_thinking", "get_llm_structured", "get_llm_complex"],
     )
     @pytest.mark.parametrize("model", ["deepseek-v4-pro", "external-deepseek-v4-pro"])
     def test_deepseek_model_gets_thinking_disabled(
@@ -176,9 +159,9 @@ class TestFactoryExtraBody:
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         monkeypatch.setattr(
-            clients, "get_settings", lambda: _fake_settings("qwen3-30b-a3b")
+            clients, "get_settings", lambda: _fake_settings("qwen3-30b-a3b", provider="qwen")
         )
-        llm = clients.get_qwen_standard()
+        llm = clients.get_llm_standard()
         assert llm.extra_body == {"enable_thinking": False}
 
 
@@ -188,9 +171,8 @@ class _DummyOut(SimpleNamespace):
 
 
 @pytest.mark.parametrize("factory_name,expected", [
-    ("get_qwen_standard", 800), ("get_qwen_thinking", 800),
-    ("get_qwen_structured", 800), ("get_qwen_complex", 800),
-    ("get_qwen_vl", 4096),
+    ("get_llm_standard", 800), ("get_llm_thinking", 800),
+    ("get_llm_structured", 800), ("get_llm_complex", 800),
 ])
 def test_factory_enforces_configured_output_budget(monkeypatch, factory_name, expected):
     factory = getattr(clients, factory_name)
@@ -206,10 +188,7 @@ def test_factory_enforces_configured_output_budget(monkeypatch, factory_name, ex
 
 @pytest.mark.usefixtures("_clear_factory_caches")
 class TestStructuredOutputMethod:
-    """DeepSeek 不支持 response_format=json_schema（400），
-    with_structured_output 不传 method 时必须自动降级为 function_calling。
-    Qwen 保持 langchain 默认（json_schema）不变。
-    """
+    """deepseek 适配默认 function_calling，qwen 保持当前 SDK 默认。"""
 
     @staticmethod
     def _bound_kwargs(runnable) -> dict:
@@ -231,7 +210,7 @@ class TestStructuredOutputMethod:
         monkeypatch.setattr(
             clients, "get_settings", lambda: _fake_settings(model)
         )
-        llm = clients.get_qwen_standard()
+        llm = clients.get_llm_standard()
         kwargs = self._bound_kwargs(llm.with_structured_output(Out))
         assert "tools" in kwargs
         assert "response_format" not in kwargs
@@ -248,7 +227,7 @@ class TestStructuredOutputMethod:
         monkeypatch.setattr(
             clients, "get_settings", lambda: _fake_settings(model)
         )
-        llm = clients.get_qwen_standard()
+        llm = clients.get_llm_standard()
         kwargs = self._bound_kwargs(
             llm.with_structured_output(Out, method="json_mode")
         )
@@ -267,9 +246,9 @@ class TestStructuredOutputMethod:
             x: int
 
         monkeypatch.setattr(
-            clients, "get_settings", lambda: _fake_settings(model)
+            clients, "get_settings", lambda: _fake_settings(model, provider="qwen")
         )
-        llm = clients.get_qwen_standard()
+        llm = clients.get_llm_standard()
         kwargs = self._bound_kwargs(llm.with_structured_output(Out))
         # langchain 默认 json_schema → response_format
         assert "response_format" in kwargs

@@ -14,20 +14,22 @@ from typing import Any
 
 import httpx
 
-from harness.differ import (
-    FieldDiff,
-    check_case_assertions,
-    check_structured_assertions,
-    check_text_assertions,
+from harness.evaluation import (
+    report_case as _report_case,
+)
+from harness.evaluation import (
+    summarize as _summarize,
+)
+from harness.evaluation import (
+    turn_diffs as _turn_diffs,
 )
 from harness.golden import (
-    GoldenCase,
     filter_by_category,
     filter_by_ids,
     load_golden,
     select_runnable,
 )
-from harness.multi_turn import MultiTurnResult, run_case_multi
+from harness.multi_turn import run_case_multi
 from harness.node_registry import DEFAULT_NODE_REGISTRY
 from harness.node_runner import (
     NodeFixtureSkipError,
@@ -36,129 +38,23 @@ from harness.node_runner import (
     run_node_fixture,
     run_node_fixture_http,
 )
+from harness.reporting import render_markdown as _render_markdown
 
 
 def _paths(values: list[str] | None) -> list[Path] | Path | None:
+    """解析用户明确选择的数据路径，保持当前数据集范围。"""
     if not values:
         return None
     paths = [Path(value) for value in values]
     return paths[0] if len(paths) == 1 else paths
 
 
-def _turn_diffs(
-    case: GoldenCase, result: MultiTurnResult, backend: str = "real"
-) -> dict[int | str, list[FieldDiff]]:
-    diffs: dict[int | str, list[FieldDiff]] = {}
-    for outcome, spec in zip(result.turns, case.turns, strict=False):
-        turn_diffs = check_text_assertions(
-            outcome.reply_text, spec, allow_dry_run=backend == "dry-run"
-        )
-        turn_diffs.extend(check_structured_assertions(
-            outcome.outputs, spec.expected, quote_content=outcome.quote_content,
-        ))
-        diffs[outcome.index] = turn_diffs
-    if case.expected_scope == "any_turn":
-        case_diffs = check_case_assertions(
-            [outcome.outputs for outcome in result.turns], case.expected,
-            quote_contents=[outcome.quote_content for outcome in result.turns],
-        )
-        if case_diffs:
-            diffs["case"] = case_diffs
-    if result.failure:
-        # 早停后未执行的轮次逐轮显式记失败（ADR 0024 D6），多轮 case 不得因早停静默通过
-        stop_turn, kind = result.failure.get("turn"), result.failure.get("kind")
-        for index in range(len(result.turns) + 1, len(case.turns) + 1):
-            diffs[index] = [
-                FieldDiff(
-                    path="runtime",
-                    expected="turn executed",
-                    actual=f"not executed: early stop at turn {stop_turn} ({kind})",
-                )
-            ]
-    return diffs
 
 
-def _case_status(result: MultiTurnResult, diffs: dict[int | str, list[FieldDiff]]) -> str:
-    """PASS / FAIL / REJECTED：业务拒绝不算 PASS，单独成桶（ADR 0024 D6）。"""
-    if any(diffs.values()):
-        return "FAIL"
-    if result.failure is None:
-        return "PASS"
-    return "REJECTED" if result.failure.get("kind") == "business_reject" else "FAIL"
 
 
-def _report_case(
-    case: GoldenCase, result: MultiTurnResult, diffs: dict[int | str, list[FieldDiff]]
-) -> dict[str, Any]:
-    status = _case_status(result, diffs)
-    return {
-        "case_id": case.id,
-        "category": case.category,
-        "dialect": case.dialect,
-        "case_diff": [item.model_dump() for item in diffs.get("case", [])],
-        "source_path": case.source_path,
-        "source_line": case.source_line,
-        "conversation_id": result.conversation_id,
-        "status": status,
-        "passed": status == "PASS",
-        "failure": result.failure,
-        "turns": [
-            {
-                "turn": outcome.index,
-                "scene": outcome.scene,
-                "raw": outcome.send_text,
-                "reply": outcome.reply_text,
-                "quote_passed": outcome.quote_passed,
-                "product_type": outcome.product_type,
-                "intent": outcome.intent,
-                "tickers": outcome.tickers,
-                "place_params": outcome.place_params,
-                "api_code": outcome.api_code,
-                "api_result": outcome.api_result,
-                "error": outcome.error,
-                "trace": outcome.trace,
-                "elapsed_ms": outcome.elapsed_ms,
-                "diff": [item.model_dump() for item in diffs.get(outcome.index, [])],
-            }
-            for outcome in result.turns
-        ],
-    }
 
 
-def _summarize(reports: list[dict[str, Any]]) -> dict[str, Any]:
-    counts = {
-        status: sum(1 for r in reports if r["status"] == status)
-        for status in ("PASS", "FAIL", "REJECTED")
-    }
-    return {
-        "total": len(reports),
-        "passed": counts["PASS"],
-        "failed": counts["FAIL"],
-        "rejected": counts["REJECTED"],
-        "pass_rate": counts["PASS"] / len(reports) if reports else 0.0,
-    }
-
-
-def _render_markdown(reports: list[dict[str, Any]]) -> str:
-    summary = _summarize(reports)
-    lines = [
-        "# Harness Regression Report",
-        "",
-        f"- PASS: {summary['passed']}",
-        f"- FAIL: {summary['failed']}",
-        f"- REJECTED: {summary['rejected']}  (backend business reject; not counted as PASS)",
-        f"- TOTAL: {summary['total']}",
-        "",
-        "| case | category | status | failure |",
-        "|---|---|---|---|",
-    ]
-    for report in reports:
-        status = report["status"]
-        lines.append(
-            f"| `{report['case_id']}` | `{report['category']}` | {status} | "
-            f"{report.get('failure') or ''} |"
-        )
-    return "\n".join(lines) + "\n"
 
 
 #: --backend 取值 → 服务端 /health.backend_mode 必须是什么（mock 只是把真后端 URL 指向 mock_api）
@@ -182,6 +78,7 @@ def _backend_gate(backend: str | None, server_mode: str | None) -> str | None:
 
 
 async def _doctor(base_url: str, checkpoint: str = "none", backend: str | None = None) -> int:
+    """核对本地应用、持久化与后端模式是否满足所选评测要求。"""
     async with httpx.AsyncClient(base_url=base_url.rstrip("/"), timeout=10.0) as client:
         try:
             health = await client.get("/health")
@@ -240,6 +137,7 @@ def _resolve_eval_ids(user_id: str | None, room_id: str | None) -> tuple[str, st
 
 
 async def _run(args: argparse.Namespace) -> int:
+    """执行当前 CLI 选择的用例并汇总统一断言结果。"""
     gate = await _doctor(args.base_url, args.checkpoint, backend=args.backend)
     if args.check_backend or gate != 0:
         return gate
@@ -399,10 +297,13 @@ async def _run_nodes(args: argparse.Namespace) -> int:
             encoding="utf-8",
         )
         print(f"report -> {output}")
-    return 0 if failed == 0 else 1
+    if failed:
+        return 1
+    return 0 if summary["passed"] else 2
 
 
 def build_parser() -> argparse.ArgumentParser:
+    """声明 CLI 参数及互斥执行模式。"""
     parser = argparse.ArgumentParser(prog="harness")
     subparsers = parser.add_subparsers(dest="command", required=True)
     run = subparsers.add_parser("run")
@@ -447,6 +348,7 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main(argv: list[str] | None = None) -> int:
+    """解析命令行并以实际执行结果设置退出码。"""
     args = build_parser().parse_args(argv)
     if args.command == "doctor":
         return asyncio.run(_doctor(args.base_url, args.checkpoint))

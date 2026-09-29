@@ -19,6 +19,7 @@ from langgraph.graph.state import CompiledStateGraph
 
 from app.graph.retry import add_io_node
 from app.graph.state import AgentState, SubgraphOutput
+from app.subgraphs.close.backend import close_clean_request, close_query_backend, close_submit
 from app.subgraphs.close.cancel_close import close_cancel_close
 from app.subgraphs.close.confirm_cancel import close_confirm_cancel
 from app.subgraphs.close.confirm_close import close_confirm_close
@@ -27,6 +28,7 @@ from app.subgraphs.close.intent import close_intent
 from app.subgraphs.close.place_close import build_place_close_graph
 from app.subgraphs.close.query_status import close_query_status
 from app.subgraphs.common import add_intent_dispatch, intent_router, make_unknown_node
+from app.subgraphs.request_boundary import after_clean, after_prepare
 
 #: unknown_intent + cascade 错误兜底节点（LLM 判 unknown_intent，或 intent 节点失败）
 close_unknown = make_unknown_node("close_unknown")
@@ -48,14 +50,14 @@ _route_after_close_intent = intent_router(_INTENT_TO_NODE, "close_unknown")
 def build_close_graph() -> CompiledStateGraph[AgentState, None, AgentState, SubgraphOutput]:
     """构建 close 子图（intent + 6 意图节点 + unknown 兜底）。"""
     g: StateGraph[AgentState, None, AgentState, SubgraphOutput] = StateGraph(AgentState, output_schema=SubgraphOutput)
-    add_io_node(g, "close_intent", close_intent)
-    add_io_node(g, "close_holding_query", close_holding_query)
-    # ADR 0024 重构 5：place_close 是子图（parse → fetch → extract → normalize → validate → submit/reject）
+    g.add_node("close_intent", close_intent)
+    g.add_node("close_holding_query", close_holding_query)
+    # 平仓内部图只准备、检查本次选择并提交；只读上下文与唯一模型均在主图。
     g.add_node("close_place_close", build_place_close_graph())
     g.add_node("close_confirm_close", close_confirm_close)
     g.add_node("close_cancel_close", close_cancel_close)
     g.add_node("close_confirm_cancel", close_confirm_cancel)
-    add_io_node(g, "close_query_status", close_query_status)
+    g.add_node("close_query_status", close_query_status)
     g.add_node("close_unknown", close_unknown)
 
     g.add_edge(START, "close_intent")
@@ -63,7 +65,14 @@ def build_close_graph() -> CompiledStateGraph[AgentState, None, AgentState, Subg
         g, "close_intent", _route_after_close_intent, _INTENT_TO_NODE, "close_unknown",
     )
     for n in targets:
-        g.add_edge(n, END)
+        g.add_conditional_edges(n, after_prepare, {"done": END, "clean": "close_clean_request"})
+    g.add_node("close_clean_request", close_clean_request)
+    g.add_node("close_submit", close_submit)
+    add_io_node(g, "close_query_backend", close_query_backend)
+    g.add_conditional_edges("close_clean_request", after_clean,
+                               {"done": END, "query": "close_query_backend", "submit": "close_submit"})
+    g.add_edge("close_submit", END)
+    g.add_edge("close_query_backend", END)
     return g.compile()
 
 

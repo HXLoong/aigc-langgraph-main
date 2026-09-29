@@ -233,6 +233,7 @@ def _sync_prompt(lf: Any, prompt: SyncPrompt) -> str:
 
 
 def _sync_all(lf: Any, root: Path) -> dict[str, int]:
+    """把当前工作区提示词单向同步到指定演练环境。"""
     prompts = _collect_sync_prompts(root)
     counts = {"created": 0, "updated": 0, "skipped": 0}
     for prompt in prompts:
@@ -243,12 +244,14 @@ def _sync_all(lf: Any, root: Path) -> dict[str, int]:
 
 
 def _new_client(base_url: str | None):
+    """按显式地址创建 SDK 客户端，凭据仍由环境提供。"""
     from langfuse import Langfuse
 
     return Langfuse(base_url=base_url)
 
 
 def main() -> int:
+    """解析上传参数并执行预览或明确请求的发布操作。"""
     parser = argparse.ArgumentParser(
         description="ADR 0014 D3 · git 提示词 → Langfuse 演练区（单向推送）"
     )
@@ -359,7 +362,7 @@ def main() -> int:
     1. Datasets → 选数据集 → Start Experiment
     2. Prompt 选 {lf_name}
     3. 变量 {{send_text}} 会自动映射到 dataset item 的 send_text
-    4. 结构化输出：打开开关，挂 CloseIntentOutput 的 JSON schema（在 Playground 存过就能选）
+    4. 结构化输出：打开开关，挂 CloseInstruction 的 JSON schema（在 Playground 存过就能选）
     5. 注意：只跑首轮；不跑 LangGraph 图，链路回归仍用 langfuse_eval.py"""
     else:
         experiment_help = """

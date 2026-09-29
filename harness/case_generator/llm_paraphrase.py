@@ -9,7 +9,7 @@
 - 变体覆盖：缩写 / 错别字 / 口语化 / 引用同义词 / 边界场景
 
 注：生成的 case **不直接合入**数据集 —— 必须经业务方 review 通过。
-本工具只产生 review 候选清单 markdown（默认 tmp/case_generator/paraphrase-candidates.md）。
+本工具只产生 review 候选清单 markdown（默认 /opt/work-file/code-tmp/aigc-langgraph-tmp/case_generator/paraphrase-candidates.md）。
 """
 from __future__ import annotations
 
@@ -19,7 +19,7 @@ from typing import Any, cast
 from langchain_core.messages import HumanMessage, SystemMessage
 from pydantic import BaseModel, ConfigDict, Field
 
-from app.llm.clients import get_qwen_thinking
+from app.llm.clients import get_llm_thinking
 from harness.golden import GoldenCase
 
 # ============================================================
@@ -100,7 +100,7 @@ async def paraphrase_case(
     seed: GoldenCase, num_variants: int = 3
 ) -> list[ParaphrasedCase]:
     """对单条种子生成 N 条对抗式变体。"""
-    llm = get_qwen_thinking().with_structured_output(ParaphraseBatch)
+    llm = get_llm_thinking().with_structured_output(ParaphraseBatch)
     user_msg = _USER_TEMPLATE.format(
         num_variants=num_variants,
         raw_content=seed.turns[-1].send_text,

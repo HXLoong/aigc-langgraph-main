@@ -7,7 +7,7 @@ request_cancel_order（针对已正式送出订单的撤单请求）。原 LLM �
 "全部撤单"未指定时从 quote 取全部；均无 → orderId: null。
 
 输入：raw_text + quote_content
-输出：state['expected_action'] = "cancel" + state['cancel_params'] = {orderList} + 后端调用结果
+输出：state['expected_action'] = "cancel" + state['cancel_params'] = {orderList} + 待清洗请求
 """
 from __future__ import annotations
 
@@ -17,7 +17,7 @@ from app.extraction.identity import prepare_identity_scope
 from app.graph.business_params import validated_cancel_params
 from app.graph.safe_node import safe_node
 from app.graph.state import AgentState, TraceEntry
-from app.subgraphs.option.backend import call_option_backend
+from app.subgraphs.option.backend import prepare_option_request
 from app.subgraphs.option.order_id import extract_for_request_cancel, extract_order_ids
 from app.subgraphs.option.order_scope import OrderScopeError
 
@@ -41,7 +41,7 @@ async def option_extract_cancel(state: AgentState) -> dict[str, Any]:
     order_list = [{"orderId": order_id} for order_id in order_ids]
     order_count = sum(1 for item in order_list if item["orderId"])
 
-    backend = await call_option_backend(
+    request_update = await prepare_option_request(
         prepared_state,
         intent="request_cancel_order",
         order_list=order_list,
@@ -51,7 +51,7 @@ async def option_extract_cancel(state: AgentState) -> dict[str, Any]:
         "field_records": records,
         "expected_action": "cancel",
         "cancel_params": validated_cancel_params(orderList=order_list),
-        **backend,
+        **request_update,
         "trace": [
             TraceEntry(
                 node="option_extract_cancel",

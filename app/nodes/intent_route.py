@@ -1,133 +1,33 @@
-"""当前一级路由节点（单次联合解析的重构目标见 ADR 0031）。
-
-两层处理(对照 Dify 主干工作流（Dify 资产已冻结于 tag dify-assets-frozen-20260917，ADR 0024 D1）):
-1. 规则层:「脚本判断期权、互换、其他查询指令」1:1 移植(app/nodes/route_rules.py)
-   —— 订单号正则、口语化平仓、互换系统引用、下单特征、平仓查询关键词、关键词计数
-2. LLM 兜底:「unknown意图兜底识别」(app/prompts/router/unknown_intent.md)
-   —— 仅规则层返回 unknown 且为文本输入时触发
-
-标签 → product_type 映射:
-互换-文本/图片/Excel → swap(swap_input_mode 区分三链)
-期权-文本 → option;期权平仓-文本 → option_close
-无法识别文件类型 → unknown(直接 fallback,不走 LLM;DSL 同语义)
-
-注:DSL 的「兜底意图识别到意图」条件写的是 not contains "unkown"(拼写笔误),
-由于 "unknown" 不含子串 "unkown" 该条件恒真,unknown 最终仍经一级分支落 fallback。
-本实现按正确语义直接以 unknown → cascade fallback,行为等价。
-"""
+"""无需模型的产品路由：订单及引用规则优先，歧义交给一次联合解析。"""
 from __future__ import annotations
 
-import logging
-from typing import Any, Literal
+from typing import Any
 
-from pydantic import Field
-
-from app.extraction.intent_evidence import IntentEvidenceOutput, intent_records
-from app.graph.retry import io_node
+from app.graph.safe_node import safe_node
 from app.graph.state import AgentState, ProductType, TraceEntry
-from app.llm.clients import get_qwen_thinking
-from app.nodes.route_rules import is_swap_transaction
-from app.prompts import blocks
-from app.prompts.spec import PromptSpec, register
+from app.nodes.route_rules import classify_trade_type
 
-logger = logging.getLogger(__name__)
-
-
-#: DSL 标签 → (product_type, swap_input_mode)
-_LABEL_MAP: dict[str, tuple[ProductType, str | None]] = {
-    "互换-文本": ("swap", "text"),
-    "互换-图片": ("swap", "image"),
-    "互换-Excel": ("swap", "excel"),
-    "期权-文本": ("option", "text"),
-    "期权平仓-文本": ("option_close", "text"),
+_LABEL_MAP: dict[str, ProductType] = {
+    "互换-文本": "swap", "期权-文本": "option", "期权平仓-文本": "option_close",
 }
 
 
-class UnknownIntentOutput(IntentEvidenceOutput):
-    """LLM 兜底输出：枚举标签、置信度及原文证据。"""
-
-    label: Literal["互换-文本", "期权-文本", "期权平仓-文本", "unknown"] = Field(
-        description="一级路由标签，取 4 个枚举值之一"
-    )
-
-
-def _user_from_state(state: AgentState) -> str:
-    return blocks.source_payload(state)
+def resolve_product_hint(state: AgentState) -> tuple[ProductType, str]:
+    """主图与隔离解析节点共用相同的规则优先级，不读取测试期望。"""
+    label = classify_trade_type(state.get("raw_text") or "", state.get("quote_content"))
+    product: ProductType = _LABEL_MAP.get(label, "unknown")
+    previous = state.get("product_type")
+    if product == "unknown" and previous in ("swap", "option", "option_close"):
+        return previous, "context"
+    return product, "rule"
 
 
-SPEC = register(PromptSpec(
-    category="router",
-    name="unknown_intent",
-    output_model=UnknownIntentOutput,
-    inputs=("raw_text", "quote_content", "history_messages"),
-    user_builder=_user_from_state,
-))
-
-
-async def _classify_with_llm(
-    text: str, quote_content: str | None, history_messages: Any = None,
-) -> UnknownIntentOutput:
-    """LLM 兜底(unknown意图兜底识别):规则未命中的模糊样本分类。
-
-    消息组装统一走 SPEC；可选历史包含原始消息 ID，用于多轮证据验证。
-    """
-    messages, _prompt_name = SPEC.build_messages(
-        {"raw_text": text, "quote_content": quote_content, "history_messages": history_messages or []}
-    )
-    llm = get_qwen_thinking().with_structured_output(UnknownIntentOutput)
-    result: Any = await llm.ainvoke(messages)
-    return UnknownIntentOutput.model_validate(result)
-
-
-@io_node
+@safe_node
 async def intent_route(state: AgentState) -> dict[str, Any]:
-    """一级路由节点。
-
-    出参:
-    - product_type: swap / option / option_close / unknown
-    - swap_input_mode: text / image / excel(仅 swap;其余产品恒 text)
-    - trace.decision: `rule→<label>` 或 `llm→<label>`
-    """
-    text = state.get("raw_text", "") or ""
-    quote = state.get("quote_content")
-    files = state.get("input_files") or []
-
-    # 第 1 层:规则(含文件分类)
-    label = is_swap_transaction(text, files=files, quote_content=quote)
-    source = "rule"
-    records = {}
-
-    # 第 2 层:LLM 兜底(仅文本 unknown;文件无法识别按 DSL 直接 fallback)
-    if label == "unknown" and not files and text.strip():
-        result = UnknownIntentOutput.model_validate(
-            await _classify_with_llm(text, quote, state.get("history_messages"))
-        )
-        records = intent_records(result, state, scope="router/intent", value=result.label)
-        label = result.label
-        source = "llm"
-
-    pt, mode = _LABEL_MAP.get(label, ("unknown", None))
-
-    # 第 3 层:多轮粘性（当前实现）——规则与 LLM 双 unknown 且
-    # checkpoint 携带上一轮 product_type 时继承之,避免"确认下单"裸发落 fallback
-    if pt == "unknown" and not files:
-        prev = state.get("product_type")
-        if prev in ("swap", "option", "option_close"):
-            pt, mode = prev, "text"
-            source, label = "sticky", prev
-            if records:
-                records["router/intent.model"] = records["router/intent"]
-                records["router/intent"] = records["router/intent"].model_copy(update={
-                    "value": prev, "source": "default", "confidence": None,
-                })
-    update: dict[str, Any] = {
-        "product_type": pt,
-        **({"field_records": records} if records else {}),
-        "trace": [TraceEntry(node="intent_route", decision=f"{source}→{label}")],
-    }
-    if pt == "swap":
-        update["swap_input_mode"] = mode
-    return update
-
-
-__all__ = ["intent_route", "UnknownIntentOutput"]
+    """提供产品提示，不调用模型；联合解析同时补齐产品、意图和参数。"""
+    # 1. 只依据本次文本及引用确定产品，Excel 本身不强制归为互换。
+    if state.get("error") or state.get("reply_text"):
+        return {}
+    product, source = resolve_product_hint(state)
+    return {"product_type": product, "swap_input_mode": "text",
+            "trace": [TraceEntry(node="intent_route", decision=f"{source}→{product}")]}

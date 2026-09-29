@@ -7,7 +7,6 @@ import hashlib
 import json
 import logging
 import math
-import subprocess
 import time
 from pathlib import Path
 from typing import Any
@@ -23,7 +22,9 @@ from app.storage.mysql import connection_args
 from app.tools.ticker_client import TickerClientHttpx
 from harness.cli import _doctor, _render_markdown, _report_case, _summarize, _turn_diffs
 from harness.golden import GoldenCase, filter_by_ids, load_golden
+from harness.langfuse_client import flush, record_business_score
 from harness.multi_turn import MultiTurnResult, run_case_multi
+from harness.version import execution_metadata
 
 logger = logging.getLogger(__name__)
 
@@ -34,25 +35,20 @@ class CapabilityProbe(BaseModel):
 
 
 async def probe_text_models() -> list[dict[str, Any]]:
-    checked: set[tuple[str, str]] = set()
-    results: list[dict[str, Any]] = []
+    """只预检本次业务解析使用的 STANDARD，不探测备用或离线生成角色。"""
+    model = llm_clients.get_llm_standard()
     prompt = load_prompt("system", "capability_probe")
-    for factory in (llm_clients.get_qwen_standard, llm_clients.get_qwen_thinking, llm_clients.get_qwen_complex):
-        model = factory()
-        key = (str(model.openai_api_base), model.model_name)
-        if key not in checked:
-            try:
-                output = await model.with_structured_output(CapabilityProbe).ainvoke([("system", prompt.system)])
-                if CapabilityProbe.model_validate(output).status != "ready":
-                    raise ValueError("unexpected capability response")
-            except Exception as exc:
-                raise ValueError(f"structured output unavailable: {model.model_name}") from exc
-            checked.add(key)
-        results.append({"factory": factory.__name__, "model": model.model_name, "structured_output": True})
-    return results
+    try:
+        output = await model.with_structured_output(CapabilityProbe).ainvoke([("system", prompt.system)])
+        if CapabilityProbe.model_validate(output).status != "ready":
+            raise ValueError("unexpected capability response")
+    except Exception as exc:
+        raise ValueError(f"structured output unavailable: {model.model_name}") from exc
+    return [{"factory": "get_llm_standard", "model": model.model_name, "structured_output": True}]
 
 
 def require_local(url: str) -> None:
+    """拒绝将本地验收请求发送到远程应用或数据库。"""
     if urlsplit(url).hostname not in {"localhost", "127.0.0.1", "::1"}:
         raise ValueError("local application/database target required")
 
@@ -68,12 +64,14 @@ def latency_percentiles(values: list[int]) -> dict[str, int | None]:
 
 class LocalJavaMessages:
     def __init__(self, pool: aiomysql.Pool, run_id: str) -> None:
+        """保存本次验收的消息与授权对手缓存。"""
         self.pool = pool
         self.run_id = run_id
         self.message_ids: list[int] = []
         self.counterparties: dict[tuple[str, str, str], str] = {}
 
     async def prepare(self, inputs: dict[str, Any]) -> None:
+        """写入本地测试消息并通过授权对手接口准备本轮参考数据。"""
         settings = get_settings()
         async with self.pool.acquire() as connection, connection.cursor() as cursor:
             await cursor.execute(
@@ -99,6 +97,7 @@ class LocalJavaMessages:
 
 
 async def run(args: argparse.Namespace) -> int:
+    """准备授权本地消息并经 HTTP 执行业务回归，保存完整失败分母。"""
     settings = get_settings()
     for url in (args.base_url, settings.otc_api_base_url, settings.mysql_uri):
         require_local(url)
@@ -127,9 +126,9 @@ async def run(args: argparse.Namespace) -> int:
     latencies: list[int] = []
     manifest = {
         "run": run_id, "base_url": args.base_url, "backend": backend, "checkpoint": "mysql",
-        "commit": subprocess.check_output(["git", "rev-parse", "HEAD"], text=True).strip(),
+        **execution_metadata(),
         "cases": len(cases), "turns": sum(len(case.turns) for case in cases),
-        "model": settings.qwen_model_standard,
+        "model": settings.llm_model_standard,
         "models": models,
         "fixtures": {p.name: hashlib.sha256(p.read_bytes()).hexdigest() for p in Path(args.data).glob("*.jsonl")},
     }
@@ -137,6 +136,7 @@ async def run(args: argparse.Namespace) -> int:
     logger.info("local evaluation started: %s cases=%s", directory, len(cases))
 
     async def execute(case: GoldenCase) -> None:
+        """执行一条用例并保留结果，准备失败也纳入统计。"""
         async with semaphore:
             try:
                 result = await run_case_multi(
@@ -149,6 +149,9 @@ async def run(args: argparse.Namespace) -> int:
                     failure={"kind": "preparation_error", "error": type(exc).__name__})
                 logger.error("case=%s preparation=%s", case.id, type(exc).__name__)
             report = _report_case(case, result, _turn_diffs(case, result))
+            record_business_score(report, metadata={"run_name": run_id,
+                "code_hash": manifest["code_hash"], "model": manifest["model"],
+                "assertion_version": manifest["assertion_version"]})
             reports.append(report)
             latencies.extend(turn.elapsed_ms for turn in result.turns)
             with (directory / "cases.jsonl").open("a") as stream:
@@ -161,6 +164,8 @@ async def run(args: argparse.Namespace) -> int:
         (directory / "message_ids.json").write_text(json.dumps(fixtures.message_ids))
         pool.close()
         await pool.wait_closed()
+        # 批次完成再统一导出，避免只依赖解释器退出时的尾部刷新。
+        await asyncio.to_thread(flush)
     reports.sort(key=lambda report: report["case_id"])
     percentiles = latency_percentiles(latencies)
     summary = {**manifest, **_summarize(reports), **percentiles, "reports": reports}
@@ -171,6 +176,7 @@ async def run(args: argparse.Namespace) -> int:
 
 
 def main() -> None:
+    """解析命令行并以实际执行结果设置退出码。"""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--base-url", default="http://127.0.0.1:8201")
     parser.add_argument("--data", default="tests/datasets/biz")

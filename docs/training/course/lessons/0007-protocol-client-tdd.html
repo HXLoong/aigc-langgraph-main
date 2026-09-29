@@ -53,33 +53,26 @@
 <p>全项目最高频的测试坑（<code>tests/CLAUDE.md</code> 专页警告）。原理一句话：<code>from x import y</code> 会把 <code>y</code> 这个名字<strong>绑进当前模块</strong>，此后 patch 原模块的 <code>x.y</code> 改不到这个已绑定的名字。</p>
 
 <pre><code><span class="cm"># ❌ 不生效：patch 定义处</span>
-monkeypatch.setattr(<span class="st">"app.llm.clients.get_qwen_thinking"</span>, fake)
-<span class="cm"># swap/intent.py 早就 `from app.llm.clients import get_qwen_thinking`，名字已绑到 intent 模块
+monkeypatch.setattr(<span class="st">"app.llm.clients.get_llm_standard"</span>, fake)
+<span class="cm"># nodes/parse_instruction.py 早就 `from app.llm.clients import get_llm_standard`，名字已绑到 parse_instruction 模块
 
-# ✅ 生效：patch 使用点（intent 模块里的名字）</span>
-monkeypatch.setattr(<span class="st">"app.subgraphs.swap.intent.get_qwen_thinking"</span>, fake)</code></pre>
+# ✅ 生效：patch 使用点（parse_instruction 模块里的名字）</span>
+monkeypatch.setattr(<span class="st">"app.nodes.parse_instruction.get_llm_standard"</span>, fake)</code></pre>
 
 <p>再看项目里 mock LLM 的标准写法——注意 mock 链要还原 <code>with_structured_output</code> 的调用形状：</p>
 
-<pre><code><span class="kw">def</span> _patch_llm(monkeypatch, return_type: <span class="kw">str</span>) -> AsyncMock:
-    <span class="st">"""让 swap.intent 调 LLM 时返回固定 SwapIntentOutput。"""</span>
-<span class="hl">    fake_output = SwapIntentOutput(type=return_type)          <span class="cm"># mock 到 Pydantic 实例，不是 JSON 字符串！</span></span>
-
+<pre><code><span class="kw">def</span> _patch_llm(monkeypatch, fake_output) -> AsyncMock:
+    <span class="st">"""唯一解析节点返回调用方准备的联合输出，包含与输入匹配的来源证据。"""</span>
     fake_llm_with_schema = MagicMock()
     fake_llm_with_schema.ainvoke = AsyncMock(return_value=fake_output)
-
     fake_base_llm = MagicMock()
     fake_base_llm.with_structured_output = MagicMock(return_value=fake_llm_with_schema)
-
-<span class="hl">    monkeypatch.setattr(intent_module, <span class="st">"get_qwen_thinking"</span>, <span class="kw">lambda</span>: fake_base_llm)  <span class="cm"># 使用点！</span></span>
-    <span class="kw">return</span> fake_llm_with_schema.ainvoke
-
-<span class="cm"># 用法：节点函数直接当普通 async 函数测，连图都不用建</span>
-<span class="kw">async def</span> test_classifies_place_order(monkeypatch):
-    _patch_llm(monkeypatch, <span class="st">"place_order_request"</span>)
-    result = <span class="kw">await</span> swap_intent({<span class="st">"raw_text"</span>: <span class="st">"做一笔招商银行的 TRS"</span>})
-    <span class="kw">assert</span> result[<span class="st">"intent"</span>] == <span class="st">"place_order_request"</span></code></pre>
-<span class="src">tests/subgraphs/swap/test_intent.py:63-90（真实测试原文）</span>
+    monkeypatch.setattr(
+        <span class="st">"app.nodes.parse_instruction.get_llm_standard"</span>,
+        <span class="kw">lambda</span>: fake_base_llm,
+    )
+    <span class="kw">return</span> fake_llm_with_schema.ainvoke</code></pre>
+<p>完整输入、联合输出与证据示例见 <code>tests/nodes/test_joint_parse.py</code>，共享 mock 见 <code>tests/joint_support.py</code>。</p>
 
 <h2>3. TDD 红绿流程（6 分钟）</h2>
 <p>项目强制顺序（禁止先改代码再补测试，禁止跳过 RED 验证）：</p>
@@ -120,11 +113,11 @@ python -m pytest tests/ -q --tb=line 2>&1 | tail -5</code></pre>
 </div>
 
 <div class="quiz-q" data-answer="a">
-<p class="quiz-stem">2. patch 了 <code>app.llm.clients.get_qwen_thinking</code> 但节点还在调真 LLM，原因是？</p>
+<p class="quiz-stem">2. patch 了 <code>app.llm.clients.get_llm_standard</code> 但节点还在调真 LLM，原因是？</p>
 <label><input type="radio" name="q2" value="a"> 节点模块 import 时已把名字绑定进自己命名空间</label>
 <label><input type="radio" name="q2" value="b"> monkeypatch 在异步测试里需要额外的作用域参数</label>
 <label><input type="radio" name="q2" value="c"> lru_cache 把真实客户端缓存住了导致替换失效</label>
-<p class="quiz-explain" hidden>"patch where it's looked up"——from x import y 后，y 存在于导入方的命名空间，改原模块无效。要 patch app.subgraphs.swap.intent.get_qwen_thinking（tests/CLAUDE.md 头号陷阱）。</p>
+<p class="quiz-explain" hidden>"patch where it's looked up"——from x import y 后，y 存在于导入方的命名空间，改原模块无效。要 patch app.nodes.parse_instruction.get_llm_standard（tests/CLAUDE.md 头号陷阱）。</p>
 </div>
 
 <div class="quiz-q" data-answer="c">

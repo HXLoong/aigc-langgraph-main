@@ -1,4 +1,4 @@
-"""意图集本地确定性评分：不依赖 Langfuse / Java / GOATS，可在 CI 里给出退出码。"""
+"""意图 fixture 与 Langfuse Dataset 投影保持一致。"""
 
 from __future__ import annotations
 
@@ -89,7 +89,7 @@ def test_frozen_context_round_trips_through_loader_and_dataset_projection(tmp_pa
     assert projected["prev_product_type"] == "option_close"
     assert not {"quote_content", "history", "prev_product_type"} & set(dataset_input(case)), "empty context stays out"
 
-    local = _LocalItem(case, suite="intent").input["turns"][1]
+    local = _LocalItem(case, suite="intent").input["sub_scenes"][0]
     assert (local["quote_content"], local["history"], local["prev_product_type"]) == (
         turn.quote_content, turn.history, "option_close"
     )

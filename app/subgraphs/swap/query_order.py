@@ -3,7 +3,7 @@
 订单号由 app/subgraphs/swap/order_id.py 确定性提取：raw 优先，否则取 quote。
 
 输入：raw_text + quote_content
-输出：state['query_filter'] = {orderList} + 后端调用结果
+输出：state['query_filter'] = {orderList} + 待清洗请求
 """
 from __future__ import annotations
 
@@ -11,13 +11,13 @@ from typing import Any
 
 from app.extraction.identity import prepare_identity_scope
 from app.graph.business_params import validated_query_filter
-from app.graph.retry import io_node
+from app.graph.safe_node import safe_node
 from app.graph.state import AgentState, TraceEntry
-from app.subgraphs.swap.backend import call_swap_backend
+from app.subgraphs.swap.backend import prepare_swap_request
 from app.subgraphs.swap.order_id import extract_for_query, extract_order_ids
 
 
-@io_node
+@safe_node
 async def swap_query_order(state: AgentState) -> dict[str, Any]:
     """swap.query_order 节点(确定性提取)。"""
     order_ids = extract_for_query(
@@ -29,7 +29,7 @@ async def swap_query_order(state: AgentState) -> dict[str, Any]:
     )
     order_list = [{"orderId": oid} for oid in order_ids]
 
-    backend = await call_swap_backend(
+    request_update = await prepare_swap_request(
         prepared_state,
         intent="query_order_status",
         order_list=order_list,
@@ -38,7 +38,7 @@ async def swap_query_order(state: AgentState) -> dict[str, Any]:
     return {
         "field_records": records,
         "query_filter": validated_query_filter(orderList=order_list),
-        **backend,
+        **request_update,
         "trace": [
             TraceEntry(
                 node="swap_query_order",

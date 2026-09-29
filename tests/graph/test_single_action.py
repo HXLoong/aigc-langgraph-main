@@ -13,12 +13,14 @@ from app.graph import main
 from app.graph.state import AgentState, Message
 from app.llm.clients import _ChatLLM
 from app.subgraphs.swap.backend import call_swap_backend
+from tests.joint_support import joint_model
 
 
 @pytest.fixture
 def no_model(monkeypatch: pytest.MonkeyPatch) -> Mock:
     model = Mock(side_effect=AssertionError("ordinary routing must not invoke a planner"))
     monkeypatch.setattr(_ChatLLM, "with_structured_output", model)
+    monkeypatch.setattr("app.nodes.parse_instruction.get_llm_standard", lambda: joint_model("swap", "place_order_request"))
     return model
 
 
@@ -119,10 +121,6 @@ async def test_all_recognized_orders_share_the_selected_action(
     monkeypatch: pytest.MonkeyPatch, product: str, mixed_wording: bool,
 ) -> None:
     """单消息单动作：混合措辞不将识别到的订单再按分句拆成不同动作。"""
-    from app.subgraphs.close import intent as close_intent
-    from app.subgraphs.close.models import CloseIntentOutput
-    from app.subgraphs.option import intent as option_intent
-    from app.subgraphs.option.models import OptionIntentOutput
 
     is_close = product == "option_close"
     order_ids = (
@@ -132,19 +130,9 @@ async def test_all_recognized_orders_share_the_selected_action(
     first_clause = f"撤单 {order_ids[0]}"
     raw = first_clause + ("；查询订单 " if mixed_wording else "、") + order_ids[1]
     intent = "close_order_cancel_request" if is_close else "request_cancel_order"
-    output_model = CloseIntentOutput if is_close else OptionIntentOutput
-    model = Mock()
-    model.with_structured_output.return_value.ainvoke = AsyncMock(return_value=output_model(
-        type=intent, confidence=1, evidence=[{"origin": "raw", "text": first_clause}],
-    ))
-    # 保留真实主图、参数提取与 DTO，仅固定意图结果并替换外部 IO。
-    monkeypatch.setattr(_ChatLLM, "with_structured_output", Mock(
-        side_effect=AssertionError("unexpected extra model call"),
-    ))
-    if is_close:
-        monkeypatch.setattr(close_intent, "get_qwen_thinking", lambda: model)
-    else:
-        monkeypatch.setattr(option_intent, "get_qwen_structured", lambda: model)
+    model_calls = []
+    monkeypatch.setattr("app.nodes.parse_instruction.get_llm_standard", lambda: joint_model(product, intent, calls=model_calls))
+    monkeypatch.setattr("app.nodes.prepare_parse_context.OptionClientHttpx.query_close_orders", AsyncMock(return_value={"code": 0, "data": []}))
     receipt = "Java：两笔订单的撤单申请已受理，等待确认。"
     client = Mock(operate=AsyncMock(return_value={"code": 0, "data": receipt}))
     for module in ("option", "close"):
@@ -159,7 +147,7 @@ async def test_all_recognized_orders_share_the_selected_action(
 
     assert result.get("error") is None
     assert result["product_type"] == product and result["intent"] == intent
-    model.with_structured_output.return_value.ainvoke.assert_awaited_once()
+    assert len(model_calls) == 1
     client.operate.assert_awaited_once()
     request = client.operate.await_args.args[0].model_dump(mode="json", by_alias=True)
     assert request["type"] == intent

@@ -104,10 +104,9 @@ async def test_retired_inquiry_nodes_are_not_registered(node: str, endpoint: str
 @pytest.mark.parametrize(
     ("product", "node", "state"),
     [
-        ("option_close", "place_close_fetch_orders", {}),
+        ("option_close", "place_close_submit", {}),
         ("option", "inquiry_submit", {}),
-        ("swap", "swap_image_order", {}),
-        ("swap", "swap_excel_order", {}),
+        ("swap", "swap_place_order_submit", {}),
         ("main", "quick_inquiry", {}),
     ],
 )
@@ -117,8 +116,8 @@ async def test_missing_required_context_is_422(product: str, node: str, state: d
 
 
 async def test_existing_node_error_is_500_and_preserves_output() -> None:
-    response = await post_node("swap", "swap_image_order", {"input_files": []})
+    response = await post_node("option", "option_intent", {"raw_text": "询价"})
     assert response.status_code == 500, response.text
     output = response.json()["output"]
-    assert output["error"]["type"] == "ValueError"
-    assert output["trace"][0]["node"] == "swap_image_order"
+    assert output["error"]["type"] == "ValidationError"
+    assert output["trace"][0]["node"] == "option_intent"

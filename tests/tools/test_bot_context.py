@@ -51,17 +51,33 @@ def test_to_wire_matches_legacy_context_shape_byte_for_byte() -> None:
     assert bare["messageContent"] == "只有原文" and bare["messageId"] == 0 and bare["userId"] == ""
 
 
-def test_backends_build_context_from_bot_context() -> None:
-    """option / close 直接用 BotContext.to_wire()；swap 只多一条操作者空串兜底。"""
-    import inspect
+async def test_backends_build_context_from_bot_context(monkeypatch) -> None:
+    """经真实 HTTP 客户端验证上下文，后端实现移动到公共边界不改变 wire。"""
+    import json
+    from importlib import import_module
 
-    from app.subgraphs.close import backend as close_backend
-    from app.subgraphs.option import backend as option_backend
-    from app.subgraphs.swap import backend as swap_backend
+    import httpx
 
-    state = _state()
-    wire = BotContext.from_state(state).to_wire()
-    for module in (option_backend, close_backend):
-        assert "BotContext.from_state(state).to_wire()" in inspect.getsource(module)
-    assert swap_backend._context(state) == wire
-    assert swap_backend._context({"raw_text": "x"})["operatorUserId"] == "", "swap 未填操作者透传空串"
+    for product, intent in (("option", "query_order_status"), ("swap", "query_order_status"), ("close", "close_order_query")):
+        module = import_module(f"app.subgraphs.{product}.backend")
+        client_class = module.SwapClientHttpx if product == "swap" else module.OptionClientHttpx
+        sent = []
+
+        def respond(request, sent=sent):
+            """仅替换网络，记录客户端真实序列化的请求。"""
+            sent.append(json.loads(request.content))
+            return httpx.Response(200, json={"code": 0, "data": "Java context receipt"})
+
+        client = client_class(base_url="http://java.invalid", token="test", transport=httpx.MockTransport(respond), dry_run=False)
+        name = "SwapClientHttpx" if product == "swap" else "OptionClientHttpx"
+        monkeypatch.setattr(module, name, lambda client=client: client)
+        kwargs = {"close_order_req_vo": {}} if product == "close" else {"order_list": []}
+        await getattr(module, f"call_{product}_backend")(_state(), intent=intent, **kwargs)
+        assert len(sent) == 1
+        payload = sent[0]
+        assert payload["conversationId"] == "conv-1"
+        assert payload["messageId"] == 20260917000042
+        assert payload["messageContent"] == "腾讯 1000 股\n订单 H-1"
+        assert payload["rawContent"] == "腾讯 1000 股" and payload["quoteContent"] == "订单 H-1"
+        assert payload["operatorUserId"] == "op1" and payload["roomId"] == "r1" and payload["userId"] == "u1"
+        assert "tickers" not in payload and "place_params" not in payload

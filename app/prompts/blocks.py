@@ -9,7 +9,7 @@ import json
 from collections.abc import Mapping, Sequence
 from typing import Any
 
-from app.extraction.candidates import evidence_sources
+from app.extraction.sources import evidence_sources
 from app.graph.state import Message
 
 

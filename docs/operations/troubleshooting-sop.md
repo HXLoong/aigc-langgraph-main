@@ -112,11 +112,12 @@
 ### 2.3 诊断步骤
 
 ```bash
-# 1. DeepSeek API 连通性
-curl -sf -m 10 https://api.deepseek.com/v1/models -H "Authorization: Bearer $LLM_API_KEY"
+# 1. 已配置网关的连通性（先在安全环境加载变量）
+curl -sf -m 10 "${LLM_API_BASE%/}/models" -H "Authorization: Bearer $LLM_API_KEY"
 
-# 2. 检查 .env 中 API key 与 base URL
-grep -E "LLM_API|QWEN_API" /etc/otc-agent/.env
+# 2. 只列配置键名，不输出密钥；provider 与模型角色按 ADR 0020 核对
+awk -F= '/^[[:space:]]*LLM_(PROVIDER|API_BASE|API_KEY|MODEL_STANDARD|MODEL_THINKING|MODEL_COMPLEX)=/ {print $1 "=<configured>"}' /etc/otc-agent/.env
+# 出现旧变量迁移错误时替换键名、删除退役 VL 配置；修改后重启。
 
 # 3. 看 LangFuse trace 的 LLM 错误信息
 #    Traces → 按 metadata.llm_error=true 过滤 → 看错误码
@@ -176,25 +177,12 @@ journalctl -u otc-agent --since "10 minutes ago" | grep -E "TimeoutException|htt
 ### 3.3 诊断步骤
 
 ```bash
-# 1. 单点 endpoint 联通测试
-curl -sf -m 5 "$OTC_API_BASE_URL/admin-api/integration/securities-instrument/select" \
-  -H "Token: $OTC_API_SECRET" \
-  -H "Content-Type: application/json" \
-  -d '{"keywordItems":[{"keyword":"600519","isFull":false}]}'
+# 1. 检查 LangGraph 就绪结果（Java 仅检测 TCP 传输连通）
+curl -fsS http://127.0.0.1:8201/ready
 
-# 期望返回：HTTP 200 + JSON 含 windCode 字段
-# 5xx → Java 端出问题
-# 401/403 → token 失效
-# Timeout → 网络隔离
-
-# 2. 多 endpoint 同时检查（找出哪些挂了）
-for path in \
-  "integration/securities-instrument/select" \
-  "counterparty/info/list"; do
-  printf "%-50s " "$path"
-  curl -sf -m 5 -o /dev/null -w "%{http_code}\n" \
-    "$OTC_API_BASE_URL/admin-api/$path" -H "Token: $OTC_API_SECRET"
-done
+# 2. 在授权本地环境运行指定业务用例，验证身份、业务码及字段断言
+python -m scripts.local_eval --base-url http://127.0.0.1:8201 \
+  --data tests/datasets/biz --case case-025 --concurrency 1
 
 # 3. 看 Java 后端日志（需要客户 IT 协助）
 # 客户 IT 查 Java 应用日志：是否 OOM、是否依赖 down、是否 GC 卡死
@@ -211,7 +199,7 @@ journalctl -u otc-agent --since "10 minutes ago" | grep -E "OtcApiException|HTTP
 | Java 依赖不通 | 客户 IT 排查 Java 后端的下游（DB / GOATS） |
 | Token 过期 | 客户 IT 提供新 token；改 .env；不重启（应用 lru_cache 5 分钟自动刷新）|
 | 网络隔离 | 客户 IT 排查防火墙规则；可能企业网络变动 |
-| 业务参数非法 | 看具体 case 用了什么参数；在对应节点（如 swap.cancel）入口加 input 验证（Pydantic 模型字段约束或显式守卫），属于业务防御性编程改动，无对应 ADR；不是回滚理由 |
+| 业务参数非法 | 看具体 case 用了什么参数；核对本次 DTO 和字段来源；Java 负责业务数值与权限校验，不在 LangGraph 增加金额/比例归一化或数字拦截（ADR 0027） |
 | 版本不兼容 | 对照 `docs/api-contracts/java-backend.md` 看字段变化；走 hotfix 升级应用代码 |
 
 ### 3.5 禁忌

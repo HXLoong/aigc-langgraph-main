@@ -13,7 +13,6 @@ import json
 import logging
 from typing import Any
 
-from app.domain.tenor import TenorError, normalize_request_tenors
 from app.graph.retry import io_node
 from app.graph.safe_node import safe_node
 from app.graph.state import AgentState, TraceEntry
@@ -81,12 +80,6 @@ async def quick_inquiry(state: AgentState) -> dict[str, Any]:
     missing = BotContext.from_state(state).missing_required()
     if missing:
         raise MissingBackendContextError("option", missing)
-    try:
-        option_rfq = normalize_request_tenors({"optionRfq": option_rfq})["optionRfq"]
-    except TenorError as exc:
-        return {"reply_text": str(exc), "trace": [TraceEntry(
-            node="quick_inquiry", decision="invalid_tenor",
-        )]}
     req = FinancialOrderOpenApiSaveReqVO.model_validate(
         {
             "conversationId": state.get("conversation_id") or "",

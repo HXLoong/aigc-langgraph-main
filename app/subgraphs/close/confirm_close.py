@@ -9,7 +9,7 @@ from app.graph.business_params import validated_confirm
 from app.graph.safe_node import safe_node
 from app.graph.state import AgentState, TraceEntry
 from app.subgraphs.close.aggregate import build_close_order_req_vo
-from app.subgraphs.close.backend import call_close_backend
+from app.subgraphs.close.backend import prepare_close_request
 from app.subgraphs.close.order_id import extract_order_ids
 
 
@@ -22,8 +22,8 @@ async def close_confirm_close(state: AgentState) -> dict[str, Any]:
       合并版同款 action 字段约定）
     - trace: 单条 TraceEntry，记录提取的订单号数量
     """
-    identity_origin = "quote"
-    identity_evidence = state.get("quote_content") or ""
+    identity_origin = "quote" if state.get("quote_content") else "raw"
+    identity_evidence = state.get("quote_content") or state.get("raw_text") or ""
     confirmation = parse_confirmation(
         state.get("raw_text"), state.get("quote_content"), product="close", action="close",
     )
@@ -39,7 +39,7 @@ async def close_confirm_close(state: AgentState) -> dict[str, Any]:
     confirm_ids = [order_id for order_id in protected_ids if order_id is not None]
     confirmation.verify_scope(confirm_ids)
     req_vo = build_close_order_req_vo(confirm_order_no_list=confirm_ids)
-    backend = await call_close_backend(
+    request_update = await prepare_close_request(
         prepared_state,
         intent="close_order_confirm",
         close_order_req_vo=req_vo,
@@ -49,7 +49,7 @@ async def close_confirm_close(state: AgentState) -> dict[str, Any]:
         "field_records": records,
         "expected_action": "close",
         "confirm": validated_confirm(action="close", confirmOrderNoList=confirm_ids),
-        **backend,
+        **request_update,
         "trace": [
             TraceEntry(
                 node="close_confirm_close",

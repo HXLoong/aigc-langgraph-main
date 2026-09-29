@@ -31,6 +31,7 @@ class NodeRegistration:
     factory: bool = False
 
     def __post_init__(self) -> None:
+        """启动时检查目录字段与输入模型一致，避免调试与运行契约漂移。"""
         if len(self.input_fields) != len(set(self.input_fields)):
             raise ValueError(f"Duplicate input field declaration: {self.product}/{self.name}")
         schema_fields = _schema_fields(self.input_schema)
@@ -48,11 +49,13 @@ class NodeRegistration:
 
     @property
     def effective_input_fields(self) -> tuple[str, ...]:
+        """合并节点自身字段与必需的后端上下文字段。"""
         fields = self.input_fields + (REQUIRED_FIELDS if self.backend_context else ())
         return tuple(dict.fromkeys(fields))
 
 
 def _schema_fields(schema: Any) -> set[str]:
+    """读取 TypedDict 或 Pydantic 输入模型声明的字段集合。"""
     if is_typeddict(schema):
         return set(get_type_hints(schema, include_extras=True))
     if isinstance(schema, type) and issubclass(schema, BaseModel):
@@ -61,6 +64,7 @@ def _schema_fields(schema: Any) -> set[str]:
 
 
 def _schema_required_fields(schema: Any) -> set[str]:
+    """读取输入模型自身声明的必需字段。"""
     if is_typeddict(schema):
         return set(schema.__required_keys__)
     if isinstance(schema, type) and issubclass(schema, BaseModel):
@@ -70,26 +74,42 @@ def _schema_required_fields(schema: Any) -> set[str]:
 
 # 执行策略与回放权限独立；IO 重试资格不代表允许回放写操作。
 _EXECUTION_OPTIONS: dict[str, dict[str, Any]] = {
+    "close_submit": {"backend_context": True},
+    "close_query_backend": {"backend_context": True, "io": True},
+    "swap_submit": {"backend_context": True},
+    "swap_query_backend": {"backend_context": True, "io": True},
+    "option_submit": {"backend_context": True},
+    "option_query_backend": {"backend_context": True, "io": True},
+    "prepare_parse_context": {"io": True},
+    "swap_place_result": {
+        "input_schema": "app.subgraphs.swap.place_order:SwapPlaceState",
+        "state_schema": "app.subgraphs.swap.place_order:SwapPlaceState",
+    },
+    "swap_validate": {
+        "input_schema": "app.subgraphs.swap.place_order:SwapPlaceState",
+        "state_schema": "app.subgraphs.swap.place_order:SwapPlaceState",
+    },
+    "swap_prepare": {
+        "input_schema": "app.subgraphs.swap.place_order:SwapPlaceState",
+        "state_schema": "app.subgraphs.swap.place_order:SwapPlaceState",
+    },
     "quick_inquiry": {"backend_context": True},
     "existing_command_query": {"io": True},
-    "intent_route": {"io": True},
     "swap": {"backend_context": True, "factory": True},
     "option": {"backend_context": True, "factory": True},
     "option_close": {"backend_context": True, "factory": True},
-    "option_intent": {"io": True},
     "option_extract_inquiry": {"backend_context": True, "factory": True},
     "option_extract_place": {"backend_context": True},
     "option_extract_confirm_place": {"backend_context": True},
     "option_extract_cancel_place": {"backend_context": True},
     "option_extract_cancel": {"backend_context": True},
     "option_extract_confirm_cancel": {"backend_context": True},
-    "option_extract_query": {"backend_context": True, "io": True},
-    "inquiry_extract": {
-        "io": True,
+    "option_extract_query": {"backend_context": True},
+    "inquiry_prepare": {
         "input_schema": "app.subgraphs.option.extract_inquiry:InquiryState",
         "state_schema": "app.subgraphs.option.extract_inquiry:InquiryState",
     },
-    "inquiry_normalize": {
+    "inquiry_validate": {
         "input_schema": "app.subgraphs.option.extract_inquiry:InquiryState",
         "state_schema": "app.subgraphs.option.extract_inquiry:InquiryState",
     },
@@ -98,41 +118,17 @@ _EXECUTION_OPTIONS: dict[str, dict[str, Any]] = {
         "input_schema": "app.subgraphs.option.extract_inquiry:InquiryState",
         "state_schema": "app.subgraphs.option.extract_inquiry:InquiryState",
     },
-    "swap_intent": {"io": True},
-    "swap_recognize_fresh_counterparty": {"io": True},
-    "swap_select_counterparty": {"io": True},
-    "swap_select_ticker": {"io": True},
     "swap_place_order_submit": {"backend_context": True},
     "swap_confirm": {"backend_context": True},
     "swap_cancel": {"backend_context": True},
-    "swap_query_order": {"backend_context": True, "io": True},
-    "swap_image_order": {"io": True, "required": ("input_files",)},
-    "swap_excel_order": {"io": True, "required": ("input_files",)},
-    "close_intent": {"io": True},
-    "close_holding_query": {"backend_context": True, "io": True},
+    "swap_query_order": {"backend_context": True},
+    "close_holding_query": {"backend_context": True},
     "close_place_close": {"backend_context": True, "factory": True},
     "close_confirm_close": {"backend_context": True},
     "close_cancel_close": {"backend_context": True},
     "close_confirm_cancel": {"backend_context": True},
-    "close_query_status": {"backend_context": True, "io": True},
-    "place_close_parse": {
-        "input_schema": "app.subgraphs.close.place_close:PlaceCloseState",
-        "state_schema": "app.subgraphs.close.place_close:PlaceCloseState",
-    },
-    "place_close_fetch_orders": {
-        "io": True,
-        "required": ("pc_parsed",),
-        "input_schema": "app.subgraphs.close.place_close:PlaceCloseState",
-        "state_schema": "app.subgraphs.close.place_close:PlaceCloseState",
-    },
-    "place_close_extract": {
-        "io": True,
-        "required": ("pc_parsed",),
-        "input_schema": "app.subgraphs.close.place_close:PlaceCloseState",
-        "state_schema": "app.subgraphs.close.place_close:PlaceCloseState",
-    },
-    "place_close_normalize": {
-        "required": ("pc_parsed",),
+    "close_query_status": {"backend_context": True},
+    "place_close_prepare": {
         "input_schema": "app.subgraphs.close.place_close:PlaceCloseState",
         "state_schema": "app.subgraphs.close.place_close:PlaceCloseState",
     },
@@ -145,14 +141,11 @@ _EXECUTION_OPTIONS: dict[str, dict[str, Any]] = {
         "input_schema": "app.subgraphs.close.place_close:PlaceCloseState",
         "state_schema": "app.subgraphs.close.place_close:PlaceCloseState",
     },
-    "place_close_reject": {
-        "input_schema": "app.subgraphs.close.place_close:PlaceCloseState",
-        "state_schema": "app.subgraphs.close.place_close:PlaceCloseState",
-    },
 }
 
 
 def _load(path: str) -> Any:
+    """按已登记的模块路径加载函数或类型，不接受任意请求路径。"""
     module, attribute = path.split(":", 1)
     return getattr(import_module(module), attribute)
 

@@ -3,7 +3,6 @@ from unittest.mock import AsyncMock
 import pytest
 
 from app.nodes.render import _render_branch
-from app.storage.idempotency import response_is_uncertain
 from app.subgraphs.close.backend import call_close_backend
 from app.tools.exceptions import EmptyBackendResultError, MissingBackendContextError
 
@@ -34,16 +33,6 @@ async def test_empty_close_receipt_is_uncertain(monkeypatch):
     assert call.await_count == 1
 
 
-def test_empty_receipt_keeps_idempotency_claim():
-    assert response_is_uncertain(
-        {
-            "data": {
-                "outputs": {
-                    "error": {"type": "EmptyBackendResultError"},
-                }
-            }
-        }
-    )
 
 
 @pytest.mark.parametrize(
@@ -104,22 +93,6 @@ async def test_invalid_json_after_dispatch_stays_uncertain(monkeypatch, target):
         await getattr(module, f"call_{target}_backend")(state, **kwargs)
 
 
-def test_retry_900_scope_excludes_quick_inquiry():
-    from app.api.notifications import project_retry_notification
-
-    response = {
-        "answer": "重复通知",
-        "data": {"outputs": {"api_code": 900, "api_result": "重复通知"}},
-    }
-    ordinary = project_retry_notification(response, {"retry_origin": "XBOT_GET_DIFY_FAIL"})
-    assert ordinary["answer"] == "IGNORE_REQUEST_NOT_REPLY_USER"
-    assert ordinary["data"]["outputs"]["api_result"] == "重复通知"
-    assert (
-        project_retry_notification(
-            response, {"retry_origin": "XBOT_GET_DIFY_FAIL", "fast_query": "1"}
-        )
-        == response
-    )
 
 
 async def test_backend_500_with_no_message_uses_dify_reply(monkeypatch):

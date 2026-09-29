@@ -10,8 +10,10 @@
 | 脚本 | 用途 |
 |---|---|
 | `local_eval.py` | 本地 HTTP 业务回归（显式 `tests/datasets/biz`，真 Java 后端）|
-| `langfuse/langfuse_eval.py` | 数据集实验与 per-turn JSON → Langfuse；评分目标为确定性断言，旧路径使用 `--no-judge`；`--local tests/datasets/intent` 为 CI 意图集 |
+| `langfuse/langfuse_eval.py` | 数据集实验与 per-turn JSON → Langfuse；评分目标为确定性断言，`--no-judge` 仅作兼容；`--local tests/datasets/intent` 为 CI 意图集 |
 | `run_with_http_tape.py` | 启动本地应用并录制 / 回放工具层 HTTP（节点回归，ADR 0029）|
+
+| `langfuse/node_dataset.py` | 节点标注审阅发布、固定版本导出、HTTP Experiment；写节点 SKIP，空样本待验收 |
 
 ### 真后端探针（联调用）
 
@@ -39,7 +41,6 @@
 | `shadow_compare.py` | 可选的 shadow 对照工具（`DRY_RUN_BACKEND` 模式可用，不进评测门）|
 | `run_alerts.py` | 告警轮询 |
 | `llm_cost_report.py` | LLM 成本日报 |
-| `reconcile_requests.py` | 现有不确定回执对账；`--apply` 只落库已核实的 Java 原始回复。按 ADR 0026 职责规范待清理，见工作计划 |
 
 ### 部署与开发
 

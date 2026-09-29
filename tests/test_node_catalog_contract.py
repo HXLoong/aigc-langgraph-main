@@ -30,8 +30,8 @@ async def test_render_preparation_retains_business_code_and_matches_direct_execu
 
 
 @pytest.mark.parametrize("name", [
-    "render", "intent_route", "swap_select_counterparty", "swap_select_ticker",
-    "inquiry_extract", "place_close_extract",
+    "render", "intent_route", "swap_apply_picks", "swap_prepare",
+    "inquiry_prepare", "place_close_prepare",
 ])
 def test_shared_nodes_have_one_input_contract(name: str) -> None:
     spec = next(node for node in build_registry() if node.name == name)
@@ -43,7 +43,7 @@ def test_execution_and_evaluation_keep_their_distinct_exposure() -> None:
     application = {node.name for node in build_registry()}
     evaluation = set(DEFAULT_NODE_REGISTRY)
     assert application - evaluation == {"entry_route", "swap", "option", "option_close"}
-    assert evaluation - application == {"swap_extract_candidates", "swap_normalize", "swap_place_result"}
+    assert evaluation - application == set()
     assert all(not node.replayable for node in DEFAULT_NODE_REGISTRY.values() if node.side_effect == "write")
 
 
@@ -96,3 +96,25 @@ def test_main_registry_matches_current_graph() -> None:
 
     registered = {node.name for node in build_registry() if node.product == "main"}
     assert registered == set(build_main_graph().nodes) - {"__start__"}
+
+
+async def test_prepared_confirmation_keeps_locks_and_blocks_redirect(monkeypatch):
+    """prepare 不能裁掉字段锁，否则同一节点在 HTTP 回放时会换单。"""
+    from unittest.mock import AsyncMock
+
+    from tests.joint_support import instruction_data
+
+    selected, foreign = "Q-20260922-0000000001", "Q-20260922-0000000002"
+    backend = AsyncMock()
+    monkeypatch.setattr("app.tools.option_client.OptionClientHttpx.operate", backend)
+    spec = next(node for node in build_registry() if node.name == "option_extract_confirm_place")
+    original = {"raw_text": "确认下单", "quote_content": selected,
+        "conversation_id": "c", "message_id": 1, "user_id": "u", "room_id": "r",
+        "parsed_instruction": instruction_data("option", "confirm_order", "确认下单", orders=[{"orderId": selected}], quote=selected),
+        "field_records": {"option/parse.orderList.0.orderId": {"value": foreign, "source": "user", "locked": True}}}
+    prepared = prepare_state(spec, original)
+    assert "field_records" in prepared.state
+    executor = NodeExecutor([spec])
+    result = await executor.run("option", spec.name, executor.validate("option", spec.name, prepared.state))
+    assert result.get("error")
+    backend.assert_not_called()

@@ -33,8 +33,8 @@
 
 | 数据集 | 目录 | 外部依赖 | 在哪跑 | 评分 |
 |---|---|---|---|---|
-| **意图集**（路由 + 意图 + 标的原文提取） | `tests/datasets/intent/` | 只有 LLM 网关；后端由仓库内 `mock_api/` 顶替，**不碰 Java / GOATS** | 本地手动（原 CI `intent-eval` 已删，见下） | `det_intent_match_pass` / `det_instrument_match_pass` 确定性评估器，由 Langfuse 异步评分 |
-| **业务集**（询价 / 下单 / 平仓卡片与后端联动） | `tests/datasets/biz/` | Java 后端 + GOATS + 授权测试账号 / 群 / 对手 / 持仓 | **只在开发 / staging 环境**手动跑（`scripts/local_eval.py` / `langfuse_eval.py --dataset biz/option_close`），绝不进 CI | 确定性字段 / 文本断言；迁移期 `--no-judge`，旧评分路径待清理 |
+| **意图集**（路由 + 意图 + 标的原文提取） | `tests/datasets/intent/` | LLM 网关 + Langfuse；后端由仓库内 `mock_api/` 顶替，**不碰 Java / GOATS** | 本地手动（`intent-eval` workflow 已删除） | 执行结果上传 Langfuse，JS Evaluation Rule 自动生成 `det_intent_match_pass` / `det_instrument_match_pass` |
+| **业务集**（询价 / 下单 / 平仓卡片与后端联动） | `tests/datasets/biz/` | Java 后端 + GOATS + 授权测试账号 / 群 / 对手 / 持仓 | **只在开发 / staging 环境**手动跑（`scripts/local_eval.py` / `langfuse_eval.py --dataset biz/option_close`），绝不进 CI | `det_business_pass` 确定性字段 / 文本断言，不调用 Judge |
 
 ```bash
 # 意图集本地（终端 1 起 mock_api）
@@ -43,9 +43,7 @@ OTC_API_BASE_URL=http://127.0.0.1:8099 GOATS_BASE_URL=http://127.0.0.1:8099 \
   python scripts/langfuse/langfuse_eval.py --local tests/datasets/intent --concurrency 3
 ```
 
-> 本地只推送 Experiment，**不算分**——确定性断言由 Langfuse 的 Evaluation Rule 异步执行。
-> 因此没有 `--fail-under` / `--report`，结果在 Langfuse UI 的 Dataset Experiments 页查看。
-> `intent-eval` workflow 已删除：它的 fixture lint 步骤与 `ci.yml` 重复，LLM 评估步骤依赖的本地评分路径已移除。
+该批量评测不进 CI；本地运行需配置 LLM 与 Langfuse 凭据。
 
 ## 二、命令速查
 
@@ -81,7 +79,7 @@ curl -X POST http://localhost:8000/v1/workflows/run \
   -d '{"inputs": {"rawContent": "600519.SH 询价 3 个月平值看涨", "conversationId": "t-1"},
        "response_mode": "blocking", "user": "t-1"}'
 
-# 层 4 · fixture 批量评估（确定性断言，旧 Judge 路径待移除）
+# 层 4 · fixture 批量评估（确定性断言，不调用 Judge）
 python scripts/langfuse/langfuse_eval.py --local tests/datasets/biz --limit 20 --concurrency 5 --no-judge
 python scripts/langfuse/langfuse_eval.py --local tests/datasets/biz --ids case-025 --no-judge  # 单 case 冒烟
 
@@ -133,7 +131,7 @@ GOATS_BASE_URL=http://127.0.0.1:8099
 按根 `CLAUDE.md`"排查与修复流程"执行，速记：
 
 1. **层 1-2 失败**：普通 TDD——先写复现测试（RED）→ 最小修复（GREEN）→ 全量回归
-2. **层 3-4 失败**：看 Langfuse 富 output（确定性 Scores / 字段 diff / turns[i] 逐字段定位；旧 Judge 字段不作为验收依据），
+2. **层 3-4 失败**：看 Langfuse 富 output（确定性 Scores / 字段 diff / turns[i] 逐字段定位），
    或 stdout 的 per-turn trace；按 `product_type` → `intent` → `place_params`
    → `api_result` 的顺序锁定错误层（标的问题核对传给后端的原文与后端工具日志）
 3. **层 5-6 失败**：先分清是契约问题（对照 `docs/api-contracts/java-backend.md`）还是

@@ -5,7 +5,7 @@
 - 共享输入/输出字段在 app/graph/state.py 的 AgentState 声明；子图临时字段可放继承它的私有 TypedDict，output_schema 限制写回范围。
 - 一轮唯一输入入口为 app/api/turn_state.py::inputs_to_state。per-turn 字段在 ingest 重置；跨轮记忆、会话活动时间遵循已实现的过期逻辑。
 - trace 使用 merge_by_id，history_messages 使用 merge_history，field_records 使用 merge_fields；新并行通道选择明确的 reducer，不照搬累加以免重复。
-- 节点返回 partial update，不原地修改输入；LangGraph 保留提取值与来源，不做业务归一化或数字校验；Java 校验业务值与默认值（ADR 0027，代码待迁移）。来源记录及锁定必须在实际后端请求边界生效。
+- 节点返回 partial update，不原地修改输入；LangGraph 保留提取值与来源，独立清洗节点处理 Java 接口类型兼容及字段省略，不做业务归一化或业务数值校验；Java 校验业务值与默认值（ADR 0027）。来源记录及锁定必须在实际后端请求边界生效。
 - 子图已返回 CompiledStateGraph 时直接嵌入，不再次 compile；以 app/subgraphs/*/graph.py 当前函数签名为准。
 
 ## IO 与错误
@@ -19,15 +19,15 @@
 
 ## 提示词
 
-- 新增或重构模型节点时先读 `docs/adr/0031-single-model-request-per-message.md`：单次工具调用的主图与全部子图共享最多一次真实模型请求额度，产品/意图/候选联合解析，Excel 批量输入；本阶段统一 deepseek-v4-pro，图片暂不处理，不安排 OCR / 多模态链路；保留独立确定性节点，不逐行、逐图、逐订单追加模型调用。
+- 新增或重构模型节点时先读 `docs/adr/0031-single-model-request-per-message.md`：单次工具调用的主图与全部子图共享最多一次真实模型请求额度，产品/意图/候选联合解析，Excel 批量输入；模型由 LLM_MODEL_STANDARD 与 LLM_PROVIDER 配置，当前基线为 deepseek-v4-pro（ADR 0020），图片暂不处理，不安排 OCR / 多模态链路；保留独立确定性节点，不逐行、逐图、逐订单追加模型调用。
 
 - 每个 LLM 节点声明 PromptSpec；模型使用 with_structured_output，字段说明由 Pydantic Field(description=) 提供。
-- 提取值保留原文与 evidence/confidence/source；Code 检查结构、来源和引用选择，按现有 DTO 传输，不做单位换算、数值校验或业务默认值补齐。Java 校验业务参数，不手工 JSON 容错或让模型宣称交易成功。
+- 提取值保留原文与 evidence/confidence/source；Code 检查结构、来源和引用选择，再生成经过类型清洗的出站副本；原字段账本保留，省略字段不得重新回填。不做单位换算、业务数值校验或默认值补齐。Java 校验业务参数。参数清洗入口的字符串 JSON 解码失败按 Dify 回退空对象并继续提交；该例外不适用于 LLM 网络、容量或结构/来源失败，不增加请求。模型不能宣称交易成功。
 - 无新增 ReAct/ToolNode/bind_tools 路线；工具由 Code 节点选择调用。
 
 ## 持久化与运行
 
-- 请求职责遵循 ADR 0026：消息防重、并发调度、重投与重复通知归调用端，交易执行幂等归 Java；LangGraph 每次合法调用独立处理，message_id 仅用于业务传递和审计关联。现有占位、回放与对账实现待清理，见 docs/work-plan.md；checkpointer 和节点审计独立保留。
+- 请求职责遵循 ADR 0026：消息防重、并发调度、重投与重复通知归调用端，交易执行幂等归 Java；LangGraph 每次合法调用独立处理，message_id 仅用于业务传递和审计关联。占位、回放与对账运行代码已移除，历史表未删，见 docs/work-plan.md；checkpointer 和节点审计独立保留。
 - 生产 checkpointer 使用 app/checkpointer/factory.py 的池及表前缀适配，唯一连接配置 MYSQL_URI。
 - 首次通过 sql/init.sql 初始化；启动只读校验，不在节点调用 saver.setup 建表，不使用生产单连接 from_conn_string。
 - 测试使用 InMemorySaver；没有跨轮要求的纯计算子图可显式 checkpointer=False。
