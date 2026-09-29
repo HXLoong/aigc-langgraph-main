@@ -3,17 +3,19 @@ from unittest.mock import AsyncMock
 
 import pytest
 
+from tests.joint_support import instruction_data
+
 H = "H-20260920-1234567890"
 Q = "Q-20260920-1234567890"
 CO = "CO-20260920-ABCDEF12"
 PATHS = [
-    ("swap.confirm", "swap_confirm", "call_swap_backend", "confirm_order", "确认下单", H),
-    ("swap.confirm", "swap_confirm", "call_swap_backend", "confirm_cancel_order", "确认撤单", H),
-    ("swap.confirm", "swap_confirm", "call_swap_backend", "confirm_modify_order", "确认修改", H),
+    ("swap.confirm", "swap_confirm", "prepare_swap_request", "confirm_order", "确认下单", H),
+    ("swap.confirm", "swap_confirm", "prepare_swap_request", "confirm_cancel_order", "确认撤单", H),
+    ("swap.confirm", "swap_confirm", "prepare_swap_request", "confirm_modify_order", "确认修改", H),
     (
         "option.extract_confirm_place",
         "option_extract_confirm_place",
-        "call_option_backend",
+        "prepare_option_request",
         "confirm_order",
         "确认订单",
         Q,
@@ -21,7 +23,7 @@ PATHS = [
     (
         "option.extract_confirm_cancel",
         "option_extract_confirm_cancel",
-        "call_option_backend",
+        "prepare_option_request",
         "confirm_cancel_order",
         "撤单确认",
         Q,
@@ -29,7 +31,7 @@ PATHS = [
     (
         "close.confirm_close",
         "close_confirm_close",
-        "call_close_backend",
+        "prepare_close_request",
         "close_order_confirm",
         "确定平仓",
         CO,
@@ -37,7 +39,7 @@ PATHS = [
     (
         "close.confirm_cancel",
         "close_confirm_cancel",
-        "call_close_backend",
+        "prepare_close_request",
         "close_order_cancel_confirm",
         "确认取消",
         CO,
@@ -101,6 +103,7 @@ async def test_all_confirmation_paths_accept_alias_and_single_quoted_order(
     result = await getattr(module, node_name)(
         {
             "raw_text": action,
+            "parsed_instruction": instruction_data("option" if module_name.startswith("option") else "swap" if module_name.startswith("swap") else "option_close", intent, action, orders=[{"orderId": oid}], quote=oid),
             "quote_content": f"单号：{oid}",
             "intent": intent,
         }
@@ -121,7 +124,7 @@ async def test_all_confirmation_paths_accept_alias_and_single_quoted_order(
 async def test_swap_confirmation_scope_cannot_expand_or_conflict(monkeypatch, command):
     module = import_module("app.subgraphs.swap.confirm")
     backend = AsyncMock()
-    monkeypatch.setattr(module, "call_swap_backend", backend)
+    monkeypatch.setattr(module, "prepare_swap_request", backend)
     result = await module.swap_confirm(
         {
             "intent": "confirm_order",
@@ -152,13 +155,14 @@ async def test_confirmation_routing_is_deterministic(monkeypatch, module_name, i
     module = import_module(f"app.subgraphs.{module_name}.intent")
     from unittest.mock import Mock
 
-    for factory in ("get_qwen_thinking", "get_qwen_structured"):
+    for factory in ("get_llm_thinking", "get_llm_structured"):
         if hasattr(module, factory):
             monkeypatch.setattr(
                 module, factory, Mock(side_effect=AssertionError("must not use LLM"))
             )
     node = getattr(module, f"{'close' if module_name == 'close' else module_name}_intent")
-    result = await node({"raw_text": raw})
+    result = await node({"raw_text": raw, "parsed_instruction": instruction_data(
+        "option_close" if module_name == "close" else module_name, intent, raw)})
     assert result.get("intent") == intent, result
 
 
@@ -180,12 +184,14 @@ def test_multiple_mappings_on_one_line():
 async def test_option_subset_confirmation_preserves_shared_parameters(monkeypatch):
     module = import_module("app.subgraphs.option.extract_confirm_place")
     backend = AsyncMock(return_value={"api_code": 0, "api_result": "真实回执"})
-    monkeypatch.setattr(module, "call_option_backend", backend)
+    monkeypatch.setattr(module, "prepare_option_request", backend)
     second = "Q-20260920-2222222222"
     result = await module.option_extract_confirm_place(
         {
             "raw_text": "确认下单，序号2，限价10",
             "quote_content": f"序号1：{Q}\n序号2：{second}",
+            "parsed_instruction": instruction_data("option", "confirm_order", "确认下单，序号2，限价10",
+                orders=[{"orderId": second, "limitPrice": 10}], quote=second),
         }
     )
     assert not result.get("error")
@@ -206,7 +212,7 @@ async def test_option_subset_confirmation_preserves_shared_parameters(monkeypatc
 async def test_option_parameter_confirmation_cannot_hide_another_action(monkeypatch, raw):
     module = import_module("app.subgraphs.option.extract_confirm_place")
     backend = AsyncMock()
-    monkeypatch.setattr(module, "call_option_backend", backend)
+    monkeypatch.setattr(module, "prepare_option_request", backend)
     result = await module.option_extract_confirm_place({"raw_text": raw, "quote_content": Q})
     backend.assert_not_awaited()
     assert result.get("reply_text")
@@ -238,6 +244,7 @@ async def test_existing_field_lock_cannot_redirect_confirmation(
     foreign = oid.rsplit("-", 1)[0] + "-9999999999"
     result = await getattr(module, node_name)({
         "raw_text": action, "quote_content": oid, "intent": intent,
+        "parsed_instruction": instruction_data("option" if module_name.startswith("option") else "swap" if module_name.startswith("swap") else "option_close", intent, action, orders=[{"orderId": oid}], quote=oid),
         "field_records": {scope: FieldRecord(value=foreign, source="user", locked=True)},
     })
     backend.assert_not_awaited()

@@ -244,7 +244,7 @@ def test_cli_sync_all_rejects_plain_and_non_staging_label(monkeypatch) -> None:
 
 
 def test_cli_manual_upload_keeps_sdk_default_url(monkeypatch) -> None:
-    monkeypatch.setattr(sys, "argv", ["upload_prompt_to_langfuse.py", "option.intent"])
+    monkeypatch.setattr(sys, "argv", ["upload_prompt_to_langfuse.py", "option.parse_instruction"])
     monkeypatch.setenv("LANGFUSE_PUBLIC_KEY", "public-test")
     monkeypatch.setenv("LANGFUSE_SECRET_KEY", "secret-test")
     monkeypatch.delenv("LANGFUSE_BASE_URL", raising=False)
@@ -255,12 +255,12 @@ def test_cli_manual_upload_keeps_sdk_default_url(monkeypatch) -> None:
 
     assert upload.main() == 0
     assert captured == [None]
-    assert client.created[0]["name"] == "option_intent"
+    assert client.created[0]["name"] == "option_parse_instruction"
 
 
 def test_cli_manual_upload_plain_pushes_text_prompt(monkeypatch) -> None:
     """--plain：不补实验用 user 消息，按纯 system 的 text 提示词推送。"""
-    monkeypatch.setattr(sys, "argv", ["upload_prompt_to_langfuse.py", "option.intent", "--plain"])
+    monkeypatch.setattr(sys, "argv", ["upload_prompt_to_langfuse.py", "option.parse_instruction", "--plain"])
     monkeypatch.setenv("LANGFUSE_PUBLIC_KEY", "public-test")
     monkeypatch.setenv("LANGFUSE_SECRET_KEY", "secret-test")
     client = FakeLangfuse()

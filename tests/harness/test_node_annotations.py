@@ -311,78 +311,23 @@ def test_read_trace_observations_reports_repeated_connect_timeout() -> None:
 def test_default_registry_marks_write_nodes_as_non_replayable() -> None:
     from harness.node_registry import DEFAULT_NODE_REGISTRY
 
-    assert DEFAULT_NODE_REGISTRY["swap_intent"].replayable is True
-    assert DEFAULT_NODE_REGISTRY["swap_intent"].side_effect == "none"
-    assert DEFAULT_NODE_REGISTRY["option_intent"].product_type == "option"
-    assert DEFAULT_NODE_REGISTRY["swap_place_order_submit"].replayable is False
-    assert DEFAULT_NODE_REGISTRY["swap_place_order_submit"].side_effect == "write"
-    assert DEFAULT_NODE_REGISTRY["option_extract_place"].replayable is False
+    for name in ("swap_submit", "option_submit", "close_submit", "quick_inquiry"):
+        assert DEFAULT_NODE_REGISTRY[name].replayable is False
+        assert DEFAULT_NODE_REGISTRY[name].side_effect == "write"
+    for name in ("swap_clean_request", "option_clean_request", "close_clean_request"):
+        assert DEFAULT_NODE_REGISTRY[name].replayable is True
+        assert DEFAULT_NODE_REGISTRY[name].side_effect == "none"
 
 
 def test_write_nodes_declare_stable_outputs_for_annotation() -> None:
     from harness.node_registry import DEFAULT_NODE_REGISTRY
 
-    required_outputs = {
-        "quick_inquiry": {"api_code", "api_result", "reply_text"},
-        "swap_place_order_submit": {"place_params", "api_code", "api_result", "reply_text"},
-        "swap_confirm": {"expected_action", "confirm", "api_code", "api_result", "reply_text"},
-        "swap_cancel": {"expected_action", "cancel_params", "api_code", "api_result", "reply_text"},
-        "option_extract_inquiry": {
-            "expected_action",
-            "place_params",
-            "api_code",
-            "api_result",
-            "reply_text",
-        },
-        "inquiry_submit": {
-            "expected_action",
-            "place_params",
-            "api_code",
-            "api_result",
-            "reply_text",
-        },
-        "option_extract_place": {
-            "expected_action",
-            "place_params",
-            "api_code",
-            "api_result",
-            "reply_text",
-        },
-        "option_extract_confirm_place": {
-            "expected_action",
-            "confirm",
-            "api_code",
-            "api_result",
-            "reply_text",
-        },
-        "option_extract_cancel_place": {
-            "expected_action",
-            "cancel_params",
-            "api_code",
-            "api_result",
-            "reply_text",
-        },
-        "option_extract_cancel": {
-            "expected_action",
-            "cancel_params",
-            "api_code",
-            "api_result",
-            "reply_text",
-        },
-        "option_extract_confirm_cancel": {
-            "expected_action",
-            "confirm",
-            "api_code",
-            "api_result",
-            "reply_text",
-        },
-    }
-
-    for node_name, expected in required_outputs.items():
-        definition = DEFAULT_NODE_REGISTRY[node_name]
+    for name in ("swap_submit", "option_submit", "close_submit"):
+        definition = DEFAULT_NODE_REGISTRY[name]
         assert definition.side_effect == "write"
         assert definition.replayable is False
-        assert expected <= set(definition.output_fields), node_name
+        assert {"api_code", "api_result", "backend_request", "submitted_params"} <= set(definition.output_fields)
+    assert {"api_code", "api_result", "reply_text"} <= set(DEFAULT_NODE_REGISTRY["quick_inquiry"].output_fields)
 
 
 def test_remaining_nodes_have_explicit_annotation_contract() -> None:
@@ -489,53 +434,34 @@ def test_default_registry_covers_close_and_backend_owned_instrument_nodes() -> N
         "close_confirm_cancel",
         "close_query_status",
         "close_unknown",
-        "place_close_parse",
-        "place_close_fetch_orders",
-        "place_close_extract",
-        "place_close_normalize",
+        "place_close_prepare",
         "place_close_validate",
         "place_close_submit",
-        "place_close_reject",
-        "swap_extract_candidates",
-        "swap_normalize",
+        "swap_prepare",
+        "swap_validate",
         "swap_place_result",
-        "inquiry_extract",
-        "inquiry_normalize",
+        "inquiry_prepare",
+        "inquiry_validate",
         "inquiry_submit",
     }
 
     assert required <= DEFAULT_NODE_REGISTRY.keys()
     assert DEFAULT_NODE_REGISTRY["close_intent"].product_type == "option_close"
-    assert DEFAULT_NODE_REGISTRY["swap_extract_candidates"].product_type == "swap"
+    assert DEFAULT_NODE_REGISTRY["swap_prepare"].product_type == "swap"
     assert not any(node.product_type == "ticker" for node in DEFAULT_NODE_REGISTRY.values())
 
 
 def test_read_only_backend_nodes_are_replayable_but_write_nodes_are_not() -> None:
     from harness.node_registry import DEFAULT_NODE_REGISTRY
 
-    for name in (
-        "swap_query_order",
-        "option_extract_query",
-        "close_holding_query",
-        "close_query_status",
-    ):
+    for name in ("swap_query_backend", "option_query_backend", "close_query_backend"):
         definition = DEFAULT_NODE_REGISTRY[name]
         assert definition.side_effect == "read"
         assert definition.replayable is True
-        assert definition.callable_path
-        assert definition.output_fields
-
-    for name in (
-        "swap_place_order_submit",
-        "option_extract_inquiry",
-        "place_close_submit",
-        "close_confirm_close",
-        "close_cancel_close",
-        "close_confirm_cancel",
-    ):
-        definition = DEFAULT_NODE_REGISTRY[name]
-        assert definition.side_effect == "write"
-        assert definition.replayable is False
+        assert definition.callable_path and definition.output_fields
+    for name in ("swap_submit", "option_submit", "close_submit"):
+        assert DEFAULT_NODE_REGISTRY[name].side_effect == "write"
+        assert DEFAULT_NODE_REGISTRY[name].replayable is False
 
 
 def test_collect_case_nodes_aggregates_each_turn_trace() -> None:

@@ -21,13 +21,14 @@ START → _route_swap_entry（本阶段仅文本 / Excel，图片暂不处理）
       → 复用主图联合解析结果，或执行本轮唯一一次产品联合解析
       → 按意图分发：先检查错误转兜底
       → 按意图的确定性节点（结构与来源检查 → 本次动作/引用选择范围 → 现有接口装配）
+      → 产品 clean_request（纯类型清洗）→ submit / query_backend（独立 HTTP）
       → backend.py 调 Java（OptionClient / SwapClient Protocol，真实响应透传）
       → END（output_schema=SubgraphOutput 限定写回面）
 ```
 
 ## 节点写法（细节以 rules 为准，这里只列要点）
 
-- 本轮唯一的联合解析节点：`PromptSpec` + `with_structured_output(<Output>)` + `@safe_node`，零重试；保留提取值与原文来源，输出契约按 ADR 0027 迁移；不追加 Code 业务归一化或数字校验，业务值由 Java 校验
+- 本轮唯一的联合解析节点：`PromptSpec` + `with_structured_output(<Output>)` + `@safe_node`，零重试；保留提取值与原文来源，输出契约按 ADR 0027 迁移；允许 Code 接口类型清洗，不追加业务归一化或业务数值校验；参数字符串 JSON 容错按 ADR 0027 D3，业务值由 Java 校验
 - 独立后端只读查询用 `@io_node` + `add_io_node`；其重试不得连带重新调用模型
 - 纯计算节点与写后端节点：`@safe_node`；写接口绝不自动重试
 - 路由函数是同步纯函数，错误优先转兜底（核心原则 9）

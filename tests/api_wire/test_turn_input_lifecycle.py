@@ -5,7 +5,6 @@ import pytest
 
 from app.api.turn_state import INPUT_FIELD_ALIASES, inputs_to_state
 from app.nodes.persist_intent import make_persist_intent
-from app.storage.idempotency import InMemoryIdempotencyStore
 from tests.test_inquiry_continuation import inquiry_workflow  # noqa: F401
 
 
@@ -24,7 +23,6 @@ def test_all_turn_inputs_are_explicitly_overwritten():
 @pytest.mark.parametrize("missing", ["message_id", "room_id"])
 def test_missing_current_identity_cannot_submit_again(request, missing):
     client, calls = request.getfixturevalue("inquiry_workflow")
-    client.app.state.idempotency_store = InMemoryIdempotencyStore()
     body = {"conversation_id": "same-session", "user": "test-user", "inputs": {
         "raw_content": "确认下单", "quote_content": "Q-20260922-0000000001",
         "room_id": "test-room", "message_id": 902201,
@@ -52,12 +50,8 @@ async def test_set_intent_never_writes_missing_or_invalid_message(message_id):
 @pytest.mark.parametrize("message_id", [None, 0, -1, "-1", "", True, False])
 def test_invalid_current_message_never_claims_idempotency_or_submits(request, message_id):
     client, calls = request.getfixturevalue("inquiry_workflow")
-    store = InMemoryIdempotencyStore()
-    store.begin = AsyncMock(wraps=store.begin)
-    client.app.state.idempotency_store = store
     client.post("/v1/workflows/run", json={"user": "test-user", "inputs": {
         "raw_content": "确认下单", "quote_content": "Q-20260922-0000000001",
         "message_id": message_id, "room_id": "test-room",
     }})
-    store.begin.assert_not_awaited()
     assert not [c for c in calls if c[0] == "operate"]

@@ -31,6 +31,7 @@ class ProbeResult:
 
 
 async def _timed(target: str, coro: Awaitable[Any]) -> tuple[ProbeStatus, str | None, int]:
+    """在独立时限内执行依赖探测，并记录耗时及失败类别。"""
     import time
 
     t0 = time.monotonic()
@@ -49,6 +50,7 @@ async def probe_mysql() -> ProbeResult:
     from app.config import get_settings
 
     async def _check() -> None:
+        """执行当前依赖的只读健康检查，失败交统一探测器记录。"""
         if checkpointer_factory.has_checkpointer_pool():
             await checkpointer_factory.probe_checkpointer()
             return
@@ -81,6 +83,7 @@ async def probe_langfuse() -> ProbeResult:
         return ProbeResult(target="langfuse", status="disabled")
 
     async def _check() -> None:
+        """执行当前依赖的只读健康检查，失败交统一探测器记录。"""
         import httpx
 
         base = settings.langfuse_base_url.rstrip("/")
@@ -98,18 +101,19 @@ async def probe_llm() -> ProbeResult:
     from app.config import get_settings
 
     settings = get_settings()
-    base = (settings.qwen_api_base or "").rstrip("/")
+    base = (settings.llm_api_base or "").rstrip("/")
     if not base:
         return ProbeResult(target="llm", status="disabled")
 
     async def _check() -> None:
+        """执行当前依赖的只读健康检查，失败交统一探测器记录。"""
         import httpx
 
         # 探测 /models（OpenAI 兼容端点标准路径），需要鉴权头，能区分 key 失效 vs endpoint 不可达
         url = f"{base}/models"
         headers = (
-            {"Authorization": f"Bearer {settings.qwen_api_key}"}
-            if settings.qwen_api_key
+            {"Authorization": f"Bearer {settings.llm_api_key}"}
+            if settings.llm_api_key
             else None
         )
         async with httpx.AsyncClient(timeout=PROBE_TIMEOUT_SECONDS, trust_env=False) as c:
@@ -124,36 +128,28 @@ async def probe_llm() -> ProbeResult:
 
 
 async def probe_java_backend() -> ProbeResult:
-    """调运行时真实依赖的只读接口 counterparty/info/list，要求业务 code==0.
+    """只检查 Java 地址的传输连通性；客户权限由授权业务验收检查。"""
+    from urllib.parse import urlsplit
 
-    ADR 0025 后 instrument-inference-prompt 已无运行时调用方，不能再作为就绪门：
-    该接口单独报错会让全部 Pod 同时 503 摘流，而对手/交易接口其实正常。
-    """
     from app.config import get_settings
-    from app.tools.auth import get_goats_auth_headers
 
-    settings = get_settings()
-    base = (settings.otc_api_base_url or "").rstrip("/")
+    base = (get_settings().otc_api_base_url or "").rstrip("/")
     if not base:
         return ProbeResult(target="java_backend", status="disabled")
 
     async def _check() -> None:
-        import httpx
-
-        url = f"{base}/admin-api/counterparty/info/list"
-        headers = {"Content-Type": "application/json"}
-        if settings.otc_api_secret:
-            headers["Authorization"] = f"Bearer {settings.otc_api_secret}"
-        headers.update(get_goats_auth_headers())
-        async with httpx.AsyncClient(timeout=PROBE_TIMEOUT_SECONDS, trust_env=False) as c:
-            r = await c.get(url, headers=headers)
-            if r.status_code >= 500:
-                raise RuntimeError(f"http_{r.status_code}")
-            payload = r.json()
-            if not isinstance(payload, dict) or "code" not in payload:
-                raise RuntimeError("bad_envelope")
-            if type(payload["code"]) is not int or payload["code"] != 0:
-                raise RuntimeError("business_error")
+        """建立并关闭 TCP 连接，不把缺客户身份的请求发送到业务接口。"""
+        parsed = urlsplit(base)
+        if parsed.scheme not in {"http", "https"} or not parsed.hostname:
+            raise ValueError("Java 地址必须是合法 HTTP(S) URL")
+        port = parsed.port or (443 if parsed.scheme == "https" else 80)
+        _, writer = await asyncio.wait_for(
+            asyncio.open_connection(parsed.hostname, port), timeout=PROBE_TIMEOUT_SECONDS,
+        )
+        try:
+            writer.close()
+        finally:
+            await writer.wait_closed()
 
     status, err, lat = await _timed("java_backend", _check())
     return ProbeResult(target="java_backend", status=status, error=err, latency_ms=lat)

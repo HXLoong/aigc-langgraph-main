@@ -40,13 +40,13 @@ class TestProductionGate:
     ) -> None:
         _patch_settings(monkeypatch, _settings("production", True))
         with pytest.raises(RuntimeError, match="生产环境"):
-            load_prompt("swap", "intent")
+            load_prompt("swap", "parse_instruction")
 
     def test_production_without_flag_loads_local(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         _patch_settings(monkeypatch, _settings("production", False))
-        p = load_prompt("swap", "intent")
+        p = load_prompt("swap", "parse_instruction")
         assert p.system
 
     def test_development_with_flag_falls_back_to_local(
@@ -54,7 +54,7 @@ class TestProductionGate:
     ) -> None:
         _patch_settings(monkeypatch, _settings("development", True))
         monkeypatch.setattr(prompts_mod, "_load_from_langfuse", lambda c, n: None)
-        p = load_prompt("swap", "intent")
+        p = load_prompt("swap", "parse_instruction")
         assert p.system
 
 

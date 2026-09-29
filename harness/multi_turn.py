@@ -11,7 +11,8 @@ from typing import Any
 
 import httpx
 
-from harness.golden import GoldenCase, TurnSpec
+from harness.golden import GoldenCase, TurnSpec, dataset_expected, dataset_input
+from harness.langfuse_client import case_trace, http_turn_trace
 from harness.scenario_inputs import ScenarioInputError, resolve_order_reference
 
 _BACKEND_ERROR_MARKERS = ("正在处理", "请勿重复", "未授权", "失败：未补充")
@@ -46,6 +47,9 @@ class MultiTurnResult:
     failure: dict[str, Any] | None = None
     remaining_turns: int = 0
     final_outputs: dict[str, Any] = field(default_factory=dict)
+    langfuse_trace_id: str | None = None
+    observation_id: str | None = None
+    trace_status: str = "disabled"
 
 
 def is_unusable_quote(text: str) -> bool:
@@ -74,6 +78,7 @@ def early_stop_kind(has_error: bool, api_code: object) -> str | None:
 
 
 def _error_info(value: Any) -> dict[str, Any] | None:
+    """将节点错误投影到评测报告的稳定诊断字段。"""
     if not value:
         return None
     if isinstance(value, dict):
@@ -88,6 +93,7 @@ def _error_info(value: Any) -> dict[str, Any] | None:
 
 
 def _extract_turn(index: int, spec: TurnSpec, quote: str, outputs: dict[str, Any]) -> TurnOutcome:
+    """保留每轮真实输入、HTTP 输出、业务参数与追踪身份。"""
     reply = str(outputs.get("reply_text") or "")
     return TurnOutcome(
         index=index,
@@ -119,8 +125,36 @@ async def run_case_multi(
     timeout: float = 180.0,
     client: httpx.AsyncClient | None = None,
     before_turn: Callable[[dict[str, Any]], Awaitable[None]] | None = None,
+    trace_metadata: dict[str, Any] | None = None,
 ) -> MultiTurnResult:
+    """执行完整用例；会话 ID 先于根 Observation 创建，多轮共用一棵树。"""
     conversation_id = f"ai-test-{uuid.uuid4().hex}"
+    with case_trace(case.id, conversation_id, user_id, metadata=trace_metadata,
+                    case_input=dataset_input(case)) as trace:
+        result = await _run_case_turns(
+            case, conversation_id=conversation_id, base_url=base_url, user_id=user_id,
+            room_id=room_id, turn_interval=turn_interval, timeout=timeout, client=client,
+            before_turn=before_turn,
+        )
+        # 保留每轮服务端 ID，核对实际接续结果，不以 SDK 初始化成功代替验证。
+        result.langfuse_trace_id = trace.trace_id
+        result.observation_id = trace.observation_id
+        if trace.trace_id:
+            connected = bool(result.turns) and all(
+                turn.outputs.get("langfuse_trace_id") == trace.trace_id for turn in result.turns
+            )
+            result.trace_status = "complete" if connected and not result.remaining_turns else "incomplete"
+        trace.update({"case_id": case.id, "expected": dataset_expected(case), "turns": [turn.outputs for turn in result.turns],
+                      "failure": result.failure, "trace_status": result.trace_status})
+        return result
+
+
+async def _run_case_turns(
+    case: GoldenCase, *, conversation_id: str, base_url: str, user_id: str, room_id: str,
+    turn_interval: float, timeout: float, client: httpx.AsyncClient | None,
+    before_turn: Callable[[dict[str, Any]], Awaitable[None]] | None,
+) -> MultiTurnResult:
+    """按序执行各轮，保留真实引用、失败轮和未执行轮数。"""
     owned_client = client is None
     http_client = client or httpx.AsyncClient(base_url=base_url.rstrip("/"), timeout=timeout)
     result = MultiTurnResult(case_id=case.id, conversation_id=conversation_id)
@@ -132,7 +166,8 @@ async def run_case_multi(
             delay = max(turn_interval if index else 0, spec.wait_before_seconds)
             if delay:
                 await asyncio.sleep(delay)
-            quote = quote_for_turn(
+            # 明确冻结的引用属于本轮输入，不能被空值或自动引用替换。
+            quote = spec.quote_content or quote_for_turn(
                 index, spec.quote_previous, [turn.reply_text for turn in result.turns]
             )
             inputs = {
@@ -149,16 +184,17 @@ async def run_case_multi(
             if before_turn is not None:
                 await before_turn(inputs)
             started = time.perf_counter()
-            response = await http_client.post(
-                endpoint,
-                json={
-                    "conversation_id": conversation_id,
-                    "inputs": inputs,
-                    "response_mode": "blocking",
-                    "user": user_id,
-                },
-            )
-            response.raise_for_status()
+            with http_turn_trace(index + 1) as trace_headers:
+                response = await http_client.post(
+                    endpoint, headers=trace_headers,
+                    json={
+                        "conversation_id": conversation_id,
+                        "inputs": inputs,
+                        "response_mode": "blocking",
+                        "user": user_id,
+                    },
+                )
+                response.raise_for_status()
             payload = response.json()
             data = payload.get("data") or {}
             outputs = dict(data.get("outputs") or {})

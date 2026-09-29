@@ -13,9 +13,8 @@ from langgraph.checkpoint.memory import InMemorySaver
 import app.main as app_main
 from app.config import get_settings
 from app.graph.main import build_main_graph
-from app.nodes.intent_route import UnknownIntentOutput
 from app.tools.message_client import MessageClientHttpx
-from tests.intent_fixtures import intent_reply, mock_ainvoke
+from tests.joint_support import joint_model
 
 
 @pytest.fixture()
@@ -28,9 +27,7 @@ def isolated_workflow(monkeypatch: pytest.MonkeyPatch) -> AsyncMock:
     monkeypatch.setattr("app.config.get_settings", lambda: settings)
     monkeypatch.setattr(app_main, "get_settings", lambda: settings)
     monkeypatch.setenv("ENABLE_LANGFUSE", "false")
-    llm = MagicMock()
-    llm.with_structured_output.return_value.ainvoke = mock_ainvoke(intent_reply(UnknownIntentOutput, label="unknown"))
-    monkeypatch.setattr("app.nodes.intent_route.get_qwen_thinking", lambda: llm)
+    monkeypatch.setattr("app.nodes.parse_instruction.get_llm_standard", lambda: joint_model("unknown", "unknown_intent"))
     write_trace = AsyncMock()
     monkeypatch.setattr("app.nodes.persist.write_node_trace", write_trace)
     return write_trace
@@ -132,25 +129,8 @@ def test_business_branch_persists_latest_intent_after_operate(
     monkeypatch: pytest.MonkeyPatch, isolated_workflow: AsyncMock,
     product_type: str, intent: str, product_number: int, raw: str,
 ) -> None:
-    from app.subgraphs.close.models import CloseIntentOutput
-    from app.subgraphs.option.models import OptionIntentOutput
-    from app.subgraphs.swap.models import SwapIntentOutput
-
-    llm_outputs = {
-        "option": {
-            "app.subgraphs.option.intent.get_qwen_structured": intent_reply(OptionIntentOutput, type="query_order_status"),
-        },
-        "option_close": {
-            "app.subgraphs.close.intent.get_qwen_thinking": intent_reply(CloseIntentOutput, type="close_order_order_query"),
-        },
-        "swap": {
-            "app.subgraphs.swap.intent.get_qwen_thinking": intent_reply(SwapIntentOutput, type="query_order_status"),
-        },
-    }
-    for factory, value in llm_outputs[product_type].items():
-        llm = MagicMock()
-        llm.with_structured_output.return_value.ainvoke = mock_ainvoke(value)
-        monkeypatch.setattr(factory, lambda llm=llm: llm)
+    monkeypatch.setattr("app.nodes.parse_instruction.get_llm_standard", lambda: joint_model(product_type, intent))
+    monkeypatch.setattr("app.tools.option_client.OptionClientHttpx.query_close_orders", AsyncMock(return_value={"code": 0, "data": []}))
 
     events: list[str] = []
     saved_requests: list[dict] = []

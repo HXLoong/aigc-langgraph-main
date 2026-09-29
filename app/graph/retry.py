@@ -18,16 +18,12 @@ from collections.abc import Awaitable, Callable
 from typing import Any
 
 import httpx
-import openai
-from langchain_core.exceptions import OutputParserException
 from langgraph.errors import NodeError
 from langgraph.graph import StateGraph
 from langgraph.runtime import Runtime
 from langgraph.types import RetryPolicy
-from pydantic import ValidationError
 
 from app.config import get_settings
-from app.extraction.fields import EvidenceError
 from app.graph.safe_node import NodeFn, P, safe_node
 from app.graph.state import ErrorInfo, TraceEntry
 from app.observability.metrics import emit_node_completed
@@ -39,19 +35,13 @@ IO_RETRYABLE: tuple[type[BaseException], ...] = (
     BackendUnreachableError,
     httpx.TimeoutException,
     httpx.ConnectError,
-    openai.APITimeoutError,
-    openai.APIConnectionError,
-    openai.RateLimitError,
-    openai.InternalServerError,
-    OutputParserException,
-    ValidationError,
-    EvidenceError,
 )
 
 _IO_NODE_FLAG = "__io_node__"
 
 
 def is_retryable(exc: BaseException) -> bool:
+    """只允许独立后端只读瞬时故障重试，模型和证据失败不重试。"""
     return isinstance(exc, IO_RETRYABLE)
 
 
@@ -65,6 +55,7 @@ def io_node(fn: NodeFn[P]) -> NodeFn[P]:
 def io_retry_policy(
     *, max_attempts: int | None = None, initial_interval: float | None = None
 ) -> RetryPolicy:
+    """为独立后端查询生成有上限的重试策略。"""
     settings = get_settings()
     return RetryPolicy(
         max_attempts=max_attempts or settings.node_retry_max_attempts,
@@ -114,6 +105,7 @@ def add_io_node(
     policy = io_retry_policy(max_attempts=max_attempts, initial_interval=initial_interval)
 
     async def recover_exhausted(state: Any, runtime: Runtime[Any]) -> dict[str, Any]:
+        """查询重试耗尽后记录原节点错误，交下游 cascade 收尾。"""
         try:
             return await fn(state)
         except IO_RETRYABLE as exc:

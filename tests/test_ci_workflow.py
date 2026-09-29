@@ -17,11 +17,11 @@ def test_ci_runs_for_pull_requests_and_manual_dispatch():
 def test_ci_uses_explicit_offline_settings():
     config = workflow()
     env = {**config["env"], **config["jobs"]["fast"]["env"]}
-    for key in ("ENABLE_LANGFUSE", "USE_MYSQL_CHECKPOINTER", "REQUEST_IDEMPOTENCY"):
+    for key in ("ENABLE_LANGFUSE", "USE_MYSQL_CHECKPOINTER"):
         assert env.get(key) == "false", key
-    for key in ("MYSQL_URI", "QWEN_API_BASE", "OTC_API_BASE_URL"):
+    for key in ("MYSQL_URI", "LLM_API_BASE", "OTC_API_BASE_URL"):
         assert urlsplit(env.get(key, "")).hostname == "127.0.0.1", key
-    for key in ("QWEN_API_KEY", "OTC_API_SECRET"):
+    for key in ("LLM_API_KEY", "OTC_API_SECRET"):
         assert env.get(key) == "ci-placeholder", key
 
 

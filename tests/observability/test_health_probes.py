@@ -218,32 +218,35 @@ async def test_run_all_probes_returns_4_results() -> None:
     assert {r.target for r in results} == {"mysql", "langfuse", "llm", "java_backend"}
 
 
-@pytest.mark.parametrize("code,expected", [(0, "ok"), (401, "fail"), (500, "fail")])
-async def test_java_probe_requires_successful_business_envelope(
-    monkeypatch: pytest.MonkeyPatch, code: int, expected: str
-) -> None:
+
+
+async def test_backend_readiness_checks_transport_without_customer_context(monkeypatch):
+    """就绪探测不调用要求真实客户身份的业务查询，不触发证券查询。"""
+    import asyncio
     from types import SimpleNamespace
+    from unittest.mock import AsyncMock
 
-    import httpx
+    from app.config import get_settings
 
-    requested: list[str] = []
-
-    def _handler(request: httpx.Request) -> httpx.Response:
-        requested.append(request.url.path)
-        return httpx.Response(
-            200, json={"code": code, "data": [], "msg": "系统异常" if code else ""},
-        )
-
-    original = httpx.AsyncClient
-    transport = httpx.MockTransport(_handler)
-    monkeypatch.setattr(
-        httpx, "AsyncClient", lambda **kwargs: original(transport=transport, **kwargs)
-    )
-    monkeypatch.setattr("app.config.get_settings", lambda: SimpleNamespace(
-        otc_api_base_url="http://java.invalid", otc_api_secret="test-only",
-    ))
-    monkeypatch.setattr("app.tools.auth.get_goats_auth_headers", lambda: {})
+    writer = SimpleNamespace(close=lambda: None, wait_closed=AsyncMock())
+    connect = AsyncMock(return_value=(object(), writer))
+    monkeypatch.setattr(asyncio, "open_connection", connect)
+    monkeypatch.setattr("app.config.get_settings", lambda: get_settings().model_copy(update={
+        "otc_api_base_url": "http://localhost:48080",
+    }))
     result = await hp.probe_java_backend()
-    assert result.status == expected
-    # 就绪探针必须打运行时真实依赖的接口；ADR 0025 后 instrument-inference-prompt 已无调用方
-    assert requested == ["/admin-api/counterparty/info/list"]
+    assert result.status == "ok"
+    connect.assert_awaited_once_with("localhost", 48080)
+    writer.wait_closed.assert_awaited_once()
+
+
+async def test_java_transport_failure_is_not_ready(monkeypatch):
+    """连接拒绝仍是硬依赖故障，不能仅因配置有 URL 就报就绪。"""
+    import asyncio
+    from types import SimpleNamespace
+    from unittest.mock import AsyncMock
+
+    monkeypatch.setattr("app.config.get_settings", lambda: SimpleNamespace(otc_api_base_url="http://localhost:48080"))
+    monkeypatch.setattr(asyncio, "open_connection", AsyncMock(side_effect=ConnectionRefusedError()))
+    result = await hp.probe_java_backend()
+    assert result.status == "fail"

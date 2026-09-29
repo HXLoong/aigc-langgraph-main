@@ -12,7 +12,7 @@ from app.extraction.identity import prepare_identity_scope
 from app.graph.business_params import validated_confirm
 from app.graph.safe_node import safe_node
 from app.graph.state import AgentState, ExpectedAction, TraceEntry
-from app.subgraphs.swap.backend import call_swap_backend
+from app.subgraphs.swap.backend import prepare_swap_request
 from app.subgraphs.swap.confirmation import parse_confirmation
 
 
@@ -44,7 +44,8 @@ async def swap_confirm(state: AgentState) -> dict[str, Any]:
             "trace": [TraceEntry(node="swap_confirm", decision=f"confirmation:{confirmation.error}")],
         }
     order_ids: list[str | None] = list(confirmation.order_ids)
-    identity_origin, identity_evidence, source = "quote", quote or "", "quote"
+    identity_origin = source = "quote" if quote else "raw"
+    identity_evidence = quote or raw or ""
     prepared_state, order_ids, records = prepare_identity_scope(
         state, order_ids, scope="swap/confirm", origin=identity_origin, evidence=identity_evidence, selection=True,
     )
@@ -57,7 +58,7 @@ async def swap_confirm(state: AgentState) -> dict[str, Any]:
         "cancel": "confirm_cancel_order",
         "modify": "confirm_modify_order",
     }
-    backend = await call_swap_backend(
+    request_update = await prepare_swap_request(
         prepared_state,
         intent=_action_intent.get(action, "confirm_order"),
         order_list=order_list,
@@ -67,7 +68,7 @@ async def swap_confirm(state: AgentState) -> dict[str, Any]:
         "field_records": records,
         "expected_action": action,
         "confirm": validated_confirm(action=action, orderList=order_list),
-        **backend,
+        **request_update,
         "trace": [
             TraceEntry(
                 node="swap_confirm",

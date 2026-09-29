@@ -1,119 +1,19 @@
-"""期权平仓意图：确定性规则优先，模型分支必须提供可校验证据与置信度。"""
+"""平仓入口复用一次联合解析结果，不再进行模型意图识别。"""
 from __future__ import annotations
 
-import re
 from typing import Any
 
-from app.domain.confirmation import (
-    confirmation_action,
-    confirmation_attempt,
-    has_execution_parameters,
-)
-from app.extraction.intent_evidence import intent_records
-from app.graph.retry import io_node
+from app.graph.safe_node import safe_node
 from app.graph.state import AgentState, TraceEntry
-from app.llm.clients import get_qwen_thinking
-from app.prompts import blocks
-from app.prompts.spec import PromptSpec, register
-from app.subgraphs.close.models import CloseIntentOutput
+from app.parsing.evidence import verify_instruction
+from app.parsing.models import CloseInstruction
 
 
-def _build_user_message(state: AgentState) -> str:
-    return blocks.source_payload(state)
-
-
-SPEC = register(PromptSpec(
-    category="option_close",
-    name="intent",
-    output_model=CloseIntentOutput,
-    inputs=("raw_text", "quote_content", "history_messages"),
-    user_builder=_build_user_message,
-))
-
-
-#: 同一分句内「撤单」前的否定（不要撤单 / 先不用撤单 / 别撤单了）
-_NEGATED_CANCEL_RE = re.compile(r"(?:不|别|没|未|无需|勿)[^，,。；;！!？?\s]{0,3}撤单")
-#: 询问撤单结果或状态（查询撤单状态 / 撤单成功了吗 / 撤单是否完成？）
-_CANCEL_QUERY_RE = re.compile(r"查|状态|进度|是否|有没有|吗|[？?]")
-
-
-def _is_cancel_instruction(raw: str) -> bool:
-    """raw 含正面撤单指令：有「撤单」且不是否定或查询语义。"""
-    return (
-        "撤单" in raw
-        and not _NEGATED_CANCEL_RE.search(raw)
-        and not _CANCEL_QUERY_RE.search(raw)
-    )
-
-
-def _deterministic_intent(raw: str) -> str | None:
-    """Move unconditional corrections ahead of the model, preserving their precedence."""
-    action = confirmation_action(raw)
-    if confirmation_attempt(raw):
-        if action == "close" and has_execution_parameters(raw):
-            return "close_order_request"
-        return {"close": "close_order_confirm", "cancel": "close_order_cancel_confirm"}.get(action or "", "unknown_intent")
-    if any(kw in raw for kw in ("拉满跟量", "全部最大", "全跟量")) and re.search(r"\d+\s*万", raw):
-        return "close_order_request"
-    if re.search(r"序号\s*\d", raw) and any(kw in raw.lower() for kw in ("平", "留", "全平", "拉满", "跟量", "pov")):
-        return "close_order_request"
-    if "确认撤单" in raw:
-        return "close_order_cancel_confirm"
-    if any(kw in raw for kw in ("查可平持仓", "查询持仓", "我有哪些")):
-        return "close_order_query"
-    return None
-
-
-@io_node
+@safe_node
 async def close_intent(state: AgentState) -> dict[str, Any]:
-    """close.intent 节点。"""
-    if not (state.get("raw_text") or "").strip():
-        return {"intent": "unknown_intent", "trace": [TraceEntry(
-            node="close_intent", decision="empty_current_input",
-        )]}
-    deterministic = _deterministic_intent(state.get("raw_text") or "")
-    if deterministic:
-        return {"intent": deterministic, "trace": [TraceEntry(
-            node="close_intent", decision=f"intent={deterministic} rule=explicit_instruction",
-        )]}
-    # ADR 0023：输出契约由 with_structured_output 的 schema 承担，不再在代码里追加格式指令
-    messages, _prompt_name = SPEC.build_messages(state)
-    llm = get_qwen_thinking().with_structured_output(CloseIntentOutput)
-    result = CloseIntentOutput.model_validate(await llm.ainvoke(messages))
-    records = intent_records(result, state, scope="close/intent", value=result.type)
-
-    intent = result.type
-    raw = state.get("raw_text", "") or ""
-    quote = state.get("quote_content") or ""
-    text = f"{raw} {quote}"
-
-    # 规则修正：含合约编号+平仓动作词但 LLM 误分为 query → request
-    if intent == "close_order_query":
-        has_contract = bool(re.search(r"(?:OPT|OPTG)-\w+", text))
-        close_actions = ("平掉","平仓","平剩","平留","市价平","部分平","我想平","我要平")
-        if has_contract and any(a in text for a in close_actions):
-            intent = "close_order_request"
-    # 正面撤单指令 → close_order_cancel_request（覆盖 LLM 误判）；否定 / 查询语义以模型为准
-    if _is_cancel_instruction(raw) and intent not in (
-        "close_order_cancel_confirm", "close_order_cancel_request"
-    ):
-        intent = "close_order_cancel_request"
-    if intent != result.type:
-        records["close/intent.model"] = records["close/intent"]
-        records["close/intent"] = records["close/intent"].model_copy(update={
-            "value": intent, "source": "default", "confidence": None,
-        })
-    return {
-        "field_records": records,
-        "intent": intent,
-        "trace": [
-            TraceEntry(
-                node="close_intent",
-                decision=f"intent={intent}",
-                llm_output={"type": intent, "model_type": result.type, "confidence": result.confidence, "evidence_count": len(result.evidence)},
-            )
-        ],
-    }
-
-
-__all__ = ["close_intent"]
+    """校验平仓产品与来源，沿已有意图路由进入确定性节点。"""
+    if state.get("error"):
+        return {}
+    parsed = CloseInstruction.model_validate(state.get("parsed_instruction") or {})
+    return {"intent": parsed.intent, "field_records": verify_instruction(parsed, state),
+            "trace": [TraceEntry(node="close_intent", decision=f"parsed→{parsed.intent}")]}

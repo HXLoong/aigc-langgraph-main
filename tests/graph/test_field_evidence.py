@@ -1,51 +1,9 @@
 """Field provenance and locks are enforced before canonical values reach a client."""
 import importlib
 
-import pytest
-from pydantic import ValidationError
-
 
 def fields():
     return importlib.import_module("app.extraction.fields")
-
-
-def test_verbatim_candidate_is_checked_against_its_declared_source():
-    module = fields()
-    candidate = module.FieldCandidate(value="UBS", evidence="向UBS询价", confidence=.9, origin="raw")
-    assert candidate.verify({"raw": "请向UBS询价"}) == "UBS"
-
-
-@pytest.mark.parametrize("value,evidence", [("瑞银", "向UBS询价"), ("UBS", "与UBS成交")])
-def test_candidate_cannot_rewrite_a_name_or_invent_evidence(value, evidence):
-    candidate = fields().FieldCandidate(value=value, evidence=evidence, confidence=1, origin="raw")
-    with pytest.raises(ValueError, match="evidence"):
-        candidate.verify({"raw": "请向UBS询价"})
-
-
-def test_quote_evidence_cannot_be_presented_as_current_user_text():
-    module = fields()
-    sources = {"raw": "选第二个", "quote": "UBS"}
-    candidate = module.FieldCandidate(value="UBS", evidence="UBS", confidence=.9, origin="raw")
-    with pytest.raises(ValueError, match="evidence"):
-        candidate.verify(sources)
-    assert candidate.model_copy(update={"origin": "quote"}).verify(sources) == "UBS"
-
-
-def test_null_candidate_does_not_invent_a_default():
-    candidate = fields().FieldCandidate(value=None, evidence="", confidence=0, origin="raw")
-    assert candidate.verify({"raw": "下单"}) is None
-
-
-def test_confidence_is_bounded_and_does_not_override_evidence():
-    module = fields()
-    with pytest.raises(ValidationError):
-        module.FieldCandidate(value="x", evidence="x", confidence=1.1)
-
-
-def test_a_number_cannot_be_cut_from_a_larger_numeric_token():
-    candidate = fields().FieldCandidate(value="50", evidence="500股", confidence=1, origin="raw")
-    with pytest.raises(ValueError, match="evidence"):
-        candidate.verify({"raw": "买入500股"})
 
 
 def test_locked_value_is_retained_and_conflict_is_observable():

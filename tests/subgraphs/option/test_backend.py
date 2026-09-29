@@ -127,7 +127,7 @@ async def test_nonempty_backend_card_is_returned_unchanged(monkeypatch) -> None:
         _complete_state(), intent="new_inquiry", option_rfq={}
     )
 
-    assert result == {"api_code": 0, "api_result": card}
+    assert {k: result[k] for k in ("api_code", "api_result")} == {"api_code": 0, "api_result": card}
 
 
 @pytest.mark.asyncio
@@ -143,4 +143,4 @@ async def test_nonempty_backend_rejection_is_returned_unchanged(monkeypatch) -> 
         _complete_state(), intent="new_inquiry", option_rfq={}
     )
 
-    assert result == {"api_code": 500, "api_result": rejection}
+    assert {k: result[k] for k in ("api_code", "api_result")} == {"api_code": 500, "api_result": rejection}

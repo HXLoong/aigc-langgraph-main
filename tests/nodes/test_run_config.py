@@ -33,3 +33,12 @@ class TestLangfuseDimensions:
         cfg = _build_run_config(conversation_id="c-9", trace_id="t-9")
         assert "langfuse_user_id" not in cfg["metadata"]
         assert cfg["metadata"]["langfuse_session_id"] == "c-9"
+
+    def test_non_ascii_session_preserves_business_thread(self):
+        """观测层映射不合法 Session，业务会话原文保持不变。"""
+        conversation = "群会话-" + "长" * 210
+        config = _build_run_config(conversation_id=conversation, trace_id="request-1")
+        session = config["metadata"]["langfuse_session_id"]
+        assert session.isascii() and len(session) <= 200
+        assert config["configurable"]["thread_id"] == conversation
+        assert session == _build_run_config(conversation, "request-2")["metadata"]["langfuse_session_id"]

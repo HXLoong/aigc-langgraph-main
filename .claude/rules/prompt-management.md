@@ -8,10 +8,10 @@
 `.md` 里的 `{{var}}` 没有独立渲染层，只有两种合法形态：
 
 - system 段占位符 → 在 `PromptSpec.injects` 登记渲染器（当前业务 system 无动态占位符），`build_messages` 构造期校验存在性
-- `[user]` 段占位符 → 只在 user 含规则文本的节点存在（`swap/fresh_counterparty.md`），经 `render_user()` 渲染；其它节点没有 `[user]` 段，user 消息由 `user_builder` 拼变量
+- `[user]` 段占位符 → 仅供确需 user 规则模板的节点使用；当前四套解析器没有动态 user 规则，经 `render_user()` 渲染；其它节点没有 `[user]` 段，user 消息由 `user_builder` 拼变量
 - 代码不注入的占位符是悬空规则，LLM 看到的是变量名；属零风险删除档，围绕它的整段规则一起删
 
-## 加载方式（ADR 0023：一个 LLM 节点 = 一个 PromptSpec）
+## 加载方式（ADR 0023：每套解析契约一个 PromptSpec，一次调用只选一套）
 
 ```python
 from app.prompts import blocks
@@ -21,23 +21,23 @@ def _build_user_message(state: AgentState) -> str:      # 只拼变量，规则�
     return f"raw_content: {state.get('raw_text', '') or ''}\n\nhistory:\n{blocks.format_history(state.get('history_messages'))}"
 
 SPEC = register(PromptSpec(
-    category="swap", name="intent",
-    output_model=SwapIntentOutput,                    # 输出契约唯一真源：每个字段写 Field(description=)
+    category="swap", name="parse_instruction",
+    output_model=SwapInstruction,                    # 输出契约唯一真源：每个字段写 Field(description=)
     inputs=("raw_text", "history_messages", "conversation_id"),   # 必须是 AgentState 字段，构造期校验
     user_builder=_build_user_message,
     gray=True,                                        # 走 _versions.yaml 灰度（resolve_prompt_version）
 ))
 
 messages, prompt_name = SPEC.build_messages(state)    # [("system", ...), ("user", ...)]
-result = await model.with_structured_output(SwapIntentOutput).ainvoke(messages)
+result = await model.with_structured_output(SwapInstruction).ainvoke(messages)
 ```
 
-- 节点默认只用 system 段 + 代码拼变量的 user；user 里若有**规则文本**，写进 `.md` 的 `[user]` 段用 `{{var}}` 占位，`user_builder` 里用 `load_prompt(...).render_user(**vars)` 渲染（先例 `swap/fresh_counterparty.md`）
+- 节点默认只用 system 段 + 代码拼变量的 user；user 里若有**规则文本**，写进 `.md` 的 `[user]` 段用 `{{var}}` 占位，`user_builder` 里用 `load_prompt(...).render_user(**vars)` 渲染
 - **禁止**把提示词正文硬编码进 Python（含"后置追加一段格式指令"这种写法）；**禁止**在 `.md` 里维护 JSON 骨架 / 字段表——字段语义只写在 Pydantic `Field(description=)`
 - 共享拼装（历史、对手列表、JSON 列表）只在 `app/prompts/blocks.py` 定义一次，不在子图里复制
 - `injects` 登记的占位符必须在 `.md` system 段里真实存在，`build_messages` 构造期校验（`tests/prompts/test_prompt_spec.py`）
 - 灰度节点必须把 `build_messages` 返回的 `prompt_name` 写进 `TraceEntry.llm_output["prompt_name"]`（ADR 0003 硬前置：进 `_versions.yaml` 前必须先写 trace，否则版本对比失真）
-- 当前 14 个业务 PromptSpec；标的识别工作流由 Java 调用，LangGraph 在标的方面只提取原始表达或用户选择（ADR 0025）。system 使用固定资产，历史和参考数据经 `blocks.source_payload` 放入 user。`fresh_counterparty` 的 `[user]` 模板继续经 `render_user` 渲染。
+- 当前 4 个互斥的业务 PromptSpec；标的识别工作流由 Java 调用，LangGraph 在标的方面只提取原始表达或用户选择（ADR 0025）。system 使用固定资产，历史和参考数据经 `blocks.source_payload` 放入 user。一次请求只执行所选产品或跨产品契约，不再有独立意图、参数、选择或 OCR 模型链。
 
 ## 来源优先级（ADR 0014 D3）
 

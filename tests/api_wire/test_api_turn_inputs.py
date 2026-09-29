@@ -14,25 +14,16 @@ from langgraph.checkpoint.serde.jsonplus import JsonPlusSerializer
 from app.api.routes import router
 from app.graph.main import build_main_graph
 from app.graph.state import Message, TickerCandidate
-from app.nodes import fast_query, intent_route
-from app.nodes.intent_route import UnknownIntentOutput
-from app.subgraphs.swap import backend, intent, multimodal
-from app.subgraphs.swap.models import SwapIntentOutput
-from app.subgraphs.swap.multimodal_evidence import ImageTranscription
+from app.nodes import fast_query
+from app.subgraphs.swap import backend
 from app.tools.goats_agent_client import GoatsAgentClientHttpx
 from app.tools.option_client import OptionClientHttpx
 from app.tools.swap_client import SwapClientHttpx
-from tests.intent_fixtures import intent_reply, mock_ainvoke
+from tests.joint_support import joint_model
 
 CONFIG = {"configurable": {"thread_id": "turn-inputs"}}
 ORDER_ID = "H-20260915-0000000001"
 IMAGE = {"type": "image", "remote_url": "http://files.test/order.png"}
-
-
-def structured_llm(value):
-    llm = MagicMock()
-    llm.with_structured_output.return_value.ainvoke = mock_ainvoke(value)
-    return llm
 
 
 @pytest.fixture
@@ -40,21 +31,7 @@ async def turn_api(monkeypatch):
     connection = MagicMock()
     connection.cursor.return_value.__aenter__.return_value.executemany = AsyncMock()
     monkeypatch.setattr(aiomysql, "connect", AsyncMock(return_value=connection))
-    monkeypatch.setattr(intent, "get_qwen_thinking", lambda: structured_llm(
-        intent_reply(SwapIntentOutput, type="query_order_status"),
-    ))
-    monkeypatch.setattr(intent_route, "get_qwen_thinking", lambda: structured_llm(
-        intent_reply(UnknownIntentOutput, label="互换-文本"),
-    ))
-    monkeypatch.setattr(multimodal, "get_qwen_vl", lambda: structured_llm(
-        ImageTranscription(text="600519.SH"),
-    ))
-    monkeypatch.setattr(multimodal, "get_qwen_structured", lambda: structured_llm(
-        multimodal.CANDIDATE_MODEL.model_validate({"orderList": [{"placeOrderWindCode": {
-            "value": "600519.SH", "evidence": "600519.SH", "confidence": 1,
-            "origin": "attachment", "reference": "file:0:image",
-        }}]}),
-    ))
+    monkeypatch.setattr("app.nodes.parse_instruction.get_llm_standard", lambda: joint_model("swap", "query_order_status"))
     requests = []
 
     def handle(request):
@@ -105,7 +82,7 @@ async def send(client, inputs):
 @pytest.mark.parametrize("first_inputs,first_node", [
     ({"fastQuery": "1"}, "quick_inquiry"),
     ({"existingCommand": "1", "atBot": "0"}, "existing_command_query"),
-    ({"files": [IMAGE]}, "swap_image_order"),
+    ({"files": [IMAGE]}, "prepare_input"),
 ])
 async def test_omitted_turn_inputs_restore_normal_route(turn_api, first_inputs, first_node):
     client, graph, requests = turn_api
@@ -119,7 +96,10 @@ async def test_omitted_turn_inputs_restore_normal_route(turn_api, first_inputs, 
     result = await send(client, {"rawContent": f"查订单{ORDER_ID}"})
     second = (await graph.aget_state(CONFIG)).values
     assert "swap_query_order" in [entry.node for entry in second["trace"]]
-    assert first_node not in [entry.node for entry in second["trace"]]
+    if first_node != "prepare_input":
+        assert first_node not in [entry.node for entry in second["trace"]]
+    else:
+        assert "图片" in first["reply_text"]
     assert result["answer"] == "本轮后端回执"
     assert len(requests) == 1
     assert requests[0][1]["type"] == "query_order_status"
@@ -153,7 +133,7 @@ async def test_current_text_defaults_after_message_fallback(turn_api, inputs, ex
     ({"fast_query": "1", "at_bot": False}, "quick_inquiry"),
     ({"existing_command": "1", "at_bot": 0}, "existing_command_query"),
     ({"fastQuery": "0", "existingCommand": "1", "atBot": "1"}, "swap_query_order"),
-    ({"sysFiles": [IMAGE]}, "swap_image_order"),
+    ({"sysFiles": [IMAGE]}, "prepare_input"),
 ])
 async def test_explicit_current_inputs_override_defaults(turn_api, inputs, node):
     client, graph, requests = turn_api
@@ -166,6 +146,6 @@ async def test_explicit_current_inputs_override_defaults(turn_api, inputs, node)
     assert state["quote_content"] == "本轮引用"
     assert state["quote_appinfo"] == "new-meta"
     assert state["input_files"] == inputs.get("sysFiles", [])
-    if node != "existing_command_query":
+    if node not in {"existing_command_query", "prepare_input"}:
         assert requests[-1][1]["quoteContent"] == "本轮引用"
         assert requests[-1][1]["quoteAppinfo"] == "new-meta"

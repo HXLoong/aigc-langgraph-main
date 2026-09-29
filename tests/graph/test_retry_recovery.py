@@ -32,7 +32,7 @@ def failing_node(name: str, calls: list[str]) -> Any:
     return io_node(fail)
 
 
-@pytest.mark.parametrize("node_name", ["intent_route", "existing_command_query"])
+@pytest.mark.parametrize("node_name", ["prepare_parse_context", "existing_command_query"])
 async def test_main_retry_exhaustion_reaches_reply_history_and_audit(
     monkeypatch: pytest.MonkeyPatch, fast_retries: None, node_name: str,
 ) -> None:
@@ -68,13 +68,17 @@ async def test_subgraph_retry_exhaustion_reaches_its_fallback(
     monkeypatch: pytest.MonkeyPatch, fast_retries: None, product: str,
 ) -> None:
     module = import_module(f"app.subgraphs.{product}.graph")
-    name = f"{product}_intent"
+    name = f"{product}_query_backend"
     calls: list[str] = []
     monkeypatch.setattr(module, name, failing_node(name, calls))
-    result = await getattr(module, f"build_{product}_graph")().ainvoke({"raw_text": "测试"})
+    from tests.joint_support import instruction_data
+    intent = "close_order_order_query" if product == "close" else "query_order_status"
+    result = await getattr(module, f"build_{product}_graph")().ainvoke({"raw_text": "测试",
+        "conversation_id": "c", "message_id": 1, "room_id": "r", "user_id": "u",
+        "parsed_instruction": instruction_data("option_close" if product == "close" else product, intent, "测试")})
     assert calls == [name, name]
     assert result["error"].node == name
-    assert [entry.node for entry in result["trace"]] == [name, f"{product}_unknown"]
+    assert [entry.node for entry in result["trace"]][-2:] == [f"{product}_clean_request", name]
 
 
 @pytest.mark.parametrize("failures", [set(), {"left"}, {"left", "right"}])

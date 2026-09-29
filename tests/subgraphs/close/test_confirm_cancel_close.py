@@ -16,6 +16,7 @@ from app.subgraphs.close import confirm_close as confirm_module
 from app.subgraphs.close.cancel_close import close_cancel_close
 from app.subgraphs.close.confirm_close import close_confirm_close
 from tests.llm_guard import forbid_llm
+from tests.request_support import run_request_nodes
 
 _QUOTE_TWO = (
     "1. CO-20260304-4FE9C941（OPT-SZZSCF20260001）\n"
@@ -41,7 +42,7 @@ _JAVA_CARD = (
 def _patch(monkeypatch: pytest.MonkeyPatch, module: object) -> AsyncMock:
     """固定后端边界；LLM 工厂若被调用即报错（去 LLM 化硬约束）。"""
     backend = AsyncMock(return_value={"api_code": 0, "api_result": "backend reply"})
-    monkeypatch.setattr(module, "call_close_backend", backend)
+    monkeypatch.setattr(module, "prepare_close_request", backend)
 
     forbid_llm(monkeypatch, module)
     return backend
@@ -201,53 +202,43 @@ class TestCloseCancelCloseNode:
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         _patch(monkeypatch, cancel_module)
-        result = await close_cancel_close(
-            {"raw_text": "撤销第一笔", "quote_content": "1. CO-20260304-759125AD"}
-        )
+        result = await run_request_nodes(close_cancel_close, {"raw_text": "撤销第一笔", "quote_content": "1. CO-20260304-759125AD"}, "close")
         assert result["cancel_params"]["cancelOrderNoList"] == ["CO-20260304-759125AD"]
 
     async def test_raw_order_id_selects_only_that_order(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         _patch(monkeypatch, cancel_module)
-        result = await close_cancel_close(
-            {"raw_text": "撤单 CO-20260304-759125AD", "quote_content": _QUOTE_TWO}
-        )
+        result = await run_request_nodes(close_cancel_close, {"raw_text": "撤单 CO-20260304-759125AD", "quote_content": _QUOTE_TWO}, "close")
         assert result["cancel_params"]["cancelOrderNoList"] == ["CO-20260304-759125AD"]
 
     async def test_unspecified_takes_all_quote_ids(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         _patch(monkeypatch, cancel_module)
-        result = await close_cancel_close(
-            {"raw_text": "都撤了", "quote_content": _QUOTE_TWO}
-        )
+        result = await run_request_nodes(close_cancel_close, {"raw_text": "都撤了", "quote_content": _QUOTE_TWO}, "close")
         assert result["cancel_params"]["cancelOrderNoList"] == [
             "CO-20260304-4FE9C941",
             "CO-20260304-E2BA7501",
         ]
 
-    async def test_conversation_orders_fallback(
+    async def test_conversation_orders_are_not_current_authorization(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """无引用、无单号时保留历史兜底（取最近一笔会话订单）。"""
+        """无引用、无单号时不使用历史订单替代本次授权。"""
         _patch(monkeypatch, cancel_module)
-        result = await close_cancel_close(
-            {
+        result = await run_request_nodes(close_cancel_close, {
                 "raw_text": "撤",
                 "quote_content": "",
                 "conversation_orders": [{"orderId": "CO-20260304-ABCD1234"}],
-            }
-        )
-        assert result["cancel_params"]["cancelOrderNoList"] == ["CO-20260304-ABCD1234"]
+            }, "close")
+        assert result["cancel_params"]["cancelOrderNoList"] == []
 
     async def test_unresolved_scope_does_not_expand(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         backend = _patch(monkeypatch, cancel_module)
-        result = await close_cancel_close(
-            {"raw_text": "撤第五笔", "quote_content": "1. CO-20260304-759125AD"}
-        )
+        result = await run_request_nodes(close_cancel_close, {"raw_text": "撤第五笔", "quote_content": "1. CO-20260304-759125AD"}, "close")
         assert result.get("reply_text")
         assert result.get("cancel_params") is None
         assert result["trace"][0].decision == "close_scope_unresolved"
@@ -257,9 +248,7 @@ class TestCloseCancelCloseNode:
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         _patch(monkeypatch, cancel_module)
-        result = await close_cancel_close(
-            {"raw_text": "撤销 CO-20260304-AAAAAAAA 和 CO-20260304-BBBBBBBB"}
-        )
+        result = await run_request_nodes(close_cancel_close, {"raw_text": "撤销 CO-20260304-AAAAAAAA 和 CO-20260304-BBBBBBBB"}, "close")
         trace = result.get("trace", [])
         assert len(trace) == 1
         assert trace[0].node == "close_cancel_close"
@@ -277,7 +266,7 @@ class TestCloseCancelCloseNode:
     ) -> None:
         """Java 平仓卡是「序号 → 合约编号 → 单号」，合约编号属于其后的单号。"""
         backend = _patch(monkeypatch, cancel_module)
-        result = await close_cancel_close({"raw_text": raw, "quote_content": _JAVA_CARD})
+        result = await run_request_nodes(close_cancel_close, {"raw_text": raw, "quote_content": _JAVA_CARD}, "close")
         assert result["cancel_params"]["cancelOrderNoList"] == expected
         assert backend.await_args.kwargs["close_order_req_vo"]["cancelOrderNoList"] == expected
 
@@ -287,7 +276,7 @@ class TestCloseCancelCloseNode:
     ) -> None:
         """「序号N」按引用卡片的序号标签绑定，不得扩大到引用中的全部订单。"""
         _patch(monkeypatch, cancel_module)
-        result = await close_cancel_close({"raw_text": raw, "quote_content": _JAVA_CARD})
+        result = await run_request_nodes(close_cancel_close, {"raw_text": raw, "quote_content": _JAVA_CARD}, "close")
         assert result["cancel_params"]["cancelOrderNoList"] == ["CO-20260921-BBBBBBBB"]
 
     async def test_sequence_without_quote_labels_uses_position(
@@ -295,14 +284,14 @@ class TestCloseCancelCloseNode:
     ) -> None:
         """引用没有序号标签时，「序号N」与确认协议一致按出现顺序绑定。"""
         _patch(monkeypatch, cancel_module)
-        result = await close_cancel_close({"raw_text": "撤序号2", "quote_content": _QUOTE_TWO})
+        result = await run_request_nodes(close_cancel_close, {"raw_text": "撤序号2", "quote_content": _QUOTE_TWO}, "close")
         assert result["cancel_params"]["cancelOrderNoList"] == ["CO-20260304-E2BA7501"]
 
     async def test_unknown_sequence_label_does_not_expand(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         backend = _patch(monkeypatch, cancel_module)
-        result = await close_cancel_close({"raw_text": "撤序号5", "quote_content": _JAVA_CARD})
+        result = await run_request_nodes(close_cancel_close, {"raw_text": "撤序号5", "quote_content": _JAVA_CARD}, "close")
         assert result.get("cancel_params") is None
         assert result["trace"][0].decision == "close_scope_unresolved"
         backend.assert_not_awaited()
@@ -312,9 +301,7 @@ class TestCloseCancelCloseNode:
     ) -> None:
         """单号大小写不敏感：只写小写单号时不得扩大到引用中的全部订单。"""
         _patch(monkeypatch, cancel_module)
-        result = await close_cancel_close(
-            {"raw_text": "撤 co-20260921-bbbbbbbb", "quote_content": _JAVA_CARD}
-        )
+        result = await run_request_nodes(close_cancel_close, {"raw_text": "撤 co-20260921-bbbbbbbb", "quote_content": _JAVA_CARD}, "close")
         assert result["cancel_params"]["cancelOrderNoList"] == ["CO-20260921-BBBBBBBB"]
 
     async def test_calls_real_backend_when_context_present(
@@ -334,16 +321,14 @@ class TestCloseCancelCloseNode:
 
         forbid_llm(monkeypatch, cancel_module)
 
-        result = await close_cancel_close(
-            {
+        result = await run_request_nodes(close_cancel_close, {
                 "raw_text": "撤销第一笔",
                 "quote_content": "1. CO-20260304-759125AD",
                 "conversation_id": "t",
                 "user_id": "u",
                 "room_id": "r",
                 "message_id": 1,
-            }
-        )
+            }, "close")
         assert len(captured) == 1
         req = captured[0]
         assert req.type.value == "close_order_cancel_request"

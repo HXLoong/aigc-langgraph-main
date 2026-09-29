@@ -1,1 +1,1 @@
-"""Evidence-backed extraction and deterministic canonicalization."""
+"""字段来源、身份选择与同次调用锁定；不负责业务归一化。"""

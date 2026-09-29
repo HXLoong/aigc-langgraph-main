@@ -2,7 +2,7 @@
 
 用法：
     python scripts/derive_intent_fixtures.py --dry-run
-    python scripts/derive_intent_fixtures.py --out tmp/intent_drafts
+    python scripts/derive_intent_fixtures.py --out /opt/work-file/code-tmp/aigc-langgraph-tmp/intent_drafts
     python scripts/derive_intent_fixtures.py --only-labeled --out tests/datasets/intent
 
 只做确定性搬运，不猜标签：
@@ -25,7 +25,7 @@ logger = logging.getLogger(__name__)
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_SOURCE = REPO_ROOT / "tests" / "datasets" / "biz"
-DEFAULT_OUT = REPO_ROOT / "tmp" / "intent_drafts"
+DEFAULT_OUT = Path("/opt/work-file/code-tmp/aigc-langgraph-tmp") / "intent_drafts"
 
 INTENT_ID_PREFIX = "intent-"
 _TURN_INPUT_KEYS = ("scene", "send_text", "at_bot", "quote_previous")

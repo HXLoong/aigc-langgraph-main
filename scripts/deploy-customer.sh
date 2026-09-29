@@ -170,9 +170,10 @@ step2_env_check() {
     # 必填字段
     local required=(
         MYSQL_URI
-        QWEN_API_BASE
-        QWEN_API_KEY
-        QWEN_MODEL_STANDARD
+        LLM_PROVIDER
+        LLM_API_BASE
+        LLM_API_KEY
+        LLM_MODEL_STANDARD
         OTC_API_BASE_URL
         OTC_API_SECRET
     )
@@ -298,27 +299,25 @@ step4_backend_check() {
 
     [ "$DRY_RUN" = "1" ] && { warn "dry-run 跳过实际连接"; return; }
 
-    local url secret
+    local url
     url=$(env_get "OTC_API_BASE_URL")
-    secret=$(env_get "OTC_API_SECRET")
+    # 只检查配置地址的 TCP 连通性，不调用任何交易或证券查询接口。
+    if ! python3 - "$url" <<'PYTHON'
+import socket
+import sys
+from urllib.parse import urlsplit
 
-    # 用一个 read endpoint 测连通（securities-instrument/select）
-    local endpoint="${url}/admin-api/integration/securities-instrument/select"
-    info "测试 endpoint: $endpoint"
-
-    local resp
-    resp=$(curl -sf -m 10 -X POST "$endpoint" \
-        -H "Content-Type: application/json" \
-        -H "Token: $secret" \
-        -d '{"keywordItems":[{"keyword":"600519","isFull":false}]}' 2>&1) \
-        || abort "Java 后端连不通或返回非 2xx。response: $resp" "docs/operations/troubleshooting-sop.md#3"
-
-    # CommonResult.code = 0 才算业务成功
-    if echo "$resp" | grep -q '"code":0'; then
-        ok "Java 后端 200 + code=0"
-    else
-        warn "Java 后端 200 但 code != 0；可能 token 失效或参数问题: $resp"
+parsed = urlsplit(sys.argv[1])
+if parsed.scheme not in {"http", "https"} or not parsed.hostname:
+    raise SystemExit("OTC_API_BASE_URL 必须是 HTTP(S) 地址")
+with socket.create_connection((parsed.hostname, parsed.port or (443 if parsed.scheme == "https" else 80)), timeout=5):
+    pass
+PYTHON
+    then
+        abort "Java 后端 TCP 连通检查失败" "docs/operations/troubleshooting-sop.md#3"
     fi
+    ok "Java 后端 TCP 可达；业务契约由授权验收用例验证"
+
 }
 
 # ============================================================

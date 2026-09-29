@@ -31,7 +31,10 @@ def test_retryable_set_is_transient_only() -> None:
 
     assert is_retryable(BackendUnreachableError("swap", "timeout"))
     assert is_retryable(httpx.ConnectError("refused"))
-    assert is_retryable(openai.APITimeoutError(request=httpx.Request("POST", "http://llm")))
+    assert not is_retryable(openai.APITimeoutError(request=httpx.Request("POST", "http://llm")))
+    from app.extraction.fields import EvidenceError
+
+    assert not is_retryable(EvidenceError("invalid source"))
     assert not is_retryable(EmptyBackendResultError("swap", 0))
     assert not is_retryable(ValueError("bad json"))
     assert BackendUnreachableError in IO_RETRYABLE
@@ -141,45 +144,29 @@ def test_add_io_node_rejects_function_without_io_node_decorator() -> None:
 
 #: 只读 IO 节点：必须带 RetryPolicy；耗尽收尾由 test_retry_recovery.py 验证
 READ_NODES: dict[str, set[str]] = {
-    "main": {"intent_route", "existing_command_query"},
-    "swap": {
-        "swap_intent", "swap_select_counterparty", "swap_select_ticker",
-        "swap_recognize_fresh_counterparty",
-        "swap_query_order", "swap_image_order", "swap_excel_order",
-    },
-    "swap_place": {"swap_extract_candidates"},
-    "option": {"option_intent", "option_extract_query"},
-    "inquiry": {"inquiry_extract"},
-    "close": {"close_intent", "close_holding_query", "close_query_status"},
-    "place_close": {"place_close_fetch_orders", "place_close_extract"},
+    "main": {"prepare_parse_context", "existing_command_query"},
+    "swap": {"swap_query_backend"}, "swap_place": set(),
+    "option": {"option_query_backend"}, "inquiry": set(),
+    "close": {"close_query_backend"}, "place_close": set(),
 }
-#: 写类节点：绝不自动重试
 WRITE_NODES: dict[str, set[str]] = {
     "main": {"quick_inquiry", "persist_intent", "persist"},
-    "swap": {"swap_place_order_submit", "swap_confirm", "swap_cancel"},
-    "option": {
-        "option_extract_inquiry", "option_extract_place", "option_extract_confirm_place",
-        "option_extract_cancel", "option_extract_cancel_place", "option_extract_confirm_cancel",
-    },
-    "inquiry": {"inquiry_submit"},
-    "close": {"close_confirm_close", "close_cancel_close", "close_confirm_cancel"},
-    "place_close": {"place_close_submit"},
+    "swap": {"swap_submit"}, "option": {"option_submit"}, "close": {"close_submit"},
+    "inquiry": set(), "place_close": set(),
 }
-#: 纯计算 / 编排 / 原生嵌入子图节点：无 IO，不挂 RetryPolicy 也不算写类
-PURE_NODES: dict[str, set[str]] = {
-    "main": {
-        "ingest", "entry_route", "pre_route", "fallback", "render",
-        "remember_confirmed_params", "record_history",
-        "swap", "option", "option_close",
-    },
-    "swap": {"swap_place_order", "swap_apply_picks", "swap_unknown"},
-    "swap_place": {"swap_normalize", "swap_place_result"},
-    "option": {"option_unknown"},
-    "inquiry": {"inquiry_normalize"},
-    "close": {"close_place_close", "close_unknown"},
-    "place_close": {
-        "place_close_parse", "place_close_normalize", "place_close_validate", "place_close_reject",
-    },
+NO_RETRY_NODES: dict[str, set[str]] = {
+    "main": {"ingest", "prepare_input", "entry_route", "pre_route", "intent_route", "parse_instruction",
+             "fallback", "render", "remember_confirmed_params", "record_history", "swap", "option", "option_close"},
+    "swap": {"swap_intent", "swap_place_order", "swap_apply_picks", "swap_unknown", "swap_clean_request",
+             "swap_place_order_submit", "swap_confirm", "swap_cancel", "swap_query_order"},
+    "swap_place": {"swap_prepare", "swap_validate", "swap_place_result"},
+    "option": {"option_intent", "option_unknown", "option_clean_request", "option_extract_query",
+               "option_extract_inquiry", "option_extract_place", "option_extract_confirm_place",
+               "option_extract_cancel", "option_extract_cancel_place", "option_extract_confirm_cancel"},
+    "inquiry": {"inquiry_prepare", "inquiry_validate", "inquiry_submit"},
+    "close": {"close_intent", "close_place_close", "close_unknown", "close_clean_request",
+              "close_confirm_close", "close_cancel_close", "close_confirm_cancel", "close_holding_query", "close_query_status"},
+    "place_close": {"place_close_prepare", "place_close_validate", "place_close_submit"},
 }
 
 
@@ -222,17 +209,17 @@ def test_every_graph_node_is_classified_read_write_or_pure() -> None:
         expected = (
             READ_NODES.get(graph_name, set())
             | WRITE_NODES.get(graph_name, set())
-            | PURE_NODES.get(graph_name, set())
+            | NO_RETRY_NODES.get(graph_name, set())
         )
         assert actual == expected, (
             f"{graph_name}: 未归类 {sorted(actual - expected)} / 已不存在 {sorted(expected - actual)}"
         )
         overlap = READ_NODES.get(graph_name, set()) & WRITE_NODES.get(graph_name, set())
         assert not overlap, f"{graph_name}: 同时归为读写 {sorted(overlap)}"
-    for graph_name, names in PURE_NODES.items():
+    for graph_name, names in NO_RETRY_NODES.items():
         for name in names:
             spec = _builders()[graph_name].nodes[name]
-            assert spec.retry_policy is None, f"{graph_name}.{name} 是纯计算节点，不应挂 RetryPolicy"
+            assert spec.retry_policy is None, f"{graph_name}.{name} 不得挂 RetryPolicy"
 
 
 def test_inquiry_has_no_local_ticker_stages():

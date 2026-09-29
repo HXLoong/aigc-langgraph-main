@@ -20,7 +20,7 @@ class CaptureGraph:
 @pytest.fixture
 def wire_client(monkeypatch):
     monkeypatch.setattr(routes, "attach_request_trace", AsyncMock(return_value=SimpleNamespace(
-        handler=None, langfuse_trace_id=None, url=None,
+        handler=None, langfuse_trace_id=None, observation_id=None, url=None,
     )))
     with TestClient(app) as client:
         client.app.state.main_graph = CaptureGraph()

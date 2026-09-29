@@ -1,9 +1,9 @@
 """case_generator CLI：批量生成业务方种子收集模板 + LLM 对抗式 paraphrase。
 
 用法：
-    python -m harness.case_generator generate-seeds [--out-dir tmp/case_generator/seeds]
+    python -m harness.case_generator generate-seeds [--out-dir /opt/work-file/code-tmp/aigc-langgraph-tmp/case_generator/seeds]
     python -m harness.case_generator list-nodes
-    python -m harness.case_generator paraphrase [--num 3] [--out tmp/case_generator/paraphrase-candidates.md]
+    python -m harness.case_generator paraphrase [--num 3] [--out /opt/work-file/code-tmp/aigc-langgraph-tmp/case_generator/paraphrase-candidates.md]
 """
 from __future__ import annotations
 
@@ -123,6 +123,8 @@ async def _cmd_paraphrase_async(
 
 
 def main(argv: list[str] | None = None) -> int:
+    """解析生成命令；默认将待审阅草稿保存在仓库外的临时目录。"""
+    # 输出参数允许显式覆盖，默认路径遵循项目统一的临时目录约定。
     parser = argparse.ArgumentParser(prog="harness.case_generator")
     sub = parser.add_subparsers(dest="cmd", required=True)
 
@@ -131,9 +133,9 @@ def main(argv: list[str] | None = None) -> int:
     )
     p_gen.add_argument(
         "--out-dir",
-        default="tmp/case_generator/seeds",
+        default="/opt/work-file/code-tmp/aigc-langgraph-tmp/case_generator/seeds",
         type=Path,
-        help="输出目录（默认 tmp/case_generator/seeds，tmp 不入库）",
+        help="输出目录（默认 /opt/work-file/code-tmp/aigc-langgraph-tmp/case_generator/seeds，位于仓库外）",
     )
     p_gen.add_argument(
         "--num-slots",
@@ -150,9 +152,9 @@ def main(argv: list[str] | None = None) -> int:
     )
     p_para.add_argument(
         "--out",
-        default="tmp/case_generator/paraphrase-candidates.md",
+        default="/opt/work-file/code-tmp/aigc-langgraph-tmp/case_generator/paraphrase-candidates.md",
         type=Path,
-        help="输出 review 候选清单 markdown（默认 tmp/case_generator/paraphrase-candidates.md）",
+        help="输出 review 候选清单 markdown（默认 /opt/work-file/code-tmp/aigc-langgraph-tmp/case_generator/paraphrase-candidates.md）",
     )
     p_para.add_argument(
         "--num",

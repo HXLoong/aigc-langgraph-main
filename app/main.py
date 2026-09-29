@@ -28,7 +28,6 @@ from app.node_execution.registry import build_registry
 from app.observability import tracing
 from app.observability.logs import configure_logging_from_settings
 from app.observability.metrics import emit_http_response, get_collector
-from app.storage.idempotency import MySQLIdempotencyStore
 from app.tools.http_pool import close_shared_http_client, open_shared_http_client
 from app.tools.message_client import MessageClientHttpx
 
@@ -60,15 +59,6 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     )
     if message_client_factory is None:
         logger.info("development environment: intent persistence disabled")
-    # ADR 0024 D4：请求级幂等 store（生产开启；业务库 message_log）
-    app.state.idempotency_store = None
-    if getattr(settings, "request_idempotency", False):
-        if not settings.mysql_uri:
-            raise RuntimeError("REQUEST_IDEMPOTENCY=true 需要 MYSQL_URI")
-        app.state.idempotency_store = MySQLIdempotencyStore(
-            settings.mysql_uri, timeout_seconds=settings.persist_timeout_seconds
-        )
-        logger.info("request idempotency store 已接线（message_log）")
     app.state.main_graph = build_main_graph(
         checkpointer=checkpointer,
         message_client_factory=message_client_factory,
@@ -116,6 +106,7 @@ class HTTPMetricsMiddleware(BaseHTTPMiddleware):
     """
 
     async def dispatch(self, request: Request, call_next):  # type: ignore[no-untyped-def]
+        """记录业务 HTTP 请求的状态类别，探测路径不计入业务分母。"""
         path = request.url.path
         excluded = path in _METRICS_EXCLUDED_PATHS
         try:

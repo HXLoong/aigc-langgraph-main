@@ -15,7 +15,7 @@ from app.tools.exceptions import (
     EmptyBackendResultError,
     MissingBackendContextError,
 )
-from tests.evidence_support import swap_candidate_output
+from tests.joint_support import instruction_data
 
 # ============================================================
 # normalize_message_id（backend 上下文统一走 BotContext）
@@ -42,6 +42,8 @@ def test_message_id_no_digits_returns_zero() -> None:
 def _full_state() -> dict:
     return {
         "raw_text": "互换下单 腾讯 1000 股",
+            "parsed_instruction": instruction_data("swap", "place_order_request", "互换下单 腾讯 1000 股",
+                orders=[{"placeOrderWindCode": "腾讯", "placeOrderQuantity": 1000}]),
         "conversation_id": "c1",
         "message_id": 100,
         "user_id": "u1",
@@ -80,7 +82,7 @@ async def test_call_swap_backend_ok_returns_api_code(
         intent="place_order_request",
         order_list=[{"placeOrderQuantity": 1000}],
     )
-    assert result == {"api_code": 0, "api_result": card}
+    assert {k: result[k] for k in ("api_code", "api_result")} == {"api_code": 0, "api_result": card}
 
 
 @pytest.mark.asyncio
@@ -186,8 +188,7 @@ async def test_place_order_submit_node_writes_api_code(
     )
     monkeypatch.setattr(backend_mod, "SwapClientHttpx", lambda: fake_client)
 
-    result = await po_module.swap_place_order_submit(
-        {
+    state = {
             "place_params": {
                 "orderList": [
                     {"placeOrderWindCode": "00700.HK", "placeOrderQuantity": 1000}
@@ -198,13 +199,14 @@ async def test_place_order_submit_node_writes_api_code(
             "user_id": "u1",
             "room_id": "r1",
         }
-    )
+    prepared = await po_module.swap_place_order_submit(state)
+    cleaned = await backend_mod.swap_clean_request({**state, **prepared})
+    result = await backend_mod.swap_submit({**state, **prepared, **cleaned})
+
     assert result["api_code"] == 0
     assert result["api_result"] == card
-    assert "expected_action" not in result["place_params"]
-    assert "expected_action" not in result  # 提交节点不改写本轮动作
-    # 后端返回真订单号 → 回写到 orderList[0].orderId，但不改写 api_result
-    assert result["place_params"]["orderList"][0]["orderId"] == "H-20260910-0000000001"
+    assert "expected_action" not in result
+    assert "place_params" not in result  # 提交节点不把 Java 新单号混入原始提交参数。
 
 
 @pytest.mark.asyncio
@@ -213,16 +215,6 @@ async def test_place_order_node_no_backend_call(
 ) -> None:
     """swap_place_order 提取节点单独调用时不触发后端调用（职责已拆到 submit 节点）。"""
     from app.subgraphs.swap import place_order as po_module
-    from app.subgraphs.swap.models import SwapOrderItem, SwapPlaceOrderParams
-
-    params = SwapPlaceOrderParams(
-        orderList=[SwapOrderItem(placeOrderWindCode="腾讯", placeOrderQuantity=1000)]
-    )
-    fake_llm = MagicMock()
-    fake_llm.ainvoke = AsyncMock(return_value=swap_candidate_output(params))
-    fake_base = MagicMock()
-    fake_base.with_structured_output = MagicMock(return_value=fake_llm)
-    monkeypatch.setattr(po_module, "get_qwen_complex", lambda: fake_base)
 
     fake_client = MagicMock()
     fake_client.operate = AsyncMock(side_effect=AssertionError("不应调用后端"))
@@ -231,6 +223,8 @@ async def test_place_order_node_no_backend_call(
     result = await po_module.swap_place_order(
         {
             "raw_text": "互换下单 腾讯 1000 股",
+            "parsed_instruction": instruction_data("swap", "place_order_request", "互换下单 腾讯 1000 股",
+                orders=[{"placeOrderWindCode": "腾讯", "placeOrderQuantity": 1000}]),
             "conversation_id": "c1",
             "message_id": 100,
             "user_id": "u1",

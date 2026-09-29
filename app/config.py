@@ -1,9 +1,12 @@
 """全局配置：从环境变量加载，pydantic 校验。"""
+import os
 from functools import lru_cache
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+LLMProvider = Literal["deepseek", "qwen", "openai_compatible"]
 
 
 class Settings(BaseSettings):
@@ -11,6 +14,7 @@ class Settings(BaseSettings):
         env_file=".env",
         env_file_encoding="utf-8",
         extra="ignore",
+        hide_input_in_errors=True,
     )
 
     # === MySQL：与 Java 共库，checkpoint、审计与幂等共用一个连接配置 ===
@@ -18,18 +22,18 @@ class Settings(BaseSettings):
     mysql_uri: str = Field(..., description="Java 共库连接，保存 langgraph_ checkpoint、审计与幂等表")
 
     # === LLM ===
-    qwen_api_base: str
-    qwen_api_key: str
+    llm_api_base: str
+    llm_api_key: str
+    llm_provider: LLMProvider = Field(description="显式选择接口适配，不根据模型名称推断厂商")
     llm_trust_env: bool = Field(
         default=True,
         description="LLM HTTP 客户端是否读取环境/系统代理和证书配置；内网直连设为 false",
     )
-    # `qwen_` 前缀为历史命名；实际模型由 .env 指定（ADR 0020 全量 DeepSeek-V4-pro，见 clients.py）。
-    # 保留多个变量名是为了未来按节点切回不同模型时只改 .env
-    qwen_model_standard: str = "qwen3.5-35b-a3b"
-    qwen_model_thinking: str = "qwen3.5-35b-a3b"
-    qwen_model_complex: str = "qwen3.5-35b-a3b"
-    qwen_model_vl: str = "qwen-vl-max-latest"
+    # 三角色独立选择模型，共用连接和适配；THINKING 名称不自动开启思考。
+    # DeepSeek Pro 是当前基线，切换模型后重启并重新验收（ADR 0020）。
+    llm_model_standard: str = "deepseek-v4-pro"
+    llm_model_thinking: str = "deepseek-v4-pro"
+    llm_model_complex: str = "deepseek-v4-pro"
 
     # === 后端业务 API ===
     otc_api_base_url: str
@@ -37,16 +41,16 @@ class Settings(BaseSettings):
 
     # 初始 20/5/60 秒预算；最终配置根据本地真实回归与压测校准。
     llm_timeout_seconds: float = Field(default=20.0, gt=0)
-    llm_output_max_tokens: int = Field(default=800, ge=64, le=800)
-    llm_vision_max_tokens: int = Field(default=4096, ge=256, le=16384)
+    llm_output_max_tokens: int = Field(default=8192, ge=64, le=65536)
+    llm_input_max_bytes: int = Field(default=65536, ge=1024)
     request_timeout_seconds: float = Field(default=60.0, gt=0, le=80)
     response_reserve_seconds: float = Field(default=5.0, gt=0)
-    # ADR 0024 D3：只读 IO 节点（LLM / 后端查询）的 LangGraph RetryPolicy；写类节点不重试
+    # ADR 0031：仅后端只读查询挂 RetryPolicy；LLM 与写类节点均不重试
     node_retry_max_attempts: int = Field(default=2, ge=1, le=3)
     node_retry_initial_interval_seconds: float = Field(default=0.5, ge=0)
     backend_timeout_seconds: float = Field(default=5.0, gt=0)
     persist_timeout_seconds: float = 5.0     # node_trace 写库连接（app/storage/node_trace.py）
-    multimodal_fetch_timeout_seconds: float = Field(default=5.0, gt=0)  # 图片 / Excel 远端文件下载（swap/multimodal.py）
+    multimodal_fetch_timeout_seconds: float = Field(default=5.0, gt=0)  # Excel 附件下载；图片在入口拒绝
     goats_agent_rfq_timeout_seconds: float = Field(default=5.0, gt=0)        # GOATS agent：快速询价参数解析
     goats_agent_instruction_timeout_seconds: float = Field(default=5.0, gt=0)  # GOATS agent：存量兼容指令查询
 
@@ -84,6 +88,9 @@ class Settings(BaseSettings):
     langfuse_public_key: str = ""
     langfuse_secret_key: str = ""
     langfuse_base_url: str = "http://127.0.0.1:3000"
+    # 联合解析输入较大，导出采用小批次和独立超时；不增加业务模型重试。
+    langfuse_timeout_seconds: int = Field(default=15, ge=1)
+    langfuse_flush_at: int = Field(default=32, ge=1)
     # 是否信任入站 W3C traceparent（把请求挂到调用方父 Trace）。仅可信网络（测试工作台）开启；
     # 与 environment 解耦（ADR 0024 D5）
     trust_inbound_traceparent: bool = False
@@ -119,17 +126,26 @@ class Settings(BaseSettings):
     # 从 Langfuse 拉提示词（需同时 enable_langfuse=true）
     use_langfuse_prompts: bool = False
 
-    # === 请求级幂等（ADR 0024 D4）：同一企微 message_id 重投不重跑图，需业务库 message_log ===
-    request_idempotency: bool = False
-
     # === 会话记忆窗口（ADR 0024 D4）===
     # history_messages 只保留最近 N 条（user + assistant 各算 1 条；40 ≈ 20 轮）。
     # 企微群 thread 长期存在，无界累加会撑大 prompt / checkpoint；N 由现场 eval 校准
     history_window_messages: int = Field(default=40, ge=2)
     conversation_idle_timeout_seconds: int = Field(default=1800, ge=60)
 
+    @model_validator(mode="before")
+    @classmethod
+    def reject_legacy_model_settings(cls, data: Any) -> Any:
+        """拒绝旧环境、dotenv 和构造参数键，只报告名称而不输出配置值。"""
+        # dotenv 未识别键仍进入校验输入；进程环境的未知键需另外检查。
+        keys = set(os.environ) | (set(data) if isinstance(data, dict) else set())
+        legacy = sorted({str(key).upper() for key in keys if str(key).upper().startswith("QWEN_")})
+        if legacy:
+            raise ValueError("旧模型配置已停用，请迁移为 LLM_* 并配置 LLM_PROVIDER：" + ", ".join(legacy))
+        return data
+
     @model_validator(mode="after")
     def validate_deadline_reserve(self) -> "Settings":
+        """保证总体请求期限为回执处理保留时间。"""
         if self.response_reserve_seconds >= self.request_timeout_seconds:
             raise ValueError("response reserve must be shorter than request deadline")
         return self

@@ -1,138 +1,86 @@
-"""意图级 runner：只跑意图子链，冻结上下文，意图集评测只依赖 LLM。
-
-主图在意图之后还会参数抽取、调后端下单/查询、render、persist，并用上一轮机器人回复拼引用；
-意图集只评 product_type / intent，所以这里只组装识别意图所需的节点：
-
-    START → ingest → pre_route → intent_route → {swap_intent | option_intent | close_intent} → END
-
-`swap_extraction=True` 时在 swap place_order_request 之后追加 swap 下单参数抽取子图
-（候选抽取 → 归一化 → 结果，纯 LLM + Code），供标的原文评估读 place_params；提交节点不在图里。
-
-每轮上下文由 fixture 冻结（quote_content / history / prev_product_type），逐轮独立执行，
-不回放上一轮回复，也不依赖 checkpointer。节点均为生产实现，任何后端调用都会暴露为网络错误。
-交易对手列表（生产由 Java 入参携带）取仓库内 mock 授权上下文，与回放模式在 CI 里从 mock_api
-拉到的数据同源，进程内读取、不走网络。
-
-仍需上一轮真实回复的用例（`requires_replay`）不能走这里，由 langfuse_eval 转主图 + mock_api 回放。
-"""
+"""冻结意图回归通过节点 HTTP 入口执行，不在评测进程内构建业务图。"""
 from __future__ import annotations
 
 import importlib
-import json
-import secrets
-from collections.abc import Mapping
+import uuid
 from typing import Any
 
-from langgraph.graph import END, START, StateGraph
-from langgraph.graph.state import CompiledStateGraph
+import httpx
 
-from app.api.turn_state import inputs_to_state
-from app.graph.retry import add_io_node
-from app.graph.state import AgentState, Message
-from app.nodes.ingest import ingest
-from app.nodes.intent_route import intent_route
-from app.nodes.pre_route import pre_route
-from app.subgraphs.close.intent import close_intent
-from app.subgraphs.option.intent import option_intent
-from app.subgraphs.swap.intent import swap_intent
-from app.subgraphs.swap.place_order import build_place_graph
+from harness.golden import GoldenCase, TurnSpec, dataset_expected, dataset_input
 from harness.intent_context import requires_replay
+from harness.langfuse_client import case_trace, http_turn_trace
+from harness.multi_turn import MultiTurnResult, _extract_turn
 
-#: 仓库内 mock 授权对手上下文（与回放模式 CI 从 mock_api 拉到的同源）。运行时导入：mock_api 不在
-#: mypy strict 范围内（app/ harness/），静态导入会把整个 mock 后端拉进类型检查
+# 授权参考列表来自仓库 mock 数据，仅供隔离意图评测，不替生产查询结果。
 COUNTERPARTIES: list[dict[str, Any]] = importlib.import_module("mock_api.backend.fixtures").COUNTERPARTIES
 
-_PRODUCT_NODES = {"swap": "swap_intent", "option": "option_intent", "option_close": "close_intent"}
+
+def turn_state(turn: TurnSpec, *, conversation_id: str) -> dict[str, Any]:
+    """只投影输入和冻结上下文，expected 永不进入模型输入。"""
+    state: dict[str, Any] = {
+        "raw_text": turn.send_text, "quote_content": turn.quote_content,
+        "conversation_id": conversation_id,
+        "option_counterparties": COUNTERPARTIES, "swap_counterparties": COUNTERPARTIES,
+        "history_messages": [dict(message) for message in turn.history],
+    }
+    if turn.prev_product_type:
+        state["product_type"] = turn.prev_product_type
+    return state
 
 
-def _route_after_ingest(state: AgentState) -> str:
-    return END if state.get("error") is not None else "pre_route"
-
-
-def _route_after_intent_route(state: AgentState) -> str:
-    """错误或 unknown 收尾；swap 图片 / Excel 链在生产里跳过意图识别，这里同样收尾。"""
-    if state.get("error") is not None:
-        return END
-    product = state.get("product_type") or "unknown"
-    if product == "swap" and (state.get("swap_input_mode") or "text") != "text":
-        return END
-    return _PRODUCT_NODES.get(product, END)
-
-
-def _route_after_swap_intent(state: AgentState) -> str:
-    if state.get("error") is None and state.get("intent") == "place_order_request":
-        return "swap_place_order"
-    return END
-
-
-def build_intent_graph(
-    *, swap_extraction: bool = False
-) -> CompiledStateGraph[AgentState, None, AgentState, AgentState]:
-    """组装意图子链；不挂 checkpointer（上下文由 fixture 冻结后逐轮注入）。"""
-    g: StateGraph[AgentState, None, AgentState, AgentState] = StateGraph(AgentState)
-    g.add_node("ingest", ingest)
-    g.add_node("pre_route", pre_route)
-    add_io_node(g, "intent_route", intent_route)
-    add_io_node(g, "swap_intent", swap_intent)
-    add_io_node(g, "option_intent", option_intent)
-    add_io_node(g, "close_intent", close_intent)
-
-    g.add_edge(START, "ingest")
-    g.add_conditional_edges("ingest", _route_after_ingest, ["pre_route", END])
-    g.add_edge("pre_route", "intent_route")
-    g.add_conditional_edges("intent_route", _route_after_intent_route, [*_PRODUCT_NODES.values(), END])
-    if swap_extraction:
-        g.add_node("swap_place_order", build_place_graph())
-        g.add_conditional_edges("swap_intent", _route_after_swap_intent, ["swap_place_order", END])
-        g.add_edge("swap_place_order", END)
-    else:
-        g.add_edge("swap_intent", END)
-    g.add_edge("option_intent", END)
-    g.add_edge("close_intent", END)
-    return g.compile(name="intent_chain")
-
-
-def turn_state(turn: Mapping[str, Any], *, conversation_id: str) -> AgentState:
-    """一轮 fixture → 入口 state：与生产同一入口（inputs_to_state），再注入冻结上下文。"""
-    state: dict[str, Any] = dict(
-        inputs_to_state(
-            {
-                "rawContent": turn.get("send_text", ""),
-                "quoteContent": turn.get("quote_content") or None,
-                "messageId": secrets.randbelow(900_000_000_000_000) + 100_000_000_000_000,
-                "roomId": "eval-room",
-                "userId": "eval-user",
-                "guid": "",
-                "at_bot": bool(turn.get("at_bot", True)),
-                "optionCounterparties": json.dumps(COUNTERPARTIES, ensure_ascii=False),
-                "swapCounterparties": json.dumps(COUNTERPARTIES, ensure_ascii=False),
-            }
-        )
-    )
-    state["conversation_id"] = conversation_id
-    history = [
-        Message(role=item["role"], content=item["content"]) for item in turn.get("history") or []
-    ]
-    if history:
-        state["history_messages"] = history
-    if turn.get("prev_product_type"):
-        # intent_route 第 3 层多轮粘性读取上一轮 product_type
-        state["product_type"] = turn["prev_product_type"]
-    return state  # type: ignore[return-value]
-
-
-async def run_turn(
-    graph: Any,
-    turn: Mapping[str, Any],
-    *,
-    conversation_id: str,
-    config: dict[str, Any] | None = None,
-) -> dict[str, Any]:
-    """执行一轮意图子链，返回最终 state。"""
-    result: dict[str, Any] = await graph.ainvoke(
-        turn_state(turn, conversation_id=conversation_id), config=config or {}
-    )
+def _node_outputs(update: dict[str, Any], tracing: dict[str, Any]) -> dict[str, Any]:
+    """将联合解析节点的输出投影到与业务回归相同的观察字段。"""
+    parsed = update.get("parsed_instruction") or {}
+    entries = update.get("trace") or []
+    trace = " → ".join(f"{entry.get('node')}[{entry.get('decision') or ''}]" for entry in entries)
+    result = {**update, **tracing, "trace": trace, "reply_text": update.get("reply_text") or ""}
+    if "orders" in parsed and parsed.get("product_type") in {"option", "swap"}:
+        result["place_params"] = {"orderList": parsed["orders"]}
     return result
 
 
-__all__ = ["build_intent_graph", "requires_replay", "run_turn", "turn_state"]
+async def run_frozen_case(
+    case: GoldenCase, *, base_url: str, user_id: str,
+    client: httpx.AsyncClient | None = None, timeout: float = 90,
+    trace_metadata: dict[str, Any] | None = None,
+) -> MultiTurnResult:
+    """逐轮独立执行解析节点；某轮失败不改变其它轮冻结输入。"""
+    conversation_id = f"ai-test-{uuid.uuid4().hex}"
+    result = MultiTurnResult(case.id, conversation_id)
+    http = client or httpx.AsyncClient(timeout=timeout)
+    try:
+        with case_trace(case.id, conversation_id, user_id, metadata=trace_metadata,
+                    case_input=dataset_input(case)) as trace:
+            for index, turn in enumerate(case.turns, 1):
+                try:
+                    state = turn_state(turn, conversation_id=conversation_id)
+                    with http_turn_trace(index) as headers:
+                        response = await http.post(f"{base_url.rstrip('/')}/v1/nodes/run", headers=headers,
+                            json={"product": "main", "node": "parse_instruction", "state": state})
+                    body = response.json()
+                    # 节点错误响应仍保留自身 updates，不能因 HTTP 500 丢掉归因信息。
+                    if "output" not in body:
+                        response.raise_for_status()
+                        raise ValueError("node response lacks output")
+                    outputs = _node_outputs(body["output"], body.get("tracing") or {})
+                    if outputs.get("error"):
+                        result.failure = {"turn": index, "kind": "node_error", "error": outputs["error"]}
+                except (httpx.HTTPError, ValueError) as exc:
+                    outputs = {"error": {"type": type(exc).__name__, "message": str(exc)[:200]}}
+                    result.failure = {"turn": index, "kind": "technical_error", "error": outputs["error"]}
+                result.turns.append(_extract_turn(index, turn, turn.quote_content, outputs))
+                result.final_outputs = outputs
+            result.langfuse_trace_id, result.observation_id = trace.trace_id, trace.observation_id
+            if trace.trace_id:
+                result.trace_status = "complete" if result.turns and all(
+                    turn.outputs.get("langfuse_trace_id") == trace.trace_id for turn in result.turns
+                ) else "incomplete"
+            trace.update({"expected": dataset_expected(case), "turns": [turn.outputs for turn in result.turns], "failure": result.failure})
+    finally:
+        if client is None:
+            await http.aclose()
+    return result
+
+
+__all__ = ["requires_replay", "run_frozen_case", "turn_state"]

@@ -21,7 +21,7 @@ class _Out(BaseModel):
 def _spec(**kw) -> PromptSpec:
     base = dict(
         category="option_close",
-        name="holding_query",
+        name="parse_instruction",
         output_model=_Out,
         inputs=("raw_text", "option_counterparties"),
         user_builder=lambda s: f"用户输入：{s.get('raw_text', '')}",
@@ -44,7 +44,7 @@ class TestPromptSpec:
         s = _spec()
         state: AgentState = {"raw_text": "查对手阿凡提的持仓", "option_counterparties": [{"ctptyId": 1, "shortName": "阿凡提"}]}
         messages, prompt_name = s.build_messages(state)
-        assert prompt_name == "holding_query"
+        assert prompt_name == "parse_instruction"
         (role_s, system), (role_u, user) = messages
         assert role_s == "system" and role_u == "user"
         assert "{{counterparty_list}}" not in system
@@ -61,10 +61,10 @@ class TestPromptSpec:
             s.build_messages({"raw_text": "x"})
 
     def test_gray_spec_uses_versions_yaml(self, monkeypatch: pytest.MonkeyPatch):
-        monkeypatch.setenv("OTC_PROMPT_SWAP_INTENT_VERSION", "intent")
-        s = PromptSpec("swap", "intent", _Out, inputs=("raw_text",), user_builder=lambda st: "u", gray=True)
+        monkeypatch.setenv("OTC_PROMPT_SWAP_PARSE_INSTRUCTION_VERSION", "parse_instruction")
+        s = PromptSpec("swap", "parse_instruction", _Out, inputs=("raw_text",), user_builder=lambda st: "u", gray=True)
         _, prompt_name = s.build_messages({"raw_text": "x", "conversation_id": "c1"})
-        assert prompt_name == "intent"
+        assert prompt_name == "parse_instruction"
 
 
 # ============================================================
@@ -95,35 +95,14 @@ class TestBlocks:
 def _load_all_nodes() -> None:
     import importlib
 
-    for mod in (
-        "app.subgraphs.option.intent",
-        "app.subgraphs.option.extract_inquiry",
-        "app.subgraphs.close.intent",
-        "app.subgraphs.close.holding_query",
-        "app.subgraphs.close.place_close",
-        "app.subgraphs.swap.intent",
-        "app.subgraphs.swap.place_order",
-        "app.subgraphs.swap.select_counterparty",
-        "app.subgraphs.swap.select_ticker",
-        "app.subgraphs.swap.fresh_counterparty",
-        "app.subgraphs.swap.multimodal",
-        "app.nodes.intent_route",
-    ):
-        importlib.import_module(mod)
+    importlib.import_module("app.parsing.prompts")
 
 
 class TestRegistry:
     def test_pilot_nodes_registered(self):
         _load_all_nodes()
         keys = set(spec_mod.all_specs())
-        assert {
-            "option/intent", "option/extract_inquiry",
-            "option_close/intent", "option_close/holding_query", "swap/intent",
-            "swap/place_order", "option_close/place_close",
-            "swap/select_counterparty", "swap/select_ticker", "swap/fresh_counterparty",
-            "swap/image_ocr", "swap/image_extract", "swap/excel_extract",
-            "router/unknown_intent",
-        } <= keys
+        assert {f"{category}/parse_instruction" for category in ("option", "swap", "option_close", "router")} <= keys
 
     def test_inputs_are_agent_state_fields(self):
         _load_all_nodes()

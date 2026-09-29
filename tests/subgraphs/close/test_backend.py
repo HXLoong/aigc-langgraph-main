@@ -63,16 +63,16 @@ class TestCallCloseBackend:
         assert req.close_order_req_vo.model_dump()["confirmOrderNoList"] == ["CO-A"]
         assert req.type.value == "close_order_confirm"
 
-    async def test_sanitizes_null_literal_before_sending(
+    async def test_preserves_literal_values_before_sending(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         captured = _patch_operate(monkeypatch, {"code": 0, "data": "ok"})
         req_vo = {"queryOrderNoList": ["null", "CO-B"]}
-        await call_close_backend(
-            FULL_STATE, intent="close_order_order_query", close_order_req_vo=req_vo
-        )
-        dumped = captured[0].close_order_req_vo.model_dump()
-        assert dumped["queryOrderNoList"] == ["CO-B"]
+        with pytest.raises(ValueError, match="身份"):
+            await call_close_backend(
+                FULL_STATE, intent="close_order_order_query", close_order_req_vo=req_vo
+            )
+        assert captured == []  # 不能删除脏订单号后改变用户指定范围。
 
     async def test_success_returns_code_and_data_verbatim(
         self, monkeypatch: pytest.MonkeyPatch
@@ -81,7 +81,7 @@ class TestCallCloseBackend:
         result = await call_close_backend(
             FULL_STATE, intent="close_order_query", close_order_req_vo={}
         )
-        assert result == {"api_code": 0, "api_result": "真实回执文案"}
+        assert {k: result[k] for k in ("api_code", "api_result")} == {"api_code": 0, "api_result": "真实回执文案"}
 
     async def test_non_zero_code_returns_msg_not_data(
         self, monkeypatch: pytest.MonkeyPatch
@@ -94,7 +94,7 @@ class TestCallCloseBackend:
         result = await call_close_backend(
             FULL_STATE, intent="close_order_request", close_order_req_vo={}
         )
-        assert result == {"api_code": 500, "api_result": "交易指令服务暂不可用"}
+        assert {k: result[k] for k in ("api_code", "api_result")} == {"api_code": 500, "api_result": "交易指令服务暂不可用"}
 
     async def test_context_fields_mapped_from_state(
         self, monkeypatch: pytest.MonkeyPatch

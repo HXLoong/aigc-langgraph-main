@@ -1,83 +1,19 @@
-"""swap.intent 节点 · 互换二级意图分类。
-
-输入：raw_text / quote_content / swap_counterparties / conversation_id
-输出：state['intent'] = SwapIntentType 之一（7 值）
-
-LLM：get_qwen_thinking 工厂 + with_structured_output（工厂语义现状见 ADR 0020 §4）。
-prompt：app/prompts/swap/intent.md（DSL v2 互换-节点-意图识别，2026-08 版）。
-
-ADR 0003 灰度：通过 `resolve_prompt_version("swap", "intent", conversation_id)`
-按 `app/prompts/_versions.yaml` 配置或 `OTC_PROMPT_SWAP_INTENT_VERSION` 环境变量
-切版本（同一会话稳定路由）；DSL v2 迁移后旧 g008 canary（intent_v2.md）已废弃
-（新提示词已内置对应仲裁规则），当前无生产灰度条目，机制保留供未来使用。
-"""
+"""互换入口检查联合解析结果，意图不再由子图重新识别。"""
 from __future__ import annotations
 
 from typing import Any
 
-from app.domain.confirmation import (
-    confirmation_action,
-    confirmation_attempt,
-)
-from app.extraction.intent_evidence import intent_records
-from app.graph.retry import io_node
+from app.graph.safe_node import safe_node
 from app.graph.state import AgentState, TraceEntry
-from app.llm.clients import get_qwen_thinking
-from app.prompts import blocks
-from app.prompts.spec import PromptSpec, register
-from app.subgraphs.swap.models import SwapIntentOutput
+from app.parsing.evidence import verify_instruction
+from app.parsing.models import SwapInstruction
 
 
-def _build_user_message(state: AgentState) -> str:
-    return blocks.source_payload(state, context={
-        "shortname_list": blocks.shortnames(state.get("swap_counterparties")),
-    })
-
-
-SPEC = register(PromptSpec(
-    category="swap",
-    name="intent",
-    output_model=SwapIntentOutput,
-    inputs=("raw_text", "quote_content", "history_messages", "swap_counterparties", "conversation_id"),
-    user_builder=_build_user_message,
-    gray=True,
-))
-
-
-@io_node
+@safe_node
 async def swap_intent(state: AgentState) -> dict[str, Any]:
-    """swap.intent 节点。
-
-    出参约定：
-    - intent: SwapIntentType 之一（小写下划线）
-    - trace: 单条 TraceEntry，记录 LLM 输出 + 实际加载的 prompt name（含灰度版本号）
-    """
-    if not (state.get("raw_text") or "").strip():
-        return {"intent": "unknown_intent", "trace": [TraceEntry(
-            node="swap_intent", decision="empty_current_input",
-        )]}
-    raw = state.get("raw_text")
-    action = confirmation_action(raw)
-    if confirmation_attempt(raw):
-        intent = {"place": "confirm_order", "cancel": "confirm_cancel_order", "modify": "confirm_modify_order"}.get(action or "", "unknown_intent")
-        return {"intent": intent, "trace": [TraceEntry(node="swap_intent", decision=f"confirmation:{intent}")]}
-
-    messages, prompt_name = SPEC.build_messages(state)
-    llm = get_qwen_thinking().with_structured_output(SwapIntentOutput)
-    result = SwapIntentOutput.model_validate(await llm.ainvoke(messages))
-    records = intent_records(result, state, scope="swap/intent", value=result.type)
-
-    return {
-        "intent": result.type,
-        "field_records": records,
-        "trace": [
-            TraceEntry(
-                node="swap_intent",
-                decision=f"intent={result.type} prompt={prompt_name}",
-                llm_output={"type": result.type, "prompt_name": prompt_name, "confidence": result.confidence, "evidence_count": len(result.evidence)},
-            )
-        ],
-    }
-
-
-__all__ = ["swap_intent"]
+    """检查来源并沿已识别意图分发，始终不调用模型。"""
+    if state.get("error"):
+        return {}
+    parsed = SwapInstruction.model_validate(state.get("parsed_instruction") or {})
+    return {"intent": parsed.intent, "field_records": verify_instruction(parsed, state),
+            "trace": [TraceEntry(node="swap_intent", decision=f"parsed→{parsed.intent}")]}

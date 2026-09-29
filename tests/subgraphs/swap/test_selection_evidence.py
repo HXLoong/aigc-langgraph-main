@@ -1,115 +1,62 @@
-"""Choices bind source evidence, explicit order scopes and authoritative candidates."""
-from unittest.mock import AsyncMock, MagicMock
+"""联合模型的选择指针必须符合当前原文、授权列表与订单范围。"""
+from __future__ import annotations
 
-from app.graph.state import TickerCandidate
-from app.subgraphs.swap import aggregate, apply_picks, select_counterparty, select_ticker
+import pytest
+
+from app.subgraphs.swap.apply_picks import swap_apply_picks
+from app.subgraphs.swap.selection_rules import counterparty_choice, ticker_choice
 
 FIRST = "H-20260918-0000000001"
 SECOND = "H-20260918-0000000002"
 
 
 def state(raw):
-    return {
-        "raw_text": raw,
-        "quote_content": f"序号：1 单号：{FIRST}\n序号：2 单号：{SECOND}",
+    """两笔订单的候选块故意反序，避免误按列表位置匹配。"""
+    return {"raw_text": raw, "quote_content": f"序号：1 单号：{FIRST}\n序号：2 单号：{SECOND}",
         "place_params": {"orderList": [{"orderId": FIRST}, {"orderId": SECOND}]},
         "swap_counterparties": [{"sort": "A", "shortName": "甲账户"}, {"sort": "B", "shortName": "乙账户"}],
         "quote_ticker_candidates": [
             {"orderId": SECOND, "orderSeq": 2, "candidates": [{"seq": 1, "code": "MSFT.O", "name": "微软"}]},
-            {"orderId": FIRST, "orderSeq": 1, "candidates": [{"seq": 1, "code": "AAPL.O", "name": "苹果"}]},
-        ],
-        "tickers": [TickerCandidate(windCode="AAPL.O", from_goats=True), TickerCandidate(windCode="MSFT.O", from_goats=True)],
-    }
+            {"orderId": FIRST, "orderSeq": 1, "candidates": [{"seq": 1, "code": "AAPL.O", "name": "苹果"}]}]}
 
 
-async def test_multi_order_counterparty_scopes_use_code_and_lock_final_names(monkeypatch):
-    monkeypatch.setattr(select_counterparty, "get_qwen_complex", MagicMock(side_effect=AssertionError("must use code")))
+async def test_scoped_counterparty_choices_are_locked():
+    """反序输入仍按订单身份写入对应对手，保留选择证据。"""
     data = state("序号2，B；序号1，A")
-    data["quote_ticker_candidates"] = []
-    data["quote_content"] = f"订单{FIRST}（序号1）：\n订单{SECOND}（序号2）："
-    selected = await select_counterparty.swap_select_counterparty(data)
-    assert not selected.get("error")
-    out = await apply_picks.swap_apply_picks({**data, **selected})
-    assert not out.get("error")
-    assert [item["placeOrderShortname"] for item in out["place_params"]["orderList"]] == ["甲账户", "乙账户"]
-    records = out["field_records"]
-    assert records["swap/place_order.orderList.0.placeOrderShortname"].locked
-    assert records["swap/place_order.orderList.1.placeOrderShortname.selection"].evidence == "序号2，B"
+    choice = counterparty_choice(data)
+    result = await swap_apply_picks({**data, "swap_counterparty_picks": choice.model_dump()})
+    assert not result.get("error"), result
+    assert [r["placeOrderShortname"] for r in result["place_params"]["orderList"]] == ["甲账户", "乙账户"]
+    assert result["field_records"]["swap/place_order.orderList.1.placeOrderShortname.selection"].evidence == "序号2，B"
 
 
-async def test_multi_order_ticker_scopes_do_not_use_candidate_block_position(monkeypatch):
-    monkeypatch.setattr(select_ticker, "get_qwen_complex", MagicMock(side_effect=AssertionError("must use code")))
+async def test_ticker_choice_uses_order_identity():
+    """按第几笔选择不能按候选块位置交叉串单。"""
     data = state("第1笔选标的1；第2笔选标的1")
-    selected = await select_ticker.swap_select_ticker(data)
-    assert not selected.get("error")
-    out = await apply_picks.swap_apply_picks({**data, **selected})
-    assert not out.get("error")
-    assert [item["placeOrderWindCode"] for item in out["place_params"]["orderList"]] == ["AAPL.O", "MSFT.O"]
-    assert out["field_records"]["swap/place_order.orderList.1.placeOrderWindCode"].source == "user"
+    choice = ticker_choice(data)
+    result = await swap_apply_picks({**data, "swap_ticker_picks": [p.model_dump() for p in choice.picks]})
+    assert not result.get("error"), result
+    assert [r["placeOrderWindCode"] for r in result["place_params"]["orderList"]] == ["AAPL.O", "MSFT.O"]
 
 
-async def test_multi_order_unscoped_choice_is_rejected(monkeypatch):
-    output = {"hasSignal": True, "picks": [{"idx": 0, "letter": "B", "evidence": "B", "confidence": .9}]}
-    model = MagicMock()
-    model.with_structured_output.return_value.ainvoke = AsyncMock(return_value=output)
-    monkeypatch.setattr(select_counterparty, "get_qwen_complex", lambda: model)
-    result = await select_counterparty.swap_select_counterparty(state("B"))
-    assert result.get("error")
-    assert not result.get("swap_counterparty_picks")
-
-
-async def test_llm_pointer_requires_real_selection_evidence(monkeypatch):
-    output = {"hasSignal": True, "picks": [{"idx": 0, "letter": "B", "evidence": "选B", "confidence": .9}]}
-    model = MagicMock()
-    model.with_structured_output.return_value.ainvoke = AsyncMock(return_value=output)
-    monkeypatch.setattr(select_counterparty, "get_qwen_complex", lambda: model)
-    result = await select_counterparty.swap_select_counterparty(state("帮我决定吧"))
+@pytest.mark.parametrize("raw,evidence", [("B", "B"), ("帮我决定吧", "选B")])
+async def test_unscoped_or_invented_model_pointer_is_rejected(raw, evidence):
+    """真实模型指针仍须通过代码来源与范围检查。"""
+    result = await swap_apply_picks({**state(raw), "swap_counterparty_picks": {
+        "hasSignal": True, "picks": [{"idx": 0, "letter": "B", "evidence": evidence, "confidence": .9}]}})
     assert result.get("error")
 
 
-def test_unknown_ticker_and_conflicting_scope_never_fall_through():
-    data = state("")
-    assert aggregate.windcode_from_pick({"orderId": FIRST, "directRef": "FAKE.O"}, data["quote_ticker_candidates"]) == "FAKE.O"
-    assert aggregate.match_order_index({"orderId": SECOND}, [{"orderId": FIRST}], {}, True) == -1
-    assert aggregate.match_order_index({"orderId": SECOND, "idx": 0}, data["place_params"]["orderList"], {}, False) == -1
+@pytest.mark.parametrize("raw", ["序号1选A；序号1选B", "序号3选B"])
+def test_conflicting_or_unknown_scope_stops_selection(raw):
+    """歧义或不存在的订单选择不能落到默认首笔。"""
+    with pytest.raises(ValueError):
+        counterparty_choice(state(raw))
 
 
-async def test_quote_choice_is_submitted_for_backend_validation(monkeypatch):
-    data = state("序号1选标的1")
-    result = await select_ticker.swap_select_ticker(data)
-    assert not result.get("error")
-    assert result["swap_ticker_picks"][0]["directRef"] == "AAPL.O"
-
-
-
-async def test_fallback_can_locate_a_real_scoped_span_without_inventing_names(monkeypatch):
-    data = state("把序号2，B这个选项应用一下")
-    model = MagicMock()
-    model.with_structured_output.return_value.ainvoke = AsyncMock(return_value={
-        "hasSignal": True, "picks": [{"idx": 1, "orderId": SECOND, "letter": "B",
-                                     "evidence": "序号2，B", "confidence": .8}],
-    })
-    monkeypatch.setattr(select_counterparty, "get_qwen_complex", lambda: model)
-    result = await select_counterparty.swap_select_counterparty(data)
-    assert not result.get("error")
-    assert result["swap_counterparty_picks"]["picks"][0]["directName"] == "乙账户"
-    assert result["swap_counterparty_picks"]["picks"][0]["idx"] == 1
-    model.with_structured_output.return_value.ainvoke.assert_awaited_once()
-
-
-async def test_explicit_all_orders_is_scoped_and_conflicting_selectors_are_rejected(monkeypatch):
-    monkeypatch.setattr(select_counterparty, "get_qwen_complex", MagicMock(side_effect=AssertionError("must use code")))
-    result = await select_counterparty.swap_select_counterparty(state("全部订单交易对手B"))
-    assert not result.get("error")
-    assert {pick["idx"] for pick in result["swap_counterparty_picks"]["picks"]} == {0, 1}
-    conflict = await select_counterparty.swap_select_counterparty(state("序号1选A；序号1选B"))
-    assert conflict.get("error")
-
-
-async def test_explicit_all_ticker_choice_cannot_silently_skip_an_order(monkeypatch):
+def test_all_ticker_choice_cannot_skip_an_order():
+    """全部选择缺一笔候选时整批失败，不能静默少提交订单。"""
     data = state("全部订单选标的1")
     data["quote_ticker_candidates"] = data["quote_ticker_candidates"][:1]
-    monkeypatch.setattr(select_ticker, "get_qwen_complex", MagicMock(side_effect=AssertionError("must use code")))
-    out = await select_ticker.swap_select_ticker(data)
-    assert out.get("error") is not None
-    assert not out.get("swap_ticker_picks")
+    with pytest.raises(ValueError):
+        ticker_choice(data)

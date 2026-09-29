@@ -47,6 +47,7 @@ async def injected_tool_clients(
 
 
 def create_app(mode: str, tape: Path) -> Any:
+    """为独立本地应用接入严格工具 HTTP 录制或回放。"""
     from app.config import get_settings
     from app.main import app
 
@@ -57,12 +58,11 @@ def create_app(mode: str, tape: Path) -> Any:
         raise ValueError("the Java application URL must be local")
     if mode not in {"record", "replay"}:
         raise ValueError("mode must be record or replay")
-    if mode == "replay" and settings.request_idempotency:
-        raise ValueError("工具回放需 REQUEST_IDEMPOTENCY=false，避免缓存响应绕过录制请求")
     original_lifespan = app.router.lifespan_context
 
     @asynccontextmanager
     async def tape_lifespan(application: Any) -> AsyncIterator[None]:
+        """在应用生命周期内管理录放传输，退出时关闭借用资源。"""
         transport = RecordingTransport(tape) if mode == "record" else ReplayTransport(tape)
         async with injected_tool_clients(transport, timeout=settings.backend_timeout_seconds):
             logger.info("tool_http_tape mode=%s; LLM/attachments/Langfuse/MySQL are outside tape", mode)
@@ -74,6 +74,7 @@ def create_app(mode: str, tape: Path) -> Any:
 
 
 def main() -> None:
+    """解析命令行并以实际执行结果设置退出码。"""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("mode", choices=("record", "replay"))
     parser.add_argument("--tape", type=Path, required=True)

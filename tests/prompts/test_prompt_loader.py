@@ -56,5 +56,5 @@ class TestRealFileRegression:
     def test_place_close_loads_fully(self):
         """P1 迁移期确认:长 system(大量内嵌围栏标记)不得被提前截断。"""
         clear_cache()
-        p = load_prompt("option_close", "place_close")
-        assert p.system.endswith("空输入或无可提取业务语义时返回空列表。")
+        p = load_prompt("option_close", "parse_instruction")
+        assert p.system.endswith("不为同一字段重复登记两种来源。")

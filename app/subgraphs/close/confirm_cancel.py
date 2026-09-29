@@ -9,15 +9,15 @@ from app.graph.business_params import validated_confirm
 from app.graph.safe_node import safe_node
 from app.graph.state import AgentState, TraceEntry
 from app.subgraphs.close.aggregate import build_close_order_req_vo
-from app.subgraphs.close.backend import call_close_backend
+from app.subgraphs.close.backend import prepare_close_request
 from app.subgraphs.close.order_id import extract_order_ids
 
 
 @safe_node
 async def close_confirm_cancel(state: AgentState) -> dict[str, Any]:
     """close.confirm_cancel 节点（确定性提取）。"""
-    identity_origin = "quote"
-    identity_evidence = state.get("quote_content") or ""
+    identity_origin = "quote" if state.get("quote_content") else "raw"
+    identity_evidence = state.get("quote_content") or state.get("raw_text") or ""
     confirmation = parse_confirmation(
         state.get("raw_text"), state.get("quote_content"), product="close", action="cancel",
     )
@@ -35,7 +35,7 @@ async def close_confirm_cancel(state: AgentState) -> dict[str, Any]:
     req_vo = build_close_order_req_vo(
         confirm_cancel_order_no_list=confirm_cancel_ids
     )
-    backend = await call_close_backend(
+    request_update = await prepare_close_request(
         prepared_state,
         intent="close_order_cancel_confirm",
         close_order_req_vo=req_vo,
@@ -47,7 +47,7 @@ async def close_confirm_cancel(state: AgentState) -> dict[str, Any]:
         "confirm": validated_confirm(
             action="cancel_close", confirmCancelOrderNoList=confirm_cancel_ids
         ),
-        **backend,
+        **request_update,
         "trace": [
             TraceEntry(
                 node="close_confirm_cancel",

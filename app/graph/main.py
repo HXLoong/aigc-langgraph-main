@@ -21,9 +21,12 @@ from app.nodes.fast_query import (
 )
 from app.nodes.ingest import ingest
 from app.nodes.intent_route import intent_route
+from app.nodes.parse_instruction import parse_instruction
 from app.nodes.persist import persist
 from app.nodes.persist_intent import make_persist_intent
 from app.nodes.pre_route import pre_route
+from app.nodes.prepare_input import prepare_input
+from app.nodes.prepare_parse_context import prepare_parse_context
 from app.nodes.record_history import record_history
 from app.nodes.remember_confirmed import remember_confirmed_params
 from app.nodes.render import render
@@ -41,7 +44,14 @@ def _route_after_ingest(state: AgentState) -> str:
     """入口准备异常或会话过期时退出，不进入三分支业务路由。"""
     if has_error(state) or state.get("session_status") == "expired":
         return "render"
-    return "entry_route"
+    return "prepare_input"
+
+
+def _route_after_input(state: AgentState) -> str:
+    """准备故障直接回复；明确拒绝先写消息意图，均不进入交易分支。"""
+    if has_error(state):
+        return "render"
+    return "persist_intent" if state.get("reply_text") else "entry_route"
 
 
 def _route_after_intent(state: AgentState) -> str:
@@ -69,32 +79,24 @@ def build_main_graph(
     checkpointer: BaseCheckpointSaver[Any] | None = None,
     message_client_factory: Callable[[], MessageClient] | None = None,
 ) -> CompiledStateGraph[AgentState, None, AgentState, AgentState]:
-    """组装并编译主图，会话保护独立于 DSL v2 的三类业务入口。
+    """会话与附件保护后分流，普通指令只联合解析一次并进入一个产品子图。
 
-    流程：
-        START → ingest（一轮边界：清状态 + 检查会话，ADR 0024 D2）→ [route_after_ingest]
-          - 过期或入口异常 → render
-          - 有效会话 → entry_route → [三类业务入口]
-              - quick_inquiry | existing_command_query → render
-              - pre_route → intent_route → [route_after_intent] →
-                  swap | option | option_close | fallback → persist_intent → render
-        render → remember_confirmed_params → record_history → persist → END
-
-    普通消息沿既有产品与意图优先级进入一个业务分支；该动作可携带多笔订单。
-
-    cascade 防御：
-    - ingest 写 state['error'] 或会话过期 → 跳 render
-    - intent_route 写 state['error'] → 跳 fallback
-    - product_type == 'unknown' → 跳 fallback
+    快速询价与存量查询沿既有外部入口；普通流程先准备只读上下文，
+    再执行唯一模型节点。子图错误沿 cascade 收尾，回复后记录历史与审计。
+    详细拓扑见 docs/architecture/main-graph-flow.md，各子图另有独立文档。
     """
+    # 1. 注册入口、解析与产品边界，只有后端只读查询挂重试策略。
     g: StateGraph[AgentState, None, AgentState, AgentState] = StateGraph(AgentState)
 
     g.add_node("ingest", ingest)
+    g.add_node("prepare_input", prepare_input)
     g.add_node("entry_route", entry_route)
     g.add_node("quick_inquiry", quick_inquiry)
     add_io_node(g, "existing_command_query", existing_command_query)
     g.add_node("pre_route", pre_route)
-    add_io_node(g, "intent_route", intent_route)
+    g.add_node("intent_route", intent_route)
+    g.add_node("parse_instruction", parse_instruction)
+    add_io_node(g, "prepare_parse_context", prepare_parse_context)
     # ADR 0024 D3：子图原生嵌入。子图 output_schema=SubgraphOutput 限定写回面，
     # trace 按 id 合并（merge_by_id），父图不再需要 ainvoke + Overwrite 手工包装
     g.add_node("swap", build_swap_graph())
@@ -107,12 +109,14 @@ def build_main_graph(
     g.add_node("remember_confirmed_params", remember_confirmed_params)
     g.add_node("record_history", record_history)
 
+    # 2. 所有路由先处理错误，再进入单一业务动作。
     g.add_edge(START, "ingest")
     g.add_conditional_edges(
         "ingest",
         _route_after_ingest,
-        {"entry_route": "entry_route", "render": "render"},
+        {"prepare_input": "prepare_input", "render": "render"},
     )
+    g.add_conditional_edges("prepare_input", _route_after_input, ["entry_route", "persist_intent", "render"])
     g.add_conditional_edges(
         "entry_route",
         _route_entry,
@@ -123,8 +127,10 @@ def build_main_graph(
         },
     )
     g.add_edge("pre_route", "intent_route")
+    g.add_edge("intent_route", "prepare_parse_context")
+    g.add_edge("prepare_parse_context", "parse_instruction")
     g.add_conditional_edges(
-        "intent_route",
+        "parse_instruction",
         _route_after_intent,
         {
             "swap": "swap",
@@ -137,6 +143,7 @@ def build_main_graph(
         g.add_edge(sub, "persist_intent")
     for sub in ("quick_inquiry", "existing_command_query"):
         g.add_edge(sub, "render")
+    # 3. 保留消息写回、真实回复、历史和审计，整体只返回本次结果。
     g.add_edge("persist_intent", "render")
     g.add_edge("render", "remember_confirmed_params")
     g.add_edge("remember_confirmed_params", "record_history")

@@ -1,87 +1,40 @@
-"""节点回归的外部依赖 mock；只在 harness 显式 mock 模式中使用。"""
-
+"""节点回归只模拟唯一解析节点的模型出口，确定性节点直接执行。"""
 from __future__ import annotations
 
 from collections.abc import Iterator, Mapping
 from contextlib import contextmanager
-from types import SimpleNamespace
 from typing import Any
 from unittest.mock import patch
 
-from pydantic import ValidationError
-
 
 class NodeMockError(ValueError):
-    """节点 fixture 的 mock 配置无效或尚未支持。"""
+    """节点样本未提供可执行的外部依赖输出。"""
 
 
 class _StructuredResult:
+    """保留生产结构化校验，仅替换模型响应。"""
+
     def __init__(self, value: Any) -> None:
+        """保存样本中的明确输出，模型类型由实际 PromptSpec 决定。"""
         self.value = value
 
-    async def ainvoke(self, _messages: Any) -> Any:
+    async def ainvoke(self, messages: Any) -> Any:
+        """返回样本输出，不请求真实模型。"""
         return self.value
 
-
-class _StructuredModel:
-    def __init__(self, value: Any) -> None:
-        self.value = value
-
-    def with_structured_output(self, _model: Any) -> _StructuredResult:
-        return _StructuredResult(self.value)
-
-
-def _required_mapping(value: Any, field: str) -> dict[str, Any]:
-    if not isinstance(value, Mapping):
-        raise NodeMockError(f"mock 配置缺少对象字段：{field}")
-    return dict(value)
+    def with_structured_output(self, model: Any) -> _StructuredResult:
+        """由生产节点负责输出契约校验，mock 不补默认字段。"""
+        return self
 
 
 @contextmanager
-def mock_node_dependencies(
-    node_name: str,
-    payload: Any,
-) -> Iterator[None]:
-    """按节点 patch 实际引用位置，只隔离 LLM / 后端等外部依赖。"""
-    if node_name != "swap_place_order":
-        raise NodeMockError(f"节点尚未提供 mock 适配器：{node_name}")
-
-    mocks = _required_mapping(payload, "mocks")
-    llm_output = _required_mapping(mocks.get("llm_output"), "mocks.llm_output")
-    from app import config as config_module
-    from app.graph import retry as retry_module
-    from app.subgraphs.swap import place_order as place_order_module
-    from app.subgraphs.swap.place_order import CANDIDATE_MODEL
-
-    try:
-        candidates = CANDIDATE_MODEL.model_validate(llm_output)
-    except (TypeError, ValidationError) as exc:
-        raise NodeMockError(f"swap_place_order mock 数据不合法：{exc}") from exc
-
-    with (
-        patch.object(
-            place_order_module,
-            "get_qwen_complex",
-            return_value=_StructuredModel(candidates),
-        ),
-        patch.object(
-            retry_module,
-            "get_settings",
-            return_value=SimpleNamespace(
-                node_retry_max_attempts=1,
-                node_retry_initial_interval_seconds=0.01,
-            ),
-        ),
-        patch.object(
-            config_module,
-            "get_settings",
-            return_value=SimpleNamespace(
-                enable_langfuse=False,
-                use_langfuse_prompts=False,
-                environment="test",
-            ),
-        ),
-    ):
+def mock_node_dependencies(node_name: str, payload: Any) -> Iterator[None]:
+    """只为 parse_instruction 提供模型出口；其它节点没有隐藏模型分支。"""
+    if node_name != "parse_instruction":
+        raise NodeMockError(f"节点没有模型 mock 适配器：{node_name}")
+    if not isinstance(payload, Mapping) or not isinstance(payload.get("llm_output"), Mapping):
+        raise NodeMockError("mock 配置缺少 mocks.llm_output")
+    with patch("app.nodes.parse_instruction.get_llm_standard", return_value=_StructuredResult(dict(payload["llm_output"]))):
         yield
 
 

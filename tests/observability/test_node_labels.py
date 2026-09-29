@@ -5,7 +5,6 @@ import asyncio
 import importlib
 import importlib.util
 import json
-import os
 import subprocess
 import sys
 from collections import Counter
@@ -67,9 +66,9 @@ def test_catalogue_covers_registered_graphs_and_model_kinds():
                 assert any("\u4e00" <= char <= "\u9fff" for char in display.name), (node, original)
                 assert display.node_id == node
     assert labels["entry_route"].kind == "code"
-    assert labels["inquiry_extract"].kind == "llm"
-    assert labels["option_intent"].kind == "hybrid"
-    assert labels["inquiry_normalize"].kind == "code"
+    assert labels["parse_instruction"].kind == "llm"
+    assert labels["option_intent"].kind == "code"
+    assert labels["inquiry_validate"].kind == "code"
     assert labels["quick_inquiry"].kind == "io"
     assert labels["option_close"].kind == "graph"
 
@@ -83,15 +82,15 @@ def test_catalogue_covers_registered_graphs_and_model_kinds():
      "业务入口分流 · 路由判断 [entry_route/select_entry_branch]"),
     ("select_custom_branch", "chain", "entry_route", None, "select_custom_branch"),
     ("LangGraph", "chain", "option_close", "option_close", "期权平仓子图 [option_close/graph]"),
-    ("option_intent", "chain", "option_intent", "option", "[Code/LLM] 期权意图识别 [option_intent]"),
-    ("inquiry_extract", "chain", "inquiry_extract", "option", "[LLM] 期权询价要素抽取 [inquiry_extract]"),
-    ("_ChatLLM", "llm", "inquiry_extract", None, "[LLM] 期权询价要素抽取 · 模型调用 [inquiry_extract/llm]"),
-    ("RunnableSequence", "chain", "inquiry_extract", None, "期权询价要素抽取 · 结构化处理链 [inquiry_extract/chain]"),
-    ("PydanticToolsParser", "chain", "inquiry_extract", None, "期权询价要素抽取 · 输出校验 [inquiry_extract/parser]"),
-    ("_router", "chain", "inquiry_extract", None, "期权询价要素抽取 · 路由判断 [inquiry_extract/_router]"),
-    ("__error_handler__inquiry_extract", "chain", None, None,
-     "期权询价要素抽取 · 重试耗尽处理 [inquiry_extract/error_handler]"),
-    ("custom_third_party", "chain", "inquiry_extract", None, "custom_third_party"),
+    ("option_intent", "chain", "option_intent", "option", "期权解析结果检查 [option_intent]"),
+    ("parse_instruction", "chain", "parse_instruction", "option", "[LLM] 业务指令联合解析 [parse_instruction]"),
+    ("_ChatLLM", "llm", "parse_instruction", None, "[LLM] 业务指令联合解析 · 模型调用 [parse_instruction/llm]"),
+    ("RunnableSequence", "chain", "parse_instruction", None, "业务指令联合解析 · 结构化处理链 [parse_instruction/chain]"),
+    ("PydanticToolsParser", "chain", "parse_instruction", None, "业务指令联合解析 · 输出校验 [parse_instruction/parser]"),
+    ("_router", "chain", "parse_instruction", None, "业务指令联合解析 · 路由判断 [parse_instruction/_router]"),
+    ("__error_handler__parse_instruction", "chain", None, None,
+     "业务指令联合解析 · 重试耗尽处理 [parse_instruction/error_handler]"),
+    ("custom_third_party", "chain", "parse_instruction", None, "custom_third_party"),
     ("期权开仓专项-case-025", "chain", None, None, "期权开仓专项-case-025"),
 ])
 def test_resolve_names_without_mutating_metadata(name, kind, node, parent, expected):
@@ -182,12 +181,12 @@ def _synthetic_graph():
         return {"second": True}
 
     graph = StateGraph(_State)
-    graph.add_node("inquiry_extract", first)
-    graph.add_node("inquiry_normalize", second)
-    graph.add_edge(START, "inquiry_extract")
-    graph.add_edge(START, "inquiry_normalize")
-    graph.add_edge("inquiry_extract", END)
-    graph.add_edge("inquiry_normalize", END)
+    graph.add_node("parse_instruction", first)
+    graph.add_node("inquiry_validate", second)
+    graph.add_edge(START, "parse_instruction")
+    graph.add_edge(START, "inquiry_validate")
+    graph.add_edge("parse_instruction", END)
+    graph.add_edge("inquiry_validate", END)
     return graph.compile()
 
 
@@ -224,16 +223,16 @@ async def test_real_sdk_preserves_tree_model_usage_and_node_identity(memory_lang
 
     assert shape(groups[0]) == shape(groups[1])
     translated = groups[1]
-    assert any(s.name == "[LLM] 期权询价要素抽取 [inquiry_extract]" for s in translated)
+    assert any(s.name == "[LLM] 业务指令联合解析 [parse_instruction]" for s in translated)
     generation = next(s for s in translated if s.attributes.get("langfuse.observation.type") == "generation")
-    assert generation.name.endswith("[inquiry_extract/llm]") and generation.name.startswith("[LLM]")
+    assert generation.name.endswith("[parse_instruction/llm]") and generation.name.startswith("[LLM]")
     assert "synthetic-label-model" in generation.attributes.values()
     assert json.loads(generation.attributes["langfuse.observation.usage_details"]) == {
         "input": 3, "output": 1, "total": 4,
     }
-    assert metadata(generation)["langgraph_node"] == "inquiry_extract"
+    assert metadata(generation)["langgraph_node"] == "parse_instruction"
     assert all(s.attributes.get("session.id") == "synthetic-naming-session" for s in translated)
-    assert any(s.name == "期权询价参数归一化 [inquiry_normalize]" for s in translated)
+    assert any(s.name == "期权询价来源检查 [inquiry_validate]" for s in translated)
     assert not localized._name_contexts
 
 
@@ -241,12 +240,12 @@ def test_parent_context_inheritance_error_cancel_and_unknown_calls(memory_langfu
     _, _, public_key = memory_langfuse
     handler = _factory(public_key=public_key)
     a, b, child_a, child_b = (uuid4() for _ in range(4))
-    handler.on_chain_start(None, {}, run_id=a, name="inquiry_extract")
-    handler.on_chain_start(None, {}, run_id=b, name="swap_normalize")
+    handler.on_chain_start(None, {}, run_id=a, name="parse_instruction")
+    handler.on_chain_start(None, {}, run_id=b, name="swap_validate")
     handler.on_chain_start(None, {}, run_id=child_a, parent_run_id=a, name="PydanticToolsParser")
     handler.on_chain_start(None, {}, run_id=child_b, parent_run_id=b, name="RunnableSequence")
-    assert handler._runs[child_a]._otel_span.name.endswith("[inquiry_extract/parser]")
-    assert handler._runs[child_b]._otel_span.name.endswith("[swap_normalize/chain]")
+    assert handler._runs[child_a]._otel_span.name.endswith("[parse_instruction/parser]")
+    assert handler._runs[child_b]._otel_span.name.endswith("[swap_validate/chain]")
     handler.on_chain_error(ValueError("synthetic"), run_id=child_a)
     handler.on_chain_error(asyncio.CancelledError(), run_id=a)
     assert a not in handler._name_contexts and child_a not in handler._name_contexts
@@ -272,8 +271,8 @@ async def test_nested_parallel_graphs_keep_their_own_labels(memory_langfuse):
         return graph.compile()
 
     graph = StateGraph(_State)
-    graph.add_node("option", child("inquiry_extract", "first"))
-    graph.add_node("option_close", child("place_close_extract", "second"))
+    graph.add_node("option", child("parse_instruction", "first"))
+    graph.add_node("option_close", child("place_close_prepare", "second"))
     for name in ("option", "option_close"):
         graph.add_edge(START, name)
         graph.add_edge(name, END)
@@ -282,8 +281,8 @@ async def test_nested_parallel_graphs_keep_their_own_labels(memory_langfuse):
     names = [s.name for s in exporter.get_finished_spans()]
     assert "期权平仓子图 [option_close/graph]" in names
     assert "期权开仓与订单操作子图 [option/graph]" in names
-    assert "[LLM] 期权询价要素抽取 · 模型调用 [inquiry_extract/llm]" in names
-    assert "[LLM] 期权平仓要素抽取 · 模型调用 [place_close_extract/llm]" in names
+    assert "[LLM] 业务指令联合解析 · 模型调用 [parse_instruction/llm]" in names
+    assert "[LLM] 期权平仓参数准备 · 模型调用 [place_close_prepare/llm]" in names
     assert not handler._name_contexts
 
 
@@ -296,7 +295,7 @@ async def test_rule_only_hybrid_path_does_not_create_generation(memory_langfuse)
     await graph.compile().ainvoke({}, config={"callbacks": [_factory(public_key=public_key)]})
     client.flush()
     spans = exporter.get_finished_spans()
-    assert any(s.name == "[Code/LLM] 期权意图识别 [option_intent]" for s in spans)
+    assert any(s.name == "期权解析结果检查 [option_intent]" for s in spans)
     assert not any(s.attributes.get("langfuse.observation.type") == "generation" for s in spans)
 
 
@@ -321,7 +320,7 @@ def test_handler_keeps_tool_retriever_types_and_error_marking(memory_langfuse, m
     spans = {s.name: s for s in exporter.get_finished_spans()}
     assert spans["external_tool"].attributes["langfuse.observation.type"] == "tool"
     assert spans["external_retriever"].attributes["langfuse.observation.type"] == "retriever"
-    assert spans["期权询价提交 [inquiry_submit]"].attributes["langfuse.observation.level"] == "ERROR"
+    assert spans["期权询价请求准备 [inquiry_submit]"].attributes["langfuse.observation.level"] == "ERROR"
     assert not handler._name_contexts
 
 
@@ -335,39 +334,13 @@ async def test_naming_failure_preserves_original_sdk_trace(memory_langfuse, monk
     result = await _synthetic_graph().ainvoke({}, config={"callbacks": [_factory(public_key=public_key)]})
     client.flush()
     assert result == {"first": True, "second": True}
-    assert "inquiry_extract" in {s.name for s in exporter.get_finished_spans()}
+    assert "parse_instruction" in {s.name for s in exporter.get_finished_spans()}
 
 
-def test_harness_uses_shared_factory_and_keeps_disable_gate(monkeypatch):
-    from app.observability import tracing
+def test_harness_observation_client_keeps_disable_gate(monkeypatch):
+    """评测不再挂第二份 LangChain callback，关闭配置时不创建 SDK 客户端。"""
     from harness import langfuse_client
-
-    sentinel = object()
-    settings = SimpleNamespace(enable_langfuse=True, langfuse_public_key="synthetic-public",
-                               langfuse_secret_key="synthetic-secret", langfuse_base_url="http://langfuse.invalid")
+    settings = SimpleNamespace(enable_langfuse=False, langfuse_public_key="synthetic",
+                               langfuse_secret_key="synthetic")
     monkeypatch.setattr("app.config.get_settings", lambda: settings)
-    monkeypatch.setattr(tracing, "create_callback_handler", lambda: sentinel)
-    monkeypatch.setattr(os, "environ", os.environ.copy())
-    langfuse_client.reset_for_test()
-    try:
-        assert langfuse_client.get_callback_handler() is sentinel
-        langfuse_client.reset_for_test()
-        settings.enable_langfuse = False
-        assert langfuse_client.get_callback_handler() is None
-    finally:
-        langfuse_client.reset_for_test()
-
-
-def test_eval_uses_shared_factory_and_keeps_disable_gate(monkeypatch):
-    from app.observability import tracing
-
-    # The legacy script bootstraps .env at import; keep that confined to this test.
-    monkeypatch.setattr(os, "environ", os.environ.copy())
-    from scripts.langfuse import langfuse_eval
-
-    sentinel = object()
-    monkeypatch.setattr(tracing, "create_callback_handler", lambda: sentinel)
-    monkeypatch.setattr(langfuse_eval, "_langfuse_enabled", lambda: True)
-    assert langfuse_eval._graph_callbacks() == [sentinel]
-    monkeypatch.setattr(langfuse_eval, "_langfuse_enabled", lambda: False)
-    assert langfuse_eval._graph_callbacks() == []
+    assert langfuse_client.get_client() is None

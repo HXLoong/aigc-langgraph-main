@@ -42,7 +42,7 @@ metadata:
 
 - Mock 的落点、`with_structured_output` 的 mock 写法、E2E 用 `InMemorySaver`：按 `.claude/rules/testing.md`，先例
   `tests/test_cascade_e2e.py`（`from app.graph.main import build_main_graph`）
-- LLM 工厂要 patch **节点模块里的使用点**，例如 `app.subgraphs.close.intent.get_qwen_thinking`，不 patch `app.llm.clients`
+- LLM 工厂要 patch **节点模块里的使用点**，例如 `app.nodes.parse_instruction.get_llm_standard`，不 patch `app.llm.clients`
 - 节点输入 State：直接构造 `AgentState` 字典，或用 `app.api.turn_state.inputs_to_state(...)` 走真实入口映射
 - 断言节点返回的 partial update 与 `trace` 条目，不断言 mock 被调用（见 `test-driven-development` skill 的反模式）
 

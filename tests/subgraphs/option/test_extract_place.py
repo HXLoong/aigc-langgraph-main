@@ -1,376 +1,41 @@
-"""option.extract_place 节点测试（请求下单，确定性提取，无 LLM）。
-
-行为 1:1 对照原提示词规约：
-
-- A 类（orderType / notionalAmount / limitPrice / povRatio / twap / shortName /
-  hasFastExecutionIntent）只取自 raw_content
-- B 类（orderId / stockCode / optionType / tenor / strikePercentage）raw 优先、引用回执兜底
-- orderType 关键词优先级 TWAP > POV（含"跟量"）> 限价单 > 市价单，与出现顺序无关
-"""
-
-from __future__ import annotations
-
-from typing import Any
+"""期权补参直接读取联合结果，不再本地解析语义或重建引用卡片。"""
 from unittest.mock import AsyncMock
 
 import pytest
 
-from app.subgraphs.option import extract_place as ep_module
 from app.subgraphs.option.extract_place import option_extract_place
-from tests.llm_guard import forbid_llm
+from tests.joint_support import instruction_data
 
-_QUOTE_CARD = (
-    "-----场外期权询价详情-----\r\n"
-    "Q-20250616-000011\r\n"
-    "标的代码：300098.SZ；欧式看涨；80%\r\n"
-    "期限待补充，请引用本消息回复期限。如需下单，请提供建仓参数。"
-)
-
-#: 批量询价卡（1M/2M 两笔订单 + 对手选项列表，case-026 形态）
-_BATCH_QUOTE_CARD = (
-    "-----场外期权询价详情-----\r\n"
-    "Q-20250616-000011\r\n"
-    "标的代码：600519.SH；欧式看涨；80%\r\n"
-    "期限：1M\r\n"
-    "Q-20250616-000012\r\n"
-    "期限：2M\r\n"
-    "本群可选交易对手列表：A.临沂阿凡提 B.11125测试短名(张天琪专用)\r\n"
-)
+ORDER = "Q-20260922-0000000001"
+QUOTE = f"单号：{ORDER}\n期限：1M\n标的：茅台\n名义本金：200万"
 
 
-def _patch(monkeypatch: pytest.MonkeyPatch) -> AsyncMock:
-    """patch 后端调用 + 禁止 LLM。"""
-    backend = AsyncMock(return_value={"api_code": 0, "api_result": "backend reply"})
-    monkeypatch.setattr(ep_module, "call_option_backend", backend)
+@pytest.mark.parametrize("raw,increment", [
+    ("市价下单100万", {"orderType": "市价单", "notionalAmount": "1000000"}),
+    ("POV7.5限价6.3", {"orderType": "POV", "povRatio": 7.5, "limitPrice": 6.3}),
+    ("TWAP 9:30-15:00", {"orderType": "TWAP", "twapStartTime": "9:30", "twapEndTime": "15:00"}),
+    ("最大跟量", {"hasFastExecutionIntent": True}),
+    ("不要最大跟量", {"hasFastExecutionIntent": False}),
+    ("期限改1Y", {"tenor": "1Y"}),
+])
+async def test_only_current_increment_is_submitted(monkeypatch, raw, increment):
+    """接口装配不补未提到的旧字段，布尔 false 也按明确证据保留。"""
+    backend = AsyncMock(return_value={"api_code": 0, "api_result": "Java receipt"})
+    monkeypatch.setattr("app.subgraphs.option.extract_place.prepare_option_request", backend)
+    orders = [{"orderId": ORDER, **increment}]
+    result = await option_extract_place({"raw_text": raw, "quote_content": QUOTE,
+        "parsed_instruction": instruction_data("option", "place_order_from_quote", raw,
+                                               orders=orders, quote=QUOTE)})
+    assert not result.get("error"), result
+    assert backend.await_args.kwargs["order_list"] == orders
+    assert backend.await_args.kwargs["intent"] == "place_order_from_quote"
+    assert result["api_result"] == "Java receipt"
 
-    forbid_llm(monkeypatch, ep_module)
-    return backend
 
-
-def _item(result: dict[str, Any], index: int = 0) -> dict[str, Any]:
-    return result["place_params"]["orderList"][index]
-
-
-@pytest.mark.asyncio
-class TestOptionExtractPlaceNode:
-    async def test_market_order_with_amount(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        backend = _patch(monkeypatch)
-        result = await option_extract_place(
-            {"raw_text": "市价下单100万", "quote_content": "Q-20250616-000011"}
-        )
-        item = _item(result)
-        assert item["orderId"] == "Q-20250616-000011"
-        assert item["orderType"] == "市价单"
-        assert item["notionalAmount"] == "1000000"
-        assert item["hasFastExecutionIntent"] is False
-        assert backend.await_args.kwargs["intent"] == "place_order_from_quote"
-
-    @pytest.mark.parametrize(
-        ("raw", "order_type", "limit_price", "pov_ratio"),
-        [
-            ("100W，限价12，POV", "POV", 12.0, None),
-            ("100W，POV，限价12", "POV", 12.0, None),
-            ("100W，POV25，限价6.3", "POV", 6.3, 25.0),
-            ("100W，限价6.3，POV25", "POV", 6.3, 25.0),
-            ("100W，限价12", "限价单", 12.0, None),
-        ],
-    )
-    async def test_keyword_priority_order_independent(
-        self,
-        monkeypatch: pytest.MonkeyPatch,
-        raw: str,
-        order_type: str,
-        limit_price: float,
-        pov_ratio: float | None,
-    ) -> None:
-        _patch(monkeypatch)
-        result = await option_extract_place(
-            {"raw_text": raw, "quote_content": "Q-20250616-000011"}
-        )
-        item = _item(result)
-        assert item["orderType"] == order_type
-        assert item["limitPrice"] == limit_price
-        assert item["povRatio"] == pov_ratio
-        assert item["notionalAmount"] == "1000000"
-
-    async def test_twap_normalizes_times(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        _patch(monkeypatch)
-        result = await option_extract_place(
-            {"raw_text": "200W，限价8，TWAP 9:30-15:00", "quote_content": "Q-1"}
-        )
-        item = _item(result)
-        assert item["orderType"] == "TWAP"
-        assert item["limitPrice"] == 8.0
-        assert item["twapStartTime"] == "09:30"
-        assert item["twapEndTime"] == "15:00"
-        assert item["notionalAmount"] == "2000000"
-
-    async def test_limit_keyword_without_number_yields_null(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        _patch(monkeypatch)
-        result = await option_extract_place(
-            {"raw_text": "1W 限价下单", "quote_content": "Q-1"}
-        )
-        item = _item(result)
-        assert item["orderType"] == "限价单"
-        assert item["limitPrice"] is None
-        assert item["notionalAmount"] == "10000"
-
-    async def test_limit_then_amount_is_not_price(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        _patch(monkeypatch)
-        result = await option_extract_place(
-            {"raw_text": "限价 100万 下单", "quote_content": "Q-1"}
-        )
-        item = _item(result)
-        assert item["limitPrice"] is None
-        assert item["notionalAmount"] == "1000000"
-
-    async def test_pov_without_ratio_is_null(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        _patch(monkeypatch)
-        result = await option_extract_place(
-            {"raw_text": "50万 POV 下单", "quote_content": "Q-1"}
-        )
-        item = _item(result)
-        assert item["orderType"] == "POV"
-        assert item["povRatio"] is None
-
-    @pytest.mark.parametrize(
-        ("raw", "order_type", "fast"),
-        [
-            ("最大跟量 100万 市价下单", "POV", True),
-            ("尽快成交 100万", None, True),
-            ("跟量25 100万市价", "POV", False),
-            ("市价跟量 100万", "POV", False),
-        ],
-    )
-    async def test_fast_execution_intent(
-        self,
-        monkeypatch: pytest.MonkeyPatch,
-        raw: str,
-        order_type: str | None,
-        fast: bool,
-    ) -> None:
-        _patch(monkeypatch)
-        result = await option_extract_place({"raw_text": raw, "quote_content": "Q-1"})
-        item = _item(result)
-        assert item["hasFastExecutionIntent"] is fast
-        assert item["orderType"] == order_type
-
-    @pytest.mark.parametrize(
-        ("raw", "ratio"),
-        [("跟量20% 100万", 20.0), ("跟量25 100万", 25.0), ("跟量比例：30% 100万", 30.0)],
-    )
-    async def test_follow_volume_ratio_is_pov_not_strike(
-        self, monkeypatch: pytest.MonkeyPatch, raw: str, ratio: float
-    ) -> None:
-        """「跟量N%」是 POV 比例，不得被当作执行价覆盖引用卡片的执行价。"""
-        _patch(monkeypatch)
-        quote = "Q-20250616-000011\r\n执行价格：100%\r\n期限：3M"
-        item = _item(await option_extract_place({"raw_text": raw, "quote_content": quote}))
-        assert item["orderType"] == "POV"
-        assert item["povRatio"] == ratio
-        assert item["strikePercentage"] == 100.0
-        assert item["notionalAmount"] == "1000000"
-
-    async def test_follow_volume_amount_is_not_ratio(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        _patch(monkeypatch)
-        item = _item(await option_extract_place({"raw_text": "跟量 100万", "quote_content": "Q-1"}))
-        assert item["povRatio"] is None
-        assert item["notionalAmount"] == "1000000"
-
-    @pytest.mark.parametrize(
-        ("raw", "order_type"),
-        [("按前收盘价限价下单 100万", "限价单"), ("收盘前最后半小时市价下单 100万", "市价单")],
-    )
-    async def test_time_words_are_not_order_scope(
-        self, monkeypatch: pytest.MonkeyPatch, raw: str, order_type: str
-    ) -> None:
-        """「前收盘价」「最后半小时」不是订单范围表达，不得拒绝整笔下单。"""
-        _patch(monkeypatch)
-        result = await option_extract_place({"raw_text": raw, "quote_content": "Q-20250616-000011"})
-        assert result.get("reply_text") is None
-        assert _item(result)["orderType"] == order_type
-
-    @pytest.mark.parametrize("raw", ["最后一笔市价下单 100万", "前两笔市价下单 100万"])
-    async def test_unsupported_scope_words_still_rejected(
-        self, monkeypatch: pytest.MonkeyPatch, raw: str
-    ) -> None:
-        backend = _patch(monkeypatch)
-        result = await option_extract_place(
-            {"raw_text": raw, "quote_content": "Q-20250616-000011、Q-20250616-000012"}
-        )
-        assert "订单范围" in result["reply_text"]
-        backend.assert_not_awaited()
-
-    @pytest.mark.parametrize(
-        ("raw", "order_type"),
-        [
-            ("不限价，市价下单 100万", "市价单"),
-            ("不要限价，市价 100万", "市价单"),
-            ("不用跟量，市价下单 100万", "市价单"),
-            ("别用市价，限价10 100万", "限价单"),
-        ],
-    )
-    async def test_negated_order_type_keyword_is_ignored(
-        self, monkeypatch: pytest.MonkeyPatch, raw: str, order_type: str
-    ) -> None:
-        _patch(monkeypatch)
-        result = await option_extract_place({"raw_text": raw, "quote_content": "Q-20250616-000011"})
-        assert _item(result)["orderType"] == order_type
-
-    async def test_kw_means_ten_million(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        """业务裁决：1kw = 1000 万，与平仓链路一致。"""
-        _patch(monkeypatch)
-        result = await option_extract_place({"raw_text": "市价下单1kw", "quote_content": "Q-20250616-000011"})
-        assert _item(result)["notionalAmount"] == "10000000"
-
-    async def test_multiple_order_ids_from_quote(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        _patch(monkeypatch)
-        result = await option_extract_place(
-            {
-                "raw_text": "市价下单",
-                "quote_content": "Q-20250616-000011、Q-20250616-000012",
-            }
-        )
-        order_list = result["place_params"]["orderList"]
-        assert [o["orderId"] for o in order_list] == [
-            "Q-20250616-000011",
-            "Q-20250616-000012",
-        ]
-        assert all(o["orderType"] == "市价单" for o in order_list)
-
-    async def test_ordinal_segments_map_each_order_params(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        """多单批量补参（case-026）：第 N 个单段 → 引用回执第 N 个订单，含各自对手字母。"""
-        _patch(monkeypatch)
-        result = await option_extract_place(
-            {
-                "raw_text": "第一个单 最大跟量，200万，A，限价10\n第二个单 限价6，100万，B",
-                "quote_content": _BATCH_QUOTE_CARD,
-            }
-        )
-        order_list = result["place_params"]["orderList"]
-        assert [o["orderId"] for o in order_list] == [
-            "Q-20250616-000011",
-            "Q-20250616-000012",
-        ]
-        first, second = order_list
-        assert first["orderType"] == "POV"
-        assert first["notionalAmount"] == "2000000"
-        assert first["limitPrice"] == 10.0
-        assert first["shortName"] == "临沂阿凡提"
-        assert first["hasFastExecutionIntent"] is True
-        assert second["orderType"] == "限价单"
-        assert second["notionalAmount"] == "1000000"
-        assert second["limitPrice"] == 6.0
-        assert second["shortName"] == "11125测试短名(张天琪专用)"
-        assert second["hasFastExecutionIntent"] is False
-
-    async def test_ordinal_segments_require_matching_order_ids(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        """越界序号给出确定性纠错，不能把整段参数扩散到已有订单。"""
-        _patch(monkeypatch)
-        result = await option_extract_place(
-            {
-                "raw_text": "第一个单 限价10，200万\n第二个单 市价 100万",
-                "quote_content": "Q-20250616-000011",
-            }
-        )
-        assert not result.get("place_params")
-        assert "序号" in result["reply_text"]
-
-    async def test_b_class_from_card(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        _patch(monkeypatch)
-        result = await option_extract_place(
-            {"raw_text": "市价下单", "quote_content": _QUOTE_CARD}
-        )
-        item = _item(result)
-        assert item["orderId"] == "Q-20250616-000011"
-        assert item["stockCode"] == "300098.SZ"
-        assert item["optionType"] == "欧式看涨"
-        assert item["strikePercentage"] == 80.0
-        assert item["tenor"] is None
-
-    async def test_raw_tenor_overrides_card(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        _patch(monkeypatch)
-        result = await option_extract_place(
-            {"raw_text": "换成2M 市价下单", "quote_content": _QUOTE_CARD}
-        )
-        item = _item(result)
-        assert item["tenor"] == "2M"
-        assert item["stockCode"] == "300098.SZ"
-
-    async def test_short_name_label_full_capture(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        _patch(monkeypatch)
-        result = await option_extract_place(
-            {
-                "raw_text": "交易对手：11125测试短名(张天琪专用) 市价下单",
-                "quote_content": "Q-1",
-            }
-        )
-        assert _item(result)["shortName"] == "11125测试短名(张天琪专用)"
-
-    async def test_short_name_option_letter_resolves_from_quote(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        _patch(monkeypatch)
-        result = await option_extract_place(
-            {
-                "raw_text": "市价下单 B",
-                "quote_content": (
-                    "本群可选交易对手列表：A.临沂阿凡提 B.11125测试短名(张天琪专用)"
-                ),
-            }
-        )
-        assert _item(result)["shortName"] == "11125测试短名(张天琪专用)"
-
-    @pytest.mark.parametrize(
-        ("raw", "expected_short_name"),
-        [
-            ("200万，市价下单，交易对手选A", "临沂阿凡提"),
-            ("交易对手：A，市价下单", "临沂阿凡提"),
-            ("100万 市价下单 交易对手选择B", "11125测试短名(张天琪专用)"),
-        ],
-    )
-    async def test_short_name_select_letter_resolves_from_quote(
-        self,
-        monkeypatch: pytest.MonkeyPatch,
-        raw: str,
-        expected_short_name: str,
-    ) -> None:
-        """标签 / 选择动词后的选项字母（case-029「交易对手选A」）必须解析成完整名称，不能原样透传。"""
-        _patch(monkeypatch)
-        result = await option_extract_place(
-            {"raw_text": raw, "quote_content": _BATCH_QUOTE_CARD}
-        )
-        assert _item(result)["shortName"] == expected_short_name
-
-    async def test_no_order_keeps_placeholder_item(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        _patch(monkeypatch)
-        result = await option_extract_place({"raw_text": "市价下单100万"})
-        order_list = result["place_params"]["orderList"]
-        assert len(order_list) == 1
-        assert order_list[0]["orderId"] is None
-        assert order_list[0]["orderType"] == "市价单"
-
-    async def test_writes_trace_and_passes_backend_order_list(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        backend = _patch(monkeypatch)
-        result = await option_extract_place(
-            {
-                "raw_text": "市价下单",
-                "quote_content": "Q-20250616-000011、Q-20250616-000012",
-            }
-        )
-        trace = result["trace"]
-        assert trace[0].node == "option_extract_place"
-        assert "deterministic" in trace[0].decision
-        assert "action=place" in trace[0].decision
-        assert "orders=2" in trace[0].decision
-        assert backend.await_args.kwargs["order_list"] == result["place_params"]["orderList"]
+async def test_missing_joint_result_cannot_submit(monkeypatch):
+    """独立节点回放必须带实际解析输入，不能隐式重新调用模型。"""
+    backend = AsyncMock()
+    monkeypatch.setattr("app.subgraphs.option.extract_place.prepare_option_request", backend)
+    result = await option_extract_place({"raw_text": "市价100万", "quote_content": QUOTE})
+    assert result.get("error") and result["error"].code == "E2"
+    backend.assert_not_called()
