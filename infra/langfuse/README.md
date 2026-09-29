@@ -58,6 +58,17 @@ langfuse-minio (9090)      ← S3 兼容存储（trace 大块归档）
 
 LangFuse v3 起强制要求 ClickHouse + Redis + S3 存储，参考 [LangFuse 自托管文档](https://langfuse.com/self-hosting)。
 
+## 可选：Windows 本地实验回调代理
+
+Windows 的 80 端口已被占用时，可用
+[docker-compose.eval-proxy.yml](./docker-compose.eval-proxy.yml) 加入 Nginx 容器。
+Langfuse 访问代理容器的 80 端口，代理再访问本机应用的 8201 端口，不占用 Windows 的 80 端口。
+只转发 `/v1/webhooks/langfuse`，配置见 [eval-proxy.nginx.conf](./eval-proxy.nginx.conf)。
+
+按 [Remote Experiment Webhook 对接](../../docs/langfuse/remote-experiment-webhook.md) § 二 B
+准备签名、保留原有 Compose override、启动代理并验证。该可选文件覆盖 web 容器的回调白名单；
+启用后 Remote Experiment URL 使用代理容器名。它不修改 Langfuse 镜像版本。
+
 ## Code Evaluator dispatcher
 
 v4 的 Code Evaluators 需要一个执行器，**不配置则功能整体关闭**（建 evaluator 返回
