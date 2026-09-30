@@ -79,3 +79,21 @@ HTTP harness / local_eval 支持这些结构断言；Langfuse Judge 评分不替
 - 期权询价 case-022～024 均为正常快速询价样例，显式 `fast_query="1"`，断言 `entry_branch=quick_inquiry` 及成功回执。case-021 为普通询价，保留原文、`at_bot=true` 及 `place_params.orderList` 参数期望；未配置快速标记时按 `"0"` 处理。
 - 对应意图样例通过节点 HTTP 调入口规则，报告标为 `entry_node`；其它冻结样例仍检验联合模型解析，不把入口规则通过等同于 LLM 解析通过。
 - 业务 case 可声明 `execution_before: "HH:mm"`，按 Asia/Shanghai 检查执行前置条件；意图集不受业务执行窗口约束。case-034 保留原始 14:30–14:50，必须在 14:30 前启动。过期时保留 FAIL 和 `fixture_precondition`，逐轮列出未执行，不能计通过。
+
+## 8. 互换标的集的提取参数约束
+
+`biz/swap_test_fuzzy_target_recog.jsonl` 的相关用例同时断言实际 `place_params.orderList`，
+避免证券代码命中掩盖币种、金额或市场提取错误。市场仅从明确市场词提取；币种仅从金额短语的
+币种标记提取，不能按港股/美股或证券名称推断。只有倍率的“一百万/100w”不标币种；
+“万元/人民币”明确为 CNY，美元/港元等复合币种词优先。金额倍率由唯一一次模型提取展开，
+Code 清洗仍只做类型兼容，不新增单位换算。
+
+- `case_14` 按 Java 当前 A 股默认值，成功卡片的 POV 预期为 9%。
+- `case_73` 按用户确认保留正常样例：输入“跟量9%”，成功卡片预期“POV比例：9%”；
+  对应 `intent/swap_instrument.jsonl` 的正文同步。实际用户输入超过上限时仍交 Java 处理。
+- `case_88` 按用户确认将成功卡片预期代码修正为 `GC2806.CMX`，补充交易对手断言；
+  同源意图集仅同步 `reference.backend_codes`，该参考字段不参与意图或标的原文评分。
+- `tests/fixtures/nodes/common/` 中已有人工标注是旧 Trace 的冻结输入；其中 `case_73` 的
+  25% 原文保留，不修改历史观察记录来冒充本次 9% 用例。
+- 新增参数约束只代表这些字段已有标注，不等于整个订单所有字段均已覆盖；
+  Java 识别结果与证券主数据存在差异时仍保留失败，不在 LangGraph 补证券映射。
