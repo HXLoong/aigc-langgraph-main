@@ -53,7 +53,7 @@ OTC_API_BASE_URL=http://127.0.0.1:8099 GOATS_BASE_URL=http://127.0.0.1:8099 \
 ruff check app/ tests/ harness/ scripts/probe_goats/
 python -m mypy app/ harness/
 python scripts/check_alert_threshold_consistency.py
-python scripts/check_fixture_consistency.py
+python scripts/check_dataset_consistency.py
 python scripts/check_adr_refs.py
 python scripts/sync_agents_md.py --check
 pytest tests/ -q -k "not e2e"

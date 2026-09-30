@@ -38,4 +38,4 @@
 ## 后果
 
 - Shadow 对照（`scripts/shadow_compare.py`）只是可选工具，不作为迁移成功指标。
-- 每新增意图 / 子图，必须同步补数据集用例；由 CI 中的 `scripts/check_fixture_consistency.py` 守护。
+- 每新增意图 / 子图，必须同步补数据集用例；由 CI 中的 `scripts/check_dataset_consistency.py` 守护。

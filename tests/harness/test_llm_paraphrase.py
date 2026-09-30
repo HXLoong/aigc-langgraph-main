@@ -1,4 +1,4 @@
-"""LLM paraphrase tests for the active fixture dialect."""
+"""LLM paraphrase tests for the active dataset dialect."""
 from __future__ import annotations
 
 from unittest.mock import AsyncMock, MagicMock

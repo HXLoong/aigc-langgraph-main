@@ -62,7 +62,7 @@ USE_MYSQL_CHECKPOINTER=false REQUEST_IDEMPOTENCY=false ENABLE_LANGFUSE=false \
 ### Step 5：数据集用例（若改了业务逻辑）
 
 - `tests/datasets/biz/` 对应文件补 2-3 条，沿用该文件既有方言（格式见 `tests/datasets/README.md`），
-  跑 `python scripts/check_fixture_consistency.py`
+  跑 `python scripts/check_dataset_consistency.py`
 - 意图变化同步 `tests/datasets/intent/`
 - 依赖 Java 的业务回归不自行执行，交主代理按 `run-eval` skill 调度
 

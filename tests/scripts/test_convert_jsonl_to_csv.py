@@ -13,7 +13,7 @@ import pytest
 
 ROOT = Path(__file__).resolve().parents[2]
 SCRIPT = ROOT / "scripts" / "convert_jsonl_to_csv.py"
-FIXTURES = ROOT / "tests" / "datasets" / "biz"
+BIZ_CASES = ROOT / "tests" / "datasets" / "biz"
 
 
 def run_cli(*args: str | Path, cwd: Path | None = None) -> subprocess.CompletedProcess[str]:
@@ -231,7 +231,7 @@ def test_missing_and_empty_input_directories_report_failure(tmp_path: Path) -> N
 def test_real_categories_and_default_input_from_another_directory(tmp_path: Path) -> None:
     result = run_cli("--output-dir", tmp_path / "csv", cwd=tmp_path)
     assert result.returncode == 0, result.stderr
-    sources = sorted(FIXTURES.glob("*.jsonl"))
+    sources = sorted(BIZ_CASES.glob("*.jsonl"))
     assert sources
     assert sorted(p.stem for p in (tmp_path / "csv").glob("*.csv")) == [p.stem for p in sources]
     for source in sources:

@@ -1,4 +1,4 @@
-"""意图 fixture 与 Langfuse Dataset 投影保持一致。"""
+"""意图数据集与 Langfuse Dataset 投影保持一致。"""
 
 from __future__ import annotations
 

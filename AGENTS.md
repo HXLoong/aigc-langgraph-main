@@ -379,7 +379,7 @@ for target in (
 
 ## Golden Set
 
-- 所有新增意图必须在 `tests/datasets/biz/` 加至少 2 条用例，并在 `tests/datasets/intent/` 补逐轮意图标签（`scripts/check_fixture_consistency.py` 校验一致性）
+- 所有新增意图必须在 `tests/datasets/biz/` 加至少 2 条用例，并在 `tests/datasets/intent/` 补逐轮意图标签（`scripts/check_dataset_consistency.py` 校验一致性）
 - case 格式沿用对应文件既有方言（详见 `tests/datasets/README.md`）
 - 跑评估：意图集 `python scripts/langfuse/langfuse_eval.py --local tests/datasets/intent`；依赖 Java 的业务集按 `run-eval` skill 由主代理调度
 
@@ -395,7 +395,7 @@ env $T pytest <受影响的测试路径> -q               # 全量 pytest 由 CI
 ruff check app/ tests/ harness/ scripts/probe_goats/
 python -m mypy app/ harness/
 python scripts/check_alert_threshold_consistency.py
-python scripts/check_fixture_consistency.py
+python scripts/check_dataset_consistency.py
 python scripts/check_adr_refs.py
 python scripts/check_docs_layout.py
 python scripts/sync_agents_md.py --check

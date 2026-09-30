@@ -1,10 +1,11 @@
-"""基准迁移检查必须检测数据丢失、空文件和重复编号。"""
+"""数据集 lint（scripts/check_dataset_consistency.py）守护：id/空文件/方言隔离、现役 biz 写类结构化期望、
+意图集 schema 与冻结上下文、reference 结构、派生 source 存在性，以及 response_blocks 块级断言形状。"""
 from __future__ import annotations
 
 import json
 from pathlib import Path
 
-from scripts import check_fixture_consistency as checker
+from scripts import check_dataset_consistency as checker
 
 
 def _valid_case(**overrides: object) -> dict:
@@ -31,7 +32,7 @@ def test_valid_case_passes(tmp_path: Path) -> None:
     assert _validate(tmp_path, [_valid_case()]) == []
 
 
-def test_business_fixture_dir_uses_biz(tmp_path: Path) -> None:
+def test_business_dataset_dir_uses_biz(tmp_path: Path) -> None:
     biz = tmp_path / "biz"
     biz.mkdir()
     biz.joinpath("option.jsonl").write_text(
@@ -144,7 +145,7 @@ def test_invalid_category_and_wrong_assertion_types_rejected(tmp_path: Path) -> 
     assert any("response_contains must be string or list[str]" in error for error in errors)
 
 
-def test_empty_fixture_file_rejected(tmp_path: Path) -> None:
+def test_empty_dataset_file_rejected(tmp_path: Path) -> None:
     biz = tmp_path / "biz"
     biz.mkdir()
     (biz / "option.jsonl").write_text("", encoding="utf-8")
@@ -174,7 +175,10 @@ def test_negative_or_read_case_does_not_require_place_params(tmp_path: Path) -> 
                        expected={"product_type": "swap", "intent": "place_order_request", "output": "缺参数"})
     query = _b_case(id="swap-q-1", category="swap/query",
                     expected={"product_type": "swap", "intent": "query_order", "output": "列表"})
-    assert not any("expected.place_params" in w for w in _warnings(tmp_path, [negative, query]))
+    warnings = _warnings(tmp_path, [negative, query])
+    assert not any(
+        ("swap-n-1" in w or "swap-q-1" in w) and "expected.place_params" in w for w in warnings
+    ), warnings
 
 
 def test_place_params_must_be_an_object_with_order_list(tmp_path: Path) -> None:
@@ -230,7 +234,7 @@ def _validate_intent(root: Path, payloads: list[dict], *, biz: list[dict] | None
     return checker.validate(root)
 
 
-def test_intent_fixture_dir_is_optional(tmp_path: Path) -> None:
+def test_intent_dataset_dir_is_optional(tmp_path: Path) -> None:
     assert _validate(tmp_path, [_valid_case()]) == []
 
 
@@ -409,4 +413,202 @@ def test_checker_runs_as_documented_script_without_pythonpath(tmp_path: Path) ->
         cwd=tmp_path, env=env, capture_output=True, text=True, check=False,
     )
     assert result.returncode == 0, result.stderr
-    assert "fixture consistency: PASS" in result.stdout
+    assert "dataset consistency: PASS" in result.stdout
+
+
+# ── 现役 biz 类目对齐 + 结构化期望缺失（ADR 0024 D6）────────────────────
+
+
+def _biz_case(**overrides: object) -> dict:
+    """A 方言现役业务用例：category 取 biz/ 实际值，只有卡片文本断言。"""
+    case: dict = {
+        "caseNo": "ai_trade_assist_prod_swap_order_case_1",
+        "name": "生产互换下单1",
+        "category": "swap_prod_data",
+        "send_text": "600519.SH，买入，100股，MKT",
+        "response_contains": "-----场外收益互换详情-----\n标的代码：600519.SH\n",
+        "sub_scenes": [],
+    }
+    case.update(overrides)
+    return case
+
+
+def _write_biz(root: Path, payloads: list[dict], *, filename: str = "swap_prod.jsonl") -> list[str]:
+    biz = root / "biz"
+    biz.mkdir(exist_ok=True)
+    lines = [json.dumps(payload, ensure_ascii=False) for payload in payloads]
+    (biz / filename).write_text("\n".join(lines), encoding="utf-8")
+    return checker.validate(root)
+
+
+def _biz_warnings(root: Path, payloads: list[dict], *, filename: str = "swap_prod.jsonl") -> list[str]:
+    assert _write_biz(root, payloads, filename=filename) == []
+    return checker.collect_warnings(root)
+
+
+def test_write_category_set_covers_live_biz_values() -> None:
+    live = {
+        "swap_prod_data", "swap_prod_acceptance_data", "swap_test_fuzzy_target_recog_data",
+        "option_inquiry_case", "option_open_case", "option_close_case",
+    }
+    assert all(checker.is_write_category(value) for value in live)
+
+
+def test_live_write_cases_without_structured_expectation_are_summarized(tmp_path: Path) -> None:
+    """互换 375 条只有文案断言：逐条刷屏无意义，按文件汇总一条。"""
+    cases = [_biz_case(), _biz_case(caseNo="ai_trade_assist_prod_swap_order_case_2")]
+    warnings = _biz_warnings(tmp_path, cases)
+    assert any("2 write-class case(s) have no structured expected" in w for w in warnings), warnings
+
+
+def test_case_with_expected_but_no_params_is_reported(tmp_path: Path) -> None:
+    case = _biz_case(
+        caseNo="case-025", category="option_open_case",
+        expected={"product_type": "option", "intent": "place_order_from_quote"},
+    )
+    warnings = _biz_warnings(tmp_path, [case], filename="option_open.jsonl")
+    assert any("case-025" in w and "expected.place_params" in w for w in warnings), warnings
+
+
+def test_close_params_satisfies_the_write_requirement(tmp_path: Path) -> None:
+    case = _biz_case(
+        caseNo="case-030", category="option_close_case",
+        expected={"product_type": "option_close", "intent": "close_order_request",
+                  "close_params": {"closeOrderList": [{"internalTradeId": "CO-20260506-DEAF117C"}]}},
+    )
+    warnings = _biz_warnings(tmp_path, [case], filename="option_close.jsonl")
+    assert not any("expected.place_params" in w for w in warnings), warnings
+
+
+# ── 多笔卡片块级断言（response_blocks）──────────────────────────────────
+
+
+def test_block_assertion_shape_is_validated(tmp_path: Path) -> None:
+    good = _biz_case(caseNo="case-054", response_blocks=[{"contains": ["标的代码：SNDK.O"]}])
+    assert _write_biz(tmp_path, [good]) == []
+
+    empty = _biz_case(caseNo="case-055", response_blocks=[])
+    errors = _write_biz(tmp_path, [empty])
+    assert any("response_blocks must be a non-empty list" in error for error in errors), errors
+
+    unknown = _biz_case(caseNo="case-056", response_blocks=[{"contains": ["x"], "guessed": "y"}])
+    errors = _write_biz(tmp_path, [unknown])
+    assert any("unknown keys" in error for error in errors), errors
+
+    scalar = _biz_case(caseNo="case-057", response_blocks=["not-an-object"])
+    errors = _write_biz(tmp_path, [scalar])
+    assert any("response_blocks[0] must be an object" in error for error in errors), errors
+
+
+def test_block_assertions_are_rejected_in_the_intent_suite(tmp_path: Path) -> None:
+    case = _intent_case(response_blocks=[{"contains": ["订单"]}])
+    errors = _validate_intent(tmp_path, [case])
+    assert any("response_blocks" in error and "business suite" in error for error in errors), errors
+
+
+# ── 意图集 reference 结构 ────────────────────────────────────────────────
+
+
+def _intent_with_reference(reference: object, **overrides: object) -> dict:
+    return _intent_case(reference=reference, sub_scenes=[], **overrides)
+
+
+def test_reference_backend_codes_must_be_security_codes(tmp_path: Path) -> None:
+    errors = _validate_intent(tmp_path, [_intent_with_reference({"backend_codes": ["【待补充】"]})])
+    assert any("backend_codes[0]" in error and "placeholder" in error for error in errors), errors
+
+    errors = _validate_intent(tmp_path, [_intent_with_reference({"backend_codes": ["300748"]})])
+    assert any("backend_codes[0]" in error for error in errors), errors
+
+    errors = _validate_intent(tmp_path, [_intent_with_reference({"backend_codes": []})])
+    assert any("non-empty list" in error for error in errors), errors
+
+
+def test_reference_shape_and_unknown_keys_are_rejected(tmp_path: Path) -> None:
+    errors = _validate_intent(tmp_path, [_intent_with_reference(["300748.SZ"])])
+    assert any("reference must be an object" in error for error in errors), errors
+
+    errors = _validate_intent(tmp_path, [_intent_with_reference(
+        {"backend_codes": ["300748.SZ"], "guessed": 1})])
+    assert any("unknown keys" in error for error in errors), errors
+
+    errors = _validate_intent(tmp_path, [_intent_with_reference({
+        "backend_codes": ["300748.SZ"], "original_instrument_assertions": [{"expression": ""}],
+    })])
+    assert any("original_instrument_assertions[0].expression" in error for error in errors), errors
+
+
+def test_well_formed_reference_passes(tmp_path: Path) -> None:
+    case = _intent_with_reference({
+        "backend_codes": ["300748.SZ", "CNY"],
+        "original_instrument_assertions": [{"expression": ["金力永磁300748.sz", "300748.sz"]}],
+    })
+    assert _validate_intent(tmp_path, [case]) == []
+
+
+def test_currency_marker_is_allowed_beside_instrument_codes(tmp_path: Path) -> None:
+    """金额下单用例的 backend_codes 混有币种标记（601600.SH / 2600.HK / CNY）。"""
+    case = _intent_with_reference({"backend_codes": ["601600.SH", "2600.HK", "CNY"]})
+    assert _validate_intent(tmp_path, [case]) == []
+
+
+# ── 派生 source：存在性 + 拒绝语义冲突 ──────────────────────────────────
+
+
+def _write_intent(root: Path, payloads: list[dict], *, filename: str, biz: list[dict]) -> list[str]:
+    biz_dir = root / "biz"
+    biz_dir.mkdir(exist_ok=True)
+    biz_lines = [json.dumps(payload, ensure_ascii=False) for payload in biz]
+    (biz_dir / "swap_prod.jsonl").write_text("\n".join(biz_lines), encoding="utf-8")
+    intent_dir = root / "intent"
+    intent_dir.mkdir(exist_ok=True)
+    lines = [json.dumps(payload, ensure_ascii=False) for payload in payloads]
+    (intent_dir / filename).write_text("\n".join(lines), encoding="utf-8")
+    return checker.validate(root)
+
+
+def _derived_case(case_no: str) -> dict:
+    return _intent_case(
+        caseNo="intent-swap-001",
+        category="intent/swap",
+        source=f"derived:swap_prod_data#{case_no}",
+        expected={"product_type": "swap", "intent": "place_order_request"},
+        sub_scenes=[],
+    )
+
+
+def test_derived_source_must_reference_existing_biz_case(tmp_path: Path) -> None:
+    case = _derived_case("ai_trade_assist_prod_swap_order_case_999")
+    errors = _write_intent(tmp_path, [case], filename="swap_flow.jsonl", biz=[_biz_case()])
+    assert any("unknown biz case" in error for error in errors), errors
+
+
+def test_derived_source_pointing_at_the_recorded_case_passes(tmp_path: Path) -> None:
+    case = _derived_case("ai_trade_assist_prod_swap_order_case_1")
+    errors = _write_intent(tmp_path, [case], filename="swap_flow.jsonl", biz=[_biz_case()])
+    assert errors == []
+
+
+def test_pending_waiver_downgrades_known_gap_to_a_warning(tmp_path: Path, monkeypatch) -> None:
+    """占位数据补齐前用 PENDING_LINT_WAIVERS 降级；条目删掉即恢复严格校验。"""
+    monkeypatch.setitem(checker.PENDING_LINT_WAIVERS, "swap_flow.jsonl", "占位标的码待补")
+    case = _intent_with_reference({"backend_codes": ["【待补充】"]})
+    case["source"] = "derived:swap_prod_data#ai_trade_assist_prod_swap_order_case_1"
+    errors = _write_intent(tmp_path, [case], filename="swap_flow.jsonl", biz=[_biz_case()])
+    assert errors == []
+    warnings = checker.collect_warnings(tmp_path)
+    assert any("pending waiver" in w and "backend_codes" in w for w in warnings), warnings
+
+
+def test_legacy_source_namespace_is_a_warning_not_an_error(tmp_path: Path) -> None:
+    case = _intent_case(
+        caseNo="intent-option-001",
+        category="intent/option",
+        source="derived:golden_option_inquiry_case#case-021",
+        expected={"product_type": "option", "intent": "new_inquiry"},
+        sub_scenes=[],
+    )
+    biz = [_biz_case(caseNo="case-021", category="option_inquiry_case")]
+    assert _write_intent(tmp_path, [case], filename="option.jsonl", biz=biz) == []
+    warnings = checker.collect_warnings(tmp_path)
+    assert any("legacy namespace" in w for w in warnings), warnings

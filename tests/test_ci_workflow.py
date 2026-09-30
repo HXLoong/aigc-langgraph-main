@@ -31,7 +31,7 @@ def test_required_checks_do_not_swallow_failures():
         "ruff check app/ tests/", "pytest tests/ ",
         "mypy app/ harness/",
         "scripts/check_alert_threshold_consistency.py",
-        "scripts/check_fixture_consistency.py", "scripts/check_adr_refs.py",
+        "scripts/check_dataset_consistency.py", "scripts/check_adr_refs.py",
         "scripts/sync_agents_md.py --check",
     ):
         selected = [step for step in steps if command in step.get("run", "")]

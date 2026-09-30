@@ -70,6 +70,66 @@ def normalize_dynamic_tokens(text: str) -> str:
     return _GENERIC_ID_RE.sub("{id}", text)
 
 
+#: 卡片标题行，如 `-----场外收益互换详情-----` / `-----场外期权询价详情-----`
+_CARD_HEADER_RE = re.compile(r"^\s*-{3,}\s*\S.*-{3,}\s*$")
+
+
+def _lines(value: Any) -> list[str]:
+    """字符串或字符串列表 → 非空行列表（宽松解析，schema 由 lint 守护）。"""
+    if value is None:
+        return []
+    if isinstance(value, str):
+        return [line.strip() for line in value.splitlines() if line.strip()]
+    if isinstance(value, list):
+        return [str(item).strip() for item in value if str(item).strip()]
+    return []
+
+
+def split_card_blocks(reply_text: str) -> list[str]:
+    """按卡片标题行把回复切成块；卡片之外的文本（前言）不计入任何块。
+
+    切块只认标题行一种依据：块内明细行（包括 `序号：n`）一律归入所属块，
+    所以多笔卡片的每一笔都必须带自己的标题行。
+    """
+    blocks: list[list[str]] = []
+    for line in (reply_text or "").splitlines():
+        if _CARD_HEADER_RE.match(line):
+            blocks.append([line])
+        elif blocks:
+            blocks[-1].append(line)
+    return [block_text for block in blocks if (block_text := "\n".join(block).strip())]
+
+
+def check_block_assertions(reply_text: str, spec: TurnSpec) -> list[FieldDiff]:
+    """多笔卡片：块数一致 + 逐块字段匹配（`response_blocks`）。
+
+    块数不符时只报长度差异，不再逐块比对——错位会连带刷屏且无定位价值。
+    """
+    expected_blocks = [block for block in spec.response_blocks if isinstance(block, dict)]
+    if not expected_blocks:
+        return []
+    actual_blocks = split_card_blocks(reply_text)
+    if len(actual_blocks) != len(expected_blocks):
+        return [FieldDiff(
+            path="response_blocks.length", expected=len(expected_blocks), actual=len(actual_blocks),
+        )]
+    failures: list[FieldDiff] = []
+    for index, expected_block in enumerate(expected_blocks):
+        block = actual_blocks[index]
+        normalized_block = normalize_dynamic_tokens(block)
+        for expected in _lines(expected_block.get("contains")):
+            if normalize_dynamic_tokens(expected) not in normalized_block:
+                failures.append(FieldDiff(
+                    path=f"response_blocks[{index}].contains", expected=expected, actual=block,
+                ))
+        for forbidden in _lines(expected_block.get("not_contains")):
+            if forbidden in block:
+                failures.append(FieldDiff(
+                    path=f"response_blocks[{index}].not_contains", expected=forbidden, actual=block,
+                ))
+    return failures
+
+
 def check_text_assertions(
     reply_text: str, spec: TurnSpec, *, allow_dry_run: bool = False
 ) -> list[FieldDiff]:
@@ -92,6 +152,7 @@ def check_text_assertions(
     for forbidden in spec.response_not_contains:
         if forbidden in reply_text:
             failures.append(FieldDiff(path="response_not_contains", expected=forbidden, actual=reply_text))
+    failures.extend(check_block_assertions(reply_text, spec))
     if ("DRY-RUN-" in reply_text or "【DRY-RUN】" in reply_text) and not allow_dry_run:
         failures.append(FieldDiff(path="runtime", expected="real backend result", actual="dry-run interception"))
     return failures

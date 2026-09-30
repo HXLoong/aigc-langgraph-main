@@ -1,6 +1,6 @@
 """意图集两种执行模式的判定（纯函数，无 app 依赖，lint 与 runner 共用）。
 
-- 冻结（intent_chain）：每轮上下文写死在 fixture（quote_content / history / prev_product_type），
+- 冻结（intent_chain）：每轮上下文写死在数据集用例（quote_content / history / prev_product_type），
   只跑意图子链、只调 LLM（harness/intent_runner.py）
 - 回放（replay）：子轮引用上一轮真实回复（quote_previous 非 False 且未冻结引用），或正文含
   `{{previous_*}}` 动态引用；必须走主图 + 后端（CI 为 mock_api）才能拿到上一轮回复

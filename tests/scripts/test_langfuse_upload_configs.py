@@ -458,7 +458,7 @@ def test_upload_score_configs_syncs_every_explicit_definition() -> None:
 
 
 def test_real_definitions_declare_suites() -> None:
-    """业务集三个文本断言 + 意图集 intent_match，按 suite 分别绑定 Rule。"""
+    """业务集三个文本断言 + 意图集 intent_match / instrument_match，按 suite 分别绑定 Rule。"""
     definitions = load_evaluator_definitions()
     assert {definition.name: definition.suite for definition in definitions} == {
         "response-contains": "business",
@@ -466,7 +466,6 @@ def test_real_definitions_declare_suites() -> None:
         "response-not-contains": "business",
         "intent-match": "intent",
         "instrument-match": "intent",
-        "rejection-match": "intent",
     }
 
 

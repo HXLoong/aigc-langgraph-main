@@ -41,13 +41,13 @@ harness 的判定口径：`PASS` / `FAIL` / `REJECTED`（后端业务拒绝且�
 - 新增或修改业务回归记录时按文件方言写入，再跑一致性检查：
 
 ```bash
-python scripts/check_fixture_consistency.py --verbose   # 现役 biz / intent；WARNING 为业务方待修数据
+python scripts/check_dataset_consistency.py --verbose   # 现役 biz / intent；WARNING 为业务方待修数据
 ```
 
 ## 4. 意图集：`intent/*.jsonl`
 
 与 `biz/` 业务集分离：只评一级路由 `product_type` 与子图 `intent`（标的子集另评标的原文），不依赖 Java / GOATS，
-不写任何 `response_*` 卡片断言。`discover_fixtures()` 默认**不**纳入该目录，需显式
+不写任何 `response_*` 卡片断言。`discover_cases()` 默认**不**纳入该目录，需显式
 `langfuse_eval.py --local tests/datasets/intent`。文件清单、冻结 / 回放两种模式、字段规则与运行方式见
 [`docs/langfuse/workflow-guide.md` §8](../../docs/langfuse/workflow-guide.md)。
 
@@ -70,7 +70,7 @@ python scripts/check_fixture_consistency.py --verbose   # 现役 biz / intent；
 - `quote.holding_contract`：引用的唯一合约编号，或加 `position` 选择对应持仓条目。
 
 解析只读取实际传入本轮的完整 quote，从“例如”或“示例”起的尾部均不参与绑定，不读取本轮模型输出或未引用的历史。
-缺失、越界、歧义和非法声明均记为失败；fixture lint 在执行前验证声明形状。
+缺失、越界、歧义和非法声明均记为失败；数据集 lint 在执行前验证声明形状。
 HTTP harness / local_eval 支持这些结构断言；Langfuse Judge 评分不替代该确定性验收。
 
 ## 7. 快速入口与固定时段
