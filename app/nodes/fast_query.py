@@ -70,6 +70,7 @@ async def quick_inquiry(state: AgentState) -> dict[str, Any]:
             len(rfq.get("raw_response") or ""),
         )
         return {
+            "product_type": "option", "intent": "new_inquiry",
             "api_code": rfq.get("code", 500),
             "api_result": rfq.get("errMsg") or "",
             "reply_text": rfq.get("errMsg") or "",
@@ -104,6 +105,9 @@ async def quick_inquiry(state: AgentState) -> dict[str, Any]:
     reply = receipt_text(code, update["api_result"])
     return {
         **update,
+        "product_type": "option", "intent": "new_inquiry",
+        # 与真实 HTTP 使用同一 DTO 序列化，保留快速询价的参数审计。
+        "backend_request": req.model_dump(mode="json", exclude_none=True),
         "reply_text": str(reply),
         "trace": [TraceEntry(node="quick_inquiry", decision=f"code={code}")],
     }

@@ -196,6 +196,7 @@ _NODES = (
         product="main",
         callable_path="app.nodes.entry_route:entry_route",
         input_fields=("fast_query", "existing_command", "at_bot"),
+        output_fields=("entry_branch", "product_type", "intent"),
         surfaces=("execution",),
     ),
     NodeSpec(
@@ -212,7 +213,7 @@ _NODES = (
             "user_id",
             "message_id",
         ),
-        output_fields=("api_code", "api_result", "reply_text"),
+        output_fields=("product_type", "intent", "backend_request", "api_code", "api_result", "reply_text"),
         side_effect="write",
     ),
     NodeSpec(

@@ -32,7 +32,7 @@
     },
     {
       "name": "intent-match",
-      "description": "意图集：逐轮比对 expected.product_type / intent 与实际路由结果。",
+      "description": "意图集：逐轮比对 expected.product_type / intent / entry_branch 与实际路由结果。",
       "source": "harness/evaluators/intent_match.js",
       "score_name": "det_intent_match_pass",
       "suite": "intent",

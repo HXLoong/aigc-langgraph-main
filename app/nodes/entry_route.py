@@ -22,4 +22,10 @@ def select_entry_branch(state: AgentState) -> EntryBranch:
 @safe_node
 async def entry_route(state: AgentState) -> dict[str, Any]:
     """将选择写入当轮 trace，具体图边由同一纯函数决定。"""
-    return {"trace": [TraceEntry(node="entry_route", decision=select_entry_branch(state))]}
+    branch = select_entry_branch(state)
+    result: dict[str, Any] = {"entry_branch": branch,
+                             "trace": [TraceEntry(node="entry_route", decision=branch)]}
+    # 快速入口已明确产品与动作，标签由规则给出，不额外请求普通解析模型。
+    if branch == "quick_inquiry":
+        result.update(product_type="option", intent="new_inquiry")
+    return result

@@ -22,7 +22,11 @@ def parameter_coverage(case: GoldenCase) -> dict[str, Any]:
     missing = []
     for index, turn in enumerate(case.turns, 1):
         intent = turn.expected.get("intent")
-        if intent and intent not in reads and not any(turn.expected.get(key) for key in parameter_fields):
+        request = turn.expected.get("backend_request") or {}
+        request_parameters = isinstance(request, dict) and any(
+            request.get(key) for key in ("orderList", "closeOrderReqVO", "optionRfq")
+        )
+        if intent and intent not in reads and not request_parameters and not any(turn.expected.get(key) for key in parameter_fields):
             missing.append(index)
     return {"status": "pending_business_acceptance" if missing else "present",
             "missing_turns": missing, "meaning": "结构化参数断言存在性，不代表完整字段覆盖"}
@@ -98,6 +102,7 @@ def report_case(
         "input": dataset_input(case) if case.turns else {},
         "expected_output": dataset_expected(case) if case.turns else {},
         "expected_scope": case.expected_scope,
+        "execution_before": case.execution_before,
         "case_expected": case.expected,
         "case_diff": [item.model_dump() for item in diffs.get("case", [])],
         "source_path": case.source_path,
@@ -117,6 +122,8 @@ def report_case(
                 "raw": outcome.send_text,
                 "source_text": case.turns[outcome.index - 1].send_text,
                 "at_bot": outcome.at_bot,
+                "fast_query": case.turns[outcome.index - 1].fast_query,
+                "entry_branch": outcome.outputs.get("entry_branch"),
                 "reply": outcome.reply_text,
                 "quote_passed": outcome.quote_passed,
                 "quote_content": outcome.quote_content,

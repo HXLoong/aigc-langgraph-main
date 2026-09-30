@@ -65,3 +65,31 @@ async def test_frozen_intent_uses_node_http_without_business_submission() -> Non
     assert result["turns"][0]["product_type"] == "option"
     assert result["turns"][0]["intent"] == "new_inquiry"
     assert "evaluations" not in result, "意图 Score 由 Langfuse JS Evaluation Rule 生成"
+
+
+async def test_fast_entry_mode_and_assertions_survive_platform_scoring_migration() -> None:
+    """JS迁移后快速入口仍独立执行，并完整保留入口断言供平台评分。"""
+    module = _module()
+    expected = {"product_type": "option", "intent": "new_inquiry", "entry_branch": "quick_inquiry"}
+    case = GoldenCase(id="intent-fast", category="intent/option", turns=[{
+        "send_text": "快速询价：雪球，600309，85/100，12m", "fast_query": "1",
+        "at_bot": False, "quote_previous": False, "expected": expected,
+    }])
+    requests = []
+
+    def response(request):
+        """只接受入口节点HTTP调用，不执行普通解析或询价业务接口。"""
+        body = json.loads(request.content)
+        requests.append((request.url.path, body))
+        return httpx.Response(200, json={"output": expected})
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(response)) as client:
+        result = await module.run_case(case, suite="intent", base_url="http://test",
+                                       user_id="u", room_id="r", client=client)
+    assert len(requests) == 1 and requests[0][0] == "/v1/nodes/run"
+    assert requests[0][1]["node"] == "entry_route"
+    assert requests[0][1]["state"]["fast_query"] == "1"
+    assert result["mode"] == "entry_node"
+    assert result["turns"][0]["entry_branch"] == "quick_inquiry"
+    assert result["turns"][0]["assertions"]["expected"] == expected
+    assert "evaluations" not in result

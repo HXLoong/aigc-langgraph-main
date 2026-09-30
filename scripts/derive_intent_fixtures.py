@@ -28,7 +28,7 @@ DEFAULT_SOURCE = REPO_ROOT / "tests" / "datasets" / "biz"
 DEFAULT_OUT = Path("/opt/work-file/code-tmp/aigc-langgraph-tmp") / "intent_drafts"
 
 INTENT_ID_PREFIX = "intent-"
-_TURN_INPUT_KEYS = ("scene", "send_text", "at_bot", "quote_previous")
+_TURN_INPUT_KEYS = ("scene", "send_text", "at_bot", "fast_query", "quote_previous")
 _PRODUCT_PREFIXES = (("option_close", "option_close"), ("option", "option"), ("swap", "swap"))
 
 
@@ -54,6 +54,8 @@ def _turn(obj: dict[str, Any], product_type: str) -> tuple[dict[str, Any], bool]
         "product_type": turn_product.strip() if isinstance(turn_product, str) and turn_product.strip() else product_type,
         "intent": intent,
     }
+    if "entry_branch" in expected:
+        turn["expected"]["entry_branch"] = expected["entry_branch"]
     return turn, bool(intent)
 
 

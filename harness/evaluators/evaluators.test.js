@@ -212,6 +212,19 @@ test("intent_match：逐轮比对 product_type / intent", async (t) => {
     });
     assert.equal(s.value, true);
   });
+
+  await t.test("快速询价产品和意图正确但入口错误或缺失时仍失败", () => {
+    // 迁移到JS后也必须保留当前分支的入口断言，不能仅检查相同的询价意图。
+    const expected = { expected: { product_type: "option", intent: "new_inquiry", entry_branch: "quick_inquiry" } };
+    for (const branch of ["quick_inquiry", "pre_route", undefined]) {
+      const s = score("intent_match", expected, {
+        turns: [{ product_type: "option", intent: "new_inquiry", entry_branch: branch }],
+      });
+      assert.equal(s.value, branch === "quick_inquiry");
+      assert.equal(s.metadata.assertion_count, 3);
+      if (branch !== "quick_inquiry") assert.match(s.comment, /entry_branch/);
+    }
+  });
 });
 
 // ---------------------------------------------------------------- 标的识别

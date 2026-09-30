@@ -396,6 +396,7 @@ def _state_to_outputs(state: AgentState) -> dict[str, Any]:
         outputs["expected_action"] = expected_action
     # 业务对象运行时为 dict，直接 dump
     for key in (
+        "entry_branch",
         "place_params",
         "cancel_params",
         "confirm",

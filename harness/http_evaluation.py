@@ -1,4 +1,4 @@
-"""统一 HTTP 执行及确定性评分，CLI 和 Langfuse Experiment 共用。"""
+"""统一 HTTP 执行及业务差异诊断，平台 JS Rule 使用同一份完整输出。"""
 from __future__ import annotations
 
 from collections.abc import Awaitable, Callable
@@ -35,6 +35,9 @@ async def run_case(
     # 保留完整轮次与诊断字段；正式 Score 由 Langfuse 中的 JS Rule 生成。
     report = report_case(case, result, turn_diffs(case, result) if suite == "business" else {})
     report["mode"] = "intent_node" if frozen else "main_graph_http"
+    # 快速样例只执行入口规则，报告不能把它标成普通模型解析。
+    if frozen and all(turn.fast_query == "1" for turn in case.turns):
+        report["mode"] = "entry_node"
     report["expected_rejection"] = any(turn.expected.get("rejection") for turn in case.turns)
     report["reply_text"] = "\n".join(turn.reply_text for turn in result.turns)
     return report

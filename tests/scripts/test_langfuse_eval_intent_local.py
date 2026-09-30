@@ -93,5 +93,3 @@ def test_frozen_context_round_trips_through_loader_and_dataset_projection(tmp_pa
     assert (local["quote_content"], local["history"], local["prev_product_type"]) == (
         turn.quote_content, turn.history, "option_close"
     )
-
-

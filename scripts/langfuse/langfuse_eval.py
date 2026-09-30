@@ -21,11 +21,11 @@ from harness.golden import (
 )
 from harness.http_evaluation import run_case
 from harness.langfuse_client import experiment_item_trace, flush, get_client
+from harness.version import ASSERTION_VERSION
 
 DATASET_NAME = "biz/option_inquiry"
 SUITES = ("intent", "business")
 DEFAULT_SUITE = "business"
-ASSERTION_VERSION = "deterministic-v1"
 
 
 def resolve_suite(suite: str | None, local_paths: list[Path] | None, dataset_name: str | None) -> str:
@@ -174,8 +174,7 @@ async def _run_items(
         except Exception as exc:
             output = _failed_report(case_id, f"{type(exc).__name__}: {exc}", item=item)
         return output
-    result = None
-        # SDK 公共接口在自己的任务上下文中创建 Experiment 根和确定性 Scores。
+    # SDK 创建 Experiment 根并保存输出，Score 由平台 JS Rule 异步生成。
     result = await asyncio.to_thread(client.run_experiment, name=run_name, run_name=run_name, data=items,
         task=task, max_concurrency=concurrency, metadata=metadata_extra or {})
     flush()

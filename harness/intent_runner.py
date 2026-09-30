@@ -19,6 +19,7 @@ COUNTERPARTIES: list[dict[str, Any]] = importlib.import_module("mock_api.backend
 def turn_state(turn: TurnSpec, *, conversation_id: str) -> dict[str, Any]:
     """只投影输入和冻结上下文，expected 永不进入模型输入。"""
     state: dict[str, Any] = {
+        "fast_query": turn.fast_query, "at_bot": turn.at_bot,
         "raw_text": turn.send_text, "quote_content": turn.quote_content,
         "conversation_id": conversation_id,
         "option_counterparties": COUNTERPARTIES, "swap_counterparties": COUNTERPARTIES,
@@ -55,9 +56,11 @@ async def run_frozen_case(
             for index, turn in enumerate(case.turns, 1):
                 try:
                     state = turn_state(turn, conversation_id=conversation_id)
+                    # 快速样例只验真实入口节点，普通冻结样例仍执行唯一解析器。
+                    node = "entry_route" if turn.fast_query == "1" else "parse_instruction"
                     with http_turn_trace(index) as headers:
                         response = await http.post(f"{base_url.rstrip('/')}/v1/nodes/run", headers=headers,
-                            json={"product": "main", "node": "parse_instruction", "state": state})
+                            json={"product": "main", "node": node, "state": state})
                     body = response.json()
                     # 节点错误响应仍保留自身 updates，不能因 HTTP 500 丢掉归因信息。
                     if "output" not in body:

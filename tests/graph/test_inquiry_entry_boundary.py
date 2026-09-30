@@ -114,6 +114,9 @@ async def test_fast_flag_uses_goats_without_keyword_or_ordinary_inquiry(
     body = json.loads(wire[1].content)
     assert body["type"] == "new_inquiry" and body["operate"] == "询价"
     assert body["orderList"] == [] and body["optionRfq"]["tenor"] == ["1M"]
+    assert result["entry_branch"] == "quick_inquiry"
+    assert (result["product_type"], result["intent"]) == ("option", "new_inquiry")
+    assert result["backend_request"] == body
     nodes = {entry.node for entry in result["trace"]}
     assert "quick_inquiry" in nodes
     assert not nodes.intersection({"pre_route", "intent_route", "option_intent", "inquiry_extract"})

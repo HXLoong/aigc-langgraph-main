@@ -7,6 +7,8 @@ from pathlib import Path
 
 from app.config import get_settings
 
+ASSERTION_VERSION = "deterministic-v2"
+
 
 def execution_metadata() -> dict[str, str]:
     """按固定顺序摘要实际工作区，CLI 与平台实验共用版本口径。"""
@@ -27,4 +29,4 @@ def execution_metadata() -> dict[str, str]:
     return {"commit": commit,
             "code_hash": digest.hexdigest(), "model": get_settings().llm_model_standard,
             "provider": get_settings().llm_provider,
-            "assertion_version": "deterministic-v1"}
+            "assertion_version": ASSERTION_VERSION}

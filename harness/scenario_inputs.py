@@ -1,5 +1,7 @@
 """测试输入的显式订单引用；禁止猜测或借用其它轮次的订单。"""
 import re
+from datetime import datetime
+from zoneinfo import ZoneInfo
 
 from harness.references import resolve_expected_references
 
@@ -10,6 +12,12 @@ _HOLDING_REFERENCE = re.compile(r"\{\{previous_holding_contract_id(?::([1-9][0-9
 
 class ScenarioInputError(ValueError):
     """用例输入所需的业务引用或选择器不满足前置条件。"""
+
+
+def ensure_execution_window(before: str | None) -> None:
+    """在任何测试消息或 HTTP 写入前校验固定时段，不修改用例中的业务时间。"""
+    if before and datetime.now(ZoneInfo("Asia/Shanghai")).strftime("%H:%M") >= before:
+        raise ScenarioInputError(f"测试前置条件不满足：必须在 Asia/Shanghai {before} 前开始执行")
 
 
 def resolve_order_reference(text: str, previous_reply: str) -> str:
