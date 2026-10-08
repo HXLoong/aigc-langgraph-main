@@ -21,9 +21,8 @@ async def run_case(
     trace_metadata: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """统一 HTTP 执行入口，输出供 Langfuse JS Evaluation Rule 评分。"""
-    # 1. 冻结意图只执行解析节点；业务、多轮回放和可见拒绝走主图 HTTP。
+    # 1. 冻结意图只执行解析节点；业务与多轮回放走主图 HTTP。
     frozen = suite == "intent" and not requires_replay([turn.model_dump() for turn in case.turns])
-    frozen = frozen and not any(turn.expected.get("rejection") for turn in case.turns)
     if frozen:
         result = await run_frozen_case(case, base_url=base_url, user_id=user_id, client=client,
                                        timeout=timeout, trace_metadata=trace_metadata)

@@ -12,7 +12,7 @@
 tests/
 ├── conftest.py            # 全局 pytest 配置（仅占位；根纪律禁止用 autouse 绕过真实业务路径）
 ├── datasets/              # 数据集：intent/（意图集）、biz/（业务验收集）等，见其 README
-├── intent_fixtures.py / evidence_support.py / llm_guard.py   # 共享 mock 工厂与守卫（证据必须来自真实输入；去 LLM 化模块不得持有 LLM 工厂）
+├── llm_guard.py           # 去 LLM 化守卫（证据必须来自真实输入；去 LLM 化模块不得持有 LLM 工厂）
 ├── graph/                 # 主图：拓扑 / reducer / 路由纯函数 / 入口分流 / RetryPolicy 读写清单 / 子图契约 / 确认路径
 ├── nodes/                 # 主图节点：ingest / pre_route / route_rules / render / persist / record_history ...
 ├── subgraphs/{swap,option,close}/  # 子图级测试（模型、图路由、各意图节点）；test_common.py 守三子图共用骨架

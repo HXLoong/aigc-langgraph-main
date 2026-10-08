@@ -56,7 +56,6 @@ class _LocalItem:
         self.metadata = {"id": case.id, "case_id": case.id, "category": case.category,
                          "suite": suite, "overview": build_overview(case)[:180], "assertion_version": ASSERTION_VERSION}
         self.has_instruments = any(turn.expected.get("instruments") for turn in case.turns)
-        self.has_rejections = any(turn.expected.get("rejection") for turn in case.turns)
 
     def as_item(self) -> dict[str, Any]:
         """SDK 的本地 Experiment 输入使用公开的字典结构。"""

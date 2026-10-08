@@ -1,4 +1,4 @@
-"""Local Java message fixtures + the production HTTP harness; never targets a remote app."""
+"""Local Java message cases + the production HTTP harness; never targets a remote app."""
 from __future__ import annotations
 
 import argparse

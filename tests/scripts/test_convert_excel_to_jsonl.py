@@ -250,7 +250,7 @@ def test_invalid_expectations(
 
 def test_dry_run_group_order_and_loader_compatibility(tmp_path: Path) -> None:
     from harness.golden import load_golden
-    from scripts.check_fixture_consistency import validate
+    from scripts.check_dataset_consistency import validate
 
     source = tmp_path / "input.xlsx"
     output = tmp_path / "datasets/biz"

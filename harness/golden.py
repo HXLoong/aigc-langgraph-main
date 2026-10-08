@@ -1,4 +1,4 @@
-"""现役 fixture 加载器：三种方言归一化为 GoldenCase（ADR 0024 D6）。
+"""现役数据集加载器：三种方言归一化为 GoldenCase（ADR 0024 D6）。
 
 - A 方言（`tests/datasets/biz/*.jsonl`）：`name/caseNo + send_text + sub_scenes[]`，
   每轮可带独立断言；case 级 `expected` 落到首轮。
@@ -8,7 +8,7 @@
   不落到任何一轮，改为 `expected_scope="any_turn"`：任一已执行轮命中即通过。
 - raw 方言（`id + raw_content` 单轮，标的回归集）：等价于单轮 A。
 
-一个文件只放一种方言；`biz/` 不接受 B / raw 字段（`scripts/check_fixture_consistency.py`）。
+一个文件只放一种方言；`biz/` 不接受 B / raw 字段（`scripts/check_dataset_consistency.py`）。
 """
 from __future__ import annotations
 
@@ -42,6 +42,8 @@ class TurnSpec(BaseModel):
     response_contains: list[str] = Field(default_factory=list)
     response_contains_any: list[str] = Field(default_factory=list)
     response_not_contains: list[str] = Field(default_factory=list)
+    #: 多笔卡片块级断言（harness/differ.py::check_block_assertions）：按卡片标题行切块后逐块比对
+    response_blocks: list[dict[str, Any]] = Field(default_factory=list)
 
 
 class GoldenCase(BaseModel):
@@ -81,6 +83,23 @@ def _assertion_lines(value: Any, *, origin: str, field_name: str) -> list[str]:
     raise ValueError(f"{origin}: {field_name} must be a string or list[str]")
 
 
+def _block_assertions(value: Any, *, origin: str) -> list[dict[str, Any]]:
+    """`response_blocks`：list[object]，块内只认 contains / not_contains（逐块字段断言）。"""
+    if value is None:
+        return []
+    if not isinstance(value, list):
+        raise ValueError(f"{origin}: response_blocks must be a list of objects")
+    blocks: list[dict[str, Any]] = []
+    for index, item in enumerate(value):
+        if not isinstance(item, dict):
+            raise ValueError(f"{origin}: response_blocks[{index}] must be an object")
+        for key in ("contains", "not_contains"):
+            if key in item:
+                _assertion_lines(item[key], origin=f"{origin}: response_blocks[{index}]", field_name=key)
+        blocks.append(item)
+    return blocks
+
+
 def _turn_from_object(
     obj: dict[str, Any], *, origin: str, default_at_bot: bool
 ) -> TurnSpec:
@@ -114,6 +133,7 @@ def _turn_from_object(
             origin=origin,
             field_name="response_not_contains",
         ),
+        response_blocks=_block_assertions(obj.get("response_blocks"), origin=origin),
     )
 
 
@@ -247,21 +267,21 @@ def build_overview(case: GoldenCase) -> str:
 
 
 #: B 方言历史参考集；仅在显式选择时加载（ADR 0030）。
-UNIFIED_FIXTURE_NAME = "unified_golden.jsonl"
+UNIFIED_DATASET_NAME = "unified_golden.jsonl"
 
 
-def discover_fixtures(
+def discover_cases(
     root: Path = Path("tests/datasets"), *, include_unified: bool = False,
 ) -> list[Path]:
     """默认只读 biz；include_unified 显式纳入同级历史参考集。"""
     if root.name in ("biz", "categories"):
-        biz_dir, fixtures_root = root, root.parent
+        biz_dir, datasets_root = root, root.parent
     else:
-        biz_dir, fixtures_root = root / "biz", root
+        biz_dir, datasets_root = root / "biz", root
         if not biz_dir.is_dir() and (root / "categories").is_dir():
             biz_dir = root / "categories"  # 旧 checkout 回退
     paths = sorted(biz_dir.glob("*.jsonl"))
-    unified = fixtures_root / UNIFIED_FIXTURE_NAME
+    unified = datasets_root / UNIFIED_DATASET_NAME
     if include_unified and unified.is_file():
         paths.append(unified)
     return paths
@@ -274,24 +294,24 @@ def load_golden(
     include_unified: bool = False,
 ) -> list[GoldenCase]:
     """加载所选文件；include_unified 追加 root 下的参考集，同一路径只追加一次。"""
-    fixture_paths: list[Path]
+    case_paths: list[Path]
     if paths is None:
-        fixture_paths = discover_fixtures(root, include_unified=include_unified)
+        case_paths = discover_cases(root, include_unified=include_unified)
     else:
         raw_paths = [paths] if isinstance(paths, Path) else list(paths)
-        fixture_paths = []
+        case_paths = []
         for path in raw_paths:
-            fixture_paths.extend(sorted(path.glob("*.jsonl")) if path.is_dir() else [path])
+            case_paths.extend(sorted(path.glob("*.jsonl")) if path.is_dir() else [path])
         if include_unified:
-            fixtures_root = root.parent if root.name in ("biz", "categories") else root
-            unified = fixtures_root / UNIFIED_FIXTURE_NAME
+            datasets_root = root.parent if root.name in ("biz", "categories") else root
+            unified = datasets_root / UNIFIED_DATASET_NAME
             if unified.is_file() and unified.resolve() not in {
-                path.resolve() for path in fixture_paths
+                path.resolve() for path in case_paths
             }:
-                fixture_paths.append(unified)
+                case_paths.append(unified)
 
     cases: list[GoldenCase] = []
-    for path in fixture_paths:
+    for path in case_paths:
         with path.open(encoding="utf-8") as stream:
             for line_number, raw_line in enumerate(stream, start=1):
                 line = raw_line.strip()
@@ -308,7 +328,7 @@ def load_golden(
     return cases
 
 
-def validate_case(case: GoldenCase, origin: str = "fixture") -> list[str]:
+def validate_case(case: GoldenCase, origin: str = "dataset") -> list[str]:
     errors: list[str] = []
     if not case.id.strip():
         errors.append(f"{origin}: id is empty")

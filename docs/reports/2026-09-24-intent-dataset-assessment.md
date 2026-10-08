@@ -30,7 +30,7 @@
 | `unified_golden.jsonl` | 921 条（单轮 670，多轮 251） | 仅最后一轮有标签；896 条合法，25 条使用已退役枚举 | 部分可，见第四节 |
 | `nodes/`（节点级 fixture） | 0 | — | `harness node-run` 已具备，但目录为空 |
 
-`python scripts/check_fixture_consistency.py`：PASS（格式合法，但覆盖面不在它的检查范围内）。
+`python scripts/check_dataset_consistency.py`：PASS（格式合法，但覆盖面不在它的检查范围内）。
 
 ## 三、意图覆盖矩阵
 
@@ -97,7 +97,7 @@
   （可用 LangGraph 子图，或复用 `app/node_execution/catalog.py` 已登记的 `intent_route / swap_intent / option_intent / close_intent`），
   不再构建整张主图、不再启动 mock_api；CI 的 `mock_api` 步骤与 `OTC_API_*` / `GOATS_*` 假环境变量随之删除。
 - 每轮上下文静态化：新增 `quote_content`（冻结的引用文本）、`history`（冻结的历史消息）、`prev_product_type`（粘性），
-  runner 直接注入 state，不再用上一轮回复拼接。`check_fixture_consistency.py` 同步校验。
+  runner 直接注入 state，不再用上一轮回复拼接。`check_dataset_consistency.py` 同步校验。
 - 本次 PoC 脚本（假 LLM + 封死网络，40/40 后端 0 调用）可直接改造为该 runner 的离线单测，守护“意图链路零后端”这一不变量。
 
 **P1：补齐数据（先用现成资产）**
@@ -116,6 +116,6 @@
 
 ```bash
 python scripts/derive_intent_fixtures.py --dry-run        # 383/391 待标注
-python scripts/check_fixture_consistency.py               # PASS
+python scripts/check_dataset_consistency.py               # PASS
 # 覆盖统计 / unified 质量统计：见本文第三、四节，均由 fixture 直接计数得出
 ```

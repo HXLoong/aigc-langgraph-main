@@ -1,4 +1,4 @@
-"""Dataset sync must prepare current fixtures and honor the selected target."""
+"""Dataset sync must prepare current cases and honor the selected target."""
 from __future__ import annotations
 
 import importlib

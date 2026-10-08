@@ -24,7 +24,7 @@
 - 用户已确认：先执行现有断言，参数覆盖缺口单列；不改 expected 提高通过率。
 - `case-027/029/032/033` 等写类轮缺少结构化参数期望，报告以 `parameter_assertion_coverage` 标为待业务验收。字段存在性也不等同于完整字段覆盖。
 - 意图套件只验产品与意图，不承担业务参数覆盖。
-- 互换拒绝集仍有旧本地数字拒绝断言，与 ADR 0027 冲突，留待业务方重新裁决；不通过修改运行代码恢复已废弃规则。
+- 互换拒绝集已裁决：以 biz 出卡为准（2026-09-30），`intent/swap_rejection.jsonl` 与 `rejection-match` 评分链一并退役；基线由意图集 391 条重定为 364 条，口径见 `docs/reports/2026-09-30-swap-rejection-vs-biz-adjudication.md`。不通过修改运行代码恢复已废弃规则。
 - 本轮证据与恢复点在 `/opt/work-file/code-tmp/aigc-langgraph-tmp/adr-refactor-20260928/`。测试通过、未运行、外部阻塞分别记录；完整 pytest 与全部静态检查完成前不宣称 CI 全绿。
 
 ### ADR 重构阶段验证记录（清洗与配置迁移前）
@@ -58,7 +58,7 @@
 - 模型连接与三角色变量改为 `LLM_*`；保留 STANDARD / THINKING / COMPLEX 独立配置，工厂改为 `get_llm_*`。STANDARD 为唯一业务解析模型，THINKING 供离线生成，COMPLEX 当前业务不用，structured 复用 STANDARD。
 - 必填 `LLM_PROVIDER=deepseek|qwen|openai_compatible`，不再按模型名猜测厂商。旧 `QWEN_*` 配置明确拒绝，不保留别名；错误只显示键名。一次真实模型请求与零重试约束保持。
 - 本地 `.env` 已完成键名迁移，保留原地址、密钥、三个模型值及其他配置；移除退役 VL 键。CI、部署模板、健康探针、评测元数据、文档与生成的代理规范已同步；业务回归预检只调用 STANDARD。
-- 离线验证：核心及调用链 453 项、其余受影响调用点 220 项通过（两批文件不重叠）；本轮范围 ruff、mypy（177 个源码文件）、ADR / fixture / 阈值 / 规则同步检查与部署脚本语法检查通过。未跑全量 pytest 或真实模型 / Java / GOATS，未提交或推送。
+- 离线验证：核心及调用链 453 项、其余受影响调用点 220 项通过（两批文件不重叠）；本轮范围 ruff、mypy（177 个源码文件）、ADR / 数据集 / 阈值 / 规则同步检查与部署脚本语法检查通过。未跑全量 pytest 或真实模型 / Java / GOATS，未提交或推送。
 - 仓库全目录文档检查仍有既存 `.DS_Store` 与 `docs/tickets/` 布局问题；扩大到所有脚本的 ruff 另有 9 项既存告警，本轮未涉及这些脚本，不宣称全仓检查通过。
 - 待部署维护者迁移 GitHub secrets `LLM_API_BASE` / `LLM_API_KEY`，填写 variable `LLM_PROVIDER`，按需迁移三个 `LLM_MODEL_*` variables；本轮未改远程设置。配置更改后重启服务，切换业务模型或网关后重新验收。
 - 变更与验证证据：`/opt/work-file/code-tmp/aigc-langgraph-tmp/llm-config-rename-20260928/`。

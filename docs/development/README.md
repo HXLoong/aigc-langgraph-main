@@ -51,7 +51,7 @@ python scripts/langfuse/langfuse_eval.py --local tests/datasets/intent --concurr
 python scripts/local_eval.py --base-url http://127.0.0.1:8201 --data tests/datasets/biz --case case-025
 
 # 一致性检查（提交前）
-python scripts/check_fixture_consistency.py && python scripts/check_adr_refs.py
+python scripts/check_dataset_consistency.py && python scripts/check_adr_refs.py
 python scripts/check_alert_threshold_consistency.py && python scripts/sync_agents_md.py --check
 ```
 

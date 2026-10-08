@@ -46,7 +46,7 @@ allowed-tools: Read, Write, Edit, Glob, Grep, Bash
 ### Step 6：测试（先 RED 再 GREEN，见 `test-driven-development` skill）
 - `tests/subgraphs/<product>/test_graph_routing.py`：新意图的路由用例
 - 节点单测：放在对应 `tests/subgraphs/<product>/test_<node>.py`；补全链路调用次数断言，模型失败后请求次数仍不超过一次
-- 数据集：`tests/datasets/biz/` 至少 2 条（`scripts/check_fixture_consistency.py` 守护）；意图集
+- 数据集：`tests/datasets/biz/` 至少 2 条（`scripts/check_dataset_consistency.py` 守护）；意图集
   `tests/datasets/intent/` 补对应逐轮标签
 - 需要批量生成测试且用户已授权子代理时，可派 `test-generator`
 
@@ -54,7 +54,7 @@ allowed-tools: Read, Write, Edit, Glob, Grep, Bash
 ```bash
 USE_MYSQL_CHECKPOINTER=false REQUEST_IDEMPOTENCY=false ENABLE_LANGFUSE=false \
   pytest tests/subgraphs/$1/ tests/test_node_catalog_contract.py -q
-python scripts/check_fixture_consistency.py
+python scripts/check_dataset_consistency.py
 ```
 全量 pytest 与真实业务回归按根 `CLAUDE.md`「并行实施与验证范围」留到统一验收。
 

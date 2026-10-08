@@ -13,7 +13,7 @@
 | 模块 | 职责 |
 |---|---|
 | `cli.py` | `python -m harness <doctor\|run\|node-run>` 入口 + 报告渲染 |
-| `golden.py` | fixture 唯一加载器，各方言归一化为 `GoldenCase` |
+| `golden.py` | 数据集唯一加载器，各方言归一化为 `GoldenCase` |
 | `multi_turn.py` | 多轮 case 的 HTTP 执行（quote 引用 / 早停 / at_bot 透传） |
 | `differ.py` / `references.py` / `scenario_inputs.py` | 字段级 diff、文本 / 结构化断言；断言与输入里的订单引用只从实际卡片解析 |
 | `intent_context.py` / `intent_runner.py` | 意图集冻结 / 回放模式判定；HTTP 联合解析 runner |

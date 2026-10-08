@@ -1,4 +1,4 @@
-"""Resolve fixture expectations from the actual quoted card, never from model output."""
+"""Resolve case expectations from the actual quoted card, never from model output."""
 from __future__ import annotations
 
 import re

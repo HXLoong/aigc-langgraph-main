@@ -23,7 +23,7 @@ def _case() -> GoldenCase:
 
 
 def test_dataset_roundtrip_preserves_input_and_each_turn_expectation() -> None:
-    """同一 fixture 在本地和 Dataset 入口具有相同输入及断言。"""
+    """同一数据集用例在本地和 Dataset 入口具有相同输入及断言。"""
     case = _case()
     item = _LocalItem(case).as_item()
     assert item["input"] == dataset_input(case) and "expected" not in item["input"]

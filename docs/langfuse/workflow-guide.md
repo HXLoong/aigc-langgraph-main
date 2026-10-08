@@ -399,7 +399,7 @@ python scripts/derive_intent_fixtures.py --dry-run
 python scripts/derive_intent_fixtures.py --out /opt/work-file/code-tmp/aigc-langgraph-tmp/intent_drafts
 # 业务方 review 补齐 intent 后，只把已完整标注的 case 写进意图集
 python scripts/derive_intent_fixtures.py --source /opt/work-file/code-tmp/aigc-langgraph-tmp/intent_drafts --only-labeled --out tests/datasets/intent
-python scripts/check_fixture_consistency.py --verbose
+python scripts/check_dataset_consistency.py --verbose
 ```
 
 脚本只做确定性搬运：`product_type` 沿用原标签或按 category 前缀推导，`intent` 只沿用已有标注，
@@ -448,4 +448,4 @@ python scripts/langfuse/langfuse_eval.py --dataset biz/swap_prod --concurrency 1
 - 业务集（`biz/`）依赖 Java 后端与授权账号，只在开发 / staging 环境用 `--dataset biz/option_close` 或
   `scripts/local_eval.py` 跑，不进 CI；依赖矩阵见 `docs/testing/README.md` §一a
 
-意图数据集的 `metadata.evaluator_names` 来自实际断言：普通意图只绑定 `intent-match`；标的集另绑 `instrument-match`；明确拒绝集另绑 `rejection-match`。不要将不适用的评分器绑定到整个项目。上传器使用数据集命名空间生成稳定 Item ID，原始案例 ID 保留在 metadata，防止不同数据集相互覆盖。
+意图数据集的 `metadata.evaluator_names` 来自实际断言：普通意图只绑定 `intent-match`；标的集另绑 `instrument-match`。不要将不适用的评分器绑定到整个项目。上传器使用数据集命名空间生成稳定 Item ID，原始案例 ID 保留在 metadata，防止不同数据集相互覆盖。

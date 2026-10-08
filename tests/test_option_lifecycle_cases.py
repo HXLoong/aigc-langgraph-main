@@ -2,7 +2,7 @@
 
 两个视角合并：
 - 加载后语义（harness.golden）：终态查询、撤单成功不等于受理
-- 原始 fixture 形状（JSONL 直读）：逐轮断言齐备、引用上下文显式、TWAP 与命名合约
+- 原始数据集用例形状（JSONL 直读）：逐轮断言齐备、引用上下文显式、TWAP 与命名合约
 """
 from __future__ import annotations
 
