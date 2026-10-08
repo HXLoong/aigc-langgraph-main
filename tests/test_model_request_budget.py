@@ -78,9 +78,11 @@ async def test_failed_dispatch_also_consumes_request_budget(monkeypatch) -> None
     model = clients._build_llm("deepseek-v4-pro")
     try:
         with budget.model_request_scope() as scope:
-            for _ in range(2):
-                with pytest.raises(openai.APIConnectionError):
-                    await model.ainvoke("synthetic")
+            with pytest.raises(openai.APIConnectionError):
+                await model.ainvoke("synthetic")
+            # 第二次在派发前被额度拦截；openai 3.x 不再把 hook 异常包装成 APIConnectionError
+            with pytest.raises((openai.APIConnectionError, budget.ModelRequestLimitError)):
+                await model.ainvoke("synthetic")
             assert len(dispatched) == scope.requests == 1
     finally:
         await model.http_async_client.aclose()
