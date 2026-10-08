@@ -1,1 +1,7 @@
 *.sh text eol=lf
+
+# 由 scripts/sync_agents_md.py 生成的 Codex 产物：PR 页面默认折叠，评审只看 CLAUDE.md / .claude/** 真源。
+# 合并冲突不要手改，先解决真源冲突，再重新运行生成脚本覆盖。
+AGENTS.md linguist-generated=true
+**/AGENTS.md linguist-generated=true
+.agents/skills/** linguist-generated=true

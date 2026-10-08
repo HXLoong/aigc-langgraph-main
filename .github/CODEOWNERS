@@ -1,0 +1,8 @@
+# AI 指令层（CLAUDE.md / .claude/**）由 owner 评审，减少多人 AI 并行改写造成的冲突。
+# 生成物 AGENTS.md / .agents/** 随真源一起评审。需要时追加其他 owner 的 GitHub 用户名。
+/CLAUDE.md @aka99
+/**/CLAUDE.md @aka99
+/.claude/ @aka99
+/AGENTS.md @aka99
+/**/AGENTS.md @aka99
+/.agents/ @aka99

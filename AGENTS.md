@@ -103,6 +103,13 @@ tests/datasets/              # intent/（意图集，只调 LLM）+ biz/（业�
 
 改纪律或流程只改 `CLAUDE.md` / `.claude/**`，再跑生成脚本一起提交；提交前跑 `python scripts/sync_agents_md.py --check` 守同步。
 
+多人各自用 AI 并行开发时，按以下约定减少冲突：
+
+- **生成物冲突不手改**：`AGENTS.md` / `.agents/**` 出现合并冲突时，先解决 `CLAUDE.md` / `.claude/**` 真源的冲突，
+  再跑 `python scripts/sync_agents_md.py` 覆盖生成物后提交（`.gitattributes` 已将其标为 generated，PR 页面默认折叠）。
+- **普通任务不改公共指令文件**：AI 在功能、修复、评测任务中不修改 `CLAUDE.md`、`.claude/**`、根 `README.md` 与 ADR 正文；
+  需要沉淀的经验先写本人 `CLAUDE.local.md`（已 gitignore）或任务记录，由 owner 定期汇总为单独的 `docs(agents)` PR（owner 见 `.github/CODEOWNERS`）。
+
 ## 并行实施与验证范围
 
 - 用户明确授权后可使用主代理与最多三个子代理。实现任务使用独立 worktree 和分支；子代理提交后由主代理审阅、集成。
