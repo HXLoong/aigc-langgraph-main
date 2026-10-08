@@ -80,11 +80,41 @@ class SwapOrderItem(WireModel):
     order_id: str | None = Field(default=None, alias="orderId", description="互换订单号 H-YYYYMMDD-XXXXXXXXXX；改单 / 补参时来自引用消息，全新下单 → null")
     place_order_ultra_contract_code: CandidateScalar | None = Field(default=None, alias="placeOrderUltraContractCode", description="合约代码（用户明确给出时）")
     place_order_wind_code: CandidateScalar | None = Field(default=None, alias="placeOrderWindCode", description="标的原文（代码或名称片段，逐字保留；最终证券识别由后端负责）")
-    place_order_transaction_type: CandidateScalar | None = Field(default=None, alias="placeOrderTransactionType", description="交易品种：A_SHARE / HK_STOCK / US_STOCK / SZ_HK_CONNECT / SH_HK_CONNECT / CHN_FUTURE / CROSS_FUTURE")
-    place_order_quantity: CandidateScalar | None = Field(default=None, alias="placeOrderQuantity", description="委托数量（股 / 手系单位展开后的整数）")
+    place_order_transaction_type: CandidateScalar | None = Field(
+        default=None, alias="placeOrderTransactionType",
+        description="这是用户明确指定的市场/通道，不是对标的所属市场的分类预测，默认null。"
+        "仅本次原文明示市场词才填写：A股→A_SHARE，港股→HK_STOCK，"
+        "美股→US_STOCK，深港通→SZ_HK_CONNECT，沪港通→SH_HK_CONNECT，"
+        "境内期货→CHN_FUTURE，跨境期货→CROSS_FUTURE。未明示为null，由Java识别。"
+        "严禁从证券名称、代码、交易所后缀、合约形式或手数推断；仅出现期货或手不等于境内期货。"
+        "有值时字段证据必须是本次明确的市场/通道词，不能用证券或数量代替。",
+    )
+    place_order_quantity: CandidateScalar | None = Field(
+        default=None, alias="placeOrderQuantity",
+        description="股/手委托的完整整数数量，明确倍率须展开；AMOUNT金额委托必须为null。"
+        "只有万/w/百万等倍率、没有股数或手数单位时走金额字段，不能放进quantity。"
+        "港股/美股/A股是市场词，其中的股不是委托数量单位，即使市场词紧邻数值也一样。"
+        "明确数量@价格格式的@前数值仍按数量提取，不换算手与股。",
+    )
     place_order_quantity_hand: CandidateScalar | None = Field(default=None, alias="placeOrderQuantityHand", description="旧字段：按手表达的数量（新提示词不再要求填写）")  # 旧字段，见 docstring
-    place_order_quantity_unit: CandidateScalar | None = Field(default=None, alias="placeOrderQuantityUnit", description="数量单位：HAND 手系 / SHARE 股系 / AMOUNT 金额（落 placeOrderNotional）")
-    place_order_order_direction: CandidateScalar | None = Field(default=None, alias="placeOrderOrderDirection", description="方向：BUY 买入 / SELL 卖出 / SHORT_OPEN 卖空 / SHORT_CLOSE 平空")
+    place_order_quantity_unit: CandidateScalar | None = Field(
+        default=None, alias="placeOrderQuantityUnit",
+        description="只按委托数值紧邻的单位判断：手/lot/张→HAND，股→SHARE；"
+        "先排除市场词：港股/美股/A股中的股不是数量单位，金额后紧跟市场词仍按金额判断。"
+        "金额词、币种或无股手的万/w/千/k/亿量词→AMOUNT，数值落placeOrderNotional。"
+        "纯数字无单位可为null；不能根据标的或市场补单位。HAND/SHARE使用placeOrderQuantity，"
+        "AMOUNT使用完整金额，两种数值字段不同时填写；手数不换算成股数。"
+        "本次明确金额已填placeOrderNotional时，必须同时填AMOUNT；明确股数/手数也必须给对应单位，"
+        "不能因市场或币种未提供而省略已明确的单位。"
+        "数量@价格表达中，@前为委托数量，不能因含倍率而改成金额。",
+    )
+    place_order_order_direction: CandidateScalar | None = Field(
+        default=None, alias="placeOrderOrderDirection",
+        description="本次明确的买卖方向必须提取，不依赖市场、币种或数量是否齐全。"
+        "完整开平仓词优先：买入开仓→BUY，买入平仓→SHORT_CLOSE，卖出开仓→SHORT_OPEN，"
+        "卖出平仓→SELL；其余买/买入/買入→BUY，卖/卖出/賣出/沽出→SELL，卖空→SHORT_OPEN，"
+        "平空→SHORT_CLOSE。单字买/卖也属于明确动作，不能漏提；未提供方向不默认买入。",
+    )
     place_order_price_type: CandidateScalar | None = Field(default=None, alias="placeOrderPriceType", description="价格类型：LimitOrder 限价 / MarketOrder 市价")
     place_order_algorithm_type: CandidateScalar | None = Field(default=None, alias="placeOrderAlgorithmType", description="算法：POV / TWAP / VWAP / ICEBERG / SNIPER")
     place_order_price: CandidateScalar | None = Field(default=None, alias="placeOrderPrice", description="限价价格（数字）")
@@ -98,8 +128,29 @@ class SwapOrderItem(WireModel):
     place_order_shortname: CandidateScalar | None = Field(default=None, alias="placeOrderShortname", description="交易对手 shortName（完整匹配优先，唯一简写次之）")
     place_order_quantity_total: CandidateScalar | None = Field(default=None, alias="placeOrderQuantityTotal", description="总量（总单场景）")
     place_order_premarket: CandidateScalar | None = Field(default=None, alias="placeOrderPremarket", description="是否盘前")
-    place_order_notional: CandidateScalar | None = Field(default=None, alias="placeOrderNotional", description="名义本金 / 金额（数量单位为 AMOUNT 时）")
-    place_order_notional_currency: CandidateScalar | None = Field(default=None, alias="placeOrderNotionalCurrency", description="名义本金币种：CNY / USD / HKD / EUR / GBP / JPY / AUD / NZD / CNH")
+    place_order_notional: CandidateScalar | None = Field(
+        default=None, alias="placeOrderNotional",
+        description="仅AMOUNT委托填写展开后的完整金额数值（支持小数），"
+        "本次提取须展开原文倍率：千/k/K=1000，万/w/W=10000，百万=1000000，亿=100000000。"
+        "中文数词同样表达完整金额；不能只保留倍率前的数字，不能输出带单位或币种的字符串。"
+        "fields.text仍逐字保留原金额及单位。已识别明确AMOUNT金额时不得漏填；"
+        "非AMOUNT或未提供金额为null，不从股数、手数或价格计算金额。",
+    )
+    place_order_notional_currency: CandidateScalar | None = Field(
+        default=None, alias="placeOrderNotionalCurrency",
+        description="币种是独立的原文提取字段，不是根据已识别金额或市场计算的字段。"
+        "仅AMOUNT且本次金额短语出现币种标记才填写；仅有数词和倍率必须为null，"
+        "中文数词也不是人民币标记，不能给一笔未标币种的金额补CNY。先匹配复合币种词："
+        "美元/美金/USD/$→USD，港元/港币/HKD→HKD，欧元/EUR/€→EUR，英镑/GBP→GBP，"
+        "日元/JPY→JPY，澳元/AUD→AUD，新西兰元/NZD→NZD，离岸人民币/CNH→CNH；"
+        "其余金额短语含元/人民币/CNY/￥时必须提取CNY，包括万元/千元/亿元的元。"
+        "严格区分：12万或12w→null，12万元→CNY，12万港元→HKD。"
+        "市场词位于金额前后或紧贴金额仍不是币种：港股买12万、买12万港股的币种都为null；"
+        "只有金额中的港币/港元/HKD才支持HKD，港股一词只能支持交易品种，不能同时支持币种。"
+        "港股/美股/A股、证券名称和代码后缀不是币种标记，"
+        "禁止据此填写HKD/USD/CNY；价格中的元不能充当委托金额币种证据。"
+        "有值时fields.text必须取本次金额中的币种标记；非AMOUNT为null。",
+    )
     place_order_entrust_ratio: CandidateScalar | None = Field(default=None, alias="placeOrderEntrustRatio", description="委托比例（可与 placeOrderQuantity 同时非 null）")
     place_order_close_intent: CandidateScalar | None = Field(default=None, alias="placeOrderCloseIntent", description="是否平仓意图（减仓 / 平掉类表达）")
     has_fast_execution_intent: CandidateScalar | None = Field(default=None, alias="hasFastExecutionIntent", description="是否最大跟量 / 快速执行语义（按 system 规则判定）")
