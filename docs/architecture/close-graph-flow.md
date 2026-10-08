@@ -12,17 +12,17 @@ config:
 ---
 graph TD;
 	__start__([<p>__start__</p>]):::first
-	close_intent(close_intent)
-	close_holding_query(close_holding_query)
-	close_place_close(close_place_close)
-	close_confirm_close(close_confirm_close)
-	close_cancel_close(close_cancel_close)
-	close_confirm_cancel(close_confirm_cancel)
-	close_query_status(close_query_status)
-	close_unknown(close_unknown)
-	close_clean_request(close_clean_request)
-	close_submit(close_submit)
-	close_query_backend(close_query_backend)
+	close_intent(close_intent<br/>读取联合结果，按意图分发)
+	close_holding_query(close_holding_query<br/>持仓查询：只装配本次过滤条件)
+	close_place_close(close_place_close<br/>平仓下单内部图入口)
+	close_confirm_close(close_confirm_close<br/>确认平仓：口令与订单范围校验)
+	close_cancel_close(close_cancel_close<br/>撤单申请：确定性单号提取)
+	close_confirm_cancel(close_confirm_cancel<br/>确认撤单：口令与订单范围校验)
+	close_query_status(close_query_status<br/>订单状态查询，确定性提取)
+	close_unknown(close_unknown<br/>兜底：未知指令引导文案)
+	close_clean_request(close_clean_request<br/>清洗出站副本，不补默认值)
+	close_submit(close_submit<br/>提交写请求，不自动重试)
+	close_query_backend(close_query_backend<br/>只读查询，有限重试)
 	__end__([<p>__end__</p>]):::last
 	__start__ --> close_intent;
 	close_cancel_close -. &nbsp;done&nbsp; .-> __end__;

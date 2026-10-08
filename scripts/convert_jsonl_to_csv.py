@@ -4,7 +4,6 @@
     python scripts/convert_jsonl_to_csv.py
     python scripts/convert_jsonl_to_csv.py --input tests/datasets/biz/example.jsonl
     python scripts/convert_jsonl_to_csv.py --input tests/datasets/biz --output-dir out
-    python scripts/convert_jsonl_to_csv.py --dry-run
 
 每个 JSONL 输出一个同名 CSV，默认放在输入目录的 csv/ 下，重复执行覆盖输出。
 目录模式只扫描直接子级。空文件生成仅有表头的 CSV；空白行不作为用例。
@@ -215,7 +214,6 @@ def main(argv: list[str] | None = None) -> int:
     )
     parser.add_argument("--input", type=Path, default=DEFAULT_INPUT, help="JSONL 文件或目录")
     parser.add_argument("--output-dir", type=Path, help="默认：输入目录/csv")
-    parser.add_argument("--dry-run", action="store_true", help="仅校验并统计，不写文件")
     args = parser.parse_args(argv)
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
     try:
@@ -225,22 +223,19 @@ def main(argv: list[str] | None = None) -> int:
         prepared = [(path, *load_rows(path)) for path in paths]
         for path, count, rows in prepared:
             target = output_dir / f"{path.stem}.csv"
-            if not args.dry_run:
-                write_csv(target, rows)
+            write_csv(target, rows)
             logger.info(
-                "input=%s cases=%s steps=%s output=%s dry_run=%s",
+                "input=%s cases=%s steps=%s output=%s",
                 path,
                 count,
                 len(rows),
                 target,
-                args.dry_run,
             )
         logger.info(
-            "files=%s cases=%s steps=%s dry_run=%s",
+            "files=%s cases=%s steps=%s",
             len(prepared),
             sum(count for _, count, _ in prepared),
             sum(len(rows) for _, _, rows in prepared),
-            args.dry_run,
         )
     except (OSError, ValueError) as exc:
         logger.error("conversion_failed error=%s", exc)

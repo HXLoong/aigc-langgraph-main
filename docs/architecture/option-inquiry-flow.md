@@ -12,9 +12,9 @@ config:
 ---
 graph TD;
 	__start__([<p>__start__</p>]):::first
-	inquiry_prepare(inquiry_prepare)
-	inquiry_validate(inquiry_validate)
-	inquiry_submit(inquiry_submit)
+	inquiry_prepare(inquiry_prepare<br/>读取本次订单，不换算参数)
+	inquiry_validate(inquiry_validate<br/>校验结构与来源，业务值交 Java)
+	inquiry_submit(inquiry_submit<br/>备好完整询价请求，交父图提交)
 	__end__([<p>__end__</p>]):::last
 	__start__ --> inquiry_prepare;
 	inquiry_prepare -.-> __end__;
