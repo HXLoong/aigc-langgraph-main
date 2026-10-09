@@ -123,9 +123,10 @@ async def existing_command_query(state: AgentState) -> dict[str, Any]:
     out = await _make_agent_client().query_instruction(query, room_id, user_id)
     obj = out.get("api_data_result_obj")
     return {
+        "product_type": "option", "intent": "new_inquiry",
         "api_code": out.get("code"),
         "api_result": json.dumps(obj, ensure_ascii=False) if obj is not None else "",
-        "reply_text": out.get("errMsg"),  # IGNORE_REQUEST_NOT_REPLY_USER
+        "reply_text": "IGNORE_REQUEST_NOT_REPLY_USER",
         "trace": [
             TraceEntry(node="existing_command_query", decision=f"code={out.get('code')}")
         ],

@@ -18,7 +18,7 @@
 #   7. 应用 Python 依赖（pip 或离线 wheel）
 #   8. 应用启动（uvicorn，可后台）
 #   9. 健康检查（/health 返回 200）
-#  10. Smoke 自检（3 条已知 case）
+#  10. HTTP 接口自检（OpenAPI 入口，不提交业务消息）
 #
 # 每步独立 function，失败时打印诊断 + 文档链接，并不向下跑。
 # 幂等：重复跑不破坏现有部署，已 OK 的步骤打印 "✅ 已就绪" 跳过。
@@ -209,7 +209,7 @@ step2_env_check() {
         info "金丝雀启用，白名单群数 = $n_rooms"
     fi
     if [ -z "$eval_user_val" ] || [[ "$eval_user_val" == *"<FILL"* ]]; then
-        info "EVAL_USER_ID 未配置（如不跑 scripts/probe_*_e2e.py 或 harness 真后端模式可忽略）"
+        info "EVAL_USER_ID 未配置（如不跑 harness 真后端模式可忽略）"
     fi
 
     # dry-run 模式 advisory
@@ -541,89 +541,19 @@ step10_smoke() {
 
     [ "$DRY_RUN" = "1" ] && { warn "dry-run 跳过"; return; }
 
-    # 用 -s（silent）但不用 -f（让 4xx/5xx 也返回 body）；
-    # 单独拿 HTTP 状态码 + body，区分"应用 5xx"vs"业务回复偏差"
-    _run_smoke() {
-        local payload="$1"
-        local body status tmp
-        tmp=$(mktemp)
-        status=$(curl -s -m 30 -o "$tmp" -w '%{http_code}' \
-            -X POST http://localhost:8000/v1/workflows/run \
-            -H "Content-Type: application/json" -d "$payload" 2>/dev/null)
-        body=$(cat "$tmp" 2>/dev/null)
-        rm -f "$tmp"
-        echo "${status}|${body}"
-    }
-
-    # 注：inputs 字段名按 app/api/routes.py _INPUT_FIELD_MAP 约定
-    # （rawContent/raw_content → raw_text；roomId → room_id 等）
-    info "Case 1: 完整代码询价"
-    local r1 status1 body1
-    r1=$(_run_smoke '{"inputs":{"raw_content":"600519.SH 询价 3 个月平值看涨","conversationId":"smoke-001","roomId":"smoke-room","userId":"smoke-user","messageId":1},"response_mode":"blocking","user":"smoke-test"}')
-    status1=${r1%%|*}; body1=${r1#*|}
-    if [ "$status1" != "200" ]; then
-        warn "Case 1 HTTP $status1（应用层错而非业务回复偏差）：$body1"
-    elif echo "$body1" | grep -q "600519"; then
-        ok "Case 1 包含 600519"
+    # 部署自检不提交业务消息，黄金集由授权人员单独执行。
+    local schema
+    schema=$(mktemp)
+    if curl -fsS -m 10 http://127.0.0.1:8000/openapi.json -o "$schema" \
+        && python3 -c 'import json, sys; data = json.load(open(sys.argv[1])); assert "/v1/workflows/run" in data["paths"]' "$schema"; then
+        ok "业务 HTTP 入口已注册"
     else
-        warn "Case 1 响应未含 600519: $body1"
+        rm -f "$schema"
+        abort "OpenAPI 接口自检失败" "docs/deploy/customer-private.md#9"
     fi
-
-    info "Case 2: 中文简称"
-    local r2 status2 body2
-    r2=$(_run_smoke '{"inputs":{"raw_content":"贵州茅台 询价","conversationId":"smoke-002","roomId":"smoke-room","userId":"smoke-user","messageId":2},"response_mode":"blocking","user":"smoke-test"}')
-    status2=${r2%%|*}; body2=${r2#*|}
-    if [ "$status2" != "200" ]; then
-        warn "Case 2 HTTP $status2（应用层错）：$body2"
-    elif echo "$body2" | grep -qE "600519|茅台"; then
-        ok "Case 2 包含 600519 或茅台"
-    else
-        warn "Case 2 响应可能异常: $body2"
-    fi
-
-    info "Case 3: 未知标的（fallback）"
-    local r3 status3 body3
-    r3=$(_run_smoke '{"inputs":{"raw_content":"完全不存在的标的xyz 询价","conversationId":"smoke-003","roomId":"smoke-room","userId":"smoke-user","messageId":3},"response_mode":"blocking","user":"smoke-test"}')
-    status3=${r3%%|*}; body3=${r3#*|}
-    if [ "$status3" != "200" ]; then
-        warn "Case 3 HTTP $status3（应用层错）：$body3"
-    elif echo "$body3" | grep -qE "无法识别|抱歉|没完全理解"; then
-        ok "Case 3 fallback 触发"
-    else
-        warn "Case 3 fallback 未触发: $body3"
-    fi
+    rm -f "$schema"
 }
 
-# ============================================================
-# Step 11 · 真后端 E2E probe（可选 · 仅 EVAL_USER_ID 配置时跑）
-# ============================================================
-step11_real_backend_probe() {
-    section "Step 11/11 · 真后端 E2E probe"
-
-    [ "$DRY_RUN" = "1" ] && { warn "dry-run 跳过"; return; }
-
-    # 前置：EVAL_USER_ID + EVAL_ROOM_ID 必填，否则跳过（不阻塞 deploy）
-    local eval_user eval_room
-    eval_user=$(env_get "EVAL_USER_ID")
-    eval_room=$(env_get "EVAL_ROOM_ID")
-    if [ -z "$eval_user" ] || [[ "$eval_user" == *"<FILL"* ]] \
-        || [ -z "$eval_room" ] || [[ "$eval_room" == *"<FILL"* ]]; then
-        warn "EVAL_USER_ID / EVAL_ROOM_ID 未配置 → 跳过真后端 probe"
-        warn "  → 客户授权后填 .env §12，再 bash scripts/deploy-customer.sh --only 11 单跑"
-        return
-    fi
-
-    info "EVAL 账号已配置，跑真后端 E2E probe（4 target × 13 cases）..."
-    info "（任一 exception/unreachable → warn，不阻塞 deploy）"
-
-    if python3 "${PROJECT_DIR}/scripts/probe_real_backend_e2e.py" \
-            --target all --stop-on-fail 2>&1 | tee -a "$LOG_FILE"; then
-        ok "真后端 probe 全通"
-    else
-        warn "真后端 probe 失败（详见 .harness-runs/probe-*/report.md）"
-        warn "  → 处置：检查 OTC_API_BASE_URL / GOATS 凭证 / 客户后端状态"
-    fi
-}
 
 # ============================================================
 # Main
@@ -644,7 +574,7 @@ main() {
     should_run_step 8  && step8_app_start
     should_run_step 9  && step9_health_check
     should_run_step 10 && step10_smoke
-    should_run_step 11 && step11_real_backend_probe
+
 
     section "${GREEN}部署完成${RESET}"
     echo

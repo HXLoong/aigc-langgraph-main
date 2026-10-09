@@ -14,25 +14,27 @@ from app.graph.safe_node import safe_node
 from app.graph.state import Message, TraceEntry
 
 
-def test_compiled_entry_has_exactly_three_business_edges():
+def test_compiled_entry_has_versioned_business_edges_and_ignore_exit():
     graph = main.build_main_graph().get_graph()
     outgoing = [edge for edge in graph.edges if edge.source == "entry_route"]
-    assert len(outgoing) == 3
     assert {edge.target for edge in outgoing} == {
-        "quick_inquiry", "existing_command_query", "pre_route",
+        "quick_inquiry", "existing_command_query", "prepare_input", "render",
     }
     assert {edge.target for edge in graph.edges if edge.source == "ingest"} == {
-        "prepare_input", "render",
+        "entry_route", "render",
     }
 
 
 @pytest.mark.parametrize("flags,expected", [
-    ({"fast_query": "1", "existing_command": "1", "at_bot": "0"}, "quick_inquiry"),
+    ({"fast_query": "1", "robot_version": "V2"}, "quick_inquiry"),
+    ({"fast_query": "1", "robot_version": "V1"}, "existing_command_query"),
     ({"existing_command": "1", "at_bot": "0"}, "existing_command_query"),
-    ({"existing_command": "1", "at_bot": "1"}, "pre_route"),
-    ({}, "pre_route"),
+    ({"existing_command": "1", "at_bot": "1", "robot_version": "V2"}, "pre_route"),
+    ({"robot_version": "V2"}, "pre_route"),
+    ({}, "ignore"),
+    ({"robot_version": "V3"}, "ignore"),
 ])
-def test_business_selector_has_no_session_exit(flags, expected):
+def test_business_selector_uses_new_version_routing(flags, expected):
     assert main._route_entry({**flags, "session_status": "expired"}) == expected
 
 
@@ -96,9 +98,10 @@ async def test_ingest_failure_does_not_continue_to_business(monkeypatch):
 
 
 @pytest.mark.parametrize("flags,chosen", [
-    ({"fast_query": "1", "existing_command": "1", "at_bot": "0"}, "quick_inquiry"),
+    ({"fast_query": "1", "robot_version": "V2"}, "quick_inquiry"),
+    ({"fast_query": "1", "robot_version": "V1"}, "existing_command_query"),
     ({"existing_command": "1", "at_bot": "0"}, "existing_command_query"),
-    ({"existing_command": "1", "at_bot": "1"}, "pre_route"),
+    ({"existing_command": "1", "at_bot": "1", "robot_version": "V2"}, "pre_route"),
 ])
 async def test_valid_session_records_choice(monkeypatch, flags, chosen):
     calls = []
@@ -146,8 +149,9 @@ async def test_router_trace_resets_between_turns_without_erasing_ingest(monkeypa
     for number in (1, 2):
         result = await graph.ainvoke({
             "raw_text": f"第{number}轮", "message_id": number, "fast_query": "1",
+            "robot_version": "V2",
             "trace": [TraceEntry(node="previous_turn")],
         }, config=config)
         nodes = [e.node for e in result["trace"]]
-        assert nodes[:3] == ["ingest", "prepare_input", "entry_route"]
+        assert nodes[:2] == ["ingest", "entry_route"]
         assert nodes.count("entry_route") == 1 and "previous_turn" not in nodes

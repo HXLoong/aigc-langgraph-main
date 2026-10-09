@@ -5,7 +5,7 @@
 | 路径 | 用途 |
 | --- | --- |
 | `biz/*.jsonl` | 现役业务验收集（A 方言），统一验收与 `harness run` 默认只加载这里 |
-| `intent/*.jsonl` | 意图集：只评一级路由与子图意图，只依赖 LLM + `mock_api`（见第 4 节） |
+| `intent/*.jsonl` | 意图集：产品／动作／入口与已标注标的原文；冻结模式只调节点，回放使用所选后端（见第 4 节） |
 | `local_backend/` | 本地合成身份种子（见 `docs/testing/local-backend-seed.md`） |
 
 已退役（无替代，勿再引用）：
@@ -16,9 +16,8 @@
 
 ## 2. 加载器：`harness/golden.py`（ADR 0024 D6）
 
-`harness.golden.load_golden()` 是唯一加载器（`python -m harness run` 与
-`scripts/langfuse/langfuse_eval.py --local` 共用），默认只发现 `biz/*.jsonl`，
-或用 `--data` 显式选择单个文件或目录。各方言归一化为同一 `GoldenCase`：
+`harness.golden.load_golden()` 是唯一加载器（`python -m harness run` 使用），
+默认只发现 `biz/*.jsonl`，或用 `--group` / `--file` 显式选择分组或文件。各方言归一化为同一 `GoldenCase`：
 
 | 方言 | 文件 | 形状 | case 级 `expected` 落点 |
 | --- | --- | --- | --- |
@@ -32,8 +31,7 @@ B 方言（`id + conversation[{raw_content, quote_desc}]` + `expected{product_ty
 
 harness 的判定口径：`PASS` / `FAIL` / `REJECTED`（后端业务拒绝且无其它 diff，单独成桶，不计入 PASS 率）；
 早停（节点错误 / 业务拒绝 / 技术错误）后未执行的轮次逐轮记 `runtime` 失败，多轮 case 不会因早停静默通过。
-`--backend dry-run` 要求服务端 `/health` 报告 `backend_mode=dry-run`（`DRY_RUN_BACKEND=true`），否则拒绝启动；
-反之 `--backend real|mock` 打在 dry-run 服务端也会被拦，避免拿假结果当回归基线。
+`run` 只支持 `--backend mock|java`，固定请求已启动的 `127.0.0.1:8000`，不启动服务、不准备数据库消息、不修改服务配置。Java 模式需真实授权账号与数据，app 接口配置须与 CLI 后端声明一致。执行方式见 [测试指南](../../docs/testing/README.md)。
 
 ## 3. 一致性要求与检查
 
@@ -46,9 +44,10 @@ python scripts/check_dataset_consistency.py --verbose   # 现役 biz / intent；
 
 ## 4. 意图集：`intent/*.jsonl`
 
-与 `biz/` 业务集分离：只评一级路由 `product_type` 与子图 `intent`（标的子集另评标的原文），不依赖 Java / GOATS，
-不写任何 `response_*` 卡片断言。`discover_cases()` 默认**不**纳入该目录，需显式
-`langfuse_eval.py --local tests/datasets/intent`。文件清单、冻结 / 回放两种模式、字段规则与运行方式见
+与 `biz/` 业务集分离：只评 `product_type`、`intent`、已标注 `entry_branch` 和标的原文，不写 `response_*` 卡片断言。
+冻结用例不调用 Java；引用上一轮回复等回放用例经主图调用所选 mock／Java 后端。
+默认 `python -m harness run` 只加载业务集，意图集需显式
+`python -m harness run --group intent`。文件清单、冻结 / 回放两种模式、字段规则与运行方式见
 [`docs/langfuse/workflow-guide.md` §8](../../docs/langfuse/workflow-guide.md)。
 
 ## 5. Excel 导出
@@ -71,11 +70,12 @@ python scripts/check_dataset_consistency.py --verbose   # 现役 biz / intent；
 
 解析只读取实际传入本轮的完整 quote，从“例如”或“示例”起的尾部均不参与绑定，不读取本轮模型输出或未引用的历史。
 缺失、越界、歧义和非法声明均记为失败；数据集 lint 在执行前验证声明形状。
-HTTP harness / local_eval 支持这些结构断言；Langfuse Judge 评分不替代该确定性验收。
+`harness run` 支持这些结构断言；评分全部为确定性断言，不调用 LLM Judge。
 
 ## 7. 快速入口与固定时段
 
-- `fast_query` 使用字符串 `"0"` / `"1"`，缺省为 `"0"`；与 `at_bot` 独立，加载、HTTP 执行和 Dataset 投影均保留。用例正文不代替入口标记。
+- `fast_query` 使用字符串 `"0"` / `"1"`，缺省为 `"0"`；与 `at_bot` 独立，用例正文不代替入口标记。
+- `robot_version`／`existing_command` 在加载、HTTP 请求与平台投影中保留。评测输入缺省为 V2 和 `"0"`，显式 V1、null、空串与存量指令标记保持原值；app 缺省版本仍为 V1，不因评测默认值而改变。
 - 期权询价 case-022～024 均为正常快速询价样例，显式 `fast_query="1"`，断言 `entry_branch=quick_inquiry` 及成功回执。case-021 为普通询价，保留原文、`at_bot=true` 及 `place_params.orderList` 参数期望；未配置快速标记时按 `"0"` 处理。
 - 对应意图样例通过节点 HTTP 调入口规则，报告标为 `entry_node`；其它冻结样例仍检验联合模型解析，不把入口规则通过等同于 LLM 解析通过。
 - 业务 case 可声明 `execution_before: "HH:mm"`，按 Asia/Shanghai 检查执行前置条件；意图集不受业务执行窗口约束。case-034 保留原始 14:30–14:50，必须在 14:30 前启动。过期时保留 FAIL 和 `fixture_precondition`，逐轮列出未执行，不能计通过。
@@ -93,7 +93,6 @@ Code 清洗仍只做类型兼容，不新增单位换算。
   对应 `intent/swap_instrument.jsonl` 的正文同步。实际用户输入超过上限时仍交 Java 处理。
 - `case_88` 按用户确认将成功卡片预期代码修正为 `GC2806.CMX`，补充交易对手断言；
   同源意图集仅同步 `reference.backend_codes`，该参考字段不参与意图或标的原文评分。
-- `tests/fixtures/nodes/common/` 中已有人工标注是旧 Trace 的冻结输入；其中 `case_73` 的
-  25% 原文保留，不修改历史观察记录来冒充本次 9% 用例。
+- 旧节点标注已经退役；历史 Trace 中 `case_73` 的 25% 原文仍是历史输入，不修改它来冒充本次 9% 用例。
 - 新增参数约束只代表这些字段已有标注，不等于整个订单所有字段均已覆盖；
   Java 识别结果与证券主数据存在差异时仍保留失败，不在 LangGraph 补证券映射。

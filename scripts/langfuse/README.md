@@ -2,30 +2,24 @@
 
 与 Langfuse 交互的脚本。真源与推送方向见 [ADR 0014 D3](../../docs/adr/0014-langfuse-as-harness-backend.md)：
 提示词 / 数据集 / 评分口径都以 git 为准，biz/intent 仍以 git 为基线；平台新标注只导出待复核快照，不自动覆盖 git，节点样本按审阅后的 Dataset 管理。
-各脚本的完整参数与使用场景见 [docs/langfuse/workflow-guide.md](../../docs/langfuse/workflow-guide.md) §7。
+各脚本的职责见 [docs/langfuse/workflow-guide.md](../../docs/langfuse/workflow-guide.md) §7，完整参数以各脚本 `--help` 为准。
 
 ## 脚本
 
 | 脚本 | 作用 |
 |---|---|
-| `langfuse_eval.py` | 跑数据集实验并打分（评测主入口） |
+
 | `node_dataset.py` | 节点标注发布、固定版本导出、HTTP 节点 Experiment |
 | `upload_golden_to_langfuse.py` | fixture → Langfuse Dataset |
 | `upload_prompt_to_langfuse.py` | git 提示词 → Langfuse Prompts |
 | `upload_evaluators.py` | 同步 Code Evaluators 及其 Online Evaluation Rules |
 | `upload_score_configs.py` | 同步人工标注用的 Score Configs 与 Annotation Queues |
 
-## langfuse_eval.py
+## 黄金集评测入口
 
-运行 LangGraph 并关联 Langfuse Experiment；按 ADR 0005，评分只用确定性断言。所有执行通过已启动的 LangGraph HTTP 服务，复用字段/文本断言与退出码；`--no-judge` 仅作旧命令兼容。
-
-```bash
-# 从 Langfuse Dataset 跑
-python scripts/langfuse/langfuse_eval.py --dataset biz/option_inquiry --ids case-022 --concurrency 1 --no-judge
-
-# 从本地 fixture 跑（输出上传后由 Langfuse JS Evaluation Rule 自动评分）
-python scripts/langfuse/langfuse_eval.py --local tests/datasets/intent --concurrency 3
-```
+本目录不再提供黄金集执行脚本。统一使用 `python -m harness run`，参数及执行限制见 [测试指南](../../docs/testing/README.md)。
+意图与业务均在 Python 内同步确定性判定，不等待平台 JS，不要求 Node.js。
+本地追踪、最终 Score 上传和 Dataset Experiment 关联不是同一件事；当前 `run` 的完整平台结果闭环尚未接通，见 [工作计划](../../docs/work-plan.md)。
 
 ## node_dataset.py
 

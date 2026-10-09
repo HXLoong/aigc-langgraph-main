@@ -1,48 +1,74 @@
-# Harness（评测台）
+# Harness 评测台
 
-三种运行方式，设计见 ADR 0002 / ADR 0014 / ADR 0029：
+黄金集真源为 `tests/datasets/biz/` 与 `tests/datasets/intent/`。
+统一评测入口为 `python -m harness run`，默认请求已启动的 `http://127.0.0.1:8000`。
+Harness 不启动 app 或 mock_api，不修改服务配置，不连接数据库准备消息。
 
-| 方式 | 入口 | 执行 | 数据 |
-|---|---|---|---|
-| HTTP 回归 | `python -m harness run` | 经本地 `/v1/workflows/run` 驱动 LangGraph，与 `app/` 解耦 | `tests/datasets/biz/`（依赖 Java） |
-| 意图级 | `scripts/langfuse/langfuse_eval.py --local tests/datasets/intent` | 冻结用例经 `/v1/nodes/run` 执行联合解析；拒绝验收（及回放）用例经主图 HTTP + `mock_api` | `tests/datasets/intent/` |
-| 节点回归 | `python -m harness node-run` | 默认 `--transport direct` 经同一 NodeExecutor 适配 JSON 状态并执行单个节点；`http` 调 `/v1/nodes/*` | 节点级 fixture 已退役（`--data` 自备目录） |
+## 黄金集执行
 
-## 模块
+```bash
+python -m harness run --group biz --backend mock
+python -m harness run --group intent --backend mock
+python -m harness run --group all --backend mock
+python -m harness run --file tests/datasets/biz/swap_prod.jsonl --case ai_trade_assist_prod_swap_order_case_1 --backend java
+```
+
+| 参数 | 含义 |
+|---|---|
+| `--group biz|intent|all` | 选择数据集，缺省 biz；指定文件时按目录推断 |
+| `--file` | 选择文件，可重复；支持混合 biz 与 intent，显式单组不得跨组 |
+| `--case` | 选择用例 ID，可重复；任一 ID 未命中即报错 |
+| `--backend mock|java` | 后端声明，已有 app 须配置对应接口，缺省 mock |
+
+mock 模式先启动 `mock_api` 并将 app 配置指向它。Java 模式使用已配置的 Java 接口及
+`EVAL_USER_ID`、`EVAL_ROOM_ID` 授权身份，不核验 Java 内部下游。
+后端切换通过服务启动配置完成，CLI 不切换正在运行的服务。
+服务不可用或启用 dry-run 时停止评测，不创建临时服务。
+
+数据层缺省传入 `robot_version="V2"`、`existing_command="0"`，显式版本包括 V1、null 和空串保持原值。
+此默认值仅适用于评测输入，不改变 app 的 V1 缺省规则。
+冻结意图调用解析节点，快速样例调用入口节点，需要引用上一轮回复的用例和业务集调用主图。
+冻结意图通过不代表 Java 业务联调通过。
+
+Python 同步完成意图与业务确定性评分，不调用 Judge，不等待平台 Rule。
+缺少有效期望或未执行的已标注轮次不能通过。评分规则见 [测试指南](../docs/testing/README.md)。
+
+## 报告与平台记录
+
+逐条结果立即追加到 `results.jsonl`，批次收尾生成 `summary.json` 与 `report.md`。
+汇总保留请求用例数、已记录数、未执行数和跳过数，PASS 率使用完整请求分母。
+
+- Windows：系统临时目录下的 `aigc-langgraph-tmp/harness/<run-id>/`
+- Linux：`/opt/work-file/code-tmp/aigc-langgraph-tmp/harness/<run-id>/`
+
+启动时打印完整路径。运行报告不得提交仓库。
+
+Langfuse 追踪由 `ENABLE_LANGFUSE` 和项目凭据控制，批次结束执行 flush。
+本地结果不因上传失败而改变，关联 ID 与入队状态不证明平台入库。
+CLI 追踪不自动生成 Dataset Experiment。
+[平台 webhook](../docs/langfuse/remote-experiment-webhook.md) 通过内部适配器复用同一 HTTP 执行器和本地评分，
+将结论写入 SDK Experiment 与 Score，不另设评测标准。
+
+## 调试工具
+
+```bash
+python -m harness doctor
+python -m harness node-run --data <节点样本目录>
+```
+
+`doctor` 检查已有服务的 `/health` 与 `/ready`。
+`node-run` 为节点调试入口，不增加黄金集验收层，写节点禁止自动回放。
+HTTP 调试使用 `--transport http` 与环境变量 `NODE_RUN_API_KEY`，详见
+[节点调试指南](../docs/development/nodes-run.md)。
+
+## 模块职责
 
 | 模块 | 职责 |
 |---|---|
-| `cli.py` | `python -m harness <doctor\|run\|node-run>` 入口 + 报告渲染 |
-| `golden.py` | 数据集唯一加载器，各方言归一化为 `GoldenCase` |
-| `multi_turn.py` | 多轮 case 的 HTTP 执行（quote 引用 / 早停 / at_bot 透传） |
-| `differ.py` / `references.py` / `scenario_inputs.py` | 字段级 diff、文本 / 结构化断言；断言与输入里的订单引用只从实际卡片解析 |
-| `intent_context.py` / `intent_runner.py` | 意图集冻结 / 回放模式判定；HTTP 联合解析 runner |
-| `evaluators/` | Langfuse Code Evaluator（文本断言、意图、标的、拒绝），清单见 `scripts/langfuse/definitions/evaluators.json` |
-| `node_registry.py` / `node_annotations.py` | 节点展示与回放策略；节点契约真源是 `app/node_execution/catalog.py`，Langfuse 提供来源 observation 与 Dataset/Experiment；写节点禁止自动回放 |
-| `node_fixtures.py` / `node_runner.py` / `node_mocks.py` | 节点 fixture 持久化与执行；`--mock` 仅模拟 `parse_instruction` 的外部模型边界 |
-| `http_tape.py` | 私有工具 HTTP 录放（`scripts/run_with_http_tape.py`），回放不回退到真实网络 |
-| `langfuse_client.py` / `token_tracker.py` / `report_history.py` | Langfuse SDK 封装、token 成本、本地历史报告索引 |
-| `case_generator/` | LLM 对抗式 paraphrase 生成 C 桶候选（`python -m harness.case_generator`） |
-
-## 用法
-
-```bash
-python -m harness doctor          # 环境体检（/health /ready）
-# HTTP 回归：必须提供授权测试身份（--user-id / --room-id 或 EVAL_USER_ID / EVAL_ROOM_ID），默认端口 8000
-python -m harness run --help      # --backend real|mock|dry-run、--checkpoint none|mysql
-python -m harness node-run --data <节点 fixture 目录>
-# 调已启动后端的受保护接口（密钥只通过环境变量传入；HTTP 模式不支持 --mock）
-NODE_RUN_API_KEY='<key>' python -m harness node-run --transport http \
-  --base-url http://127.0.0.1:8000 --data <节点 fixture 目录>
-```
-
-节点回归：带写副作用或 fixture 里 `replay.enabled != true` 的节点显示 `SKIP`，不计入失败；
-未在注册表中的节点报错并计为 FAIL；全为 SKIP 时退出码 2，保留待验收状态。
-
-业务和意图批量评分都使用明确字段与文本断言，不调用 Judge。`--no-judge` 只作旧命令兼容；缺期望或未执行轮必须失败。写类结构化参数标注缺口单列待验收，不把当前 PASS 当作完整参数覆盖。
-
-平台实验：`python -m scripts.langfuse.langfuse_eval --local tests/datasets/intent --base-url http://127.0.0.1:8201`；需先启动同版本 LangGraph 服务。平台 Dataset 可用 `--dataset-version <带时区ISO时间>` 固定版本。本地 Java 验收仍使用 `scripts/local_eval.py` 准备授权测试消息。
-
-节点闭环：`python -m scripts.langfuse.node_dataset publish|export|run --help`。发布需要审阅者及来源 Trace/Observation，导出只写待复核快照，回归共用 `node_runner` 的字段比较；全为 SKIP 或没有样本时退出码 2，不能当作通过。
-
-Langfuse 必須与服务端使用同一项目。可信本地服务设置 `TRUST_INBOUND_TRACEPARENT=true`，根与子 Observation 共用本次用例 Session。报告的 `trace_status` 检查返回关联，`score_status=enqueued` 仅表示排入 SDK 队列；实际入库仍需通过平台查询核对。模型调用没有重试；观测导出超时单独配置 `LANGFUSE_TIMEOUT_SECONDS` 和 `LANGFUSE_FLUSH_AT`。
+| `golden.py` | 黄金文件选择、加载及平台投影 |
+| `multi_turn.py`、`intent_runner.py` | 主图多轮与冻结意图 HTTP 执行 |
+| `http_evaluation.py` | CLI 与平台共用的执行入口 |
+| `intent_scoring.py`、`evaluation.py`、`differ.py` | 本地确定性评分 |
+| `run_reports.py`、`reporting.py` | 逐条留档、汇总及 Markdown 报告 |
+| `langfuse_client.py`、`remote_experiment.py` | 可选追踪与平台触发适配 |
+| `node_registry.py`、`node_runner.py` | 节点展示和安全回放，契约真源在 `app/node_execution/catalog.py` |

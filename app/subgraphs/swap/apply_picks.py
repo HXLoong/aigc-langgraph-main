@@ -28,8 +28,10 @@ async def swap_apply_picks(state: AgentState) -> dict[str, Any]:
             previous = (state.get("field_records") or {}).get(path)
             if previous is not None and previous.locked and previous.value != value:
                 raise ValueError("已锁定字段不能在同一指令中被选择节点改写")
-            if previous is not None:
-                records[path + ".candidate"] = previous
+            candidate_path = f"swap/parse.orderList.{index}.{field}"
+            candidate = (state.get("field_records") or {}).get(candidate_path)
+            if candidate is not None:
+                records[path + ".candidate"] = candidate
             selection_path = path + ".selection"
             records[selection_path] = FieldRecord(
                 value=pick, source="user", evidence=pick["evidence"], origin="raw",
@@ -40,7 +42,7 @@ async def swap_apply_picks(state: AgentState) -> dict[str, Any]:
                 evidence=value, locked=True,
                 origin=("authorized-counterparties" if field == "placeOrderShortname"
                         else "quote" if pick.get("seq") is not None else "raw"),
-                derived_from=[selection_path],
+                derived_from=[selection_path, *([candidate_path] if candidate is not None else [])],
             )
             orders[index][field] = value
     return {

@@ -258,7 +258,8 @@ class AgentState(TypedDict, total=False):
     quote_appinfo: str | None  # quoteAppinfo（已弃用但保留兼容）
 
     # -------- 入口·DSL v2 新增（主干工作流 start 节点 2026-08 版）--------
-    entry_branch: Literal["quick_inquiry", "existing_command_query", "pre_route"] | None
+    entry_branch: Literal["quick_inquiry", "existing_command_query", "pre_route", "ignore"] | None
+    robot_version: str | None  # 后端预查版本；本轮未配置按 V1，非法版本静默
     fast_query: str | None  # fast_query：快速询价标记（参与型看涨/雪球前置分支）
     at_bot: bool | None  # at_bot：是否 @ 机器人
     existing_command: str | None  # existing_command：存量兼容-交易查询指令

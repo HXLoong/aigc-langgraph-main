@@ -44,7 +44,7 @@ def wire(monkeypatch: pytest.MonkeyPatch) -> list[httpx.Request]:
     monkeypatch.setattr(httpx.AsyncClient, "send", send)
     settings = get_settings().model_copy(update={
         "goats_base_url": "http://goats.test", "goats_client_id": "test-client",
-        "goats_client_secret": "test-secret", "goats_opt_agent_id": "test-agent",
+        "goats_client_secret": "test-secret",
     })
     monkeypatch.setattr("app.config.get_settings", lambda: settings)
     client = OptionClientHttpx(base_url="http://java.test", token="test", dry_run=False)

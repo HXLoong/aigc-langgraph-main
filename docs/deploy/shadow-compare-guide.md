@@ -180,12 +180,13 @@ shadow 是**等价性验证**，不是"哪边对"的裁决。三种典型差异�
 
 **Q: 没有 Dify 实例怎么验证 LangGraph？**
 
-A: 用 `scripts/langfuse/langfuse_eval.py --local <fixture>` 跑本地评估 — fixture 的 expected_output 就是
-"我们认为正确的答案"，不依赖 Dify：
+A: 以 `tests/datasets/` 的明确期望做黄金集评测，不依赖 Dify 实例：
 
 ```bash
-python scripts/langfuse/langfuse_eval.py --local tests/datasets/biz
+python -m harness run --group intent --backend mock
 ```
+
+业务集可选择 mock 或 Java；命令、授权和入口字段限制统一见 [测试指南](../testing/README.md)。Shadow 只是可选差异对照，不增加验收层。
 
 **Q: Dify 返回结构和我们约定的不一样怎么办？**
 
@@ -193,6 +194,4 @@ A: 改 `_normalize_dify(dify_resp)` 这一个函数即可。
 
 **Q: 跑下来差异率 30%，全是 intent 不同？**
 
-A: 大概率是 LangGraph 的提示词跟 Dify 不同步。检查 `app/prompts/**/*.md` 与
-Dify 当前生产工作流的 LLM 节点对比，必要时跑 `python scripts/export_dify_prompts.py`
-重导。
+A: 先核对入口版本、引用上下文、模型、动作与实际请求，再对照批准的行为差异；不能仅凭意图差异率断定提示词问题。提示词真源是 git 的 `app/prompts/**/*.md`，不从 Dify 导出覆盖；以黄金集断言判断是否符合业务要求。

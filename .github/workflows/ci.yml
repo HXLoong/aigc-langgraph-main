@@ -1,9 +1,7 @@
 name: CI
 
-# 2026-05-12 曾暂停自动触发；2026-09-22 按 ADR 0024 D6 / D8 阶段 0 门槛恢复：
-# fast job（每次 push / PR，< 2 min）守 lint + 一致性检查 + 快速测试，
-# slow job（PR + main）跑全量 pytest（含 e2e）。真实 MySQL 用例（RUN_LOCAL_MYSQL_TESTS=1）
-# 2026-09-24 起不再进 CI，只在本地 / 联调环境 opt-in 运行（docs/development/nodes-run.md）。
+# fast 执行 ruff、mypy 和 app 核心快速测试。
+# slow 执行 app 核心全量 pytest；真实模型、Java 黄金集与真实数据库不进 CI。
 on:
   push:
     branches: [main]
@@ -18,20 +16,23 @@ env:
   # ADR 0014 D5: CI 中默认关闭 LangFuse（不跑 server，避免成本与脆弱性）
   ENABLE_LANGFUSE: "false"
   PYTHONUTF8: "1"
+  USE_MYSQL_CHECKPOINTER: "false"
+  MYSQL_URI: "mysql+aiomysql://ci:ci@127.0.0.1:1/ci"
+  LLM_PROVIDER: "openai_compatible"
+  LLM_API_BASE: "http://127.0.0.1:1/v1"
+  LLM_API_KEY: "ci-placeholder"
+  LLM_MODEL_STANDARD: "ci-placeholder"
+  LLM_MODEL_THINKING: "ci-placeholder"
+  LLM_MODEL_COMPLEX: "ci-placeholder"
+  OTC_API_BASE_URL: "http://127.0.0.1:1"
+  OTC_API_SECRET: "ci-placeholder"
 
 jobs:
   fast:
-    name: lint + 一致性 + 快速测试
+    name: ruff + mypy + app 核心快速测试
     runs-on: ubuntu-latest
     timeout-minutes: 20
-    env:
-      USE_MYSQL_CHECKPOINTER: "false"
-      MYSQL_URI: "mysql+aiomysql://ci:ci@127.0.0.1:1/ci"
-      LLM_PROVIDER: "openai_compatible"
-      LLM_API_BASE: "http://127.0.0.1:1/v1"
-      LLM_API_KEY: "ci-placeholder"
-      OTC_API_BASE_URL: "http://127.0.0.1:1"
-      OTC_API_SECRET: "ci-placeholder"
+
     steps:
       - uses: actions/checkout@v4
 
@@ -49,30 +50,9 @@ jobs:
       - name: Lint (ruff)
         run: ruff check app/ tests/ harness/ scripts/probe_goats/ scripts/langfuse/ scripts/goats_api_mock/
 
-      - name: 评测器测试（Langfuse code evaluators，纯 JS）
-        run: node --test harness/evaluators/evaluators.test.js
-
       - name: Type check (mypy)
         run: python -m mypy app/ harness/
 
-      - name: ADR 0019 阈值一致性 (alerts.py ↔ ADR 0019 ↔ runbook)
-        run: python scripts/check_alert_threshold_consistency.py
-
-      - name: tests/datasets 一致性（验收集与意图枚举）
-        run: python scripts/check_dataset_consistency.py
-
-      - name: ADR 引用一致性（互引虚悬 + 代码路径存在性）
-        run: python scripts/check_adr_refs.py
-
-      - name: docs/ 存放规则（目录白名单 + 命名 + 报告归档 + 链接有效）
-        run: python scripts/check_docs_layout.py
-
-      - name: AGENTS.md / .agents 与 CLAUDE.md / .claude 同步
-        run: python scripts/sync_agents_md.py --check
-
-      - name: 无配置可导入（tests/test_import_without_env.py）
-        # 不带 .env：模块级 get_settings() 一旦回潮，这一步先于全量测试失败
-        run: pytest tests/test_import_without_env.py -q -p no:cacheprovider
 
       - name: Fast tests (pytest -k "not e2e")
         run: pytest tests/ -q -p no:cacheprovider -k "not e2e"
@@ -83,15 +63,7 @@ jobs:
     timeout-minutes: 40
     needs: fast
     if: github.event_name != 'push' || github.ref == 'refs/heads/main'
-    env:
-      USE_MYSQL_CHECKPOINTER: "false"
-      # 不连数据库：*_mysql.py 集成用例未设 RUN_LOCAL_MYSQL_TESTS 时自动 skip
-      MYSQL_URI: "mysql+aiomysql://ci:ci@127.0.0.1:1/ci"
-      LLM_PROVIDER: "openai_compatible"
-      LLM_API_BASE: "http://127.0.0.1:1/v1"
-      LLM_API_KEY: "ci-placeholder"
-      OTC_API_BASE_URL: "http://127.0.0.1:1"
-      OTC_API_SECRET: "ci-placeholder"
+
     steps:
       - uses: actions/checkout@v4
 

@@ -11,25 +11,18 @@ import time
 from dataclasses import asdict
 from pathlib import Path
 from typing import Any
+from uuid import uuid4
 
 import httpx
 
-from harness.evaluation import (
-    report_case as _report_case,
-)
-from harness.evaluation import (
-    summarize as _summarize,
-)
-from harness.evaluation import (
-    turn_diffs as _turn_diffs,
-)
 from harness.golden import (
-    filter_by_category,
-    filter_by_ids,
+    file_group,
     load_golden,
-    select_runnable,
+    select_by_ids,
+    select_dataset_files,
 )
-from harness.multi_turn import run_case_multi
+from harness.http_evaluation import DEFAULT_BASE_URL, ensure_app_available, run_case
+from harness.langfuse_client import flush
 from harness.node_registry import DEFAULT_NODE_REGISTRY
 from harness.node_runner import (
     NodeFixtureSkipError,
@@ -38,41 +31,17 @@ from harness.node_runner import (
     run_node_fixture,
     run_node_fixture_http,
 )
-from harness.reporting import render_markdown as _render_markdown
+from harness.run_reports import RunReports
 
-
-def _paths(values: list[str] | None) -> list[Path] | Path | None:
-    """解析用户明确选择的数据路径，保持当前数据集范围。"""
-    if not values:
-        return None
-    paths = [Path(value) for value in values]
-    return paths[0] if len(paths) == 1 else paths
-
-
-
-
-
-
-
-
-
-
-#: --backend 取值 → 服务端 /health.backend_mode 必须是什么（mock 只是把真后端 URL 指向 mock_api）
-_REQUIRED_SERVER_MODE = {"real": "real", "mock": "real", "dry-run": "dry-run"}
+_REQUIRED_SERVER_MODE = {"mock": "real", "java": "real"}
 
 
 def _backend_gate(backend: str | None, server_mode: str | None) -> str | None:
-    """返回阻断原因；None 表示放行。旧服务端不报模式时只对 dry-run 严格（不能假定写类已被拦截）。"""
+    """保留 doctor 对显式服务模式的兼容检查。"""
     if backend is None:
         return None
     wanted = _REQUIRED_SERVER_MODE[backend]
-    if server_mode is None:
-        return (
-            "--backend dry-run requires the server to report backend_mode=dry-run in /health; got none"
-            if backend == "dry-run"
-            else None
-        )
-    if server_mode != wanted:
+    if server_mode is not None and server_mode != wanted:
         return f"--backend {backend} needs server backend_mode={wanted}, but /health reports {server_mode!r}"
     return None
 
@@ -113,97 +82,62 @@ async def _doctor(base_url: str, checkpoint: str = "none", backend: str | None =
     return 2
 
 
-def _dotenv_values() -> dict[str, str]:
-    """读 repo 根 .env 的 KEY=VALUE（忽略注释 / 空行）。"""
-    path = Path(__file__).resolve().parents[1] / ".env"
-    if not path.exists():
-        return {}
-    values: dict[str, str] = {}
-    for line in path.read_text(encoding="utf-8").splitlines():
-        stripped = line.strip()
-        if not stripped or stripped.startswith("#") or "=" not in stripped:
-            continue
-        key, _, value = stripped.partition("=")
-        values[key.strip()] = value.strip().strip('"').strip("'")
-    return values
-
-
 def _resolve_eval_ids(user_id: str | None, room_id: str | None) -> tuple[str, str]:
-    """显式传参优先；缺省回读 repo 根 .env 的 EVAL_USER_ID / EVAL_ROOM_ID。"""
-    if user_id and room_id:
-        return user_id, room_id
-    values = _dotenv_values()
-    return user_id or values.get("EVAL_USER_ID", ""), room_id or values.get("EVAL_ROOM_ID", "")
+    """身份使用统一 Settings，环境变量优先于 .env。"""
+    from app.config import get_settings
+
+    settings = get_settings()
+    return user_id or settings.eval_user_id, room_id or settings.eval_room_id
 
 
 async def _run(args: argparse.Namespace) -> int:
-    """执行当前 CLI 选择的用例并汇总统一断言结果。"""
-    gate = await _doctor(args.base_url, args.checkpoint, backend=args.backend)
-    if args.check_backend or gate != 0:
-        return gate
-    user_id, room_id = _resolve_eval_ids(args.user_id, args.room_id)
-    if not user_id or not room_id:
-        print(
-            "ERROR: --user-id and --room-id are required (or EVAL_USER_ID / EVAL_ROOM_ID in .env)",
-            file=sys.stderr,
-        )
+    """按数据集分组/文件/用例选择黄金用例，经本地 HTTP 执行并汇总确定性结果。"""
+    try:
+        files, group = select_dataset_files(args.group, args.file)
+        cases = select_by_ids(load_golden(files), args.case)
+    except ValueError as exc:
+        print(f"ERROR: {exc}", file=sys.stderr)
         return 2
-    cases = filter_by_ids(
-        filter_by_category(
-            load_golden(_paths(args.data), include_unified=args.include_unified), args.category,
-        ), args.case,
-    )
-    cases, skipped = select_runnable(cases)
-    if skipped:
-        print(
-            f"skipped {len(skipped)} unrunnable cases (skip_reason set), e.g. {skipped[0].id}: {skipped[0].skip_reason}"
-        )
-    if args.limit is not None:
-        cases = cases[: args.limit]
+
+
+    user_id, room_id = _resolve_eval_ids(None, None)
+    if args.backend == "java" and (not user_id or not room_id):
+        print("ERROR: java backend requires EVAL_USER_ID and EVAL_ROOM_ID", file=sys.stderr)
+        return 2
+    user_id = user_id or "eval-user"
+    room_id = room_id or "eval-room"
+
     if not cases:
         print("ERROR: no cases selected", file=sys.stderr)
         return 2
+    try:
+        await ensure_app_available()
+    except RuntimeError as exc:
+        print(f"ERROR: {exc}", file=sys.stderr)
+        return 2
 
-    print(f"base_url={args.base_url} backend={args.backend} checkpoint={args.checkpoint}")
-    print(f"running {len(cases)} cases; write-side effects are enabled by server configuration")
-    reports: list[dict[str, Any]] = []
-    for case in cases:
-        result = await run_case_multi(
-            case,
-            base_url=args.base_url,
-            user_id=user_id,
-            room_id=room_id,
-            turn_interval=args.turn_interval,
-        )
-        diffs = _turn_diffs(case, result, backend=args.backend)
-        report = _report_case(case, result, diffs)
-        reports.append(report)
-        print(f"[{report['status']}] {case.id} ({case.category})")
-        if args.stop_on_fail and not report["passed"]:
-            break
-
-    out_dir = Path(args.out or ".harness-runs") / f"probe-{time.strftime('%Y%m%d-%H%M%S')}"
-    failures = out_dir / "failures"
-    failures.mkdir(parents=True, exist_ok=True)
-    for report in reports:
-        if not report["passed"]:
-            (failures / f"{report['case_id']}.json").write_text(
-                json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8"
-            )
-    summary = {
-        **_summarize(reports),
-        "backend": args.backend,
-        "checkpoint": args.checkpoint,
-        "base_url": args.base_url,
-        "reports": reports,
-    }
-    passed = summary["passed"]
-    (out_dir / "summary.json").write_text(
-        json.dumps(summary, ensure_ascii=False, indent=2), encoding="utf-8"
-    )
-    (out_dir / "report.md").write_text(_render_markdown(reports), encoding="utf-8")
-    print(f"reports -> {out_dir}")
-    return 0 if passed == len(reports) else 1
+    run_id = f"run-{time.strftime('%Y%m%d-%H%M%S')}-{uuid4().hex[:8]}"
+    reports = RunReports(run_id, len(cases), {
+        "backend": args.backend, "group": group, "base_url": DEFAULT_BASE_URL,
+    })
+    print(f"backend={args.backend} group={group} files={len(files)} cases={len(cases)}")
+    print(f"service={DEFAULT_BASE_URL} reports -> {reports.directory}")
+    try:
+        for case in cases:
+            if case.skip_reason:
+                report = {"case_id": case.id, "category": case.category, "status": "SKIP",
+                          "passed": False, "failure": {"error": case.skip_reason}, "turns": []}
+            else:
+                suite = "intent" if file_group(Path(case.source_path)) == "intent" else "business"
+                report = await run_case(
+                    case, suite=suite, base_url=DEFAULT_BASE_URL, user_id=user_id, room_id=room_id,
+                )
+            reports.append(report)
+            print(f"[{report['status']}] {case.id} ({case.category})")
+    finally:
+        summary = reports.finish()
+        flush()
+    return 0 if summary["passed"] == len(cases) else 1
 
 
 async def _run_nodes(args: argparse.Namespace) -> int:
@@ -307,23 +241,19 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="harness")
     subparsers = parser.add_subparsers(dest="command", required=True)
     run = subparsers.add_parser("run")
-    run.add_argument("--data", action="append")
     run.add_argument(
-        "--include-unified", action="store_true",
-        help="显式追加 tests/datasets/unified_golden.jsonl 历史参考集（默认只读 biz）",
+        "--group", choices=("biz", "intent", "all"), default=None,
+        help="数据集分组：biz / intent / all；缺省 biz，指定 --file 时按目录判定",
     )
-    run.add_argument("--base-url", default="http://127.0.0.1:8000")
-    run.add_argument("--backend", choices=("real", "mock", "dry-run"), default="real")
-    run.add_argument("--checkpoint", choices=("none", "mysql"), default="none")
-    run.add_argument("--check-backend", action="store_true")
-    run.add_argument("--turn-interval", type=float, default=0.0)
-    run.add_argument("--stop-on-fail", action="store_true")
-    run.add_argument("--limit", type=int)
-    run.add_argument("--case", action="append")
-    run.add_argument("--category")
-    run.add_argument("--out")
-    run.add_argument("--user-id", default=os.getenv("EVAL_USER_ID", ""))
-    run.add_argument("--room-id", default=os.getenv("EVAL_ROOM_ID", ""))
+    run.add_argument(
+        "--file", action="append", type=Path,
+        help="指定现役数据文件（biz 或 intent 目录下），可重复",
+    )
+    run.add_argument("--case", action="append", help="指定用例 ID，可重复；任一未命中即报错")
+    run.add_argument(
+        "--backend", choices=("mock", "java"), default="mock",
+        help="评测后端声明：mock 或 java；已有 app 必须配置对应后端",
+    )
     doctor = subparsers.add_parser("doctor")
     doctor.add_argument("--base-url", default="http://127.0.0.1:8000")
     doctor.add_argument("--checkpoint", choices=("none", "mysql"), default="none")

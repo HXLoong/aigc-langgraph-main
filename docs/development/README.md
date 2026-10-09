@@ -13,8 +13,8 @@
 ### 系统要求
 - Python 3.11+（严格）
 - MySQL 8.0.19 ≤ version < 9.6.0
-- Docker + Docker Compose（本地开发推荐）
-- Node.js 18+（仅 Claude Code 需要）
+- Docker + Docker Compose（运行自托管 Langfuse 时需要）
+- app 与本地评测无需 Node.js；AI 辅助工具的安装要求见各自文档
 
 ### 初始化
 
@@ -25,9 +25,11 @@ cp .env.example .env        # 填入真实配置；MYSQL_URI 指向 Java 现有�
 pip install -e ".[dev]"     # 含 pytest/ruff/mypy
 # 在 Java 数据库执行一次初始化（LangGraph 不自带 MySQL 容器）
 mysql -h <HOST> -P <PORT> -u <USER> -p --database=<JAVA_DATABASE> < sql/init.sql
-USE_MYSQL_CHECKPOINTER=false REQUEST_IDEMPOTENCY=false ENABLE_LANGFUSE=false \
-    python -m pytest tests/test_smoke.py -q
+PYTHONUTF8=1 USE_MYSQL_CHECKPOINTER=false ENABLE_LANGFUSE=false \
+    python -m pytest tests/graph/test_entry_branches.py tests/graph/test_entry_route_guard.py -q
 ```
+
+无数据库的本地单轮调试设置 `ENVIRONMENT=development`、`USE_MYSQL_CHECKPOINTER=false`、`MYSQL_URI=""`。生产必须启用 checkpoint；仅关闭 checkpoint 不会关闭已配置 URI 的节点审计。Windows 安装、PowerShell 环境变量和 V2 调用示例见 [根 README](../../README.md)。
 
 ## 日常命令
 
@@ -35,25 +37,48 @@ USE_MYSQL_CHECKPOINTER=false REQUEST_IDEMPOTENCY=false ENABLE_LANGFUSE=false \
 # 启动服务
 uvicorn app.main:app --reload --port 8000
 
-# 跑测试
-python -m pytest tests/ -q                          # 全部
-python -m pytest tests/ -q -k "swap"               # 只跑互换
-python -m pytest tests/integration/ tests/test_cascade_e2e.py -q   # 只跑集成 / E2E
-python -m pytest --cov=app/                        # 覆盖率
+# 跑 app 核心测试（先相关文件，完整验收再全量）
+PYTHONUTF8=1 USE_MYSQL_CHECKPOINTER=false ENABLE_LANGFUSE=false python -m pytest tests/ -q
+PYTHONUTF8=1 USE_MYSQL_CHECKPOINTER=false ENABLE_LANGFUSE=false python -m pytest tests/ -q -k "swap"
 
 # 代码质量
 ruff check app/ tests/                 # lint
 ruff format app/ tests/                # 格式化
 mypy app/                              # 类型
 
-# 评估
-python scripts/langfuse/langfuse_eval.py --local tests/datasets/intent --concurrency 3
-python scripts/local_eval.py --base-url http://127.0.0.1:8201 --data tests/datasets/biz --case case-025
+# 评估（黄金数据集）
+python -m harness run --group biz --backend mock      # 业务黄金集全量，mock 后端
+python -m harness run --group intent --backend mock   # 意图黄金集全量
+python -m harness run --file tests/datasets/biz/swap_prod.jsonl --case ai_trade_assist_prod_swap_order_case_1 --backend java  # 仅授权单条
+python -m harness run --case case-021 --backend mock  # 指定单条用例
 
-# 一致性检查（提交前）
-python scripts/check_dataset_consistency.py && python scripts/check_adr_refs.py
-python scripts/check_alert_threshold_consistency.py && python scripts/sync_agents_md.py --check
 ```
+
+黄金集参数与执行限制见 [测试指南](../testing/README.md)。Harness 固定请求已启动的 `127.0.0.1:8000`，不启动 app 或 mock_api、不修改服务配置。评测输入缺省 V2，显式版本原值透传。Java 全量仅在明确授权后运行，不因部署自动执行。
+
+### HTTP 业务调用
+
+普通业务请求显式传入 V2，账号与群使用授权身份，消息 ID 每次调用保持唯一。
+
+```json
+{
+  "inputs": {
+    "rawContent": "查可平持仓",
+    "messageId": 100000000000001,
+    "conversationId": "local-read-example",
+    "userId": "<授权测试账号>",
+    "roomId": "<授权测试群>",
+    "atBot": true,
+    "fastQuery": "0",
+    "existingCommand": "0",
+    "robotVersion": "V2"
+  },
+  "response_mode": "blocking",
+  "user": "<授权测试账号>"
+}
+```
+
+请求入口为 `POST /v1/workflows/run`，接口结构见本地 `/docs`。
 
 ## 添加新功能的标准流程
 
@@ -83,12 +108,12 @@ python scripts/check_alert_threshold_consistency.py && python scripts/sync_agent
 - 修改配置后重启；换模型需重新验收，当前基线为 deepseek-v4-pro。
 
 ### HTTP 调用
-- 统一走 `OptionClient` / `SwapClient` / `TickerClient` Protocol（ADR 0001 D2），连接走 `app/tools/http_pool.py` 单例池
+- 统一走 `OptionClient` / `SwapClient` / `MessageClient` / `GoatsAgentClient` Protocol，连接走 `app/tools/http_pool.py` 单例池；不调用证券查询接口（ADR 0025）
 - 不要直接用 httpx.AsyncClient，不要在 client 里自写重试
 
 ### 提示词管理
 - git `.md` 是唯一真源：改提示词直接改 `app/prompts/**/*.md` + 普通 PR（`prompt(<scope>)` commit）
-- 新 LLM 节点按 ADR 0023 建 `PromptSpec`（`app/prompts/spec.py`，先例 `app/subgraphs/swap/intent.py`）；新意图可用 `/add-intent` skill
+- 模型解析契约按 ADR 0023 建 `PromptSpec`（`app/prompts/spec.py`）；业务模型入口是 `app/nodes/parse_instruction.py`，修改不得增加同次调用的模型请求。新意图可用 `/add-intent` skill
 
 ## 常见代码片段
 
@@ -112,11 +137,11 @@ async def my_node(state: AgentState) -> dict[str, Any]:
     }
 ```
 
-### 新加一个 LLM 节点
+### 声明解析契约（示意，不新增第二次模型请求）
 ```python
 from app.graph.safe_node import safe_node
 from app.graph.state import AgentState
-from app.llm.clients import get_llm_thinking
+from app.llm.clients import get_llm_standard
 from app.prompts.spec import PromptSpec, register
 from app.subgraphs.swap.models import MyOutput
 
@@ -134,7 +159,7 @@ SPEC = register(PromptSpec(
 @safe_node
 async def extract_something(state: AgentState) -> dict[str, Any]:
     messages, prompt_name = SPEC.build_messages(state)
-    llm = get_llm_thinking().with_structured_output(MyOutput)
+    llm = get_llm_standard().with_structured_output(MyOutput)
     result: MyOutput = await llm.ainvoke(messages)
     return {"...": result.xxx, "trace": [...]}
 ```
@@ -173,7 +198,7 @@ ORDER BY step_index;
   - 能确定性计算的步骤不走 LLM
 
 ### 当准确率下降
-- 跑 `scripts/langfuse/langfuse_eval.py --local <fixture>` 定位失败 category
+- 跑 `python -m harness run --group intent --backend mock` 定位失败用例
 - 先在 `tests/datasets/biz/` 补失败 case，再按 TDD 修复
 - 检查是否提示词被意外改动：`git log app/prompts/`
 

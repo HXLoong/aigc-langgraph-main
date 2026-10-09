@@ -1,150 +1,146 @@
-# 测试指南 · docs/testing 目录说明
+# 测试指南
 
-> 本目录保存**仍在使用的测试说明**：测试分层与命令、数据集组织、测试环境与种子数据。
-> 本文件是测试体系的**总入口与实操指南**；带日期的评估 / 测试报告放 [../reports/](../reports/README.md)。
->
-> | 文档 | 用途 |
-> |---|---|
-> | 本文 | 测试分层、黄金集依赖矩阵、命令与失败定位 |
-> | [local-backend-seed.md](./local-backend-seed.md) | 本地合成身份种子与验收边界 |
->
-> 纪律真源（本文不重复，冲突时以它们为准）：
-> - `.claude/rules/testing.md` — 三层 TDD 准则 / Mock 陷阱 / Golden 规范
-> - `tests/CLAUDE.md` — tests/ 目录布局 + 局部命令
-> - 根 `CLAUDE.md`"排查与修复流程" — bug 定位 SOP
+本页是测试执行与失败定位入口。黄金数据格式见 [数据集说明](../../tests/datasets/README.md)，
+执行器细节见 [Harness](../../harness/README.md)，测试身份准备见 [本地种子与授权边界](./local-backend-seed.md)。
+进展和未完成项只在 [工作计划](../work-plan.md) 维护。
 
----
+## 1. 两类正式验证
 
-## 一、测试分层全景（从快到慢）
+| 类型 | 入口 | 验证内容 |
+|---|---|---|
+| app 核心测试 | `python -m pytest` | 路由、状态、参数、来源、引用选择、出站请求、错误兜底和 app HTTP 契约 |
+| 黄金数据集评测 | `python -m harness run` | 实际模型和业务链路输出是否满足 `tests/datasets/` 中的明确期望 |
 
-| 层 | 跑什么 | 依赖 | 耗时 | 何时跑 |
-|---|---|---|---|---|
-| 1 · 单元/子图测试 | `pytest -k "not e2e"` | 无（LLM/后端全 mock） | ~30s | 每次改代码后，提交前必跑 |
-| 2 · mock_api 集成测试 | `pytest tests/integration/ mock_api/` | 无（ASGI 内存直连，不起端口） | ~1s | 改 Client / 后端契约相关代码后 |
-| 3 · 全链路手测（mock 后端） | uvicorn mock_api + uvicorn app + curl | 真实 LLM key | 秒级/条 | 验证单条指令的真实识别效果 |
-| 4 · golden 批量评估 | `langfuse_eval.py` / `python -m harness run` | 真实 LLM key（+后端，可 mock） | 分钟级 | 改提示词/路由后、发版前 |
-| 5 · 真后端探针 | `scripts/probe_*_e2e.py` | VPN + 真实测试环境 | 手动 | 联调期、现场部署时 |
-| 6 · 真后端数据集回归 | `scripts/local_eval.py` / `langfuse_eval.py`（指向真后端） | VPN + LLM key | 小时级 | 发版前（评测门见 ADR 0030 D3） |
+不另设 mock 集成、真后端探针或真后端回归层。
+`mock_api` 是可替换的外部接口 stub，`node-run` 是单节点调试工具，部署 smoke 是环境检查。
+pytest 不维护 harness、辅助脚本、mock_api、平台或基础设施自身的测试。
+静态检查不是额外的业务评测层。
 
-原则：**低层绿了才上高层**。层 1-2 零外部依赖，是 CI 与日常开发的守卫；层 3-4 验证 LLM
-真实效果；层 5-6 验证真实环境契约。
+## 2. app 核心测试
 
-## 一a、黄金集依赖矩阵：哪些能进 CI
-
-| 数据集 | 目录 | 外部依赖 | 在哪跑 | 评分 |
-|---|---|---|---|---|
-| **意图集**（路由 + 意图 + 标的原文提取） | `tests/datasets/intent/` | LLM 网关 + Langfuse；后端由仓库内 `mock_api/` 顶替，**不碰 Java / GOATS** | 本地手动（`intent-eval` workflow 已删除） | 执行结果上传 Langfuse，JS Evaluation Rule 自动生成 `det_intent_match_pass` / `det_instrument_match_pass` |
-| **业务集**（询价 / 下单 / 平仓卡片与后端联动） | `tests/datasets/biz/` | Java 后端 + GOATS + 授权测试账号 / 群 / 对手 / 持仓 | **只在开发 / staging 环境**手动跑（`scripts/local_eval.py` / `langfuse_eval.py --dataset biz/option_close`），绝不进 CI | `det_business_pass` 确定性字段 / 文本断言，不调用 Judge |
+从仓库根目录运行，避免本地 `.env` 开启持久化或追踪：
 
 ```bash
-# 意图集本地（终端 1 起 mock_api）
-uvicorn mock_api.server:app --port 8099
-OTC_API_BASE_URL=http://127.0.0.1:8099 GOATS_BASE_URL=http://127.0.0.1:8099 \
-  python scripts/langfuse/langfuse_eval.py --local tests/datasets/intent --concurrency 3
+# Linux / macOS / Git Bash
+# 新入口规则专项
+PYTHONUTF8=1 USE_MYSQL_CHECKPOINTER=false ENABLE_LANGFUSE=false python -m pytest tests/graph/test_entry_branches.py tests/graph/test_entry_route_guard.py -q
 ```
 
-该批量评测不进 CI；本地运行需配置 LLM 与 Langfuse 凭据。
+Windows PowerShell 先设置 `$env:PYTHONUTF8="1"`、`$env:USE_MYSQL_CHECKPOINTER="false"`、
+`$env:ENABLE_LANGFUSE="false"`，再运行相同的 `python -m pytest ...`。
+修改代码后先执行受影响路径，完整验收再运行 `python -m pytest tests/ -q`。
+核心规则修复遵循 RED → GREEN，业务样本显式使用 V2 输入，不改变 app 的 V1 默认规则。
+主图冒烟命令为 `PYTHONUTF8=1 USE_MYSQL_CHECKPOINTER=false ENABLE_LANGFUSE=false python -m pytest tests/test_smoke.py -q`。
 
-## 二、命令速查
-
-### 提交前本地检查（与 CI fast job 一致）
+必要静态检查：
 
 ```bash
-ruff check app/ tests/ harness/ scripts/probe_goats/
+ruff check app/ tests/ harness/ scripts/probe_goats/ scripts/langfuse/ scripts/goats_api_mock/
 python -m mypy app/ harness/
-python scripts/check_alert_threshold_consistency.py
-python scripts/check_dataset_consistency.py
-python scripts/check_adr_refs.py
-python scripts/sync_agents_md.py --check
-pytest tests/ -q -k "not e2e"
+
 ```
 
-以零失败、零告警为通过条件；保留本地 MySQL 等条件跳过，不新增 skip/xfail。
-真实模型准确率与客户业务闭环须另行取得证据。
+### CI 执行内容
 
-### 分层调试命令
+`.github/workflows/ci.yml` 由 main push、PR 和手动触发执行。
+
+| Job | 内容 |
+|---|---|
+| fast · ruff + mypy + app 核心快速测试 | ruff；mypy；`pytest tests/ -k "not e2e"` |
+| slow · app 核心全量测试 | fast 成功后执行 `pytest tests/`，包含隔离外部 IO 的 E2E |
+
+两个 Job 使用统一占位配置，显式配置三类模型名，关闭 MySQL checkpoint 与 Langfuse。
+CI 仅保留 ruff、mypy 和 app 核心 pytest，不执行五项一致性检查或平台 JS evaluator 自测。
+黄金数据集评测通过 Harness 单独运行，支持全量、文件与用例选择，以及 mock 和 Java 后端；不进入 CI 自动执行。
+CI 不调用真实模型、Java 或真实数据库。
+静态检查可覆盖 harness 和脚本，但不为这些支撑工具维护独立 pytest。
+
+## 3. 黄金集范围与后端
+
+| 数据集 | 目录 | 执行方式 | 正式判定 |
+|---|---|---|---|
+| 业务集 | `tests/datasets/biz/` | 主图 HTTP，多轮引用取真实回复，外部后端 mock 或 Java | 本地参数／字段／卡片文本断言 |
+| 意图集 | `tests/datasets/intent/` | 冻结输入调解析节点；快速样例调入口节点；需回放的样例走主图 | 本地产品／动作／入口及已标注标的断言 |
+
+冻结意图不调用 Java 业务接口；即使选择 Java，也不能把解析节点通过当成 Java 联调通过。
+回放意图和业务样例使用本次选择的外部后端；本项目不核验 Java 内部的下游环境。
+所有黄金集都可能消耗真实模型请求，不进 CI 自动批量运行。
+
+统一 CLI 只有四类 `run` 参数：
+
+| 参数 | 作用 |
+|---|---|
+| `--group biz|intent|all` | 选择数据集分组，未指定文件时缺省 biz |
+| `--file <路径>` | 指定现役文件，可重复；单组文件可自动推断 group |
+| `--case <ID>` | 指定用例，可重复；任一 ID 未命中就报错 |
+| `--backend mock|java` | 声明本次外部后端，已有 app 须配置对应接口，缺省 mock |
 
 ```bash
-# 层 1 · 快速回归（提交前必跑）
-python -m pytest tests/ -q -k "not e2e" --tb=line 2>&1 | tail -3
+# 各组全量（Java 全量必须先获得明确授权）
+python -m harness run --group intent --backend mock
+python -m harness run --group biz --backend mock
+python -m harness run --group all --backend mock
 
-# 层 2 · mock_api 集成测试（含契约校验）
-python -m pytest tests/integration/ mock_api/ -q
-
-# 层 3 · 全链路手测（终端 1 起 mock，终端 2 起应用，终端 3 发指令）
-uvicorn mock_api.server:app --reload --port 8099
-uvicorn app.main:app --reload
-curl -X POST http://localhost:8000/v1/workflows/run \
-  -H "Content-Type: application/json" \
-  -d '{"inputs": {"rawContent": "600519.SH 询价 3 个月平值看涨", "conversationId": "t-1"},
-       "response_mode": "blocking", "user": "t-1"}'
-
-# 层 4 · fixture 批量评估（确定性断言，不调用 Judge）
-python scripts/langfuse/langfuse_eval.py --local tests/datasets/biz --limit 20 --concurrency 5 --no-judge
-python scripts/langfuse/langfuse_eval.py --local tests/datasets/biz --ids case-025 --no-judge  # 单 case 冒烟
-
-# 层 4a · 意图集（只调 LLM + mock 后端，确定性 product_type/intent 比对，不跑 Judge；见 docs/langfuse/workflow-guide.md §8）
-python scripts/langfuse/langfuse_eval.py --local tests/datasets/intent --concurrency 3 --no-judge
-
-# 层 5 · 真后端探针（需 VPN）
-python scripts/probe_real_backend_e2e.py     # 写路径探针 runner（--target）
-python scripts/probe_swap_write_e2e.py       # 互换写
-python scripts/probe_option_write_e2e.py     # 期权写
-python scripts/probe_close_write_e2e.py      # 平仓写
+# 指定文件与单条用例
+python -m harness run --file tests/datasets/biz/swap_prod.jsonl --backend mock
+python -m harness run --file tests/datasets/biz/swap_prod.jsonl --case ai_trade_assist_prod_swap_order_case_1 --backend java
 ```
 
-## 三、本地 Mock 测试环境
+### 执行注意事项
 
-`mock_api/` 是本地假后端（GOATS 21 端点 + Java 后端 10 端点，按真实 DTO 校验入参），
-让全链路测试**不需要 VPN 和真实后端**。用法与 .env 配置详见
-[`mock_api/README.md`](../../mock_api/README.md)，要点：
+- CLI 固定访问已启动的 `http://127.0.0.1:8000`，不启动或关闭 app、mock_api，不修改 `.env`。
+- mock 评测先启动 `uvicorn mock_api.server:app --port 8099`，并将 app 的 `OTC_API_BASE_URL` 和 `GOATS_BASE_URL` 配置为 `http://127.0.0.1:8099` 后启动 app。
+- Java 评测将 app 配置为实际 Java 接口；EVAL 身份、群、对手及持仓必须已获授权，不核验 Java 内部下游。
+- Harness 不准备数据库消息。无数据库评测服务使用 `USE_MYSQL_CHECKPOINTER=false`、`MYSQL_URI=""`，已有服务改配置后需重新启动。
+- 评测输入缺省使用 V2 和普通指令标记，显式版本及存量标记按数据集原值透传；app 缺省版本仍为 V1。
+- `--file` 支持跨 biz／intent 混合文件；未指定 group 时推断为 all，显式单组不得跨组。
+- mock 使用独立 stub，不读取 `expected` 来伪造通过，不保证全部真后端卡片断言匹配。
 
-```bash
-# .env 指向 mock（LLM 仍走真实 DeepSeek，只有后端是假的）
-OTC_API_BASE_URL=http://127.0.0.1:8099
-GOATS_BASE_URL=http://127.0.0.1:8099
-```
+## 4. 本地确定性评分
 
-- mock 返回**固定 stub**，验证的是"链路通 + 契约对 + 参数提取对"，不验证业务数值正确性
-- 不想产生任何写副作用（即使对 mock）：叠加 `DRY_RUN_BACKEND=true`（写类 intent 在
-  Client 层拦截，读类放行）
-- ⚠️ macOS 下客户端务必用 `127.0.0.1` 而非 `localhost`（IPv6 解析陷阱，见 mock README）
+正式结果在 Python 内同步得出，不需要 Node.js，也不等待 Langfuse 回传。
 
-## 四、切换到真实客户测试环境
+### 意图集
 
-1. **改 .env**：三个 URL 换成真实地址（内网格式参考 `.env.example` 注释），需 VPN 可达
-2. **跑探针**（层 5）：四个 `probe_*_e2e.py` 逐条过，确认契约与连通性；任何 4xx/5xx
-   先解决再往下走
-3. **真后端数据集回归**（层 6）：`langfuse_eval.py` 跑 B 桶全集，退出门见
-   ADR 0030 D3（总 PASS 率不低于上一基线；B 桶 ≥ 90% / C 桶 ≥ 80%）
-4. **现场 smoke**：≥ 5 条真实业务流走通，部署用
-   `scripts/deploy-customer.sh`（自带预检 + smoke 自检）
+实现为 `harness/intent_scoring.py`：
 
-已知坑（真后端联调前必读）：
-- **GOATS agent 路径** · 统一配置 `GOATS_BASE_URL`（主机根，或带 `/api` 尾缀，客户端会归一），
-  客户端自动补全 `/api/internal/agent/*`；两种基址写法均有单测锁定
-- 后端 dedup：多轮 case 间隔太短会撞"正在处理，请勿重复提交"；workaround 只允许放在
-  `scripts/langfuse/langfuse_eval.py`（turn 间 sleep），**严禁进业务代码**（根 CLAUDE.md P0 红线）
+- 按轮比较已标注的 `expected.product_type`、`intent`、`entry_branch`，字符串精确相等。
+- `expected.instruments` 对订单进行无序、一对一匹配；每个标的的 `expression` 可列多个可接受表达。
+  表达比较忽略空白并统一大小写，交易品种只接受已标注候选，不补证券代码。
+- 缺少实际轮次、有已标注字段不匹配、标的遗漏或多出标的，判相应评分失败。
+- 合并存在有效断言的评分项；没有任何可评分标注不能通过。不适用的标的评分不单独导致普通意图失败。
 
-## 五、失败了怎么排查
+### 业务集
 
-按根 `CLAUDE.md`"排查与修复流程"执行，速记：
+实现为 `harness/evaluation.py`、`differ.py`、`references.py`：
 
-1. **层 1-2 失败**：普通 TDD——先写复现测试（RED）→ 最小修复（GREEN）→ 全量回归
-2. **层 3-4 失败**：看 Langfuse 富 output（确定性 Scores / 字段 diff / turns[i] 逐字段定位），
-   或 stdout 的 per-turn trace；按 `product_type` → `intent` → `place_params`
-   → `api_result` 的顺序锁定错误层（标的问题核对传给后端的原文与后端工具日志）
-3. **层 5-6 失败**：先分清是契约问题（对照 `docs/api-contracts/java-backend.md`）还是
-   环境问题（VPN / 鉴权 / dedup）；契约问题回到 mock 复现后按 TDD 修
+- 文本的 `response_contains` 必须全部命中，`response_contains_any` 至少一个命中，
+  `response_not_contains` 不能命中；`response_blocks` 在指定卡片块内检查。
+- `expected` 中明确声明的结构字段逐项比较；参数优先取实际提交投影。
+  `$ref` 只从本轮真实引用解析订单／对手／持仓身份，缺失或歧义不能通过。
+- 对 Java 契约允许数字字符串的十进制字段使用有限 Decimal 比较；整数、Boolean、身份、枚举和普通文本仍严格检查。
+  不做业务单位换算、默认补齐或证券匹配。
+- 节点错误、技术错误、前置时段失败和未执行轮次保留失败；Java `code=0` 或“有回复”不等于断言通过。
+- 无差异且执行成功为 `PASS`；业务拒绝且无其它差异为 `REJECTED`，不计 PASS；其余为 `FAIL`。
+  有字段标注不等于整个订单已完整覆盖，报告保留参数断言覆盖信息。
 
-## 六、本目录的文档存放约定
+## 5. 报告与失败定位
 
-本目录只放仍在使用的测试说明（如 `local-backend-seed.md`）。一次性的评估、测试报告按 `YYYY-MM-DD-<topic>.md`
-放 [../reports/](../reports/README.md)，结论吸收后删除；评测运行输出写 `.harness-runs/`，不进 `docs/`；
-golden case 放 `tests/datasets/`，测试代码放 `tests/`，含真实密钥的配置严禁入库。总规则见 [../README.md](../README.md#存放规则)。
+CLI 逐条追加 `results.jsonl`，收尾写 `summary.json` 和 `report.md`。
+Windows 使用系统临时目录下的 `aigc-langgraph-tmp/harness/<run-id>/`，
+Linux 使用 `/opt/work-file/code-tmp/aigc-langgraph-tmp/harness/<run-id>/`，启动时打印完整路径。
+汇总保留完整请求分母与未执行、跳过数量，跳过、外部阻塞或未执行不算通过。
+运行报告不可提交仓库。
 
-### 断言版本 deterministic-v2
+失败时依次检查：
 
-HTTP 报告中的参数优先来自实际提交投影。对 Java 明确允许数字字符串的十进制字段，评估器使用有限 Decimal 精确比较；百分号仅在已有百分比契约中处理，不做单位或比例换算。整数传输类型、Boolean、证券/订单身份、枚举、时间及普通文本仍严格检查，不能全局字符串转数字。原始值、类型、清洗记录与出站请求继续保留。
+1. 输入及 `entry_branch`：版本、@、快速／存量标记是否正确传递。
+2. `product_type / intent` 和模型错误：区分网关／代理失败与解析／证据错误。
+3. 实际提交参数与引用：核对原字段、来源账本、清洗记录、出站请求。
+4. Java 原始回复：区分权限、缺对手／持仓、业务拒绝和真实输出差异。
+5. 只对已定位问题做核心测试复现与相关用例复验；不改低 expected、不伪造 Java 卡片。
 
-快速询价样例同时断言入口、产品/动作和业务结果；入口标记必须经数据集加载与 HTTP runner 实际传递。业务前置条件失败也保留完整分母与未执行轮次，报告不得把环境阻塞当通过。
+Langfuse 可以辅助追踪，上传故障不改变本地结果。
+CLI 提供可选追踪并在收尾 flush，不自动创建 Dataset Experiment。
+平台 webhook 复用同一执行与评分入口，通过 SDK Experiment 上传结果和 Score。
+平台入库仍须核查，不以关联 ID 或 SDK 入队代替证据，详见 [Langfuse 链路](../langfuse/workflow-guide.md)。

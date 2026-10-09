@@ -33,9 +33,11 @@ import logging
 import os
 import subprocess
 import sys
+import tempfile
 import time
 from pathlib import Path
 from typing import Any
+from uuid import uuid4
 
 from fastapi import APIRouter, HTTPException, Request
 
@@ -46,8 +48,10 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/v1/webhooks", tags=["langfuse"])
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
-_EVAL_SCRIPT = PROJECT_ROOT / "scripts" / "langfuse" / "langfuse_eval.py"
-_RUN_LOG_DIR = PROJECT_ROOT / ".harness-runs"
+_RUN_LOG_DIR = (
+    Path(tempfile.gettempdir()) / "aigc-langgraph-tmp" / "harness"
+    if os.name == "nt" else Path("/opt/work-file/code-tmp/aigc-langgraph-tmp/harness")
+)
 
 #: 签名时间戳容忍窗口（秒）。触发是同步请求，正常秒级到达；窗口只用于挡重放。
 _SIGNATURE_TOLERANCE_SECONDS = 300
@@ -58,6 +62,7 @@ _ALLOWED_CONFIG_KEYS = frozenset({"ids", "limit", "concurrency"})
 
 #: dataset 名 → 在跑的任务；同一 dataset 同时只允许一个 run，避免 UI 连点打爆后端
 _running: dict[str, asyncio.Task[None]] = {}
+_spawn_lock = asyncio.Lock()
 
 
 def verify_signature(*, raw_body: bytes, header: str, secret: str) -> bool:
@@ -119,22 +124,26 @@ def parse_config(raw: Any) -> dict[str, Any]:
 
 
 def build_eval_args(*, dataset_name: str, config: dict[str, Any]) -> list[str]:
-    """拼 langfuse_eval.py 的命令行。
-
-    不传 --suite：脚本按 dataset 名前缀判定套件（`intent/`、`intent_`、`intent-` 为意图集，
-    其余为业务集），而数据集由上传脚本按相对路径命名，两者天然一致。
-    dataset 同理以 Langfuse 传来的 datasetName 为准，不从 config 取。
-
-    批量评分固定 --no-judge：ADR 0005 规定评测只用确定性断言，不调用 LLM Judge。
-    """
-    args = [str(_EVAL_SCRIPT), "--dataset", dataset_name]
+    """构造内部平台适配进程；执行与评分复用 Harness。"""
+    parts = dataset_name.split("/")
+    if len(parts) < 2 or parts[0] not in {"biz", "intent"} or any(
+        not part or part in {".", ".."} or "\\" in part or ":" in part for part in parts
+    ):
+        raise ValueError("datasetName 必须对应 biz/ 或 intent/ 下的黄金文件")
+    root = (PROJECT_ROOT / "tests" / "datasets").resolve()
+    path = root.joinpath(*parts[:-1], f"{parts[-1]}.jsonl").resolve()
+    if root not in path.parents or not path.is_file():
+        raise ValueError(f"黄金数据文件不存在：{dataset_name}")
+    if parts[0] == "biz" and config.get("concurrency", 1) != 1:
+        raise ValueError("业务实验 concurrency 必须为 1")
+    args = ["-m", "harness.remote_experiment", "--dataset", dataset_name]
 
     ids = config.get("ids")
     if ids is not None:
-        if not isinstance(ids, list) or not all(isinstance(i, str) for i in ids):
+        if not isinstance(ids, list) or not all(isinstance(i, str) and i.strip() and not i.startswith("-") for i in ids):
             raise ValueError("ids 必须是字符串数组")
         if ids:
-            args += ["--ids", ",".join(ids)]
+            args += ["--ids", *ids]
 
     for key, flag in (("limit", "--limit"), ("concurrency", "--concurrency")):
         value = config.get(key)
@@ -145,7 +154,6 @@ def build_eval_args(*, dataset_name: str, config: dict[str, Any]) -> list[str]:
             raise ValueError(f"{key} 必须是正整数")
         args += [flag, str(value)]
 
-    args.append("--no-judge")
     return args
 
 
@@ -155,7 +163,7 @@ def _slug(name: str) -> str:
 
 
 def _spawn(*, args: list[str], dataset_name: str) -> tuple[subprocess.Popen[bytes], Path]:
-    """起子进程。stdout/stderr 落 .harness-runs/，实验细节不回灌业务日志。
+    """起评测子进程。stdout/stderr 落仓库外，实验细节不回灌业务日志。
 
     用同步的 subprocess.Popen（调用方放工作线程）而不是 asyncio.create_subprocess_exec：
     Windows 上 uvicorn 带 --reload/--workers 时用的是 SelectorEventLoop，它的
@@ -164,7 +172,7 @@ def _spawn(*, args: list[str], dataset_name: str) -> tuple[subprocess.Popen[byte
     """
     _RUN_LOG_DIR.mkdir(parents=True, exist_ok=True)
     stamp = time.strftime("%Y%m%d-%H%M%S")
-    log_path = _RUN_LOG_DIR / f"langfuse-webhook-{stamp}-{_slug(dataset_name)}.log"
+    log_path = _RUN_LOG_DIR / f"langfuse-webhook-{stamp}-{uuid4().hex[:8]}-{_slug(dataset_name)}.log"
     with log_path.open("wb") as log_file:
         proc = subprocess.Popen(  # noqa: S603
             [sys.executable, *args],
@@ -224,18 +232,21 @@ async def trigger_remote_experiment(request: Request) -> dict[str, Any]:
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
-    current = _running.get(dataset_name)
-    if current is not None and not current.done():
-        raise HTTPException(status_code=409, detail=f"{dataset_name} 已有实验在跑")
 
-    if not _EVAL_SCRIPT.exists():
-        raise HTTPException(status_code=500, detail=f"评测脚本不存在: {_EVAL_SCRIPT}")
+    if not settings.enable_langfuse or not settings.langfuse_public_key or not settings.langfuse_secret_key:
+        raise HTTPException(status_code=503, detail="Langfuse 实验配置未就绪")
+    if not settings.eval_user_id or not settings.eval_room_id:
+        raise HTTPException(status_code=503, detail="EVAL_USER_ID / EVAL_ROOM_ID 未配置")
 
-    # spawn 与 reap 都是同步阻塞调用，放工作线程，不占事件循环
-    proc, log_path = await asyncio.to_thread(_spawn, args=args, dataset_name=dataset_name)
-    _running[dataset_name] = asyncio.create_task(
-        asyncio.to_thread(_reap, proc, dataset_name, log_path)
-    )
+    # 检查和登记保持原子性，避免两个触发请求在 spawn 等待期间同时通过。
+    async with _spawn_lock:
+        current = _running.get(dataset_name)
+        if current is not None and not current.done():
+            raise HTTPException(status_code=409, detail=f"{dataset_name} 已有实验在跑")
+        proc, log_path = await asyncio.to_thread(_spawn, args=args, dataset_name=dataset_name)
+        _running[dataset_name] = asyncio.create_task(
+            asyncio.to_thread(_reap, proc, dataset_name, log_path)
+        )
     logger.info(
         "langfuse remote experiment started dataset=%s pid=%d log=%s",
         dataset_name,

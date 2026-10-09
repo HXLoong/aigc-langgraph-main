@@ -118,9 +118,47 @@
 - 本地记录完整，业务评分 **106/106** 已读回；意图平台评分未读回，服务端 Observation 仍有导出缺失，不能宣称完整追踪闭环。
   完整输入、预期、输出和错误报告：`/opt/work-file/code-tmp/aigc-langgraph-tmp/four-suites-eval-20260930-150201/`。
 
-## 2. 客户现场部署与运维（已就绪的能力）
+### Dify 入口、Harness 收敛与互换评测（2026-10-10 审阅）
 
-- `scripts/deploy-customer.sh` 一键部署 + smoke 自检；`.env.customer.template`；`infra/langfuse/` self-hosted 栈
+- 新入口以用户提供的 `场外交易-scz.yml` 为准：非 @ 存量指令优先；缺省 V1，V1 普通静默，V2 普通业务／快速询价分别分流。离线 **162 组入口组合、0 差异**；本轮相关核心测试 **82 项通过**。这仅是局部证据，不代表所有产品／动作已完成 Dify 行为验收。
+- 此前向已有 `127.0.0.1:8000` app 执行三个指定文件：意图 `swap_instrument` **341/348**、业务 `swap_prod` **62/123**、`swap_prod_acceptance` **0/162**；总计 **403/633 PASS**。主图请求经 runner 的 `before_turn` 显式注入 V2，**不是正式 CLI 的验证结果**。本次 review 未重跑 Java。
+- 主要失败为标的／证据错误、业务卡片差异及外部身份数据不匹配；验收集预期对手“聚鸣价值精选”在授权环境缺失。业务 **279/285** 返回 Java `code=0`，但不能据此当作断言通过。算法等差异仍需对照实际提交，不能一律归为环境问题。
+- 逐条结果在仓库外 `C:\Users\PC\AppData\Local\Temp\aigc-langgraph-tmp\swap-eval-20261009-185859`；审阅与执行边界见 [报告](./reports/2026-10-10-dify-harness-review.md)。早一轮网关／代理失败和中断结果不混入通过率。
+- 新人根 README 已按安装、配置、启动、V2 调用、两类测试与学习导航整理；主要实操说明改为同一 Harness／本地评分口径，不再推荐已删脚本。目标仍归 ADR，动态状态仅在本页维护。
+
+### Harness、CI 与部署整改（2026-10-10）
+
+| 范围 | 已实施内容 | 验证边界 |
+|---|---|---|
+| Harness 固定入口 | 删除临时 app 启动模块，CLI 固定请求已有 `127.0.0.1:8000`；四类 run 参数不变；后端由已有服务启动配置提供 | 离线 MockTransport 核对 URL，CLI 禁止 Popen 检查通过；未重放 Java 写入 |
+| 评测输入与选择 | 评测输入缺省 V2，显式 V1、null、空串和存量标记原值透传；支持跨 biz／intent 文件；平台投影保留入口字段和块级断言 | 离线 HTTP、加载、选择与投影检查通过；app 默认 V1 不变 |
+| 报告 | 每条写 results.jsonl，收尾汇总与 Markdown 写仓库外；保留完整 requested、SKIP 与未执行分母；批次 flush | 离线生成路径与本地判定通过；强制终止进程时仅保证已写逐条结果，不保证执行 finally |
+| 平台触发 | webhook 改为内部 `harness.remote_experiment` 适配，复用 run_case 和本地评分；平台条目绑定 git 用例并核对输入与期望；SDK Experiment 输出 report 与确定性 Score | 签名 ASGI、错误范围与 mock SDK 流程通过；真实平台触发、入库与父子关联待验收；CLI 追踪不自动生成 Experiment |
+| CI | 按用户确认仅保留 ruff、mypy、app 核心快速／全量 pytest；移除五项一致性检查，不新增替代门槛；共用模型与依赖占位配置 | 黄金集通过 Harness 单独评测，不进入 CI 自动执行；历史 ADR 引用问题归文档维护，不再阻塞 CI |
+| 主图冒烟 | 原先 4 FAIL 为输入缺少 V2；测试按新入口传 V2 与 @，保留原断言 | 主图冒烟及入口专项共 31 PASS；未运行完整 pytest |
+| 部署 | 删除自动 Java 黄金集全量；移除虚构账号业务 smoke，自检只核对健康、依赖和 OpenAPI 入口 | bash -n 通过；未实际部署，服务检查不代表业务验收 |
+| 文档 | 根 README 精简为配置、启动、测试与文档索引；同步开发、测试、Harness、数据集、mock、Langfuse 与部署说明 | 实操文档不再描述临时服务或未透传版本；审阅报告保留其当时快照 |
+
+离线证据位于 `C:\Users\PC\AppData\Local\Temp\aigc-langgraph-tmp\harness-offline-20261010`。
+这些记录使用假 HTTP 与 SDK，只证明工具链路径，不是三个黄金文件的模型或 Java 验收结果。
+
+**最大跟量公共 prompt 核对：未完整对齐，未修改其业务语义。**
+
+- Dify 节点 `17797951842080` 输出公共 keywords 和 hasFastExecutionIntent 规则。keywords 注入互换、期权、平仓意图，字段规则注入期权下单与平仓参数；并非所有互换参数节点都消费公共字段规则。
+- 公共规则规定“最大跟量”优先 true，不被价格、POV／TWAP 或明确比例覆盖；其它快速执行词仅在没有具体跟量比例时 true；普通“跟量／市价跟量”不是快速执行；仅判断机器人名过滤后的本次输入。
+- app 三套提示词目前只有概括性意图说明，未完整表达上述优先级与词语边界，没有对应公共 prompt 资产。仅存在同名字段不能证明行为对齐。
+- Dify 自身存在矛盾：公共规则未命中 false，期权下单稀疏段未命中 null，平仓旧段落又把普通跟量设为 true。app 当前保留稀疏 null 和非 null 字段证据，不能擅自补无证据 false。下一步需明确采用公共判定规则与稀疏提交边界，再补相关回归与提示词。
+
+**剩余验收与 owner 配套：**
+
+1. 最大跟量规则收敛及三产品专项；平仓预查询门控、待补对手范围广播、引用顺序定位与锁定边界复验仍按相关核心范围执行。
+2. 真实 Langfuse webhook → SDK Experiment → HTTP → Score 入库验收；先同步包含版本字段的 Dataset，不将 202 或关联 ID 当作成功。
+3. owner 更新 `CLAUDE.md`／`.claude/**`／`scripts/CLAUDE.md` 的旧命令与测试范围，修正 ADR 0002／0030 的已删脚本引用、0021 的已删测试引用，再生成 AGENTS／`.agents`。本轮未修改受保护真源或 ADR 正文，不通过恢复退役文件规避检查。
+4. 完整 pytest、三个指定文件的统一 Java 复验与真实部署尚未执行；保留前次批量结果，不宣称新 CLI 全量验收通过。
+
+## 2. 客户现场部署与运维（工具与待验收事项）
+
+- `scripts/deploy-customer.sh` 提供部署、健康与接口自检，不自动执行黄金集；语法检查通过，真实部署待验收。另有 `.env.customer.template` 与 `infra/langfuse/` self-hosted 栈
 - `scripts/rollback_canary.sh` 应急回切、`scripts/drill_smoke.sh` 演练 smoke、`scripts/canary_status.py` / `scripts/metrics_snapshot.py` 灰度状态与指标快照、`scripts/run_alerts.py` 阈值告警干跑、Grafana 面板模板（`infra/`）
 - `docs/operations/on-call-runbook.md` 值班手册（严重等级对齐 ADR 0019）；回切演练在首次切流前执行
 - `scripts/shadow_compare.py` 为可选对照工具，不进任何门
@@ -136,5 +174,5 @@
 ## 4. 相关文档
 
 - `docs/adr/README.md` · 决策索引与待办表
-- `docs/testing/README.md` · 测试分层与真后端切换
+- `docs/testing/README.md` · app 核心测试与黄金集 mock／Java 执行
 - `docs/operations/on-call-runbook.md` · 值班手册 / `docs/operations/troubleshooting-sop.md` · 生产排障

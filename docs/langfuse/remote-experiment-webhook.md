@@ -1,66 +1,63 @@
 # Remote Experiment Webhook 对接
 
-在 Langfuse Dataset 页面点 `Run`，直接触发本机跑一次数据集实验，结果按 Dataset / Experiment / Score
-闭环回写。端点实现见 [app/api/langfuse_webhook.py](../../app/api/langfuse_webhook.py)。
+`POST /v1/webhooks/langfuse` 接收平台触发，校验签名、数据集名称和执行范围后启动内部评测进程。
+评测复用 `harness.http_evaluation.run_case` 与本地 Python 评分，固定请求已启动的
+`http://127.0.0.1:8000`，不启动 app、不修改后端配置、不连接数据库准备消息。
 
-本机侧只做验签、解析配置、点火；实验交给 `scripts/langfuse/langfuse_eval.py` 子进程跑。
+## 配置
 
-## 一、Langfuse 侧
+| 配置 | 用途 |
+|---|---|
+| `ENABLE_LANGFUSE_WEBHOOK=true` | 开启端点 |
+| `LANGFUSE_WEBHOOK_SECRET` | 验证平台签名 |
+| `ENABLE_LANGFUSE=true` 与 `LANGFUSE_*` 项目凭据 | SDK Experiment 记录与结果上传 |
+| `EVAL_USER_ID`、`EVAL_ROOM_ID` | 授权测试账号与群 |
 
-Dataset → `Start Experiment` → `⚡ Custom Experiment` → 填 URL 与 Default config：
+app 的后端地址须预先配置为本次评测使用的 mock 或 Java。
+业务写入须使用授权身份与数据，配置凭据不替代业务授权。
 
-![Edit remote experiment trigger：URL 与 Default config](./images/webhooks/url-config.png)
+平台 Dataset 页面配置 `Custom Experiment` 触发地址并启用请求签名。
+Docker 内访问宿主机使用 `host.docker.internal`，不能使用容器自身的 localhost。
+平台 URL 校验依部署版本的 SSRF 策略执行；反向代理可通过 80 或 443 接收 webhook，
+再转发至本地 8000 app。内部评测仍访问 8000，不将 app 改为其他端口。
+私网访问白名单配置见 [自托管说明](./self-hosted-deployment.md)。
 
-- **URL** —— `http://host.docker.internal:80/v1/webhooks/langfuse`
-  - 端口只能是 **80 或 443**：Langfuse 发送前做 SSRF 校验，其它端口直接拒绝，白名单放不开
-  - Langfuse 跑在容器里时用 `host.docker.internal`；容器内的 `localhost` 指容器自己
-- **Default config** —— 默认参数，触发时用户可改，支持的键见 § 三
-- **Advanced Options → Enabled** —— 暂停触发但保留配置
+## 数据集与执行范围
 
-打开 **Sign requests**，保存后密钥只显示一次：
+`datasetName` 对应 git 中的黄金文件，如 `biz/swap_prod`、`intent/swap_instrument`。
+内部适配器读取平台 Dataset，将稳定用例 ID 绑定到本地黄金用例。
+平台输入与期望必须与 git 投影一致；缺项、重复项、不一致或未找到指定 ID 均报错，执行前须完成数据同步。
+平台内容不覆盖 git 黄金集。
 
-![Sign requests 开关与一次性密钥](./images/webhooks/sign.png)
+Default config 支持以下字段，其他字段返回 400：
 
-把它复制到根目录 `.env` 的 `LANGFUSE_WEBHOOK_SECRET`。密钥丢了就关掉开关保存、再打开保存，会重新生成。
-
-## 二、本机侧
-
-```bash
-uvicorn app.main:app --port 80        # 必须是 80 或 443
-```
-
-| 变量 | 文件 | 说明 |
-|---|---|---|
-| `ENABLE_LANGFUSE_WEBHOOK` | `.env` | 默认 `false`；关闭时端点返回 404 |
-| `LANGFUSE_WEBHOOK_SECRET` | `.env` | Langfuse 生成的一次性密钥；为空返回 503 |
-| `LANGFUSE_WEBHOOK_WHITELISTED_HOST` | `infra/langfuse/.env` | 填 `host.docker.internal`，改后需 `docker compose up -d` |
-
-白名单那项是必需的：`host.docker.internal` 解析到私网地址，Langfuse 默认拒绝。
-
-## 三、Default config 支持的参数
-
-| 键 | 类型 | 默认 | 说明 |
+| 字段 | 类型 | 默认值 | 含义 |
 |---|---|---|---|
-| `ids` | 字符串数组 | 全部 | 只跑指定用例，填 golden case id（如 `case-023`），也接受 dataset item 的 UUID |
-| `limit` | 正整数 | 不限 | 只跑前 N 条 |
-| `concurrency` | 正整数 | `1` | 并发数；业务集保持 1，并发高会撞后端 dedup |
+| `ids` | 字符串数组 | 全部 | 黄金用例 ID 或平台 Item ID |
+| `limit` | 正整数 | 不限 | 执行选中范围的前 N 条 |
+| `concurrency` | 正整数 | 1 | 业务集仅允许 1；意图集可指定并发 |
 
 ```json
-{ "ids": ["case-023"], "concurrency": 1 }
+{"ids": ["ai_trade_assist_prod_swap_order_case_1"], "concurrency": 1}
 ```
 
-- **`dataset` 也不用配**：用 Langfuse 传来的 `datasetName`，UI 上选的哪个就是哪个
-- 其余未知键直接返回 400 —— 拼写错误当场暴露，不静默忽略
-- 评分固定 `--no-judge`（[ADR 0005](../adr/0005-annotation-roles-judge-plus-business-spotcheck.md)：批量评分只用确定性断言）
+## 执行与结果
 
-## 四、响应与排查
+内部 `harness.remote_experiment` 是平台触发适配器，不是另一套评测工具或评分标准。
+它复用本地 HTTP 执行与评分，将完整 report 作为 SDK Experiment 输出，并将已有结论转为 Score。
+意图结论使用 `det_intent_pass`，有效子评分使用 `det_intent_match_pass`、`det_instrument_match_pass`；
+业务结论使用 `det_business_pass`。SKIP 不产生通过分数，不调用 Judge，不等待平台 JS Rule。
 
 | 状态码 | 含义 |
 |---|---|
-| `202` | 已受理，实验在子进程里跑 |
-| `401` | 签名校验失败：密钥不一致，或 Langfuse 侧没打开 Sign requests |
-| `404` | `ENABLE_LANGFUSE_WEBHOOK` 未打开 |
-| `409` | 同一 dataset 已有实验在跑 |
-| `503` | 开关已开但密钥为空 |
+| 202 | 已启动评测进程，不代表实验成功 |
+| 400 | 请求、范围或数据集名称无效 |
+| 401 | 签名校验失败 |
+| 404 | webhook 未开启 |
+| 409 | 同一数据集已有实验运行 |
+| 503 | 签名密钥、Langfuse 或授权身份配置未就绪 |
 
-实验输出写在 `.harness-runs/langfuse-webhook-*.log`。
+日志与逐条报告写入仓库外：Windows 为系统临时目录的 `aigc-langgraph-tmp/harness/`，
+Linux 为 `/opt/work-file/code-tmp/aigc-langgraph-tmp/harness/`。
+启动响应提供日志路径，实验报告路径在日志中输出。
+本地 PASS 与平台上传状态分别核查，平台入库需检查 Experiment、Observation 与 Score。

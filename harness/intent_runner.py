@@ -20,6 +20,7 @@ def turn_state(turn: TurnSpec, *, conversation_id: str) -> dict[str, Any]:
     """只投影输入和冻结上下文，expected 永不进入模型输入。"""
     state: dict[str, Any] = {
         "fast_query": turn.fast_query, "at_bot": turn.at_bot,
+        "robot_version": turn.robot_version, "existing_command": turn.existing_command,
         "raw_text": turn.send_text, "quote_content": turn.quote_content,
         "conversation_id": conversation_id,
         "option_counterparties": COUNTERPARTIES, "swap_counterparties": COUNTERPARTIES,
