@@ -27,7 +27,7 @@ def no_model(monkeypatch: pytest.MonkeyPatch) -> Mock:
 def test_ordinary_entry_goes_directly_to_product_routing() -> None:
     graph = main.build_main_graph().get_graph()
     assert {edge.target for edge in graph.edges if edge.source == "entry_route"} == {
-        "quick_inquiry", "existing_command_query", "pre_route",
+        "quick_inquiry", "existing_command_query", "prepare_input", "render",
     }
     assert "plan_instructions" not in graph.nodes
     assert "instructions" not in graph.nodes
@@ -57,6 +57,7 @@ async def test_original_message_enters_one_business_branch(
     result = await graph.ainvoke({
         "raw_text": raw, "message_content": raw, "message_id": 1234567890123456789,
         "conversation_id": "single-action", "room_id": "room", "user_id": "user",
+                "robot_version": "V2", "at_bot": True,
     })
 
     assert result.get("error") is None
@@ -99,6 +100,7 @@ async def test_single_action_submits_both_orders_and_keeps_original_receipt(
     result = await main.build_main_graph().ainvoke({
         "raw_text": raw, "message_content": raw, "message_id": 1234567890123456789,
         "conversation_id": "batch-order", "room_id": "room", "user_id": "user",
+                "robot_version": "V2", "at_bot": True,
     })
 
     assert result.get("error") is None
@@ -143,6 +145,7 @@ async def test_all_recognized_orders_share_the_selected_action(
     result = await main.build_main_graph(message_client_factory=lambda: message_client).ainvoke({
         "raw_text": raw, "message_content": raw, "message_id": 1234567890123456789,
         "conversation_id": "one-action-two-orders", "room_id": "room", "user_id": "user",
+                "robot_version": "V2", "at_bot": True,
     })
 
     assert result.get("error") is None
@@ -194,6 +197,7 @@ async def test_completed_legacy_checkpoint_preserves_history_without_execution_s
     message_client = Mock(set_intent=AsyncMock())
     result = await main.build_main_graph(saver, lambda: message_client).ainvoke({
         "raw_text": "互换买入600519 100股", "message_id": 2, "conversation_id": "legacy-single-action",
+                "robot_version": "V2", "at_bot": True,
         "input_files": [{"type": "document", "extension": ".pdf"}] if unsupported_file else [],
     }, config=config)
 

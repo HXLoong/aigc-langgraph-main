@@ -22,7 +22,7 @@ async def test_joint_model_failure_cascades_once_without_java(monkeypatch, error
     audit = AsyncMock()
     monkeypatch.setattr("app.nodes.persist.write_node_trace", audit)
     state = await build_main_graph().ainvoke({"raw_text": "期权询价", "conversation_id": "c",
-        "message_id": 1, "user_id": "u", "room_id": "r"})
+        "message_id": 1, "user_id": "u", "room_id": "r", "robot_version": "V2", "at_bot": True})
     assert state["error"].node == "parse_instruction"
     assert state["reply_text"]
     names = [entry.node for entry in state["trace"]]

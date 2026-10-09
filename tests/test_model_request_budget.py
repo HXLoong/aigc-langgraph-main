@@ -118,7 +118,7 @@ async def test_token_limit_stops_even_when_partial_output_is_valid_json(monkeypa
     try:
         with _budget_module().model_request_scope():
             result = await build_main_graph().ainvoke({"raw_text": raw, "conversation_id": "c",
-                "message_id": 1, "room_id": "r", "user_id": "u"})
+                "message_id": 1, "room_id": "r", "user_id": "u", "robot_version": "V2", "at_bot": True})
         assert len(dispatched) == 1
         backend.assert_not_called()
         assert result["error"].code == "E2" and "容量" in result["reply_text"]

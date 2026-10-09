@@ -48,11 +48,11 @@ async def test_main_retry_exhaustion_reaches_reply_history_and_audit(
     monkeypatch.setattr(main, "pre_route", AsyncMock(return_value={}))
     monkeypatch.setattr(main, node_name, failing_node(node_name, calls))
     monkeypatch.setattr(main, "persist", audit)
-    monkeypatch.setattr(main, "_route_entry", lambda _: (
-        "existing_command_query" if node_name == "existing_command_query" else "pre_route"
-    ))
+
     result = await main.build_main_graph().ainvoke({
         "raw_text": "查询订单", "conversation_id": "retry-test", "message_id": 123,
+                "robot_version": "V2", "at_bot": False,
+                "existing_command": "1" if node_name == "existing_command_query" else "0",
     })
     names = [entry.node for entry in result["trace"]]
     assert calls == [node_name, node_name]

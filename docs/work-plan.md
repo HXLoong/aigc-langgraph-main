@@ -142,6 +142,14 @@
 离线证据位于 `C:\Users\PC\AppData\Local\Temp\aigc-langgraph-tmp\harness-offline-20261010`。
 这些记录使用假 HTTP 与 SDK，只证明工具链路径，不是三个黄金文件的模型或 Java 验收结果。
 
+**CI 核心测试失败修复（2026-10-10）：**
+
+- 使用 CI 同款占位环境且不读取本机 `.env`，完整快速集合复现 **62 FAIL / 1164 PASS / 7 deselected**；禁止外部 socket 连接，业务网络请求尝试为 **0**。Windows 事件循环内部 socketpair 单独放行，不作为外部请求。
+- 根因是测试未同步当前入口契约：普通业务用例未传 V2、非 @ 存量优先预期错误，以及 ingest／entry_route 的旧拓扑预期。用户列出的写回等待超时、checkpoint error 为 None、模型请求计数为 0 均由静默分支导致，不是访问真实 LLM／Java 失败。
+- 更新 12 个核心测试文件中的显式输入和路由预期；保留原业务断言、不修改 app 默认 V1、不添加 skip、不缩小 CI 范围。补充 HTTP 多轮版本不继承回归和 @ 存量／快速标记组合。
+- 受影响的 11 个文件 **105 PASS**；完整快速集合 **1228 PASS / 7 deselected**。另行执行 7 项 E2E，先复现同类 3 FAIL，再补 V2 后 **7 PASS**。两个互斥集合覆盖当前 pytest 用例，均为零业务网络请求；ruff、mypy 和修改文件 whitespace 检查通过。
+- 证据位于 `C:\Users\PC\AppData\Local\Temp\aigc-langgraph-tmp\ci-core-20261010`。上述为本地 Windows 运行结果，GitHub Ubuntu / Python 3.11 Job 仍需在提交后重跑；未调用真实模型、Java 或数据库。
+
 **最大跟量公共 prompt 核对：未完整对齐，未修改其业务语义。**
 
 - Dify 节点 `17797951842080` 输出公共 keywords 和 hasFastExecutionIntent 规则。keywords 注入互换、期权、平仓意图，字段规则注入期权下单与平仓参数；并非所有互换参数节点都消费公共字段规则。
@@ -154,7 +162,7 @@
 1. 最大跟量规则收敛及三产品专项；平仓预查询门控、待补对手范围广播、引用顺序定位与锁定边界复验仍按相关核心范围执行。
 2. 真实 Langfuse webhook → SDK Experiment → HTTP → Score 入库验收；先同步包含版本字段的 Dataset，不将 202 或关联 ID 当作成功。
 3. owner 更新 `CLAUDE.md`／`.claude/**`／`scripts/CLAUDE.md` 的旧命令与测试范围，修正 ADR 0002／0030 的已删脚本引用、0021 的已删测试引用，再生成 AGENTS／`.agents`。本轮未修改受保护真源或 ADR 正文，不通过恢复退役文件规避检查。
-4. 完整 pytest、三个指定文件的统一 Java 复验与真实部署尚未执行；保留前次批量结果，不宣称新 CLI 全量验收通过。
+4. 本地核心 pytest 已按 fast 与 E2E 互斥范围完成复验，GitHub Job 尚待重跑；三个指定文件的统一 Java 复验与真实部署尚未执行，保留前次批量结果，不宣称新 CLI 黄金集全量验收通过。
 
 ## 2. 客户现场部署与运维（工具与待验收事项）
 

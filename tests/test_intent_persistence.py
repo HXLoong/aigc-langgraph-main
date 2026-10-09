@@ -43,7 +43,7 @@ def test_development_http_workflow_does_not_write_messages(
     monkeypatch.setattr(app_main, "MessageClientHttpx", factory)
     with TestClient(app_main.app) as client:
         response = client.post("/v1/workflows/run", json={
-            "inputs": {"raw_content": "你好", "message_id": 42}, "user": "stable-user",
+            "inputs": {"raw_content": "你好", "message_id": 42, "robot_version": "V2", "at_bot": True}, "user": "stable-user",
         })
     assert response.status_code == 200, response.text
     assert response.json()["answer"]
@@ -66,7 +66,8 @@ def test_first_turn_persists_generated_conversation_id_and_followup_reuses_it(
     ))
     with TestClient(app_main.app) as client:
         response = client.post("/v1/workflows/run", json={
-            "inputs": {"raw_content": "你好", "conversation_id": "", "message_id": 42},
+            "inputs": {"raw_content": "你好", "conversation_id": "", "message_id": 42,
+                       "robot_version": "V2", "at_bot": True},
             "user": "stable-user",
         })
 
@@ -81,7 +82,8 @@ def test_first_turn_persists_generated_conversation_id_and_followup_reuses_it(
         assert response.json()["answer"]
 
         followup = client.post("/v1/workflows/run", json={
-            "inputs": {"raw_content": "你好", "conversation_id": generated_id, "message_id": 43},
+            "inputs": {"raw_content": "你好", "conversation_id": generated_id, "message_id": 43,
+                                   "robot_version": "V2", "at_bot": True},
             "user": "stable-user",
         })
         assert followup.status_code == 200, followup.text
@@ -107,7 +109,8 @@ def test_set_intent_failure_returns_502_and_persists_failure_trace(
     ))
     with TestClient(app_main.app) as client:
         response = client.post("/v1/workflows/run", json={
-            "inputs": {"raw_content": "你好", "conversation_id": "", "message_id": 42},
+            "inputs": {"raw_content": "你好", "conversation_id": "", "message_id": 42,
+                       "robot_version": "V2", "at_bot": True},
             "user": "stable-user",
         })
 
@@ -158,7 +161,7 @@ def test_business_branch_persists_latest_intent_after_operate(
         response = client.post("/v1/workflows/run", json={
             "inputs": {
                 "raw_content": raw, "conversation_id": "(\\existing-id\\\\)",
-                "message_id": 75, "room_id": "test-room",
+                "message_id": 75, "room_id": "test-room", "robot_version": "V2", "at_bot": True,
             },
             "user": "stable-user",
         })
@@ -193,7 +196,8 @@ async def test_http_response_waits_for_set_intent_acknowledgement(
         transport=httpx.ASGITransport(app=app_main.app), base_url="http://test",
     ) as client:
         pending = asyncio.create_task(client.post("/v1/workflows/run", json={
-            "inputs": {"raw_content": "你好", "conversation_id": "", "message_id": 42},
+            "inputs": {"raw_content": "你好", "conversation_id": "", "message_id": 42,
+                       "robot_version": "V2", "at_bot": True},
             "user": "stable-user",
         }))
         try:
@@ -211,7 +215,7 @@ async def test_direct_graph_without_factory_does_not_write_messages(
 ) -> None:
     send = AsyncMock(side_effect=AssertionError("unexpected external request"))
     monkeypatch.setattr(httpx.AsyncClient, "send", send)
-    final = await build_main_graph().ainvoke({"raw_text": "你好"})
+    final = await build_main_graph().ainvoke({"raw_text": "你好", "robot_version": "V2", "at_bot": True})
     assert final.get("error") is None
     assert final["reply_text"]
     send.assert_not_awaited()
@@ -235,10 +239,12 @@ async def test_next_turn_recovers_after_set_intent_failure_with_checkpoint(
     config = {"configurable": {"thread_id": "opaque-id"}}
     first = await graph.ainvoke({
         "raw_text": "你好", "conversation_id": "opaque-id", "message_id": 1,
+                "robot_version": "V2", "at_bot": True,
     }, config=config)
     assert first["error"].node == "persist_intent"
     second = await graph.ainvoke({
         "raw_text": "你好", "conversation_id": "opaque-id", "message_id": 2,
+                "robot_version": "V2", "at_bot": True,
     }, config=config)
     assert second.get("error") is None
     assert second["reply_text"]
