@@ -12,9 +12,9 @@ config:
 ---
 graph TD;
 	__start__([<p>__start__</p>]):::first
-	swap_prepare(swap_prepare)
-	swap_validate(swap_validate)
-	swap_place_result(swap_place_result)
+	swap_prepare(swap_prepare<br/>读取参数与候选选择指针)
+	swap_validate(swap_validate<br/>校验来源与已有订单身份)
+	swap_place_result(swap_place_result<br/>写入本次 place_params)
 	__end__([<p>__end__</p>]):::last
 	__start__ --> swap_prepare;
 	swap_prepare -.-> __end__;

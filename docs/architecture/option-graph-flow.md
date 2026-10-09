@@ -12,18 +12,18 @@ config:
 ---
 graph TD;
 	__start__([<p>__start__</p>]):::first
-	option_intent(option_intent)
-	option_extract_inquiry(option_extract_inquiry)
-	option_extract_place(option_extract_place)
-	option_extract_confirm_place(option_extract_confirm_place)
-	option_extract_cancel_place(option_extract_cancel_place)
-	option_extract_cancel(option_extract_cancel)
-	option_extract_confirm_cancel(option_extract_confirm_cancel)
-	option_extract_query(option_extract_query)
-	option_unknown(option_unknown)
-	option_clean_request(option_clean_request)
-	option_submit(option_submit)
-	option_query_backend(option_query_backend)
+	option_intent(option_intent<br/>读取联合结果，按意图分发)
+	option_extract_inquiry(option_extract_inquiry<br/>普通询价内部图入口)
+	option_extract_place(option_extract_place<br/>下单 / 补参：只提交稀疏参数)
+	option_extract_confirm_place(option_extract_confirm_place<br/>确认下单：单号与显式增量)
+	option_extract_cancel_place(option_extract_cancel_place<br/>取消下单：确定性单号提取)
+	option_extract_cancel(option_extract_cancel<br/>撤单请求：确定性单号提取)
+	option_extract_confirm_cancel(option_extract_confirm_cancel<br/>确认撤单：口令与引用校验)
+	option_extract_query(option_extract_query<br/>订单状态查询，确定性提取)
+	option_unknown(option_unknown<br/>兜底：未知指令引导文案)
+	option_clean_request(option_clean_request<br/>清洗出站副本，不补默认值)
+	option_submit(option_submit<br/>提交写请求，不自动重试)
+	option_query_backend(option_query_backend<br/>只读查询，有限重试)
 	__end__([<p>__end__</p>]):::last
 	__start__ --> option_intent;
 	option_clean_request -. &nbsp;done&nbsp; .-> __end__;

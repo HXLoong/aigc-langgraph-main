@@ -12,9 +12,9 @@ config:
 ---
 graph TD;
 	__start__([<p>__start__</p>]):::first
-	place_close_prepare(place_close_prepare)
-	place_close_validate(place_close_validate)
-	place_close_submit(place_close_submit)
+	place_close_prepare(place_close_prepare<br/>读取本次订单的接口值)
+	place_close_validate(place_close_validate<br/>校验单号、合约与引用范围)
+	place_close_submit(place_close_submit<br/>备好 closeOrderReqVO，交父图提交)
 	__end__([<p>__end__</p>]):::last
 	__start__ --> place_close_prepare;
 	place_close_prepare -.-> __end__;

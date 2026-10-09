@@ -12,17 +12,17 @@ config:
 ---
 graph TD;
 	__start__([<p>__start__</p>]):::first
-	swap_intent(swap_intent)
-	swap_place_order(swap_place_order)
-	swap_apply_picks(swap_apply_picks)
-	swap_place_order_submit(swap_place_order_submit)
-	swap_confirm(swap_confirm)
-	swap_cancel(swap_cancel)
-	swap_query_order(swap_query_order)
-	swap_unknown(swap_unknown)
-	swap_clean_request(swap_clean_request)
-	swap_submit(swap_submit)
-	swap_query_backend(swap_query_backend)
+	swap_intent(swap_intent<br/>读取联合结果，按意图分发)
+	swap_place_order(swap_place_order<br/>下单内部图：准备与校验参数)
+	swap_apply_picks(swap_apply_picks<br/>候选选择与来源校验，确定性)
+	swap_place_order_submit(swap_place_order_submit<br/>备好原始请求，交父图清洗提交)
+	swap_confirm(swap_confirm<br/>确认协议校验后提交)
+	swap_cancel(swap_cancel<br/>撤单单号确定性提取)
+	swap_query_order(swap_query_order<br/>订单状态查询，确定性提取)
+	swap_unknown(swap_unknown<br/>兜底：未知指令引导文案)
+	swap_clean_request(swap_clean_request<br/>清洗出站副本，不补默认值)
+	swap_submit(swap_submit<br/>提交写请求，不自动重试)
+	swap_query_backend(swap_query_backend<br/>只读查询，有限重试)
 	__end__([<p>__end__</p>]):::last
 	__start__ --> swap_intent;
 	swap_apply_picks -.-> swap_place_order_submit;
