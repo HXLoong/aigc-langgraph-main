@@ -134,7 +134,7 @@
 | 评测输入与选择 | 评测输入缺省 V2，显式 V1、null、空串和存量标记原值透传；支持跨 biz／intent 文件；平台投影保留入口字段和块级断言 | 离线 HTTP、加载、选择与投影检查通过；app 默认 V1 不变 |
 | 报告 | 每条写 results.jsonl，收尾汇总与 Markdown 写仓库外；保留完整 requested、SKIP 与未执行分母；批次 flush | 离线生成路径与本地判定通过；强制终止进程时仅保证已写逐条结果，不保证执行 finally |
 | 平台触发 | webhook 改为内部 `harness.remote_experiment` 适配，复用 run_case 和本地评分；平台条目绑定 git 用例并核对输入与期望；SDK Experiment 输出 report 与确定性 Score | 签名 ASGI、错误范围与 mock SDK 流程通过；真实平台触发、入库与父子关联待验收；CLI 追踪不自动生成 Experiment |
-| CI | 按用户确认仅保留 ruff、mypy、app 核心快速／全量 pytest；移除五项一致性检查，不新增替代门槛；共用模型与依赖占位配置 | 黄金集通过 Harness 单独评测，不进入 CI 自动执行；历史 ADR 引用问题归文档维护，不再阻塞 CI |
+| CI | 按用户确认仅保留 ruff、mypy、`pytest tests/ -k "not e2e"` app 核心快速测试；移除 slow 全量测试及五项一致性检查，不新增替代门槛 | 黄金集通过 Harness 单独评测，不进入 CI 自动执行；CI 占位配置不调用真实模型、Java 或数据库 |
 | 主图冒烟 | 原先 4 FAIL 为输入缺少 V2；测试按新入口传 V2 与 @，保留原断言 | 主图冒烟及入口专项共 31 PASS；未运行完整 pytest |
 | 部署 | 删除自动 Java 黄金集全量；移除虚构账号业务 smoke，自检只核对健康、依赖和 OpenAPI 入口 | bash -n 通过；未实际部署，服务检查不代表业务验收 |
 | 文档 | 根 README 精简为配置、启动、测试与文档索引；同步开发、测试、Harness、数据集、mock、Langfuse 与部署说明 | 实操文档不再描述临时服务或未透传版本；审阅报告保留其当时快照 |

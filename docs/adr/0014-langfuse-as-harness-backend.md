@@ -1,5 +1,7 @@
 # ADR 0014 · LangFuse 作为 Harness 工程的后台服务
 
+## 状态
+
 - 状态：已采纳
 - 日期：2026-05-10
 - 关系：修订 [ADR 0004](./0004-trace-granularity-node-level.md)（trace 后台）与 [ADR 0005](./0005-annotation-roles-judge-plus-business-spotcheck.md)（标注平台）

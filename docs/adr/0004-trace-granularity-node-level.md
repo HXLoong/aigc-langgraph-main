@@ -1,5 +1,7 @@
 # ADR 0004 · Trace 颗粒度：节点级元数据入库 + LangFuse 关联完整 LLM I/O
 
+## 状态
+
 - 状态：已采纳
 - 日期：2026-05-10
 - 关系：trace 后台为自托管 LangFuse（[ADR 0014](./0014-langfuse-as-harness-backend.md)）

@@ -46,13 +46,12 @@ python -m mypy app/ harness/
 
 | Job | 内容 |
 |---|---|
-| fast · ruff + mypy + app 核心快速测试 | ruff；mypy；`pytest tests/ -k "not e2e"` |
-| slow · app 核心全量测试 | fast 成功后执行 `pytest tests/`，包含隔离外部 IO 的 E2E |
+| CI · ruff + mypy + app 核心快速测试 | ruff；mypy；`pytest tests/ -k "not e2e"` |
 
-两个 Job 使用统一占位配置，显式配置三类模型名，关闭 MySQL checkpoint 与 Langfuse。
-CI 仅保留 ruff、mypy 和 app 核心 pytest，不执行五项一致性检查或平台 JS evaluator 自测。
+Job 使用统一占位配置，显式配置三类模型名，关闭 MySQL checkpoint 与 Langfuse。
+CI 仅保留 ruff、mypy 和 app 核心快速 pytest，不执行 slow 全量测试、五项一致性检查或平台 JS evaluator 自测。
 黄金数据集评测通过 Harness 单独运行，支持全量、文件与用例选择，以及 mock 和 Java 后端；不进入 CI 自动执行。
-CI 不调用真实模型、Java 或真实数据库。
+核心 pytest 对 LLM 与 Java 边界使用 mock；CI 不调用真实模型、Java 或真实数据库。
 静态检查可覆盖 harness 和脚本，但不为这些支撑工具维护独立 pytest。
 
 ## 3. 黄金集范围与后端
