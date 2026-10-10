@@ -186,7 +186,7 @@ Invoke-RestMethod -Method Post -Uri 'http://127.0.0.1:8201/instrument-inference/
 | 当前 Python HTTP 契约 | 22 项通过：两条真实图的模型异常、解析失败、截断、单次模型超时及图异常返回 500；整体超时返回 504；成功、空分支、400/422、模型次数、用量及运行标识保留；OpenAPI 声明 500/504 信封。模型 HTTP 使用内存模拟传输，整体期限仅在检查中缩短为 30ms；`java-zero-change/python-http.json`、`java-zero-change/openapi.json` |
 | 当前原版 Java 兼容性 | 恢复并编译后的原类通过 19 项检查：接收上述 Python 响应，两个入口拒绝 500/504，成功/空输出兼容，失败时不清空原排序候选；并核对新增校验方法已不存在和完整 URL 行为。HTTP API、对手提示和交易时段仅内存隔离，无网络或业务写入；`java-zero-change/java-compat.json`、`java-zero-change/java-compat.log`。不等同于 Spring 业务入口联调 |
 | 配置切换 | 初次交付的禁用状态见 `config-record.json`；用户已切换为新 ID 47、48 启用、旧 ID 43、39 禁用，唯一性及 70000ms/零重试/保存日志已核对；当前证据 `java-entry-success.json` |
-| Java 实际业务入口正常链路 | 用户经本地 Java 48081 发起，消息 ID `202610100001`。推断日志 `1143986`：配置 47、HTTP 200、模型 3 次、10549 tokens、14.324 秒；数据库召回 25 个候选后，排序日志 `1143988`：配置 48、HTTP 200、模型 1 次、6052 tokens、14.906 秒。两个 URL 均指向本地 Python 8201，运行标识与响应头 trace 对应。最终展示 Top 5 并生成待补参草稿；`java-entry-success.json` |
+| Java 实际业务入口正常链路（历史 dev1 证据） | 用户经本地 Java 48081 发起。推断日志 `1143986`：配置 47、HTTP 200、模型 3 次、10549 tokens、14.324 秒；数据库召回 25 个候选后，排序日志 `1143988`：配置 48、HTTP 200、模型 1 次、6052 tokens、14.906 秒。两个 URL 均指向本地 Python 8201，运行标识与响应头 trace 对应。最终展示 Top 5 并生成待补参草稿；`java-entry-success.json`。测试消息身份仅保存在仓库外证据中 |
 | 真实模型工具调用 | 5 次 HTTP 调用成功；包含两个空分支和下表三个非空调用；`live-python-http.json` |
 
 真实模型非空调用：
@@ -199,7 +199,7 @@ Invoke-RestMethod -Method Post -Uri 'http://127.0.0.1:8201/instrument-inference/
 
 待验收和限制：
 
-- Java 48081 的本次正常链路已验收，用户请求生成草稿 `H-20261010-9604085248`，数据库状态 `NEED_COMPLETE_PARAMS`；数量、方向和交易对手为空，GOATS 订单标识为空。该草稿需要纳入验收记录，未自动删除或补参。正式测试对手范围核对、精确代码命中/单候选短路、Java 实际入口的 HTTP 500/504 故障路径以及失败回退实操仍待验收。主代理未发起 Java 业务请求。
+- Java 48081 的历史 dev1 正常链路已验收，用户请求生成待补参草稿，数据库状态 `NEED_COMPLETE_PARAMS`；数量、方向和交易对手为空，GOATS 订单标识为空。草稿标识仅保存在仓库外验收记录，未自动删除或补参。正式测试对手范围核对、精确代码命中/单候选短路、Java 实际入口的 HTTP 500/504 故障路径以及失败回退实操仍待验收。主代理未发起 Java 业务请求。
 - Langfuse 服务 `127.0.0.1:3000` 连接被拒绝，SDK 导出失败，CLI 查询也失败；trace 入库、父子关系与服务端用量审计仍待验收，不能将响应中的 trace ID 视为入库成功。`langfuse-read.txt`、`python-server.stdout.log` 保留证据。空分支本次耗时 11–13 秒，包含不可用观测服务的开销；观测恢复后需复核，不作性能达标声明。
 - 文档全仓检查被原有 `tmp/langfuse-pr-preflight/pytest` 访问权限阻塞；此外仓库已有的 `docs/langfuse/developer-manuals/` 删除造成旧链接缺失。本次未恢复或修改这些用户改动；改用 Git 文件清单在内存中限定扫描后，发现 12 项既有断链，新增接口文档与索引零违规；JSON 示例均可解析。
 - 未新增或修改测试脚本，未运行 pytest、业务数据集评测或压测；两个仓库原有未提交改动及原 YAML 保留。未 push、未创建 PR。
