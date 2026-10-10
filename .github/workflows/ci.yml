@@ -47,13 +47,13 @@ jobs:
           pip install -e ".[dev]"
 
       - name: Lint (ruff)
-        run: ruff check app/ tests/ harness/ scripts/probe_goats/ scripts/langfuse/ scripts/goats_api_mock/
+        run: ruff check app/ instrument_inference/ instrument_ranking/ tests/ harness/ scripts/probe_goats/ scripts/langfuse/ scripts/goats_api_mock/
 
       - name: 评测器测试（Langfuse code evaluators，纯 JS）
         run: node --test harness/evaluators/evaluators.test.js
 
       - name: Type check (mypy)
-        run: python -m mypy app/ harness/
+        run: python -m mypy app/ harness/ instrument_inference/ instrument_ranking/
 
       - name: ADR 0019 阈值一致性 (alerts.py ↔ ADR 0019 ↔ runbook)
         run: python scripts/check_alert_threshold_consistency.py

@@ -1,13 +1,14 @@
 """提示词即代码（ADR 0023）：PromptSpec 把一个 LLM 节点的提示词契约声明为代码对象。
 
 一个节点 = 一个 PromptSpec：
-- `inputs`        读取的 AgentState 字段（构造时校验必须存在于 AgentState，改 State 就会红）
+- `inputs`        读取的 State 字段（构造时按 state_schema 校验，默认 AgentState）
 - `output_model`  with_structured_output 的 Pydantic 模型——输出契约的唯一真源，
                   字段语义写在 Field(description=...)，通过 function calling schema 下发；
                   提示词正文不再维护 JSON 骨架 / 字段表
 - `injects`       system 段里由代码渲染的 `{{var}}` 占位符 → 渲染器（AgentState → str），
                   登记的占位符必须在 `.md` system 段真实存在（构造期校验）
 - `user_builder`  AgentState → user 消息（规则文本只能住在 .md，代码只拼变量）
+- `state_schema`  可选独立 TypedDict；工具 spec 不调用 register、不进入主图注册表
 - `gray`          是否走 `_versions.yaml` 灰度（resolve_prompt_version）
 
 注册表 `all_specs()` 供测试交叉核对 AgentState / 输出契约。
@@ -16,7 +17,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Iterator, Mapping
 from dataclasses import dataclass, field
-from typing import Any, get_type_hints
+from typing import Any, Generic, TypeVar, get_type_hints
 
 from pydantic import BaseModel
 from pydantic.fields import FieldInfo
@@ -24,40 +25,38 @@ from pydantic.fields import FieldInfo
 from app.graph.state import AgentState
 from app.prompts import load_prompt, resolve_prompt_version
 
-Renderer = Callable[[AgentState], str]
+StateT = TypeVar("StateT", bound=Mapping[str, Any])
+Renderer = Callable[[StateT], str]
 
-_REGISTRY: dict[str, PromptSpec] = {}
-
-
-def _agent_state_fields() -> frozenset[str]:
-    return frozenset(get_type_hints(AgentState))
+_REGISTRY: dict[str, PromptSpec[Any]] = {}
 
 
 @dataclass(frozen=True)
-class PromptSpec:
+class PromptSpec(Generic[StateT]):
     category: str
     name: str
     output_model: type[BaseModel] | None
     inputs: tuple[str, ...]
-    user_builder: Renderer
-    injects: Mapping[str, Renderer] = field(default_factory=dict)
+    user_builder: Renderer[StateT]
+    injects: Mapping[str, Renderer[StateT]] = field(default_factory=dict)
     gray: bool = False
+    state_schema: type[Any] = field(default=AgentState)
 
     def __post_init__(self) -> None:
-        unknown = set(self.inputs) - _agent_state_fields()
+        unknown = set(self.inputs) - set(get_type_hints(self.state_schema))
         if unknown:
-            raise ValueError(f"{self.key} 的 inputs 不在 AgentState 中：{sorted(unknown)}")
+            raise ValueError(f"{self.key} 的 inputs 不在 {self.state_schema.__name__} 中：{sorted(unknown)}")
 
     @property
     def key(self) -> str:
         return f"{self.category}/{self.name}"
 
-    def resolve_name(self, state: AgentState) -> str:
+    def resolve_name(self, state: StateT) -> str:
         if not self.gray:
             return self.name
         return resolve_prompt_version(self.category, self.name, state.get("conversation_id"))
 
-    def render_system(self, state: AgentState) -> tuple[str, str]:
+    def render_system(self, state: StateT) -> tuple[str, str]:
         """(渲染后的 system, 实际加载的 prompt name)。占位符不在 system 里即视为契约错误。"""
         prompt_name = self.resolve_name(state)
         system = load_prompt(self.category, prompt_name).system
@@ -67,12 +66,12 @@ class PromptSpec:
             system = system.replace(placeholder, renderer(state))
         return system, prompt_name
 
-    def build_messages(self, state: AgentState) -> tuple[list[tuple[str, str]], str]:
+    def build_messages(self, state: StateT) -> tuple[list[tuple[str, str]], str]:
         system, prompt_name = self.render_system(state)
         return [("system", system), ("user", self.user_builder(state))], prompt_name
 
 
-def register(spec: PromptSpec) -> PromptSpec:
+def register(spec: PromptSpec[StateT]) -> PromptSpec[StateT]:
     """模块导入时登记；同一 key 重复登记视为编程错误（两个节点抢同一提示词）。"""
     existing = _REGISTRY.get(spec.key)
     if existing is not None and existing is not spec:
@@ -81,7 +80,7 @@ def register(spec: PromptSpec) -> PromptSpec:
     return spec
 
 
-def all_specs() -> dict[str, PromptSpec]:
+def all_specs() -> dict[str, PromptSpec[Any]]:
     return dict(_REGISTRY)
 
 

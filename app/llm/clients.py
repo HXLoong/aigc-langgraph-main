@@ -70,8 +70,11 @@ class _ChatLLM(ChatOpenAI):
         return result
 
 
-def _build_llm(model: str, *, max_tokens: int | None = None, thinking_off: bool = True) -> ChatOpenAI:
-    """文本工厂共用构造：温度 0，SDK 和图层均零重试，调用边界统一计数。"""
+def _build_llm(
+    model: str, *, max_tokens: int | None = None, thinking_off: bool = True,
+    temperature: float = 0.0, timeout: float | None = None,
+) -> ChatOpenAI:
+    """文本工厂共用构造：默认温度 0，零重试，调用边界统一计数。"""
     settings = get_settings()
     # 角色与模型别名不参与厂商推断，通用模式不发送厂商扩展。
     body = _thinking_off_extra_body(settings.llm_provider) if thinking_off else {}
@@ -81,8 +84,8 @@ def _build_llm(model: str, *, max_tokens: int | None = None, thinking_off: bool 
         model=model,
         base_url=settings.llm_api_base,
         api_key=SecretStr(settings.llm_api_key),
-        temperature=0.0,
-        timeout=settings.llm_timeout_seconds,
+        temperature=temperature,
+        timeout=timeout if timeout is not None else settings.llm_timeout_seconds,
         max_tokens=max_tokens or settings.llm_output_max_tokens,
         max_retries=0,
         **extra,
@@ -112,3 +115,9 @@ def get_llm_structured() -> ChatOpenAI:
 def get_llm_complex() -> ChatOpenAI:
     """COMPLEX：保留复杂任务的独立模型配置，当前业务链不使用。"""
     return _build_llm(get_settings().llm_model_complex)
+
+
+@lru_cache(maxsize=1)
+def get_llm_instrument_tool() -> ChatOpenAI:
+    """标的工具复用 STANDARD 配置；独立温度与单次超时，不影响企微主图。"""
+    return _build_llm(get_settings().llm_model_standard, temperature=0.1, timeout=20.0)

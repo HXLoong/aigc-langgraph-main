@@ -31,6 +31,10 @@ from app.observability.logs import configure_logging_from_settings
 from app.observability.metrics import emit_http_response, get_collector
 from app.tools.http_pool import close_shared_http_client, open_shared_http_client
 from app.tools.message_client import MessageClientHttpx
+from instrument_inference.api import router as inference_router
+from instrument_inference.workflow import build_graph as build_inference_graph
+from instrument_ranking.api import router as ranking_router
+from instrument_ranking.workflow import build_graph as build_ranking_graph
 
 logger = logging.getLogger(__name__)
 
@@ -64,6 +68,8 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         checkpointer=checkpointer,
         message_client_factory=message_client_factory,
     )
+    app.state.instrument_inference_graph = build_inference_graph()
+    app.state.instrument_ranking_graph = build_ranking_graph()
     app.state.node_executor = NodeExecutor(build_registry(message_client_factory))
     logger.info("main graph compiled")
 
@@ -125,6 +131,8 @@ class HTTPMetricsMiddleware(BaseHTTPMiddleware):
 app.add_middleware(HTTPMetricsMiddleware)
 
 app.include_router(api_router)
+app.include_router(inference_router)
+app.include_router(ranking_router)
 app.include_router(nodes_router)
 app.include_router(health_router)
 # webhook 无条件挂载，由处理函数按 ENABLE_LANGFUSE_WEBHOOK 判定（关闭时 404）：

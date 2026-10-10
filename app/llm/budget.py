@@ -19,13 +19,16 @@ class ModelRequestBudget:
     """计数仅覆盖真实请求尝试，失败不返还额度。"""
 
     requests: int = 0
+    limit: int = 1
     _lock: Lock = field(default_factory=Lock, repr=False)
 
     def claim(self) -> None:
         """派发前原子占用，保护异步子任务及线程继承的同一额度。"""
         with self._lock:
-            if self.requests:
-                raise ModelRequestLimitError("本次工具调用最多允许一次模型请求")
+            if self.requests >= self.limit:
+                message = ("本次工具调用最多允许一次模型请求" if self.limit == 1
+                           else f"本次工具调用最多允许 {self.limit} 次模型请求")
+                raise ModelRequestLimitError(message)
             self.requests += 1
 
 
@@ -33,13 +36,15 @@ _current_budget: ContextVar[ModelRequestBudget | None] = ContextVar("model_reque
 
 
 @contextmanager
-def model_request_scope() -> Iterator[ModelRequestBudget]:
+def model_request_scope(*, limit: int = 1) -> Iterator[ModelRequestBudget]:
     """入口创建额度；内部借用已有额度，退出后恢复调用方上下文。"""
     existing = _current_budget.get()
     if existing is not None:
         yield existing
         return
-    budget = ModelRequestBudget()
+    if limit < 1:
+        raise ValueError("模型请求额度必须为正整数")
+    budget = ModelRequestBudget(limit=limit)
     token = _current_budget.set(budget)
     try:
         yield budget

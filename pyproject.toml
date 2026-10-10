@@ -70,7 +70,7 @@ ignore_missing_imports = true
 
 [tool.setuptools.packages.find]
 where = ["."]
-include = ["app*", "harness*"]
+include = ["app*", "harness*", "instrument_inference*", "instrument_ranking*"]
 
 [tool.setuptools.package-data]
 "app.prompts" = ["**/*.md"]
