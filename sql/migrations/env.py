@@ -1,0 +1,37 @@
+"""共享 Java 数据库中的业务表迁移；checkpoint 表由 sql/init.sql 初始化。"""
+from __future__ import annotations
+
+import asyncio
+
+from alembic import context
+from sqlalchemy import Connection
+from sqlalchemy.ext.asyncio import create_async_engine
+from sqlalchemy.pool import NullPool
+
+from app.config import get_settings
+from app.storage.mysql import ALEMBIC_VERSION, SESSION_INIT
+
+
+def run_sync(connection: Connection) -> None:
+    context.configure(connection=connection, target_metadata=None, version_table=ALEMBIC_VERSION)
+    with context.begin_transaction():
+        context.run_migrations()
+
+
+async def run_online() -> None:
+    engine = create_async_engine(get_settings().mysql_uri, poolclass=NullPool,
+                                 connect_args={"charset": "utf8mb4", "init_command": SESSION_INIT})
+    try:
+        async with engine.connect() as connection:
+            await connection.run_sync(run_sync)
+    finally:
+        await engine.dispose()
+
+
+if context.is_offline_mode():
+    context.configure(dialect_name="mysql", literal_binds=True, target_metadata=None,
+                      version_table=ALEMBIC_VERSION)
+    with context.begin_transaction():
+        context.run_migrations()
+else:
+    asyncio.run(run_online())

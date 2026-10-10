@@ -1,81 +1,59 @@
-"""close.confirm_close 节点 · 确认平仓订单号提取。
-
-输入：raw_text + quote_content（引用消息含订单列表）
-输出：state['confirm'] = {"confirmOrderNoList": [...], "action": "close"}
-
-LLM：standard 模型 + with_structured_output（ADR 0010 强制规则；
-Dify 原 prompt 标 thinking，工程层覆盖为 standard 满足 structured output）。
-prompt：app/prompts/option_close/confirm_close.md。
-"""
+"""平仓最终确认：明确口令、当前引用与唯一订单范围由共享代码协议校验。"""
 from __future__ import annotations
 
 from typing import Any
 
+from app.domain.confirmation import parse_confirmation
+from app.extraction.identity import prepare_identity_scope
 from app.graph.business_params import validated_confirm
 from app.graph.safe_node import safe_node
 from app.graph.state import AgentState, TraceEntry
-from app.llm.clients import get_qwen_thinking
-from app.prompts import load_prompt
-from app.subgraphs.close.models import ConfirmCloseParams
-from app.subgraphs.option.backend import call_option_backend
-
-
-def _build_user_message(state: AgentState) -> str:
-    """组装与 Dify confirm_close.md user template 一致的格式。"""
-    raw_content = state.get("raw_text", "") or ""
-    quote_content = state.get("quote_content") or ""
-    return (
-        f"用户发送消息：{raw_content}\n"
-        f"用户引用消息：{quote_content}"
-    )
+from app.subgraphs.close.aggregate import build_close_order_req_vo
+from app.subgraphs.close.backend import prepare_close_request
+from app.subgraphs.close.order_id import extract_order_ids
 
 
 @safe_node
 async def close_confirm_close(state: AgentState) -> dict[str, Any]:
-    """close.confirm_close 节点。
+    """close.confirm_close 节点（确定性提取）。
 
     出参约定：
     - confirm: dict 含 confirmOrderNoList + action="close"（与 swap.confirm
       合并版同款 action 字段约定）
     - trace: 单条 TraceEntry，记录提取的订单号数量
     """
-    prompt = load_prompt("option_close", "confirm_close")
-    llm = get_qwen_thinking().with_structured_output(ConfirmCloseParams)
-
-    user_message = _build_user_message(state)
-    result: Any = await llm.ainvoke(
-        [
-            ("system", prompt.system),
-            ("user", user_message),
-        ]
+    identity_origin = "quote" if state.get("quote_content") else "raw"
+    identity_evidence = state.get("quote_content") or state.get("raw_text") or ""
+    confirmation = parse_confirmation(
+        state.get("raw_text"), state.get("quote_content"), product="close", action="close",
     )
+    if confirmation.error:
+        return {"confirm": None, "reply_text": confirmation.correction(),
+                "trace": [TraceEntry(node="close_confirm_close", decision=f"confirmation:{confirmation.error}")]}
+    confirm_ids = list(confirmation.order_ids)
 
-    # regex 兜底：LLM 抽不到时直接从 raw_text + quote_content 抠 CO-YYYYMMDD-XXX 单号
-    # （结构化字符串抽取,与 swap.place_order 抠 H-YYYYMMDD-N 同款思路）
-    confirm_ids = list(result.confirmOrderNoList)
-    if not confirm_ids:
-        import re as _re_co
-        raw = (state.get("raw_text") or "") + "\n" + (state.get("quote_content") or "")
-        confirm_ids = list(dict.fromkeys(_re_co.findall(r"CO-\d{8}-[A-Z0-9]+", raw)))
-
-    # 真后端调用：把 confirm 列表映射为 closeOrderReqVO，按 close_order_confirm 意图
-    order_list = [
-        {"orderId": oid} for oid in confirm_ids
-    ]
-    backend = await call_option_backend(
-        state,
+    prepared_state, protected_ids, records = prepare_identity_scope(
+        state, confirm_ids, scope="close/confirm", field="confirmOrderNoList", origin=identity_origin, evidence=identity_evidence,
+        explicit_raw_ids=extract_order_ids(state.get("raw_text")), selection=True,
+    )
+    confirm_ids = [order_id for order_id in protected_ids if order_id is not None]
+    confirmation.verify_scope(confirm_ids)
+    req_vo = build_close_order_req_vo(confirm_order_no_list=confirm_ids)
+    request_update = await prepare_close_request(
+        prepared_state,
         intent="close_order_confirm",
-        order_list=order_list,
+        close_order_req_vo=req_vo,
     )
 
     return {
+        "field_records": records,
+        "expected_action": "close",
         "confirm": validated_confirm(action="close", confirmOrderNoList=confirm_ids),
-        **backend,
+        **request_update,
         "trace": [
             TraceEntry(
                 node="close_confirm_close",
-                decision=f"orders={len(confirm_ids)}",
-                llm_output=result.model_dump(),
+                decision=f"deterministic,orders={len(confirm_ids)}",
             )
         ],
     }

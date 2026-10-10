@@ -1,46 +1,55 @@
-"""FastAPI 入口（ADR 0001 D6 + ADR 0014 D8）。
+"""FastAPI 入口（ADR 0001 D6 + ADR 0014 D5）。
 
-启动时：
-- 编译主图 + 挂载到 app.state
-- 注册 LangFuse callback handler（如 ENABLE_LANGFUSE=true）
+启动时编译主图并挂载到 app.state。**LangFuse 回调不在本层注入**：所有环境统一由
+`app/api/routes.py` 走请求级 trace（ADR 0024 D5），`config.metadata` 携带
+trace_id / langfuse_session_id / langfuse_user_id。
 """
 from __future__ import annotations
 
 import logging
-import os
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
+from fastapi.exceptions import RequestValidationError
 from fastapi.responses import PlainTextResponse
+from starlette.exceptions import HTTPException
 from starlette.middleware.base import BaseHTTPMiddleware
 
+from app.api.errors import workflow_http_error, workflow_validation_error
 from app.api.health import router as health_router
+from app.api.langfuse_webhook import router as langfuse_webhook_router
+from app.api.nodes import router as nodes_router
 from app.api.routes import router as api_router
 from app.checkpointer.factory import close_checkpointer, init_checkpointer
 from app.config import get_settings
 from app.graph.main import build_main_graph
+from app.node_execution.executor import NodeExecutor
+from app.node_execution.registry import build_registry
+from app.observability import tracing
+from app.observability.logs import configure_logging_from_settings
 from app.observability.metrics import emit_http_response, get_collector
+from app.tools.http_pool import close_shared_http_client, open_shared_http_client
 from app.tools.message_client import MessageClientHttpx
+from instrument_inference.api import router as inference_router
+from instrument_inference.workflow import build_graph as build_inference_graph
+from instrument_ranking.api import router as ranking_router
+from instrument_ranking.workflow import build_graph as build_ranking_graph
 
 logger = logging.getLogger(__name__)
 
 
-def _is_enabled(env_key: str, default: bool = False) -> bool:
-    raw = os.environ.get(env_key, "").strip().lower()
-    if raw == "":
-        return default
-    return raw in {"1", "true", "yes", "on"}
-
-
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
-    """编译主图 + LangFuse 接入。"""
+    """编译主图并挂载到 app.state。"""
     logger.info("starting otc-agent-langgraph")
 
-    # #153 裁决（ADR 0009/0021）：checkpointer 接线——多轮状态持久化是生产正确性。
+    # ADR 0009/0021：checkpointer 接线——多轮状态持久化是生产正确性。
     # 显式启用即硬依赖（init 失败直接抛，不静默降级）；生产未启用 fail-fast。
     settings = get_settings()
+    configure_logging_from_settings(settings)  # ADR 0024 D5：structlog 接管 stdlib，日志带 trace_id
+    # ADR 0024 D3：业务后端 HTTP 连接池随进程生命周期，各 Client 复用
+    await open_shared_http_client(timeout=settings.backend_timeout_seconds)
     checkpointer = None
     if getattr(settings, "use_mysql_checkpointer", False):
         checkpointer = await init_checkpointer()
@@ -48,39 +57,39 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     elif getattr(settings, "environment", "") == "production":
         raise RuntimeError(
             "生产环境必须启用 MySQL checkpointer（USE_MYSQL_CHECKPOINTER=true，"
-            "见 ADR 0021 / issue #153）"
+            "见 ADR 0021）"
         )
-    app.state.main_graph = build_main_graph(
-        checkpointer=checkpointer, message_client_factory=MessageClientHttpx,
+    message_client_factory = (
+        None if settings.environment == "development" else MessageClientHttpx
     )
+    if message_client_factory is None:
+        logger.info("development environment: intent persistence disabled")
+    app.state.main_graph = build_main_graph(
+        checkpointer=checkpointer,
+        message_client_factory=message_client_factory,
+    )
+    app.state.instrument_inference_graph = build_inference_graph()
+    app.state.instrument_ranking_graph = build_ranking_graph()
+    app.state.node_executor = NodeExecutor(build_registry(message_client_factory))
     logger.info("main graph compiled")
-
-    if _is_enabled("ENABLE_LANGFUSE"):
-        try:
-            from harness.langfuse_client import get_callback_handler
-
-            handler = get_callback_handler()
-            app.state.langfuse_handler = handler
-            logger.info("LangFuse callback handler registered")
-        except Exception as exc:  # noqa: BLE001 - 不让 LangFuse 失败导致服务起不来
-            logger.warning("LangFuse init skipped: %s", exc)
-            app.state.langfuse_handler = None
-    else:
-        app.state.langfuse_handler = None
 
     yield
 
     if checkpointer is not None:
         await close_checkpointer()
+    await close_shared_http_client()
+    tracing.flush()  # ADR 0024 D5：滚动更新 / SIGTERM 不丢尾部 trace
     logger.info("stopping otc-agent-langgraph")
 
 
 app = FastAPI(
     title="otc-agent-langgraph",
-    description="场外衍生品 AI 指令助手 — LangGraph 替换 Dify",
+    description="场外衍生品 AI 指令助手（LangGraph）",
     version="0.2.0-m1",
     lifespan=lifespan,
 )
+app.add_exception_handler(HTTPException, workflow_http_error)
+app.add_exception_handler(RequestValidationError, workflow_validation_error)
 
 
 # 探测路径不计入 HTTP 指标（频次极高会稀释告警分母 + 增 metrics cardinality）
@@ -104,6 +113,7 @@ class HTTPMetricsMiddleware(BaseHTTPMiddleware):
     """
 
     async def dispatch(self, request: Request, call_next):  # type: ignore[no-untyped-def]
+        """记录业务 HTTP 请求的状态类别，探测路径不计入业务分母。"""
         path = request.url.path
         excluded = path in _METRICS_EXCLUDED_PATHS
         try:
@@ -121,14 +131,21 @@ class HTTPMetricsMiddleware(BaseHTTPMiddleware):
 app.add_middleware(HTTPMetricsMiddleware)
 
 app.include_router(api_router)
+app.include_router(inference_router)
+app.include_router(ranking_router)
+app.include_router(nodes_router)
 app.include_router(health_router)
+# webhook 无条件挂载，由处理函数按 ENABLE_LANGFUSE_WEBHOOK 判定（关闭时 404）：
+# 本模块 import 期不能读 settings —— tests/test_import_without_env.py 要求 app.main
+# 在没有任何环境变量的环境里也能 import
+app.include_router(langfuse_webhook_router)
 
 
 @app.get("/metrics", response_class=PlainTextResponse, include_in_schema=False)
 async def metrics() -> str:
-    """Prometheus 兼容指标端点（C1.5 / Issue #50）。
+    """Prometheus 兼容指标端点。
 
     返回 text/plain 格式的 exposition，可被 Prometheus / VictoriaMetrics 抓取。
-    监控面板字段说明见 docs/observability.md。
+    监控面板字段说明见 docs/operations/observability.md。
     """
     return get_collector().render_prometheus()

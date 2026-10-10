@@ -1,74 +1,52 @@
-"""option.extract_query 节点 · 期权订单状态查询参数提取。
+"""option.extract_query 节点 · 期权订单状态查询参数提取（确定性，已去 LLM 化）。
+
+Dify DSL v2 迁移（对应 `期权-节点-查询订单状态`，node_id=17793301774310）：
+处理 query_order_status。原 LLM 调用的唯一任务是提取 Q- 订单号，改为
+app/subgraphs/option/order_id.py 确定性提取（瘦身 P1）。行为约定 1:1 对照原提示词：
+raw 或 quote 提到具体订单号则提取；均无 → orderId: null（下游接口会查询近期所有订单）。
 
 输入：raw_text + quote_content
-输出：state['query_filter'] = {orderList}
-
-LLM：standard 模型 + with_structured_output（ADR 0010）。
-prompt：app/prompts/option/extract_query.md。
+输出：state['query_filter'] = {orderList} + 待清洗请求
 """
 from __future__ import annotations
 
 from typing import Any
 
+from app.extraction.identity import prepare_identity_scope
 from app.graph.business_params import validated_query_filter
 from app.graph.safe_node import safe_node
-from app.graph.state import AgentState, Message, TraceEntry
-from app.llm.clients import get_qwen_thinking
-from app.prompts import load_prompt
-from app.subgraphs.option.backend import call_option_backend
-from app.subgraphs.option.models import OptionExtractQueryParams
-
-
-def _format_history(history: list[Message] | None) -> str:
-    if not history:
-        return ""
-    lines: list[str] = []
-    for msg in history:
-        role = msg.role if hasattr(msg, "role") else msg.get("role", "user")
-        content = msg.content if hasattr(msg, "content") else msg.get("content", "")
-        lines.append(f"{role}: {content}")
-    return "\n".join(lines)
-
-
-def _build_user_message(state: AgentState) -> str:
-    raw_content = state.get("raw_text", "") or ""
-    quote_content = state.get("quote_content") or ""
-    history_str = _format_history(state.get("history_messages"))
-    return (
-        f"用户消息：{raw_content}\n\n"
-        f"引用消息：{quote_content}\n\n"
-        f"历史对话：\n{history_str}"
-    )
+from app.graph.state import AgentState, TraceEntry
+from app.subgraphs.option.backend import prepare_option_request
+from app.subgraphs.option.order_id import extract_for_query, extract_order_ids
 
 
 @safe_node
 async def option_extract_query(state: AgentState) -> dict[str, Any]:
-    """option.extract_query 节点。"""
-    prompt = load_prompt("option", "extract_query")
-    llm = get_qwen_thinking().with_structured_output(OptionExtractQueryParams)
-
-    user_message = _build_user_message(state)
-    result: Any = await llm.ainvoke(
-        [
-            ("system", prompt.system),
-            ("user", user_message),
-        ]
+    """option.extract_query 节点（query_order_status，确定性提取）。"""
+    order_ids = extract_for_query(
+        raw=state.get("raw_text"), quote=state.get("quote_content")
     )
-    order_list = [item.model_dump() for item in result.orderList]
-    backend = await call_option_backend(
-        state,
+    prepared_state, order_ids, records = prepare_identity_scope(
+        state, order_ids, scope="option/query", origin="raw" if extract_order_ids(state.get("raw_text")) else "quote",
+        evidence=(state.get("raw_text") if extract_order_ids(state.get("raw_text")) else state.get("quote_content")) or "",
+    )
+    order_list = [{"orderId": order_id} for order_id in order_ids]
+    order_count = sum(1 for item in order_list if item["orderId"])
+
+    request_update = await prepare_option_request(
+        prepared_state,
         intent="query_order_status",
         order_list=order_list,
     )
 
     return {
+        "field_records": records,
         "query_filter": validated_query_filter(orderList=order_list),
-        **backend,
+        **request_update,
         "trace": [
             TraceEntry(
                 node="option_extract_query",
-                decision=f"orders={len(result.orderList)}",
-                llm_output=result.model_dump(),
+                decision=f"deterministic,orders={order_count}",
             )
         ],
     }

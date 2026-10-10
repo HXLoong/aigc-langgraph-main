@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""告警 cron 入口（C1.6 / Issue #55）。
+"""告警 cron 入口。
 
 每分钟跑一次（cron 配置）：
     * * * * * cd /opt/otc-agent && python scripts/run_alerts.py >> /var/log/alerts.log 2>&1
@@ -81,7 +81,7 @@ def main() -> int:
 
     metrics_text = fetch_metrics(f"{app_url}/metrics")
     if not metrics_text:
-        # self-review #69 必修 #2：metrics 拉空时**不**调 evaluate
+        # self-review 必修项：metrics 拉空时**不**调 evaluate
         # 避免全 0 metrics 被误判为"业务恢复"触发虚假 recover 信号；
         # 改为发 watchdog 告警（监控失联也是告警事件）。
         logger.warning("metrics empty, skipping evaluation; sending watchdog alert")

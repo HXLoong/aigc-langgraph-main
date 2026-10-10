@@ -1,27 +1,26 @@
-"""LLM 对抗式 paraphrase 生成器（grill-with-docs 第 4 决策 C 来源）。
+"""LLM 对抗式 paraphrase 生成器（数据集 C 桶来源）。
 
-输入：业务方种子 case（来自 golden.jsonl，source="business_seed"）
-输出：候选 case 列表（source="llm_paraphrase"），等业务方 review 后合入 golden
+输入：业务方种子 case（来自 tests/datasets/biz，source="business_seed"）
+输出：候选 case 列表（source="llm_paraphrase"），等业务方 review 后合入数据集
 
 策略：
-- 用 thinking 模型（ADR 0010：复杂推理用 thinking）
+- 用 thinking 工厂的模型（ADR 0020）
 - 给 LLM 一条种子，让它生成 N 条**与种子表达不同但 expected 相同**的对抗变体
 - 变体覆盖：缩写 / 错别字 / 口语化 / 引用同义词 / 边界场景
 
-注：生成的 case **不直接合入** golden.jsonl —— 必须经业务方 review pass。
-本工具只产生 docs/m2-llm-generated-cases.md 候选清单。
+注：生成的 case **不直接合入**数据集 —— 必须经业务方 review 通过。
+本工具只产生 review 候选清单 markdown（默认 /opt/work-file/code-tmp/aigc-langgraph-tmp/case_generator/paraphrase-candidates.md）。
 """
 from __future__ import annotations
 
 import json
-from typing import Literal
+from typing import Any, cast
 
 from langchain_core.messages import HumanMessage, SystemMessage
 from pydantic import BaseModel, ConfigDict, Field
 
-from app.llm.clients import get_qwen_thinking
+from app.llm.clients import get_llm_thinking
 from harness.golden import GoldenCase
-
 
 # ============================================================
 # Pydantic 输出 schema
@@ -33,8 +32,8 @@ class ParaphrasedCase(BaseModel):
 
     model_config = ConfigDict(extra="ignore")
 
-    raw_content: str
-    quote_content: str | None = None
+    send_text: str
+    quote_previous: bool | None = None
     notes: str = Field(description="变体类型说明，如 '缩写' / '口语化' / '错别字'")
 
 
@@ -101,16 +100,16 @@ async def paraphrase_case(
     seed: GoldenCase, num_variants: int = 3
 ) -> list[ParaphrasedCase]:
     """对单条种子生成 N 条对抗式变体。"""
-    llm = get_qwen_thinking().with_structured_output(ParaphraseBatch)
+    llm = get_llm_thinking().with_structured_output(ParaphraseBatch)
     user_msg = _USER_TEMPLATE.format(
         num_variants=num_variants,
-        raw_content=seed.raw_content,
+        raw_content=seed.turns[-1].send_text,
         expected=json.dumps(seed.expected, ensure_ascii=False),
-        quote_content=seed.quote_content or "(无)",
+        quote_content="(首轮无引用)",
     )
-    result = await llm.ainvoke(
+    result = cast(ParaphraseBatch, await llm.ainvoke(
         [SystemMessage(content=_SYSTEM_PROMPT), HumanMessage(content=user_msg)]
-    )
+    ))
     return list(result.variants)
 
 
@@ -118,13 +117,16 @@ def to_golden_dict(
     seed: GoldenCase,
     paraphrased: ParaphrasedCase,
     new_id: str,
-) -> dict:
+) -> dict[str, Any]:
     """把 LLM 生成的变体转为 golden.jsonl 格式（不直接合入，等 review）。"""
     return {
         "id": new_id,
         "category": seed.category,
-        "raw_content": paraphrased.raw_content,
-        "quote_content": paraphrased.quote_content,
+        "send_text": paraphrased.send_text,
+        "at_bot": True,
+        "response_contains": [],
+        "response_not_contains": [],
+        "sub_scenes": [],
         "expected": seed.expected,
         "notes": f"LLM paraphrase: {paraphrased.notes} (seed={seed.id})",
         "source": "llm_paraphrase",
@@ -141,7 +143,7 @@ _REVIEW_HEADER = """\
 
 > grill-with-docs 第 4 决策 C 来源 · LLM 生成的 paraphrase 候选 case
 >
-> 业务方 review pass 的 case 转 jsonl 合入 `tests/fixtures/golden.jsonl`，
+> 业务方 review pass 的 case 转 jsonl 合入 `tests/datasets/biz/`，
 > 标记 `source: llm_paraphrase`（PASS 阈值 80%，比 business_seed 90% 阈值更宽松）。
 
 ## 使用流程
@@ -163,21 +165,16 @@ def render_review_markdown(
     for seed, variants in seed_with_paraphrases:
         lines.append(f"## 种子 {seed.id}（{seed.category}）")
         lines.append("")
-        lines.append(f"**原话**: {seed.raw_content}")
+        lines.append(f"**原话**: {seed.turns[-1].send_text}")
         lines.append(
             f"**expected**: `{json.dumps(seed.expected, ensure_ascii=False)}`"
         )
-        if seed.quote_content:
-            lines.append(f"**quote**: {seed.quote_content}")
         lines.append("")
         lines.append("### 候选变体")
         lines.append("")
         for idx, v in enumerate(variants, 1):
-            quote_part = (
-                f"\n  - quote: `{v.quote_content}`" if v.quote_content else ""
-            )
             lines.append(
-                f"- [ ] **{seed.id}-v{idx}** ({v.notes})\n  - raw: `{v.raw_content}`{quote_part}"
+                f"- [ ] **{seed.id}-v{idx}** ({v.notes})\n  - send_text: `{v.send_text}`"
             )
         lines.append("")
     return "\n".join(lines)

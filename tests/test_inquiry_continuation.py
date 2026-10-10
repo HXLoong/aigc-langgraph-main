@@ -3,26 +3,20 @@ from __future__ import annotations
 
 import json
 from collections.abc import Iterator
+from types import SimpleNamespace
 from typing import Any
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock
 from uuid import UUID
 
 import httpx
 import pytest
 from fastapi.testclient import TestClient
-from pydantic import BaseModel
 
 import app.main as app_main
 from app.config import get_settings
-from app.subgraphs.option.models import (
-    OptionInquiryParams,
-    OptionIntentOutput,
-    OptionPlaceOrModifyParams,
-)
 from app.tools.message_client import MessageClientHttpx
 from app.tools.option_client import OptionClientHttpx
 from app.tools.swap_client import SwapClientHttpx
-from app.tools.ticker_client import TickerClientHttpx
 
 FIRST_MESSAGE = "300773.SZ，欧式看涨，80%"
 INQUIRY_CARD = (
@@ -33,15 +27,25 @@ INQUIRY_CARD = (
 UPDATED_CARD = "  -----场外期权询价详情-----\r\nQ-20260907-000001\r\n期限：1M\r\n"
 
 
-def _patch_llm(
-    monkeypatch: pytest.MonkeyPatch, factory: str,
-    schema: type[BaseModel], outputs: list[dict[str, Any]],
-) -> AsyncMock:
-    invoke = AsyncMock(side_effect=[schema.model_validate(item) for item in outputs])
-    llm = MagicMock()
-    llm.with_structured_output.return_value.ainvoke = invoke
-    monkeypatch.setattr(factory, lambda: llm)
-    return invoke
+def _patch_joint(monkeypatch, product, intent, orders):
+    """只替换联合模型边界，真实提示词、来源校验和子图完整执行。"""
+    from app.parsing.models import CrossProductInstruction
+    from tests.joint_support import instruction_data
+
+    sequence = iter(orders)
+    def structured(schema):
+        """按每轮实际输入建立合法来源，不把业务期望塞进运行时。"""
+        async def invoke(messages):
+            """返回本轮约定的模型输出，并保留调用参数供历史断言。"""
+            sources = json.loads(messages[-1][1])["sources"]
+            value = instruction_data(product, intent, sources["raw"],
+                orders=next(sequence), quote=sources.get("quote", ""))
+            return schema.model_validate({"instruction": value} if schema is CrossProductInstruction else value)
+        invoke_mock.side_effect = invoke
+        return SimpleNamespace(ainvoke=invoke_mock)
+    invoke_mock = AsyncMock()
+    monkeypatch.setattr("app.nodes.parse_instruction.get_llm_standard", lambda: SimpleNamespace(with_structured_output=structured))
+    return invoke_mock
 
 
 @pytest.fixture()
@@ -51,7 +55,7 @@ def inquiry_workflow(
     from langgraph.checkpoint.memory import InMemorySaver
 
     settings = get_settings().model_copy(update={
-        "environment": "development", "use_mysql_checkpointer": True,
+        "environment": "staging", "use_mysql_checkpointer": True,
         "enable_langfuse": False,
     })
     monkeypatch.setattr("app.config.get_settings", lambda: settings)
@@ -59,27 +63,20 @@ def inquiry_workflow(
     monkeypatch.setenv("ENABLE_LANGFUSE", "false")
     monkeypatch.setattr(app_main, "init_checkpointer", AsyncMock(return_value=InMemorySaver()))
     monkeypatch.setattr(app_main, "close_checkpointer", AsyncMock())
-    monkeypatch.setattr("app.nodes.persist._write_to_mysql", AsyncMock())
+    monkeypatch.setattr("app.nodes.persist.write_node_trace", AsyncMock())
 
-    # 保留真实 tokenizer / resolver / ticker HTTP 序列化，业务词的 LLM 推断返回空。
-    infer_llm = MagicMock()
-    infer_llm.invoke.return_value.content = ""
-    monkeypatch.setattr("app.subgraphs.ticker.tools.make_qwen_thinking", lambda: infer_llm)
+    # 默认用于身份生命周期测试；具体场景在测试内设置联合解析输出。
+    _patch_joint(monkeypatch, "option", "confirm_order", [[{"orderId": "Q-20260922-0000000001"}]] * 20)
     calls: list[tuple[str, dict[str, Any]]] = []
 
     def handler(request: httpx.Request) -> httpx.Response:
         path = request.url.path
         payload = json.loads(request.content) if request.content else {}
-        if path.endswith("/securities-instrument/select"):
-            keyword = payload["keywordItems"][0]["keyword"]
-            data = [{"windCode": "300773.SZ", "insShtDesc": "拉卡拉"}] if keyword in (
-                "300773.SZ", "300773",
-            ) else []
-        elif path.endswith("/instrument-inference-prompt"):
-            data = ""
-        elif path.endswith(("/financial-orders/operate", "/swap-order/operate")):
+        if path.endswith(("/financial-orders/operate", "/swap-order/operate")):
             calls.append(("operate", payload))
             data = INQUIRY_CARD if payload["rawContent"] == FIRST_MESSAGE else UPDATED_CARD
+        elif path.endswith("/query-close-orders"):
+            data = []
         elif path.endswith("/message/set-intent"):
             calls.append(("set-intent", payload))
             data = True
@@ -91,14 +88,17 @@ def inquiry_workflow(
     monkeypatch.setattr("app.subgraphs.option.backend.OptionClientHttpx", lambda: OptionClientHttpx(
         base_url="https://java.invalid", token="", transport=transport, dry_run=False,
     ))
+    monkeypatch.setattr("app.subgraphs.close.backend.OptionClientHttpx", lambda: OptionClientHttpx(
+        base_url="https://java.invalid", token="", transport=transport, dry_run=False,
+    ))
+    monkeypatch.setattr("app.nodes.prepare_parse_context.OptionClientHttpx", lambda: OptionClientHttpx(
+        base_url="https://java.invalid", token="", transport=transport, dry_run=False,
+    ))
     monkeypatch.setattr(app_main, "MessageClientHttpx", lambda: MessageClientHttpx(
         base_url="https://java.invalid", token="", transport=transport,
     ))
     monkeypatch.setattr("app.subgraphs.swap.backend.SwapClientHttpx", lambda: SwapClientHttpx(
         base_url="https://java.invalid", token="", transport=transport, dry_run=False,
-    ))
-    monkeypatch.setattr("app.subgraphs.ticker.tools.TickerClientHttpx", lambda **kw: TickerClientHttpx(
-        base_url="https://java.invalid", token="", transport=transport,
     ))
     with TestClient(app_main.app) as client:
         yield client, calls
@@ -120,21 +120,13 @@ def test_two_turn_inquiry_continues_history_and_sends_order_id_with_tenor(
     top: dict[str, Any], aliases: dict[str, Any], expected_id: str | None,
 ) -> None:
     client, calls = inquiry_workflow
-    intent_llm = _patch_llm(
-        monkeypatch, "app.subgraphs.option.intent.get_qwen_structured",
-        OptionIntentOutput, [{"type": "new_inquiry"}, {"type": "new_inquiry"}],
-    )
-    extract_llm = _patch_llm(
-        monkeypatch, "app.subgraphs.option.extract_inquiry.get_qwen_thinking",
-        OptionInquiryParams, [
-            {"orderList": [{"stockCode": "300773.SZ", "optionType": "欧式看涨",
-                            "strikePercentage": 80}]},
-            {"orderList": [{"orderId": "Q-20260907-000001", "tenor": "1M"}]},
-        ],
-    )
+    intent_llm = extract_llm = _patch_joint(monkeypatch, "option", "new_inquiry", [
+        [{"stockCode": "300773.SZ", "optionType": "欧式看涨", "strikePercentage": 80}],
+        [{"orderId": "Q-20260907-000001", "tenor": "1M"}],
+    ])
     first = client.post("/v1/workflows/run", json={
         **top, "inputs": {"raw_content": FIRST_MESSAGE, "message_id": 1,
-                          "room_id": "test-room", **aliases}, "user": "stable-user",
+                          "room_id": "test-room", "robot_version": "V2", "at_bot": True, **aliases}, "user": "stable-user",
     })
     assert first.status_code == 200, first.text
     assert first.json()["data"]["status"] == "succeeded"
@@ -156,7 +148,7 @@ def test_two_turn_inquiry_continues_history_and_sends_order_id_with_tenor(
     second = client.post("/v1/workflows/run", json={
         "conversation_id": conversation_id,
         "inputs": {"raw_content": "1M", "quote_content": first.json()["answer"],
-                   "message_id": 2, "room_id": "test-room"}, "user": "stable-user",
+                   "message_id": 2, "room_id": "test-room", "robot_version": "V2", "at_bot": True}, "user": "stable-user",
     })
     assert second.status_code == 200, second.text
     assert second.json()["data"]["status"] == "succeeded"
@@ -176,11 +168,15 @@ def test_two_turn_inquiry_continues_history_and_sends_order_id_with_tenor(
         assert payload["intent"] == "new_inquiry"
         assert payload["productType"] == 0
 
-    for invoke in (intent_llm, extract_llm):
-        second_user_message = invoke.call_args_list[1].args[0][1][1]
-        # 首轮原话不在引用卡片中；此断言证明历史由 checkpoint 续接到 LLM。
-        assert FIRST_MESSAGE in second_user_message
-        assert f"assistant: {INQUIRY_CARD}" in second_user_message
+    second_user_message = intent_llm.call_args_list[1].args[0][1][1]
+    assert FIRST_MESSAGE in second_user_message
+    assert INQUIRY_CARD in json.loads(second_user_message)["sources"].values()
+    assert "assistant" in json.loads(second_user_message)["source_roles"].values()
+    sources = json.loads(extract_llm.call_args_list[1].args[0][1][1])["sources"]
+    # 证据引用使用 checkpoint 中稳定的消息 ID，不能把历史伪装成本轮原文。
+    assert sources["raw"] == "1M" and sources["quote"] == INQUIRY_CARD
+    assert sources[f"history:{first_state['history_messages'][0].id}"] == FIRST_MESSAGE
+    assert sources[f"history:{first_state['history_messages'][1].id}"] == INQUIRY_CARD
     second_state = graph.get_state(config).values
     assert second_state["conversation_id"] == conversation_id
     assert [(msg.role, msg.content) for msg in second_state["history_messages"]] == [
@@ -194,55 +190,41 @@ def test_order_extraction_preserves_tenor_for_backend_intent_correction(
     inquiry_workflow: tuple[TestClient, list[tuple[str, dict[str, Any]]]],
 ) -> None:
     client, calls = inquiry_workflow
-    _patch_llm(monkeypatch, "app.subgraphs.option.intent.get_qwen_structured",
-               OptionIntentOutput, [{"type": "place_order_from_quote"}])
-    _patch_llm(monkeypatch, "app.subgraphs.option.extract_place_or_modify.get_qwen_thinking",
-               OptionPlaceOrModifyParams,
-               [{"orderList": [{"orderId": "Q-20260907-000001", "tenor": "1M"}]}])
+    _patch_joint(monkeypatch, "option", "place_order_from_quote", [
+        [{"orderId": "Q-20260907-000001", "tenor": "1M"}],
+    ])
     response = client.post("/v1/workflows/run", json={
         "conversation_id": "backend-corrects-intent",
         "inputs": {"raw_content": "1M", "quote_content": INQUIRY_CARD,
-                   "message_id": 2, "room_id": "test-room"}, "user": "stable-user",
+                   "message_id": 2, "room_id": "test-room", "robot_version": "V2", "at_bot": True}, "user": "stable-user",
     })
     assert response.status_code == 200, response.text
     assert response.json()["data"]["status"] == "succeeded"
     assert calls[0][1]["type"] == "place_order_from_quote"
-    assert calls[0][1]["orderList"] == [{"orderId": "Q-20260907-000001", "tenor": "1M"}]
+    assert calls[0][1]["orderList"] == [{
+        "orderId": "Q-20260907-000001", "tenor": "1M",
+    }]
     assert response.json()["answer"] == UPDATED_CARD
 
 
 @pytest.mark.parametrize("product,raw", [
     ("option", "期权查订单"), ("swap", "互换查订单"),
-    ("option_close", "查询 CO-20260907-000001"),
+    ("option_close", "查询 CO-20260907-00000001"),
 ])
 def test_business_subgraphs_do_not_duplicate_checkpoint_history(
     monkeypatch: pytest.MonkeyPatch,
     inquiry_workflow: tuple[TestClient, list[tuple[str, dict[str, Any]]]],
     product: str, raw: str,
 ) -> None:
-    from app.subgraphs.close.models import CloseIntentOutput, QueryStatusParams
-    from app.subgraphs.option.models import OptionExtractQueryParams
-    from app.subgraphs.swap.models import SwapIntentOutput, SwapQueryParams
-
-    cases = {
-        "option": ("option", OptionIntentOutput, "query_order_status",
-                   "extract_query", OptionExtractQueryParams, "get_qwen_structured"),
-        "swap": ("swap", SwapIntentOutput, "query_order_status",
-                 "query_order", SwapQueryParams, "get_qwen_thinking"),
-        "option_close": ("close", CloseIntentOutput, "close_order_order_query",
-                         "query_status", QueryStatusParams, "get_qwen_thinking"),
-    }
-    category, intent_schema, intent, extract_node, extract_schema, intent_factory = cases[product]
-    _patch_llm(monkeypatch, f"app.subgraphs.{category}.intent.{intent_factory}",
-               intent_schema, [{"type": intent}] * 3)
-    _patch_llm(monkeypatch, f"app.subgraphs.{category}.{extract_node}.get_qwen_thinking",
-               extract_schema, [{}] * 3)
+    intent = "close_order_order_query" if product == "option_close" else "query_order_status"
+    _patch_joint(monkeypatch, product, intent, [[]] * 3)
     client, calls = inquiry_workflow
     expected_history = []
     for message_id in range(1, 4):
         response = client.post("/v1/workflows/run", json={
             "conversation_id": "history-session",
-            "inputs": {"raw_content": raw, "message_id": message_id, "room_id": "test-room"},
+            "inputs": {"raw_content": raw, "message_id": message_id, "room_id": "test-room",
+                                   "robot_version": "V2", "at_bot": True},
             "user": "stable-user",
         })
         assert response.status_code == 200, response.text

@@ -42,7 +42,7 @@ class MissingBackendContextError(RuntimeError):
 class EmptyBackendResultError(RuntimeError):
     """业务后端返回成功或失败状态，但没有可供用户展示的结果。"""
 
-    def __init__(self, target: str, code: int) -> None:
+    def __init__(self, target: str, code: int | None) -> None:
         self.target = target
         self.code = code
         super().__init__(f"{target}: backend returned an empty result (code={code})")
@@ -56,7 +56,7 @@ async def translate_httpx_errors(target: str) -> AsyncIterator[None]:
     """
     try:
         yield
-    except httpx.TimeoutException as exc:
+    except (httpx.TimeoutException, TimeoutError) as exc:
         raise BackendUnreachableError(target, "timeout") from exc
     except httpx.ConnectError as exc:
         raise BackendUnreachableError(target, "connect_error") from exc

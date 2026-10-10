@@ -1,212 +1,34 @@
-"""option.extract_inquiry 节点测试 · 含 ticker resolver 集成验证。"""
-from __future__ import annotations
-
-from unittest.mock import AsyncMock, MagicMock
+"""普通询价保持模型给出的全部订单与标的原文，证券校验归 Java。"""
+from unittest.mock import AsyncMock
 
 import pytest
-from pydantic import ValidationError
 
-from app.graph.state import TickerCandidate
-from app.subgraphs.option import extract_inquiry as ei_module
 from app.subgraphs.option.extract_inquiry import option_extract_inquiry
-from app.subgraphs.option.models import (
-    OptionInquiryItem,
-    OptionInquiryParams,
-)
-from app.subgraphs.ticker.resolver import TickerResolution
+from tests.joint_support import instruction_data
+from tests.request_support import run_request_nodes
 
 
-def _patch_resolver(
-    monkeypatch: pytest.MonkeyPatch,
-    candidates: list[TickerCandidate],
-) -> None:
-    """让 resolve_ticker_full 和 resolve_ticker 都返回指定候选，不调真后端。"""
-    resolution = TickerResolution(resolved=candidates, hitl_pending=[])
-    monkeypatch.setattr(ei_module, "resolve_ticker_full", AsyncMock(return_value=resolution))
-    monkeypatch.setattr(ei_module, "resolve_ticker", AsyncMock(return_value=candidates))
+@pytest.mark.parametrize("names", [["600519.SH", "600519.SH"], ["茅台", "腾讯"], ["unknown", " 600519 "]])
+async def test_all_orders_keep_original_security_expressions(monkeypatch, names):
+    """即使前端兼容 tickers 有其它候选，也不替换本次原文或少提交订单。"""
+    backend = AsyncMock(return_value={"code": 0, "data": "Java card"})
+    monkeypatch.setattr("app.tools.option_client.OptionClientHttpx.operate", backend)
+    raw = "、".join(names) + "期权询价1M/2M"
+    orders = [{"stockCode": name, "tenor": tenor} for name, tenor in zip(names, ("1M", "2M"), strict=True)]
+    result = await run_request_nodes(option_extract_inquiry, {"raw_text": raw, "conversation_id": "c", "message_id": 1,
+        "room_id": "r", "user_id": "u", "tickers": [{"windCode": "OTHER.O", "from_goats": True}],
+        "parsed_instruction": instruction_data("option", "new_inquiry", raw, orders=orders)}, "option")
+    assert not result.get("error"), result
+    assert backend.await_args.args[0].model_dump(exclude_none=True)["orderList"] == orders
+    assert result["place_params"]["orderList"] == orders
 
 
-def _patch_llm(
-    monkeypatch: pytest.MonkeyPatch, params: OptionInquiryParams
-) -> AsyncMock:
-    fake_llm = MagicMock()
-    fake_llm.ainvoke = AsyncMock(return_value=params)
-    fake_base = MagicMock()
-    fake_base.with_structured_output = MagicMock(return_value=fake_llm)
-    monkeypatch.setattr(ei_module, "get_qwen_thinking", lambda: fake_base)
-    monkeypatch.setattr(
-        ei_module,
-        "call_option_backend",
-        AsyncMock(return_value={"api_code": 0, "api_result": "backend reply"}),
-    )
-    return fake_llm.ainvoke
-
-
-# ============================================================
-# OptionInquiryItem 模型
-# ============================================================
-
-
-class TestOptionInquiryItem:
-    def test_minimal_all_none(self) -> None:
-        item = OptionInquiryItem()
-        assert item.stockCode is None
-        assert item.optionType is None
-
-    def test_full_item(self) -> None:
-        item = OptionInquiryItem(
-            stockCode="腾讯控股",
-            optionType="欧式看涨",
-            tenor="1M",
-            strikePercentage=100.0,
-            notionalAmount=10000000,
-            participationRate=None,
-        )
-        assert item.optionType == "欧式看涨"
-
-    def test_invalid_option_type_rejected(self) -> None:
-        with pytest.raises(ValidationError):
-            OptionInquiryItem(optionType="美式看涨")  # type: ignore[arg-type]
-
-    def test_extra_fields_ignored(self) -> None:
-        params = OptionInquiryItem.model_validate(
-            {"stockCode": "腾讯", "garbage": "x"}
-        )
-        assert params.stockCode == "腾讯"
-
-    @pytest.mark.parametrize(
-        "valid_type",
-        ["欧式看涨", "欧式看跌", "雪球", "气囊", "参与型看涨"],
-    )
-    def test_all_valid_option_types(self, valid_type: str) -> None:
-        item = OptionInquiryItem(optionType=valid_type)  # type: ignore[arg-type]
-        assert item.optionType == valid_type
-
-
-# ============================================================
-# 节点端到端
-# ============================================================
-
-
-@pytest.mark.asyncio
-class TestOptionExtractInquiryNode:
-    async def test_inquiry_with_known_ticker(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        """resolver 命中标的 → resolver 写 state['tickers']。"""
-        _patch_resolver(monkeypatch, [
-            TickerCandidate(windCode="00700.HK", insShtDesc="腾讯控股", from_goats=True),
-        ])
-        params = OptionInquiryParams(
-            orderList=[
-                OptionInquiryItem(
-                    stockCode="腾讯",
-                    optionType="欧式看涨",
-                    tenor="1M",
-                    strikePercentage=100.0,
-                )
-            ]
-        )
-        _patch_llm(monkeypatch, params)
-        result = await option_extract_inquiry(
-            {"raw_text": "期权询价 腾讯 欧式看涨 行权价100% 1个月"}
-        )
-
-        assert result["place_params"]["expected_action"] == "inquiry"
-        assert result["place_params"]["orderList"][0]["stockCode"] == "腾讯"
-        tickers = result.get("tickers", [])
-        assert len(tickers) >= 1
-        assert any("700" in t.windCode and t.windCode.endswith(".HK") for t in tickers)
-        assert all(t.from_goats for t in tickers)
-
-    async def test_inquiry_with_unknown_ticker(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        """节点正常完成，LLM 提取不受 ticker resolver 影响。"""
-        _patch_resolver(monkeypatch, [])
-        params = OptionInquiryParams(
-            orderList=[
-                OptionInquiryItem(stockCode="某不存在的标的", tenor="1M")
-            ]
-        )
-        _patch_llm(monkeypatch, params)
-        result = await option_extract_inquiry(
-            {"raw_text": "询价 某不存在的标的 1M"}
-        )
-        # 真实 API 可能模糊匹配到结果，不强制要求空
-        assert isinstance(result.get("tickers"), list)
-        # LLM 提取仍然返回（resolver 结果不影响 LLM 结果）
-        assert (
-            result["place_params"]["orderList"][0]["stockCode"]
-            == "某不存在的标的"
-        )
-
-    async def test_inquiry_multi_distinct_tickers(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        """用户原话含多个标的 → resolver 返回多条。"""
-        from app.graph.state import TickerCandidate
-        from app.subgraphs.ticker.resolver import TickerResolution
-
-        monkeypatch.setattr(
-            ei_module,
-            "resolve_ticker_full",
-            AsyncMock(return_value=TickerResolution(
-                resolved=[
-                    TickerCandidate(windCode="600519.SH", insShtDesc="贵州茅台", from_goats=True),
-                    TickerCandidate(windCode="00700.HK", insShtDesc="腾讯控股", from_goats=True),
-                ],
-                hitl_pending=[],
-            )),
-        )
-        params = OptionInquiryParams(
-            orderList=[
-                OptionInquiryItem(stockCode="茅台", optionType="雪球"),
-                OptionInquiryItem(stockCode="腾讯", optionType="雪球"),
-            ]
-        )
-        _patch_llm(monkeypatch, params)
-        result = await option_extract_inquiry(
-            {"raw_text": "雪球询价 茅台 和 腾讯 1Y"}
-        )
-        wind_codes = {t.windCode for t in result["tickers"]}
-        assert "600519.SH" in wind_codes
-        assert "00700.HK" in wind_codes
-
-    async def test_writes_trace_with_ticker_count(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        _patch_resolver(monkeypatch, [
-            TickerCandidate(windCode="00700.HK", insShtDesc="腾讯控股", from_goats=True),
-        ])
-        params = OptionInquiryParams(
-            orderList=[
-                OptionInquiryItem(stockCode="腾讯", optionType="雪球"),
-            ]
-        )
-        _patch_llm(monkeypatch, params)
-        result = await option_extract_inquiry(
-            {"raw_text": "雪球询价 腾讯"}
-        )
-        trace = result.get("trace", [])
-        assert len(trace) == 1
-        decision = trace[0].decision
-        assert "action=inquiry" in decision
-        assert "orders=1" in decision
-        assert "tickers=1" in decision
-
-    async def test_safe_node_catches_llm_error(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        fake_llm = MagicMock()
-        fake_llm.with_structured_output = MagicMock(
-            return_value=MagicMock(
-                ainvoke=AsyncMock(side_effect=RuntimeError("LLM down"))
-            )
-        )
-        monkeypatch.setattr(
-            ei_module, "get_qwen_thinking", lambda: fake_llm
-        )
-        result = await option_extract_inquiry({"raw_text": "x"})
-        assert result.get("error") is not None
-        assert result["error"].node == "option_extract_inquiry"
+async def test_unspecified_security_is_not_filled_from_tickers(monkeypatch):
+    """缺字段交 Java 提示，不能将唯一候选擅自当成用户选择。"""
+    backend = AsyncMock(return_value={"code": 0, "data": "Java要求补充标的"})
+    monkeypatch.setattr("app.tools.option_client.OptionClientHttpx.operate", backend)
+    result = await run_request_nodes(option_extract_inquiry, {"raw_text": "期权询价1M", "conversation_id": "c", "message_id": 1,
+        "room_id": "r", "user_id": "u", "tickers": [{"windCode": "600519.SH"}],
+        "parsed_instruction": instruction_data("option", "new_inquiry", "期权询价1M", orders=[{"tenor": "1M"}])}, "option")
+    assert not result.get("error"), result
+    assert backend.await_args.args[0].model_dump(exclude_none=True)["orderList"] == [{"tenor": "1M"}]

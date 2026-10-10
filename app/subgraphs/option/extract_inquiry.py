@@ -1,184 +1,85 @@
-"""option.extract_inquiry 节点 · 期权询价参数提取（含 ticker resolver 集成）。
-
-输入：raw_text + quote_content + history_messages
-输出：state['place_params'] = {expected_action: "inquiry", orderList: [...]}
-      state['tickers'] = list[TickerCandidate]（来自 ticker resolver）
-
-**首次集成 ticker resolver**：
-- LLM 提取询价参数（stockCode 字段保留用户原话）
-- 节点同步调用 resolve_ticker(raw_text) 拿 from_goats=True 候选
-- 写到 state['tickers']，供下游审计 / 后端调用使用
-
-LLM：standard 模型 + with_structured_output（ADR 0010）。
-prompt：app/prompts/option/extract_inquiry.md。
-"""
+"""普通期权询价子图：读取联合解析 → 来源检查 → Java 提交。"""
 from __future__ import annotations
 
+from functools import lru_cache
 from typing import Any
+
+from langgraph.graph import END, START, StateGraph
+from langgraph.graph.state import CompiledStateGraph
 
 from app.graph.business_params import validated_place_params
 from app.graph.safe_node import safe_node
-from app.graph.state import AgentState, Message, TraceEntry
-from app.llm.clients import get_qwen_thinking
-from app.prompts import load_prompt
-from app.subgraphs.option.backend import _with_resolved_ticker, call_option_backend
-from app.subgraphs.option.models import OptionInquiryParams
-from app.subgraphs.ticker.resolver import resolve_ticker, resolve_ticker_full
-
-#: 快速询价 / 雪球 / 参与型识别关键词（命中则不走 LLM，直传 GOATS instrument parser）
-_FAST_INQUIRY_MARKERS = ("快速询价", "雪球", "参与型", "敲入", "敲出")
+from app.graph.state import AgentState, SubgraphOutput, TraceEntry
+from app.parsing.evidence import verify_instruction
+from app.parsing.models import OptionInstruction
+from app.subgraphs.option.backend import prepare_option_request
 
 
-def _is_fast_inquiry(text: str) -> bool:
-    """检测 raw_text 是否是快速询价 / 雪球类强信号场景。"""
-    if not text:
-        return False
-    return any(m in text for m in _FAST_INQUIRY_MARKERS)
+class InquiryState(AgentState, total=False):
+    """询价私有中间态，只保存本次待提交的参数。"""
+
+    iq_order_list: list[dict[str, Any]]
 
 
-def _format_history(history: list[Message] | None) -> str:
-    if not history:
-        return ""
-    lines: list[str] = []
-    for msg in history:
-        role = msg.role if hasattr(msg, "role") else msg.get("role", "user")
-        content = msg.content if hasattr(msg, "content") else msg.get("content", "")
-        lines.append(f"{role}: {content}")
-    return "\n".join(lines)
-
-
-def _build_user_message(state: AgentState) -> str:
-    raw_content = state.get("raw_text", "") or ""
-    quote_content = state.get("quote_content") or ""
-    history_str = _format_history(state.get("history_messages"))
-    return (
-        f"用户消息：{raw_content}\n\n"
-        f"引用消息：{quote_content}\n\n"
-        f"历史对话：\n{history_str}"
-    )
+InquiryOutput = SubgraphOutput
 
 
 @safe_node
+async def inquiry_prepare(state: InquiryState) -> dict[str, Any]:
+    """读取同一次解析结果，不展开或换算业务参数。"""
+    parsed = OptionInstruction.model_validate(state.get("parsed_instruction") or {})
+    if parsed.intent != "new_inquiry":
+        raise ValueError("询价子图不能执行其它业务动作")
+    orders = [order.model_dump(exclude_none=True, exclude_unset=True) for order in parsed.orders]
+    return {"iq_order_list": orders,
+            "trace": [TraceEntry(node="inquiry_prepare", decision=f"orders={len(orders)}")]}
+
+
+@safe_node
+async def inquiry_validate(state: InquiryState) -> dict[str, Any]:
+    """提交前检查结构与来源，业务数值和证券有效性由 Java 判断。"""
+    parsed = OptionInstruction.model_validate(state.get("parsed_instruction") or {})
+    return {"field_records": verify_instruction(parsed, state)}
+
+
+@safe_node
+async def inquiry_submit(state: InquiryState) -> dict[str, Any]:
+    """准备完整询价请求；父图清洗后提交，写请求不重试。"""
+    orders = state.get("iq_order_list") or []
+    result = await prepare_option_request(state, intent="new_inquiry", order_list=orders)
+    return {"expected_action": "inquiry", "place_params": validated_place_params(orderList=orders),
+            **result, "trace": [TraceEntry(node="inquiry_submit", decision=f"orders={len(orders)}")]}
+
+
+def _after_prepare(state: InquiryState) -> str:
+    """读取失败即结束，避免空参数进入后端。"""
+    return END if state.get("error") else "inquiry_validate"
+
+
+def _after_validate(state: InquiryState) -> str:
+    """来源检查失败即结束，不发起业务写入。"""
+    return END if state.get("error") else "inquiry_submit"
+
+
+def build_inquiry_graph() -> CompiledStateGraph[InquiryState, None, AgentState, SubgraphOutput]:
+    """以独立确定性节点构建询价流程，模型请求数恒为零。"""
+    graph = StateGraph(InquiryState, input_schema=AgentState, output_schema=SubgraphOutput)
+    graph.add_node("inquiry_prepare", inquiry_prepare)
+    graph.add_node("inquiry_validate", inquiry_validate)
+    graph.add_node("inquiry_submit", inquiry_submit)
+    graph.add_edge(START, "inquiry_prepare")
+    graph.add_conditional_edges("inquiry_prepare", _after_prepare, ["inquiry_validate", END])
+    graph.add_conditional_edges("inquiry_validate", _after_validate, ["inquiry_submit", END])
+    graph.add_edge("inquiry_submit", END)
+    return graph.compile(name="option_extract_inquiry")
+
+
+@lru_cache(maxsize=1)
+def get_inquiry_graph() -> CompiledStateGraph[InquiryState, None, AgentState, SubgraphOutput]:
+    """供节点调试复用编译图，不保存会话 checkpoint。"""
+    return build_inquiry_graph()
+
+
 async def option_extract_inquiry(state: AgentState) -> dict[str, Any]:
-    """option.extract_inquiry 节点。
-
-    出参约定：
-    - place_params: {expected_action: "inquiry", orderList: [...]}
-    - tickers: list[TickerCandidate]（resolver 输出，from_goats=True）
-    - trace: 单条 TraceEntry，记录订单数 + 标的数
-    """
-    raw_text = state.get("raw_text", "") or ""
-
-    # 0a. 快速询价 / 雪球 / 参与型 → 直接转发给 GOATS instrument parser，跳过 LLM 抽取
-    # 与 Dify 工作流"判断快速询价"分支对齐：用户输入这类强信号关键词时，原文直传
-    # GOATS endpoint 拿 parsed 字段（productType/tenor/knockInPrice/...），再带着这些
-    # 字段调现有 option/operate backend 拿正式询价回复
-    if _is_fast_inquiry(raw_text):
-        from app.tools.goats_rfq import parse_rfq_instrument
-
-        rfq_data = await parse_rfq_instrument(raw_text)
-        if rfq_data:
-            # 把 GOATS parser 返回的字段填到 optionRfq 调后端
-            # 把 GOATS parser 字段透传给 backend (含 fuzzyCodeList / productSubtypeList 等扩展字段)
-            option_rfq = {
-                "chatType": rfq_data.get("chatType"),
-                "chatInstrument": rfq_data.get("chatInstrument") or raw_text,
-                "productType": rfq_data.get("productType"),
-                "tenor": rfq_data.get("tenor"),
-                "strike": [str(s) for s in (rfq_data.get("strike") or [])],
-                "knockInPrice": [str(p) for p in (rfq_data.get("knockInPrice") or [])],
-                "knockOutPrice": [str(p) for p in (rfq_data.get("knockOutPrice") or [])],
-                "estimateMargin": [str(m) for m in (rfq_data.get("estimateMargin") or [])],
-                "fuzzyCodeList": rfq_data.get("fuzzyCodeList") or [],
-                "productSubtypeList": rfq_data.get("productSubtypeList") or [],
-                "participateRate": [str(p) for p in (rfq_data.get("participateRate") or [])],
-            }
-            backend = await call_option_backend(
-                state,
-                intent="new_inquiry",
-                option_rfq=option_rfq,
-            )
-            # 不写 place_params/tickers，让 render 走 step 5 直接透传 backend api_result
-            return {
-                **backend,
-                "trace": [
-                    TraceEntry(
-                        node="option_extract_inquiry",
-                        decision=f"fast_inquiry product={rfq_data.get('productType')}",
-                        llm_output={"rfq_data": rfq_data},
-                    )
-                ],
-            }
-
-    # 0. 无效标的预检（代码格式但不在池→直接拒绝，不调 LLM）
-    import re as _re_ticker
-    _has_code_like = bool(_re_ticker.search(
-        r"\d{5,6}[.\s]|[A-Z]{2,6}\d+|L\d{4,}", raw_text
-    ))
-    if _has_code_like:
-        _tickers = await resolve_ticker(raw_text)
-        if not _tickers:
-            return {
-                "place_params": validated_place_params(expected_action="inquiry", orderList=[]),
-                "tickers": [],
-                "error": "抱歉！标的代码（或标的名称）不在标的池内，无法自动报价，请联系对口销售或交易员。",
-                "trace": [TraceEntry(node="option_extract_inquiry", decision="invalid_ticker")],
-            }
-
-    # 1. LLM 提取询价参数（standard 模型 + structured output）
-    prompt = load_prompt("option", "extract_inquiry")
-    llm = get_qwen_thinking().with_structured_output(OptionInquiryParams)
-    user_message = _build_user_message(state)
-    params: Any = await llm.ainvoke(
-        [
-            ("system", prompt.system),
-            ("user", user_message),
-        ]
-    )
-
-    # 2. ticker resolver 识别标的（含 HITL 信号）
-    resolution = await resolve_ticker_full(raw_text)
-    tickers = resolution.resolved
-    order_list = [item.model_dump() for item in params.orderList]
-    backend_order_list = [
-        _with_resolved_ticker(dict(item), tickers, idx)
-        for idx, item in enumerate(order_list)
-    ]
-
-    types = [item.optionType for item in params.orderList if item.optionType]
-    decision = (
-        f"action=inquiry,"
-        f" orders={len(params.orderList)},"
-        f" tickers={len(tickers)},"
-        f" types={types},"
-        f" hitl={len(resolution.hitl_pending)}"
-    )
-
-    backend = await call_option_backend(
-        state,
-        intent="new_inquiry",
-        order_list=backend_order_list,
-    )
-
-    out: dict = {
-        "place_params": validated_place_params(expected_action="inquiry", orderList=order_list),
-        "tickers": tickers,
-        **backend,
-        "trace": [
-            TraceEntry(
-                node="option_extract_inquiry",
-                decision=decision,
-                llm_output={
-                    "params": params.model_dump(),
-                    "tickers_count": len(tickers),
-                    "hitl_count": len(resolution.hitl_pending),
-                },
-            )
-        ],
-    }
-    if resolution.hitl_pending:
-        out["ticker_hitl_candidates"] = resolution.hitl_pending
-    return out
-
-
-__all__ = ["option_extract_inquiry"]
+    """独立节点执行入口只返回询价子图写回面。"""
+    return await get_inquiry_graph().ainvoke(state)

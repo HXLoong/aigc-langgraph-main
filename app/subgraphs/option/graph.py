@@ -1,111 +1,83 @@
 """option 子图编译入口。
 
-ADR 0001 D6 + ADR 0011 二次修订 + grill-with-docs 第 1/2 决策。
-
-★ option 子图 6/6 真节点全部到位（100%）：
-
     START → option_intent → [route_by_intent]
-        → option_extract_inquiry          (new_inquiry)
-        → option_extract_place_or_modify  (place_order_from_quote / request_modify_order)
-        → option_extract_cancel           (cancel_order_request / request_cancel_order)
-        → option_extract_confirm          (confirm_order / confirm_cancel_order /
-                                           confirm_modify_order)
-        → option_extract_query            (query_order_status)
-        → option_unknown                  (unknown_intent + cascade 错误兜底)
+        → option_extract_inquiry        (new_inquiry)
+        → option_extract_place          (place_order_from_quote)
+        → option_extract_confirm_place  (confirm_order)
+        → option_extract_cancel_place   (cancel_order_request)
+        → option_extract_cancel         (request_cancel_order)
+        → option_extract_confirm_cancel (confirm_cancel_order)
+        → option_extract_query          (query_order_status)
+        → option_unknown                (unknown_intent + cascade 错误兜底)
         → END
 
-注：原 option_todo 占位节点已删除（所有真节点到位）。仅保留 option_unknown
-处理 unknown_intent + cascade 防御场景。
+7 个意图 : 7 个真节点一一对应（Dify DSL v2「期权-意图识别」8 枚举值，
+unknown_intent 走兜底）。不再有 request_modify_order / confirm_modify_order
+——期权无独立改单流程，对已有订单的参数修改统一归 place_order_from_quote。
 """
 from __future__ import annotations
-
-from typing import Any
 
 from langgraph.graph import END, START, StateGraph
 from langgraph.graph.state import CompiledStateGraph
 
-from app.graph.cascade import has_error
-from app.graph.safe_node import safe_node
-from app.graph.state import AgentState, TraceEntry
+from app.graph.retry import add_io_node
+from app.graph.state import AgentState, SubgraphOutput
+from app.subgraphs.common import add_intent_dispatch, intent_router, make_unknown_node
+from app.subgraphs.option.backend import option_clean_request, option_query_backend, option_submit
 from app.subgraphs.option.extract_cancel import option_extract_cancel
-from app.subgraphs.option.extract_confirm import option_extract_confirm
-from app.subgraphs.option.extract_inquiry import option_extract_inquiry
-from app.subgraphs.option.extract_place_or_modify import (
-    option_extract_place_or_modify,
-)
+from app.subgraphs.option.extract_cancel_place import option_extract_cancel_place
+from app.subgraphs.option.extract_confirm_cancel import option_extract_confirm_cancel
+from app.subgraphs.option.extract_confirm_place import option_extract_confirm_place
+from app.subgraphs.option.extract_inquiry import build_inquiry_graph
+from app.subgraphs.option.extract_place import option_extract_place
 from app.subgraphs.option.extract_query import option_extract_query
 from app.subgraphs.option.intent import option_intent
+from app.subgraphs.request_boundary import after_clean, after_prepare
 
+#: unknown_intent + cascade 错误兜底节点
+option_unknown = make_unknown_node("option_unknown")
 
-@safe_node
-async def option_unknown(state: AgentState) -> dict[str, Any]:
-    """unknown_intent + cascade 错误兜底节点（替代原 option_todo）。"""
-    intent = state.get("intent") or "unknown_intent"
-    return {
-        "trace": [
-            TraceEntry(
-                node="option_unknown",
-                decision=f"unhandled_intent={intent}",
-            )
-        ]
-    }
-
-
-#: intent → 真节点 key 路由表（option 子图 9 个意图全覆盖，unknown 走 unknown 兜底）
+#: intent → 真节点 key 路由表（option 子图 7 个基础意图全覆盖，unknown 走 unknown 兜底）
 _INTENT_TO_NODE: dict[str, str] = {
     "new_inquiry": "option_extract_inquiry",
-    "place_order_from_quote": "option_extract_place_or_modify",
-    "request_modify_order": "option_extract_place_or_modify",
-    "cancel_order_request": "option_extract_cancel",
+    "place_order_from_quote": "option_extract_place",
+    "confirm_order": "option_extract_confirm_place",
+    "cancel_order_request": "option_extract_cancel_place",
     "request_cancel_order": "option_extract_cancel",
-    "confirm_order": "option_extract_confirm",
-    "confirm_cancel_order": "option_extract_confirm",
-    "confirm_modify_order": "option_extract_confirm",
+    "confirm_cancel_order": "option_extract_confirm_cancel",
     "query_order_status": "option_extract_query",
 }
 
-
-def _route_after_option_intent(state: AgentState) -> str:
-    """option.intent 后路由：cascade 防御 + intent 分发。"""
-    if has_error(state):
-        return "option_unknown"
-    intent = state.get("intent") or "unknown_intent"
-    return _INTENT_TO_NODE.get(intent, "option_unknown")
+#: option.intent 后路由：cascade 防御 + intent 分发
+_route_after_option_intent = intent_router(_INTENT_TO_NODE, "option_unknown")
 
 
-def build_option_graph() -> CompiledStateGraph:
-    """构建 option 子图（6/6 真节点全部到位）。"""
-    g: StateGraph = StateGraph(AgentState)
+def build_option_graph() -> CompiledStateGraph[AgentState, None, AgentState, SubgraphOutput]:
+    """构建 option 子图（7 意图 : 7 真节点一一对应）。"""
+    g: StateGraph[AgentState, None, AgentState, SubgraphOutput] = StateGraph(AgentState, output_schema=SubgraphOutput)
     g.add_node("option_intent", option_intent)
-    g.add_node("option_extract_inquiry", option_extract_inquiry)
-    g.add_node("option_extract_place_or_modify", option_extract_place_or_modify)
+    g.add_node("option_extract_inquiry", build_inquiry_graph())  # 子图原生嵌入（ADR 0024 D3）
+    g.add_node("option_extract_place", option_extract_place)
+    g.add_node("option_extract_confirm_place", option_extract_confirm_place)
+    g.add_node("option_extract_cancel_place", option_extract_cancel_place)
     g.add_node("option_extract_cancel", option_extract_cancel)
-    g.add_node("option_extract_confirm", option_extract_confirm)
+    g.add_node("option_extract_confirm_cancel", option_extract_confirm_cancel)
     g.add_node("option_extract_query", option_extract_query)
     g.add_node("option_unknown", option_unknown)
 
     g.add_edge(START, "option_intent")
-    g.add_conditional_edges(
-        "option_intent",
-        _route_after_option_intent,
-        {
-            "option_extract_inquiry": "option_extract_inquiry",
-            "option_extract_place_or_modify": "option_extract_place_or_modify",
-            "option_extract_cancel": "option_extract_cancel",
-            "option_extract_confirm": "option_extract_confirm",
-            "option_extract_query": "option_extract_query",
-            "option_unknown": "option_unknown",
-        },
+    targets = add_intent_dispatch(
+        g, "option_intent", _route_after_option_intent, _INTENT_TO_NODE, "option_unknown",
     )
-    for n in (
-        "option_extract_inquiry",
-        "option_extract_place_or_modify",
-        "option_extract_cancel",
-        "option_extract_confirm",
-        "option_extract_query",
-        "option_unknown",
-    ):
-        g.add_edge(n, END)
+    for n in targets:
+        g.add_conditional_edges(n, after_prepare, {"done": END, "clean": "option_clean_request"})
+    g.add_node("option_clean_request", option_clean_request)
+    g.add_node("option_submit", option_submit)
+    add_io_node(g, "option_query_backend", option_query_backend)
+    g.add_conditional_edges("option_clean_request", after_clean,
+                               {"done": END, "query": "option_query_backend", "submit": "option_submit"})
+    g.add_edge("option_submit", END)
+    g.add_edge("option_query_backend", END)
     return g.compile()
 
 

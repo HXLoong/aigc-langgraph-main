@@ -1,50 +1,54 @@
-# ADR 0021 · 文本二阶段确认替代 LangGraph interrupt + checkpointer 接线
+# ADR 0021 · 单次指令处理：LangGraph 识别提交，Java 决定业务流程
+
+## 状态
 
 - 状态：已采纳
-- 日期：2026-08-27
-- 起源：#153 裁决（wayfinder map #138 全量核查发现 [ADR 0006](./0006-hitl-interrupt-boundary.md) 0% 落地）
-- 取代：[ADR 0006](./0006-hitl-interrupt-boundary.md) 的 interrupt 机制部分（其"写 + 资金双轴"风险象限规则仍沿用）
+- 日期：2026-09-24
+- 关系：输入与来源契约见 [ADR 0027](./0027-field-evidence-contract.md)，调用职责见 [ADR 0026](./0026-request-idempotency-uncertain-receipts-reconciliation.md)，会话持久化见 [ADR 0024](./0024-langgraph-native-rearchitecture.md) D4
 - 作者：图灵科技 + Tony
 
-## 上下文
+## 背景
 
-ADR 0006 决策用 `interrupt_before` 拦截写+资金类节点，但核查确认其执行载体从未存在：主图无 `interrupt_before`、生产图 `checkpointer=None`、`/v1/message/confirm` 恢复端点缺失。与此同时，**文本"确认"路径已在生产实际工作**：客户回复"确认"→ 意图分类 → `confirm_*` 意图节点执行写操作（swap/option/close 三子图均有此路由）——原设计中的"按钮故障兜底"事实上成为唯一路径，且被 M2/M3 评估验证可用。
+LangGraph 是单次指令处理工具。Java 保存订单及业务状态，并通过既有接口处理提交；LangGraph 不应根据本地风险分类把一次合法指令强制拆成“申请”和“等待用户再次确认”两阶段。
 
 ## 决策
 
-### 1. 文本二阶段确认为正式确认机制（interrupt 不做）
+### 1. 每次调用独立识别并提交
 
-写+资金类动作（place_order / cancel / modify / place_close）的客户确认统一走**文本二阶段**：
-
+```text
+用户本次消息及引用
+    → LangGraph：识别产品、单一业务动作、订单号与本次参数
+    → 校验结构、来源与引用选择范围，构造现有接口请求
+    → Java：读取订单、校验权限与业务状态、决定后续流程并处理
+    → LangGraph：返回本次真实业务回执，本次调用结束
 ```
-客户发起 → 节点提取参数 → render 输出确认卡（文本）→ 单轮结束
-客户回复"确认"→ 一级路由 + 子图 intent → confirm_* 节点 → 真正写后端
-```
 
-不实现 `interrupt_before` / 确认按钮回调端点。理由：
+- LangGraph 当前不做二阶段处理：不生成本地待确认状态、不暂停等待第二条消息、不维护订单确认状态机，也不按资金 / 合约风险表统一要求用户二次确认。
+- LangGraph 不把普通下单、撤单、改单或平仓自动改写成确认动作；识别到的本次动作按现有 Java `type` / DTO 契约提交，Java 决定该动作的处理结果。
+- 若用户本次明确发送现有契约支持的“确认下单”等指令，仍将它作为一次独立的业务动作识别并提交；动作和本次引用选择必须一致，历史记忆不能代替本次授权。这不要求所有交易都先经过本地申请阶段。
+- Java 若返回待补充、待确认或业务拒绝，LangGraph 按真实回执契约呈现。是否需要后续操作由 Java 业务契约决定，不由 LangGraph 新增或绕过；本决策不修改 Java 源码、配置、接口和订单执行语义。
 
-- 文本路径已被验证可用且被 golden 覆盖；interrupt 路径需要企微按钮回调链路 + Java 侧配合新联调面，M3.3 阶段引入不现实
-- 二阶段语义等价：写操作同样需要客户显式二次表达，风险象限规则（ADR 0006 表）继续用于判断"哪些意图必须走二阶段"
-- 单轮结束 + 新消息重新起图的模型更简单，不依赖 interrupt 的 checkpoint 恢复语义
+### 2. 参数与订单数据的归属
 
-### 2. checkpointer 接线（同批落地，修复 [ADR 0009](./0009-mysql-version-and-tdsql-compatibility.md) 严重偏离）
+- LangGraph 提取本次动作、订单号及适用的显式参数；未明确提供的订单字段不从历史或引用卡片拼装成完整订单。
+- 对现有契约允许的参数修改，只提交本次明确提供的增量。Java 读取已有订单，合并参数并判断存在性、归属、权限和状态。
+- 识别出订单号或确认口令不代表交易已被执行；确认类指令的来源与选择范围处理遵循 ADR 0027 D5。
+- 不实现 `interrupt_before`、恢复待确认图或按钮回调端点。下一条用户消息开始新的调用，独立计数模型额度（ADR 0031）。
 
-多轮对话状态持久化与 interrupt 无关，是**生产正确性**要求（跨进程/重启不失忆），随本 ADR 一并接线：
+### 3. 会话持久化是独立的运行要求
 
-- 新增配置 `use_mysql_checkpointer`（`app/config.py`）：**生产必须 true**——lifespan 在 `environment=production` 且未启用时直接 fail-fast；显式启用后 AIOMySQLSaver 初始化失败同样直接抛（硬依赖，不静默降级）
-- 开发/CI 默认 false：本地测试不被 MySQL 依赖绑架，避免 checkpoint 脏状态引起测试翻转；本地要验证持久化行为时在 `.env` 打开
-- `.env.customer.template` 已加 `USE_MYSQL_CHECKPOINTER=true`；现场首启即执行 `.setup()` 建表——**这是 TDSQL 兼容性（ADR 0009 上下界约束）第一次真实验证的时点**，部署 checklist 须包含
-- 回归测试：`tests/test_checkpointer_wiring.py`（fail-fast / 硬依赖 / 接线 / 默认关 5 用例）
+checkpointer 保存图状态与对话上下文，快照不作为订单权威数据，也不作为执行本次指令的待确认凭据。
+
+- 生产 `use_mysql_checkpointer` 必须为 true，关闭或初始化失败时启动报错；不因取消二阶段处理改变这项要求。
+- 开发 / CI 默认关闭，以命令级设置隔离真实数据库依赖。
+- 表由 `sql/init.sql` 创建，启动仅只读校验（ADR 0009）；接线回归见 `tests/test_checkpointer_wiring.py`。
 
 ## 备选方案
 
-- **补齐 interrupt 全套**（ADR 0006 原设计）：需企微按钮回调 + Java 配合 + checkpoint 恢复语义管理，M3.3 阶段成本与风险不成比例；文本路径已可用，收益增量小。
-- **checkpointer 也不接**：多轮状态继续无持久化，重启失忆 + HITL 类场景永久受限——生产不可接受。
-- **checkpointer 默认全局开**：本地/CI 测试被 MySQL 绑架，同 conversation_id 的 checkpoint 残留造成测试翻转（`tests/CLAUDE.md` 根纪律）。
+- **LangGraph 本地申请、等待、确认**：重复 Java 的业务流程与订单状态，不采用。
+- **自动把普通指令提升为确认动作**：改变现有接口语义，也不能从用户表达推定交易授权，不采用。
+- **每次识别并提交本次动作，Java 决定流程（已选）**：单轮、多轮采用同一职责，真实回执保持权威。
 
 ## 后果
 
-- ADR 0006 标记被本 ADR 取代（风险象限表保留引用）；[ADR 0008](./0008-ticker-resolution-as-react-agent.md) c 段的 interrupt 消歧同理不做（ticker 消歧走 render 文本卡片，已是现状）。
-- 现场部署 checklist 新增：首启验证 checkpoint 4 张系统表建表成功（TDSQL 上跑通 `.setup()`）。
-- 未来若业务方强烈要求按钮式确认，重开 ADR 评估 interrupt——届时 checkpointer 已就位，增量只剩端点与按钮回调。
-- `confirm_*` 意图的 golden 覆盖成为确认链路的唯一回归防线（相关缺口见 Issue #113 的 modify 意图补充要求）。
+现有确认类意图继续用于兼容 Java 接口，但不构成本地强制二阶段流程。当前确认参数重建与相关规则尚待收敛；代码调整和真实业务验收见[工作计划](../work-plan.md)，本决策不代表运行行为已改变。

@@ -1,9 +1,9 @@
 """case_generator CLI：批量生成业务方种子收集模板 + LLM 对抗式 paraphrase。
 
 用法：
-    python -m harness.case_generator generate-seeds [--out-dir docs/m2-golden-seeds]
+    python -m harness.case_generator generate-seeds [--out-dir /opt/work-file/code-tmp/aigc-langgraph-tmp/case_generator/seeds]
     python -m harness.case_generator list-nodes
-    python -m harness.case_generator paraphrase [--num 3] [--out docs/m2-llm-generated-cases.md]
+    python -m harness.case_generator paraphrase [--num 3] [--out /opt/work-file/code-tmp/aigc-langgraph-tmp/case_generator/paraphrase-candidates.md]
 """
 from __future__ import annotations
 
@@ -35,11 +35,11 @@ def cmd_generate_seeds(out_dir: Path, num_slots: int = 8) -> int:
 
     # 生成索引页
     index_lines = [
-        "# M2 Golden 种子收集索引",
+        "# Golden 种子收集索引",
         "",
         "> grill-with-docs 2026-05-10 第 4 决策落地 · 业务方填空",
         "",
-        f"共 **{len(written)}** 个 M2 节点等待业务方种子。每个节点至少 6-8 条，",
+        f"共 **{len(written)}** 个节点等待业务方种子。每个节点至少 6-8 条，",
         "总目标 ≥ 80 条以满足 P0 退出门（ADR 0001 D9.2）。",
         "",
         "## 节点列表",
@@ -59,7 +59,7 @@ def cmd_generate_seeds(out_dir: Path, num_slots: int = 8) -> int:
             "",
             "- 每个文件含 8 个 case 槽位，至少填 6 条",
             "- 只标 `expected.product_type` + `expected.intent`，参数细节不标",
-            "- 写完后由工程师转 jsonl 合入 `tests/fixtures/golden.jsonl`",
+            "- 写完后由工程师审核并合入 `tests/datasets/biz/`",
             "- 所有种子标 `source: business_seed`（B 桶 PASS 阈值 ≥ 90%）",
             "",
         ]
@@ -86,10 +86,11 @@ async def _cmd_paraphrase_async(
 ) -> int:
     """LLM 对抗式 paraphrase 子命令。"""
     from harness.case_generator.llm_paraphrase import (
+        ParaphrasedCase,
         paraphrase_case,
         render_review_markdown,
     )
-    from harness.golden import load_golden
+    from harness.golden import GoldenCase, load_golden
 
     seeds = load_golden(golden_path)
     if not seeds:
@@ -102,7 +103,7 @@ async def _cmd_paraphrase_async(
     ]
     print(f"paraphrasing {len(business_seeds)} business seeds, {num_variants} variants each ...")
 
-    pairs: list[tuple] = []
+    pairs: list[tuple[GoldenCase, list[ParaphrasedCase]]] = []
     for i, seed in enumerate(business_seeds, 1):
         print(f"  [{i}/{len(business_seeds)}] {seed.id} ({seed.category}) ...", flush=True)
         try:
@@ -122,6 +123,8 @@ async def _cmd_paraphrase_async(
 
 
 def main(argv: list[str] | None = None) -> int:
+    """解析生成命令；默认将待审阅草稿保存在仓库外的临时目录。"""
+    # 输出参数允许显式覆盖，默认路径遵循项目统一的临时目录约定。
     parser = argparse.ArgumentParser(prog="harness.case_generator")
     sub = parser.add_subparsers(dest="cmd", required=True)
 
@@ -130,9 +133,9 @@ def main(argv: list[str] | None = None) -> int:
     )
     p_gen.add_argument(
         "--out-dir",
-        default="docs/m2-golden-seeds",
+        default="/opt/work-file/code-tmp/aigc-langgraph-tmp/case_generator/seeds",
         type=Path,
-        help="输出目录（默认 docs/m2-golden-seeds）",
+        help="输出目录（默认 /opt/work-file/code-tmp/aigc-langgraph-tmp/case_generator/seeds，位于仓库外）",
     )
     p_gen.add_argument(
         "--num-slots",
@@ -149,9 +152,9 @@ def main(argv: list[str] | None = None) -> int:
     )
     p_para.add_argument(
         "--out",
-        default="docs/m2-llm-generated-cases.md",
+        default="/opt/work-file/code-tmp/aigc-langgraph-tmp/case_generator/paraphrase-candidates.md",
         type=Path,
-        help="输出 review 候选清单 markdown（默认 docs/m2-llm-generated-cases.md）",
+        help="输出 review 候选清单 markdown（默认 /opt/work-file/code-tmp/aigc-langgraph-tmp/case_generator/paraphrase-candidates.md）",
     )
     p_para.add_argument(
         "--num",
@@ -161,9 +164,9 @@ def main(argv: list[str] | None = None) -> int:
     )
     p_para.add_argument(
         "--golden",
-        default="tests/fixtures/golden.jsonl",
+        default="tests/datasets/biz",
         type=Path,
-        help="种子来源 golden.jsonl 路径",
+        help="种子来源 biz 目录或 JSONL 路径",
     )
 
     args = parser.parse_args(argv)

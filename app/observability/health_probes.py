@@ -1,4 +1,4 @@
-"""健康检查探测（D2.6 / Issue #72）。
+"""健康检查探测。
 
 4 个上游 probe：MySQL / LangFuse / LLM / Java 后端。
 每个独立 timeout，单点慢不阻塞。失败时返回简短状态码，不泄漏内部细节。
@@ -7,26 +7,31 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from collections.abc import Awaitable
 from dataclasses import dataclass
-from typing import Literal
+from typing import Any, Literal
 
 logger = logging.getLogger(__name__)
 
 ProbeStatus = Literal["ok", "fail", "disabled"]
+ProbeTarget = Literal["mysql", "langfuse", "llm", "java_backend"]
 
-PROBE_TIMEOUT_SECONDS = 1.5
-READY_TOTAL_TIMEOUT_SECONDS = 3.0
+# 单个依赖的探测上限；3 秒可容纳冷启动时的首次连接、握手和查询开销。
+PROBE_TIMEOUT_SECONDS = 3
+# 4 个并行探测的整体上限；额外余量用于模块导入、任务调度和取消收尾。
+READY_TOTAL_TIMEOUT_SECONDS = 8
 
 
 @dataclass(frozen=True)
 class ProbeResult:
-    target: Literal["mysql", "langfuse", "llm", "java_backend"]
+    target: ProbeTarget
     status: ProbeStatus
     error: str | None = None
     latency_ms: int | None = None
 
 
-async def _timed(target: str, coro) -> tuple[ProbeStatus, str | None, int]:
+async def _timed(target: str, coro: Awaitable[Any]) -> tuple[ProbeStatus, str | None, int]:
+    """在独立时限内执行依赖探测，并记录耗时及失败类别。"""
     import time
 
     t0 = time.monotonic()
@@ -40,25 +45,24 @@ async def _timed(target: str, coro) -> tuple[ProbeStatus, str | None, int]:
 
 
 async def probe_mysql() -> ProbeResult:
-    """SELECT 1 on checkpoint_mysql_uri."""
+    """SELECT 1：saver 已接线时打 saver 自己的连接池（ADR 0024 D4），否则直连 mysql_uri。"""
+    from app.checkpointer import factory as checkpointer_factory
     from app.config import get_settings
 
     async def _check() -> None:
-        from urllib.parse import urlparse
+        """执行当前依赖的只读健康检查，失败交统一探测器记录。"""
+        if checkpointer_factory.has_checkpointer_pool():
+            await checkpointer_factory.probe_checkpointer()
+            return
 
         import aiomysql
 
-        uri = get_settings().checkpoint_mysql_uri
+        from app.storage.mysql import connection_args
+
+        uri = get_settings().mysql_uri
         if not uri:
             raise RuntimeError("no_uri")
-        parsed = urlparse(uri)
-        conn = await aiomysql.connect(
-            host=parsed.hostname,
-            port=parsed.port or 3306,
-            user=parsed.username or "",
-            password=parsed.password or "",
-            db=(parsed.path or "/").lstrip("/") or None,
-        )
+        conn = await aiomysql.connect(**connection_args(uri))
         try:
             async with conn.cursor() as cur:
                 await cur.execute("SELECT 1")
@@ -79,6 +83,7 @@ async def probe_langfuse() -> ProbeResult:
         return ProbeResult(target="langfuse", status="disabled")
 
     async def _check() -> None:
+        """执行当前依赖的只读健康检查，失败交统一探测器记录。"""
         import httpx
 
         base = settings.langfuse_base_url.rstrip("/")
@@ -96,18 +101,19 @@ async def probe_llm() -> ProbeResult:
     from app.config import get_settings
 
     settings = get_settings()
-    base = (settings.qwen_api_base or "").rstrip("/")
+    base = (settings.llm_api_base or "").rstrip("/")
     if not base:
         return ProbeResult(target="llm", status="disabled")
 
     async def _check() -> None:
+        """执行当前依赖的只读健康检查，失败交统一探测器记录。"""
         import httpx
 
         # 探测 /models（OpenAI 兼容端点标准路径），需要鉴权头，能区分 key 失效 vs endpoint 不可达
         url = f"{base}/models"
         headers = (
-            {"Authorization": f"Bearer {settings.qwen_api_key}"}
-            if settings.qwen_api_key
+            {"Authorization": f"Bearer {settings.llm_api_key}"}
+            if settings.llm_api_key
             else None
         )
         async with httpx.AsyncClient(timeout=PROBE_TIMEOUT_SECONDS, trust_env=False) as c:
@@ -122,30 +128,28 @@ async def probe_llm() -> ProbeResult:
 
 
 async def probe_java_backend() -> ProbeResult:
-    """调最轻量的 read endpoint counterparty/info/instrument-inference-prompt."""
-    from app.config import get_settings
-    from app.tools.auth import get_goats_auth_headers
+    """只检查 Java 地址的传输连通性；客户权限由授权业务验收检查。"""
+    from urllib.parse import urlsplit
 
-    settings = get_settings()
-    base = (settings.otc_api_base_url or "").rstrip("/")
+    from app.config import get_settings
+
+    base = (get_settings().otc_api_base_url or "").rstrip("/")
     if not base:
         return ProbeResult(target="java_backend", status="disabled")
 
     async def _check() -> None:
-        import httpx
-
-        url = f"{base}/admin-api/counterparty/info/instrument-inference-prompt"
-        headers = {"Content-Type": "application/json"}
-        if settings.otc_api_secret:
-            headers["Authorization"] = f"Bearer {settings.otc_api_secret}"
-        headers.update(get_goats_auth_headers())
-        async with httpx.AsyncClient(timeout=PROBE_TIMEOUT_SECONDS, trust_env=False) as c:
-            r = await c.get(url, headers=headers)
-            if r.status_code >= 500:
-                raise RuntimeError(f"http_{r.status_code}")
-            payload = r.json()
-            if not isinstance(payload, dict) or "code" not in payload:
-                raise RuntimeError("bad_envelope")
+        """建立并关闭 TCP 连接，不把缺客户身份的请求发送到业务接口。"""
+        parsed = urlsplit(base)
+        if parsed.scheme not in {"http", "https"} or not parsed.hostname:
+            raise ValueError("Java 地址必须是合法 HTTP(S) URL")
+        port = parsed.port or (443 if parsed.scheme == "https" else 80)
+        _, writer = await asyncio.wait_for(
+            asyncio.open_connection(parsed.hostname, port), timeout=PROBE_TIMEOUT_SECONDS,
+        )
+        try:
+            writer.close()
+        finally:
+            await writer.wait_closed()
 
     status, err, lat = await _timed("java_backend", _check())
     return ProbeResult(target="java_backend", status=status, error=err, latency_ms=lat)
@@ -165,9 +169,10 @@ async def run_all_probes() -> list[ProbeResult]:
             timeout=READY_TOTAL_TIMEOUT_SECONDS,
         )
     except TimeoutError:
+        targets: tuple[ProbeTarget, ...] = ("mysql", "langfuse", "llm", "java_backend")
         return [
-            ProbeResult(target=t, status="fail", error="total_timeout")  # type: ignore[arg-type]
-            for t in ("mysql", "langfuse", "llm", "java_backend")
+            ProbeResult(target=t, status="fail", error="total_timeout")
+            for t in targets
         ]
     return list(results)
 

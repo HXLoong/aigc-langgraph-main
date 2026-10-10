@@ -6,12 +6,13 @@ from typing import Any
 
 from app.graph.safe_node import NodeFn, safe_node
 from app.graph.state import AgentState, TraceEntry
+from app.tools.bot_context import normalize_message_id
 from app.tools.message_client import MessageClient, SetIntentRequest
 
 
 def make_persist_intent(
     message_client_factory: Callable[[], MessageClient] | None,
-) -> NodeFn:
+) -> NodeFn[[AgentState]]:
     """未注入客户端时跳过消息写回，供单测及直接运行的 harness 使用。"""
 
     @safe_node
@@ -19,11 +20,16 @@ def make_persist_intent(
         if message_client_factory is None:
             return {"trace": [TraceEntry(node="persist_intent", decision="skipped")]}
 
+        if normalize_message_id(state.get("message_id")) <= 0:
+            return {"trace": [TraceEntry(
+                node="persist_intent", decision="skipped:missing_message_id",
+            )]}
+
         req = SetIntentRequest(
-            conversationId=state["conversation_id"],
-            messageId=str(state["message_id"]),
+            conversation_id=state["conversation_id"],
+            message_id=str(state["message_id"]),
             intent=state.get("intent") or "unknown_intent",
-            productType=1 if state.get("product_type") == "swap" else 0,
+            product_type=1 if state.get("product_type") == "swap" else 0,
         )
         await message_client_factory().set_intent(req)
         return {}

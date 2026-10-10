@@ -1,185 +1,65 @@
 # ADR 0001 · 推倒重写 `app/`，按 Harness-first 范式落实 LangGraph 替换 Dify
 
-- 状态：已采纳（重写已完成，M1/M2 落地；本文含蓝图与落地的差异对照）
+## 状态
+
+- 状态：已采纳
 - 日期：2026-05-10
-- 修订：2026-08-27 深度改写为现状口径（wayfinder map #138 / 核查 #139）
+- 关系：D5 与「备选方案」的评估轴由 [ADR 0031](./0031-single-model-request-per-message.md) 修订；标的职责见 [ADR 0025](./0025-instrument-resolution-delegated-to-backend.md)；协议演进见 [ADR 0024](./0024-langgraph-native-rearchitecture.md) D7；评测门见 [ADR 0030](./0030-goal-restatement-native-langgraph-dataset-eval-harness.md) D3
 - 作者：图灵科技 + Tony
 
-## 上下文（历史）
+## 背景
 
-2026-05 时 `app/` 下代码是早期自动生成的迁移骨架，存在结构性问题：与真实 Dify 主干工作流的节点划分不一一对应（互换 12 个 LLM 节点 / 期权 7 个 LLM 节点的实际结构没被精确还原）、对 Java Worker 的契约不明确、缺少独立可 replay 的节点接口、测试按"代码先有再补测试"的传统顺序。迁移目标已在 CLAUDE.md 钉死：用 LangGraph 替换 Dify。
+重写前的 `app/` 是自动生成的迁移骨架：节点划分与真实 Dify 工作流不一一对应、对 Java 后端的契约不明确、缺少可独立回放的节点接口、测试是"先写代码再补"。决定推倒重写，按 **Harness-first**（先有评测与契约，再有实现）推进。
 
-决定**推倒重写**，按 Harness-first 范式推进。重写已随 M1/M2 完成（M2 PR #41 合 main）。以下各节按"决策 + 落地现状"记述。
+## 决策
 
-## Decision
+### D1 · 重写边界
 
-### D1 · 推倒边界（含落地后修正）
+重写 State、主图、子图、节点、工具层、API 与测试；新增与 `app/` 解耦的 `harness/` 评测台。
 
-| 处置 | 内容 | 现状备注 |
-|------|------|---|
-| 保留 | `app/prompts/`（现 **37 个**业务 .md）· `app/checkpointer/factory.py` · `dify/sync.py` + `dify/yaml/` · `tests/fixtures/golden.jsonl` | `app/llm/clients.py` 保留路径、**内容已按 [ADR 0020](./0020-unify-all-llm-on-deepseek-v4-pro.md) 重写**为 vendor 适配层 |
-| ~~保留~~ 已下线 | `mock_api/server.py` | 2026-05-13 随"切换真实后端环境"删除（commit `4ac9f0b`），单测改 AsyncMock、e2e 走 `scripts/probe_*_e2e.py` 真后端探针 |
-| 重写 | `app/state.py` · `app/graphs/` · `app/subgraphs/` · `app/nodes/` · `app/tools/` · `app/api/routes.py` · `tests/` · `scripts/` | `app/state.py` 与 `app/graphs/main_graph.py` 现仅剩兼容 shim，真源在 `app/graph/` |
-| 新增 | `harness/` 顶层目录（评测台，与 `app/` 解耦） | 已建成，模块清单见 [ADR 0002](./0002-comprehensive-runtime-harness.md) |
+### D2 · 工具层按 Java 真实 endpoint 拆分 Protocol
 
-### D2 · `tools/` 层的契约策略（落地与蓝图一致）
+后端调用清单的唯一维护处为 [Java / GOATS 出站 API 清单](../api-contracts/java-backend.md#langgraph-出站后端-api-清单)，列出完整 HTTP 方法、路径、客户端和用途，区分业务调用与本地验收 / 健康检查。调用方依赖 OptionClient、SwapClient、MessageClient、GoatsAgentClient 的 Protocol。
 
-按**真实 endpoint 边界**拆 3 个 Protocol（放弃早期"按业务领域拆 4 个"的方案；Java 契约见 `docs/api-contracts/java-backend.md`）：
+`TickerClient`（`app/tools/ticker_client.py`）保留用于授权交易对手列表查询，不提供 LangGraph 标的识别职责。`GET /admin-api/integration/securities-instrument/select`（简称 `/securities-instrument/select`）禁止被任何 LangGraph 本地流程调用，包括业务链、测试、验收脚本和探针；标的识别由 Java 内部工作流完成（ADR 0025）。
 
-| Protocol | 覆盖范围 | 真实 endpoint |
-|----------|----------|---------------|
-| `OptionClient`（`app/tools/option_client.py`）| 期权全流程，16 种意图 | `POST /admin-api/financial-orders/operate` + `POST /admin-api/financial-orders/query-close-orders` |
-| `SwapClient`（`app/tools/swap_client.py`）| 互换全流程，7 种意图 | `POST /admin-api/swap-order/operate` + `GET /admin-api/swap-order/get` + `POST /admin-api/swap-order/get-conversation-orders` |
-| `TickerClient`（`app/tools/ticker_client.py`）| 标的查询 / 动态推断 prompt / 交易对手列表 | `GET /admin-api/integration/securities-instrument/select` + `GET /admin-api/counterparty/info/instrument-inference-prompt` + `GET /admin-api/counterparty/info/list` |
+入参出参匹配 Java DTO 字段名，保留结构类型约束；业务归一化与数字校验按 ADR 0027 交由 Java。节点不直接创建 `httpx.AsyncClient` 调后端，统一经 Client Protocol 与连接池。
 
-工程纪律（全部落地）：
+### D3 · 对 Java 暴露 Dify 兼容协议
 
-- 入参出参用 Pydantic 模型，字段名严格匹配 Java DTO（`placeOrderWindCode` 等保留 Java 风格命名）
-- type 字段对应 Java enum：`SwapIntentionType` 7 值 / `stockOptionIntentionType` 16 值，Pydantic `Literal` 严格约束
-- 金额一律 `Decimal`，发送前 `truncate(2)`（对齐 `TradePrecisionUtil.truncateOrderScale()`）
-- 调用方只依赖 Protocol；实现现仅存 `*Httpx` 真后端实现（mock 实现随 mock_api 下线）
-- 机器人上下文（conversationId / messageId / userId / roomId ...）由 ingest 节点解析后存 AgentState 透传
+`POST /v1/workflows/run` 兼容 Dify Workflow Run API（blocking 模式）。切换或回滚只需改 Java 侧 `agentUrl`；原生协议规划见 ADR 0024 D7（暂缓）。
 
-理由：Java 后端是"按 endpoint 聚合"的设计，Protocol 边界跟随 endpoint 边界，Pydantic 模型才能与 Java DTO 一一对应。
+### D4 · 标的识别归 Java 后端
 
-### D3 · 暴露给 Java Worker 的协议（落地一致）
+LangGraph 提取标的原始表达或用户对引用候选的明确选择，通过业务接口提交；Java 调用对应的标的识别工作流并完成业务校验（[ADR 0025](./0025-instrument-resolution-delegated-to-backend.md)）。
 
-`POST /v1/workflows/run` 完全模拟 Dify Workflow Run API（`app/api/routes.py`），仅支持 **blocking**（Java 侧 `StockBotMessageServiceImpl.java` 写死 blocking，核查时行号已漂移至 :1885）。迁移期协议一致 → 回滚只需改 `agentUrl`；跑稳后如需干净协议另开 ADR。
+### D5 · 节点策略：一次解析，确定性处理分层
 
-### D4 · 标的查询职责归 LangGraph（endpoint 已存在，Java 工作量 0）
+每次工具调用全链路最多一次模型请求，产品、意图与必要候选共用一次解析结果（[ADR 0031](./0031-single-model-request-per-message.md)，目标规范已采纳，代码待重构）。产品子图、结构与来源检查、引用选择及后端执行保持独立职责，只做订单号提取的步骤继续由代码处理。
 
-审计 Java 源码确认 endpoint 已存在：`SecuritiesInstrumentController.java:100` `GET /admin-api/integration/securities-instrument/select`（GET + RequestBody，不规范但合法）。httpx 实现用 GET-with-body：`await client.request("GET", url, json=payload)`（已落地于 `app/tools/ticker_client.py`）。
+用 PromptSpec、按产品与意图组织的输出契约和数据集回归控制联合解析复杂度；业务节点数量不作为模型请求次数的替代指标。
 
-理由：CLAUDE.md 钉死"标的代码必须 `from_goats=True`"，LangGraph 必须自己校验；直连 DB 是反模式；HTTP 跳转 5-20ms 对 LLM 链路可忽略；`TickerClient` 是干净可 mock 的 Protocol。`queryTradingHours` 至今未实现（决策未推进，仍无需求）。
+### D6 · 目录结构与 AgentState
 
-### D5 · 节点合并策略：保守路 A+ 加 option 拆分
+- 一节点一文件、测试按意图组对应；`AgentState` 按业务对象聚合（`app/graph/state.py`），harness 按业务对象比对，新增意图只加字段不破坏结构。
+- 业务参数字段由 `app/graph/business_params.py` 状态级模型校验（`extra=forbid` 防字段名拼错）。
+- harness 与 `app/` 解耦，只经 HTTP 入口驱动（[ADR 0002](./0002-comprehensive-runtime-harness.md)）。
 
-逻辑层与 Dify 大部分 1:1，两处定向重构 + 一处瘦身：
+### D7 · 失败报告格式
 
-| 处置 | 内容 | 登记 |
-|------|------|---|
-| **合并** | 互换 3 个"确认 X"节点 → 1 个 `swap.confirm(expected_action)`，新写统一 confirm 提示词（`app/subgraphs/swap/confirm.py`） | 本 ADR |
-| **拆分** | 期权 intent_extract（2870 行单节点）→ 1 intent + 5 extract（`extract_inquiry` / `extract_place_or_modify` / `extract_cancel` / `extract_confirm` / `extract_query`；close_order_* 归独立 close 子图） | [ADR 0011](./0011-split-option-intent-and-extraction.md) 二次修订 |
-| **询价补参修复** | `option/intent.md`：期限补充归 `new_inquiry`，建仓补参/确认/撤单按动作和业务阶段判断，删除引用卡片关键词强制改写意图的后处理；`extract_inquiry.md` 增加可选原单号 `orderId`；`extract_place_or_modify.md` 保留可选期限 `tenor`，原单号与新增期限同传，缺省参数由 Java 合并；保留冻结的 `intent_extract.md` | 2026-09-07 用户明确授权；两轮 HTTP + checkpoint + Java HTTP 请求回归，见 [API 契约](../api-contracts/java-backend.md) |
-| **瘦身** | `app/prompts/swap/place_order.md`：Dify 原版 3059 行 / 152,546 字符 → **2249 行 / 126,171 字符**（删冗余示例、压缩重复规则，保留语义；原版存为 `place_order.dify_original.md`） | 2026-05-12 grill 授权，M2/M3 执行，本次补登记 |
-| **保持** | 其他 Dify LLM 节点 1:1 复刻，提示词照搬 | — |
+机器读 = LangFuse Trace API；人读 = LangFuse UI；CI 离线 = 本地 JSON（`.harness-runs/`，含字段级 diff 与逐节点 trace）。设计要点：字段级 diff 比文本 diff 更快定位，trace 定位到具体 LLM 调用与提示词文件。
 
-**节点数：蓝图 24 → 主干落地 20**（与 CLAUDE.md / README 口径一致）：
+## 备选方案
 
-| 子图 | 蓝图 | 落地 | 差异说明 |
-|---|---|---|---|
-| swap | 10 | **6**（intent / place_order / confirm / cancel / query_order / unknown 兜底）| `place_order_image` / `place_order_excel` / `image_recognize` / `cancel_extract` 为 **P2 backlog**（按线上流量增量补）；`hand_to_share.py` 已实现**未接线** |
-| option | 6 | 6（另有 unknown 兜底节点）| 与蓝图一致 |
-| option_close | 7 | 7（另有 unknown 兜底）| 与蓝图一致 |
-| ticker | 1（ReAct 子图）| 1 | ⚠️ 实为 resolver 确定性编排，见下"实现偏离" |
+> 评估轴已按 [ADR 0031](./0031-single-model-request-per-message.md) 重述（它修订了 D5）：决定划分的不是节点数量，而是**每次工具调用实际发起的模型请求次数**；合并模型节点本身不是收益，用输出契约与回归数据控制合并后的复杂度才是。
 
-补充事实：`intent_extract.md`（2870 行）已冻结为 diff 快照，非"当前最大提示词"——`place_order.dify_original.md`（3059 行）更大，两者均为非活跃资产（`app/prompts/CLAUDE.md`）。
+- **增量改造现有 `app/`**：节点划分不对齐、状态扁平、后端调用集中在一个大类中，"边改边背债"抵消收益。
+- **按节点数激进合并（约 19 → 5-6 节点）**：以"少写节点"为目标，提示词大面积重写、信息密度过载、无法与原流程逐节点对比。0031 之后这条轴已被否——业务节点数量不作为模型请求次数的替代指标，且不要求把所有产品合成一套大提示词。
+- **保守路线 A+（已选）**：**确定性**分层保持逻辑层 1:1（结构与来源检查、引用选择、后端执行各守其责）+ 工程层全新（Pydantic 契约 / `@safe_node` / 可回放 / harness），单位时间收益最大。
+- **模型解析层收敛（0031 现行方案，已采纳、代码待重构）**：同一次调用最多一次请求且零重试，因此产品分类、意图识别、候选选择与参数提取合并为**互斥的四选一联合解析器**（互换 / 期权 / 平仓 / 跨产品），产品不明确时由跨产品解析器在同一次请求内一并判断；禁止用合并函数、逐订单 / 逐附件处理或 Agent 循环规避额度。合并后同步迁移 PromptSpec、harness 注册、节点 fixture 与流程文档。
 
-互换"下单 vs 改单"共用 `place_order_request`，靠 `orderList[i].orderId` 有无区分（`swap/place_order.py` 落地一致）。
+## 后果（均已兑现）
 
-不走激进合并的理由（保留原论证）：用户最痛的三件事（标的不准 / 参数 bug / 评估缺失）分别靠 ticker 算法、Pydantic 契约、harness 解决，不靠节点合并；激进合并会让提示词信息密度过载、diff 颗粒度变粗。
-
-提示词纪律：重构期内合并/新写/瘦身须在本表登记；M4 全量后恢复只读（[ADR 0003](./0003-prompt-versioning-by-file-coexistence.md) 管版本化）。
-
-### D6 · 目录结构 + AgentState（按落地现状重画）
-
-```
-app/
-├── api/                       # routes.py（POST /v1/workflows/run）+ health.py
-├── graph/
-│   ├── main.py                # 主图组装 + 一级路由（_route_after_intent）
-│   ├── state.py               # AgentState（真源；app/state.py 仅 shim）
-│   ├── safe_node.py           # @safe_node 装饰器
-│   └── cascade.py             # cascade fallback 防御
-├── nodes/                     # ingest / intent_route / persist / render / fallback
-├── subgraphs/
-│   ├── swap/                  # graph / intent / place_order / confirm / cancel /
-│   │                          #   query_order / hand_to_share(未接线) / backend / models
-│   ├── option/                # graph / intent / extract_*×5 / backend / models
-│   ├── close/                 # graph / intent / place_close / cancel_close / confirm_close /
-│   │                          #   confirm_cancel / holding_query / query_status / models（7 节点）
-│   └── ticker/                # graph / react_agent(死代码) / tools(4 @tool) / resolver(生产路径)
-├── tools/                     # option_client / swap_client / ticker_client（3 Protocol）
-│                              #   + models / auth / exceptions / goats_rfq
-├── llm/clients.py             # LLM 统一工厂（ADR 0020 vendor 适配层）
-├── checkpointer/factory.py    # AIOMySQLSaver（已随 ADR 0021/#153 接线，use_mysql_checkpointer）
-├── observability/             # tracing / metrics / alerts / canary / health_probes
-└── prompts/                   # 37 个业务 .md + _versions.yaml
-harness/                       # 评测台（模块清单见 ADR 0002）
-```
-
-工程纪律与落地情况：
-
-1. **一节点一文件，50-150 行** —— 多数达标；越界豁免名单：`close/place_close.py` 280、`ticker/tools.py` 547、`ticker/resolver.py` 373、`option/extract_inquiry.py` 187、`swap/place_order.py` 179（软纪律，超 200 行需在 PR 说明）
-2. **测试一对一** —— 实际按"意图组/链路"分组（如 `test_confirm_cancel_query.py` 覆盖 3 节点），语义等价
-3. **harness 只 import `app.graph.main.build_main_graph`** —— 主链路成立；例外见"实现偏离"
-
-`AgentState` 按业务对象聚合（`app/graph/state.py`）：`product_type`（Literal 4 值）/ `intent` / `tickers` / `place_params` / `cancel_params` / `confirm` / `query_filter` / `close_params` / `trace`（Annotated add reducer）/ `error`。理由：harness 按业务对象比对，新增意图只加字段不破坏结构。⚠️ 业务参数字段的类型现状见"实现偏离"。
-
-### D7 · Harness 失败报告格式（LangFuse 版为准）
-
-- **机器读** = LangFuse Trace API（完整 span 树 + token + latency + 字段级 metadata）
-- **人读** = LangFuse UI
-- **suspected_node / suspected_prompt** = `harness/reporter.py` 启发式层（"diff 字段的最后写入节点" + state 字段→节点→prompt 映射表）
-- **CI 离线 fallback** = 本地 JSON（`.harness-runs/`），结构含 `diff`（字段级路径数组）/ `trace`（每节点 llm_input_excerpt + llm_output）/ `suspected_*`
-
-四个关键设计不变：字段级 diff 比 unified diff 快、trace 定位到具体 LLM 调用、suspected_node 启发式、suspected_prompt 给出可直接编辑的 .md 路径。
-
-### D8 · 上线节奏（现状）
-
-| 里程碑 | 内容 | 状态 |
-|--------|------|---|
-| M1 · 骨架 | 新 graph/state + 3 Protocol + harness MVP | ✅（30 条 golden 全 PASS，历史退出门）|
-| M2 · 子图实现 | 主干节点逐个实现 + golden 扩张 | ✅（PR #41；mock baseline 92.5% / 真 LLM 84.6%——**Qwen 口径，已被 ADR 0020 作废待重建**）|
-| M3 · 工程联调闭环（[ADR 0016](./0016-m3-scope-engineering-loop-not-shadow.md) 重定义，非 shadow 双跑）| 真后端联调 + 真 LLM 评测 + 灰度工具链 | M3.1/M3.2 ✅，M3.3 进行中（Issue #82-#87）|
-| M4 · 金丝雀切换 | 按群组切流 + F4.1 shadow 第二意见 | 工具链就绪，未启动（[ADR 0017](./0017-m4-canary-quantitative-exit-gate.md) / [0019](./0019-incident-severity-thresholds.md)）|
-
-### D9 · M2 节点实现优先级（历史记录）
-
-P0（swap.place_order / option intent+extract / close.place_close / ticker）→ P1（cancel / confirm / query 类）→ P2（image / excel / hand_to_share / query_status——除 query_status 已落地外仍是 backlog）。D9.2 退出门（ticker PASS ≥ 90% + 100% from_goats、三链路 ≥ 85%、P0 golden ≥ 80 条）已按当时口径通过。
-
-## 实现偏离（2026-08-27 核查 [#139](https://github.com/GZTL-AI/aigc-langgraph/issues/139)，裁决另行处理）
-
-| 偏离 | 现状 | 裁决 issue |
-|---|---|---|
-| **ticker "1 节点 = ReAct Agent 子图"名存实亡** | 主图从未 `add_node("ticker", ...)`；生产走 `ticker/resolver.py` 确定性流水线（tokenize → GOATS → 规则选优 → infer_code 兜底），`react_agent.py` 为死代码。节点计数 20 中的这 1 个是虚的 | [#154](https://github.com/GZTL-AI/aigc-langgraph/issues/154) |
-| ~~AgentState 业务参数字段无类型契约~~ | ✅ **#160 落地（2026-08-27）**：新增 `app/graph/business_params.py` 状态级模型，15 个写入点全部经 `validated_*` 校验（extra=forbid 防字段名拼错，输出与历史 dict 逐字节一致）；运行时保持 dict（读取侧/checkpoint/eval 零改动）——这是 D6 意图在 M3.3 阶段的实现形态，全运行时对象化留 M4 后评估 |
-| ~~D9.1 `--mock-ticker` 开关~~ | ✅ #160 裁决：**承诺撤销**——CI 回归由 pytest + mock LLM 承担（977 collected），harness golden 人工/评估触发；D9.1 该段转历史 |
-| ~~harness 依赖面超纪律 3~~ | ✅ #160 裁决：**纪律放宽**为"harness 仅依赖三个稳定入口：`app.graph.main` / `app.config` / `app.llm.clients`"——现状即合规，新增依赖需回本表登记 |
-
-关联的 checkpointer 未接线问题记录在 [ADR 0009](./0009-mysql-version-and-tdsql-compatibility.md)（裁决 [#153](https://github.com/GZTL-AI/aigc-langgraph/issues/153)）。
-
-## 备选方案（历史论证，保留）
-
-- **增量改造现有 `app/`**：节点划分不对齐 Dify、state 扁平铺、god class `otc_backend.py`（现已被 3 Protocol 取代）——节省的工作量被"边改边背债"抵消。
-- **路 B 激进合并（19 → 5-6 节点）**：提示词 80% 重写、信息密度过载、shadow 无法 1:1 对比——为了重构而重构。
-- **选保守路 A+**：逻辑层 1:1（仅合并 3 确认）+ 工程层全新做（Pydantic 契约 / @safe_node / 可 replay / harness），单位时间收益最大。
-
-## 后果
-
-### 积极（均已兑现）
-
-- AI 工具自驱迭代：harness/LangFuse 输出可直接定位到 .md 文件
-- bug 修复有回归基线：golden 已扩到 535 条
-- 联调零阻塞：Protocol 切换实现即可
-- 新意图有模板：`@safe_node` + Pydantic Output + .md 提示词 + golden case 四件套
-
-### 消极与现状
-
-| 后果 | 现状 |
-|------|---|
-| 重写期 `app/` 不可用 | 已过去（feature 分支已合 main）|
-| `app/prompts/` 重构期可改写 | D5 处置表登记制运行中；M4 后恢复只读 |
-| harness 运行成本 | 已可度量（token_tracker + llm_cost_report）；golden 分类分层跑 |
-
-## Related
-
-- [ADR 0000](./0000-migrate-from-dify-to-langgraph.md) · 迁移动机（四痛点）
-- [ADR 0002](./0002-comprehensive-runtime-harness.md) · Harness 三阶段，本 ADR D7-D9 是其落地
-- [ADR 0008](./0008-ticker-resolution-as-react-agent.md) · ticker ReAct 决策（现状偏离见上表 + [#154](https://github.com/GZTL-AI/aigc-langgraph/issues/154)）
-- [ADR 0011](./0011-split-option-intent-and-extraction.md) · option 拆 **1 intent + 5 extract**（二次修订口径）
-- [ADR 0012](./0012-restore-backend-http-for-securities-instrument.md) · 标的查询走后端 HTTP，D4 是其精确化（endpoint = `GET /admin-api/integration/securities-instrument/select`）
-- [ADR 0014](./0014-langfuse-as-harness-backend.md) · LangFuse 后台（修订 D7）
-- [ADR 0015](./0015-intent-route-rules-first-llm-fallback.md) · 一级路由（精确化 D6 的 intent_route）
-- [ADR 0020](./0020-unify-all-llm-on-deepseek-v4-pro.md) · LLM 全量 DeepSeek-V4-pro（取代 ADR 0010 的选型口径）
-- `dify/yaml/主干工作流.yml`（19 个 LLM 节点）· `docs/api-contracts/java-backend.md` · `CONTEXT.md`
+- 评测与 LangFuse 输出可直接定位到提示词文件，AI 工具可自驱迭代。
+- 缺陷修复有数据集回归基线；联调通过切换 Protocol 实现即可完成。
+- 新意图有固定模板：`@safe_node` + Pydantic 输出模型 + `.md` 提示词 + golden case。

@@ -1,46 +1,41 @@
-# ADR 0005 · Phase 4 标注闭环：LLM judge 全量 + 业务方每周抽检关键 case
+# ADR 0005 · 标注闭环：确定性断言 + 业务方复核
 
-- 状态：已采纳（标注平台随 [ADR 0014](./0014-langfuse-as-harness-backend.md) 定为 LangFuse Annotation Queue；Phase 4 运营尚未立项）
-- 日期：2026-05-10
-- 修订：2026-08-27 深度改写为现状口径（wayfinder map #138 / 核查 #140）
+## 状态
+
+- 状态：已采纳
+- 日期：2026-09-24
+- 关系：平台见 [ADR 0014](./0014-langfuse-as-harness-backend.md)，节点回归闭环见 [ADR 0029](./0029-node-level-debug-api-and-regression-workbench.md)，放行门见 [ADR 0030](./0030-goal-restatement-native-langgraph-dataset-eval-harness.md)
 - 作者：图灵科技 + Tony
 
-## 决策（角色分工，保持不变）
+## 背景
 
-[ADR 0002](./0002-comprehensive-runtime-harness.md) Phase 4 需要"线上 trace → 标注 → golden set 反哺"。采用 **LLM judge 自动评分 + 业务方关键 case 复核**双层分工：
+数据集已包含业务方确认的期望字段与文本断言。让另一模型重新判断同一输出会引入评分漂移和额外请求，失败原因也难以定位。自动评分应直接比较实际输出与明确期望，业务含义存在争议的样本交业务方复核。
 
-1. **LLM judge 做日常自动评分**，覆盖全量流量（Phase 4 目标态）。
-2. **业务方做关键 case 标注**：每周约 30 分钟，看 judge 低置信 case 做最终定性（对/错/业务等价），回流 golden。
-3. **工程师不充当业务正确性裁判**：只负责 trace 抓取、judge 提示词调优、回流脚本。
+## 决策
 
-**业务方标注权重 > judge**：业务方定性为"错"的 case 无条件进 golden 作反例。
+### D1 · 数据集批量评测使用确定性断言
 
-## judge 层落地现状（2026-08-27，先于 Phase 4 以离线形态落地）
+- 意图集、业务集与节点集统一按各自的 `expected` 和文本断言评分；离线批跑与 Langfuse Dataset Experiment 均不调用 LLM Judge，也不由模型补写缺失的期望。
+- 断言覆盖产品、意图、稳定结构化字段，以及明确的包含 / 不包含文本要求；数值期望采用数据集规定的精度或容差。评测侧的数值比较不属于业务运行链路的数字校验（ADR 0027）。
+- 缺少必要断言、上下文或执行结果时，记录不可评分原因，不默认为 PASS；业务拒绝、多轮早停及写类参数覆盖遵循 ADR 0030 D3。
+- 评测仍可调用被测业务链中的 LLM，其请求额度遵循 ADR 0031；评分器自身不额外请求模型。线上反馈由代码指标与人工复核处理，不预设全量 LLM Judge。
 
-- 载体：`scripts/langfuse_eval.py`（M3 主用评估入口）——**覆盖面是离线 golden 批跑，不是线上流量**；"100% 线上流量"仍是 Phase 4 目标而非现状。
-- judge 模型：经 DeepSeek 的 Anthropic 兼容端点调用，默认 **`deepseek-v4-flash`**（`ANTHROPIC_MODEL` 可覆盖；与 [ADR 0020](./0020-unify-all-llm-on-deepseek-v4-pro.md) 业务侧的 v4-pro 不同型号，flash 为评估成本考量）。
-- 输出契约：**`{pass: bool, score: 0.0-1.0, reason: str}`**（原设计的 `confidence ∈ {high, medium, low}` 三档未采用；Phase 4 若要驱动"业务方只看低置信"队列，需定义 score→confidence 映射阈值）。
-- ⚠️ 存在双实现：`langfuse_eval_clean.py` 亦含 judge 逻辑，有提示词漂移风险。
+### D2 · 业务方提供期望，工程师实现比较
 
-## 标注平台选型（已定）
+- 业务方复核错例、补齐或修正期望，并确认争议样本；工程师负责采集输入、实现断言、定位字段差异和维护回归，不替业务方猜测业务真值。
+- 每项评分保留 case ID、断言版本、期望值、实际值、差异和关联 trace；同一冻结输入、实际输出与断言版本应得到相同评分。
+- 缺失期望的生产样本先进入标注队列，人工确认后才能成为回归用例。
 
-**LangFuse Annotation Queue**（ADR 0014 四件套之一：trace / dataset / eval / annotation），零额外开发量、与 trace 数据天然关联。自建 UI 仅当业务方界面需求（中文/专属字段/SSO）不满足时再评估。标注队列的创建/拉取/回流脚本尚无——属 Phase 4 立项范围（二期 Issue #37 D 桶回流自动化）。
+### D3 · Langfuse 承载闭环
+
+目标流程：Trace / Observation → 人工标注期望 → Dataset Item → Experiment → 确定性 Scores / 字段差异 → 错例复核 → 修复后重跑。复用 `harness/` 的字段比较逻辑，本地 CLI 与 Langfuse 回归采用同一评分口径；迁移规则见 ADR 0029。
 
 ## 备选方案
 
-- **仅工程师标注**：不懂业务正确性，质量不达标。
-- **仅业务方标注**：规模上不去。
-- **仅 LLM judge**：领域常识不足，偏差累积污染基线。
-- **业务方 + judge 混合（已选）**：业务方时间花在 judge 最不确定的 case 上，平衡规模和权威性。
-
-## 实现偏离（裁决见 [#159](https://github.com/GZTL-AI/aigc-langgraph/issues/159)）
-
-| 偏离 | 现状 |
-|---|---|
-| **judge 提示词硬编码在脚本里** | `langfuse_eval.py` 内 Python 字符串常量，不在 `app/prompts/`、不走 `load_prompt`、无版本号——违背本 ADR 自身"judge 提示词纳入 [ADR 0003](./0003-prompt-versioning-by-file-coexistence.md) 版本化（改动 → 历史评分作废 → 重跑批次）"的要求，改动不留痕 |
-| **golden 的"标注来源"字段被占用** | `golden.jsonl` 的 `source` 字段 535/535 全是数据出处路径（`csv/…/rowN`）；本 ADR 要求的标注权威性维度（judge / business / engineer）无处可放，Phase 4 回流前需另起字段（如 `annotation_source`） |
+- **LLM Judge 自动裁决**：存在评分漂移、额外成本和无法直接复现的判断，本项目批量验收不采用。
+- **全部人工比对**：难以支持每次改动的稳定回归。
+- **代码断言 + 业务方复核（已选）**：自动比较负责稳定性，业务方负责期望的正确性。
 
 ## 后果
 
-- 业务方每周 30 分钟是 Phase 4 硬依赖，立项前须与业务方明确承诺。
-- judge 模型是软依赖可替换；但提示词版本化缺口（见上）必须先补，否则评分批次不可比。
+断言必须足够覆盖业务行为；不能通过放宽断言或忽略字段提高通过率。运行时代码仍保留 Judge 路径，移除评分调用、统一退出码与迁移验收见[工作计划](../work-plan.md)；本决策不代表这些改造已经完成。

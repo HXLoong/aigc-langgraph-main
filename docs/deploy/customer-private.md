@@ -3,7 +3,7 @@
 > **版本**：v1.0（2026-05-12）
 > **适用范围**：otc-agent 在客户内网完整部署（应用 + MySQL + LangFuse + 企微接入）
 > **预期时长**：首次部署 4-6 小时（含资源准备）；熟练后 30 分钟可重复
-> **关联**：C1.11 LangFuse 部署 / C1.13 一键脚本（推荐用脚本而非手工执行本文）
+> **关联**：LangFuse self-hosted 部署 / `scripts/deploy-customer.sh` 一键脚本（推荐用脚本而非手工执行本文）
 
 本文档面向**客户 IT 运维**。10 个步骤从零到 LangGraph 应用接入企微生产，每步都给验证命令。
 
@@ -14,27 +14,27 @@
 ### 0.1 谁要看本文档
 
 - 客户 IT 运维（执行者）
-- 图灵科技工程 #25（远程支持）
+- 图灵科技工程负责人（远程支持）
 - Tony（项目协调）
 
 ### 0.2 部署前提
 
 完成以下 4 件事**之前**不要启动部署：
 
-1. ✅ `docs/customer-env-assessment.md` 14 节调研填完整（所有"待填"字段都有真实值）
+1. ✅ `docs/deploy/customer-env-assessment.md` 14 节调研填完整（所有"待填"字段都有真实值）
 2. ✅ MySQL 已创建好 2 个库（业务库 + checkpoint 库），账号权限就位
 3. ✅ DeepSeek-v4-pro API Key 拿到（开发期我方提供，现场客户对齐）
 4. ✅ Java 后端可达（curl 测试 8 endpoints 至少有 1 返回 CommonResult）
 
 ### 0.3 自动化 vs 手工
 
-**推荐**：用 `scripts/deploy-customer.sh`（C1.13 一键脚本，PR #58 完成后启用）。本文档是脚本失败时的手工备份路径，以及理解每步在做什么的参考。
+**推荐**：用 `scripts/deploy-customer.sh`（一键脚本）。本文档是脚本失败时的手工备份路径，以及理解每步在做什么的参考。
 
 ---
 
 ## 1. 主机准备
 
-参考 `docs/customer-env-assessment.md` §2 部署前检查清单。最低配置：
+参考 `docs/deploy/customer-env-assessment.md` §2 部署前检查清单。最低配置：
 
 - OS：Ubuntu 22.04 / CentOS 7+ / RHEL 8+
 - CPU：8 核
@@ -68,23 +68,18 @@ mysql -h <HOST> -u <USER> -p -e "SELECT VERSION();"
 
 不在版本区间内 → 阻塞，必须升级或换 Checkpointer（成本高，找工程团队评估）。
 
-### 2.2 创建两个库 + 账号
+### 2.2 在 Java 现有数据库初始化 LangGraph 表
 
-```sql
--- 业务库
-CREATE DATABASE otc_agent_business CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
-CREATE USER 'otc_agent'@'%' IDENTIFIED BY '<STRONG_PASSWORD>';
-GRANT SELECT, INSERT, UPDATE, DELETE, CREATE, ALTER, INDEX ON otc_agent_business.* TO 'otc_agent'@'%';
+使用已有账号连接 Java 数据库，由连接参数选择库；SQL 不创建数据库、不包含 USE 或授权。
 
--- Checkpoint 库（建议独立）
-CREATE DATABASE otc_agent_checkpoint CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
-CREATE USER 'otc_agent_cp'@'%' IDENTIFIED BY '<STRONG_PASSWORD>';
-GRANT SELECT, INSERT, UPDATE, DELETE, CREATE, ALTER, INDEX, DROP ON otc_agent_checkpoint.* TO 'otc_agent_cp'@'%';
-
-FLUSH PRIVILEGES;
+```bash
+mysql -h <HOST> -P <PORT> -u <USER> -p --database=<JAVA_DATABASE> < sql/init.sql
 ```
 
-**重要**：checkpoint 库账号需要 DDL 权限（CREATE/ALTER）—— AIOMySQLSaver 首次启动会自动建表。
+九张表均带 `langgraph_` 前缀，使用 `utf8mb4_general_ci`。只需配置 `MYSQL_URI`，选择 Java 现有数据库。
+应用启动只校验结构和版本，不自动建表；运行账号只需自身前缀表的读写权限及元数据可见性。
+初始化/后续结构升级由具备 DDL 权限的部署账号执行。旧独立库保留，不自动迁移、删除历史。
+容器访问宿主机 MySQL 时使用 `host.docker.internal`，不要在容器内使用 localhost 指代宿主机。
 
 ### 2.3 时区一致性
 
@@ -101,7 +96,7 @@ SELECT @@system_time_zone, @@global.time_zone;
 
 ## 3. 部署 LangFuse Self-Hosted
 
-详见 [`docs/deploy/langfuse-self-hosted.md`](./langfuse-self-hosted.md)。
+详见 [`docs/langfuse/self-hosted-deployment.md`](../langfuse/self-hosted-deployment.md)。
 
 简版步骤：
 
@@ -144,10 +139,10 @@ chmod 600 .env  # 限制读权限
 
 参考 `.env.customer.template` 11 节注释。最少必填：
 
-- `CHECKPOINT_MYSQL_URI` / `BUSINESS_MYSQL_URI`（§2）
-- `QWEN_API_BASE` / `QWEN_API_KEY` / `QWEN_MODEL_STANDARD`（DeepSeek）
+- `MYSQL_URI`（§2）
+- `LLM_PROVIDER` / `LLM_API_BASE` / `LLM_API_KEY` / `LLM_MODEL_STANDARD`（显式选择适配与业务模型；THINKING / COMPLEX 为独立角色，详见 ADR 0020）
 - `OTC_API_BASE_URL` / `OTC_API_SECRET`
-- `LANGFUSE_HOST` / `LANGFUSE_PUBLIC_KEY` / `LANGFUSE_SECRET_KEY`（§3）
+- `LANGFUSE_BASE_URL` / `LANGFUSE_PUBLIC_KEY` / `LANGFUSE_SECRET_KEY`（§3）
 
 ### 4.3 验证
 
@@ -172,7 +167,7 @@ pip install -e ".[dev]"
 
 ### 5.2 离线（无公网）
 
-参考 C1.14 离线包流程（PR #59 完成后启用）：
+参考离线包流程：
 
 ```bash
 # 从客户提供的离线包导入
@@ -226,29 +221,27 @@ journalctl -u otc-agent -f
 curl http://localhost:8000/health
 # 期望返回 200 + JSON
 
-# 健康检查 endpoint 在 D2.6 实现后会校验 4 个上游
-# 临时验证：
-curl http://localhost:8000/v1/workflows/run \
-  -H "Content-Type: application/json" \
-  -d '{"inputs":{"raw_text":"测试"},"response_mode":"blocking","user":"smoke"}'
-# 期望返回有 reply_text 字段的 JSON
+# 依赖状态与业务接口注册
+curl http://127.0.0.1:8000/ready
+curl http://127.0.0.1:8000/openapi.json
+# 核对依赖状态与 /v1/workflows/run 路由
 ```
 
-如某一项失败 → 见 [`docs/on-call-runbook.md`](../on-call-runbook.md) §5 故障 playbook。
+如某一项失败 → 见 [`docs/operations/on-call-runbook.md`](../operations/on-call-runbook.md) §5 故障 playbook。
 
 ---
 
 ## 8. 接入企微
 
-### 8.1 配置企微机器人 Webhook
+### 8.1 配置 Java 侧 `agentUrl`
 
-企微管理员后台：
+企微回调由客户现有的 Java Worker 接收，LangGraph 不直接对接企微。接入与切换只改 Java 侧 `agentUrl`（ADR 0001）：
 
-1. 应用管理 → 自建应用 → 创建（或编辑）otc-agent 机器人
-2. Webhook URL：`https://<reverse-proxy>/v1/workflows/run`
-   - **必须 HTTPS**（企微强制）
-   - 反向代理（nginx）把 LangGraph 8000 端口经 443 SSL 暴露
-3. 验证：在测试群发"测试"，应用日志看到接收请求
+1. Java 配置管理员把 `agentUrl` 设为 `https://<reverse-proxy>/v1/workflows/run`（反向代理把 LangGraph 8000 端口经 443 暴露，见 §8.2）
+2. 金丝雀阶段只让白名单群指向 LangGraph，并在 LangGraph `.env` 的 `CANARY_ROOM_IDS` 登记这些群；
+   `agentUrl` 的配置粒度（按群 / 全局）与生效方式在环境调研时核实（`docs/deploy/customer-env-assessment.md` §8）
+3. 验证：在测试群发"测试"，LangGraph 应用日志看到 `/v1/workflows/run` 请求
+4. 紧急回切：把 `agentUrl` 改回 Dify 地址，步骤见 `docs/operations/on-call-runbook.md` §7
 
 ### 8.2 反向代理示例（nginx）
 
@@ -272,52 +265,30 @@ server {
 
 ### 8.3 验证
 
-测试群发 "@otc-agent 600519.SH 询价" → 应该看到询价回复（M2 baseline）。
+测试群发 "@otc-agent 600519.SH 询价" → 应该看到询价回复。
 
 ---
 
-## 9. Smoke 自检（3 条 case）
+## 9. 部署自检与业务验收
 
-部署完成后**必须**跑 3 条 smoke 验证全链路：
+部署脚本检查 `/health`、`/ready` 与 OpenAPI 中的 `/v1/workflows/run` 入口。
+自检不提交业务消息，不使用虚构账号，不自动运行黄金集。
+服务存活与接口注册不代表模型、Java 业务或黄金断言通过。
 
-### Case 1：完整代码 + 简单询价
-
-```bash
-curl http://localhost:8000/v1/workflows/run \
-  -H "Content-Type: application/json" \
-  -d '{
-    "inputs": {
-      "raw_text": "600519.SH 询价 3 个月平值看涨",
-      "conversation_id": "smoke-001"
-    },
-    "response_mode": "blocking",
-    "user": "smoke-test"
-  }'
-
-# 期望：reply_text 含 "询价" + "600519.SH" + 期限/期权类型字段
-```
-
-### Case 2：中文简称
+业务验收使用已经启动的 8000 服务，由授权人员指定黄金文件与用例：
 
 ```bash
-curl ... -d '{"inputs":{"raw_text":"贵州茅台 询价"...}'
-# 期望：reply_text 含 "600519.SH 贵州茅台"
+python -m harness run --file tests/datasets/biz/swap_prod.jsonl --case ai_trade_assist_prod_swap_order_case_1 --backend java
 ```
 
-### Case 3：未知标的（fallback）
-
-```bash
-curl ... -d '{"inputs":{"raw_text":"完全不存在的标的xyz 询价"...}'
-# 期望：reply_text 含 "抱歉，无法识别"
-```
-
-3 条全 OK → 部署成功。
+账号、群、对手与数据须已获授权，完整范围由统一验收安排。
+执行与评分口径见 [测试指南](../testing/README.md)。
 
 ---
 
 ## 10. 故障排查
 
-按 `docs/on-call-runbook.md` §5 五类故障 playbook 处理：
+按 `docs/operations/on-call-runbook.md` §5 五类故障 playbook 处理：
 
 | 现象 | playbook |
 |---|---|
@@ -327,7 +298,7 @@ curl ... -d '{"inputs":{"raw_text":"完全不存在的标的xyz 询价"...}'
 | trace 不显示 | §5.5 LangFuse 不可达 |
 | 多轮对话失忆 | §5.6 MySQL Checkpointer 失败 |
 
-故障升级路径：客户 IT 自查（本文档 + on-call runbook）→ 图灵科技 #25 → Tony。
+故障升级路径：客户 IT 自查（本文档 + on-call runbook）→ 图灵科技工程负责人 → Tony。
 
 ---
 
@@ -335,23 +306,22 @@ curl ... -d '{"inputs":{"raw_text":"完全不存在的标的xyz 询价"...}'
 
 | 任务 | 频率 | 文档 |
 |---|---|---|
-| 备份 LangFuse 数据 | 周备份 | `docs/deploy/langfuse-self-hosted.md` §5 |
-| 监控告警检查 | 每日（自动化）| C1.6（#55）落地后 |
-| 应用日志归档 | 按客户合规要求 | C1.18 安全审计后再细化 |
-| API Key 轮转 | 按客户合规要求 | C1.18 安全审计后再细化 |
-| 版本升级 | minor 月度 / major 视客户需求 | `docs/deploy/langfuse-self-hosted.md` §7 |
+| 备份 LangFuse 数据 | 周备份 | `docs/langfuse/self-hosted-deployment.md` §5 |
+| 监控告警检查 | 每日（自动化）| 告警接线后 |
+| 应用日志归档 | 按客户合规要求 | 安全审计后再细化 |
+| API Key 轮转 | 按客户合规要求 | 安全审计后再细化 |
+| 版本升级 | minor 月度 / major 视客户需求 | `docs/langfuse/self-hosted-deployment.md` §7 |
 
 ---
 
 ## 关联资源
 
 - `.env.customer.template`（本目录的 env 模板）
-- [`docs/customer-env-assessment.md`](../customer-env-assessment.md) · 部署前调研清单
-- [`docs/deploy/langfuse-self-hosted.md`](./langfuse-self-hosted.md) · LangFuse 部署详解
-- [`docs/on-call-runbook.md`](../on-call-runbook.md) · 故障 playbook
+- [`docs/deploy/customer-env-assessment.md`](customer-env-assessment.md) · 部署前调研清单
+- [`docs/langfuse/self-hosted-deployment.md`](../langfuse/self-hosted-deployment.md) · LangFuse 部署详解
+- [`docs/operations/on-call-runbook.md`](../operations/on-call-runbook.md) · 故障 playbook
 - [`docs/api-contracts/java-backend.md`](../api-contracts/java-backend.md) · Java 后端契约
 - ADR 0009 · MySQL 版本兼容性
 - ADR 0014 · LangFuse 后端
-- ADR 0018 · 双模型分立
-- `scripts/deploy-customer.sh`（C1.13，PR 完成后启用）
-- `scripts/build-offline-bundle.sh`（C1.14，PR 完成后启用）
+- ADR 0020 · 通用模型配置与 DeepSeek Pro 当前基线
+- `scripts/deploy-customer.sh`

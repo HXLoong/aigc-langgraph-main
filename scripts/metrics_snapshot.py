@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""LangGraph 全指标快照（C1.5/C1.6/C1.7/G5.1 + D2.6 健康检查可视化）。
+"""LangGraph 全指标快照（告警 / 成本 / 金丝雀 / 健康检查可视化）。
 
-F4.2-F4.5 金丝雀切流期间 Tony / 业务方 / on-call 查"当前 LangGraph 健康状态"
+金丝雀切流期间 Tony / 业务方 / on-call 查"当前 LangGraph 健康状态"
 的运维 CLI。不需要 Grafana / Prometheus 客户端，纯 HTTP + 文本解析。
 
 跑法：
@@ -20,11 +20,9 @@ F4.2-F4.5 金丝雀切流期间 Tony / 业务方 / on-call 查"当前 LangGraph 
     ...
 
     ## 业务指标
-    Fallback 触发: 12（reason=cascade_fail:8 / zero_match:3 / hitl_card:1）
-    HITL 触发: 5
+    Fallback 触发: 12（reason=cascade_fail:9 / backend_unreachable:3）
     LLM 调用: 287（ok:280 error:7 = 2.4% 失败率）
     LLM token 消耗: prompt=1.2M completion=345K
-    动态 prompt: cache_hit=240 / cache_miss_ok=42 / fallback=0
 
     ## 金丝雀（otc_agent_canary_traffic_total）
     is_canary=true:  142
@@ -88,11 +86,7 @@ def _parse_labels(labels_str: str) -> tuple:
 
 
 def _parse_metrics(text: str) -> dict[str, dict[tuple, float]]:
-    """parse prometheus exposition → counter[name][labels_tuple] = value。
-
-    只处理 counter 行；histogram 的 _sum / _count / _bucket 暂不在快照范围
-    （历史 P95 看 latency 不在 F4.2 决策 critical path）。
-    """
+    """保留 counter 和经典 histogram 样本，供文本及 JSON 快照使用。"""
     counters: dict[str, dict[tuple, float]] = defaultdict(dict)
     for line in text.splitlines():
         line = line.strip()
@@ -104,9 +98,6 @@ def _parse_metrics(text: str) -> dict[str, dict[tuple, float]]:
                 name, value_str = line.rsplit(" ", 1)
             except ValueError:
                 continue
-            # 跳过 histogram 衍生指标（_bucket / _sum / _count）
-            if name.endswith(("_bucket", "_sum", "_count")):
-                continue
             try:
                 counters[name][()] = float(value_str)
             except ValueError:
@@ -116,9 +107,6 @@ def _parse_metrics(text: str) -> dict[str, dict[tuple, float]]:
             name, rest = line.split("{", 1)
             labels_str, value_str = rest.split("}", 1)
         except ValueError:
-            continue
-        # 跳过 histogram 衍生指标（_bucket / _sum / _count）
-        if name.endswith(("_bucket", "_sum", "_count")):
             continue
         try:
             value = float(value_str.strip())
@@ -187,10 +175,6 @@ def _render_business_section(counters: dict[str, dict[tuple, float]]) -> list[st
     else:
         lines.append("  Fallback 触发: 0")
 
-    hitl = counters.get("otc_agent_hitl_total", {})
-    hitl_total = int(sum(hitl.values()))
-    lines.append(f"  HITL 触发: {hitl_total}")
-
     llm = counters.get("otc_agent_llm_total", {})
     llm_total = int(sum(llm.values()))
     llm_by_status = {k: int(v) for k, v in _sum_by_label(llm, "status").items()}
@@ -212,19 +196,11 @@ def _render_business_section(counters: dict[str, dict[tuple, float]]) -> list[st
             f"  LLM token 消耗: prompt={prompt:,} completion={completion:,}"
         )
 
-    dyn = counters.get("otc_agent_dynamic_prompt_total", {})
-    if dyn:
-        by_status = {k: int(v) for k, v in _sum_by_label(dyn, "status").items()}
-        lines.append(
-            f"  动态 prompt: cache_hit={by_status.get('cache_hit', 0)} "
-            f"miss_ok={by_status.get('cache_miss_ok', 0)} "
-            f"fallback={by_status.get('fallback', 0)}"
-        )
     return lines
 
 
 def _render_canary_section(counters: dict[str, dict[tuple, float]]) -> list[str]:
-    lines: list[str] = ["## 金丝雀 (otc_agent_canary_traffic_total · G5.1)"]
+    lines: list[str] = ["## 金丝雀 (otc_agent_canary_traffic_total)"]
     canary = counters.get("otc_agent_canary_traffic_total", {})
     if not canary:
         lines.append("  （无数据，金丝雀未启用或服务未收到请求）")
@@ -239,7 +215,7 @@ def _render_canary_section(counters: dict[str, dict[tuple, float]]) -> list[str]
 
 
 def _render_health_section(counters: dict[str, dict[tuple, float]]) -> list[str]:
-    lines: list[str] = ["## 健康检查 (otc_agent_health_check_total · D2.6)"]
+    lines: list[str] = ["## 健康检查 (otc_agent_health_check_total)"]
     health = counters.get("otc_agent_health_check_total", {})
     if not health:
         lines.append("  （无数据，/ready 尚未被调用）")
@@ -263,11 +239,49 @@ def _render_health_section(counters: dict[str, dict[tuple, float]]) -> list[str]
     return lines
 
 
+def _render_http_section(counters: dict[str, dict[tuple, float]]) -> list[str]:
+    lines = ["## HTTP 请求累计（单次快照，不代表滚动窗口通过率）"]
+    requests = counters.get("otc_agent_http_total", {})
+    total = sum(requests.values())
+    if total <= 0:
+        return [*lines, "  （无 HTTP 请求样本，错误率不可计算）"]
+    errors = sum(value for labels, value in requests.items()
+                 if dict(labels).get("status_class") == "5xx")
+    cascade = sum(value for labels, value in counters.get("otc_agent_fallback_total", {}).items()
+                  if dict(labels).get("reason") == "cascade_fail")
+    lines.extend([
+        f"  HTTP 请求累计: {total:g}",
+        f"  5xx: {errors:g} ({errors / total:.2%})",
+        f"  cascade_fail: {cascade:g} ({cascade / total:.2%})",
+    ])
+    return lines
+
+
+def _render_histogram_section(counters: dict[str, dict[tuple, float]]) -> list[str]:
+    lines = ["## Histogram 原始累计样本（_sum / _count / _bucket）"]
+    for name, samples in sorted(counters.items()):
+        if not name.endswith(("_bucket", "_sum", "_count")):
+            continue
+        for labels, value in sorted(samples.items()):
+            scope = dict(labels).get("node") or (
+                "端到端" if name.startswith("otc_agent_intent_latency_ms_") else "无节点标签"
+            )
+            label_text = ",".join(f'{key}="{val}"' for key, val in labels)
+            lines.append(f"  {name}{{{label_text}}} {value:g} [{scope}]")
+    if len(lines) == 1:
+        lines.append("  （无直方图数据）")
+    return lines
+
+
 def render_human(snap: MetricsSnapshot) -> str:
     lines: list[str] = []
     lines.append(
         f"=== LangGraph 指标快照 · {snap.timestamp} · host={snap.host} ==="
     )
+    lines.append("")
+    lines.extend(_render_http_section(snap.counters))
+    lines.append("")
+    lines.extend(_render_histogram_section(snap.counters))
     lines.append("")
     lines.extend(_render_node_section(snap.counters))
     lines.append("")
@@ -306,7 +320,7 @@ def build_snapshot(metrics_url: str) -> MetricsSnapshot:
 
 def cli() -> int:
     parser = argparse.ArgumentParser(
-        description="LangGraph 全指标快照（F4 灰度期运维 CLI）"
+        description="LangGraph 全指标快照（灰度期运维 CLI）"
     )
     parser.add_argument(
         "--url",

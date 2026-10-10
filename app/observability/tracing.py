@@ -1,51 +1,359 @@
-"""可观测性配置（OpenTelemetry + 可选 Langfuse）。"""
+"""可观测性接入点（可选依赖 Langfuse）。
+
+Langfuse 是**可选依赖**：本模块是它唯一的接入点，`app/` 下其它位置一律不得
+`import langfuse`。
+
+三条约束：
+
+1. 所有 langfuse import 都在同一个 `try` 内 —— 失败只 warning 并降级，绝不阻断业务
+2. 进程级 client 单例 —— 不在请求路径上重复构造
+3. 对外提供 `RequestTrace` 与统一 callback 工厂，不要求调用方导入 langfuse 类型
+
+两个 ID 的归属必须分清：
+
+- `request_trace_id`：业务审计 ID，调用方生成，贯穿 `node_trace.trace_id` 与
+  `config.metadata.trace_id`（ADR 0004）—— **恒定存在**
+- `RequestTrace.langfuse_trace_id`：LangFuse 侧 Trace ID —— **可能不存在**
+"""
 from __future__ import annotations
 
+import asyncio
+import hashlib
 import logging
+import re
+from dataclasses import dataclass
+from typing import Any
+from uuid import UUID
+
+from langchain_core.callbacks import BaseCallbackHandler
 
 from app.config import get_settings
+from app.observability.node_labels import label_observation
+from app.observability.privacy import mask_sensitive
 
 logger = logging.getLogger(__name__)
 
-# 全局 Langfuse 回调实例，供 LangChain / LangGraph 调用时注入
-_langfuse_handler = None
+_TRACEPARENT_RE = re.compile(
+    r"^00-(?P<trace_id>[0-9a-f]{32})-(?P<span_id>[0-9a-f]{16})-[0-9a-f]{2}$"
+)
+
+#: 进程级 LangFuse client 单例（懒惰创建）
+_langfuse_client: Any | None = None
 
 
-def get_langfuse_handler():
-    """返回全局 CallbackHandler，未启用时返回 None。"""
-    return _langfuse_handler
+def session_identifier(conversation_id: str) -> str:
+    """只映射不符合 SDK 属性约束的观测 ID，业务会话 ID 始终由调用方保留。"""
+    if conversation_id and conversation_id.isascii() and len(conversation_id) <= 200:
+        return conversation_id
+    return "conversation:" + hashlib.sha256(conversation_id.encode("utf-8")).hexdigest()
 
 
-def setup_observability(app) -> None:
-    """在 FastAPI 启动时调用。"""
-    global _langfuse_handler
-    settings = get_settings()
-
-    if settings.enable_langfuse and settings.langfuse_public_key and settings.langfuse_secret_key:
-        try:
-            # langfuse 4.x：先初始化全局 client，再从 langchain 子模块取 CallbackHandler
-            from langfuse import Langfuse
-            from langfuse.langchain import CallbackHandler
-
-            Langfuse(
-                public_key=settings.langfuse_public_key,
-                secret_key=settings.langfuse_secret_key,
-                host=settings.langfuse_base_url,
-            )
-            _langfuse_handler = CallbackHandler()
-            logger.info(
-                "Langfuse 已启用，host=%s project=%s",
-                settings.langfuse_base_url, settings.langfuse_project,
-            )
-        except ImportError as e:
-            logger.warning("langfuse 未安装或版本不兼容：%s", e)
-        except Exception as e:
-            logger.warning("Langfuse 初始化失败：%s", e)
-
-    # OpenTelemetry FastAPI 自动埋点
+def report_handled_error(state: dict[str, Any], observation: Any | None = None) -> None:
+    """Mark the current LangChain observation when a node returned an error as data."""
+    if not _enabled():
+        return
     try:
-        from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
-        FastAPIInstrumentor.instrument_app(app)
-        logger.info("OpenTelemetry FastAPI 埋点已启用")
-    except Exception as e:
-        logger.warning("OTel 埋点失败（可忽略）: %s", e)
+        # Lazy import keeps the standalone callback factory independent of graph imports.
+        from app.observability.diagnostics import failure_diagnostic
+
+        detail = failure_diagnostic(state)
+        client = _ensure_client() if detail and observation is None else None
+        if (client is not None or observation is not None) and detail is not None:
+            status = f"{detail['code']} {detail['node']}: {detail['summary']}"
+            if detail["elapsed_ms"] is not None:
+                status += f" ({detail['elapsed_ms']} ms)"
+            if observation is not None:
+                observation.update(level="ERROR", status_message=status, metadata={"diagnostic": detail})
+            elif client is not None:
+                client.update_current_span(level="ERROR", status_message=status,
+                                           metadata={"diagnostic": detail})
+    except Exception as exc:
+        logger.warning("handled-error telemetry unavailable: %s", type(exc).__name__)
+
+
+class HandledErrorCallback(BaseCallbackHandler):
+    # Run before the Langfuse callback detaches/ends this chain's current observation.
+    run_inline = True
+
+    def __init__(self, handler: Any | None = None) -> None:
+        """保存本次请求的观测上下文，避免跨请求共享可变状态。"""
+        self._handler = handler
+
+    def on_chain_end(self, outputs: Any, *, run_id: UUID, **kwargs: Any) -> None:
+        """按当前运行身份转交 on_chain_end 回调，保持父子关联并在结束时清理上下文。"""
+        if isinstance(outputs, dict) and outputs.get("error"):
+            # LangGraph child callbacks can leave an ended child in the current context.
+            # Langfuse 4.5 keeps active observations by LangChain run ID; use that identity
+            # before its on_chain_end removes the entry. This SDK seam has a live trace test.
+            if self._handler is not None:
+                observation = getattr(self._handler, "_runs", {}).get(run_id)
+                if observation is not None:
+                    report_handled_error(outputs, observation)
+            else:
+                report_handled_error(outputs)
+
+
+@dataclass(frozen=True, slots=True)
+class RequestTrace:
+    """一次请求的 LangFuse 接入结果；不暴露任何 langfuse 类型。
+
+    Attributes:
+        handler: 可直接放进 `config["callbacks"]` 的回调；None 表示未接入
+        langfuse_trace_id: LangFuse 侧 Trace ID；None 表示未接入
+        url: LangFuse 跳转链接；None 表示未接入（或父 Trace 模式不适用）
+    """
+
+    handler: Any | None = None
+    langfuse_trace_id: str | None = None
+    url: str | None = None
+
+    @property
+    def observation_id(self) -> str | None:
+        """返回本次服务端图的根 ID，即使 Callback 已结束该 Observation 也可读取。"""
+        value = getattr(self.handler, "root_observation_id", None)
+        return value if isinstance(value, str) else None
+
+
+def parse_traceparent(value: str | None) -> tuple[str, str] | None:
+    """解析 W3C traceparent（`00-<32hex trace_id>-<16hex span_id>-<2hex flags>`）。
+
+    格式非法或全零 ID 返回 None。
+    """
+    match = _TRACEPARENT_RE.fullmatch(value or "")
+    if match is None:
+        return None
+    trace_id = match.group("trace_id")
+    span_id = match.group("span_id")
+    if trace_id == "0" * 32 or span_id == "0" * 16:
+        return None
+    return trace_id, span_id
+
+
+def _enabled() -> bool:
+    """LangFuse 是否具备启用条件（开关 + 双 key；ADR 0024 D5：所有环境同一条请求级路径）。"""
+    settings = get_settings()
+    return bool(
+        settings.enable_langfuse
+        and settings.langfuse_public_key
+        and settings.langfuse_secret_key
+    )
+
+
+def _ensure_client() -> Any | None:
+    """懒惰创建并缓存进程级 Langfuse client；不可用时返回 None。
+
+    不依赖 FastAPI 启动钩子 —— eval / harness / 测试都会直接调图。
+    """
+    global _langfuse_client
+    if _langfuse_client is not None:
+        return _langfuse_client
+    if not _enabled():
+        return None
+    settings = get_settings()
+    try:
+        from langfuse import Langfuse
+
+        _langfuse_client = Langfuse(
+            public_key=settings.langfuse_public_key,
+            secret_key=settings.langfuse_secret_key,
+            host=settings.langfuse_base_url,
+            environment=getattr(settings, "environment", None) or "default",
+            timeout=getattr(settings, "langfuse_timeout_seconds", 15),
+            flush_at=getattr(settings, "langfuse_flush_at", 32),
+            mask=mask_sensitive,
+        )
+    except ImportError as exc:
+        logger.warning("langfuse 未安装或版本不兼容：%s", exc)
+        return None
+    except Exception as exc:  # noqa: BLE001 - tracing 失败不阻断业务
+        logger.warning("Langfuse client 初始化失败：%s", exc)
+        return None
+    return _langfuse_client
+
+
+def create_callback_handler(
+    *, public_key: str | None = None, trace_context: dict[str, str] | None = None,
+) -> Any:
+    """Create a named SDK handler lazily; callers keep their existing enable/error gates."""
+    from langfuse.langchain import CallbackHandler
+
+    class LocalizedCallbackHandler(CallbackHandler):
+        run_inline = True
+
+        def __init__(self, **kwargs: Any) -> None:
+            """保存本次请求的观测上下文，避免跨请求共享可变状态。"""
+            super().__init__(**kwargs)
+            self._name_contexts: dict[UUID, tuple[str | None, UUID | None]] = {}
+            self.root_observation_id: str | None = None
+
+        def _named_start(
+            self, method: str, kind: str, serialized: Any, value: Any, *,
+            run_id: UUID, parent_run_id: UUID | None = None,
+            metadata: dict[str, Any] | None = None, **kwargs: Any,
+        ) -> Any:
+            """为当前回调记录独立命名上下文，并转交 SDK 建立观测。"""
+            original = self.get_langchain_run_name(serialized, **kwargs)
+            parent_node = self._name_contexts.get(parent_run_id, (None, None))[0] if parent_run_id else None
+            try:
+                display = label_observation(original, kind=kind, metadata=metadata, parent_node=parent_node)
+                self._name_contexts[run_id] = (display.node_id, parent_run_id)
+                kwargs = {**kwargs, "name": display.name}
+                metadata = display.metadata
+            except Exception as exc:
+                # Display projection must never remove a trace or block a business call.
+                logger.warning("Langfuse name projection unavailable: %s", type(exc).__name__)
+            try:
+                result = getattr(super(), method)(serialized, value, run_id=run_id,
+                    parent_run_id=parent_run_id, metadata=metadata, **kwargs)
+                if parent_run_id is None:
+                    # 与 HandledErrorCallback 共用 SDK 4.5 的 run 映射；真实 SDK 测试守护此接缝。
+                    observation = self._runs.get(run_id)
+                    if observation is not None:
+                        self.root_observation_id = observation.id
+                return result
+            except BaseException:
+                self._clear_name_context(run_id)
+                raise
+
+        def _clear_name_context(self, run_id: UUID) -> None:
+            """清理结束或失败的回调上下文，防止并发节点串用。"""
+            pending = {run_id}
+            while pending:
+                children = {key for key, (_, parent) in list(self._name_contexts.items()) if parent in pending}
+                for key in pending:
+                    self._name_contexts.pop(key, None)
+                pending = children
+
+        def _named_finish(self, method: str, value: Any, *, run_id: UUID, **kwargs: Any) -> Any:
+            """按当前运行身份结束观测，并保证清理本地上下文。"""
+            try:
+                return getattr(super(), method)(value, run_id=run_id, **kwargs)
+            finally:
+                self._clear_name_context(run_id)
+
+        def on_chain_start(self, serialized: Any, inputs: Any, **kwargs: Any) -> Any:
+            """按当前运行身份转交 on_chain_start 回调，保持父子关联并在结束时清理上下文。"""
+            return self._named_start("on_chain_start", "chain", serialized, inputs, **kwargs)
+
+        def on_chat_model_start(self, serialized: Any, messages: Any, **kwargs: Any) -> Any:
+            """按当前运行身份转交 on_chat_model_start 回调，保持父子关联并在结束时清理上下文。"""
+            return self._named_start("on_chat_model_start", "llm", serialized, messages, **kwargs)
+
+        def on_llm_start(self, serialized: Any, prompts: Any, **kwargs: Any) -> Any:
+            """按当前运行身份转交 on_llm_start 回调，保持父子关联并在结束时清理上下文。"""
+            return self._named_start("on_llm_start", "llm", serialized, prompts, **kwargs)
+
+        def on_tool_start(self, serialized: Any, input_str: str, **kwargs: Any) -> Any:
+            """按当前运行身份转交 on_tool_start 回调，保持父子关联并在结束时清理上下文。"""
+            return self._named_start("on_tool_start", "tool", serialized, input_str, **kwargs)
+
+        def on_retriever_start(self, serialized: Any, query: str, **kwargs: Any) -> Any:
+            """按当前运行身份转交 on_retriever_start 回调，保持父子关联并在结束时清理上下文。"""
+            return self._named_start("on_retriever_start", "retriever", serialized, query, **kwargs)
+
+        def on_chain_end(self, outputs: Any, **kwargs: Any) -> Any:
+            """按当前运行身份转交 on_chain_end 回调，保持父子关联并在结束时清理上下文。"""
+            return self._named_finish("on_chain_end", outputs, **kwargs)
+
+        def on_chain_error(self, error: BaseException, **kwargs: Any) -> Any:
+            """按当前运行身份转交 on_chain_error 回调，保持父子关联并在结束时清理上下文。"""
+            return self._named_finish("on_chain_error", error, **kwargs)
+
+        def on_llm_end(self, response: Any, **kwargs: Any) -> Any:
+            """按当前运行身份转交 on_llm_end 回调，保持父子关联并在结束时清理上下文。"""
+            return self._named_finish("on_llm_end", response, **kwargs)
+
+        def on_llm_error(self, error: BaseException, **kwargs: Any) -> Any:
+            """按当前运行身份转交 on_llm_error 回调，保持父子关联并在结束时清理上下文。"""
+            return self._named_finish("on_llm_error", error, **kwargs)
+
+        def on_tool_end(self, output: Any, **kwargs: Any) -> Any:
+            """按当前运行身份转交 on_tool_end 回调，保持父子关联并在结束时清理上下文。"""
+            return self._named_finish("on_tool_end", output, **kwargs)
+
+        def on_tool_error(self, error: BaseException, **kwargs: Any) -> Any:
+            """按当前运行身份转交 on_tool_error 回调，保持父子关联并在结束时清理上下文。"""
+            return self._named_finish("on_tool_error", error, **kwargs)
+
+        def on_retriever_end(self, documents: Any, **kwargs: Any) -> Any:
+            """按当前运行身份转交 on_retriever_end 回调，保持父子关联并在结束时清理上下文。"""
+            return self._named_finish("on_retriever_end", documents, **kwargs)
+
+        def on_retriever_error(self, error: BaseException, **kwargs: Any) -> Any:
+            """按当前运行身份转交 on_retriever_error 回调，保持父子关联并在结束时清理上下文。"""
+            return self._named_finish("on_retriever_error", error, **kwargs)
+
+    return LocalizedCallbackHandler(public_key=public_key, trace_context=trace_context)
+
+
+async def attach_request_trace(
+    *, request_trace_id: str, traceparent: str | None
+) -> RequestTrace:
+    """把请求接到 LangFuse（自建 Trace 或接入外部父 Trace）。
+
+    未启用或出现任何 langfuse 异常都返回空 `RequestTrace` —— 本函数**不抛异常**。
+
+    Args:
+        request_trace_id: 业务审计 ID；自建 Trace 时复用为 LangFuse Trace ID，
+            保证 `node_trace.trace_id` 与 LangFuse trace 同值可直查（ADR 0004）
+        traceparent: 调用方传入的 W3C traceparent；仅 `trust_inbound_traceparent=true`
+            时生效（测试工作台等可信网络），否则恒被忽略
+    """
+    settings = get_settings()
+    if not _enabled():
+        return RequestTrace()
+
+    # 信任边界由独立开关承担（ADR 0024 D5）；注入只影响 trace 归属，不影响业务数据
+    parent_context = (
+        parse_traceparent(traceparent)
+        if getattr(settings, "trust_inbound_traceparent", False)
+        else None
+    )
+    langfuse_trace_id = parent_context[0] if parent_context else request_trace_id
+
+    # 必须先注册进程级 client：CallbackHandler(public_key=) 内部 get_client 只在已注册实例里查，
+    # 查不到会静默返回 tracing_enabled=False 的假 client（首次请求 / 父 Trace 分支曾因此丢 trace）
+    client = _ensure_client()
+    if client is None:
+        return RequestTrace()
+
+    try:
+        trace_context = {"trace_id": langfuse_trace_id}
+        if parent_context:
+            trace_context["parent_span_id"] = parent_context[1]
+
+        handler = create_callback_handler(
+            public_key=settings.langfuse_public_key,
+            trace_context=trace_context,
+        )
+        # The SDK attaches OTel context during callbacks. An executor-thread callback cannot
+        # propagate that ContextVar into the async node; inline execution preserves it.
+        handler.run_inline = True
+    except Exception as exc:  # noqa: BLE001 - tracing 失败不阻断业务
+        logger.warning("LangFuse trace 接入失败：%s", exc)
+        return RequestTrace()
+
+    if parent_context:
+        # 父 Trace 由调用方创建并持有链接，这里不重复查询
+        return RequestTrace(handler=handler, langfuse_trace_id=langfuse_trace_id)
+
+    url: str | None = None
+    try:
+        url = await asyncio.to_thread(client.get_trace_url, trace_id=langfuse_trace_id)
+    except Exception as exc:  # noqa: BLE001 - 链接失败不影响 trace 上报
+        logger.warning("LangFuse trace 链接不可用：%s", exc)
+    return RequestTrace(handler=handler, langfuse_trace_id=langfuse_trace_id, url=url)
+
+
+def flush() -> None:
+    """进程退出前把未导出的 span 刷出去（lifespan 关闭段调用；无 client 时无操作）。"""
+    client = _langfuse_client
+    if client is None:
+        return
+    try:
+        client.flush()
+    except Exception as exc:  # noqa: BLE001 - 退出路径不抛
+        logger.warning("LangFuse flush 失败：%s", exc)
+
+
+__all__ = ["RequestTrace", "attach_request_trace", "create_callback_handler", "flush", "parse_traceparent"]

@@ -1,29 +1,27 @@
 """提示词加载器。
 
-从 `app/prompts/**/*.md` 中加载由 `scripts/export_dify_prompts.py` 导出的提示词。
+从 `app/prompts/**/*.md` 加载提示词（git 是唯一真源，ADR 0024 D1）。
 当 ENABLE_LANGFUSE=true 且 use_langfuse_prompts=true 时，优先从 Langfuse 拉取，
 失败时回退到本地 .md 文件。
 
 md 格式约定：
     # 提示词标题
-    - **node_id**: `...`
-    - **model**: `...`
 
     ## [system]
     ```
-    <system 提示词内容>
+    <system 提示词内容；由代码渲染的 {{var}} 占位符须在 PromptSpec.injects 登记>
     ```
 
-    ## [user]
+    ## [user]        ← 仅当 user 含规则文本时才有（先例 swap/place_order.md）
     ```
-    <user 模板，可能包含 {{#node.var#}} 变量占位符>
+    <user 模板，{{var}} 经 render_user() 渲染>
     ```
 
 使用方式：
     from app.prompts import load_prompt
     p = load_prompt("swap", "intent")
     # p.system → str
-    # p.user_template → str（原始 Dify 占位符未替换）
+    # p.user_template → str（{{var}} 未渲染）
     # p.config → dict（Langfuse 附带的 model / temperature 等，本地加载时为 None）
 """
 from __future__ import annotations
@@ -35,6 +33,10 @@ import re
 from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
+from typing import TYPE_CHECKING, Any, cast
+
+if TYPE_CHECKING:
+    from langfuse import Langfuse
 
 logger = logging.getLogger(__name__)
 
@@ -48,28 +50,26 @@ class Prompt:
     """单条提示词，包含 system 与 user 两部分。"""
     name: str
     system: str
-    user_template: str   # 可能包含 Dify 占位符 {{#xxx.yyy#}}
-    config: dict | None = None  # Langfuse 附带的 model / temperature 等
+    user_template: str   # {{var}} 模板；无 [user] 段时为空串
+    config: dict[str, Any] | None = None  # Langfuse 附带的 model / temperature 等
 
     def render_user(self, **kwargs: str) -> str:
-        """把 user_template 中的 {{variable_name}} 占位符替换成实际值。
-
-        注意：此方法只替换简单的 {{name}} 占位符。
-        Dify 原始占位符（{{#node_id.var#}}）会被保留在原文中，
-        视为大模型能够理解的上下文信息。
-        """
+        """把 user_template 中的 {{variable_name}} 占位符替换成实际值；未提供的占位符原样保留。"""
         text = self.user_template
         for k, v in kwargs.items():
             text = text.replace("{{" + k + "}}", str(v) if v is not None else "")
         return text
 
 
+# 闭合围栏必须后跟下一节标题(## [...])或文件尾——否则 [system] 段内嵌套的
+# ``` 围栏(如输出格式示例)会让非贪婪匹配提前截断(P1 迁移期发现的隐藏 bug,
+# 曾把 option_close/cancel_close.md 从 4717 字符截到 1049)。
 _MD_SYSTEM_RE = re.compile(
-    r"##\s*\[system\]\s*\n+```[a-zA-Z]*\n(.*?)\n```",
+    r"##\s*\[system\]\s*\n+```[a-zA-Z]*\n(.*?)\n```(?=\s*(?:##\s*\[|\Z))",
     re.DOTALL,
 )
 _MD_USER_RE = re.compile(
-    r"##\s*\[user\]\s*\n+```[a-zA-Z]*\n(.*?)\n```",
+    r"##\s*\[user\]\s*\n+```[a-zA-Z]*\n(.*?)\n```(?=\s*(?:##\s*\[|\Z))",
     re.DOTALL,
 )
 
@@ -88,7 +88,7 @@ def _langfuse_name(category: str, name: str) -> str:
     return "_".join(category.split("/") + [name])
 
 
-def _get_langfuse_client():
+def _get_langfuse_client() -> Langfuse:
     """惰性构造 Langfuse 客户端（独立函数便于测试替换）。"""
     from langfuse import Langfuse
 
@@ -126,7 +126,7 @@ def _load_from_langfuse(category: str, name: str) -> Prompt | None:
             config=lf_prompt.config or {},
         )
     except Exception as exc:  # noqa: BLE001
-        # #155 裁决：从 debug 静默升为 warning——静默回退会掩盖
+        # warning 而非 debug 静默——静默回退会掩盖
         # "以为在用 Langfuse 版实则本地版"的版本错配
         logger.warning("Langfuse 加载 %s/%s 失败，回退本地：%s", category, name, exc)
         logger.debug("Langfuse 加载失败详情", exc_info=True)
@@ -151,11 +151,11 @@ def load_prompt(category: str, name: str) -> Prompt:
 
     settings = get_settings()
     if settings.use_langfuse_prompts and getattr(settings, "environment", "") == "production":
-        # ADR 0014 D3-2 硬闸门（#155 裁决补齐）：生产提示词真理来源是 git .md，
+        # ADR 0014 D3-2 硬闸门：生产提示词真理来源是 git .md，
         # 从 LangFuse 拉取会绕过 git PR 审计，误开即 fail-fast
         raise RuntimeError(
             "生产环境禁止从 LangFuse 拉取提示词（USE_LANGFUSE_PROMPTS 必须为 false，"
-            "见 ADR 0014 D3-2 / issue #155）"
+            "见 ADR 0014 D3-2）"
         )
     if settings.enable_langfuse and settings.use_langfuse_prompts:
         lf_prompt = _load_from_langfuse(category, name)
@@ -179,54 +179,13 @@ def load_prompt(category: str, name: str) -> Prompt:
     return Prompt(name=f"{category}/{name}", system=system, user_template=user_template)
 
 
-@lru_cache(maxsize=128)
-def compose_prompt(category: str, name: str, version: str = "v1") -> Prompt:
-    """版本化加载，支持把多个 md 片段拼装成一个 Prompt。
-
-    - version="v1"：行为等同 load_prompt(category, name)，直接读原 md
-    - version="v2"+：从 `{category}/{version}/` 子目录加载：
-        1. `_base.md`（所有意图共享的规则基底）
-        2. `{name}.md`（意图专属示例 / 输出约束）
-      两者的 `[system]` 段按顺序拼接为最终 system prompt
-
-    设计目的：
-    - 把原本巨型单体 prompt 拆成 base + 意图片段，裁剪冗余示例降低延迟
-    - 多个意图片段共享 base，避免规则被复制多份
-    - 通过版本号做 A/B 切换，一键回滚 v1
-
-    Args:
-        category: 一级目录，如 "swap"
-        name: 意图片段文件名（不含 .md），如 "place_order"
-        version: "v1" 走原 load_prompt；"v2" 起走 {category}/{version}/ 子目录拼装
-
-    Example:
-        >>> p = compose_prompt("swap", "place_order", version="v2")
-        >>> # p.system = swap/v2/_base.md 的 system + "\\n\\n" + swap/v2/place_order.md 的 system
-    """
-    if version == "v1":
-        return load_prompt(category, name)
-
-    subcat = f"{category}/{version}"
-    base = load_prompt(subcat, "_base")
-    leaf = load_prompt(subcat, name)
-
-    merged_system = base.system + "\n\n" + leaf.system
-    # user_template 优先取叶片段的；叶没定义就用 base 的（兜底）
-    user_template = leaf.user_template or base.user_template
-    return Prompt(
-        name=f"{subcat}/{name}",
-        system=merged_system,
-        user_template=user_template,
-    )
-
-
 # ============================================================
 # v1/v2 灰度切流（ADR 0003 同目录并存模式）
 # ============================================================
 
 
 @lru_cache(maxsize=1)
-def _load_versions_config() -> dict[str, dict]:
+def _load_versions_config() -> dict[str, dict[str, Any]]:
     """读取并缓存 _versions.yaml 的 overrides 段。
 
     yaml 缺失或解析失败时返回空 dict（默认全部走 v1）。
@@ -345,7 +304,7 @@ def resolve_prompt_version(
             continue
         cumulative += float(v.get("weight", 1.0)) / total_weight
         if bucket_pos < cumulative:
-            return v.get("name", base_name)
+            return cast(str, v.get("name", base_name))
 
     last = versions[-1]
     return last.get("name", base_name) if isinstance(last, dict) else base_name
@@ -354,5 +313,4 @@ def resolve_prompt_version(
 def clear_cache() -> None:
     """清空加载缓存（测试或热更新时使用）。"""
     load_prompt.cache_clear()
-    compose_prompt.cache_clear()
     _load_versions_config.cache_clear()

@@ -8,17 +8,17 @@
 ```bash
 # 最小用法（差异打印到 stdout，明细写入 JSON 文件）
 python scripts/shadow_compare.py \\
-    --langgraph http://localhost:8000/v1/message \\
+    --langgraph http://127.0.0.1:8201/v1/workflows/run \\
     --dify https://dify.example.com/v1/workflows/run \\
     --dify-api-key dify-app-xxx \\
-    --sample tests/fixtures/golden.jsonl \\
+    --sample sample_real_traffic.jsonl \\
     --output /tmp/shadow_diff.json
 
 # 同时写入 MySQL（生产灰度场景）
 python scripts/shadow_compare.py \\
     --langgraph ... --dify ... --sample ... \\
     --mysql-host mysql.prod \\
-    --mysql-db otc_agent_business
+    --mysql-db otc_goats_ai_trading_dev
 
 # Dry-run（只打印不存盘）
 python scripts/shadow_compare.py ... --dry-run
@@ -26,6 +26,15 @@ python scripts/shadow_compare.py ... --dry-run
 # 只跑前 N 条
 python scripts/shadow_compare.py ... --max-cases 5
 ```
+
+## 样本格式（--sample）
+
+每行一条 JSON，至少包含 `id` 与 `raw_content`（可带 `quote_content` / `attachments`）：
+
+    {"id": "s-001", "raw_content": "600519.SH 询价 3 个月平值看涨"}
+
+注意：`tests/datasets/biz/` 的两种方言（`send_text` / `conversation`）不是该格式，需先转换；
+灰度期直接用导出的真实流量样本。
 
 ## 响应归一化
 
@@ -105,11 +114,11 @@ async def call_endpoint(
 
 
 def _normalize_dify(dify_resp: dict) -> dict:
-    """从 Dify 工作流响应中提取完整 outputs（F4.1 字段级 diff）。
+    """从 Dify 工作流响应中提取完整 outputs（字段级 diff）。
 
     Dify 标准响应：{data: {outputs: {...}, status: "succeeded"}}
 
-    F4.1 增强：除 product_type / intent / api_code 外，也提取业务对象字段：
+    增强：除 product_type / intent / api_code 外，也提取业务对象字段：
     - tickers（标的解析结果）
     - place_params / cancel_params / confirm / query_filter / close_params
     - ticker_hitl_candidates（HITL 卡片）
@@ -144,7 +153,7 @@ def _normalize_langgraph(lg_resp: dict) -> dict:
     return _normalize_dify(lg_resp)
 
 
-# F4.1 字段级 diff 配置：随机字段默认忽略（订单号 / UUID / 时间戳 / 延迟敏感字段）
+# 字段级 diff 配置：随机字段默认忽略（订单号 / UUID / 时间戳 / 延迟敏感字段）
 DEFAULT_IGNORED_PATHS = frozenset(
     {
         # 订单号在两侧独立生成（H-/OPT-/CO- prefix 后是 timestamp + random）
@@ -157,7 +166,7 @@ DEFAULT_IGNORED_PATHS = frozenset(
         "*.created_at",
         "*.finished_at",
         "*.timestamp",
-        # reply_text 是渲染层，按 ADR 0017 不强 diff（业务方按业务对象 review）
+        # reply_text 是渲染层文本，不强制 diff（业务方按业务对象 review）
         "reply_text",
     }
 )
@@ -239,26 +248,25 @@ def compare(
 # ============================================================
 async def write_to_mysql(pool: Any, result: CompareResult) -> None:
     """写一条对比记录到 shadow_compare 表。"""
-    async with pool.acquire() as conn:
-        async with conn.cursor() as cur:
-            await cur.execute(
-                """
-                INSERT INTO shadow_compare
+    async with pool.acquire() as conn, conn.cursor() as cur:
+        await cur.execute(
+            """
+                INSERT INTO langgraph_shadow_compare
                 (message_id, primary_path, primary_result, shadow_result,
                  is_equal, diff_detail, created_at)
                 VALUES (%s, %s, %s, %s, %s, %s, %s)
                 """,
-                (
-                    result.case_id,
-                    "langgraph",
-                    json.dumps(result.langgraph_resp, ensure_ascii=False),
-                    json.dumps(result.dify_resp, ensure_ascii=False),
-                    1 if result.is_equal else 0,
-                    json.dumps(result.diffs, ensure_ascii=False),
-                    datetime.now(),
-                ),
-            )
-            await conn.commit()
+            (
+                result.case_id,
+                "langgraph",
+                json.dumps(result.langgraph_resp, ensure_ascii=False),
+                json.dumps(result.dify_resp, ensure_ascii=False),
+                1 if result.is_equal else 0,
+                json.dumps(result.diffs, ensure_ascii=False),
+                datetime.now(),
+            ),
+        )
+        await conn.commit()
 
 
 def write_to_file(path: Path, results: list[CompareResult], summary: Summary) -> None:
@@ -296,7 +304,7 @@ def write_to_file(path: Path, results: list[CompareResult], summary: Summary) ->
 def write_markdown_report(
     path: Path, results: list[CompareResult], summary: Summary
 ) -> None:
-    """生成 F4.1 每日 diff 报告（业务方 review 用）。
+    """生成 每日 diff 报告（业务方 review 用）。
 
     格式：摘要 + 按字段 diff Top-K + 失败 case 列表（含 raw_content）。
     """
@@ -373,7 +381,8 @@ async def main(args: argparse.Namespace) -> int:
             pool = await aiomysql.create_pool(
                 host=args.mysql_host, port=args.mysql_port,
                 user=args.mysql_user, password=args.mysql_password,
-                db=args.mysql_db, autocommit=False,
+                db=args.mysql_db, autocommit=False, charset="utf8mb4",
+                init_command="SET NAMES utf8mb4 COLLATE utf8mb4_general_ci",
             )
 
     summary = Summary(total=len(cases))
@@ -464,7 +473,7 @@ async def main(args: argparse.Namespace) -> int:
         write_to_file(args.output, results, summary)
         print(f"\n详细结果已写入 {args.output}")
 
-    # F4.1 markdown 每日报告
+    # markdown 每日报告
     if args.markdown_report and not args.dry_run:
         write_markdown_report(args.markdown_report, results, summary)
         print(f"Markdown 报告已写入 {args.markdown_report}")
@@ -489,13 +498,13 @@ async def main(args: argparse.Namespace) -> int:
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="LangGraph vs Dify shadow 双跑对比")
-    parser.add_argument("--langgraph", required=True, help="LangGraph /v1/message 端点 URL")
+    parser.add_argument("--langgraph", required=True, help="LangGraph /v1/workflows/run 端点 URL（与 Dify 同一 wire 格式）")
     parser.add_argument("--dify", required=True, help="Dify /v1/workflows/run 端点 URL")
     parser.add_argument("--dify-api-key", default="", help="Dify App API Key（写入 Authorization 头）")
     parser.add_argument("--sample", required=True, type=Path, help="JSONL 样本文件路径")
     parser.add_argument("--output", type=Path, default=None, help="JSON 输出路径（明细 + 汇总）")
     parser.add_argument("--markdown-report", type=Path, default=None,
-                        help="F4.1 每日 diff 报告 markdown 路径（业务方 review 用）")
+                        help="每日 diff 报告 markdown 路径（业务方 review 用）")
     parser.add_argument("--ignore-field", action="append", default=[],
                         help="忽略字段 path（可多次指定，支持 *.foo 通配）")
     parser.add_argument("--max-cases", type=int, default=0, help="只跑前 N 条（0 = 全跑）")
@@ -507,6 +516,6 @@ if __name__ == "__main__":
     parser.add_argument("--mysql-port", type=int, default=3306)
     parser.add_argument("--mysql-user", default="otc_agent")
     parser.add_argument("--mysql-password", default="password")
-    parser.add_argument("--mysql-db", default="otc_agent_business")
+    parser.add_argument("--mysql-db", default="otc_goats_ai_trading_dev")
 
     sys.exit(asyncio.run(main(parser.parse_args())))

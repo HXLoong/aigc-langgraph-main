@@ -18,7 +18,7 @@
 
 <div class="callout">
 <span class="callout-title">为什么学这个（对齐任务）</span>
-"可严肃测试"是我们迁出 Dify 的第一理由（handbook 第 1.1 节），841 个测试就是成果。但这套体系有两条纪律撑着：<strong>依赖反转</strong>（后端可 mock）和 <strong>TDD 强制</strong>（CLAUDE.md 核心原则第 5 条：先写失败测试再改代码，禁止反过来）。你的每一个 PR 都会被用这两条检验。
+"可严肃测试"是我们迁出 Dify 的第一理由（ADR 0000），数千个测试就是成果。但这套体系有两条纪律撑着：<strong>依赖反转</strong>（后端可 mock）和 <strong>TDD 强制</strong>（CLAUDE.md 核心原则第 5 条：先写失败测试再改代码，禁止反过来）。你的每一个 PR 都会被用这两条检验。
 </div>
 
 <h2>1. Protocol：三行接口换来整个可测性（8 分钟）</h2>
@@ -42,7 +42,7 @@
 <table>
 <tr><th>层</th><th>职责</th><th>测试策略</th></tr>
 <tr><td><code>Protocol</code></td><td>接口契约（Python 结构化鸭子类型，实现类无需显式继承）</td><td>单测塞 FakeClient——一个实现了同名 async 方法的普通类</td></tr>
-<tr><td>Pydantic ReqVO</td><td>与 Java DTO 1:1（如 <code>SwapOrderOpenApiSaveReqVO</code>：type + orderList + 9 个机器人上下文）</td><td>模型校验测试（tests/subgraphs/swap/test_models.py）</td></tr>
+<tr><td>Pydantic ReqVO</td><td>与 Java DTO 1:1（如 <code>SwapOrderOpenApiSaveReqVO</code>：type + orderList + 9 个机器人上下文）</td><td>容器无行为，不写测试——字段名与类型交 Pydantic 与 Java 契约保证</td></tr>
 <tr><td><code>SwapClientHttpx</code></td><td>真 HTTP：认证头、tenacity 重试、dry_run 拦截</td><td>注入 <code>transport</code> mock HTTP 层——<strong>测试慢就 mock 这里，绝不改业务代码路径</strong>（P0 红线）</td></tr>
 </table>
 </div>
@@ -53,47 +53,40 @@
 <p>全项目最高频的测试坑（<code>tests/CLAUDE.md</code> 专页警告）。原理一句话：<code>from x import y</code> 会把 <code>y</code> 这个名字<strong>绑进当前模块</strong>，此后 patch 原模块的 <code>x.y</code> 改不到这个已绑定的名字。</p>
 
 <pre><code><span class="cm"># ❌ 不生效：patch 定义处</span>
-monkeypatch.setattr(<span class="st">"app.llm.clients.get_qwen_thinking"</span>, fake)
-<span class="cm"># swap/intent.py 早就 `from app.llm.clients import get_qwen_thinking`，名字已绑到 intent 模块
+monkeypatch.setattr(<span class="st">"app.llm.clients.get_llm_standard"</span>, fake)
+<span class="cm"># nodes/parse_instruction.py 早就 `from app.llm.clients import get_llm_standard`，名字已绑到 parse_instruction 模块
 
-# ✅ 生效：patch 使用点（intent 模块里的名字）</span>
-monkeypatch.setattr(<span class="st">"app.subgraphs.swap.intent.get_qwen_thinking"</span>, fake)</code></pre>
+# ✅ 生效：patch 使用点（parse_instruction 模块里的名字）</span>
+monkeypatch.setattr(<span class="st">"app.nodes.parse_instruction.get_llm_standard"</span>, fake)</code></pre>
 
 <p>再看项目里 mock LLM 的标准写法——注意 mock 链要还原 <code>with_structured_output</code> 的调用形状：</p>
 
-<pre><code><span class="kw">def</span> _patch_llm(monkeypatch, return_type: <span class="kw">str</span>) -> AsyncMock:
-    <span class="st">"""让 swap.intent 调 LLM 时返回固定 SwapIntentOutput。"""</span>
-<span class="hl">    fake_output = SwapIntentOutput(type=return_type)          <span class="cm"># mock 到 Pydantic 实例，不是 JSON 字符串！</span></span>
-
+<pre><code><span class="kw">def</span> _patch_llm(monkeypatch, fake_output) -> AsyncMock:
+    <span class="st">"""唯一解析节点返回调用方准备的联合输出，包含与输入匹配的来源证据。"""</span>
     fake_llm_with_schema = MagicMock()
     fake_llm_with_schema.ainvoke = AsyncMock(return_value=fake_output)
-
     fake_base_llm = MagicMock()
     fake_base_llm.with_structured_output = MagicMock(return_value=fake_llm_with_schema)
-
-<span class="hl">    monkeypatch.setattr(intent_module, <span class="st">"get_qwen_thinking"</span>, <span class="kw">lambda</span>: fake_base_llm)  <span class="cm"># 使用点！</span></span>
-    <span class="kw">return</span> fake_llm_with_schema.ainvoke
-
-<span class="cm"># 用法：节点函数直接当普通 async 函数测，连图都不用建</span>
-<span class="kw">async def</span> test_classifies_place_order(monkeypatch):
-    _patch_llm(monkeypatch, <span class="st">"place_order_request"</span>)
-    result = <span class="kw">await</span> swap_intent({<span class="st">"raw_text"</span>: <span class="st">"做一笔招商银行的 TRS"</span>})
-    <span class="kw">assert</span> result[<span class="st">"intent"</span>] == <span class="st">"place_order_request"</span></code></pre>
-<span class="src">tests/subgraphs/swap/test_intent.py:63-90（真实测试原文）</span>
+    monkeypatch.setattr(
+        <span class="st">"app.nodes.parse_instruction.get_llm_standard"</span>,
+        <span class="kw">lambda</span>: fake_base_llm,
+    )
+    <span class="kw">return</span> fake_llm_with_schema.ainvoke</code></pre>
+<p>完整输入、联合输出与证据示例见 <code>tests/nodes/test_joint_parse.py</code>，共享 mock 见 <code>tests/joint_support.py</code>。</p>
 
 <h2>3. TDD 红绿流程（6 分钟）</h2>
 <p>项目强制顺序（禁止先改代码再补测试，禁止跳过 RED 验证）：</p>
 
 <pre><code><span class="cm"># 1. 写最小复现测试（体现 bug 或新需求的期望行为）</span>
 <span class="cm"># 2. 跑到 RED —— 必须亲眼看到它失败</span>
-.venv/bin/python -m pytest tests/subgraphs/swap/test_yyy.py -v
+python -m pytest tests/subgraphs/swap/test_yyy.py -v
 <span class="cm"># 3. 写最小修复代码</span>
 <span class="cm"># 4. 跑到 GREEN + 全量回归</span>
-.venv/bin/python -m pytest tests/ -q --tb=line 2>&1 | tail -5</code></pre>
+python -m pytest tests/ -q --tb=line 2>&1 | tail -5</code></pre>
 
 <div class="callout warn">
 <span class="callout-title">为什么 RED 这一步不能省</span>
-没见过测试失败，你就不知道它<strong>是否真的在测你以为在测的东西</strong>——一个从写出来就绿的测试，很可能 mock 错了位置（比如 patch 了定义处），改什么都绿。RED 是测试自身的测试。三层金字塔（模型/路由单测 → 子图节点测 → E2E）与更多技巧见 <code>.claude/rules/testing.md</code>。
+没见过测试失败，你就不知道它<strong>是否真的在测你以为在测的东西</strong>——一个从写出来就绿的测试，很可能 mock 错了位置（比如 patch 了定义处），改什么都绿。RED 是测试自身的测试。三层 TDD 准则（核心需求层单测 → 子图节点测 → E2E；契约层不写测试）与更多技巧见 <code>.claude/rules/testing.md</code>。
 </div>
 
 <h2>4. 动手练习：完整走一遍红绿（8 分钟）</h2>
@@ -120,11 +113,11 @@ monkeypatch.setattr(<span class="st">"app.subgraphs.swap.intent.get_qwen_thinkin
 </div>
 
 <div class="quiz-q" data-answer="a">
-<p class="quiz-stem">2. patch 了 <code>app.llm.clients.get_qwen_thinking</code> 但节点还在调真 LLM，原因是？</p>
+<p class="quiz-stem">2. patch 了 <code>app.llm.clients.get_llm_standard</code> 但节点还在调真 LLM，原因是？</p>
 <label><input type="radio" name="q2" value="a"> 节点模块 import 时已把名字绑定进自己命名空间</label>
 <label><input type="radio" name="q2" value="b"> monkeypatch 在异步测试里需要额外的作用域参数</label>
 <label><input type="radio" name="q2" value="c"> lru_cache 把真实客户端缓存住了导致替换失效</label>
-<p class="quiz-explain" hidden>"patch where it's looked up"——from x import y 后，y 存在于导入方的命名空间，改原模块无效。要 patch app.subgraphs.swap.intent.get_qwen_thinking（tests/CLAUDE.md 头号陷阱）。</p>
+<p class="quiz-explain" hidden>"patch where it's looked up"——from x import y 后，y 存在于导入方的命名空间，改原模块无效。要 patch app.nodes.parse_instruction.get_llm_standard（tests/CLAUDE.md 头号陷阱）。</p>
 </div>
 
 <div class="quiz-q" data-answer="c">
@@ -149,8 +142,7 @@ monkeypatch.setattr(<span class="st">"app.subgraphs.swap.intent.get_qwen_thinkin
 
 <h2>6. 延伸与下一课</h2>
 <ul>
-<li><strong>本课首选一手资料</strong>：<code>tests/CLAUDE.md</code> + <code>.claude/rules/testing.md</code>（mock 陷阱与测试金字塔的项目权威出处）</li>
-<li>深入：<code>docs/training/langgraph-handbook.md</code> 第 4.3.4 节（Dify HTTP 节点对照）、第 9 章（测试与 harness）；<code>docs/api-contracts/java-backend.md</code>（写 ReqVO 必看）</li>
+<li><strong>本课首选一手资料</strong>：<code>tests/CLAUDE.md</code> + <code>.claude/rules/testing.md</code>（mock 陷阱与三层 TDD 准则的项目权威出处）</li>
 <li>工具：修 bug 时可用 <code>/test-driven-development</code> skill 走完整 TDD workflow</li>
 <li>下一课：<a href="0008-harness-golden-pr.html">第 08 课 · harness 与 golden case：你的第一个 PR</a>——最后一课，把一切串成上线标准</li>
 </ul>

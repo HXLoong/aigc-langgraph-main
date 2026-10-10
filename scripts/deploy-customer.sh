@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # ============================================================
-# otc-agent 客户现场一键部署脚本（C1.13 / Issue #58）
+# otc-agent 客户现场一键部署脚本
 #
 # 用法：
 #   bash scripts/deploy-customer.sh             # 顺序跑全部步骤
@@ -18,16 +18,16 @@
 #   7. 应用 Python 依赖（pip 或离线 wheel）
 #   8. 应用启动（uvicorn，可后台）
 #   9. 健康检查（/health 返回 200）
-#  10. Smoke 自检（3 条已知 case）
+#  10. HTTP 接口自检（OpenAPI 入口，不提交业务消息）
 #
 # 每步独立 function，失败时打印诊断 + 文档链接，并不向下跑。
 # 幂等：重复跑不破坏现有部署，已 OK 的步骤打印 "✅ 已就绪" 跳过。
 #
 # 关联文档：
 #   - docs/deploy/customer-private.md（详细手工步骤）
-#   - docs/deploy/langfuse-self-hosted.md（LangFuse 深度部署）
-#   - docs/customer-env-assessment.md（环境调研）
-#   - docs/on-call-runbook.md（部署后故障）
+#   - docs/langfuse/self-hosted-deployment.md（LangFuse 深度部署）
+#   - docs/deploy/customer-env-assessment.md（环境调研）
+#   - docs/operations/on-call-runbook.md（部署后故障）
 # ============================================================
 
 set -u  # 未定义变量报错；不用 -e，每步函数自己控制 exit
@@ -106,7 +106,7 @@ step1_preflight() {
 
     # Docker
     if ! command -v docker >/dev/null 2>&1; then
-        abort "未安装 Docker (≥ 24.x)" "docs/customer-env-assessment.md#2.2"
+        abort "未安装 Docker (≥ 24.x)" "docs/deploy/customer-env-assessment.md#2.2"
     fi
     local docker_ver
     docker_ver=$(docker --version | grep -oE '[0-9]+\.[0-9]+' | head -1)
@@ -114,7 +114,7 @@ step1_preflight() {
 
     # Docker Compose
     if ! docker compose version >/dev/null 2>&1; then
-        abort "未安装 Docker Compose v2 (plugin)" "docs/customer-env-assessment.md#2.2"
+        abort "未安装 Docker Compose v2 (plugin)" "docs/deploy/customer-env-assessment.md#2.2"
     fi
     info "Docker Compose: $(docker compose version --short)"
 
@@ -169,11 +169,11 @@ step2_env_check() {
 
     # 必填字段
     local required=(
-        CHECKPOINT_MYSQL_URI
-        BUSINESS_MYSQL_URI
-        QWEN_API_BASE
-        QWEN_API_KEY
-        QWEN_MODEL_STANDARD
+        MYSQL_URI
+        LLM_PROVIDER
+        LLM_API_BASE
+        LLM_API_KEY
+        LLM_MODEL_STANDARD
         OTC_API_BASE_URL
         OTC_API_SECRET
     )
@@ -195,30 +195,30 @@ step2_env_check() {
 
     ok ".env 必填字段全部就绪"
 
-    # F4 灰度切流 advisory（非必填，仅提示状态）· §10 + §12
+    # 灰度切流 advisory（非必填，仅提示状态）· §10 + §12
     local canary_val eval_user_val
     canary_val=$(env_get "CANARY_ROOM_IDS")
     eval_user_val=$(env_get "EVAL_USER_ID")
     if [ -z "$canary_val" ]; then
-        info "F4 金丝雀未启用（CANARY_ROOM_IDS 空 → 任何 roomId 都视为非 canary）"
+        info "金丝雀未启用（CANARY_ROOM_IDS 空 → 任何 roomId 都视为非 canary）"
     elif [ "$canary_val" = "ALL" ]; then
-        info "F4 金丝雀=ALL（全量已切流，所有 roomId 都视为 canary）"
+        info "金丝雀=ALL（全量已切流，所有 roomId 都视为 canary）"
     else
         local n_rooms
         n_rooms=$(echo "$canary_val" | awk -F, '{print NF}')
-        info "F4 金丝雀启用，白名单群数 = $n_rooms"
+        info "金丝雀启用，白名单群数 = $n_rooms"
     fi
     if [ -z "$eval_user_val" ] || [[ "$eval_user_val" == *"<FILL"* ]]; then
-        info "EVAL_USER_ID 未配置（如不跑 scripts/probe_*_e2e.py 或 harness 真后端模式可忽略）"
+        info "EVAL_USER_ID 未配置（如不跑 harness 真后端模式可忽略）"
     fi
 
-    # F4.1 dry-run 模式 advisory（PR #112）
+    # dry-run 模式 advisory
     local dry_run_val
     dry_run_val=$(env_get "DRY_RUN_BACKEND")
     if [ "$dry_run_val" = "true" ] || [ "$dry_run_val" = "1" ]; then
-        warn "DRY_RUN_BACKEND=true（F4.1 shadow 期生效，写类调用被拦截）"
-        warn "  → F4.2 切流前**务必**改回 false，否则用户下单会被拦截！"
-        warn "  → 详见 docs/on-call-runbook.md §5.7"
+        warn "DRY_RUN_BACKEND=true（shadow 期生效，写类调用被拦截）"
+        warn "  → 切流前**务必**改回 false，否则用户下单会被拦截！"
+        warn "  → 详见 docs/operations/on-call-runbook.md §5.7"
     elif [ -n "$dry_run_val" ] && [ "$dry_run_val" != "false" ] && [ "$dry_run_val" != "0" ]; then
         warn "DRY_RUN_BACKEND 值未识别 ($dry_run_val)，按 false 处理"
     else
@@ -239,21 +239,21 @@ step3_mysql_check() {
         return
     fi
 
-    local cp_uri
-    cp_uri=$(env_get "CHECKPOINT_MYSQL_URI")
+    local mysql_uri
+    mysql_uri=$(env_get "MYSQL_URI")
 
     # 用 Python urllib 正确解析（sed 处理含 @ 的密码会贪婪匹配出错；
     # 同时支持 URL-encoded 特殊字符如 %40 = @）
     local parsed
     parsed=$(python3 -c "
 from urllib.parse import urlparse, unquote
-u = urlparse('$cp_uri')
+u = urlparse('$mysql_uri')
 print(u.hostname or '')
 print(u.port or 3306)
 print(unquote(u.username or ''))
 print(unquote(u.password or ''))
 print((u.path or '').lstrip('/').split('?', 1)[0])
-" 2>/dev/null) || abort "URI 解析失败（CHECKPOINT_MYSQL_URI 格式错？）" "docs/deploy/customer-private.md#4"
+" 2>/dev/null) || abort "URI 解析失败（MYSQL_URI 格式错？）" "docs/deploy/customer-private.md#4"
 
     local host port user pass db
     host=$(echo "$parsed" | sed -n '1p')
@@ -276,7 +276,7 @@ EOF
 
     if ! mysql --defaults-extra-file="$creds_file" -h "$host" -P "$port" -u "$user" -e "SELECT 1" >/dev/null 2>&1; then
         rm -f "$creds_file"
-        abort "MySQL 连不通，检查 .env 中 CHECKPOINT_MYSQL_URI" "docs/troubleshooting-sop.md#4"
+        abort "MySQL 连不通，检查 .env 中 MYSQL_URI" "docs/operations/troubleshooting-sop.md#4"
     fi
 
     local ver
@@ -299,27 +299,25 @@ step4_backend_check() {
 
     [ "$DRY_RUN" = "1" ] && { warn "dry-run 跳过实际连接"; return; }
 
-    local url secret
+    local url
     url=$(env_get "OTC_API_BASE_URL")
-    secret=$(env_get "OTC_API_SECRET")
+    # 只检查配置地址的 TCP 连通性，不调用任何交易或证券查询接口。
+    if ! python3 - "$url" <<'PYTHON'
+import socket
+import sys
+from urllib.parse import urlsplit
 
-    # 用一个 read endpoint 测连通（securities-instrument/select）
-    local endpoint="${url}/admin-api/integration/securities-instrument/select"
-    info "测试 endpoint: $endpoint"
-
-    local resp
-    resp=$(curl -sf -m 10 -X POST "$endpoint" \
-        -H "Content-Type: application/json" \
-        -H "Token: $secret" \
-        -d '{"keywordItems":[{"keyword":"600519","isFull":false}]}' 2>&1) \
-        || abort "Java 后端连不通或返回非 2xx。response: $resp" "docs/troubleshooting-sop.md#3"
-
-    # CommonResult.code = 0 才算业务成功
-    if echo "$resp" | grep -q '"code":0'; then
-        ok "Java 后端 200 + code=0"
-    else
-        warn "Java 后端 200 但 code != 0；可能 token 失效或参数问题: $resp"
+parsed = urlsplit(sys.argv[1])
+if parsed.scheme not in {"http", "https"} or not parsed.hostname:
+    raise SystemExit("OTC_API_BASE_URL 必须是 HTTP(S) 地址")
+with socket.create_connection((parsed.hostname, parsed.port or (443 if parsed.scheme == "https" else 80)), timeout=5):
+    pass
+PYTHON
+    then
+        abort "Java 后端 TCP 连通检查失败" "docs/operations/troubleshooting-sop.md#3"
     fi
+    ok "Java 后端 TCP 可达；业务契约由授权验收用例验证"
+
 }
 
 # ============================================================
@@ -329,17 +327,17 @@ step5_langfuse_up() {
     section "Step 5/10 · LangFuse 启动"
 
     if [ ! -f "${LANGFUSE_DIR}/docker-compose.yml" ]; then
-        abort "找不到 ${LANGFUSE_DIR}/docker-compose.yml" "docs/deploy/langfuse-self-hosted.md"
+        abort "找不到 ${LANGFUSE_DIR}/docker-compose.yml" "docs/langfuse/self-hosted-deployment.md"
     fi
 
     if [ ! -f "${LANGFUSE_DIR}/.env" ]; then
-        abort "${LANGFUSE_DIR}/.env 不存在。参考 docs/deploy/langfuse-self-hosted.md §2.1 生成" "docs/deploy/langfuse-self-hosted.md#2"
+        abort "${LANGFUSE_DIR}/.env 不存在。参考 docs/langfuse/self-hosted-deployment.md §2.1 生成" "docs/langfuse/self-hosted-deployment.md#2"
     fi
 
     # 检查 3 个必填密钥
     for key in SALT ENCRYPTION_KEY NEXTAUTH_SECRET; do
         if ! grep -q "^${key}=" "${LANGFUSE_DIR}/.env"; then
-            abort "${LANGFUSE_DIR}/.env 缺少 $key（用 openssl 生成）" "docs/deploy/langfuse-self-hosted.md#2.1"
+            abort "${LANGFUSE_DIR}/.env 缺少 $key（用 openssl 生成）" "docs/langfuse/self-hosted-deployment.md#2.1"
         fi
     done
 
@@ -347,7 +345,7 @@ step5_langfuse_up() {
 
     info "启动容器（约 30-60 秒首次 migration）"
     docker compose -f "${LANGFUSE_DIR}/docker-compose.yml" --env-file "${LANGFUSE_DIR}/.env" up -d \
-        || abort "docker compose up 失败" "docs/deploy/langfuse-self-hosted.md#8"
+        || abort "docker compose up 失败" "docs/langfuse/self-hosted-deployment.md#8"
 
     # 等所有容器 healthy（最多 120 秒）
     # 注意：旧 docker compose 输出 JSON array、新版输出 JSONL；用 docker ps
@@ -383,7 +381,7 @@ step5_langfuse_up() {
         echo -n "."
     done
     echo
-    abort "LangFuse 等待超时（120s）。看 docker compose logs" "docs/deploy/langfuse-self-hosted.md#8"
+    abort "LangFuse 等待超时（120s）。看 docker compose logs" "docs/langfuse/self-hosted-deployment.md#8"
 }
 
 # ============================================================
@@ -435,7 +433,7 @@ step7_python_deps() {
         # shellcheck disable=SC1091
         . venv/bin/activate
 
-        # 离线 wheel 优先（C1.14 #59 产出）
+        # 离线 wheel 优先
         if [ -d "wheelhouse" ]; then
             info "检测到 wheelhouse/，离线安装"
             pip install --no-index --find-links=wheelhouse -e ".[dev]" \
@@ -449,7 +447,7 @@ step7_python_deps() {
     # 验证 import
     "$PROJECT_DIR"/venv/bin/python -c "from app.config import get_settings; get_settings()" 2>/dev/null \
         || uv run python -c "from app.config import get_settings; get_settings()" \
-        || abort "应用配置加载失败（检查 .env 字段）" "docs/troubleshooting-sop.md"
+        || abort "应用配置加载失败（检查 .env 字段）" "docs/operations/troubleshooting-sop.md"
 
     ok "Python 依赖安装 + 配置加载成功"
 }
@@ -504,16 +502,16 @@ step9_health_check() {
         sleep 2
         waited=$((waited + 2))
     done
-    [ "$waited" -ge 30 ] && abort "/health 30 秒未通" "docs/troubleshooting-sop.md#1"
+    [ "$waited" -ge 30 ] && abort "/health 30 秒未通" "docs/operations/troubleshooting-sop.md#1"
 
-    # /metrics（C1.5 #65）
+    # /metrics
     if curl -sf -m 3 http://localhost:8000/metrics >/dev/null 2>&1; then
         ok "GET /metrics 200（监控埋点工作）"
     else
-        warn "/metrics 不可用（C1.5 可能未生效）"
+        warn "/metrics 不可用（metrics 中间件可能未生效）"
     fi
 
-    # /ready（D2.6 #72）· 4 个上游探测：mysql / langfuse / llm / java_backend
+    # /ready· 4 个上游探测：mysql / langfuse / llm / java_backend
     # 200 = 全绿；503 = 至少一个 fail（degraded）
     local ready_status ready_tmp
     ready_tmp=$(mktemp)
@@ -529,7 +527,7 @@ step9_health_check() {
             warn "  → 上线前请先排查失败的上游（python scripts/metrics_snapshot.py 查健康检查段）"
             ;;
         *)
-            warn "GET /ready HTTP $ready_status（D2.6 路由可能未注册）"
+            warn "GET /ready HTTP $ready_status（/ready 路由可能未注册）"
             ;;
     esac
     rm -f "$ready_tmp"
@@ -543,89 +541,19 @@ step10_smoke() {
 
     [ "$DRY_RUN" = "1" ] && { warn "dry-run 跳过"; return; }
 
-    # 用 -s（silent）但不用 -f（让 4xx/5xx 也返回 body）；
-    # 单独拿 HTTP 状态码 + body，区分"应用 5xx"vs"业务回复偏差"
-    _run_smoke() {
-        local payload="$1"
-        local body status tmp
-        tmp=$(mktemp)
-        status=$(curl -s -m 30 -o "$tmp" -w '%{http_code}' \
-            -X POST http://localhost:8000/v1/workflows/run \
-            -H "Content-Type: application/json" -d "$payload" 2>/dev/null)
-        body=$(cat "$tmp" 2>/dev/null)
-        rm -f "$tmp"
-        echo "${status}|${body}"
-    }
-
-    # 注：inputs 字段名按 app/api/routes.py _INPUT_FIELD_MAP 约定
-    # （rawContent/raw_content → raw_text；roomId → room_id 等）
-    info "Case 1: 完整代码询价"
-    local r1 status1 body1
-    r1=$(_run_smoke '{"inputs":{"raw_content":"600519.SH 询价 3 个月平值看涨","conversationId":"smoke-001","roomId":"smoke-room","userId":"smoke-user","messageId":1},"response_mode":"blocking","user":"smoke-test"}')
-    status1=${r1%%|*}; body1=${r1#*|}
-    if [ "$status1" != "200" ]; then
-        warn "Case 1 HTTP $status1（应用层错而非业务回复偏差）：$body1"
-    elif echo "$body1" | grep -q "600519"; then
-        ok "Case 1 包含 600519"
+    # 部署自检不提交业务消息，黄金集由授权人员单独执行。
+    local schema
+    schema=$(mktemp)
+    if curl -fsS -m 10 http://127.0.0.1:8000/openapi.json -o "$schema" \
+        && python3 -c 'import json, sys; data = json.load(open(sys.argv[1])); assert "/v1/workflows/run" in data["paths"]' "$schema"; then
+        ok "业务 HTTP 入口已注册"
     else
-        warn "Case 1 响应未含 600519: $body1"
+        rm -f "$schema"
+        abort "OpenAPI 接口自检失败" "docs/deploy/customer-private.md#9"
     fi
-
-    info "Case 2: 中文简称"
-    local r2 status2 body2
-    r2=$(_run_smoke '{"inputs":{"raw_content":"贵州茅台 询价","conversationId":"smoke-002","roomId":"smoke-room","userId":"smoke-user","messageId":2},"response_mode":"blocking","user":"smoke-test"}')
-    status2=${r2%%|*}; body2=${r2#*|}
-    if [ "$status2" != "200" ]; then
-        warn "Case 2 HTTP $status2（应用层错）：$body2"
-    elif echo "$body2" | grep -qE "600519|茅台"; then
-        ok "Case 2 包含 600519 或茅台"
-    else
-        warn "Case 2 响应可能异常: $body2"
-    fi
-
-    info "Case 3: 未知标的（fallback）"
-    local r3 status3 body3
-    r3=$(_run_smoke '{"inputs":{"raw_content":"完全不存在的标的xyz 询价","conversationId":"smoke-003","roomId":"smoke-room","userId":"smoke-user","messageId":3},"response_mode":"blocking","user":"smoke-test"}')
-    status3=${r3%%|*}; body3=${r3#*|}
-    if [ "$status3" != "200" ]; then
-        warn "Case 3 HTTP $status3（应用层错）：$body3"
-    elif echo "$body3" | grep -qE "无法识别|抱歉|没完全理解"; then
-        ok "Case 3 fallback 触发"
-    else
-        warn "Case 3 fallback 未触发: $body3"
-    fi
+    rm -f "$schema"
 }
 
-# ============================================================
-# Step 11 · 真后端 E2E probe（可选 · 仅 EVAL_USER_ID 配置时跑）
-# ============================================================
-step11_real_backend_probe() {
-    section "Step 11/11 · 真后端 E2E probe（PR #111）"
-
-    [ "$DRY_RUN" = "1" ] && { warn "dry-run 跳过"; return; }
-
-    # 前置：EVAL_USER_ID + EVAL_ROOM_ID 必填，否则跳过（不阻塞 deploy）
-    local eval_user eval_room
-    eval_user=$(env_get "EVAL_USER_ID")
-    eval_room=$(env_get "EVAL_ROOM_ID")
-    if [ -z "$eval_user" ] || [[ "$eval_user" == *"<FILL"* ]] \
-        || [ -z "$eval_room" ] || [[ "$eval_room" == *"<FILL"* ]]; then
-        warn "EVAL_USER_ID / EVAL_ROOM_ID 未配置 → 跳过真后端 probe"
-        warn "  → 客户授权后填 .env §12，再 bash scripts/deploy-customer.sh --only 11 单跑"
-        return
-    fi
-
-    info "EVAL 账号已配置，跑真后端 E2E probe（4 target × 13 cases）..."
-    info "（任一 exception/unreachable → warn，不阻塞 deploy）"
-
-    if python3 "${PROJECT_DIR}/scripts/probe_real_backend_e2e.py" \
-            --target all --stop-on-fail 2>&1 | tee -a "$LOG_FILE"; then
-        ok "真后端 probe 全通"
-    else
-        warn "真后端 probe 失败（详见 .harness-runs/probe-*/report.md）"
-        warn "  → 处置：检查 OTC_API_BASE_URL / GOATS 凭证 / 客户后端状态"
-    fi
-}
 
 # ============================================================
 # Main
@@ -646,7 +574,7 @@ main() {
     should_run_step 8  && step8_app_start
     should_run_step 9  && step9_health_check
     should_run_step 10 && step10_smoke
-    should_run_step 11 && step11_real_backend_probe
+
 
     section "${GREEN}部署完成${RESET}"
     echo
@@ -655,8 +583,8 @@ main() {
     echo "💓 健康检查:        http://localhost:8000/health"
     echo "📈 监控指标:        http://localhost:8000/metrics"
     echo
-    echo "📖 接入企微 Webhook 见 docs/deploy/customer-private.md §8"
-    echo "📖 故障处理 见 docs/on-call-runbook.md"
+    echo "📖 接入 Java 侧 agentUrl 见 docs/deploy/customer-private.md §8"
+    echo "📖 故障处理 见 docs/operations/on-call-runbook.md"
     echo
 }
 

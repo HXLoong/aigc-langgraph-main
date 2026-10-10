@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -11,7 +12,6 @@ from app.tools.exceptions import (
     EmptyBackendResultError,
     MissingBackendContextError,
 )
-from app.tools.models import CommonResult
 
 
 @pytest.fixture(autouse=True)
@@ -90,15 +90,14 @@ async def test_missing_context_logs_field_names_to_terminal(caplog) -> None:
 @pytest.mark.parametrize(
     "backend_response",
     [
-        CommonResult(code=0, msg="ok", data=None),
-        CommonResult(code=0, msg="ok", data="   "),
-        CommonResult(code=0, msg="ok", data={}),
-        CommonResult(code=0, msg="ok", data=[]),
-        CommonResult(code=500, msg="", data=None),
+        {"code": 0, "msg": "ok", "data": None},
+        {"code": 0, "msg": "ok", "data": "   "},
+        {"code": 0, "msg": "ok", "data": {}},
+        {"code": 0, "msg": "ok", "data": []},
     ],
 )
 async def test_empty_backend_result_raises_explicit_error(
-    monkeypatch, backend_response: CommonResult
+    monkeypatch, backend_response: dict[str, Any]
 ) -> None:
     client = MagicMock()
     client.operate = AsyncMock(return_value=backend_response)
@@ -120,7 +119,7 @@ async def test_nonempty_backend_card_is_returned_unchanged(monkeypatch) -> None:
     card = "-----场外期权询价详情-----\n单号：Q-1\n期限：1M"
     client = MagicMock()
     client.operate = AsyncMock(
-        return_value=CommonResult(code=0, msg="ok", data=card)
+        return_value={"code": 0, "msg": "ok", "data": card}
     )
     monkeypatch.setattr(backend_module, "OptionClientHttpx", lambda: client)
 
@@ -128,7 +127,7 @@ async def test_nonempty_backend_card_is_returned_unchanged(monkeypatch) -> None:
         _complete_state(), intent="new_inquiry", option_rfq={}
     )
 
-    assert result == {"api_code": 0, "api_result": card}
+    assert {k: result[k] for k in ("api_code", "api_result")} == {"api_code": 0, "api_result": card}
 
 
 @pytest.mark.asyncio
@@ -136,7 +135,7 @@ async def test_nonempty_backend_rejection_is_returned_unchanged(monkeypatch) -> 
     rejection = "未找到标的信息"
     client = MagicMock()
     client.operate = AsyncMock(
-        return_value=CommonResult(code=500, msg=rejection, data=None)
+        return_value={"code": 500, "msg": rejection, "data": None}
     )
     monkeypatch.setattr(backend_module, "OptionClientHttpx", lambda: client)
 
@@ -144,4 +143,4 @@ async def test_nonempty_backend_rejection_is_returned_unchanged(monkeypatch) -> 
         _complete_state(), intent="new_inquiry", option_rfq={}
     )
 
-    assert result == {"api_code": 500, "api_result": rejection}
+    assert {k: result[k] for k in ("api_code", "api_result")} == {"api_code": 500, "api_result": rejection}

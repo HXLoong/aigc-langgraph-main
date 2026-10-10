@@ -1,79 +1,59 @@
-"""swap.cancel 节点 · 互换撤单订单号提取。
+"""swap.cancel 节点 · 互换撤单订单号提取（确定性，不调用 LLM）。
 
-输入：raw_text + quote_content + history_messages
-输出：state['cancel_params'] = {orderList}
+订单号由 app/subgraphs/swap/order_id.py 确定性提取。保留 raw 指定的订单范围，
+范围无法解析时提示补充且不调用后端。
 
-注：ADR 0001 D6 列了 swap.cancel + swap.cancel_extract 两个节点。骨架阶段
-合并为单节点 swap.cancel —— swap.intent 已做意图分类，不需要额外的"路由层"
-cancel.py。如果未来出现需要拆分的业务（如双阶段确认），再单独 PR 扩展。
-
-LLM：standard 模型 + with_structured_output（ADR 0010）。
-prompt：app/prompts/swap/cancel_order.md（Dify 原文）。
+输入：raw_text + quote_content
+输出：state['cancel_params'] = {orderList} + 待清洗请求
 """
 from __future__ import annotations
 
 from typing import Any
 
+from app.extraction.identity import prepare_identity_scope
 from app.graph.business_params import validated_cancel_params
 from app.graph.safe_node import safe_node
-from app.graph.state import AgentState, Message, TraceEntry
-from app.llm.clients import get_qwen_thinking
-from app.prompts import load_prompt
-from app.subgraphs.swap.backend import call_swap_backend
-from app.subgraphs.swap.models import SwapCancelParams
-
-
-def _format_history(history: list[Message] | None) -> str:
-    if not history:
-        return ""
-    lines: list[str] = []
-    for msg in history:
-        role = msg.role if hasattr(msg, "role") else msg.get("role", "user")
-        content = msg.content if hasattr(msg, "content") else msg.get("content", "")
-        lines.append(f"{role}: {content}")
-    return "\n".join(lines)
-
-
-def _build_user_message(state: AgentState) -> str:
-    raw_content = state.get("raw_text", "") or ""
-    quote_content = state.get("quote_content") or ""
-    history_str = _format_history(state.get("history_messages"))
-    return (
-        f"raw_content: {raw_content}\n\n"
-        f"quote_content: {quote_content}\n\n"
-        f"history_query_str:\n{history_str}"
-    )
+from app.graph.state import AgentState, TraceEntry
+from app.subgraphs.swap.backend import prepare_swap_request
+from app.subgraphs.swap.order_id import CancelScopeError, extract_for_cancel, extract_order_ids
 
 
 @safe_node
 async def swap_cancel(state: AgentState) -> dict[str, Any]:
-    """swap.cancel 节点。"""
-    prompt = load_prompt("swap", "cancel_order")
-    llm = get_qwen_thinking().with_structured_output(SwapCancelParams)
-
-    user_message = _build_user_message(state)
-    result: Any = await llm.ainvoke(
-        [
-            ("system", prompt.system),
-            ("user", user_message),
-        ]
+    """swap.cancel 节点(确定性提取)。"""
+    try:
+        order_ids = extract_for_cancel(
+            raw=state.get("raw_text"), quote=state.get("quote_content")
+        )
+    except CancelScopeError:
+        return {
+            "cancel_params": None,
+            "api_result": None,
+            "api_code": None,
+            "reply_text": "无法确定本次撤单范围，请补充完整订单号，或重新引用订单消息并指定要撤的订单。",
+            "trace": [TraceEntry(node="swap_cancel", decision="cancel_scope_unresolved")],
+        }
+    prepared_state, order_ids, records = prepare_identity_scope(
+        state, order_ids, scope="swap/cancel", origin="quote", evidence=state.get("quote_content") or "",
+        explicit_raw_ids=extract_order_ids((state.get("raw_text") or "").upper()), selection=True,
     )
+    order_list = [{"orderId": oid} for oid in order_ids]
 
-    order_list = [item.model_dump() for item in result.orderList]
-    backend = await call_swap_backend(
-        state,
+    request_update = await prepare_swap_request(
+        prepared_state,
         intent="cancel_order_request",
         order_list=order_list,
     )
 
     return {
+        "field_records": records,
+        "expected_action": "cancel",
         "cancel_params": validated_cancel_params(orderList=order_list),
-        **backend,
+        **request_update,
         "trace": [
             TraceEntry(
                 node="swap_cancel",
-                decision=f"orders={len(result.orderList)}",
-                llm_output=result.model_dump(),
+                decision=f"deterministic,orders={len(order_list)}",
             )
         ],
     }

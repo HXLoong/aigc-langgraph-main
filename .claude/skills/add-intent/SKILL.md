@@ -7,73 +7,69 @@ allowed-tools: Read, Write, Edit, Glob, Grep, Bash
 
 # 新增一个业务意图
 
+归属判定：命中任一条 → 新建独立子图（改走 `subgraph-builder`）；否则归现有子图作为新意图——后端 API 集合与现有子图重叠 < 30%；有独立的前置查询流程；业务方在 PRD 中作为独立产品线介绍；意图数量预计 ≥ 4 个。同一判定在 PR 模板「子图归属判定」逐次勾选。节点写法以
+`.claude/rules/langgraph-patterns.md` 与 `.claude/rules/prompt-management.md` 为准。新增意图遵守 [ADR 0031](../../../docs/adr/0031-single-model-request-per-message.md) 的单次工具调用最多一次模型请求上限，现有链路迁移见工作计划。本 skill 只给停顿点和改动清单。
+
 ## 参数
-- `$1` = 产品类型：swap / option / close
+- `$1` = 产品类型：swap / option / close（close 子图的提示词目录是 `app/prompts/option_close/`）
 - `$2` = 新意图名（snake_case，如 `adjust_hedge`）
 
 ## 执行流程
 
 ### Step 1：审查现状
-- 读 `app/subgraphs/$1/` 包（`graph.py` / `models.py` / `intent.py` / 各意图节点文件）
-- 列出当前已有的意图和路由
+- 读 `app/subgraphs/$1/`：`graph.py`（`_INTENT_TO_NODE` 与条件边）、`models.py`（`<Product>IntentType`）、`intent.py`、各意图节点
+- 按上面的四条规则确认它确实归现有子图；命中任一条就改走 `subgraph-builder`
 
 ### Step 2：跟用户确认（停顿点）
-**在改任何代码前，问用户**：
-1. 新意图的业务含义是什么？
-2. 对应的后端 API 是否已经有了？用什么 `type` 值？
-3. 参数提取的字段是什么？
-4. 是否需要独立的 Pydantic 输出模型，还是复用现有？
-5. 是否需要 `interrupt_before`（需要人工确认）？
+**改任何代码前，问用户**：
+1. 业务含义与典型原话？
+2. 对应后端 API 与 `type` 值是否已存在（对照 `docs/api-contracts/java-backend.md`）？
+3. 要提取哪些字段？哪些能用正则 / 枚举 / 规则确定（归 Code），哪些必须 LLM 抽原文候选？
+4. 本次动作对应哪个 Java type / DTO？按 ADR 0021 单次识别提交，不在 LangGraph 强制二阶段或自动提升为确认；LangGraph 识别动作、订单号及本次适用的显式参数，引用范围由 `app/domain/confirmation.py` 校验，订单数据与业务状态由 Java 管理
 
 等用户回答后再继续。
 
-### Step 3：改 `app/subgraphs/<product>/models.py`
-- 在 `IntentType` Literal 加新值
-- 若需要新输出模型，加一个 `<Intent>Output` Pydantic 类
+### Step 3：意图识别
+- `app/subgraphs/<product>/models.py`：`<Product>IntentType` 加枚举值，意图输出模型的 `Field(description=)` 同步说明
+- 更新本轮联合解析的产品/意图/候选契约及提示词；当前 `intent.md` 等资产作为迁移输入，不另加独立的分类或提取请求
 
-### Step 4：在 `app/subgraphs/<product>/` 加节点文件并接路由
-- 新增 `@safe_node` 装饰的提取函数 `extract_<intent>`
-  - 用 `load_prompt("<product>", "<intent>")` 加载提示词
-  - 用 `with_structured_output(<Intent>Output)`
-- 更新 `graph.py` 的 `_INTENT_TO_NODE` 路由表 **和** `add_conditional_edges` 的 path_map（两处都要改，漏一处会静默走 unknown 兜底）
-- 更新 `build_<product>_graph()`：`g.add_node` + `g.add_conditional_edges` + 合流边
+### Step 4：参数节点
+- 能由 Code 确定的字段：`@safe_node` 纯计算节点
+- 需要 LLM 的字段纳入本轮唯一联合解析：`PromptSpec` + 原文候选契约 + `@safe_node`，零重试；不得在意图分类后增加参数模型请求。提取值保留来源，业务值交 Java 校验；不增加 Code 业务归一化或数字校验（ADR 0027）
+- 写后端的节点用 `@safe_node`，绝不自动重试；后端响应如实透传
+- 确认意图按 ADR 0021 提取订单号和适用的显式增量参数，已有订单字段由 Java 获取，不依赖本地待确认订单；现有确认参数收敛待办见 `docs/work-plan.md`
 
-### Step 5：提示词
-若有对应 Dify 提示词：
-- 用 `/migrate-prompt <dify-yaml> <node-title> <product>` 导入
+### Step 5：接路由与登记
+- `graph.py`：在 `_INTENT_TO_NODE` 登记新意图 → 节点（条件边由 `app/subgraphs/common.py` 的 `add_intent_dispatch` 自动生成；漏登记会静默走 unknown 兜底），加节点与汇合边
+- 节点契约登记：`app/node_execution/catalog.py`；trace 中文名：`app/observability/node_labels.py`
 
-若无：
-- **停下来问用户**是否要临时手写一段
-- 不要擅自硬编码提示词到代码
+### Step 6：测试（先 RED 再 GREEN，见 `test-driven-development` skill）
+- `tests/subgraphs/<product>/test_graph_routing.py`：新意图的路由用例
+- 节点单测：放在对应 `tests/subgraphs/<product>/test_<node>.py`；补全链路调用次数断言，模型失败后请求次数仍不超过一次
+- 数据集：`tests/datasets/biz/` 至少 2 条（`scripts/check_dataset_consistency.py` 守护）；意图集
+  `tests/datasets/intent/` 补对应逐轮标签
+- 需要批量生成测试且用户已授权子代理时，可派 `test-generator`
 
-### Step 6：测试
-调用 `test-generator` subagent（或直接补测试）：
-- `test_models.py`：新 Pydantic 模型的字段测试
-- `test_models.py` 路由函数映射测试
-- `test_e2e.py`：1-2 条 E2E 用例（mock LLM）
-- `tests/fixtures/golden.jsonl`：2 条端到端 case
-
-### Step 7：跑验证
+### Step 7：跑验证（轻量）
 ```bash
-pytest tests/ -v -k "$1"     # 只跑相关子图测试
+USE_MYSQL_CHECKPOINTER=false REQUEST_IDEMPOTENCY=false ENABLE_LANGFUSE=false \
+  pytest tests/subgraphs/$1/ tests/test_node_catalog_contract.py -q
+python scripts/check_dataset_consistency.py
 ```
+全量 pytest 与真实业务回归按根 `CLAUDE.md`「并行实施与验证范围」留到统一验收。
 
-全部通过才算完成。
-
-### Step 8：最终清单
-给用户一份改动清单：
-- [ ] `<product>_models.py`: 加 `IntentType` + `<Intent>Output`
-- [ ] `<product>.py`: 加 `extract_<intent>` 节点 + 路由 + 子图 edges
-- [ ] `app/prompts/<product>/<intent>.md`: 提示词（源自 Dify 或新写）
-- [ ] `tests/test_models.py`: 模型和路由测试
-- [ ] `tests/test_e2e.py`: E2E 测试
-- [ ] `tests/fixtures/golden.jsonl`: golden case
-- [ ] `pytest tests/ -v` 全通过
-- [ ] （可选）`app/state.py`：若需要新的 State 字段
+### Step 8：交付清单
+- [ ] `models.py`：`<Product>IntentType` + 输出模型字段说明
+- [ ] 联合解析提示词 + 产品/意图/候选契约，`prompt(<scope>)` commit
+- [ ] 参数节点（结构 / 来源 / 引用范围与接口装配）
+- [ ] `graph.py`：`_INTENT_TO_NODE` + 节点 + 边
+- [ ] `catalog.py` + `node_labels.py` 登记
+- [ ] 测试 + biz ≥ 2 条 + 意图集标签
+- [ ] 已运行 / 未运行的检查写明
 
 ## 禁止
 
 - 跳过"跟用户确认"步骤
-- 用 mock 提示词掩盖真实需求
 - 复用现有意图但改其语义（要新加，不要改旧）
-- 忘了更新 `route_by_intent`
+- 让模型直接决定交易最终值，或把提示词正文写进 Python
+- 在代码 / 配置里维护标的等业务数据字典（根 `CLAUDE.md` P0）

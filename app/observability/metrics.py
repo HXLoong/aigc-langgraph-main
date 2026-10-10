@@ -1,12 +1,11 @@
-"""业务指标埋点（C1.5 / Issue #50）。
+"""业务指标埋点。
 
-提供轻量级的内存 MetricsCollector + Prometheus 兼容输出，承载 ADR 0017
-（M4 退出门）+ ADR 0019（故障升级）双量化阈值所需的全部核心指标：
+提供轻量级的内存 MetricsCollector + Prometheus 兼容输出，承载 ADR 0030 D3
+（上线观察）+ ADR 0019（故障升级）两组量化阈值所需的核心指标：
 
 - 每意图响应延迟（P50/P95/P99）—— Histogram
 - 节点级 PASS/FAIL 率 —— Counter（labels: node, status）
 - Fallback render 触发率 —— Counter
-- HITL interrupt 触发率 —— Counter
 - LLM 调用成功/失败率 —— Counter（labels: model, status）
 
 设计原则：
@@ -15,11 +14,10 @@
 - **可观测降级**：metrics 模块自身故障不能影响业务主流程（all-try-except）
 - **Prometheus 兼容**：`/metrics` endpoint 输出标准 exposition 格式
 
-字段命名约定（与 ADR 0017 + 0019 量化指标对齐）：
+字段命名约定（与 ADR 0030 D3 + ADR 0019 量化指标对齐）：
 - `otc_agent_node_total{node,status}` —— 节点级 counter
 - `otc_agent_intent_latency_ms{product_type,intent}` —— 延迟 histogram
 - `otc_agent_fallback_total{reason}` —— fallback render counter
-- `otc_agent_hitl_total{node}` —— HITL counter
 - `otc_agent_llm_total{model,status}` —— LLM counter
 """
 from __future__ import annotations
@@ -27,7 +25,6 @@ from __future__ import annotations
 import logging
 import threading
 from collections import defaultdict
-from time import perf_counter
 from typing import Any
 
 logger = logging.getLogger(__name__)
@@ -95,15 +92,15 @@ class MetricsCollector:
     """业务指标采集器。线程安全。
 
     内部维护几个独立的 counter 与 histogram，按 label 维度区分。
-    Counter 用 dict[tuple, int] 存（tuple = labels 排序后的值）。
+    Counter 用 dict[tuple[tuple[str, str], ...], int] 存（tuple = labels 排序后的值）。
     """
 
     def __init__(self) -> None:
         self._lock = threading.Lock()
         # counter[name][labels_tuple] = count
-        self._counters: dict[str, dict[tuple, int]] = defaultdict(lambda: defaultdict(int))
+        self._counters: dict[str, dict[tuple[tuple[str, str], ...], int]] = defaultdict(lambda: defaultdict(int))
         # histogram[name][labels_tuple] = _Histogram
-        self._histograms: dict[str, dict[tuple, _Histogram]] = defaultdict(dict)
+        self._histograms: dict[str, dict[tuple[tuple[str, str], ...], _Histogram]] = defaultdict(dict)
 
     # ---- emit API ----
 
@@ -164,9 +161,9 @@ class MetricsCollector:
                     label_str = self._key_to_labels(key)
                     lines.append(f"{name}{label_str} {count}")
             # Histograms
-            for name, items in self._histograms.items():
+            for name, histogram_items in self._histograms.items():
                 lines.append(f"# TYPE {name} histogram")
-                for key, hist in items.items():
+                for key, hist in histogram_items.items():
                     label_str_prefix = self._key_to_labels(key, trailing_comma=True)
                     snap = hist.snapshot()
                     for bucket, count in snap["buckets"].items():
@@ -182,13 +179,13 @@ class MetricsCollector:
     # ---- 内部工具 ----
 
     @staticmethod
-    def _labels_to_key(labels: dict[str, str] | None) -> tuple:
+    def _labels_to_key(labels: dict[str, str] | None) -> tuple[tuple[str, str], ...]:
         if not labels:
             return ()
         return tuple(sorted(labels.items()))
 
     @staticmethod
-    def _key_to_labels(key: tuple, trailing_comma: bool = False) -> str:
+    def _key_to_labels(key: tuple[tuple[str, str], ...], trailing_comma: bool = False) -> str:
         if not key:
             return "" if not trailing_comma else ""
         body = ",".join(f'{k}="{v}"' for k, v in key)
@@ -228,14 +225,15 @@ def get_collector() -> MetricsCollector:
 # 指标名称（与文档 / Prometheus 查询保持一致）
 METRIC_NODE_TOTAL = "otc_agent_node_total"
 METRIC_INTENT_LATENCY = "otc_agent_intent_latency_ms"
+METRIC_NODE_LATENCY = "otc_agent_node_latency_ms"  # ADR 0024 D5：节点延迟独立直方图（此前寄生在 intent 直方图）
 METRIC_FALLBACK_TOTAL = "otc_agent_fallback_total"
-METRIC_HITL_TOTAL = "otc_agent_hitl_total"
 METRIC_LLM_TOTAL = "otc_agent_llm_total"
-METRIC_LLM_TOKENS = "otc_agent_llm_tokens_total"  # C1.7 成本监控（按模型 + 方向 prompt/completion）
-METRIC_DYNAMIC_PROMPT_TOTAL = "otc_agent_dynamic_prompt_total"  # D2.5 / ADR 0013：cache_hit / cache_miss_ok / fallback
-METRIC_CANARY_TRAFFIC_TOTAL = "otc_agent_canary_traffic_total"  # G5.1 / F4.2：按 is_canary 区分进入的请求
+METRIC_LLM_TOKENS = "otc_agent_llm_tokens_total"  # 成本监控（按模型 + 方向 prompt/completion）
+METRIC_LLM_CACHE_TOKENS = "otc_agent_llm_cache_tokens_total"
+METRIC_LLM_CACHE_USAGE = "otc_agent_llm_cache_usage_total"
+METRIC_CANARY_TRAFFIC_TOTAL = "otc_agent_canary_traffic_total"  # 按 is_canary 区分进入的请求
 METRIC_HTTP_RESPONSE_TOTAL = "otc_agent_http_total"  # ADR 0019 P0：HTTP 5xx 暴增告警依赖
-METRIC_DRY_RUN_INTERCEPT_TOTAL = "otc_agent_dry_run_intercept_total"  # F4.1 shadow：写类调用被 dry-run 拦截
+METRIC_DRY_RUN_INTERCEPT_TOTAL = "otc_agent_dry_run_intercept_total"  # shadow 对照：写类调用被 dry-run 拦截
 METRIC_OPTION_BACKEND_MISSING_CONTEXT_TOTAL = (
     "otc_agent_option_backend_missing_context_total"
 )
@@ -245,15 +243,11 @@ METRIC_OPTION_BACKEND_EMPTY_RESULT_TOTAL = (
 
 
 def emit_node_completed(node: str, status: str = "ok", elapsed_ms: int | None = None) -> None:
-    """节点完成时 emit。status: ok / error"""
+    """节点完成时 emit。status: ok / error / retry（可重试异常穿透给 RetryPolicy 的一次尝试）"""
     coll = get_collector()
     coll.inc_counter(METRIC_NODE_TOTAL, {"node": node, "status": status})
     if elapsed_ms is not None:
-        coll.observe_histogram(
-            METRIC_INTENT_LATENCY,
-            elapsed_ms,
-            {"product_type": "unknown", "intent": "unknown", "node": node},
-        )
+        coll.observe_histogram(METRIC_NODE_LATENCY, elapsed_ms, {"node": node})
 
 
 def emit_intent_latency(product_type: str, intent: str, elapsed_ms: int) -> None:
@@ -280,25 +274,29 @@ def emit_option_backend_empty_result() -> None:
     get_collector().inc_counter(METRIC_OPTION_BACKEND_EMPTY_RESULT_TOTAL)
 
 
-def emit_hitl(node: str) -> None:
-    """HITL interrupt 触发。"""
-    get_collector().inc_counter(METRIC_HITL_TOTAL, {"node": node})
-
-
 def emit_llm_call(model: str, status: str) -> None:
     """LLM 调用结束。status: ok / error / timeout"""
     get_collector().inc_counter(METRIC_LLM_TOTAL, {"model": model, "status": status})
 
 
-def emit_canary_traffic(is_canary: bool) -> None:
-    """金丝雀流量计数（G5.1 / F4.2）。
+def emit_llm_cache(model: str, node: str | None, status: str, hit: int, miss: int) -> None:
+    labels = {"model": model, "node": node or "unknown"}
+    collector = get_collector()
+    collector.inc_counter(METRIC_LLM_CACHE_USAGE, {**labels, "status": status})
+    if status == "reported":
+        for result, value in (("hit", hit), ("miss", miss)):
+            collector.inc_counter(METRIC_LLM_CACHE_TOKENS, {**labels, "result": result}, value)
 
-    F4.2 期间企微管理员只切了部分群的 Webhook 到 LangGraph。LangGraph 收到
+
+def emit_canary_traffic(is_canary: bool) -> None:
+    """金丝雀流量计数。
+
+    灰度期间只有部分群的 Java 侧 `agentUrl` 指向 LangGraph。LangGraph 收到
     的每条请求都该按 roomId 判定是否在 canary allowlist 内：
     - is_canary=True：合规进入，正常处理
-    - is_canary=False：可能是企微管理员误切非测试群 → 告警 + Tony 回切
+    - is_canary=False：可能误切了非测试群的 `agentUrl` → 告警 + 回切
 
-    F4.4 全量上线后 allowlist 含 ALL，所有流量都计为 canary（指标可继续保留）。
+    全量上线后 allowlist 含 ALL，所有流量都计为 canary（指标可继续保留）。
     """
     get_collector().inc_counter(
         METRIC_CANARY_TRAFFIC_TOTAL,
@@ -307,7 +305,7 @@ def emit_canary_traffic(is_canary: bool) -> None:
 
 
 def emit_dry_run_intercept(client: str, operation: str) -> None:
-    """F4.1 shadow 双跑：dry-run 拦截了一次写类客户端调用。
+    """shadow 双跑：dry-run 拦截了一次写类客户端调用。
 
     Args:
         client: "option" / "swap" / "ticker"
@@ -339,24 +337,13 @@ def emit_http_response(path: str, status_class: str) -> None:
     )
 
 
-def emit_dynamic_prompt(status: str) -> None:
-    """ADR 0013 动态 prompt 拉取计数（D2.5）。
-
-    status:
-        cache_hit       命中缓存（5min TTL 内）
-        cache_miss_ok   miss 后真后端成功拉取
-        fallback        真后端不可达，降级走静态 prompt
-    """
-    get_collector().inc_counter(METRIC_DYNAMIC_PROMPT_TOTAL, {"status": status})
-
-
 def emit_llm_tokens(
     model: str,
     prompt_tokens: int,
     completion_tokens: int,
     node: str | None = None,
 ) -> None:
-    """LLM 调用结束后记录消耗的 token 数（C1.7 成本监控）。
+    """LLM 调用结束后记录消耗的 token 数（成本监控）。
 
     Args:
         model: 模型名，如 deepseek-v4-pro / qwen3-30b-a3b
@@ -377,52 +364,25 @@ def emit_llm_tokens(
     coll.inc_counter(METRIC_LLM_TOKENS, labels_completion, value=completion_tokens)
 
 
-# ============================================================
-# 计时上下文（用于细粒度延迟测量）
-# ============================================================
-
-
-class Timer:
-    """with Timer() as t: ... ; t.elapsed_ms  → int
-
-    用法:
-        with Timer() as t:
-            do_work()
-        emit_intent_latency("swap", "place_order", t.elapsed_ms)
-    """
-
-    def __init__(self) -> None:
-        self._start: float = 0.0
-        self.elapsed_ms: int = 0
-
-    def __enter__(self) -> Timer:
-        self._start = perf_counter()
-        return self
-
-    def __exit__(self, exc_type, exc_val, exc_tb) -> None:
-        self.elapsed_ms = int((perf_counter() - self._start) * 1000)
 
 
 __all__ = [
     "MetricsCollector",
-    "Timer",
     "emit_node_completed",
     "emit_intent_latency",
     "emit_fallback",
     "emit_option_backend_missing_context",
     "emit_option_backend_empty_result",
-    "emit_hitl",
     "emit_llm_call",
     "emit_llm_tokens",
-    "emit_dynamic_prompt",
     "emit_canary_traffic",
     "emit_http_response",
     "emit_dry_run_intercept",
     "get_collector",
     "METRIC_NODE_TOTAL",
     "METRIC_INTENT_LATENCY",
+    "METRIC_NODE_LATENCY",
     "METRIC_FALLBACK_TOTAL",
-    "METRIC_HITL_TOTAL",
     "METRIC_LLM_TOTAL",
     "METRIC_LLM_TOKENS",
     "METRIC_HTTP_RESPONSE_TOTAL",

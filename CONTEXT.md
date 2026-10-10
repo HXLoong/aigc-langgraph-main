@@ -7,30 +7,45 @@
 
 ### Engineering 术语
 
+**联调修复优先级**：
+用于开发与真后端联调阶段裁决失败项是否必须先修的优先级，不等同于 ADR 0019 的生产事故等级。P0 表示阻断全部联调；P1 表示阻断可靠验证；P2 表示不阻断当前重构任务，可带红推进。
+_Avoid_: 用 ADR 0019 的 on-call P0/P1/P2 阈值给开发测试失败定级
+
+**验收场景**：
+真后端联调时作为一条业务流计数的端到端场景。一个验收场景可以包含多轮用户指令，并消费前序步骤产生的真实订单号、报价或持仓；计数单位是完整业务闭环，不是单条消息。
+_Avoid_: 把一个多轮闭环中的每条用户指令分别计为一条业务流
+
+**本地链路 PASS**：
+GOATS 在开发机不可达时，验收场景仍完整经过 LangGraph 和真实 Java 业务代码，并由 Java 按真实 `integration_api_config` 实际尝试调用 GOATS；请求、集成日志和失败原因可核验，Java 与 LangGraph 如实表达失败，不伪造下单、撤单、成交或查询成功。GOATS 连接失败可以是预期结果；未进入正确业务分支、未发起 GOATS 请求、配置缺失、异常被吞掉或回复伪成功均为 FAIL。
+_Avoid_: 本地业务交易 PASS、mock GOATS 成功、把“失败可观测”表述成“交易走通”
+
+**业务交易 PASS**：
+在可访问真实 GOATS 的客户环境中，验收场景获得 GOATS 的真实成功响应，且后续订单状态可以查询和追踪。它是业务闭环的最终验收，不由本地链路 PASS 替代。
+_Avoid_: 仅凭 Java 已尝试调用 GOATS、集成日志存在或 mock 返回成功就宣称交易成功
+
 **Harness（评测台 / Harness Engineering）**：
-一套把 "case → 跑 LangGraph → 比对预期 → 结构化输出失败原因 → 喂给 AI 工具改代码 → 再跑" 做成全自动闭环的工具链。包含 golden set、replay 工具、结构化 diff 报告、可被 Claude Code 单命令调用的 CLI。
-_Avoid_: 混沌工程（Chaos Engineering，不同概念）、可观测性平台（trace 只是 harness 的副产品之一）、单元测试（粒度更粗，跑端到端）
+一套把 "case → 跑 LangGraph → 比对预期 → 结构化输出失败原因 → 喂给 AI 编码工具改代码 → 再跑" 做成闭环的工具链。三层粒度：HTTP 端到端回归（业务验收集）、意图子链（意图集）、节点级调试与回归（旧 git fixture 目录已退役，执行 API 与 CLI 保留；Langfuse 闭环待迁移，ADR 0029）；配结构化 diff 报告与 CLI（`harness/README.md`）。
+_Avoid_: 混沌工程（Chaos Engineering，不同概念）、可观测性平台（trace 只是 harness 的副产品之一）、单元测试（harness 跑的是数据集而非代码单元）
 
 **Golden case**：
-一条 harness 输入：用户原话 + 期望输出（intent / product_type / 关键参数）。集合（golden set）是 harness 的回归基线。按来源分四个桶：
+一条 harness 输入：用户原话 + 期望输出。集合（golden set）是 harness 的回归基线；业务验收集 `tests/datasets/biz/` 以 Java 卡片文本断言为主、可选结构化 `expected`，意图集 `tests/datasets/intent/` 逐轮断言 product_type / intent。按来源分三个桶（目标口径；现役 biz 与 intent 的来源分桶待完善；B 方言历史参考集已退役）：
 - **B 桶**：业务方手写种子——主动构造、意图均衡的典型句式，expected 字段由业务方直接填写
 - **C 桶**：LLM paraphrase——以 B 桶为种子做对抗式改写（换说法 / 边界 case），业务方 review pass 后合入
-- **D 桶**：客户历史真实输入——从企微群抄录的原话，反映真实分布（含拼写错误、缩写、上下文依赖）；expected 字段**必须由业务方人工标注后才能合入** golden.jsonl，是持续增长的集合（M3 联调后持续补充，不是一次性交付物）
-- ~~A 桶~~：历史企微日志抽样（暂搁，M3 shadow 阶段的线上流量会自然替代）
+- **D 桶**：客户历史真实输入——从企微群抄录的原话，反映真实分布（含拼写错误、缩写、上下文依赖）；expected 字段**必须由业务方人工标注后才能合入**数据集，是持续增长的集合
 
-各桶退出门 PASS 率：B ≥ 90% / C ≥ 80% / D 无硬性阈值（样本量少，作为补充参考）。
+各桶目标 PASS 率：B ≥ 90% / C ≥ 80% / D 无硬性阈值（补充参考）。现行评测门以 ADR 0030 D3 为准。
 _Avoid_: 测试用例（太泛）、fixture（语义不准）、anchor case（请用"B 桶代表性 case"代替）
 
 **Shadow compare（双跑对照）**：
-同一条 case 同时打到 Dify 和 LangGraph，diff 输出找差异。是 Dify→LangGraph 迁移期的**辅助参考工具**，**不是合格性判定的标准**——Dify 自己有"标的不准 / 参数 bug / 评估缺失"三大已知缺陷（迁移动机），不能作为 ground truth。LangGraph 是否合格的判定标准是 **Golden case PASS 率**，不是 shadow diff 率。Shadow 的实际用途是 M4 金丝雀切流前给业务方提供"Dify 与 LangGraph 在生产真实流量上的输出对比"作为决策辅助。
+同一条 case 同时打到 Dify 和 LangGraph，diff 输出找差异（`scripts/shadow_compare.py`）。是**可选的辅助参考工具**，**不是合格性判定的标准**——Dify 输出本身有已知缺陷，不能作为 ground truth；合格性以 **Golden case PASS 率**为准。实际用途是切流前给业务方提供两边输出对比作为决策辅助。
 _Avoid_: A/B test（语义不准，不涉及流量切分）；ground truth 验证（Dify 不是 ground truth）
 
 **Ground truth（合格性判定标准）**：
-Golden case 的 expected 字段。LangGraph 输出与 expected 一致 = PASS；不一致 = FAIL。M3 退出门基于 PASS 率（≥ 阈值），不基于 shadow diff 率。
+Golden case 的 expected 字段及业务方确认的文本要求。确定性断言比较实际输出并记录 PASS / FAIL 与字段差异；缺少必要期望不能判 PASS。评分不调用 LLM Judge，业务争议交人工复核（ADR 0005 / 0030）。
 _Avoid_: 拿 Dify 输出当 ground truth（Dify 是参考竞品而非真理）
 
 **节点（Node）**：
-LangGraph 图中一个 `@safe_node` 装饰的 async 函数。在本项目语境下，节点和 Dify 的 LLM 节点 1:1 对齐（仅 3 个"确认 X"合并为 1）。
+图中的一个可独立执行、记录状态和追踪结果的步骤，可以承担识别、确定性处理或后端调用。节点划分以当前职责为准，不要求与历史 Dify 节点一一对应。
 _Avoid_: step（太泛）、stage、handler
 
 **LangFuse**：
@@ -39,39 +54,94 @@ _Avoid_: LangSmith（数据出境，已废止）、可观测性平台（窄了�
 
 ### 业务术语
 
+**消息轮次**：
+从收到一条用户消息到完成该条消息回复的一次处理；该消息引用的历史、附件和同一动作下的多笔订单都属于这一轮。用户随后发送的确认或补充消息属于新一轮，同一会话可以包含多轮。
+_Avoid_: 把一笔订单、一张附件或一个处理分支各算一轮；把完整多轮验收场景算作一轮
+
 **意图（Intent）**：
-用户原话被识别后归类的二级动作，如 `place_order_request` / `cancel_order` / `query_order` / `close_position`。**一级路由是 product_type**（swap / option / close），二级才是 intent。
+用户原话在业务产品内对应的具体动作，如询价、申请下单、确认下单、撤单或查询。意图以产品 `product_type`（swap / option / option_close）为范围，产品与意图可联合判定；产品路由与整个工作流的入口路由是两个层次。
 _Avoid_: action（与下单 algorithm type 的 "action" 字段冲突）、type（太泛）
 
+**入口路由**：
+将输入分为快速询价、存量指令查询、LLM 指令三类。LLM 指令分支按既有优先级选择一个产品和一个业务动作，不再进行多动作编排。
+_Avoid_: 将产品分类或已退出的多指令编排称为额外的一级入口分支
+
+**单业务动作**：
+一条消息只采用一个业务动作，该业务分支识别到的多笔订单共用这个动作。订单数量可以多于一笔，动作数量仍为一个；混合措辞也不再按分句为订单分配不同动作。例如识别为撤单申请后，识别到的 A、B 两笔订单均按撤单申请处理。各订单的权限、状态与最终确认要求继续适用。
+_Avoid_: 将多个订单等同于多个动作；识别到订单就视为交易已确认或已完成
+
 **标的（Ticker / Instrument）**：
-交易对象的唯一标识。在本项目内必须是经过 goats 库校验过的代码（`from_goats=True` 是绝对约束），不接受未经校验的字符串。
+交易指令指向的证券、基金、期货等交易对象。名称、代码或月份描述是标的表达；表达对应的真实标的需经过识别，是否可交易需经过业务校验。
 _Avoid_: stock（仅指股票）、symbol（不准确）、underlying（仅期权语境）
 
-**Confirm 节点的 action 参数**：
-合并版 `swap.confirm(action: "place" | "cancel" | "modify")`——同一个节点处理三种动作的二次确认，调用方传入 expected_action。
-_Avoid_: 三个独立的"确认下单 / 确认撤单 / 确认改单"节点（已合并）
+**标的表达**：
+用户原话或引用消息中的证券名称、代码或月份表达；它是识别输入，不等同于已经校验的标的。
+_Avoid_: 把提取到的名称或引用候选直接当作后端已校验结果
+
+**确认动作（expected_action）**：
+本次指令对应的业务动作，如下单、撤单、改单或平仓；由 LangGraph 识别并传递给 Java。动作标签描述用户意图，不代表订单已经确认或执行成功；订单状态由 Java 管理（ADR 0021）。
+_Avoid_: 把动作标签当作待确认订单状态或交易成功凭据
+
+**单次指令处理 / 确认类指令**：
+LangGraph 每次只识别并提交用户本次动作；是否需要后续业务步骤由 Java 决定。用户明确发送的确认类指令是独立动作，不要求所有交易先走本地申请和等待确认流程（ADR 0021）。
+_Avoid_: LangGraph 强制二阶段、自动把普通动作提升为确认、把历史记忆代替本次选择
+
+**快速询价 / 存量指令**：
+入口路由的两个前置分支。快速询价由请求标志 `fast_query=1` 决定，走 GOATS 解析后以 `optionRfq` 提交；存量指令走 GOATS `instruction/query` 做存量兼容查询。文本里出现"雪球""快速询价"等词不改变入口。
+_Avoid_: 按关键词判断是否快速询价
+
+**交易对手（Counterparty）**：
+互换指令里的交易对手方。LangGraph 从授权对手列表中识别用户表达或引用选择（`swap_select_counterparty` / `swap_recognize_fresh_counterparty`），不自行扩充对手清单。
+_Avoid_: 客户（太泛）、用户（指发消息的人）
+
+**字段证据 / 字段锁定**：
+提取值与原始表达、引用和附件位置的关联，以及同次指令内防止被选字段或订单静默覆盖的约束。来源可信不等于业务值有效；业务值与默认值由 Java 校验和处理，LangGraph 不承担业务归一化和数字校验（ADR 0027，旧代码待迁移）。
+_Avoid_: 让模型直接输出最终下单参数
+
+**消息 / 工具调用**：
+消息是用户发送的一条指令；工具调用是调用端为处理该指令发起的一次 LangGraph 执行。同一消息可以由调用端多次调用，每次独立计算模型额度；消息标识用于关联这些调用，不代表 LangGraph 只处理一次（ADR 0026 / 0031）。
+_Avoid_: 把消息标识等同于单次调用标识、把内部重试当作新调用
+
+**消息防重 / 交易幂等**：
+消息防重是调用端对重复投递、并发处理和通知的控制；交易幂等是 Java 业务端保证重复业务请求不造成重复交易的职责。LangGraph 返回本次调用结果，不承担跨调用防重或结果回放（ADR 0026）。
+_Avoid_: 把短期防重锁等同于交易执行幂等、让工具替调用端裁决是否重投
+
+**不确定回执 / 对账**：
+不确定回执表示无法确认本次交易执行结果，不代表成功或失败；对账是调用端及 Java 业务端核对请求与权威回执、确认结果的过程。LangGraph 提供本次调用的审计证据（ADR 0026）。
+_Avoid_: 把不确定回执当成消息锁、把缺少回执当成未执行的证明
+
+**业务拒绝（REJECTED）**：
+后端或业务规则如实拒绝了指令（如数量非正、无权限）。评测里单独成桶，不计入 PASS 也不算代码 FAIL（ADR 0024 D6）。
+_Avoid_: 把拒绝改写成成功卡片，或把拒绝当作 LangGraph 缺陷
+
+**意图集 / 冻结上下文 / 回放**：
+意图集（`tests/datasets/intent/`）只评产品与意图，不依赖 Java。冻结用例把每轮上下文写在 fixture 里、只跑意图子链；走主图 + `mock_api` 的是拒绝验收用例和引用上一轮真实回复的回放用例（当前多轮用例已全部冻结，`harness/intent_context.py` 判定）。
+_Avoid_: 把意图集与依赖 Java 的业务验收集混跑
+
+**节点级样本**：
+单个节点的输入与稳定期望。旧 git fixture 目录已退役，无现成替代数据集；节点执行 API 与 node-run 保留。逐步以 Langfuse Dataset / Experiment / Score 关联审阅后的样本、来源和结果；带写副作用的节点只留标注、不自动回放（ADR 0029）。
+_Avoid_: 用节点 fixture 代替端到端业务验收
+
+### 运维与评测术语
+
+**Context-dependent case（上下文依赖 case）**：
+golden case 中，正确的 product_type 或 intent 只有在已知多轮对话历史时才能确定的一类 case（如裸"撤单"/"确认下单"）。
+单轮 case 不携带对话历史，这类场景必须写成多轮 case（`sub_scenes` / `conversation`），由 harness 按轮次依次请求；单轮写法下的失败不作为 pass rate 的改进目标。
+_Avoid_: 把这类失败归因于"节点 bug"（根因是测试环境缺少对话历史，不是节点逻辑错误）
+
+**紧急回滚（Emergency Rollback）**：
+出现 P0 故障时，把企微群消息重新路由回 Dify 的操作：由客户侧 Java 配置管理员把 Java 侧 `agentUrl` 从 LangGraph 改回 Dify（ADR 0001），企微入口与 LangGraph 代码都不动；服务侧善后（清空 `CANARY_ROOM_IDS`、审计记录）由 `scripts/rollback_canary.sh` 完成。具体操作步骤以 `docs/operations/on-call-runbook.md` §7 为准。
+_Avoid_: "应用层特性开关"（需要改代码或重启才生效的方案）
+
+**金丝雀切流（Canary Rollout）**：
+按**群组**逐步把企微群从 Dify 切到 LangGraph 的过程，切换动作同样是改 Java 侧 `agentUrl`（能否按群配置在部署前环境调研中核实）。分三阶段：测试群（1-2 个）→ 更多测试群（~30% 群组）→ 全量；服务侧用 `CANARY_ROOM_IDS` 白名单标记已切群（`ALL` 表示全量），非白名单流量触发 `non_canary_traffic` P0 告警。不需要代码部署，故障影响范围天然隔离到已切群组。
+_Avoid_: "按流量百分比分发"（企微不支持单群内流量分流）、"按会话 ID 哈希"（需要分流代理层，不必要）
 
 ## Relationships
 
 - 一份 **Golden case** 既被 **Harness** 用作回归基线，也可被 **Shadow compare** 用作双跑输入
 - **Harness** 的失败报告会指向具体的 **节点（Node）**，让 AI 工具知道改哪里
-- 一条用户原话先经一级路由到 **product_type**（swap / option / close），再由该子图内识别 **意图（Intent）**
-- 任何 **标的** 出现在 LangGraph 输出前，必须经过 ticker 子图（ReAct Agent，4 个工具：tokenize / completeness / rank / infer_code）校验，最终输出 `from_goats=True`
-- LangGraph 通过 3 个 **Protocol**（OptionClient / SwapClient / TickerClient）调用 Java 后端业务 API，契约定义见 `docs/api-contracts/java-backend.md`
-
-**Context-dependent case（上下文依赖 case）**：
-golden case 中，正确的 product_type 或 intent 只有在已知多轮对话历史时才能确定的一类 case（如裸"撤单"/"确认下单"）。
-M2 / M3 阶段 harness runner 每条 case 独立跑，不注入 history_messages，这些 case 的失败属于**已知局限**，不作为 pass rate 的改进目标。M3 阶段靠真实流量 case（D 桶）自然补充。
-_Avoid_: 把这类失败归因于"节点 bug"（根因是测试环境缺少对话历史，不是节点逻辑错误）
-
-**紧急回滚（Emergency Rollback）**：
-出现 P0 故障时，把企微群消息重新路由回 Dify 的操作。实现方式：企微管理员修改机器人的 Webhook 地址（LangGraph endpoint → Dify endpoint），约 1 分钟生效，无需 SSH 或重启服务。
-_Avoid_: "流量层切换"（暗示需要 Nginx/网关操作）、"应用层特性开关"（需要重启）、"客户 IT 操作"（企微管理员即可完成）
-
-**金丝雀切流（Canary Rollout）**：
-M4 阶段按**群组**逐步把企微机器人 Webhook 从 Dify 切到 LangGraph 的过程（选项 B：按群组分配）。分三阶段：测试群（1-2 个）→ 更多测试群（~30% 群组）→ 全量。每阶段由企微管理员改 Webhook，不需要代码部署。故障影响范围天然隔离到已切群组。
-_Avoid_: "按流量百分比分发"（企微不支持单群内流量分流）、"按会话 ID 哈希"（需要分流代理层，不必要）
-
-## Flagged ambiguities
-
-- 用户原话写"混沌工程"，英文写"Harness Engineering"——这两个**不是同一个概念**。本项目语境下统一指 **Harness**，混沌工程不在本项目范畴。
+- 用户原话先经 **入口路由** 分流；LLM 指令分支内按 **product_type** 和 **意图（Intent）** 处理
+- LangGraph 提取 **标的表达** 或用户对引用候选的明确选择，Java 调用对应的标的识别工作流并完成业务校验；提取与选择本身不代表识别成功。职责与接口兼容说明见 [标的识别后端边界](docs/architecture/backend-instrument-boundary.md)
+- LangGraph 经 `app/tools/` 的 Client Protocol 调用外部系统：OptionClient / SwapClient（Java 业务）、MessageClient（意图写回）、GoatsAgentClient（快速询价 / 存量指令）；TickerClient 只供本地验收脚本拉授权对手列表。Java 契约见 `docs/api-contracts/java-backend.md`
+- 业务卡片与订单执行结果来自 Java 后端，原始回执是业务核查依据。

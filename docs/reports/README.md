@@ -1,0 +1,15 @@
+# 报告 · 一次性评估、审阅与调研快照
+
+本目录存放**某一时点**产出的报告：数据集评估、代码审阅导读、专项调研、事故复盘等。报告写完即冻结，不随代码更新；
+需要长期生效的结论提炼进 ADR、`architecture/` 或 `work-plan.md`，结论被吸收后报告可删除（历史从 git 找回）。
+
+命名：`YYYY-MM-DD-<topic>.md`，日期为报告完成日；lint 拒绝在其他目录放带日期的文档。
+
+| 报告 | 摘要 |
+|---|---|
+| [2026-09-29-langfuse-manual-source-review.md](./2026-09-29-langfuse-manual-source-review.md) | A1–A6 操作手册编写时发现的资料差异，交审阅人处理；含版本和沙箱验证待办 |
+| [2026-10-10-dify-harness-review.md](./2026-10-10-dify-harness-review.md) | Dify 入口对照、Harness／webhook／部署／CI 缺口与三个指定文件的 Java 评测记录 |
+| [2026-09-24-app-structure-review.md](./2026-09-24-app-structure-review.md) | app/ 结构体检与分层整理：发现、已完成整理与待业务确认事项 |
+| [2026-09-24-intent-dataset-assessment.md](./2026-09-24-intent-dataset-assessment.md) | 期权 / 互换意图识别数据集评估：意图集只调 LLM 的可行性与改造建议 |
+| [2026-09-24-option-open-close-review-guide.md](./2026-09-24-option-open-close-review-guide.md) | 期权开仓 / 平仓重构代码的人工审阅导读与问题清单 |
+| [2026-09-30-swap-rejection-vs-biz-adjudication.md](./2026-09-30-swap-rejection-vs-biz-adjudication.md) | 互换拒绝集 27 条与 biz 出卡期望冲突：证据、待业务回答的问题、裁决后的改动面 |

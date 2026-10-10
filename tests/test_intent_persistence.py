@@ -13,29 +13,43 @@ from langgraph.checkpoint.memory import InMemorySaver
 import app.main as app_main
 from app.config import get_settings
 from app.graph.main import build_main_graph
-from app.nodes.intent_route import ProductTypeOutput
 from app.tools.message_client import MessageClientHttpx
-from app.tools.models import CommonResult
+from tests.joint_support import joint_model
 
 
 @pytest.fixture()
 def isolated_workflow(monkeypatch: pytest.MonkeyPatch) -> AsyncMock:
     settings = get_settings().model_copy(update={
-        "environment": "development",
+        "environment": "staging",
         "use_mysql_checkpointer": False,
         "enable_langfuse": False,
     })
     monkeypatch.setattr("app.config.get_settings", lambda: settings)
     monkeypatch.setattr(app_main, "get_settings", lambda: settings)
     monkeypatch.setenv("ENABLE_LANGFUSE", "false")
-    llm = MagicMock()
-    llm.with_structured_output.return_value.ainvoke = AsyncMock(
-        return_value=ProductTypeOutput(product_type="unknown")
-    )
-    monkeypatch.setattr("app.nodes.intent_route.get_qwen_thinking", lambda: llm)
+    monkeypatch.setattr("app.nodes.parse_instruction.get_llm_standard", lambda: joint_model("unknown", "unknown_intent"))
     write_trace = AsyncMock()
-    monkeypatch.setattr("app.nodes.persist._write_to_mysql", write_trace)
+    monkeypatch.setattr("app.nodes.persist.write_node_trace", write_trace)
     return write_trace
+
+
+def test_development_http_workflow_does_not_write_messages(
+    monkeypatch: pytest.MonkeyPatch, isolated_workflow: AsyncMock,
+) -> None:
+    settings = app_main.get_settings().model_copy(update={"environment": "development"})
+    monkeypatch.setattr("app.config.get_settings", lambda: settings)
+    monkeypatch.setattr(app_main, "get_settings", lambda: settings)
+    factory = MagicMock(side_effect=AssertionError("development must not create a message client"))
+    monkeypatch.setattr(app_main, "MessageClientHttpx", factory)
+    with TestClient(app_main.app) as client:
+        response = client.post("/v1/workflows/run", json={
+            "inputs": {"raw_content": "你好", "message_id": 42, "robot_version": "V2", "at_bot": True}, "user": "stable-user",
+        })
+    assert response.status_code == 200, response.text
+    assert response.json()["answer"]
+    factory.assert_not_called()
+    trace = isolated_workflow.call_args.args[0]
+    assert any(entry.node == "persist_intent" and entry.decision == "skipped" for entry in trace)
 
 
 def test_first_turn_persists_generated_conversation_id_and_followup_reuses_it(
@@ -52,7 +66,8 @@ def test_first_turn_persists_generated_conversation_id_and_followup_reuses_it(
     ))
     with TestClient(app_main.app) as client:
         response = client.post("/v1/workflows/run", json={
-            "inputs": {"raw_content": "你好", "conversation_id": "", "message_id": 42},
+            "inputs": {"raw_content": "你好", "conversation_id": "", "message_id": 42,
+                       "robot_version": "V2", "at_bot": True},
             "user": "stable-user",
         })
 
@@ -67,7 +82,8 @@ def test_first_turn_persists_generated_conversation_id_and_followup_reuses_it(
         assert response.json()["answer"]
 
         followup = client.post("/v1/workflows/run", json={
-            "inputs": {"raw_content": "你好", "conversation_id": generated_id, "message_id": 43},
+            "inputs": {"raw_content": "你好", "conversation_id": generated_id, "message_id": 43,
+                                   "robot_version": "V2", "at_bot": True},
             "user": "stable-user",
         })
         assert followup.status_code == 200, followup.text
@@ -76,7 +92,8 @@ def test_first_turn_persists_generated_conversation_id_and_followup_reuses_it(
         assert saved_requests[1]["conversationId"] == generated_id
 
     persisted_trace = isolated_workflow.call_args.args[0]
-    assert persisted_trace[-1].node == "persist_intent"
+    nodes = [entry.node for entry in persisted_trace]
+    assert nodes.index("persist_intent") < nodes.index("render") < nodes.index("record_history")
 
 
 @pytest.mark.parametrize("status_code,code", [(503, 0), (401, 0), (422, 0), (200, 123)])
@@ -92,12 +109,16 @@ def test_set_intent_failure_returns_502_and_persists_failure_trace(
     ))
     with TestClient(app_main.app) as client:
         response = client.post("/v1/workflows/run", json={
-            "inputs": {"raw_content": "你好", "conversation_id": "", "message_id": 42},
+            "inputs": {"raw_content": "你好", "conversation_id": "", "message_id": 42,
+                       "robot_version": "V2", "at_bot": True},
             "user": "stable-user",
         })
 
     assert response.status_code == 502, response.text
-    assert response.json() == {"detail": "消息会话与意图持久化失败，请稍后重试。"}
+    assert response.json() == {
+        "code": "internal_server_error", "status": 502,
+        "message": "消息会话与意图持久化失败，请稍后重试。",
+    }
     trace = isolated_workflow.call_args.args[0]
     assert any(entry.node == "persist_intent" and entry.decision == "error" for entry in trace)
 
@@ -111,28 +132,8 @@ def test_business_branch_persists_latest_intent_after_operate(
     monkeypatch: pytest.MonkeyPatch, isolated_workflow: AsyncMock,
     product_type: str, intent: str, product_number: int, raw: str,
 ) -> None:
-    from app.subgraphs.close.models import CloseIntentOutput, QueryStatusParams
-    from app.subgraphs.option.models import OptionExtractQueryParams, OptionIntentOutput
-    from app.subgraphs.swap.models import SwapIntentOutput, SwapQueryParams
-
-    llm_outputs = {
-        "option": {
-            "app.subgraphs.option.intent.get_qwen_structured": OptionIntentOutput(type="query_order_status"),
-            "app.subgraphs.option.extract_query.get_qwen_thinking": OptionExtractQueryParams(),
-        },
-        "option_close": {
-            "app.subgraphs.close.intent.get_qwen_thinking": CloseIntentOutput(type="close_order_order_query"),
-            "app.subgraphs.close.query_status.get_qwen_thinking": QueryStatusParams(),
-        },
-        "swap": {
-            "app.subgraphs.swap.intent.get_qwen_thinking": SwapIntentOutput(type="query_order_status"),
-            "app.subgraphs.swap.query_order.get_qwen_thinking": SwapQueryParams(),
-        },
-    }
-    for factory, value in llm_outputs[product_type].items():
-        llm = MagicMock()
-        llm.with_structured_output.return_value.ainvoke = AsyncMock(return_value=value)
-        monkeypatch.setattr(factory, lambda llm=llm: llm)
+    monkeypatch.setattr("app.nodes.parse_instruction.get_llm_standard", lambda: joint_model(product_type, intent))
+    monkeypatch.setattr("app.tools.option_client.OptionClientHttpx.query_close_orders", AsyncMock(return_value={"code": 0, "data": []}))
 
     events: list[str] = []
     saved_requests: list[dict] = []
@@ -142,9 +143,10 @@ def test_business_branch_persists_latest_intent_after_operate(
         async def operate(self, req):
             events.append("operate")
             operate_requests.append(req)
-            return CommonResult(code=0, data="BACKEND_CARD")
+            return {"code": 0, "data": "BACKEND_CARD"}
 
     monkeypatch.setattr("app.subgraphs.option.backend.OptionClientHttpx", BusinessClient)
+    monkeypatch.setattr("app.subgraphs.close.backend.OptionClientHttpx", BusinessClient)
     monkeypatch.setattr("app.subgraphs.swap.backend.SwapClientHttpx", BusinessClient)
 
     def handler(request: httpx.Request) -> httpx.Response:
@@ -159,7 +161,7 @@ def test_business_branch_persists_latest_intent_after_operate(
         response = client.post("/v1/workflows/run", json={
             "inputs": {
                 "raw_content": raw, "conversation_id": "(\\existing-id\\\\)",
-                "message_id": 75, "room_id": "test-room",
+                "message_id": 75, "room_id": "test-room", "robot_version": "V2", "at_bot": True,
             },
             "user": "stable-user",
         })
@@ -169,7 +171,7 @@ def test_business_branch_persists_latest_intent_after_operate(
     assert response.json()["data"]["outputs"]["product_type"] == product_type
     assert response.json()["answer"] == "BACKEND_CARD"
     assert events == ["operate", "set-intent"]
-    assert operate_requests[0].messageId == 75  # /operate 仍使用整数
+    assert operate_requests[0].message_id == 75  # /operate 仍使用整数
     assert saved_requests == [{
         "conversationId": "(\\existing-id\\\\)", "messageId": "75",
         "intent": intent, "productType": product_number, "orderIds": [],
@@ -194,7 +196,8 @@ async def test_http_response_waits_for_set_intent_acknowledgement(
         transport=httpx.ASGITransport(app=app_main.app), base_url="http://test",
     ) as client:
         pending = asyncio.create_task(client.post("/v1/workflows/run", json={
-            "inputs": {"raw_content": "你好", "conversation_id": "", "message_id": 42},
+            "inputs": {"raw_content": "你好", "conversation_id": "", "message_id": 42,
+                       "robot_version": "V2", "at_bot": True},
             "user": "stable-user",
         }))
         try:
@@ -212,7 +215,7 @@ async def test_direct_graph_without_factory_does_not_write_messages(
 ) -> None:
     send = AsyncMock(side_effect=AssertionError("unexpected external request"))
     monkeypatch.setattr(httpx.AsyncClient, "send", send)
-    final = await build_main_graph().ainvoke({"raw_text": "你好"})
+    final = await build_main_graph().ainvoke({"raw_text": "你好", "robot_version": "V2", "at_bot": True})
     assert final.get("error") is None
     assert final["reply_text"]
     send.assert_not_awaited()
@@ -236,10 +239,12 @@ async def test_next_turn_recovers_after_set_intent_failure_with_checkpoint(
     config = {"configurable": {"thread_id": "opaque-id"}}
     first = await graph.ainvoke({
         "raw_text": "你好", "conversation_id": "opaque-id", "message_id": 1,
+                "robot_version": "V2", "at_bot": True,
     }, config=config)
     assert first["error"].node == "persist_intent"
     second = await graph.ainvoke({
         "raw_text": "你好", "conversation_id": "opaque-id", "message_id": 2,
+                "robot_version": "V2", "at_bot": True,
     }, config=config)
     assert second.get("error") is None
     assert second["reply_text"]

@@ -1,118 +1,42 @@
-"""close 子图路由测试 · intent → conditional → holding_query / todo。"""
-from __future__ import annotations
-
+"""产品子图按联合结果执行一个动作，保留当前 Java wire 与未知兜底。"""
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from app.subgraphs.close import build_close_graph
-from app.subgraphs.close import holding_query as hq_module
-from app.subgraphs.close import intent as intent_module
-from app.subgraphs.close.models import CloseIntentOutput, HoldingQueryParams
+from app.llm.clients import _ChatLLM
+from app.subgraphs.close.graph import build_close_graph
+from tests.joint_support import instruction_data
 
 
-def _patch_intent(monkeypatch: pytest.MonkeyPatch, intent_type: str) -> None:
-    fake_output = CloseIntentOutput(type=intent_type)  # type: ignore[arg-type]
-    fake_llm = MagicMock()
-    fake_llm.ainvoke = AsyncMock(return_value=fake_output)
-    fake_base = MagicMock()
-    fake_base.with_structured_output = MagicMock(return_value=fake_llm)
-    monkeypatch.setattr(intent_module, "get_qwen_thinking", lambda: fake_base)
+@pytest.mark.parametrize("intent,raw,node,quote", [('close_order_query', '查可平持仓', 'close_holding_query', ''), ('close_order_request', 'CO-20260922-ABCDEF12 平100万市价', 'close_place_close', ''), ('close_order_confirm', '确认平仓', 'close_confirm_close', 'CO-20260922-ABCDEF12'), ('close_order_cancel_request', '撤单', 'close_cancel_close', 'CO-20260922-ABCDEF12'), ('close_order_cancel_confirm', '确认撤单', 'close_confirm_cancel', 'CO-20260922-ABCDEF12'), ('close_order_order_query', '查询 CO-20260922-ABCDEF12', 'close_query_status', '')])
+async def test_each_action_reaches_one_java_call_without_model(monkeypatch, intent, raw, node, quote):
+    """只替换外部边界，路由、来源检查和 DTO 均走真实实现。"""
+    no_model = MagicMock(side_effect=AssertionError("产品子图不允许模型请求"))
+    monkeypatch.setattr(_ChatLLM, "with_structured_output", no_model)
+    backend = AsyncMock(return_value={"code": 0, "data": "Java receipt"})
+    monkeypatch.setattr("app.tools.option_client.OptionClientHttpx.operate", backend)
+    orders = []
+    if intent == "new_inquiry":
+        orders = [{"stockCode": "茅台"}]
+    elif intent in {"place_order_from_quote", "confirm_order"}:
+        orders = [{"orderId": quote}]
+    elif intent == "close_order_request":
+        orders = [{"orderId": "CO-20260922-ABCDEF12", "closeOrderNotionalDelta": "1000000", "closeOrderType": "市价单"}]
+    parsed = instruction_data("option_close", intent, raw, orders=orders, quote=quote)
+    result = await build_close_graph().ainvoke({"raw_text": raw, "quote_content": quote,
+        "conversation_id": "c", "message_id": 1, "user_id": "u", "room_id": "r", "parsed_instruction": parsed})
+    assert not result.get("error"), result
+    assert result["api_result"] == "Java receipt"
+    assert backend.await_count == 1
+    assert backend.await_args.args[0].type == intent
+    no_model.assert_not_called()
 
 
-def _patch_holding_query(
-    monkeypatch: pytest.MonkeyPatch, params: HoldingQueryParams
-) -> None:
-    fake_llm = MagicMock()
-    fake_llm.ainvoke = AsyncMock(return_value=params)
-    fake_base = MagicMock()
-    fake_base.with_structured_output = MagicMock(return_value=fake_llm)
-    monkeypatch.setattr(hq_module, "get_qwen_thinking", lambda: fake_base)
-    monkeypatch.setattr(
-        hq_module,
-        "call_option_backend",
-        AsyncMock(return_value={"api_code": 0, "api_result": "backend reply"}),
-    )
-
-
-@pytest.mark.asyncio
-async def test_close_query_routes_to_holding_query(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """close_order_query → close_holding_query 节点。"""
-    _patch_intent(monkeypatch, "close_order_query")
-    _patch_holding_query(
-        monkeypatch,
-        HoldingQueryParams(closeable_only=False),
-    )
-    graph = build_close_graph()
-    final = await graph.ainvoke(
-        {
-            "raw_text": "我有哪些期权持仓",
-            "conversation_id": "t",
-            "user_id": "u",
-            "room_id": "r",
-            "message_id": 1,
-            "message_content": "我有哪些期权持仓",
-        }
-    )
-    trace_nodes = [e.node for e in final.get("trace", [])]
-    assert "close_intent" in trace_nodes
-    assert "close_holding_query" in trace_nodes
-    assert "close_todo" not in trace_nodes
-    assert final.get("intent") == "close_order_query"
-    assert final.get("close_params") is not None
-    assert final["close_params"]["closeable_only"] is False
-
-
-@pytest.mark.asyncio
-async def test_unknown_intent_routes_to_close_unknown(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """unknown_intent 走 close_unknown 兜底（close 子图 7/7 真节点全到位）。"""
-    _patch_intent(monkeypatch, "unknown_intent")
-    graph = build_close_graph()
-    final = await graph.ainvoke(
-        {
-            "raw_text": "你好",
-            "conversation_id": "t",
-            "user_id": "u",
-            "room_id": "r",
-            "message_id": 1,
-            "message_content": "你好",
-        }
-    )
-    trace_nodes = [e.node for e in final.get("trace", [])]
-    assert "close_unknown" in trace_nodes
-    assert "close_holding_query" not in trace_nodes
-    assert "close_place_close" not in trace_nodes
-
-
-@pytest.mark.asyncio
-async def test_close_intent_error_routes_to_todo_not_holding_query(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """intent 节点 LLM 失败 → state['error'] → 走 todo（不进 holding_query）。"""
-    fake_llm = MagicMock()
-    fake_llm.with_structured_output = MagicMock(
-        return_value=MagicMock(
-            ainvoke=AsyncMock(side_effect=RuntimeError("LLM down"))
-        )
-    )
-    monkeypatch.setattr(
-        intent_module, "get_qwen_thinking", lambda: fake_llm
-    )
-    graph = build_close_graph()
-    final = await graph.ainvoke(
-        {
-            "raw_text": "x",
-            "conversation_id": "t",
-            "user_id": "u",
-            "room_id": "r",
-            "message_id": 1,
-            "message_content": "x",
-        }
-    )
-    trace_nodes = [e.node for e in final.get("trace", [])]
-    assert "close_holding_query" not in trace_nodes
-    assert final.get("error") is not None
+async def test_unknown_intent_never_calls_backend(monkeypatch):
+    """结构有效的未知意图也只进入兜底，不用空参数尝试交易。"""
+    backend = AsyncMock()
+    monkeypatch.setattr("app.tools.option_client.OptionClientHttpx.operate", backend)
+    result = await build_close_graph().ainvoke({"raw_text": "你好", "parsed_instruction":
+        instruction_data("option_close", "unknown_intent", "你好")})
+    assert not result.get("error")
+    backend.assert_not_called()

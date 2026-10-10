@@ -1,59 +1,15 @@
-"""TickerClient — 标的查询 / 推断 prompt / 交易对手列表（contracts §1）。
+"""TickerClient — 授权交易对手列表（仅本地验收脚本使用，交易链路不调用）。
 
-特别注意：标的查询是 GET + RequestBody（Java 实现不规范但合法），
-要用 `client.request("GET", url, json=payload)` 不能用 `client.get()`。
+标的识别归 Java 后端（ADR 0025），本客户端不提供标的查询。
+响应一律原样 dict 透传（Java 后端数据不做 Pydantic 建模/校验）。
 """
 from __future__ import annotations
 
 from typing import Any, Protocol
 
 import httpx
-from pydantic import BaseModel, ConfigDict, Field
 
-from app.tools.models import CommonResult
-
-# ============================================================
-# Pydantic 模型
-# ============================================================
-
-
-class KeywordItem(BaseModel):
-    """关键词查询项。"""
-
-    keyword: str
-    isFull: bool = False
-
-
-class SecuritiesInstrumentReqVO(BaseModel):
-    """`GET /admin-api/integration/securities-instrument/select` 请求体（带 Body 的 GET）。"""
-
-    model_config = ConfigDict(extra="allow")
-
-    placeOrderWindCode: str | None = None
-    keywordItems: list[KeywordItem] = Field(default_factory=list)
-    transactionTypeList: list[str] | None = None
-
-
-class SecuritiesInstrumentRespVO(BaseModel):
-    """对齐 Java `SecuritiesInstrumentOpenApiRespVO`。"""
-
-    model_config = ConfigDict(extra="allow")
-
-    windCode: str
-    insShtDesc: str | None = None
-    insLngDesc: str | None = None
-    relevanceScore: int | None = None
-    transactionTypeLists: list[str] = Field(default_factory=list)
-
-
-class CounterpartyVO(BaseModel):
-    """交易对手信息。"""
-
-    model_config = ConfigDict(extra="allow")
-
-    name: str | None = None
-    code: str | None = None
-
+from app.tools.http_pool import acquire_http_client
 
 # ============================================================
 # Protocol
@@ -61,21 +17,16 @@ class CounterpartyVO(BaseModel):
 
 
 class TickerClient(Protocol):
-    """标的相关客户端协议。"""
-
-    async def search_securities_instrument(
-        self, req: SecuritiesInstrumentReqVO
-    ) -> list[SecuritiesInstrumentRespVO]: ...
-
-    async def get_inference_prompt(self) -> str: ...
+    """交易对手列表客户端协议。"""
 
     async def list_counterparty(
-        self, room_id: str | None = None
-    ) -> list[CounterpartyVO]: ...
+        self, room_id: str | None = None, *, user_id: str | None = None,
+        business_type: str | None = None, message_id: int | None = None,
+    ) -> list[dict[str, Any]]: ...
 
 
 # ============================================================
-# Httpx 实现（注意：select 是 GET + RequestBody，ADR 0012 修订版）
+# Httpx 实现
 # ============================================================
 
 
@@ -85,7 +36,7 @@ class TickerClientHttpx:
     def __init__(
         self,
         base_url: str = "",
-        timeout: float = 30.0,
+        timeout: float | None = None,
         token: str | None = None,
         transport: httpx.AsyncBaseTransport | None = None,
     ) -> None:
@@ -93,7 +44,7 @@ class TickerClientHttpx:
         from app.config import get_settings
         settings = get_settings()
         self._base_url = (base_url or settings.otc_api_base_url).rstrip("/")
-        self._timeout = timeout
+        self._timeout = timeout if timeout is not None else settings.backend_timeout_seconds
         self._token = token if token is not None else settings.otc_api_secret
         self._transport = transport
 
@@ -106,57 +57,31 @@ class TickerClientHttpx:
         h.update(get_goats_auth_headers())
         return h
 
-    def _client_kwargs(self) -> dict:
+    def _client_kwargs(self) -> dict[str, Any]:
         """httpx.AsyncClient 构造参数（测试期可注入 transport）。"""
-        kw = {"timeout": self._timeout, "trust_env": False}
+        kw: dict[str, Any] = {"timeout": self._timeout, "trust_env": False}
         if self._transport is not None:
             kw["transport"] = self._transport
         return kw
 
-    async def search_securities_instrument(
-        self, req: SecuritiesInstrumentReqVO
-    ) -> list[SecuritiesInstrumentRespVO]:
-        """⚠️ Java 端是 GET + RequestBody（不规范但合法），要用 client.request("GET", ...) 写法。"""
-        from app.tools.exceptions import translate_httpx_errors
-
-        url = f"{self._base_url}/admin-api/integration/securities-instrument/select"
-        payload = req.model_dump(mode="json", exclude_none=True)
-        async with (
-            translate_httpx_errors("ticker"),
-            httpx.AsyncClient(**self._client_kwargs()) as client,
-        ):
-            r = await client.request("GET", url, json=payload, headers=self._headers)
-            r.raise_for_status()
-            result = CommonResult.model_validate(r.json())
-            data: Any = result.data or []
-            return [SecuritiesInstrumentRespVO.model_validate(item) for item in data]
-
-    async def get_inference_prompt(self) -> str:
-        from app.tools.exceptions import translate_httpx_errors
-
-        url = f"{self._base_url}/admin-api/counterparty/info/instrument-inference-prompt"
-        async with (
-            translate_httpx_errors("ticker"),
-            httpx.AsyncClient(**self._client_kwargs()) as client,
-        ):
-            r = await client.get(url, headers=self._headers)
-            r.raise_for_status()
-            result = CommonResult.model_validate(r.json())
-            return str(result.data or "")
-
     async def list_counterparty(
-        self, room_id: str | None = None
-    ) -> list[CounterpartyVO]:
+        self, room_id: str | None = None, *, user_id: str | None = None,
+        business_type: str | None = None, message_id: int | None = None,
+    ) -> list[dict[str, Any]]:
         from app.tools.exceptions import translate_httpx_errors
 
         url = f"{self._base_url}/admin-api/counterparty/info/list"
-        params = {"roomId": room_id} if room_id else None
+        params = {key: str(value) for key, value in {
+            "roomId": room_id, "userId": user_id, "type": business_type, "messageId": message_id,
+        }.items() if value is not None}
         async with (
             translate_httpx_errors("ticker"),
-            httpx.AsyncClient(**self._client_kwargs()) as client,
+            acquire_http_client(timeout=self._timeout, transport=self._transport) as client,
         ):
-            r = await client.get(url, params=params, headers=self._headers)
+            r = await client.get(url, params=params, headers=self._headers, timeout=self._timeout)
             r.raise_for_status()
-            result = CommonResult.model_validate(r.json())
-            data: Any = result.data or []
-            return [CounterpartyVO.model_validate(item) for item in data]
+            envelope: dict[str, Any] = r.json()
+            if envelope.get("code") != 0:
+                raise ValueError(f"counterparty lookup failed: code={envelope.get('code')}")
+            rows: list[dict[str, Any]] = envelope.get("data") or []
+            return rows

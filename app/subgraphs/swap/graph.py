@@ -1,106 +1,62 @@
-"""swap 子图编译入口。
-
-ADR 0001 D5/D6 + grill-with-docs 第 1 决策。
-
-★ swap 子图主路由 7/7 意图全覆盖（5 个真节点 + 1 unknown 兜底）：
-
-    START → swap_intent → [route_by_intent]
-        → swap_place_order  (place_order_request)         ← P0 核心
-        → swap_confirm      (confirm_order / confirm_cancel_order /
-                             confirm_modify_order)        ← 合并版（ADR 0001 D5）
-        → swap_cancel       (cancel_order_request)
-        → swap_query_order  (query_order_status)
-        → swap_unknown      (unknown_intent + cascade 错误兜底)
-        → END
-
-P2 辅助节点（不对应 intent，是 swap.place_order 的工具）后续 PR 实施：
-- swap.place_order_image（图片输入）
-- swap.place_order_excel（Excel 输入）
-- swap.image_recognize（图片识别工具）
-- swap.hand_to_share（互换分享）
-- swap.cancel_extract（如未来需要双阶段撤单确认）
-"""
+"""互换业务子图：消费联合解析，确定性选择候选并执行单一业务动作。"""
 from __future__ import annotations
-
-from typing import Any
 
 from langgraph.graph import END, START, StateGraph
 from langgraph.graph.state import CompiledStateGraph
 
-from app.graph.cascade import has_error
-from app.graph.safe_node import safe_node
-from app.graph.state import AgentState, TraceEntry
+from app.graph.retry import add_io_node
+from app.graph.state import AgentState, SubgraphOutput
+from app.subgraphs.common import add_intent_dispatch, intent_router, make_unknown_node
+from app.subgraphs.request_boundary import after_clean, after_prepare
+from app.subgraphs.swap.apply_picks import swap_apply_picks
+from app.subgraphs.swap.backend import swap_clean_request, swap_query_backend, swap_submit
 from app.subgraphs.swap.cancel import swap_cancel
 from app.subgraphs.swap.confirm import swap_confirm
 from app.subgraphs.swap.intent import swap_intent
-from app.subgraphs.swap.place_order import swap_place_order
+from app.subgraphs.swap.place_order import build_place_graph, swap_place_order_submit
 from app.subgraphs.swap.query_order import swap_query_order
 
-
-@safe_node
-async def swap_unknown(state: AgentState) -> dict[str, Any]:
-    """unknown_intent + cascade 错误兜底节点（替代原 swap_todo）。"""
-    intent = state.get("intent") or "unknown_intent"
-    return {
-        "trace": [
-            TraceEntry(
-                node="swap_unknown",
-                decision=f"unhandled_intent={intent}",
-            )
-        ]
-    }
-
-
-#: intent → 真节点 key 路由表（swap 子图 7 个意图全覆盖）
-_INTENT_TO_NODE: dict[str, str] = {
-    "place_order_request": "swap_place_order",
-    "cancel_order_request": "swap_cancel",
-    "confirm_order": "swap_confirm",
-    "confirm_cancel_order": "swap_confirm",
-    "confirm_modify_order": "swap_confirm",
-    "query_order_status": "swap_query_order",
+swap_unknown = make_unknown_node("swap_unknown")
+_INTENT_TO_NODE = {
+    "place_order_request": "swap_place_order", "cancel_order_request": "swap_cancel",
+    "confirm_order": "swap_confirm", "confirm_cancel_order": "swap_confirm",
+    "confirm_modify_order": "swap_confirm", "query_order_status": "swap_query_order",
 }
+_route_after_swap_intent = intent_router(_INTENT_TO_NODE, "swap_unknown")
 
 
-def _route_after_swap_intent(state: AgentState) -> str:
-    """swap.intent 后路由：cascade 防御 + intent 分发。"""
-    if has_error(state):
-        return "swap_unknown"
-    intent = state.get("intent") or "unknown_intent"
-    return _INTENT_TO_NODE.get(intent, "swap_unknown")
+def _route_after_place_order(state: AgentState) -> str:
+    """参数准备错误时结束；候选选择使用同一次模型的指针。"""
+    return "swap_unknown" if state.get("error") or state.get("reply_text") else "swap_apply_picks"
 
 
-def build_swap_graph() -> CompiledStateGraph:
-    """构建 swap 子图（主路由 7/7 意图全覆盖）。"""
-    g: StateGraph = StateGraph(AgentState)
-    g.add_node("swap_intent", swap_intent)
-    g.add_node("swap_place_order", swap_place_order)
-    g.add_node("swap_confirm", swap_confirm)
-    g.add_node("swap_cancel", swap_cancel)
-    g.add_node("swap_query_order", swap_query_order)
-    g.add_node("swap_unknown", swap_unknown)
-
-    g.add_edge(START, "swap_intent")
-    g.add_conditional_edges(
-        "swap_intent",
-        _route_after_swap_intent,
-        {
-            "swap_place_order": "swap_place_order",
-            "swap_confirm": "swap_confirm",
-            "swap_cancel": "swap_cancel",
-            "swap_query_order": "swap_query_order",
-            "swap_unknown": "swap_unknown",
-        },
-    )
-    for n in (
-        "swap_place_order",
-        "swap_confirm",
-        "swap_cancel",
-        "swap_query_order",
-        "swap_unknown",
-    ):
-        g.add_edge(n, END)
-    return g.compile()
+def _route_after_apply_picks(state: AgentState) -> str:
+    """选择或字段锁定冲突时不提交整批订单。"""
+    return "swap_unknown" if state.get("error") else "swap_place_order_submit"
 
 
-__all__ = ["build_swap_graph"]
+def build_swap_graph() -> CompiledStateGraph[AgentState, None, AgentState, SubgraphOutput]:
+    """保留原生产品边界；仅独立后端查询挂 RetryPolicy。"""
+    graph = StateGraph(AgentState, output_schema=SubgraphOutput)
+    graph.add_node("swap_intent", swap_intent)
+    graph.add_node("swap_place_order", build_place_graph())
+    graph.add_node("swap_apply_picks", swap_apply_picks)
+    graph.add_node("swap_place_order_submit", swap_place_order_submit)
+    graph.add_node("swap_confirm", swap_confirm)
+    graph.add_node("swap_cancel", swap_cancel)
+    graph.add_node("swap_query_order", swap_query_order)
+    graph.add_node("swap_unknown", swap_unknown)
+    graph.add_edge(START, "swap_intent")
+    add_intent_dispatch(graph, "swap_intent", _route_after_swap_intent, _INTENT_TO_NODE, "swap_unknown")
+    graph.add_conditional_edges("swap_place_order", _route_after_place_order, ["swap_apply_picks", "swap_unknown"])
+    graph.add_conditional_edges("swap_apply_picks", _route_after_apply_picks, ["swap_place_order_submit", "swap_unknown"])
+    for node in ("swap_place_order_submit", "swap_confirm", "swap_cancel", "swap_query_order", "swap_unknown"):
+        graph.add_conditional_edges(node, after_prepare, {"done": END, "clean": "swap_clean_request"})
+    graph.add_node("swap_clean_request", swap_clean_request)
+    graph.add_node("swap_submit", swap_submit)
+    add_io_node(graph, "swap_query_backend", swap_query_backend)
+    graph.add_conditional_edges("swap_clean_request", after_clean,
+                               {"done": END, "query": "swap_query_backend", "submit": "swap_submit"})
+    graph.add_edge("swap_submit", END)
+    graph.add_edge("swap_query_backend", END)
+    return graph.compile()

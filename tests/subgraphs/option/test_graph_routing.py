@@ -1,141 +1,42 @@
-"""option 子图路由测试 · intent → conditional → extract / todo。"""
-from __future__ import annotations
-
+"""产品子图按联合结果执行一个动作，保留当前 Java wire 与未知兜底。"""
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from app.subgraphs.option import build_option_graph
-from app.subgraphs.option import (
-    extract_place_or_modify as epm_module,
-)
-from app.subgraphs.option import intent as intent_module
-from app.subgraphs.option.models import (
-    OptionIntentOutput,
-    OptionOrderItem,
-    OptionPlaceOrModifyParams,
-)
+from app.llm.clients import _ChatLLM
+from app.subgraphs.option.graph import build_option_graph
+from tests.joint_support import instruction_data
 
 
-def _patch(
-    monkeypatch: pytest.MonkeyPatch,
-    module: object,
-    value: object,
-    fn: str = "get_qwen_thinking",
-) -> None:
-    fake_llm = MagicMock()
-    fake_llm.ainvoke = AsyncMock(return_value=value)
-    fake_base = MagicMock()
-    fake_base.with_structured_output = MagicMock(return_value=fake_llm)
-    monkeypatch.setattr(module, fn, lambda: fake_base)
-    if hasattr(module, "call_option_backend"):
-        monkeypatch.setattr(
-            module,
-            "call_option_backend",
-            AsyncMock(
-                return_value={"api_code": 0, "api_result": "backend reply"}
-            ),
-        )
+@pytest.mark.parametrize("intent,raw,node,quote", [('new_inquiry', '期权询价茅台', 'option_extract_inquiry', ''), ('place_order_from_quote', '限价10', 'option_extract_place', 'Q-20260922-0000000001'), ('confirm_order', '确认下单', 'option_extract_confirm_place', 'Q-20260922-0000000001'), ('cancel_order_request', '取消下单', 'option_extract_cancel_place', 'Q-20260922-0000000001'), ('request_cancel_order', '撤单', 'option_extract_cancel', 'Q-20260922-0000000001'), ('confirm_cancel_order', '确认撤单', 'option_extract_confirm_cancel', 'Q-20260922-0000000001'), ('query_order_status', '查询 Q-20260922-0000000001', 'option_extract_query', '')])
+async def test_each_action_reaches_one_java_call_without_model(monkeypatch, intent, raw, node, quote):
+    """只替换外部边界，路由、来源检查和 DTO 均走真实实现。"""
+    no_model = MagicMock(side_effect=AssertionError("产品子图不允许模型请求"))
+    monkeypatch.setattr(_ChatLLM, "with_structured_output", no_model)
+    backend = AsyncMock(return_value={"code": 0, "data": "Java receipt"})
+    monkeypatch.setattr("app.tools.option_client.OptionClientHttpx.operate", backend)
+    orders = []
+    if intent == "new_inquiry":
+        orders = [{"stockCode": "茅台"}]
+    elif intent in {"place_order_from_quote", "confirm_order"}:
+        orders = [{"orderId": quote}]
+    elif intent == "close_order_request":
+        orders = [{"orderId": "CO-20260922-ABCDEF12", "closeOrderNotionalDelta": "1000000", "closeOrderType": "市价单"}]
+    parsed = instruction_data("option", intent, raw, orders=orders, quote=quote)
+    result = await build_option_graph().ainvoke({"raw_text": raw, "quote_content": quote,
+        "conversation_id": "c", "message_id": 1, "user_id": "u", "room_id": "r", "parsed_instruction": parsed})
+    assert not result.get("error"), result
+    assert result["api_result"] == "Java receipt"
+    assert backend.await_count == 1
+    assert backend.await_args.args[0].type == intent
+    no_model.assert_not_called()
 
 
-@pytest.mark.asyncio
-async def test_place_order_from_quote_routes_to_extract_place(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """place_order_from_quote → option_extract_place_or_modify 真节点。"""
-    _patch(
-        monkeypatch,
-        intent_module,
-        OptionIntentOutput(type="place_order_from_quote"),
-        fn="get_qwen_structured",
-    )
-    _patch(
-        monkeypatch,
-        epm_module,
-        OptionPlaceOrModifyParams(
-            orderList=[OptionOrderItem(orderId="Q-1", orderType="市价单")]
-        ),
-        fn="get_qwen_thinking",
-    )
-
-    graph = build_option_graph()
-    final = await graph.ainvoke(
-        {
-            "raw_text": "市价下单",
-            "conversation_id": "t",
-            "user_id": "u",
-            "room_id": "r",
-            "message_id": 1,
-            "message_content": "x",
-        }
-    )
-    trace_nodes = [e.node for e in final.get("trace", [])]
-    assert "option_intent" in trace_nodes
-    assert "option_extract_place_or_modify" in trace_nodes
-    assert "option_todo" not in trace_nodes
-    assert final.get("intent") == "place_order_from_quote"
-    assert final.get("place_params", {}).get("expected_action") == "place"
-
-
-@pytest.mark.asyncio
-async def test_request_modify_routes_to_extract_place(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """request_modify_order → option_extract_place_or_modify（共用 schema）。"""
-    _patch(
-        monkeypatch,
-        intent_module,
-        OptionIntentOutput(type="request_modify_order"),
-        fn="get_qwen_structured",
-    )
-    _patch(
-        monkeypatch,
-        epm_module,
-        OptionPlaceOrModifyParams(
-            orderList=[OptionOrderItem(orderId="Q-1", limitPrice=10)]
-        ),
-        fn="get_qwen_thinking",
-    )
-
-    graph = build_option_graph()
-    final = await graph.ainvoke(
-        {
-            "raw_text": "改限价 10",
-            "conversation_id": "t",
-            "user_id": "u",
-            "room_id": "r",
-            "message_id": 1,
-            "message_content": "x",
-        }
-    )
-    trace_nodes = [e.node for e in final.get("trace", [])]
-    assert "option_extract_place_or_modify" in trace_nodes
-    assert final.get("place_params", {}).get("expected_action") == "modify"
-
-
-@pytest.mark.asyncio
-async def test_unknown_intent_routes_to_option_unknown(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """unknown_intent 走 option_unknown 兜底（option 子图 6/6 真节点全到位）。"""
-    _patch(
-        monkeypatch,
-        intent_module,
-        OptionIntentOutput(type="unknown_intent"),
-        fn="get_qwen_structured",
-    )
-    graph = build_option_graph()
-    final = await graph.ainvoke(
-        {
-            "raw_text": "你好",
-            "conversation_id": "t",
-            "user_id": "u",
-            "room_id": "r",
-            "message_id": 1,
-            "message_content": "x",
-        }
-    )
-    trace_nodes = [e.node for e in final.get("trace", [])]
-    assert "option_unknown" in trace_nodes
-    assert "option_extract_place_or_modify" not in trace_nodes
-    assert "option_extract_inquiry" not in trace_nodes
+async def test_unknown_intent_never_calls_backend(monkeypatch):
+    """结构有效的未知意图也只进入兜底，不用空参数尝试交易。"""
+    backend = AsyncMock()
+    monkeypatch.setattr("app.tools.option_client.OptionClientHttpx.operate", backend)
+    result = await build_option_graph().ainvoke({"raw_text": "你好", "parsed_instruction":
+        instruction_data("option", "unknown_intent", "你好")})
+    assert not result.get("error")
+    backend.assert_not_called()

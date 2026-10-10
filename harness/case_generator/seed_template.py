@@ -1,7 +1,7 @@
 """业务方 golden 种子收集模板生成器（grill-with-docs 2026-05-10 第 4 决策）。
 
-为 M2 24 个节点各生成一份 markdown 模板，业务方填空填出 6-8 条种子 case。
-业务方填完后由工具转 jsonl 合入 `tests/fixtures/golden.jsonl`。
+为 NODE_REGISTRY 中的每个节点生成一份 markdown 模板，业务方填空填出 6-8 条种子 case。
+业务方填完后由工具转 jsonl 合入 `tests/datasets/biz/`。
 
 模板填空原则：
 - 只标 product_type + intent（路由层），不标参数细节
@@ -10,7 +10,7 @@
 生成方式：
     from harness.case_generator import render_seed_template
     md = render_seed_template("swap.place_order")
-    # 写到 docs/m2-golden-seeds/swap-place-order.md
+    # 写到 <out-dir>/swap-place-order.md（默认 /opt/work-file/code-tmp/aigc-langgraph-tmp/case_generator/seeds/）
 """
 from __future__ import annotations
 
@@ -22,32 +22,18 @@ class NodeSeedSpec:
     """单节点的种子收集规约。"""
 
     node_name: str
-    product_type: str  # "swap" / "option" / "option_close" / "ticker"
+    product_type: str  # "swap" / "option" / "option_close"
     intent_values: list[str]  # 该节点对应的合法 intent 枚举
     description: str  # 中文描述
     sample_inputs: list[str] = field(default_factory=list)  # 示例输入（启发业务方）
 
 
 # ============================================================
-# 24 节点的种子规约（grill-with-docs 决策的 M2 节点分布）
+# 各节点的种子规约
 # ============================================================
 
 #: 节点 → 种子规约（按 ADR 0001 D9 P0/P1/P2 优先级排序）
 NODE_REGISTRY: dict[str, NodeSeedSpec] = {
-    # ---- ticker 子图（横切，被业务子图调用）----
-    "ticker.react_agent": NodeSeedSpec(
-        node_name="ticker.react_agent",
-        product_type="ticker",
-        intent_values=[],  # ticker 没意图，输出是 list[TickerCandidate]
-        description="标的识别 ReAct Agent。输入用户原话，输出 from_goats=True 的标的代码列表。",
-        sample_inputs=[
-            "做一笔 00700.HK 的 TRS",
-            "腾讯",
-            "伦铜下月合约",
-            "买 50ETF 一些",
-            "纳指",
-        ],
-    ),
     # ---- swap 子图（10 节点，P0/P1/P2）----
     "swap.intent": NodeSeedSpec(
         node_name="swap.intent",
@@ -119,20 +105,18 @@ NODE_REGISTRY: dict[str, NodeSeedSpec] = {
         intent_values=[
             "new_inquiry",
             "place_order_from_quote",
-            "request_modify_order",
-            "request_cancel_order",
-            "cancel_order_request",
             "confirm_order",
+            "cancel_order_request",
+            "request_cancel_order",
             "confirm_cancel_order",
-            "confirm_modify_order",
             "query_order_status",
             "unknown_intent",
         ],
-        description="期权二级意图分类（10 个基础意图，不含 close_order_*）。",
+        description="期权二级意图分类（DSL v2:7 意图 + unknown,不含 close_order_*）。",
         sample_inputs=[
             "期权询价 腾讯控股 欧式看涨 行权价500 1个月",
             "确认第二笔",
-            "期权撤单 OPT-20260304-0001",
+            "期权撤单 Q-20260304-0000000001",
         ],
     ),
     "option.extract_inquiry": NodeSeedSpec(
@@ -146,39 +130,53 @@ NODE_REGISTRY: dict[str, NodeSeedSpec] = {
             "帮我询价茅台 3 个月雪球 名义 1000w",
         ],
     ),
-    "option.extract_place_or_modify": NodeSeedSpec(
-        node_name="option.extract_place_or_modify",
+    "option.extract_place": NodeSeedSpec(
+        node_name="option.extract_place",
         product_type="option",
-        intent_values=["place_order_from_quote", "request_modify_order"],
-        description="期权下单/改单参数（共用 schema，靠 expected_action 区分）。",
+        intent_values=["place_order_from_quote"],
+        description="期权下单参数（DSL v2 拆分：报价引用场景下单，含改单归类）。",
         sample_inputs=[
             "期权下单 茅台 欧式看涨 行权价 1800 期限 1M 名义 500万",
-            "改单 OPT-20260304-0001 行权价改 1850",
+            "改单 Q-20260304-0000000001 行权价改 1850",
+        ],
+    ),
+    "option.extract_cancel_place": NodeSeedSpec(
+        node_name="option.extract_cancel_place",
+        product_type="option",
+        intent_values=["cancel_order_request"],
+        description="期权取消下单参数提取（DSL v2 拆分）。",
+        sample_inputs=[
+            "不下了，取消这笔期权",
+            "算了先不要下单",
         ],
     ),
     "option.extract_cancel": NodeSeedSpec(
         node_name="option.extract_cancel",
         product_type="option",
-        intent_values=["cancel_order_request", "request_cancel_order"],
-        description="期权撤单参数提取（合并 cancel_order_request + request_cancel_order）。",
+        intent_values=["request_cancel_order"],
+        description="期权撤单请求参数提取（DSL v2：仅 request_cancel_order）。",
         sample_inputs=[
-            "期权撤单 OPT-20260304-0001",
-            "撤销期权订单 OPT-20260304-0002",
+            "期权撤单 Q-20260304-0000000001",
+            "撤销期权订单 Q-20260304-0000000002",
         ],
     ),
-    "option.extract_confirm": NodeSeedSpec(
-        node_name="option.extract_confirm",
+    "option.extract_confirm_place": NodeSeedSpec(
+        node_name="option.extract_confirm_place",
         product_type="option",
-        intent_values=[
-            "confirm_order",
-            "confirm_cancel_order",
-            "confirm_modify_order",
-        ],
-        description="期权三种确认参数提取（合并版，靠 expected_action 区分）。",
+        intent_values=["confirm_order"],
+        description="期权确认下单参数提取（DSL v2 拆分）。",
         sample_inputs=[
             "确认第二笔",
-            "期权 确认下单 OPT-20260304-0001",
-            "确认期权撤单 OPT-20260304-0001",
+            "期权 确认下单 Q-20260304-0000000001",
+        ],
+    ),
+    "option.extract_confirm_cancel": NodeSeedSpec(
+        node_name="option.extract_confirm_cancel",
+        product_type="option",
+        intent_values=["confirm_cancel_order"],
+        description="期权确认撤单参数提取（DSL v2 拆分）。",
+        sample_inputs=[
+            "确认期权撤单 Q-20260304-0000000001",
         ],
     ),
     "option.extract_query": NodeSeedSpec(

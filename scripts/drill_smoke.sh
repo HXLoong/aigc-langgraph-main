@@ -1,15 +1,15 @@
 #!/usr/bin/env bash
-# F4.0 演练 smoke 脚本 · 不注入故障，仅串联 6 件套验证可用性。
+# 回切演练 smoke 脚本 · 不注入故障，仅串联 5 件套验证可用性。
 #
 # 用途：
-#   1. Tony 首次 walkthrough docs/m3-f4.0-oncall-drill.md 前，本地干跑确认
-#      6 件套工具的命令、退出码、输出格式都正常。
+#   1. 首次 walkthrough docs/operations/on-call-runbook.md §8 回切演练前，本地干跑确认
+#      5 件套工具的命令、退出码、输出格式都正常。
 #   2. 演练当天 Scene 1（基线确认）可直接调本脚本替代手敲多条命令。
 #
 # 注意：
 #   - 本脚本只覆盖 Scene 1（基线）+ Scene 5 的查询动作（不真回切）+
 #     Scene 6 的恢复验证（不真改 .env）。
-#   - **绝不**注入故障 / 改 .env / 调 rollback。F4.0 真演练用人工执行剧本。
+#   - **绝不**注入故障 / 改 .env / 调 rollback。真演练按 docs/operations/on-call-runbook.md §8 人工执行。
 #
 # 跑法：
 #   bash scripts/drill_smoke.sh                                # 本地（默认 :8000）
@@ -89,7 +89,7 @@ while [[ $# -gt 0 ]]; do
         --json) JSON_OUTPUT=1; shift ;;
         -h|--help)
             cat <<'EOF'
-F4.0 演练 smoke 脚本
+回切演练 smoke 脚本
 
 用法：bash scripts/drill_smoke.sh [选项]
 
@@ -109,14 +109,13 @@ EOF
 done
 
 # ============================================================
-# Check 1 · F4 6 件套工具存在
+# Check 1 · 演练 5 件套工具存在
 # ============================================================
 check_tools_exist() {
-    section "Check 1/6 · 6 件套工具就位"
+    section "Check 1/6 · 5 件套工具就位"
     local tools=(
         "scripts/canary_status.py"
         "scripts/metrics_snapshot.py"
-        "scripts/promote_langfuse_prompt.py"
         "scripts/deploy-customer.sh"
         "scripts/rollback_canary.sh"
         "infra/grafana/dashboards/otc-agent-overview.json"
@@ -128,14 +127,14 @@ check_tools_exist() {
         fi
     done
     if [ "${#missing[@]}" -eq 0 ]; then
-        record_check "6 件套工具存在" pass "全部 6 项"
+        record_check "5 件套工具存在" pass "全部 ${#tools[@]} 项"
     else
-        record_check "6 件套工具存在" fail "缺失: ${missing[*]}"
+        record_check "5 件套工具存在" fail "缺失: ${missing[*]}"
     fi
 }
 
 # ============================================================
-# Check 2 · 工具语法 OK（bash -n / python -c import）
+# Check 2 · 工具语法 OK（bash -n / python --help 可加载）
 # ============================================================
 check_tools_syntax() {
     section "Check 2/6 · 工具语法可加载"
@@ -146,7 +145,6 @@ check_tools_syntax() {
     local pyscripts=(
         "scripts/canary_status.py"
         "scripts/metrics_snapshot.py"
-        "scripts/promote_langfuse_prompt.py"
     )
 
     local errs=()
@@ -160,10 +158,9 @@ check_tools_syntax() {
     for s in "${pyscripts[@]}"; do
         local f="${PROJECT_DIR}/$s"
         [ ! -f "$f" ] && continue
-        if ! "$PYTHON_BIN" -c \
-            "import ast, pathlib, sys; ast.parse(pathlib.Path(sys.argv[1]).read_text(encoding='utf-8'))" \
-            "$f" 2>/dev/null; then
-            errs+=("$s [py syntax]")
+        # 真正执行 --help：ast.parse 会放过导入即 NameError 的合并遗留
+        if ! "$PYTHON_BIN" "$f" --help >/dev/null 2>&1; then
+            errs+=("$s [py load]")
         fi
     done
 
@@ -175,7 +172,7 @@ check_tools_syntax() {
 }
 
 # ============================================================
-# Check 3 · /ready 4 上游全绿（D2.6）
+# Check 3 · /ready 4 上游全绿
 # ============================================================
 check_ready() {
     section "Check 3/6 · /ready 4 上游探测"
@@ -195,7 +192,7 @@ check_ready() {
             record_check "/ready 不可达" fail "服务未启动或 URL 错: $READY_URL"
             ;;
         *)
-            record_check "/ready HTTP $status" fail "意外状态码（D2.6 路由可能未注册）"
+            record_check "/ready HTTP $status" fail "意外状态码（/ready 路由可能未注册）"
             ;;
     esac
     rm -f "$tmp"
@@ -272,7 +269,7 @@ check_deploy_steps() {
     rc=$?
     if [ "$rc" -eq 0 ] && echo "$out" | grep -q "必填字段全部就绪"; then
         local canary_line
-        canary_line=$(echo "$out" | grep -E "F4 金丝雀" | head -1 | sed 's/^.*[FW] //')
+        canary_line=$(echo "$out" | grep -E "金丝雀" | head -1 | sed 's/^.*[FW] //')
         record_check "deploy step 2 (.env 校验)" pass "$canary_line"
     else
         record_check "deploy step 2 (.env 校验)" fail "exit=$rc · $(echo "$out" | tail -2 | tr '\n' '|')"
@@ -305,7 +302,7 @@ print_summary() {
         "$PASSED" "$FAILED" "$TOTAL" "$rate"
 
     if [ "$FAILED" -eq 0 ]; then
-        printf "${GREEN}=== 演练基线 OK · 可执行 docs/m3-f4.0-oncall-drill.md ===${NC}\n"
+        printf "${GREEN}=== 演练基线 OK · 可执行 docs/operations/on-call-runbook.md §8 回切演练 ===${NC}\n"
         return 0
     fi
     printf "${RED}=== 演练基线异常 · 修复后再演练 ===${NC}\n"
@@ -354,7 +351,7 @@ print_json() {
 # ============================================================
 # 主流程
 # ============================================================
-section "F4.0 演练 smoke · $(date '+%Y-%m-%d %H:%M:%S')"
+section "回切演练 smoke · $(date '+%Y-%m-%d %H:%M:%S')"
 echo "  PROJECT_DIR: $PROJECT_DIR"
 echo "  METRICS_URL: $METRICS_URL"
 echo "  READY_URL:   $READY_URL"

@@ -1,8 +1,6 @@
 """close 子图编译入口。
 
-ADR 0001 D6 + grill-with-docs。
-
-★ close 子图所有 7 节点真节点全部到位（intent + 6 真节点）：
+ADR 0001 D6：intent + 6 个意图节点 + close_unknown 兜底。
 
     START → close_intent → [route_by_intent]
         → close_holding_query   (close_order_query)
@@ -13,47 +11,27 @@ ADR 0001 D6 + grill-with-docs。
         → close_query_status    (close_order_order_query)
         → close_unknown         (unknown_intent / cascade 错误兜底)
         → END
-
-注：原 close_todo 占位节点已删除（所有真节点到位）。仅保留 close_unknown
-处理 unknown_intent + cascade 防御场景。
 """
 from __future__ import annotations
-
-from typing import Any
 
 from langgraph.graph import END, START, StateGraph
 from langgraph.graph.state import CompiledStateGraph
 
-from app.graph.cascade import has_error
-from app.graph.safe_node import safe_node
-from app.graph.state import AgentState, TraceEntry
+from app.graph.retry import add_io_node
+from app.graph.state import AgentState, SubgraphOutput
+from app.subgraphs.close.backend import close_clean_request, close_query_backend, close_submit
 from app.subgraphs.close.cancel_close import close_cancel_close
 from app.subgraphs.close.confirm_cancel import close_confirm_cancel
 from app.subgraphs.close.confirm_close import close_confirm_close
 from app.subgraphs.close.holding_query import close_holding_query
 from app.subgraphs.close.intent import close_intent
-from app.subgraphs.close.place_close import close_place_close
+from app.subgraphs.close.place_close import build_place_close_graph
 from app.subgraphs.close.query_status import close_query_status
+from app.subgraphs.common import add_intent_dispatch, intent_router, make_unknown_node
+from app.subgraphs.request_boundary import after_clean, after_prepare
 
-
-@safe_node
-async def close_unknown(state: AgentState) -> dict[str, Any]:
-    """unknown_intent + cascade 错误兜底节点。
-
-    替代原 close_todo 占位（close 子图所有真节点已实施）。仍保留以处理：
-    - LLM 判 unknown_intent
-    - intent 节点失败后的 cascade 防御目的地
-    """
-    intent = state.get("intent") or "unknown_intent"
-    return {
-        "trace": [
-            TraceEntry(
-                node="close_unknown",
-                decision=f"unhandled_intent={intent}",
-            )
-        ]
-    }
-
+#: unknown_intent + cascade 错误兜底节点（LLM 判 unknown_intent，或 intent 节点失败）
+close_unknown = make_unknown_node("close_unknown")
 
 #: intent → 真节点 key 路由表（close 子图全 6 个 close_order_* 意图全覆盖）
 _INTENT_TO_NODE: dict[str, str] = {
@@ -65,21 +43,17 @@ _INTENT_TO_NODE: dict[str, str] = {
     "close_order_order_query": "close_query_status",
 }
 
-
-def _route_after_close_intent(state: AgentState) -> str:
-    """close.intent 后路由：cascade 防御 + intent 分发。"""
-    if has_error(state):
-        return "close_unknown"
-    intent = state.get("intent") or "unknown_intent"
-    return _INTENT_TO_NODE.get(intent, "close_unknown")
+#: close.intent 后路由：cascade 防御 + intent 分发
+_route_after_close_intent = intent_router(_INTENT_TO_NODE, "close_unknown")
 
 
-def build_close_graph() -> CompiledStateGraph:
-    """构建 close 子图（7/7 真节点全部到位）。"""
-    g: StateGraph = StateGraph(AgentState)
+def build_close_graph() -> CompiledStateGraph[AgentState, None, AgentState, SubgraphOutput]:
+    """构建 close 子图（intent + 6 意图节点 + unknown 兜底）。"""
+    g: StateGraph[AgentState, None, AgentState, SubgraphOutput] = StateGraph(AgentState, output_schema=SubgraphOutput)
     g.add_node("close_intent", close_intent)
     g.add_node("close_holding_query", close_holding_query)
-    g.add_node("close_place_close", close_place_close)
+    # 平仓内部图只准备、检查本次选择并提交；只读上下文与唯一模型均在主图。
+    g.add_node("close_place_close", build_place_close_graph())
     g.add_node("close_confirm_close", close_confirm_close)
     g.add_node("close_cancel_close", close_cancel_close)
     g.add_node("close_confirm_cancel", close_confirm_cancel)
@@ -87,29 +61,18 @@ def build_close_graph() -> CompiledStateGraph:
     g.add_node("close_unknown", close_unknown)
 
     g.add_edge(START, "close_intent")
-    g.add_conditional_edges(
-        "close_intent",
-        _route_after_close_intent,
-        {
-            "close_holding_query": "close_holding_query",
-            "close_place_close": "close_place_close",
-            "close_confirm_close": "close_confirm_close",
-            "close_cancel_close": "close_cancel_close",
-            "close_confirm_cancel": "close_confirm_cancel",
-            "close_query_status": "close_query_status",
-            "close_unknown": "close_unknown",
-        },
+    targets = add_intent_dispatch(
+        g, "close_intent", _route_after_close_intent, _INTENT_TO_NODE, "close_unknown",
     )
-    for n in (
-        "close_holding_query",
-        "close_place_close",
-        "close_confirm_close",
-        "close_cancel_close",
-        "close_confirm_cancel",
-        "close_query_status",
-        "close_unknown",
-    ):
-        g.add_edge(n, END)
+    for n in targets:
+        g.add_conditional_edges(n, after_prepare, {"done": END, "clean": "close_clean_request"})
+    g.add_node("close_clean_request", close_clean_request)
+    g.add_node("close_submit", close_submit)
+    add_io_node(g, "close_query_backend", close_query_backend)
+    g.add_conditional_edges("close_clean_request", after_clean,
+                               {"done": END, "query": "close_query_backend", "submit": "close_submit"})
+    g.add_edge("close_submit", END)
+    g.add_edge("close_query_backend", END)
     return g.compile()
 
 

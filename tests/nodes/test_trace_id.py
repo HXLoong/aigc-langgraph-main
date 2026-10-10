@@ -1,4 +1,4 @@
-"""#156 裁决落地：trace_id 贯穿（ADR 0004 关联键补实现）。
+"""trace_id 贯穿（ADR 0004 关联键）。
 
 - routes/ingest 生成 trace_id 入 state（ingest 兜底，非 API 入口如 eval 也有）
 - persist 落 node_trace.trace_id 列 → SQL 与 LangFuse 可按单次调用关联
@@ -6,7 +6,7 @@
 from __future__ import annotations
 
 from app.nodes.ingest import ingest
-from app.nodes.persist import _trace_entry_to_row
+from app.storage.node_trace import trace_entry_to_row as _trace_entry_to_row
 
 
 class TestIngestTraceId:
@@ -34,9 +34,9 @@ class TestPersistTraceId:
     def test_insert_sql_has_trace_id_column(self) -> None:
         import inspect
 
-        from app.nodes import persist as persist_mod
+        from app.storage import node_trace
 
-        src = inspect.getsource(persist_mod._write_to_mysql)
+        src = inspect.getsource(node_trace.write_node_trace)
         assert "trace_id" in src, "INSERT 语句缺 trace_id 列"
 
 

@@ -1,138 +1,105 @@
 # OTC Agent · 场外衍生品 AI 指令助手
 
-基于 **FastAPI + LangGraph + MySQL + LangFuse** 的企微场外衍生品指令解析平台，从 Dify 工作流迁移而来。
+基于 FastAPI 与 LangGraph 的企微指令解析服务，支持互换、期权和期权平仓。
+服务通过 Dify 兼容 HTTP 接口接收消息，将解析结果提交 Java 业务接口并返回业务回复。
+MySQL 提供会话持久化与审计，Langfuse 提供可选追踪。
 
-> 当前阶段：**M1 / M2 完成 → M3 工程联调 + 评估迭代进行中**（参见 [ADR 0001](./docs/adr/0001-rewrite-app-with-harness-first.md) 和 [ADR 0016](./docs/adr/0016-m3-scope-engineering-loop-not-shadow.md)）
-
-## 当前进度
-
-| 里程碑 | 状态 | 内容 | 退出门 |
-|--------|------|------|--------|
-| **M1 · 骨架** | ✅ 完成 | LangFuse 部署 + 主图骨架 + 公共节点 + Client Protocol + Harness MVP | smoke + tools + api + harness 测试 PASS |
-| **M2 · 子图实现** | ✅ 完成（PR #41 已合入 main） | 20 个 LangGraph 节点：swap 6 + option 6 + option_close 7 + ticker 1；golden 扩到 350+ | mock_api baseline PASS ≥ 92.5%；真 LLM baseline 84.6%（`docs/m2-real-llm-final-report.md`）|
-| **M3.1 · Mock 跑通** | ✅ 完成 | LangGraph 全链路 → mock_api 8099 → 业务流端到端 | harness anchor 全集 PASS ≥ 85% |
-| **M3.2 · 真后端联调** | ✅ 完成 | D2.1–D2.6（三 client 切真后端 + 字段对齐 + ticker GOATS 联调 + 不可达降级 + InferCode 动态片段 + 健康检查）；Dx.1/Dx.2 swap/close 真 write 接入 | HTTP 5xx = 0 / 4xx = 0 |
-| **M3.3 · 真后端 Golden 回归** | 🔄 进行中 | E3.1 B 桶真后端 PASS（小样本完成）+ E3.2 桶分别评估 + E3.3 D 桶（依赖 PM）+ E3.4 错例聚类只修 P0/P1 + E3.5 现场 smoke + E3.6 业务方 sign-off | PASS ≥ M3.1 mock baseline，无链路回归 |
-| **M4 · 金丝雀切流** | ⏸ 工具链就绪，待启动 | 测试群 → ~30% 群组 → 全量；shadow 双跑作 M4 第二意见（ADR 0016）| 100% 切流 + 7 天无重大事故 |
-
-**M4 准备就绪的工具链**（可直接复用）：
-
-- `scripts/deploy-customer.sh` · 客户现场一键部署 + smoke 自检（C1.13）
-- `scripts/rollback_canary.sh` · F4 灰度应急回切（PR #98）
-- `scripts/drill_smoke.sh` · 演练 smoke（PR #100）
-- `scripts/shadow_compare.py` · LangGraph vs Dify 字段级 diff（PR #90 / #112，含 `DRY_RUN_BACKEND` 模式）
-- `scripts/canary_status.py` / `scripts/metrics_snapshot.py` · 灰度状态 + F4 全指标快照（PR #92 / #94）
-- `scripts/promote_langfuse_prompt.py` · LangFuse Prompt 晋升（F4.6 / PR #95）
-- `scripts/run_alerts.py` · 阈值告警干跑（5xx / cascade / P95 延迟 / LLM 失败率）
-- Grafana 灰度观测面板 JSON 模板（`infra/`，F4.2-F4.5 / PR #97）
-- `docs/on-call-runbook.md` · on-call 应急回切剧本（F4.0 / PR #99）
-
-参见 [docs/m3-m4-roadmap.md](./docs/m3-m4-roadmap.md) 获取分阶段任务图与分工，[ADR 0016](./docs/adr/0016-m3-scope-engineering-loop-not-shadow.md) 获取 M3 范围重定义，[ADR 0017](./docs/adr/0017-m4-canary-quantitative-exit-gate.md) 获取 M4 量化退出门。
-
-## 二期持续优化（全量上线后）
-
-来自客户内部汇报方案（2026-05-11）的三件套，**不在 T+3~4 全量上线范围内**，全量上线后启动：
-
-- **Issue #35** · 评估→优化→更新→再评估自动闭环（错例聚类 / A/B 自动评估 / 自动 PR 生成）
-- **Issue #36** · 智能体异常干预 + 沉淀记忆机制（agentic memory，跨会话经验记忆）
-- **Issue #37** · 回流集自动化打通（D 桶 · 生产真实流量 → golden，需脱敏 + 业务方人工标注）
-
-## 快速开始
-
-详见 [HOW_TO_RUN.md](./HOW_TO_RUN.md)。简版：
+## 启动命令
 
 ```bash
-# 1. 安装
-pip install -e ".[dev]"
-
-# 2. 启动依赖
-docker compose up -d mysql
-docker compose -f infra/langfuse/docker-compose.yml --env-file infra/langfuse/.env up -d
-
-# 3. 启动应用
-uvicorn app.main:app --reload   # POST /v1/workflows/run（兼容 Dify Workflow Run API）
-
-# 4. 跑测试（841 passed + 14 skipped，2 分钟左右）
-pytest tests/ -v
-
-# 5. 跑评估
-python scripts/langfuse_eval.py --local tests/fixtures/golden.jsonl --concurrency 4
-#   ↑ DeepSeek V4 Judge + per-turn 富集 JSON 写到 Langfuse Cloud
-python -m harness run                                    # 备用 harness CLI 入口
+python -m pip install -e ".[dev]"
+python -m uvicorn app.main:app --host 0.0.0.0 --port 8000
 ```
 
-## 架构
+服务启动后，检查接口并运行 app 核心测试：
 
-```text
-企微回调 → Java Worker → POST /v1/workflows/run（Dify-兼容）→ FastAPI → LangGraph
-                                                                        ↓
-                              ingest → intent_route → swap / option / option_close / ticker 子图
-                                                                        ↓
-                                          persist (node_trace) → render → outputs
-                                                                        ↓
-                                LangFuse（trace + dataset + eval + annotation；
-                                          self-hosted 或 Cloud 二选一）
-                                                                        ↓
-              Java Backend（option / swap / ticker；契约见 docs/api-contracts/）
+```bash
+curl http://127.0.0.1:8000/health
+curl http://127.0.0.1:8000/ready
+PYTHONUTF8=1 USE_MYSQL_CHECKPOINTER=false ENABLE_LANGFUSE=false \
+  python -m pytest tests/test_smoke.py -q
 ```
 
-详见 [ADR 0001](./docs/adr/0001-rewrite-app-with-harness-first.md)（推倒重写决定）+ [ADR 0014](./docs/adr/0014-langfuse-as-harness-backend.md)（LangFuse 后台）+ [ADR 0016](./docs/adr/0016-m3-scope-engineering-loop-not-shadow.md)（M3 范围重定义）。
+## 部署说明
 
-## 项目结构
+运行环境为 Python 3.11+。生产持久化使用 MySQL 8.0.19 至 9.6.0 之前的版本。
+数据库初始化前，将 `MYSQL_URI` 指向 Java 现有数据库；初始化脚本创建 LangGraph 使用的表，不创建数据库。
+生产服务启用 `USE_MYSQL_CHECKPOINTER=true`。无数据库本地调试设置
+`ENVIRONMENT=development`、`USE_MYSQL_CHECKPOINTER=false`、`MYSQL_URI=""`。
+仅关闭 checkpoint 不会关闭已配置 URI 的节点审计。
 
-```text
-app/                        # LangGraph 应用层
-├── main.py                 # FastAPI 入口 + lifespan + HTTPMetricsMiddleware + /metrics
-├── api/                    # routes.py（POST /v1/workflows/run）+ health.py（/health, /ready）
-├── graph/                  # state + safe_node + cascade fallback
-├── graphs/main_graph.py    # 兼容 shim → 真源 app/graph/main.py（一级路由 _route_after_intent）
-├── nodes/                  # ingest / intent_route / persist / render / fallback
-├── subgraphs/
-│   ├── swap/               # intent / place_order / cancel / confirm / query_order / hand_to_share
-│   ├── option/             # intent + 5 extract（inquiry / place_or_modify / cancel / confirm / query）
-│   ├── close/              # intent / place_close / cancel_close / confirm_close / confirm_cancel / holding_query / query_status
-│   └── ticker/             # ReAct Agent（tokenize / completeness / rank / infer_code）+ resolver
-├── tools/                  # OptionClient / SwapClient / TickerClient + models + auth
-├── llm/clients.py          # Qwen 工厂：standard / thinking / VL / qwen3.5-35b-a3b 非 thinking
-├── checkpointer/factory.py # AIOMySQLSaver
-├── observability/          # tracing + metrics（Prometheus 兼容 /metrics）
-└── prompts/                # Dify 提示词资产（router / swap / option / option_close / ticker）
+`.env` 中需要配置以下项目：
 
-harness/                    # 评测台 CLI（python -m harness <run|diff|sync-golden|...>）
-scripts/                    # langfuse_eval.py / eval_golden.py / probe_*_e2e.py / promote_*.py / canary_*.sh ...
-infra/langfuse/             # LangFuse self-hosted Docker Compose（PG + ClickHouse + Redis + MinIO + Web + Worker）
-docs/adr/                   # 架构决定 ADR 0000-0021（共 22 篇）+ README 索引
-docs/api-contracts/         # Java 后端真实业务 API 契约
-dify/                       # Dify 同步工具（保留历史 YAML 资产）
-tests/                      # 841 passed + 14 skipped；行覆盖率 82%
-tests/fixtures/             # golden.jsonl（350+ 条）+ golden_ticker_2026-05.jsonl
+| 配置 | 用途 |
+|---|---|
+| `LLM_PROVIDER`、`LLM_API_BASE`、`LLM_API_KEY` | 模型适配、网关地址与凭证 |
+| `LLM_MODEL_STANDARD`、`LLM_MODEL_THINKING`、`LLM_MODEL_COMPLEX` | 必填模型角色名称，业务解析使用 STANDARD |
+| `OTC_API_BASE_URL`、`OTC_API_SECRET` | Java 业务接口与凭证 |
+| `GOATS_BASE_URL`、`GOATS_CLIENT_ID`、`GOATS_CLIENT_SECRET`、`GOATS_EXTAPP_SALT` | 快速询价与存量查询接口 |
+| `MYSQL_URI`、`USE_MYSQL_CHECKPOINTER` | 数据库连接与会话持久化 |
+| `ENABLE_LANGFUSE`、`LANGFUSE_*` | 可选追踪与平台记录 |
+| `EVAL_USER_ID`、`EVAL_ROOM_ID` | 黄金集评测的授权测试账号与群 |
+
+已有 `.env` 时保留原配置。密钥不得提交仓库。完整开发配置见
+[开发指南](./docs/development/README.md)，数据库初始化见 [`sql/init.sql`](./sql/init.sql)。
+
+## 服务接口
+
+| 入口 | 用途 |
+|---|---|
+| `http://127.0.0.1:8000/docs` | HTTP 接口文档 |
+| `GET /health` | 服务存活检查 |
+| `GET /ready` | 依赖状态检查 |
+| `POST /v1/workflows/run` | Dify 兼容业务入口 |
+| `POST /v1/nodes/run` | 受保护的节点调试入口 |
+
+普通业务输入须传入 `robotVersion: "V2"`。缺省版本按 V1，普通消息静默。
+请求中的账号、群和消息 ID 使用调用端真实身份。单次调用处理一个业务动作，可包含多笔订单。
+证券识别与交易业务校验由 Java 负责。入口分流见
+[主图流程](./docs/architecture/main-graph-flow.md)。
+
+## 测试与评测
+
+app 核心测试验证路由、状态、参数、字段来源、引用选择、错误兜底与 HTTP 契约。
+改动验证运行受影响的测试文件，完整验收运行 `python -m pytest tests/ -q`。
+
+黄金用例保存在 [`tests/datasets/`](./tests/datasets/README.md)，统一由 Harness 请求已启动的
+`http://127.0.0.1:8000` 服务。Harness 不启动 app，不修改服务配置，不连接数据库准备测试消息。
+
+```bash
+python -m harness run --group intent --backend mock
+python -m harness run --file tests/datasets/biz/swap_prod.jsonl \
+  --case ai_trade_assist_prod_swap_order_case_1 --backend java
 ```
 
-## 关键文档
+`--group biz|intent|all` 选择数据集，`--file` 选择文件，`--case` 选择用例；文件和用例参数可重复。
+`--backend mock|java` 声明评测后端，运行中的 app 须已配置对应接口。
+默认范围为业务集全量。Java 评测须使用已授权账号与数据，不随部署自动执行。
+mock_api 替代外部接口，不模拟模型。Python 同步判定结果，不依赖 Langfuse 或 Node.js。
 
-| 文档 | 用途 |
-|------|------|
-| [CLAUDE.md](./CLAUDE.md) | AI 工具加载的项目 memory |
-| [CONTEXT.md](./CONTEXT.md) | 领域术语 + 概念边界 |
-| [HOW_TO_RUN.md](./HOW_TO_RUN.md) | 完整启动流程 |
-| [PLAN.md](./PLAN.md) | 期权链路评估与提示词迭代方案 |
-| [QUICKSTART_CLAUDE_CODE.md](./QUICKSTART_CLAUDE_CODE.md) | Claude Code 实操指南 |
-| [docs/adr/](./docs/adr/) | 架构决定 ADR 0000-0021（共 22 篇），入口见 [索引](./docs/adr/README.md) |
-| [docs/m3-m4-roadmap.md](./docs/m3-m4-roadmap.md) | M3/M4 端到端任务图（2026-05-11） |
-| [docs/on-call-runbook.md](./docs/on-call-runbook.md) | 上线 on-call SOP |
-| [docs/api-contracts/java-backend.md](./docs/api-contracts/java-backend.md) | Java 后端真实契约 |
-| [infra/langfuse/README.md](./infra/langfuse/README.md) | LangFuse self-hosted 启动 |
+评分规则、报告与 mock 服务配置见 [测试指南](./docs/testing/README.md) 和
+[Harness 说明](./harness/README.md)。
 
-## 核心约定
+## 项目结构与文档
 
-- Python 3.11+，严格类型提示
-- ruff lint（行宽 100）
-- pytest + `asyncio_mode = "auto"`，提交前跑 `pytest tests/ -v`
-- 任何 bug fix / 新功能走 TDD（先写失败测试，再改代码；详见 `.claude/skills/test-driven-development/`）
-- 走 feature 分支 + PR，main 受保护
-- 严禁硬编码业务数据字典（命名指数 → ETF 代码等）；走 LLM 推断 + 后端权威源校验
+| 目录 | 内容 |
+|---|---|
+| `app/` | HTTP 服务、图、业务节点、解析契约、客户端与提示词 |
+| `harness/` | 黄金集加载、HTTP 执行、确定性评分与报告 |
+| `tests/` | app 核心测试与黄金数据集 |
+| `mock_api/` | 本地外部接口 stub |
+| `scripts/` | 数据同步、部署与运维 |
+| `infra/`、`sql/` | 基础设施配置、数据库初始化与迁移 |
 
-详见 [.claude/rules/](./.claude/rules/) + [docs/adr/](./docs/adr/) + [CLAUDE.md](./CLAUDE.md) 的"绝对禁止"小节。
+- [开发指南](./docs/development/README.md) · 环境配置、接口调用与日常开发
+- [测试指南](./docs/testing/README.md) · 核心测试、黄金集范围与评分
+- [架构导览](./docs/architecture/README.md) · 代码分层与图结构
+- [领域术语](./CONTEXT.md) · 业务概念与职责边界
+- [Java 接口契约](./docs/api-contracts/java-backend.md) · 出站业务协议
+- [部署文档](./docs/deploy/README.md) · 服务部署与环境检查
+- [运维手册](./docs/operations/on-call-runbook.md) · 监控与故障处置
+- [ADR](./docs/adr/README.md) · 架构决策
+- [文档地图](./docs/README.md) · 文档索引
 
 ## License
 

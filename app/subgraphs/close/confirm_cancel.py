@@ -1,62 +1,57 @@
-"""close.confirm_cancel 节点 · 确认撤销平仓订单号提取。
-
-输入：raw_text + quote_content（引用消息含订单列表）
-输出：state['confirm'] = {action: "cancel_close", confirmCancelOrderNoList: [...]}
-
-LLM：standard 模型 + with_structured_output（ADR 0010）。
-prompt：app/prompts/option_close/confirm_cancel.md。
-"""
+"""平仓最终确认：明确口令、当前引用与唯一订单范围由共享代码协议校验。"""
 from __future__ import annotations
 
 from typing import Any
 
+from app.domain.confirmation import parse_confirmation
+from app.extraction.identity import prepare_identity_scope
 from app.graph.business_params import validated_confirm
 from app.graph.safe_node import safe_node
 from app.graph.state import AgentState, TraceEntry
-from app.llm.clients import get_qwen_thinking
-from app.prompts import load_prompt
-from app.subgraphs.close.models import ConfirmCancelParams
-from app.subgraphs.option.backend import call_option_backend
-
-
-def _build_user_message(state: AgentState) -> str:
-    raw_content = state.get("raw_text", "") or ""
-    quote_content = state.get("quote_content") or ""
-    return (
-        f"用户发送消息：{raw_content}\n"
-        f"用户引用消息：{quote_content}"
-    )
+from app.subgraphs.close.aggregate import build_close_order_req_vo
+from app.subgraphs.close.backend import prepare_close_request
+from app.subgraphs.close.order_id import extract_order_ids
 
 
 @safe_node
 async def close_confirm_cancel(state: AgentState) -> dict[str, Any]:
-    """close.confirm_cancel 节点。"""
-    prompt = load_prompt("option_close", "confirm_cancel")
-    llm = get_qwen_thinking().with_structured_output(ConfirmCancelParams)
-
-    user_message = _build_user_message(state)
-    result: Any = await llm.ainvoke(
-        [
-            ("system", prompt.system),
-            ("user", user_message),
-        ]
+    """close.confirm_cancel 节点（确定性提取）。"""
+    identity_origin = "quote" if state.get("quote_content") else "raw"
+    identity_evidence = state.get("quote_content") or state.get("raw_text") or ""
+    confirmation = parse_confirmation(
+        state.get("raw_text"), state.get("quote_content"), product="close", action="cancel",
     )
+    if confirmation.error:
+        return {"confirm": None, "reply_text": confirmation.correction(),
+                "trace": [TraceEntry(node="close_confirm_cancel", decision=f"confirmation:{confirmation.error}")]}
+    confirm_cancel_ids = list(confirmation.order_ids)
 
-    order_list = [{"orderId": oid} for oid in result.confirmCancelOrderNoList]
-    backend = await call_option_backend(
-        state,
+    prepared_state, protected_ids, records = prepare_identity_scope(
+        state, confirm_cancel_ids, scope="close/confirm_cancel", field="confirmCancelOrderNoList", origin=identity_origin, evidence=identity_evidence,
+        explicit_raw_ids=extract_order_ids(state.get("raw_text")), selection=True,
+    )
+    confirm_cancel_ids = [order_id for order_id in protected_ids if order_id is not None]
+    confirmation.verify_scope(confirm_cancel_ids)
+    req_vo = build_close_order_req_vo(
+        confirm_cancel_order_no_list=confirm_cancel_ids
+    )
+    request_update = await prepare_close_request(
+        prepared_state,
         intent="close_order_cancel_confirm",
-        order_list=order_list,
+        close_order_req_vo=req_vo,
     )
 
     return {
-        "confirm": validated_confirm(action="cancel_close", confirmCancelOrderNoList=result.confirmCancelOrderNoList),
-        **backend,
+        "field_records": records,
+        "expected_action": "cancel",
+        "confirm": validated_confirm(
+            action="cancel_close", confirmCancelOrderNoList=confirm_cancel_ids
+        ),
+        **request_update,
         "trace": [
             TraceEntry(
                 node="close_confirm_cancel",
-                decision=f"orders={len(result.confirmCancelOrderNoList)}",
-                llm_output=result.model_dump(),
+                decision=f"deterministic,orders={len(confirm_cancel_ids)}",
             )
         ],
     }
