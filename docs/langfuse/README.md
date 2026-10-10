@@ -5,25 +5,6 @@
 [ADR 0014](../adr/0014-langfuse-as-harness-backend.md)，基础设施快速启动见
 [infra/langfuse/README.md](../../infra/langfuse/README.md)。
 
-## 按任务照做的手册
-
-任务手册补充具体操作，已有概念说明、契约和 ADR 通过链接复用。可作为 Notion 页面内容；
-页面包含负责人、状态、SDK 与自托管版本、最后验证日期和验证人，正文统一为：适用人群与场景、
-前置条件、操作步骤、验证、常见问题、本项目不用的功能及原因、参考。
-
-| 编号 | 手册 | 负责人 | 状态 | 做完能得到什么 |
-|---|---|---|---|---|
-| A1 | [Trace 查看与排障](./developer-manuals/a1-trace-troubleshooting.md) | @HXl | 草稿 | 按运行名、会话 ID 或消息 ID 找到请求，读 span 树与 turns，定位出错节点 |
-| A2 | [Session、User、Tag 与过滤](./developer-manuals/a2-sessions-users-tags-filters.md) | @HXl | 草稿 | 串起多轮会话，按业务用户和标签查记录，组合筛选并保存常用视图 |
-| A3 | [Dashboard 与指标分析](./developer-manuals/a3-dashboard-and-metrics.md) | @HXl | 草稿 | 按实际 Home Dashboard 查看延迟、token、成本、错误占比及评分趋势，查阅项目告警阈值与处理规则 |
-| A4 | [Dataset 管理（界面）](./developer-manuals/a4-dataset-management.md) | @HXl | 草稿 | 浏览和筛选用例，追溯 Git 来源，理解单向发布并核对发布结果 |
-| A5 | [Experiment 结果对比](./developer-manuals/a5-experiment-comparison.md) | @HXl | 草稿 | 对比两次运行，找新增失败用例，阅读确定性 Scores、Comment 和字段差异 |
-| A6 | [人工标注与业务复核](./developer-manuals/a6-human-annotation.md) | @HXl | 草稿 | 使用标注队列记录结论与依据，导出复核材料，经业务确认后合入 fixture |
-
-练习只查沙箱测试记录；截图须使用测试数据或先脱敏，不在手册中填写密钥、密码、API Key 或内网地址。
-不改正式项目配置，不升级 SDK 或部署。发现资料差异时记录给审阅人，见
-[资料审阅记录](../reports/2026-09-29-langfuse-manual-source-review.md)。
-
 ## 一、推荐阅读顺序
 
 | # | 文档 | 读完能做什么 |

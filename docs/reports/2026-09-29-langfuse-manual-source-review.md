@@ -46,7 +46,7 @@
 
 ## A2 补充审阅记录（2026-09-29）
 
-本节对应 [A2 · Session、User、Tag 与过滤](../langfuse/developer-manuals/a2-sessions-users-tags-filters.md)，保留上方 A1 记录不变。记录人 Codex，审阅人 @HXl；A2 状态为草稿，尚未进行沙箱 UI 验收或发布 Notion。
+本节对应 [A2 · Session、User、Tag 与过滤](https://github.com/GZTL-AI/aigc-langgraph/blob/bd55a8a/docs/langfuse/developer-manuals/a2-sessions-users-tags-filters.md)，保留上方 A1 记录不变。记录人 Codex，审阅人 @HXl；A2 状态为草稿，尚未进行沙箱 UI 验收或发布 Notion。
 
 ### 核对结果
 
@@ -80,7 +80,7 @@
 
 ## A3 补充审阅记录（2026-09-29）
 
-本节对应 [A3 · Dashboard 与指标分析](../langfuse/developer-manuals/a3-dashboard-and-metrics.md)。记录人 Codex，审阅人 @HXl；保留 A1、A2 记录与既有功能手册。A3 为草稿，未发布 Notion，未连接正式项目修改配置或数据，未升级 SDK 或部署。
+本节对应 [A3 · Dashboard 与指标分析](https://github.com/GZTL-AI/aigc-langgraph/blob/bd55a8a/docs/langfuse/developer-manuals/a3-dashboard-and-metrics.md)。记录人 Codex，审阅人 @HXl；保留 A1、A2 记录与既有功能手册。A3 为草稿，未发布 Notion，未连接正式项目修改配置或数据，未升级 SDK 或部署。
 
 ### 核对结果
 
@@ -116,7 +116,7 @@
 
 ### A3 本轮截图核对与操作范围调整
 
-用户随后要求只查看已有 Dashboard，并提供三张实际页面截图。本轮按截图更新 A3；上方初稿关于新建卡片、保存面板及快照命令的验收安排不再用于当前手册。当前验收以 [A3 第 4 节](../langfuse/developer-manuals/a3-dashboard-and-metrics.md#4-验证做完后应该看到什么)为准。
+用户随后要求只查看已有 Dashboard，并提供三张实际页面截图。本轮按截图更新 A3；上方初稿关于新建卡片、保存面板及快照命令的验收安排不再用于当前手册。当前验收以 [A3 第 4 节](https://github.com/GZTL-AI/aigc-langgraph/blob/bd55a8a/docs/langfuse/developer-manuals/a3-dashboard-and-metrics.md#4-验证做完后应该看到什么)为准。
 
 | 核对项 | 截图证据与本轮处理 |
 |---|---|
@@ -150,7 +150,7 @@ A3 步骤 8 改为“查看告警阈值与处理规则”，链接可观测性�
 
 ## A4 补充审阅记录（2026-09-29）
 
-本节对应 [A4 · Dataset 管理（界面）](../langfuse/developer-manuals/a4-dataset-management.md)。记录人 Codex，审阅人 @HXl；A4 为草稿。新增任务手册与目录入口，保留既有功能指南、自动同步说明和 ADR，未发布 Notion，未访问或修改平台数据。
+本节对应 [A4 · Dataset 管理（界面）](https://github.com/GZTL-AI/aigc-langgraph/blob/bd55a8a/docs/langfuse/developer-manuals/a4-dataset-management.md)。记录人 Codex，审阅人 @HXl；A4 为草稿。新增任务手册与目录入口，保留既有功能指南、自动同步说明和 ADR，未发布 Notion，未访问或修改平台数据。
 
 ### 核对结果
 
@@ -184,7 +184,7 @@ A3 步骤 8 改为“查看告警阈值与处理规则”，链接可观测性�
 
 ## A5 补充审阅记录（2026-09-29）
 
-对应 [A5 · Experiment 结果对比](../langfuse/developer-manuals/a5-experiment-comparison.md)。记录人 Codex，审阅人 @HXl；状态为草稿。本次新增任务手册、目录入口及官方测试截图，未改原功能指南、契约或 ADR，未发布 Notion，未连接项目查询数据或执行评测。
+对应 [A5 · Experiment 结果对比](https://github.com/GZTL-AI/aigc-langgraph/blob/bd55a8a/docs/langfuse/developer-manuals/a5-experiment-comparison.md)。记录人 Codex，审阅人 @HXl；状态为草稿。本次新增任务手册、目录入口及官方测试截图，未改原功能指南、契约或 ADR，未发布 Notion，未连接项目查询数据或执行评测。
 
 ### 核对结果
 
@@ -219,7 +219,7 @@ A3 步骤 8 改为“查看告警阈值与处理规则”，链接可观测性�
 
 ## A6 补充审阅记录（2026-09-29）
 
-对应 [A6 · 人工标注与业务复核](../langfuse/developer-manuals/a6-human-annotation.md)。记录人 Codex，审阅人 @HXl；状态为草稿。本次新增任务手册、目录入口和两张官方测试截图；未改已有契约、业务代码、fixture 或平台配置，未发布 Notion。
+对应 [A6 · 人工标注与业务复核](https://github.com/GZTL-AI/aigc-langgraph/blob/bd55a8a/docs/langfuse/developer-manuals/a6-human-annotation.md)。记录人 Codex，审阅人 @HXl；状态为草稿。本次新增任务手册、目录入口和两张官方测试截图；未改已有契约、业务代码、fixture 或平台配置，未发布 Notion。
 
 ### 核对结果
 
