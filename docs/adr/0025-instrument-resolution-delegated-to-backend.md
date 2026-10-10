@@ -1,7 +1,10 @@
 # ADR 0025 · 标的识别职责边界：Java 调用识别工作流
 
-- 状态：已采纳（追认，落地 commit `2f9ce65`）
+## 状态
+
+- 状态：已采纳
 - 日期：2026-09-20
+- 记录方式：追认已有实现（commit `2f9ce65`）
 - 关系：修订 [ADR 0001](./0001-rewrite-app-with-harness-first.md) D4、[ADR 0023](./0023-prompt-as-code-langgraph.md)、[ADR 0024](./0024-langgraph-native-rearchitecture.md) D2 / D3
 - 执行说明：[docs/architecture/backend-instrument-boundary.md](../architecture/backend-instrument-boundary.md)
 - 作者：图灵科技 + Tony

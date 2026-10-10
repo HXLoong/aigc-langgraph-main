@@ -1,6 +1,8 @@
 # ADR 0005 · 标注闭环：确定性断言 + 业务方复核
 
-- 状态：已采纳（评分规范已修订，评测代码与线上标注流程待迁移）
+## 状态
+
+- 状态：已采纳
 - 日期：2026-09-24
 - 关系：平台见 [ADR 0014](./0014-langfuse-as-harness-backend.md)，节点回归闭环见 [ADR 0029](./0029-node-level-debug-api-and-regression-workbench.md)，放行门见 [ADR 0030](./0030-goal-restatement-native-langgraph-dataset-eval-harness.md)
 - 作者：图灵科技 + Tony

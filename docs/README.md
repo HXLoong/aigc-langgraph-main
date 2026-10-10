@@ -1,14 +1,15 @@
 # docs · 文档地图与存放规则
 
-一页看懂文档在哪、读什么、何时读，以及**新文档该放哪**。存放规则由 `scripts/check_docs_layout.py`
-在 CI fast job 中强制检查；人和 AI agent（Claude Code / Codex）写文档都按本页执行。
+一页看懂文档在哪、读什么、何时读，以及**新文档该放哪**。文档布局和引用按本页规则人工复核；人和 AI agent（Claude Code / Codex）写文档都按本页执行。
 
 ## 新人阅读路径
 
-1. 根 `CLAUDE.md` —— 项目现状、命令、核心原则、排查 SOP
-2. [architecture/](./architecture/README.md) —— 单页导览 + 分层说明
-3. 根 `CONTEXT.md` —— 领域语言（业务术语）
-4. [adr/](./adr/README.md) —— 架构决策索引，按需查
+1. [根 README](../README.md) → [开发指南](./development/README.md) —— 安装、配置、启动和调用
+2. [测试指南](./testing/README.md) → [数据集说明](../tests/datasets/README.md) —— app 核心测试与黄金集评测
+3. [architecture/](./architecture/README.md) → [CONTEXT.md](../CONTEXT.md) —— 架构分层与业务术语
+4. [接口契约](./api-contracts/README.md) → [adr/](./adr/README.md) —— 接口与设计依据
+
+进展与待办只查 [work-plan.md](./work-plan.md)；AI 协作时再按需读 `CLAUDE.md`／生成的 `AGENTS.md`，不把代理规则当成新人部署手册。
 
 ## 目录总览
 
@@ -38,7 +39,7 @@
 | 文档回答的问题 | 放到 |
 |---|---|
 | 系统现在长什么样、某段逻辑住在哪、谁负责什么 | `architecture/` |
-| 为什么做这个技术决定、有哪些取舍 | `adr/`（编号递增，只写现行结论） |
+| 为什么做这个技术决定、有哪些取舍 | `adr/`（编号稳定，保留决策及演进历史） |
 | 外部接口的字段、路径、错误码是什么 | `api-contracts/` |
 | 我在本地怎么跑起来、怎么调试、开发时报错怎么办 | `development/` |
 | 怎么测、测试数据怎么准备、数据集怎么组织 | `testing/` |
@@ -64,12 +65,12 @@
 ### 3. 约定（评审把关）
 
 - **新增文档登记到所在目录的 `README.md` 索引**
-- **现行文档只写现状**：过时内容直接改或删，历史从 git 找回；不保留"旧版 / v2 / 备份"并存文件
+- **现行文档只写现状**：过时内容直接改或删，历史从 git 找回；不保留"旧版 / v2 / 备份"并存文件。ADR 按 [ADR 维护规范](./adr/README.md) 保留决策历史，不适用本条删除被取代记录
 - **报告是快照**：`reports/` 里的文档写完不再维护；结论要长期生效时，提炼进 ADR、`architecture/` 或 `work-plan.md`，
   报告可在结论被吸收后删除
 - **不放生成物**：本机测试报告、评测输出、导出数据写到仓库外 `/opt/work-file/code-tmp/aigc-langgraph-tmp/`，不进 `docs/`
 - **单一真源**：同一事实只在一处维护，别处链接过去；纪律类规则写在 `CLAUDE.md` / `.claude/rules/`，`docs/` 不复述
-- 移动或改名文档时全仓更新引用，跑 `python scripts/check_docs_layout.py` 确认零违规
+- 移动或改名文档时人工全仓更新并复核引用
 
 ## 不在 docs/ 里的重要文档
 

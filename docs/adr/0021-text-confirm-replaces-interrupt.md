@@ -1,6 +1,8 @@
 # ADR 0021 · 单次指令处理：LangGraph 识别提交，Java 决定业务流程
 
-- 状态：已采纳（不做 LangGraph 二阶段处理，现有确认链路待收敛）
+## 状态
+
+- 状态：已采纳
 - 日期：2026-09-24
 - 关系：输入与来源契约见 [ADR 0027](./0027-field-evidence-contract.md)，调用职责见 [ADR 0026](./0026-request-idempotency-uncertain-receipts-reconciliation.md)，会话持久化见 [ADR 0024](./0024-langgraph-native-rearchitecture.md) D4
 - 作者：图灵科技 + Tony

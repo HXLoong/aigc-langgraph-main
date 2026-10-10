@@ -41,19 +41,19 @@ _NODES = (
     NodeSpec(
         name="swap_clean_request", product="swap",
         callable_path="app.subgraphs.swap.backend:swap_clean_request",
-        input_fields=("field_records", "pending_backend_request",),
+        input_fields=("field_records", "pending_backend_request", "place_params", "raw_text", "quote_content", "swap_counterparties", "quote_ticker_candidates"),
         output_fields=("cleaned_backend_request", "cleaning_records"), side_effect="none",
     ),
     NodeSpec(
         name="swap_submit", product="swap",
         callable_path="app.subgraphs.swap.backend:swap_submit",
-        input_fields=("field_records", "pending_backend_request", "cleaned_backend_request", "place_params", "cancel_params", "confirm", "query_filter", "close_params", "conversation_id", "message_id", "raw_text", "user_id", "room_id", "quote_content", "quote_appinfo", "guid", "operator_user_id"),
+        input_fields=("field_records", "pending_backend_request", "cleaned_backend_request", "place_params", "cancel_params", "confirm", "query_filter", "close_params", "conversation_id", "message_id", "raw_text", "user_id", "room_id", "quote_content", "quote_appinfo", "guid", "operator_user_id", "swap_counterparties", "quote_ticker_candidates"),
         output_fields=("backend_request", "submitted_params", "api_code", "api_result", "reply_text"), side_effect="write",
     ),
     NodeSpec(
         name="swap_query_backend", product="swap",
         callable_path="app.subgraphs.swap.backend:swap_query_backend",
-        input_fields=("field_records", "pending_backend_request", "cleaned_backend_request", "place_params", "cancel_params", "confirm", "query_filter", "close_params", "conversation_id", "message_id", "raw_text", "user_id", "room_id", "quote_content", "quote_appinfo", "guid", "operator_user_id"),
+        input_fields=("field_records", "pending_backend_request", "cleaned_backend_request", "place_params", "cancel_params", "confirm", "query_filter", "close_params", "conversation_id", "message_id", "raw_text", "user_id", "room_id", "quote_content", "quote_appinfo", "guid", "operator_user_id", "swap_counterparties", "quote_ticker_candidates"),
         output_fields=("backend_request", "submitted_params", "api_code", "api_result", "reply_text"), side_effect="read",
     ),
     NodeSpec(
@@ -79,7 +79,7 @@ _NODES = (
         name="prepare_input",
         product="main",
         callable_path="app.nodes.prepare_input:prepare_input",
-        input_fields=("raw_text", "input_files", "fast_query", "existing_command"),
+        input_fields=("raw_text", "input_files"),
         output_fields=("attachment_sources", "attachment_rows", "reply_text"),
         side_effect="read",
     ),
@@ -195,8 +195,8 @@ _NODES = (
         name="entry_route",
         product="main",
         callable_path="app.nodes.entry_route:entry_route",
-        input_fields=("fast_query", "existing_command", "at_bot"),
-        output_fields=("entry_branch", "product_type", "intent"),
+        input_fields=("fast_query", "existing_command", "at_bot", "robot_version"),
+        output_fields=("entry_branch", "product_type", "intent", "reply_text"),
         surfaces=("execution",),
     ),
     NodeSpec(
@@ -221,7 +221,7 @@ _NODES = (
         product="main",
         callable_path="app.nodes.fast_query:existing_command_query",
         input_fields=("raw_text", "room_id", "operator_user_id", "user_id"),
-        output_fields=("api_code", "api_result", "reply_text"),
+        output_fields=("product_type", "intent", "api_code", "api_result", "reply_text"),
         side_effect="read",
     ),
     NodeSpec(

@@ -2,7 +2,11 @@
 
 代码真源：[app/graph/main.py](../../app/graph/main.py)。图按当前编译拓扑核对；产品子图内部流程单独成文。
 
-一次合法 HTTP 调用拥有独立模型额度；规则选择期权、互换、平仓或跨产品 PromptSpec，只有 `parse_instruction` 请求模型。`prepare_parse_context` 的后端只读重试发生在模型之前；模型失败不重试，直接 cascade。图片与含图片输入在入口拒绝；Excel 全量读入后一次解析。快速询价与存量分支沿既有外部工具执行。`entry_route` 输出 `entry_branch`；快速入口由 `fast_query="1"` 明确选择，并确定性给出 `option/new_inquiry`，与 `at_bot` 独立，不调用普通联合解析器。
+一次合法 HTTP 调用拥有独立模型额度；规则选择期权、互换、平仓或跨产品 PromptSpec，只有 `parse_instruction` 请求模型。`prepare_parse_context` 仅在当前明确平仓或引用补参且存在目标身份时读取订单上下文；持仓查询、撤单、状态查询和确认不依赖这次预查询。只读重试发生在模型之前，模型失败不重试。
+
+会话保护之后，`entry_route` 先判断 `existing_command="1" && at_bot="0"`，成立时绕过版本直接存量查询。其余请求按调用端传入的 `robot_version` 分流，兼容 `robotVersion`：未传、null、空串按 V1；V1 快速请求走存量查询，V1 其他请求静默；V2 快速请求走快速询价，V2 其他请求进入附件准备与普通链路；非法版本静默。版本精确匹配、不查询 GOATS，每轮未传不继承上轮版本。静默结束输出 `IGNORE_REQUEST_NOT_REPLY_USER`，不调用模型、业务接口或意图写回。
+
+快速询价和存量查询均确定性给出 `option/new_inquiry`，完成后等待 `persist_intent` 写回 Java 的 `new_inquiry/productType=0` 再回复；存量查询恒回静默哨兵。只有普通 V2 链路进入附件准备，拒绝图片、完整读取 Excel，再执行一次联合解析。
 
 ```mermaid
 ---
@@ -14,7 +18,7 @@ graph TD;
 	__start__([<p>__start__</p>]):::first
 	ingest(ingest<br/>入口薄层，重置本轮字段)
 	prepare_input(prepare_input<br/>附件边界：图片拒绝，Excel 读入)
-	entry_route(entry_route<br/>入口分流：快速询价 / 存量指令 / 普通)
+	entry_route(entry_route<br/>存量优先，V1/V2版本分流与静默)
 	quick_inquiry(quick_inquiry<br/>快速询价：GOATS 解析后提交询价)
 	existing_command_query(existing_command_query<br/>存量指令查询，恒回静默哨兵)
 	pre_route(pre_route<br/>前置提取：对手列表 / 引用候选标的)
@@ -33,11 +37,12 @@ graph TD;
 	__end__([<p>__end__</p>]):::last
 	__start__ --> ingest;
 	entry_route -.-> existing_command_query;
-	entry_route -.-> pre_route;
+	entry_route -.-> prepare_input;
+	entry_route -.-> render;
 	entry_route -.-> quick_inquiry;
-	existing_command_query --> render;
+	existing_command_query --> persist_intent;
 	fallback --> persist_intent;
-	ingest -.-> prepare_input;
+	ingest -.-> entry_route;
 	ingest -.-> render;
 	intent_route --> prepare_parse_context;
 	option --> persist_intent;
@@ -48,11 +53,11 @@ graph TD;
 	parse_instruction -.-> swap;
 	persist_intent --> render;
 	pre_route --> intent_route;
-	prepare_input -.-> entry_route;
+	prepare_input -.-> pre_route;
 	prepare_input -.-> persist_intent;
 	prepare_input -.-> render;
 	prepare_parse_context --> parse_instruction;
-	quick_inquiry --> render;
+	quick_inquiry --> persist_intent;
 	record_history --> persist;
 	remember_confirmed_params --> record_history;
 	render --> remember_confirmed_params;

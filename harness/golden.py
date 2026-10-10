@@ -28,6 +28,8 @@ class TurnSpec(BaseModel):
     send_text: str
     at_bot: bool = False
     fast_query: Literal["0", "1"] = "0"
+    robot_version: str | None = "V2"
+    existing_command: Literal["0", "1"] = "0"
     quote_previous: bool | None = None
     wait_before_seconds: float = Field(default=0, ge=0, le=300)
     #: B 方言的引用说明原文（"用户引用上一条机器人消息"）；首轮标注了引用的上下文依赖 case
@@ -114,6 +116,8 @@ def _turn_from_object(
         send_text=send_text,
         at_bot=obj.get("at_bot", default_at_bot),
         fast_query=obj.get("fast_query", "0"),
+        robot_version=obj.get("robot_version", "V2"),
+        existing_command=obj.get("existing_command", "0"),
         quote_previous=obj.get("quote_previous"),
         wait_before_seconds=obj.get("wait_before_seconds", 0),
         quote_content=obj.get("quote_content") or "",
@@ -269,6 +273,60 @@ def build_overview(case: GoldenCase) -> str:
 #: B 方言历史参考集；仅在显式选择时加载（ADR 0030）。
 UNIFIED_DATASET_NAME = "unified_golden.jsonl"
 
+#: 现役数据集根与分组目录。种子数据（local_backend/）不是评测用例，不参与发现。
+DATASETS_ROOT = Path(__file__).resolve().parents[1] / "tests" / "datasets"
+GROUP_DIRS: dict[str, str] = {"biz": "biz", "intent": "intent"}
+
+
+def group_paths(group: str) -> list[Path]:
+    """按数据集分组发现现役 JSONL 文件；`all` 合并 biz 与 intent。"""
+    if group not in GROUP_DIRS and group != "all":
+        raise ValueError(f"unknown dataset group: {group!r}")
+    directories = (
+        [DATASETS_ROOT / name for name in GROUP_DIRS.values()]
+        if group == "all"
+        else [DATASETS_ROOT / GROUP_DIRS[group]]
+    )
+    return sorted(
+        path for directory in directories for path in directory.glob("*.jsonl") if path.is_file()
+    )
+
+
+def file_group(path: Path) -> str:
+    """根据文件所在目录判定其数据集分组；不属 biz/intent 即报错。"""
+    resolved = path.resolve()
+    for group, name in GROUP_DIRS.items():
+        if (DATASETS_ROOT / name).resolve() in resolved.parents:
+            return group
+    raise ValueError(
+        f"dataset file must live under tests/datasets/biz or tests/datasets/intent: {path}"
+    )
+
+
+def select_dataset_files(
+    group: str | None, files: list[Path] | None
+) -> tuple[list[Path], str]:
+    """解析 --group 与 --file，返回 (文件列表, 生效分组)。
+
+    显式 --file 时按目录判定分组；未显式指定 --group 时沿用文件分组，
+    指定但与文件分组冲突时报错。未指定 --file 时默认加载 biz 分组。
+    """
+    if files:
+        paths: list[Path] = []
+        for raw in files:
+            if raw.is_dir():
+                paths.extend(sorted(p for p in raw.glob("*.jsonl") if p.is_file()))
+            else:
+                paths.append(raw)
+        if not paths:
+            raise ValueError("no dataset files selected")
+        groups = {file_group(path) for path in paths}
+        if group is not None and group != "all" and groups != {group}:
+            raise ValueError(f"--group {group!r} conflicts with selected files")
+        resolved_group = next(iter(groups)) if len(groups) == 1 else "all"
+        return list(dict.fromkeys(paths)), resolved_group
+    return group_paths(group or "biz"), group or "biz"
+
 
 def discover_cases(
     root: Path = Path("tests/datasets"), *, include_unified: bool = False,
@@ -372,11 +430,27 @@ def filter_by_ids(cases: Iterable[GoldenCase], ids: list[str] | None) -> list[Go
     return [case for case in cases if case.id in wanted]
 
 
+def select_by_ids(cases: Iterable[GoldenCase], ids: list[str] | None) -> list[GoldenCase]:
+    """按 ID 精确选择并保持请求顺序；任一 ID 未命中即报错，不静默漏跑。"""
+    selected = list(cases)
+    if not ids:
+        return selected
+    wanted = list(dict.fromkeys(ids))
+    by_id = {case.id: case for case in selected}
+    missing = [case_id for case_id in wanted if case_id not in by_id]
+    if missing:
+        raise ValueError(f"未找到用例 ID：{', '.join(missing)}")
+    return [by_id[case_id] for case_id in wanted]
+
+
 # ── Langfuse Dataset / 本地确定性评分共用的 biz 结构投影 ──
 
 
 def _dataset_turn_input(turn: TurnSpec) -> dict[str, Any]:
-    result: dict[str, Any] = {"send_text": turn.send_text, "at_bot": turn.at_bot}
+    result: dict[str, Any] = {
+        "send_text": turn.send_text, "at_bot": turn.at_bot,
+        "robot_version": turn.robot_version, "existing_command": turn.existing_command,
+    }
     if turn.fast_query != "0":
         result["fast_query"] = turn.fast_query
     if turn.quote_previous is not None:
@@ -397,6 +471,7 @@ def _dataset_turn_expected(turn: TurnSpec) -> dict[str, Any]:
         "response_contains",
         "response_contains_any",
         "response_not_contains",
+        "response_blocks",
     ):
         value = getattr(turn, field_name)
         if value:

@@ -1,6 +1,6 @@
 # GOATS + OTC Backend Mock API
 
-模拟两套接口供本地开发与集成测试，无需 VPN / 真实后端：
+模拟 app 直接调用的两组外部接口，供本地调试和黄金集评测使用，无需 VPN / 真实后端。这不是两种 mock 验收模式，也不核验 Java 内部下游：
 
 1. **GOATS 外部接口**（21 个）— 模拟 GOATS 对客机器人 `/api/internal/agent/*` + `/api/uniweb/...`。
    LangGraph 实际只调用 DSL v2 fast_query 前置分支的 2 个端点（`option_rfq_instrument_parser` /
@@ -8,8 +8,7 @@
    与真实 GOATS 路径（`trs/order`）不同，当前没有调用方
 2. **OTC Java 后端接口**（10 个）— 模拟 yudao 后端 `/admin-api/*`，按真实 Java DTO 校验入参 + 按 type 分发业务行为
 
-> 定位：**本地开发与集成测试工具**（`tests/integration/` 与 CI 意图集评估使用它），
-> 不替代真后端业务回归；业务集验收仍以真 Java 后端为准（ADR 0030 D3）。
+> 定位：黄金集评测的本地 mock 后端；不作为独立测试对象，也不替代真后端业务回归。业务集验收仍以真 Java 后端为准（ADR 0030 D3）。
 
 ## 让 LangGraph 应用指向 mock（.env 配置）
 
@@ -21,9 +20,9 @@ GOATS_CLIENT_SECRET=mock-client-secret
 GOATS_EXTAPP_SALT=mock-salt
 ```
 
-LLM 仍走真实 DeepSeek（mock 只替后端）；不想产生任何真实副作用时叠加 `DRY_RUN_BACKEND=true`。
+LLM 仍走配置的真实模型，mock 只替代外部后端。`DRY_RUN_BACKEND=true` 会拦截写类 Client 调用，不能用其回复作为黄金集业务通过证据。
 
-完整测试分层（mock → golden 评估 → 真后端切换）见 [`docs/testing/README.md`](../docs/testing/README.md)。
+本项目只有 app 核心测试与黄金集评测两类验证，见 [`docs/testing/README.md`](../docs/testing/README.md)。
 
 ## 启动
 
@@ -35,28 +34,9 @@ uvicorn mock_api.server:app --reload --port 8099
 
 > **重要**：在 macOS 下 `localhost` 优先解析为 `::1`（IPv6），但 uvicorn 默认只 bind 127.0.0.1（IPv4），httpx 调 localhost 会拿到 503。**测试 / 客户端务必用 `127.0.0.1`**。
 
-## 测试方式
+## 与黄金集评测的关系
 
-### 方式一：pytest（推荐，无需启动 server）
-
-```bash
-pytest mock_api/test_backend_api.py -v
-```
-
-45 条用例，覆盖 10 个后端接口的全部 type 分发分支 + 入参校验，使用 `httpx.ASGITransport` 内存调用，零网络开销。
-
-### 方式二：脚本（需要 server 在跑）
-
-```bash
-# 终端 1
-uvicorn mock_api.server:app --port 8099
-
-# 终端 2
-python mock_api/test_all_endpoints.py            # 默认 127.0.0.1:8099
-python mock_api/test_all_endpoints.py --port 8080 --host 192.168.1.100
-```
-
-24 条端到端用例（GOATS / admin-api 接口 + 错误模拟 `?_error=1`），不在 pytest `testpaths` 内，CI 不跑。
+mock_api 与 app 均需预先启动，Harness 固定请求 `127.0.0.1:8000`，不管理服务生命周期。mock 的固定 stub 只提供链路执行所需响应；黄金用例仍由本地评分器按 `expected` 判定，不通过 mock 自测或 mock 返回值替代业务断言。
 
 ## 后端接口清单
 
@@ -156,19 +136,18 @@ mock_api/
 │   ├── financial.py       # /admin-api/financial-orders/* 路由
 │   ├── ticker.py          # /admin-api/integration/* + /admin-api/counterparty/* 路由
 │   └── misc.py            # bot/name/list + set-intent
-├── test_backend_api.py    # pytest 后端 mock 完整测试（45 条，ASGITransport）
-├── test_all_endpoints.py  # 端到端脚本（24 条，需启 server）
+
 └── README.md              # 本文件
 ```
 
 ## 与 LangGraph 的对接
 
-客户端读 `OTC_API_BASE_URL`（必填，无默认值）与 `GOATS_BASE_URL`，按上文「.env 配置」指向 8099 后即可跑意图集：
+按上文配置将 app 指向 8099 后启动或重启，分别运行 mock_api 与 app，再执行黄金集：
 
 ```bash
-uvicorn mock_api.server:app --port 8099 &
-OTC_API_BASE_URL=http://127.0.0.1:8099 GOATS_BASE_URL=http://127.0.0.1:8099 \
-  python scripts/langfuse/langfuse_eval.py --local tests/datasets/intent
+python -m harness run --group intent --backend mock
+python -m harness run --file tests/datasets/biz/swap_prod.jsonl --backend mock
 ```
 
-业务验收集 `tests/datasets/biz/` 依赖真 Java 后端，不用 mock 跑。接口 OpenAPI 可用 `app.openapi()` 现场生成。
+业务集支持 mock 执行，但 stub 不保证满足真后端卡片期望，不能替代 Java 验收。
+评测输入缺省使用 V2，显式入口字段按原值透传。接口 OpenAPI 可用 `app.openapi()` 现场生成。

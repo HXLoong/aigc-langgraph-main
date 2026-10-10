@@ -31,9 +31,6 @@ async def prepare_input(state: AgentState) -> dict[str, Any]:
            and file.get("mime_type") != "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
            for file in files):
         return {"reply_text": "附件格式暂不支持，请改用文本或 .xlsx 格式的 Excel。"}
-    if files and (state.get("fast_query") == "1" or state.get("existing_command") == "1"):
-        return {"reply_text": "附件请通过普通智能指令发送；快速询价和存量查询请使用文本。"}
-
     # 2. 每份文件保留独立来源；读取期间不调用模型，也不逐行解析业务含义。
     sources: dict[str, str] = {}
     rows: list[str] = []

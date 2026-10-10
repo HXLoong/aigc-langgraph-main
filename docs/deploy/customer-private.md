@@ -221,12 +221,10 @@ journalctl -u otc-agent -f
 curl http://localhost:8000/health
 # 期望返回 200 + JSON
 
-# 健康检查 endpoint 校验 4 个上游
-# 临时验证：
-curl http://localhost:8000/v1/workflows/run \
-  -H "Content-Type: application/json" \
-  -d '{"inputs":{"raw_text":"测试"},"response_mode":"blocking","user":"smoke"}'
-# 期望返回有 reply_text 字段的 JSON
+# 依赖状态与业务接口注册
+curl http://127.0.0.1:8000/ready
+curl http://127.0.0.1:8000/openapi.json
+# 核对依赖状态与 /v1/workflows/run 路由
 ```
 
 如某一项失败 → 见 [`docs/operations/on-call-runbook.md`](../operations/on-call-runbook.md) §5 故障 playbook。
@@ -271,42 +269,20 @@ server {
 
 ---
 
-## 9. Smoke 自检（3 条 case）
+## 9. 部署自检与业务验收
 
-部署完成后**必须**跑 3 条 smoke 验证全链路：
+部署脚本检查 `/health`、`/ready` 与 OpenAPI 中的 `/v1/workflows/run` 入口。
+自检不提交业务消息，不使用虚构账号，不自动运行黄金集。
+服务存活与接口注册不代表模型、Java 业务或黄金断言通过。
 
-### Case 1：完整代码 + 简单询价
-
-```bash
-curl http://localhost:8000/v1/workflows/run \
-  -H "Content-Type: application/json" \
-  -d '{
-    "inputs": {
-      "raw_text": "600519.SH 询价 3 个月平值看涨",
-      "conversation_id": "smoke-001"
-    },
-    "response_mode": "blocking",
-    "user": "smoke-test"
-  }'
-
-# 期望：reply_text 含 "询价" + "600519.SH" + 期限/期权类型字段
-```
-
-### Case 2：中文简称
+业务验收使用已经启动的 8000 服务，由授权人员指定黄金文件与用例：
 
 ```bash
-curl ... -d '{"inputs":{"raw_text":"贵州茅台 询价"...}'
-# 期望：reply_text 含 "600519.SH 贵州茅台"
+python -m harness run --file tests/datasets/biz/swap_prod.jsonl --case ai_trade_assist_prod_swap_order_case_1 --backend java
 ```
 
-### Case 3：未知标的（fallback）
-
-```bash
-curl ... -d '{"inputs":{"raw_text":"完全不存在的标的xyz 询价"...}'
-# 期望：reply_text 含 "抱歉，无法识别"
-```
-
-3 条全 OK → 部署成功。
+账号、群、对手与数据须已获授权，完整范围由统一验收安排。
+执行与评分口径见 [测试指南](../testing/README.md)。
 
 ---
 

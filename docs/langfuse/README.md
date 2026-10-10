@@ -24,13 +24,15 @@
 |---|---|
 | 搞清 Dataset 的字段怎么设计 | `workflow-guide.md` § 3 |
 | 上传用例、配自动评分、配人工评分口径 | `workflow-guide.md` § 4；界面操作见 WebUI 手册 § 3 |
-| 跑一次 Experiment、查看失败用例 | `workflow-guide.md` § 5–6 |
+| 执行黄金评测、分清本地结果与平台记录 | `workflow-guide.md` § 5–6；正式命令见 [测试指南](../testing/README.md) |
 | 知道有哪些脚本可用 | `workflow-guide.md` § 7 与 [`scripts/langfuse/README.md`](../../scripts/langfuse/README.md) |
 | 分清意图集与业务集两套件 | `workflow-guide.md` § 8 |
-| 从 Langfuse 界面点 Run 触发本机跑实验 | [`remote-experiment-webhook.md`](./remote-experiment-webhook.md) |
+| 配置平台触发与范围 | [`remote-experiment-webhook.md`](./remote-experiment-webhook.md) |
 | 让智能体或命令行替我操作 Langfuse | [`agent-skill-and-cli.md`](./agent-skill-and-cli.md) |
 | 从零学 Langfuse 方法论 | [`langfuse-workshop-intro.md`](./langfuse-workshop-intro.md) |
 | 在客户内网部署 | [`self-hosted-deployment.md`](./self-hosted-deployment.md) |
+
+黄金集在本地 Python 同步确定性评分，不需 Node.js、不等待平台 Rule。CLI 提供可选追踪，平台 webhook 复用同一执行与评分入口并记录 SDK Experiment。受理和关联信息不代表平台入库，验证状态见 [工作计划](../work-plan.md)。
 
 ## 三、两条边界
 

@@ -1,6 +1,8 @@
 # ADR 0002 · 建设综合运行时 Harness（开发期 + 运行期 + 调优期三位一体）
 
-- 状态：已采纳（基础能力已建成；确定性评分与 Langfuse 闭环待迁移）
+## 状态
+
+- 状态：已采纳
 - 日期：2026-05-10
 - 关系：节点层由 [ADR 0029](./0029-node-level-debug-api-and-regression-workbench.md) 补充；评测门统一到 [ADR 0030](./0030-goal-restatement-native-langgraph-dataset-eval-harness.md) D3
 - 作者：图灵科技 + Tony

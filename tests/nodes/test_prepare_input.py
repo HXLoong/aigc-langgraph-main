@@ -78,6 +78,7 @@ async def test_rejected_attachment_still_persists_message_intent(monkeypatch):
     monkeypatch.setattr("app.nodes.persist.write_node_trace", AsyncMock())
     state = await build_main_graph(message_client_factory=lambda: SimpleNamespace(set_intent=write_intent)).ainvoke({
         "raw_text": "见图片", "conversation_id": "c", "message_id": 1,
+                "robot_version": "V2", "at_bot": True,
         "input_files": [{"type": "image", "url": "http://unused/image.png"}],
     })
     assert "图片" in state["reply_text"]

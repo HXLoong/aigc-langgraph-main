@@ -4,6 +4,7 @@ from __future__ import annotations
 import re
 from typing import Any, cast
 
+from app.extraction.fields import FieldRecord
 from app.graph.state import AgentState
 from app.subgraphs.swap.aggregate import (
     match_order_index,
@@ -24,6 +25,43 @@ _VERBS = re.compile(r"^(?:请选择|选择|选用|选|换成|改成|更换为|�
 _CP = re.compile(r"^(?:交易对手|对手|交易账号|账号|账户)\s*[:：]?\s*")
 _TICKER = re.compile(r"^(?:标的|证券|股票)\s*[:：]?\s*")
 _NUMERIC_PENDING = re.compile(r"(?:价格|数量|POV比例|可见委托量)[^\n。;；]{0,15}待补充|请补充参数[^】]*(?:价格|数量|POV|可见委托量)")
+_QUOTE_ID = re.compile(r"H-[A-Za-z0-9]+(?:-[A-Za-z0-9]+)*")
+_QUOTE_HEADER = re.compile(r"(?:单号|订单号|订单)\s*[:：]?\s*(H-[A-Za-z0-9]+(?:-[A-Za-z0-9]+)*)")
+_CP_PENDING = re.compile(
+    r"(?:交易对手|对手|交易账[号户]|账[号户])\s*[:：]?\s*[【\[]?\s*待补充"
+    r"|请补充参数[^】\]\n]*(?:交易对手|对手|交易账[号户]|账[号户])"
+)
+
+
+def _reference_blocks(state: AgentState) -> list[tuple[str, str]]:
+    """按引用原文顺序读取订单块，不用本次提交或候选数组重排。"""
+    quote = state.get("quote_content") or ""
+    headers = list(_QUOTE_HEADER.finditer(quote))
+    positions = [(match.start(), match[1]) for match in headers] if headers else [
+        (match.start(), match[0]) for match in _QUOTE_ID.finditer(quote)
+    ]
+    blocks: list[tuple[str, str]] = []
+    seen: set[str] = set()
+    for index, (start, identity) in enumerate(positions):
+        end = positions[index + 1][0] if index + 1 < len(positions) else len(quote)
+        if identity not in seen:
+            seen.add(identity)
+            blocks.append((identity, quote[start:end]))
+    return blocks
+
+
+def _pending_counterparty_indices(state: AgentState) -> list[int]:
+    """无范围选择只广播到引用中对手待补充的订单，目标遗漏则整批拒绝。"""
+    orders = (state.get("place_params") or {}).get("orderList") or []
+    indices: list[int] = []
+    for identity, block in _reference_blocks(state):
+        if not _CP_PENDING.search(block):
+            continue
+        matches = [index for index, order in enumerate(orders) if order.get("orderId") == identity]
+        if len(matches) != 1:
+            raise ValueError("交易对手待补充订单未完整提交或身份不唯一")
+        indices.append(matches[0])
+    return indices
 
 
 def _number(text: str) -> int:
@@ -51,12 +89,18 @@ def order_sequences(state: AgentState) -> dict[str, int]:
         r"(H-[A-Za-z0-9]+(?:-[A-Za-z0-9]+)*)\s*[（(]\s*序号\s*[:：]?\s*(\d+)\s*[）)]",
         state.get("quote_content") or "",
     )]
+    pairs += [(match[2], int(match[1])) for match in re.finditer(
+        r"序号\s*[:：]?\s*(\d+)\s*(?:单号|订单号)\s*[:：]?\s*(H-[A-Za-z0-9]+(?:-[A-Za-z0-9]+)*)",
+        state.get("quote_content") or "",
+    )]
     result: dict[str, int] = {}
     for identity, sequence in pairs:
         if not isinstance(identity, str) or not isinstance(sequence, int):
             continue
         if identity in result and result[identity] != sequence:
             raise ValueError("引用订单序号不一致")
+        if any(other != identity and value == sequence for other, value in result.items()):
+            raise ValueError("引用订单序号指向多个订单")
         result[identity] = sequence
     return result
 
@@ -66,6 +110,7 @@ def _segments(state: AgentState) -> list[tuple[list[int], str, str]]:
     raw = (state.get("raw_text") or "").strip()
     orders = (state.get("place_params") or {}).get("orderList") or []
     sequences = order_sequences(state)
+    referenced = [identity for identity, _ in _reference_blocks(state)]
     scopes = list(_SCOPE.finditer(raw))
     if not scopes:
         all_match = _ALL.search(raw)
@@ -82,8 +127,9 @@ def _segments(state: AgentState) -> list[tuple[list[int], str, str]]:
         elif scope[1] is not None:
             indices = [i for i, order in enumerate(orders) if sequences.get(order.get("orderId")) == int(scope[1])]
         else:
-            idx = _number(scope[2]) - 1
-            indices = [idx] if 0 <= idx < len(orders) else []
+            ordinal = _number(scope[2]) - 1
+            identity = referenced[ordinal] if 0 <= ordinal < len(referenced) else None
+            indices = [i for i, order in enumerate(orders) if identity is not None and order.get("orderId") == identity]
         if len(indices) != 1:
             raise ValueError("选择指令的订单范围不存在或不唯一")
         end = scopes[position + 1].start() if position + 1 < len(scopes) else len(raw)
@@ -169,8 +215,14 @@ def _choices(state: AgentState, kind: str) -> list[dict[str, Any]] | None:
         for token in tokens:
             if kind == "counterparty":
                 pick = _cp_pick(token, state.get("swap_counterparties") or [])
-                picks = [(idx, pick) for idx in indices] if pick else []
-                if pick and not indices:
+                targets = indices
+                # 单独字母/名称按 Dify 填充所有待补对手；已完整订单不自动改写。
+                if pick and not _SCOPE.search(evidence) and not _ALL.search(evidence):
+                    pending = _pending_counterparty_indices(state)
+                    if pending:
+                        targets = pending
+                picks = [(idx, pick) for idx in targets] if pick else []
+                if pick and not targets:
                     raise ValueError("多订单选择必须明确订单范围")
             else:
                 picks = []
@@ -247,3 +299,25 @@ def validate_picks(
             raise ValueError("同一订单存在互相冲突的选择")
         validated[index] = {**matches[0], "evidence": evidence, "confidence": confidence}
     return list(validated.values())
+
+
+def validate_applied_picks(state: AgentState) -> None:
+    """清洗与提交边界重验选择账本，不能用伪造的派生路径绕过选择校验。"""
+    records = state.get("field_records") or {}
+    for path, record in records.items():
+        match = re.fullmatch(r"swap/place_order\.orderList\.(\d+)\.(placeOrderWindCode|placeOrderShortname)", path)
+        if not match or not isinstance(record, FieldRecord):
+            continue
+        selection_path = path + ".selection"
+        if selection_path not in record.derived_from:
+            continue
+        selection = records.get(selection_path)
+        if not isinstance(selection, FieldRecord) or not selection.locked or not isinstance(selection.value, dict):
+            raise ValueError("候选选择账本缺少有效原文指针")
+        if selection.evidence != selection.value.get("evidence"):
+            raise ValueError("候选选择证据与账本不一致")
+        kind = "ticker" if match[2] == "placeOrderWindCode" else "counterparty"
+        picks = validate_picks(state, [selection.value], kind)
+        value_key = "directRef" if kind == "ticker" else "directName"
+        if len(picks) != 1 or picks[0]["idx"] != int(match[1]) or picks[0][value_key] != record.value:
+            raise ValueError("候选选择结果与有效字段锁不一致")

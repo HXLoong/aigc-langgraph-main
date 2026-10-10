@@ -4,6 +4,8 @@
 
 `place_close_prepare` 读取本次订单；`place_close_validate` 校验单号、合约和引用选择一致性；`place_close_submit` 准备 closeOrderReqVO，交平仓父图清洗后提交。不会在图内重新查询后再调用模型，也不换算金额、补执行参数或校验数字范围。
 
+订单上下文按本次平仓动作或补参需要在模型之前读取，不扩大到持仓查询、撤单、进度查询和确认；单独存在引用身份不构成读取理由。
+
 ```mermaid
 ---
 config:

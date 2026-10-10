@@ -126,7 +126,7 @@ def test_two_turn_inquiry_continues_history_and_sends_order_id_with_tenor(
     ])
     first = client.post("/v1/workflows/run", json={
         **top, "inputs": {"raw_content": FIRST_MESSAGE, "message_id": 1,
-                          "room_id": "test-room", **aliases}, "user": "stable-user",
+                          "room_id": "test-room", "robot_version": "V2", "at_bot": True, **aliases}, "user": "stable-user",
     })
     assert first.status_code == 200, first.text
     assert first.json()["data"]["status"] == "succeeded"
@@ -148,7 +148,7 @@ def test_two_turn_inquiry_continues_history_and_sends_order_id_with_tenor(
     second = client.post("/v1/workflows/run", json={
         "conversation_id": conversation_id,
         "inputs": {"raw_content": "1M", "quote_content": first.json()["answer"],
-                   "message_id": 2, "room_id": "test-room"}, "user": "stable-user",
+                   "message_id": 2, "room_id": "test-room", "robot_version": "V2", "at_bot": True}, "user": "stable-user",
     })
     assert second.status_code == 200, second.text
     assert second.json()["data"]["status"] == "succeeded"
@@ -196,7 +196,7 @@ def test_order_extraction_preserves_tenor_for_backend_intent_correction(
     response = client.post("/v1/workflows/run", json={
         "conversation_id": "backend-corrects-intent",
         "inputs": {"raw_content": "1M", "quote_content": INQUIRY_CARD,
-                   "message_id": 2, "room_id": "test-room"}, "user": "stable-user",
+                   "message_id": 2, "room_id": "test-room", "robot_version": "V2", "at_bot": True}, "user": "stable-user",
     })
     assert response.status_code == 200, response.text
     assert response.json()["data"]["status"] == "succeeded"
@@ -223,7 +223,8 @@ def test_business_subgraphs_do_not_duplicate_checkpoint_history(
     for message_id in range(1, 4):
         response = client.post("/v1/workflows/run", json={
             "conversation_id": "history-session",
-            "inputs": {"raw_content": raw, "message_id": message_id, "room_id": "test-room"},
+            "inputs": {"raw_content": raw, "message_id": message_id, "room_id": "test-room",
+                                   "robot_version": "V2", "at_bot": True},
             "user": "stable-user",
         })
         assert response.status_code == 200, response.text

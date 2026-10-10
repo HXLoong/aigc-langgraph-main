@@ -1,6 +1,7 @@
 """GOATS 接口探针共享工具（手工脚本，不是 pytest 用例）。
 
-- 凭据一律来自 `app.config.get_settings()`（`.env` / 环境变量），仓库里不允许出现明文
+- 凭据一律来自 `.env` / 环境变量（地址、secret、salt 走 `app.config.get_settings()`，
+  探针固定 agent 标识走本地 `_ProbeAgentSettings`），仓库里不允许出现明文
   地址、client secret、salt 或 agent id（根 CLAUDE.md「绝对禁止」）；配置经模块级
   `__getattr__` 惰性读取，import 本模块不要求 `.env` 存在
 - 写类接口（下单 / 撤单 / 平仓 / 改单）默认拒绝执行，必须显式 `--confirm-write`
@@ -15,10 +16,25 @@ import time
 from typing import Any
 
 import httpx
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from app.config import get_settings
 
-#: 模块常量名 → (Settings 字段, 环境变量名)
+
+class _ProbeAgentSettings(BaseSettings):
+    """仅手工探针使用固定身份；业务请求身份取自本次群和用户。"""
+
+    model_config = SettingsConfigDict(
+        env_file=".env", env_file_encoding="utf-8", extra="ignore",
+        hide_input_in_errors=True,
+    )
+    goats_opt_agent_id: str = ""
+    goats_opt_agent_sub_id: str = ""
+    goats_com_agent_id: str = ""
+    goats_com_agent_sub_id: str = ""
+
+
+#: 模块常量名 → (配置字段, 环境变量名)
 _CONFIG_NAMES: dict[str, tuple[str, str]] = {
     "BASE_URL": ("goats_base_url", "GOATS_BASE_URL"),
     "CLIENT_ID": ("goats_client_id", "GOATS_CLIENT_ID"),
@@ -37,11 +53,12 @@ _TIMEOUT = 15.0
 
 def config(name: str) -> str:
     field, _env = _CONFIG_NAMES[name]
-    return str(getattr(get_settings(), field) or "").rstrip("/")
+    settings = _ProbeAgentSettings() if name in {"OPT_AID", "OPT_SUB", "COM_AID", "COM_SUB"} else get_settings()
+    return str(getattr(settings, field) or "").rstrip("/")
 
 
 def __getattr__(name: str) -> str:
-    """`from _utils import COM_AID` 这类常量式用法走这里，首次访问才读 Settings。"""
+    """`from _utils import COM_AID` 这类常量式用法走这里，首次访问才读配置。"""
     if name in _CONFIG_NAMES:
         return config(name)
     raise AttributeError(name)

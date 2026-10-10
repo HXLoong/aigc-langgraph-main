@@ -1,6 +1,8 @@
 # ADR 0027 · 字段来源契约：保留提取证据，业务值由 Java 校验
 
-- 状态：已采纳（Java 请求前类型兼容清洗；业务值仍由 Java 校验）
+## 状态
+
+- 状态：已采纳
 - 日期：2026-09-24
 - 关系：输出描述见 [ADR 0023](./0023-prompt-as-code-langgraph.md)，标的职责见 [ADR 0025](./0025-instrument-resolution-delegated-to-backend.md)，单次处理见 [ADR 0021](./0021-text-confirm-replaces-interrupt.md)，模型额度见 [ADR 0031](./0031-single-model-request-per-message.md)
 - 作者：图灵科技 + Tony

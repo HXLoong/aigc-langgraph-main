@@ -22,6 +22,7 @@ INPUT_FIELD_ALIASES = {
     "fast_query": ("fast_query", "fastQuery"),
     "at_bot": ("at_bot", "atBot"),
     "existing_command": ("existing_command", "existingCommand"),
+    "robot_version": ("robot_version", "robotVersion"),
     "bot_name": ("bot_name", "botName"),
     "operator_user_id": ("operator_user_id", "operatorUserId"),
     "retry_origin": ("retry_origin", "retryOrigin"),

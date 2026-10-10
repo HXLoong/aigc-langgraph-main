@@ -123,6 +123,8 @@ def report_case(
                 "source_text": case.turns[outcome.index - 1].send_text,
                 "at_bot": outcome.at_bot,
                 "fast_query": case.turns[outcome.index - 1].fast_query,
+                "robot_version": case.turns[outcome.index - 1].robot_version,
+                "existing_command": case.turns[outcome.index - 1].existing_command,
                 "entry_branch": outcome.outputs.get("entry_branch"),
                 "reply": outcome.reply_text,
                 "quote_passed": outcome.quote_passed,

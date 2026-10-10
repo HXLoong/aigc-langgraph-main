@@ -43,7 +43,7 @@ async def test_option_inquiry_uses_one_model_and_preserves_java_wire(monkeypatch
     monkeypatch.setattr("app.nodes.persist.write_node_trace", AsyncMock())
     graph = build_main_graph(InMemorySaver())
     state = await graph.ainvoke({"raw_text": "茅台期权询价100万", "conversation_id": "joint-case",
-        "message_id": 1, "room_id": "room", "user_id": "user"},
+        "message_id": 1, "room_id": "room", "user_id": "user", "robot_version": "V2", "at_bot": True},
         config={"configurable": {"thread_id": "joint-case"}})
     assert state.get("error") is None
     assert len(model_calls) == len(requests) == 1
