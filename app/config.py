@@ -1,7 +1,6 @@
 """全局配置：从环境变量加载，pydantic 校验。"""
-import os
 from functools import lru_cache
-from typing import Any, Literal
+from typing import Literal
 
 from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -30,10 +29,10 @@ class Settings(BaseSettings):
         description="LLM HTTP 客户端是否读取环境/系统代理和证书配置；内网直连设为 false",
     )
     # 三角色独立选择模型，共用连接和适配；THINKING 名称不自动开启思考。
-    # DeepSeek Pro 是当前基线，切换模型后重启并重新验收（ADR 0020）。
-    llm_model_standard: str = "deepseek-v4-pro"
-    llm_model_thinking: str = "deepseek-v4-pro"
-    llm_model_complex: str = "deepseek-v4-pro"
+    # 模型名称只由环境提供，代码不内置厂商默认值（ADR 0020）。
+    llm_model_standard: str
+    llm_model_thinking: str
+    llm_model_complex: str
 
     # === 后端业务 API ===
     otc_api_base_url: str
@@ -59,12 +58,6 @@ class Settings(BaseSettings):
     goats_client_id: str = ""
     goats_client_secret: str = ""
     goats_extapp_salt: str = ""
-    #: 期权业务 GOATS agent 标识（option_rfq_instrument_parser 等内部 endpoint 需要）
-    goats_opt_agent_id: str = ""
-    goats_opt_agent_sub_id: str = ""
-    #: 互换 / 通用业务 GOATS agent 标识（scripts/probe_goats 探针用；生产路径不读）
-    goats_com_agent_id: str = ""
-    goats_com_agent_sub_id: str = ""
 
     # === 真实环境测试账号（D2.* probe / 阶段 2 联调用，不进生产路径）===
     eval_room_id: str = ""
@@ -135,17 +128,6 @@ class Settings(BaseSettings):
     # 企微群 thread 长期存在，无界累加会撑大 prompt / checkpoint；N 由现场 eval 校准
     history_window_messages: int = Field(default=40, ge=2)
     conversation_idle_timeout_seconds: int = Field(default=1800, ge=60)
-
-    @model_validator(mode="before")
-    @classmethod
-    def reject_legacy_model_settings(cls, data: Any) -> Any:
-        """拒绝旧环境、dotenv 和构造参数键，只报告名称而不输出配置值。"""
-        # dotenv 未识别键仍进入校验输入；进程环境的未知键需另外检查。
-        keys = set(os.environ) | (set(data) if isinstance(data, dict) else set())
-        legacy = sorted({str(key).upper() for key in keys if str(key).upper().startswith("QWEN_")})
-        if legacy:
-            raise ValueError("旧模型配置已停用，请迁移为 LLM_* 并配置 LLM_PROVIDER：" + ", ".join(legacy))
-        return data
 
     @model_validator(mode="after")
     def validate_deadline_reserve(self) -> "Settings":

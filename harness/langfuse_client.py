@@ -151,3 +151,28 @@ def record_business_score(report: dict[str, Any], *, metadata: dict[str, Any]) -
         logger.warning("业务评分未写入：%s", type(exc).__name__)
     else:
         report["score_status"] = "enqueued"
+
+
+def _item_value(item: Any, name: str, default: Any = None) -> Any:
+    """兼容 SDK Dataset Item 与本地实验字典的同一字段。"""
+    return item.get(name, default) if isinstance(item, dict) else getattr(item, name, default)
+
+
+def select_dataset_items(items: list[Any], ids: list[str] | None) -> list[Any]:
+    """只选择启用的 Dataset Item，可按平台 ID 或稳定 case ID 选择。"""
+    wanted = set(ids or [])
+    selected = []
+    for item in items:
+        status = _item_value(item, "status", "ACTIVE")
+        if str(getattr(status, "value", status)).upper() == "ARCHIVED":
+            continue
+        metadata = _item_value(item, "metadata") or {}
+        if not wanted or wanted.intersection(
+            {
+                str(_item_value(item, "id", "")),
+                str(metadata.get("id", "")),
+                str(metadata.get("case_id", "")),
+            }
+        ):
+            selected.append(item)
+    return selected

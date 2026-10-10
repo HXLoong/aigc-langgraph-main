@@ -12,11 +12,10 @@ from uuid import uuid4
 import httpx
 from langfuse.experiment import Evaluation
 
-from harness.langfuse_client import experiment_item_trace, flush, get_client
+from harness.langfuse_client import experiment_item_trace, flush, get_client, select_dataset_items
 from harness.node_experiment import dataset_record, item_fixture, run_node_case
 from harness.node_runner import load_node_fixtures
 from harness.version import execution_metadata
-from scripts.langfuse.langfuse_eval import select_dataset_items
 
 
 def version_time(value: str | None) -> datetime:

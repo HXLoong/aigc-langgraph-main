@@ -25,7 +25,7 @@ def test_missing_current_identity_cannot_submit_again(request, missing):
     client, calls = request.getfixturevalue("inquiry_workflow")
     body = {"conversation_id": "same-session", "user": "test-user", "inputs": {
         "raw_content": "确认下单", "quote_content": "Q-20260922-0000000001",
-        "room_id": "test-room", "message_id": 902201,
+        "room_id": "test-room", "message_id": 902201, "robot_version": "V2", "at_bot": True,
     }}
     assert client.post("/v1/workflows/run", json=body).status_code == 200
     del body["inputs"][missing]
@@ -52,6 +52,6 @@ def test_invalid_current_message_never_claims_idempotency_or_submits(request, me
     client, calls = request.getfixturevalue("inquiry_workflow")
     client.post("/v1/workflows/run", json={"user": "test-user", "inputs": {
         "raw_content": "确认下单", "quote_content": "Q-20260922-0000000001",
-        "message_id": message_id, "room_id": "test-room",
+        "message_id": message_id, "room_id": "test-room", "robot_version": "V2", "at_bot": True,
     }})
     assert not [c for c in calls if c[0] == "operate"]

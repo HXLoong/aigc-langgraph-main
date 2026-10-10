@@ -5,10 +5,12 @@
 
 ## 新人阅读路径
 
-1. 根 `CLAUDE.md` —— 项目现状、命令、核心原则、排查 SOP
-2. [architecture/](./architecture/README.md) —— 单页导览 + 分层说明
-3. 根 `CONTEXT.md` —— 领域语言（业务术语）
-4. [adr/](./adr/README.md) —— 架构决策索引，按需查
+1. [根 README](../README.md) → [开发指南](./development/README.md) —— 安装、配置、启动和调用
+2. [测试指南](./testing/README.md) → [数据集说明](../tests/datasets/README.md) —— app 核心测试与黄金集评测
+3. [architecture/](./architecture/README.md) → [CONTEXT.md](../CONTEXT.md) —— 架构分层与业务术语
+4. [接口契约](./api-contracts/README.md) → [adr/](./adr/README.md) —— 接口与设计依据
+
+进展与待办只查 [work-plan.md](./work-plan.md)；AI 协作时再按需读 `CLAUDE.md`／生成的 `AGENTS.md`，不把代理规则当成新人部署手册。
 
 ## 目录总览
 

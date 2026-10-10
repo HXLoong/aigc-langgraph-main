@@ -21,7 +21,7 @@ from tests.joint_support import joint_model
 
 CONTEXT = {
     "conversation_id": "inquiry-entry", "message_id": 123,
-    "room_id": "room", "user_id": "user",
+    "room_id": "room", "user_id": "user", "robot_version": "V2", "at_bot": True,
 }
 
 
@@ -44,7 +44,7 @@ def wire(monkeypatch: pytest.MonkeyPatch) -> list[httpx.Request]:
     monkeypatch.setattr(httpx.AsyncClient, "send", send)
     settings = get_settings().model_copy(update={
         "goats_base_url": "http://goats.test", "goats_client_id": "test-client",
-        "goats_client_secret": "test-secret", "goats_opt_agent_id": "test-agent",
+        "goats_client_secret": "test-secret",
     })
     monkeypatch.setattr("app.config.get_settings", lambda: settings)
     client = OptionClientHttpx(base_url="http://java.test", token="test", dry_run=False)
@@ -96,18 +96,30 @@ async def test_ordinary_inquiry_keywords_never_call_goats(
     assert result["reply_text"] == "Java 询价回执"
 
 
-@pytest.mark.parametrize("existing", [False, True])
+@pytest.mark.parametrize("existing,at_bot,branch", [
+    (False, False, "quick_inquiry"),
+    (True, False, "existing_command_query"),
+    (True, True, "quick_inquiry"),
+])
 async def test_fast_flag_uses_goats_without_keyword_or_ordinary_inquiry(
-    monkeypatch: pytest.MonkeyPatch, wire: list[httpx.Request], existing: bool,
+    monkeypatch: pytest.MonkeyPatch, wire: list[httpx.Request],
+    existing: bool, at_bot: bool, branch: str,
 ) -> None:
     model = MagicMock(side_effect=AssertionError("fast entry must not enter ordinary inquiry"))
     monkeypatch.setattr("app.nodes.parse_instruction.get_llm_standard", model)
     result = await main.build_main_graph().ainvoke({
         **CONTEXT, "raw_text": "600519.SH 1M", "fast_query": "1",
-        "existing_command": "1" if existing else "0", "at_bot": "0",
+        "existing_command": "1" if existing else "0", "at_bot": at_bot,
     })
 
     assert result.get("error") is None
+    model.assert_not_called()
+    assert result["entry_branch"] == branch
+    if branch == "existing_command_query":
+        assert [request.url.host for request in wire] == ["goats.test"]
+        assert wire[0].url.path.endswith("/instruction/query")
+        assert result["reply_text"] == "IGNORE_REQUEST_NOT_REPLY_USER"
+        return
     assert [request.url.host for request in wire] == ["goats.test", "java.test"]
     assert wire[0].headers["agentid"] == "room@tl"
     assert wire[0].headers["agentsubid"] == "user"

@@ -25,7 +25,7 @@ async def test_real_main_graph_uses_one_model_and_one_business_call(monkeypatch,
     monkeypatch.setattr("app.tools.option_client.OptionClientHttpx.query_close_orders", AsyncMock(return_value={"code": 0, "data": []}))
     monkeypatch.setattr("app.nodes.persist.write_node_trace", AsyncMock())
     result = await build_main_graph().ainvoke({"raw_text": raw, "conversation_id": "smoke", "message_id": 1,
-        "user_id": "u", "room_id": "r"})
+        "user_id": "u", "room_id": "r", "robot_version": "V2", "at_bot": True})
     assert not result.get("error"), result
     assert len(calls) == 1 and backend.await_count == 1
     assert (result["product_type"], result["intent"]) == (product, intent)
@@ -41,7 +41,7 @@ async def test_unknown_turns_preserve_history_but_reset_trace(monkeypatch):
     graph = build_main_graph(InMemorySaver())
     config = {"configurable": {"thread_id": "smoke-history"}}
     results = [await graph.ainvoke({"raw_text": f"第{index}轮闲聊", "conversation_id": "smoke-history",
-        "message_id": index}, config=config) for index in (1, 2)]
+        "message_id": index, "robot_version": "V2", "at_bot": True}, config=config) for index in (1, 2)]
     assert len(calls) == 2
     for result in results:
         assert not result.get("error"), result

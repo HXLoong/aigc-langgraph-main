@@ -80,11 +80,11 @@ async def send(client, inputs):
 
 
 @pytest.mark.parametrize("first_inputs,first_node", [
-    ({"fastQuery": "1"}, "quick_inquiry"),
+    ({"fastQuery": "1", "robotVersion": "V2"}, "quick_inquiry"),
     ({"existingCommand": "1", "atBot": "0"}, "existing_command_query"),
-    ({"files": [IMAGE]}, "prepare_input"),
+    ({"files": [IMAGE], "robotVersion": "V2"}, "prepare_input"),
 ])
-async def test_omitted_turn_inputs_restore_normal_route(turn_api, first_inputs, first_node):
+async def test_omitted_nonversion_turn_inputs_restore_normal_route(turn_api, first_inputs, first_node):
     client, graph, requests = turn_api
     await send(client, {
         "rawContent": "首轮输入", "quoteContent": f"单号：{ORDER_ID}",
@@ -93,7 +93,7 @@ async def test_omitted_turn_inputs_restore_normal_route(turn_api, first_inputs, 
     first = (await graph.aget_state(CONFIG)).values
     assert first_node in [entry.node for entry in first["trace"]]
     requests.clear()
-    result = await send(client, {"rawContent": f"查订单{ORDER_ID}"})
+    result = await send(client, {"rawContent": f"查订单{ORDER_ID}", "robotVersion": "V2"})
     second = (await graph.aget_state(CONFIG)).values
     assert "swap_query_order" in [entry.node for entry in second["trace"]]
     if first_node != "prepare_input":
@@ -108,10 +108,27 @@ async def test_omitted_turn_inputs_restore_normal_route(turn_api, first_inputs, 
     for key in ("fast_query", "existing_command", "at_bot", "quote_content", "quote_appinfo"):
         assert second[key] is None
     assert second["input_files"] == []
+    assert second["robot_version"] == "V2"
     # ADR 0024 D2：业务对象 per-turn，不再跨轮残留（跨轮记忆只有 history_messages）
     for key in ("tickers", "place_params", "cancel_params"):
         assert second[key] is None
     assert second["history_messages"][:len(first["history_messages"])] == first["history_messages"]
+
+
+async def test_omitted_current_version_does_not_reuse_previous_v2(turn_api):
+    client, graph, requests = turn_api
+    await send(client, {"rawContent": f"查订单{ORDER_ID}", "robotVersion": "V2"})
+    assert len(requests) == 1
+    requests.clear()
+    result = await send(client, {"rawContent": f"查订单{ORDER_ID}"})
+    state = (await graph.aget_state(CONFIG)).values
+    assert state["robot_version"] is None
+    assert state["entry_branch"] == "ignore"
+    assert result["answer"] == "IGNORE_REQUEST_NOT_REPLY_USER"
+    assert not requests
+    assert not {"parse_instruction", "swap_query_order"}.intersection(
+        entry.node for entry in state["trace"]
+    )
 
 
 @pytest.mark.parametrize("inputs,expected", [
@@ -130,14 +147,14 @@ async def test_current_text_defaults_after_message_fallback(turn_api, inputs, ex
 
 
 @pytest.mark.parametrize("inputs,node", [
-    ({"fast_query": "1", "at_bot": False}, "quick_inquiry"),
+    ({"fast_query": "1", "at_bot": False, "robot_version": "V2"}, "quick_inquiry"),
     ({"existing_command": "1", "at_bot": 0}, "existing_command_query"),
-    ({"fastQuery": "0", "existingCommand": "1", "atBot": "1"}, "swap_query_order"),
-    ({"sysFiles": [IMAGE]}, "prepare_input"),
+    ({"fastQuery": "0", "existingCommand": "1", "atBot": "1", "robotVersion": "V2"}, "swap_query_order"),
+    ({"sysFiles": [IMAGE], "robotVersion": "V2"}, "prepare_input"),
 ])
 async def test_explicit_current_inputs_override_defaults(turn_api, inputs, node):
     client, graph, requests = turn_api
-    await send(client, {"rawContent": "上轮正文", "fastQuery": "1"})
+    await send(client, {"rawContent": "上轮正文", "fastQuery": "1", "robotVersion": "V2"})
     requests.clear()
     await send(client, {"rawContent": f"查订单{ORDER_ID}", "quoteContent": "本轮引用",
                         "quoteAppinfo": "new-meta", **inputs})

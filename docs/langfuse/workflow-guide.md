@@ -1,451 +1,140 @@
 # Langfuse 功能与评测链路使用指南
 
-本文说明 `aigc-langgraph` 如何使用 Langfuse 管理黄金数据集、执行评测、自动打分，以及从失败用例追踪到 LangGraph 节点。
+本页说明本项目的本地评测、追踪与平台数据之间的关系。
+执行命令和正式评分规则只在 [测试指南](../testing/README.md) 维护；
+使用界面见 [Web UI 手册](./web-ui-operation-manual.md)，自托管见 [部署说明](./self-hosted-deployment.md)。
 
-> 按 [ADR 0005](../adr/0005-annotation-roles-judge-plus-business-spotcheck.md)，意图 / 业务 / 节点批量评分统一使用确定性断言，不调用 LLM Judge。`--no-judge` 仅保留为旧命令兼容参数。节点回归逐步接入 Dataset / Experiment / Score，迁移与评分覆盖见[工作计划](../work-plan.md)。
+**正式结果由本地 Python 同步确定性评分，不调用 Judge，不等待 Langfuse JS Rule，也不需要 Node.js 服务。**
+Langfuse 是可选记录与分析平台；追踪成功不等于评分成功，SDK 入队不等于已入库。
+实现缺口与待办见 [工作计划](../work-plan.md)。
 
 ## 1. 功能入口
 
-| 功能 | 用途 |
-|---|---|
-| Tracing | 查看 Trace 及内部 LangGraph、LLM、工具 Observations |
-| Sessions | 聚合同一多轮会话的 Trace |
-| Prompts / Playground | 管理和调试 Prompt |
-| Scores | 统一查看自动与人工评分 |
-| Evaluators | 管理自动评分逻辑和 Evaluation Rules |
-| Human Annotation | 人工复核 Trace、Observation 或 Session |
-| Datasets | 管理测试输入、期望输出和 metadata |
-| Experiments | 执行 Dataset，并比较输出、Trace 和 Scores |
-| Users / Alerts | 按用户聚合记录、配置告警 |
+| 对象／功能 | 用途 | 与本地结果的关系 |
+|---|---|---|
+| Trace / Observation | 保存用例、HTTP 轮、图节点、模型和外部调用过程 | 用于定位失败，不决定 PASS |
+| Session | 聚合同一会话的执行记录 | 不替代多轮断言 |
+| Dataset / Dataset Item | 平台上的输入、期望和来源 metadata | 黄金真源仍是 git 的 `tests/datasets/` |
+| Experiment / Experiment Item | 关联一次数据集执行及逐条结果 | 需要执行器显式关联，不因上传 Trace 自动生成 |
+| Score | 保存确定性结果或人工复核 | 应注明来源，不与平台补充评分混用 |
+| Evaluator / Evaluation Rule | 平台运行的可选评分逻辑与触发规则 | 平台异步分数不阻塞本地结束 |
+| Prompts / Playground | 提示词演练与查看 | 生产提示词仍从 git 加载 |
 
 ## 2. 对象与评测链路
 
-```text
-Dataset
-└── Dataset Item：input + expectedOutput + metadata
-    └── Experiment Item：一次用例执行结果
-        └── Trace
-            ├── root Observation：用例根输出
-            └── child Observations：LangGraph 节点、LLM、工具调用
+本地正式链路：
 
-本地 SDK Evaluator ───────────────────────────────> 自动 Score
-Online Evaluation Rule ─> 项目级 Evaluator ──────> 自动 Score
-Human Annotation ─────────────────────────────────> 人工 Score
-Session ──────────────────────────────────────────> 聚合同一多轮会话
+```text
+ tests/datasets/{biz,intent}（输入 + 明确期望）
+  → harness.golden 加载与选择
+  → HTTP 执行（解析／入口节点或主图）
+  → Python 确定性评分
+  → 本地 report / PASS / FAIL / REJECTED
 ```
 
-- Dataset 保存测试标准，Experiment 保存本次执行结果。
-- Trace 和 Observations 保存执行过程，Score 保存评价结果。
-- Evaluator 是项目级评分逻辑，本身不绑定 Dataset。
-- Evaluation Rule 定义过滤条件。新的 Observation 入库并满足条件时，Langfuse 自动运行 Evaluator。通常所说的“绑定了谁”，指的是 Rule 匹配谁。
+启用 Langfuse 时的追踪链路：
+
+```text
+用例根 Observation
+  → HTTP 轮 Observation
+  → app 图／节点／模型 Observation
+```
+
+Dataset 同步、Trace 上传、最终 report／Score 上传、Experiment 关联是不同操作。
+黄金集 `harness run` 使用可选追踪并在批次收尾 flush，不自动创建 Dataset Experiment。
+平台 webhook 通过内部适配器复用相同 HTTP 执行器，最终 report 与本地 Score 由 SDK Experiment 记录。
+节点 Dataset 工具是独立调试能力，不证明黄金集平台闭环可用，也不增加正式验收层。
 
 ## 3. Dataset 数据结构
 
-Dataset Item 的三个字段全部由 `scripts/langfuse/upload_golden_to_langfuse.py` 写入，Langfuse 不会自动补充任何字段：
+`harness.golden` 是用例加载真源；平台同步工具将数据投影为：
 
-- `input`：首轮输入与 `sub_scenes` 多轮输入，键为 `send_text`、`at_bot`、`quote_previous`；非零的 `wait_before_seconds` 也逐轮保留。
-- `expectedOutput`：首轮断言与 `sub_scenes` 多轮断言。**只写非空字段**，所以各用例的键不完全一致：`expected`、`response_contains`、`response_contains_any`、`response_not_contains` 中保留有值的那些，另外总有 `sub_scenes`。
-- `metadata`：用例标签、来源和说明，见 3.1。
+- `input`：首轮消息与 `sub_scenes` 多轮输入，包括明确引用、历史及已有入口标记。
+- `expectedOutput`：明确结构／文本断言，不从实际输出反推 expected。
+- `metadata`：稳定用例 ID、名称、类别、来源、数据文件与行号等，用于追溯和展示。
 
-### 3.1 metadata 字段
+Dataset 名通常取数据文件的相对路径、去掉 `.jsonl`，例如 `biz/swap_prod`、`intent/swap_instrument`。
+原始 case ID 应保留用于对账；平台 Item ID 与本地 case ID 不是必然同一值。
+`category` 是数据标签，不提供新的 CLI 分类选择参数。
 
-`metadata` 由 `upload_golden_to_langfuse.py::_metadata()` 构造基础字段。自动同步还保存原始 `reference`、`description`（若存在）、相对 `fixture_path` 和 `source_line`：
+loader、HTTP runner 与平台投影保留 `robot_version`／`existing_command`。
+评测输入缺省 V2，显式版本保持原值，app 的缺省 V1 不改变。
+平台触发前须重新同步包含入口字段的数据集，输入和期望与 git 不一致时拒绝执行。
+冻结历史、参考证券码和 expected 不得混入当前用户证据。
 
-| 字段 | 来源 | 用途 |
-|---|---|---|
-| `id` | fixture 的 `id`（无则用 `caseNo`） | 原始用例编号；自动同步的 Item ID 为 `<dataset_name>:<id>`，避免跨 Dataset 冲突 |
-| `caseNo` | fixture 的 `caseNo`，缺失回退 `id` | 原始用例编号，用于和本地 fixture 对账 |
-| `name` | fixture 的 `name`，缺失回退 `id` | 用例名，列表展示用 |
-| `category` | fixture 的 `category`，缺失回退文件名 | 用例分类，按业务域统计通过率 |
-| `test_function` | 由 `category` 复制 | 供 `langfuse_eval.py --filter` 匹配，决定这一轮跑哪一批用例 |
-| `type` | fixture 的 `type` | 区分正例 / 负例（`positive` / `negative`）。**A 方言没有这个字段，上传后是空串** |
-| `source` | fixture 的 `source` | 用例来源（`business_seed`、`llm_paraphrase`），追溯用例怎么来的。**A 方言没有这个字段，上传后是空串** |
-| `scene` | fixture 的 `scene` | 场景标签。**A 方言没有这个字段，上传后是空串** |
-| `overview` | 脚本生成 | 多行概览：ID / 类别 / 类型 / 来源 / 期望路由 + 逐轮对话。**本地 Judge 直接用它作为“题目”拼进评分提示词**，是这里最有实际作用的一个字段 |
-| `tags` | 脚本生成 | 非空的 `[category, source, suite]`，列表里的分类标签 |
-| `turns` | 脚本计算 | 轮次数，用于分辨单轮 / 多轮用例 |
-| `suite` / `backend` | 路径或命令参数 | 区分意图集与业务集及其评测后端 |
-| `reference` / `description` | fixture 原文 | 自动同步时保留来源依据和用例说明 |
-| `fixture_path` / `source_line` | 文件相对路径与行号 | 自动同步时定位 Git 中的真源 |
+## 4. 配置与数据同步
 
-> A 方言现位于 `tests/datasets/biz/*.jsonl` 和 `tests/datasets/intent/*.jsonl`；B 方言历史文件原位于 `tests/datasets/unified_golden.jsonl`，只有 B 方言带 `type` / `source` / `scene`。另外，早期用旧版脚本上传的 Dataset（如 `otc-option-golden`，350 条，2026-05 创建）只有 8 个字段，没有 `name` / `caseNo` / `scene`，需要当前字段集就用当前脚本重新上传。
+### 4.1 可选追踪
 
-下面是一条旧版手动上传后的 Item（取自 Dataset `golden_option_inquiry_case` 的 `case-024`，`response_contains` 已截断）。自动同步会补入上表的来源字段和 `suite` / `backend`：
+通过安全的环境配置填写 `ENABLE_LANGFUSE`、`LANGFUSE_BASE_URL`、
+`LANGFUSE_PUBLIC_KEY`、`LANGFUSE_SECRET_KEY`。关闭开关或缺凭证时追踪不启用，本地评分不依赖它。
 
-```json
-{
-  "input": {
-    "send_text": "快速询价：参与型看涨，000002.SZ，80/80，3M",
-    "at_bot": false,
-    "quote_previous": false,
-    "sub_scenes": []
-  },
-  "expectedOutput": {
-    "sub_scenes": [],
-    "response_contains": ["-----场外期权询价详情-----", "标的代码：000002.SZ"]
-  },
-  "metadata": {
-    "id": "case-024",
-    "caseNo": "case-024",
-    "name": "case-024",
-    "category": "option_inquiry_case",
-    "test_function": "option_inquiry_case",
-    "type": "",
-    "source": "",
-    "scene": "",
-    "tags": ["option_inquiry_case", ""],
-    "turns": 1,
-    "overview": "ID: case-024\n类别: option_inquiry_case\n用例类型: \n来源: \n期望路由: product_type=, intent=\n对话:\n  第1轮: send_text=快速询价：参与型看涨，000002.SZ，80/80，3M; 无引用"
-  }
-}
-```
+需要贯通 harness → app 的父子记录时，两侧使用同一项目；只在可信网络启用
+`TRUST_INBOUND_TRACEPARENT=true`。已有服务需要重启才会使用新的进程配置。
+返回 Trace ID 只是关联信息，平台是否收到 Observation／Score 必须另查。
 
-多轮用例通过 `input.sub_scenes[n]` 与 `expectedOutput.sub_scenes[n]` 按下标对应。上传脚本不转换成另一套 `turns` 或 `expected_scope` 结构。
-
-上传结果的字段值取决于 `--source` 指向的方言：`tests/datasets/biz/*.jsonl`（A 方言）的 `category` 形如 `option_inquiry_case`；历史 B 方言的 `category` 形如 `option/inquiry`，并会带上 `type` 与 `source`。
-
-旧节点 fixture 目录已退役。批量同步递归扫描现有 `tests/datasets/` 下全部 JSONL；新增任何子目录的 JSONL 都会成为独立 Dataset，不能假设节点样本会被自动排除。
-
-## 4. 首次配置
-
-以下命令均在 `aigc-langgraph/` 目录执行。先确认 `.env` 已配置 Langfuse 地址和密钥。
-
-### 4.1 上传 Dataset
-
-`.github/workflows/langfuse-dataset-sync.yml` 在 `main` 收到包含 `tests/datasets/**/*.jsonl` 的 push 时自动触发；受分支保护时，这对应合并含数据集变更的 PR。Actions 页仍可手动运行重跑。它检出运行时最新 `main`，在 `ubuntu-latest` 上用 Langfuse Python SDK `4.15.0` 串行同步。仓库变量 `LANGFUSE_BASE_URL`（自托管实例地址）和 Secrets `LANGFUSE_PUBLIC_KEY` / `LANGFUSE_SECRET_KEY` 都是必需的；缺失时 workflow 失败。
+### 4.2 黄金集同步
 
 ```bash
-python scripts/langfuse/upload_golden_to_langfuse.py --sync-all --dry-run
 python scripts/langfuse/upload_golden_to_langfuse.py --sync-all
-# 临时覆盖服务地址
-python scripts/langfuse/upload_golden_to_langfuse.py --sync-all --base-url http://127.0.0.1:3000
 ```
 
-`--sync-all` 递归扫描 `tests/datasets/` 下全部 `.jsonl`，忽略其他文件。每个文件独立成 Dataset，名称是相对路径去掉扩展名：`intent/option_close.jsonl` → `intent/option_close`，`biz/option_close.jsonl` → `biz/option_close`；`/` 在 Langfuse 中呈现为文件夹。上传前检查 Dataset 名称冲突和全局用例 ID 重复；Item ID 固定为 `<dataset_name>:<case_id>`（Langfuse 要求项目内唯一），原始 ID 保存在 metadata。每次 upsert 设为 `ACTIVE`。所有文件上传成功后，才归档各 Dataset 中已经从对应文件移除的 Item；空文件或上传失败时不归档。改名后的路径作为新 Dataset 同步，远端旧 Dataset 和实验历史保留。
+该操作上传数据，不执行用例、不完成评测。它会向配置的 Langfuse 发送用例内容，
+只在允许数据共享的环境运行，具体选择／覆盖行为先查脚本 `--help`。
+数据集审阅和修改在 git 完成，平台新增标注先导出复核，不自动回写黄金期望。
 
-手动指定来源和 Dataset 的旧用法仍可使用：
+### 4.3 平台评分与人工复核
 
-```powershell
-# 预览
-python scripts/langfuse/upload_golden_to_langfuse.py --source tests/datasets/biz/option_inquiry.jsonl --dataset-name biz/option_inquiry --mode overwrite --dry-run
+`harness/evaluators/` 与 `scripts/langfuse/definitions/` 是平台评分资产。
+已有 Online Rule 可以异步产生补充 Score，但正式本地结果不等待它，也不要求部署本地 JS 服务。
+是否继续维护这些资产由工具链收敛方案决定，不把平台 evaluator 自测当成 app 核心验证。
 
-# 上传
-python scripts/langfuse/upload_golden_to_langfuse.py --source tests/datasets/biz/option_inquiry.jsonl --dataset-name biz/option_inquiry --mode overwrite
-```
+人工标注可用于复核失败和修订期望；不能以平台分数覆盖本地字段差异，
+不能把无适用断言、未执行或环境阻塞标记成业务通过。
 
-`overwrite` 会先删除该 Dataset 的现有 Items，适合首次替换旧格式；仅新增或更新用例时使用 `--mode append`。
+## 5. 执行评测与 Experiment 边界
 
-`--source` 指向单个 JSONL 时，只上传该文件中的用例；指向目录时，会读取目录下全部 `*.jsonl`，并将所有用例
-上传到 `--dataset-name` 指定的同一个 Dataset。脚本不会按文件名自动创建多个 Dataset。
+黄金集只用 `python -m harness run`，四类参数为 `--group`、`--file`、`--case`、`--backend`。
+运行、范围、Java 写入授权与报告位置见测试指南，不另换脚本以启用追踪。
 
-如果希望一个 JSONL 文件对应一个 Dataset，需要分别执行。例如在 Windows CMD 中：
+CLI 与平台适配器固定访问已有 8000 服务，不临时启动 app、不修改服务配置。
+正式本地结果与平台上传状态分开记录。
 
-```cmd
-python scripts\langfuse\upload_golden_to_langfuse.py --source tests\fixtures\biz\option_inquiry.jsonl --dataset-name biz/option_inquiry --mode append
+[Remote Experiment webhook](./remote-experiment-webhook.md) 校验签名和范围后启动内部评测进程，
+从平台取数并与 git 黄金集绑定，复用本地执行和评分，再通过 SDK Experiment 记录结果。
+本地评分不等待平台 Rule；受理成功不代表执行或上传成功。
 
-python scripts\langfuse\upload_golden_to_langfuse.py --source tests\fixtures\biz\option_open.jsonl --dataset-name biz/option_open --mode append
+## 6. 从失败结果定位节点
 
-python scripts\langfuse\upload_golden_to_langfuse.py --source tests\fixtures\biz\option_close.jsonl --dataset-name biz/option_close --mode append
-```
+1. 从本地报告取得 case ID、失败轮、实际输入、期望、diff、error 以及关联 ID（若有）。
+2. 先核对入口版本／分支，再查产品、动作、来源、实际出站参数，最后核对 Java 原始回复。
+3. 在平台按关联 ID 找用例根、HTTP 轮、服务端图和模型记录，核对父子关系与 Session。
+4. Observation 缺失单列为追踪缺口；不要把平台不可用当业务通过，也不要因上传失败篡改业务结果。
+5. 对 app 根因先补核心回归再修复，只重跑相关范围；Java 业务数据或识别问题不在 app 内补字典。
 
-`append` 通过稳定的 Item ID 执行新增或更新，不会删除远端已有但本次文件中不存在的 Item；需要让远端 Item 集合
-与本地文件完全一致时，显式使用 `--mode overwrite`。
+Java `code=0` 不等于黄金断言 PASS；拒绝／处理中等真实回复不得改写为本地订单卡。
 
-### 4.1a 上传 Prompt 到 staging
+## 7. `scripts/langfuse/` 脚本职责
 
-`.github/workflows/langfuse-prompt-sync.yml` 在 `main` 收到包含 `app/prompts/option/*.md`、`option_close/*.md` 或 `swap/*.md` 的 push 时自动触发；受分支保护时，这对应合并含提示词变更的 PR。Actions 页仍可手动运行重跑。workflow 检出运行时最新
-`main`，使用 Langfuse Python SDK `4.15.0` 串行上传。它需要仓库变量 `LANGFUSE_BASE_URL`
-及 Secrets `LANGFUSE_PUBLIC_KEY`、`LANGFUSE_SECRET_KEY`，缺一即失败。
-
-```bash
-python scripts/langfuse/upload_prompt_to_langfuse.py --sync-all --dry-run
-python scripts/langfuse/upload_prompt_to_langfuse.py --sync-all
-python scripts/langfuse/upload_prompt_to_langfuse.py --sync-all --base-url http://127.0.0.1:3000
-
-# 单文件手动上传仍可使用
-python scripts/langfuse/upload_prompt_to_langfuse.py option_close.intent --dry-run
-python scripts/langfuse/upload_prompt_to_langfuse.py option_close.intent
-# 纯 system 的 text 提示词（不补实验用 user 消息，UI Prompt Experiment 不可用）
-python scripts/langfuse/upload_prompt_to_langfuse.py option_close.intent --plain
-```
-
-批量模式只扫描三个业务目录的顶层 `.md`（目前 13 个）。名称按目录和文件 stem 用下划线连接：
-`option_close/intent.md` → `option_close_intent`；`swap/intent_v2.md` →
-`swap_intent_v2`，`_vN.md` 是独立 Prompt 名称。上传前会解析并校验全部文件及名称冲突。
-`[system]` 内容原样保留；有 `[user]` 时使用文件中的模板；否则加入含
-`{{send_text}}` 的首轮实验用 chat user 模板。批量模式固定只上传 `staging`，不接受 `--plain`
-或其他标签。
-
-脚本无缓存读取每个 Prompt 的 `staging` 版本。内容和类型相同则跳过；不同则创建同名新版本，
-`staging` 标签随新版本移动。若 UI 中存在不同的 staging 草稿，本次 Git 内容会覆盖其标签指向；
-历史版本仍保留。远端同名 text/chat 类型冲突、鉴权或网络失败会使任务失败。删除本地文件不会
-自动删除 Langfuse 中的 Prompt。生产继续从 Git 加载提示词，提示词修改仍需 PR 评审。
-
-### 4.2 配置 Online 自动评分
-
-> **前置：自托管实例必须配置 code evaluator dispatcher**，否则 `--apply` 返回
-> `412 Code evaluations are not enabled for this deployment.`，功能整体关闭。在
-> `infra/langfuse/.env` 填两个开关（`docker-compose.yml` 已预留）后重启生效：
->
-> ```bash
-> LANGFUSE_CODE_EVAL_DISPATCHER=insecure-local
-> QUEUE_CONSUMER_CODE_EVAL_EXECUTION_QUEUE_IS_ENABLED=true
-> ```
->
-> | Dispatcher | 用途 | 语言支持 |
-> |---|---|---|
-> | `insecure-local` | 本地开发；worker 进程内执行 | **只有 TypeScript/JavaScript** |
-> | `aws-lambda` | 生产自托管；派发到 Lambda 执行器 | Python + TypeScript/JavaScript |
->
-> worker 镜像只有 Node，Python evaluator 在本地无解（`insecure-local` 返回 `412 ... not supported by
-> the configured dispatcher`），必须部署 `aws-lambda`（本地可用 LocalStack 模拟，需挂 Docker socket）。
-> 参见[自托管 code evaluator 配置](https://langfuse.com/self-hosting/configuration/code-evaluators)。
->
-> **本仓库**：Langfuse 托管版使用 `harness/evaluators/*.js`，`upload_evaluators.py` 以
-> `SOURCE_LANGUAGE = "TYPESCRIPT"` 上传（Langfuse 只收 `PYTHON` / `TYPESCRIPT`，TS 是 JS 超集），
-> 因此 `insecure-local` 可执行。Python 脚本只执行用例并上传 Experiment 输出，不在本地复制评分逻辑。
->
-> **坑：源码必须是裸 `function evaluate`，不能带 `export`** —— 带 `export` 的 evaluator 在
-> v4.46.0 + `insecure-local` 下**静默不执行**：不出分、日志无报错、无任何提示，只能靠"分数没出现"
-> 发现（与[官方 Function contract 示例](https://langfuse.com/docs/evaluation/evaluation-methods/code-evaluators)一致）。
-> 本地 `import` 时（如写 TS 测试）读源码后临时补 `export`，不改原文件。
-
-对所有 Dataset 生效：
-
-```powershell
-# 预览
-python scripts/langfuse/upload_evaluators.py --dry-run
-
-# 上传 Evaluator 和 Rule
-python scripts/langfuse/upload_evaluators.py --apply
-```
-
-只对指定 Dataset 生效时增加过滤参数：
-
-```powershell
-python scripts/langfuse/upload_evaluators.py --dataset-name biz/option_inquiry --apply
-```
-
-脚本从 `definitions/evaluators.json` 同步三个项目级 Evaluator，并创建对应的 Evaluation Rules：
-
-- 不传 `--dataset-name`：Rule 只过滤 `isExperimentItemRootSpan=true`，匹配所有 Dataset 的 Experiment Item 根输出。
-- 传入 `--dataset-name`：Rule 再增加 `datasetId` 条件，只匹配该 Dataset。
-- 普通请求、`--local` 评测和子 Observations 不会触发。
-
-三个 Evaluator 分别检查 `response_contains`、`response_contains_any` 和 `response_not_contains`，产生三个 Boolean
-Score。重复同步时，同名且相同则跳过，不同则更新；改名会新建，旧记录不会自动删除。全局 Rule 与 Dataset 专属
-Rule 同时启用会重复评分，应在 `Evaluators → Evaluation Rules` 中只保留一种作用范围。
-
-### 4.3 配置人工评分口径
-
-```powershell
-# 预览
-python scripts/langfuse/upload_score_configs.py --dry-run
-
-# 上传
-python scripts/langfuse/upload_score_configs.py --apply
-```
-
-脚本读取两份定义：`definitions/score-configs.json` 同步 Score Config，`definitions/annotation-queues.json`
-同步 Annotation Queue。当前包含用例级人工指标 `human_business_verdict`（取值 `正确`、`错误`、`待确认`），
-以及绑定了该指标的队列 `业务人工复核`。
-
-Annotation Queue 的定义里 `score_configs` 写 **Score Config 名称**而不是 id，脚本在同步完 config 后解析成
-远端 id 再绑定，因此换实例（本地 / 云端 / 客户内网）不需要改定义文件。
-
-> **Langfuse 没有 queue 级的 update 或 delete 接口**，只开放 items / assignments 的操作。
-> 绑定不一致时脚本报 `drift` 并提示在 UI 重建该 queue，**不会自动改**。改名会新建 queue，旧队列需手工删。
-
-当前人工标注采用“分类结论 + Score Comment”：分类值用于统计，Comment 用于补充判断依据。Comment 在 Langfuse UI 中是可选字段，Score Config 的描述只能提示、不能强制填写。若需要独立、可查询的文本评分维度，可再增加 `TEXT` Score Config；文本值限制为 1–500 个字符。参见 Langfuse 官方的 [UI 人工评分](https://langfuse.com/docs/evaluation/evaluation-methods/scores-via-ui) 和 [Score 数据模型](https://langfuse.com/docs/evaluation/scores/data-model)。
-
-仍未覆盖：**分配标注人员**、**按 Experiment 的 trace_id 把待复核结果入队**。前者在 UI 的
-`Annotation Queues → Members` 手工分配，后者需要按 Experiment 结果批量调用 `create-item`。
-
-## 5. 执行 Experiment
-
-先启动同版本 LangGraph HTTP 服务。可信本地回归开启 `TRUST_INBOUND_TRACEPARENT=true`，并确保评测端和服务端连接同一 Langfuse 项目；生产入口不能无条件信任外部追踪头。
-
-```bash
-ENVIRONMENT=staging TRUST_INBOUND_TRACEPARENT=true LLM_OUTPUT_MAX_TOKENS=8192 \
-  uvicorn app.main:app --host 127.0.0.1 --port 8201
-# 按当前 git 意图集执行；只经节点 HTTP，不调用 Java 交易接口
-ENVIRONMENT=staging python -m scripts.langfuse.langfuse_eval \
-  --local tests/datasets/intent/option.jsonl --base-url http://127.0.0.1:8201 \
-  --concurrency 2
-# 平台 Dataset 可固定版本；真实写类仍需授权账号和本地依赖
-python -m scripts.langfuse.langfuse_eval --dataset biz/option_inquiry --ids case-022 \
-  --base-url http://127.0.0.1:8201 --concurrency 1 --prepare-java
-```
-
-平台读取可用 `--dataset-version <带时区ISO时间>`。`--dry-run` 只预览，`--ids` / `--filter` / `--limit` 控制范围。`--no-judge` 仅保留命令兼容，所有套件都不调用 Judge；Score 由 Langfuse 的 JS Evaluation Rule 自动生成。
-
-SDK Experiment 直接保存确定性 Scores：业务为 `det_business_pass`，意图及标的使用同源 Code Evaluator。Online Rule 可作补充观察，批次退出码不依赖尚未完成的异步评分。缺少断言、执行结果或轮次必须失败；写类参数标注不完整单列 `parameter_assertion_coverage`，不等同于完整业务验收。
-
-`local_eval.py` 准备授权 Java 测试消息，执行同一 HTTP runner 和字段比较器，把 `det_business_pass` 关联到原有用例 Trace。报告保留代码/模型/断言/数据版本、Trace/Observation ID、每轮参数和差异；`score_status=enqueued` 不是已入库证明。
-
-### 节点标注与回归
-
-从真实 observation 审阅输入和正确输出，再用 `scripts/langfuse/node_dataset.py publish` 发布节点 Dataset。稳定 ID 包含数据集和来源身份，重复发布不会覆盖其它 Dataset。来源 Trace/Observation 与审阅者必须保留；空期望不允许发布。
-
-`export` 固定版本导出待复核快照，不能自动覆盖 git 的 biz/intent 基线；`run` 经节点 HTTP 比较同一字段断言并写 Experiment。写节点只留标注并 SKIP，即使平台误标可回放也不能执行；没有有效样本或全 SKIP 时为待验收。命令见 [脚本说明](../../scripts/langfuse/README.md)。当前没有已审阅节点基线时，不宣称节点 Dataset 验收通过。
-
-### 5.1 Environment 与评分查看位置
-
-Environment 用于区分数据来源。部分名称由 Langfuse SDK 固定使用，不是本项目自定义：
-
-| Environment | 含义 | 默认是否出现在 Scores 主列表 |
-|---|---|---|
-| `default` | 未显式配置环境的普通 Trace；本项目客户端显式提供当前环境 | 是 |
-| `production` / `staging` / `development` | 应用与评测客户端通过 `ENVIRONMENT` 配置的业务环境 | 是 |
-| `sdk-experiment` | Langfuse SDK 执行 Dataset Experiment 时使用的官方内部环境 | 否 |
-| `langfuse-code-eval` | Langfuse-managed Code Evaluator 自身的执行 Trace | 否 |
-| `langfuse-llm-as-a-judge` | Langfuse-managed LLM Judge 自身的执行 Trace | 否 |
-
-本项目通过 `--dataset` 执行后，用例 Trace、`otc-option-judge` 和
-三个文本断言 Score 都属于本次 Experiment，主要在 Dataset 的 `Experiments` 对比页查看。它们关联的用例
-Observations 使用 `sdk-experiment` 环境；Scores 主列表默认隐藏该内部环境，因此列表中看不到并不代表 Score 未生成。
-
-需要在 Scores 主列表查看时，展开左侧过滤面板，显式选择 `Environment = sdk-experiment`，再按 Score 名称过滤。
-Code Evaluator 返回的业务 Score 仍关联被评测的 `sdk-experiment` Observation；`langfuse-code-eval` 只用于查看
-Evaluator 自身的执行日志、耗时和错误。
-
-使用 `--local` 时不会创建 Dataset Experiment。此模式产生普通 Trace，通常落在 `default` 或
-`LANGFUSE_TRACING_ENVIRONMENT` 指定的环境中，Score 直接从 Tracing 或 Scores 页面查看。
-
-### 5.2 Score Source
-
-Scores 页面的 `Source` 表示 Score 的产生方式，与 Dataset 和 Environment 无关：
-
-| Source | 含义 | 本项目中的例子 |
-|---|---|---|
-| `EVAL` | 由 Langfuse 的评测流程产生，包括 Experiment Evaluator、Code Evaluator 和 LLM Judge | Dataset Experiment 中的 `otc-option-judge`，以及三个 Online Code Evaluator Score |
-| `ANNOTATION` | 由人员在 Langfuse UI 或 Annotation Queue 中人工评分 | `human_business_verdict` |
-| `API` | 应用、脚本或 CI 通过 Langfuse API/SDK 主动写入 | `--local` 模式调用 `create_score()` 写入的 Judge Score，或业务侧用户反馈 |
-
-`Source` 由 Score 的创建路径自动设置，不能通过 Score Config 指定。同一个 Score 名称如果通过不同路径写入，可能
-同时出现不同 Source。例如 `otc-option-judge` 在 Dataset Experiment 中属于 `EVAL`，在当前 `--local` 模式中属于
-`API`。筛选 `EVAL` 只查看自动评测结果，筛选 `ANNOTATION` 只查看人工结论。
-
-## 6. 查看链路与排查问题
-
-```text
-失败 case
-→ Experiment Item
-→ Trace
-→ root Observation
-→ 异常或输出不符的 child Observation
-→ 对照 Expected Output、实际 output 和 Score comment
-```
-
-查看步骤：
-
-1. 从 Dataset 的 `Experiments` 页签打开本次 Experiment。
-2. 按 case ID 找到 Experiment Item，并进入关联 Trace。
-3. 展开 root Observation，定位 LangGraph、LLM 或工具调用。
-4. 检查输入、输出、错误和耗时，再对照 Expected Output 与 Scores。
-5. 多轮问题继续检查 Session；需要业务复核时，在用例根输出记录一个 `human_business_verdict`。
-
-| 现象 | 检查位置 |
+| 工具 | 用途 |
 |---|---|
-| Dataset 中没有 Experiment Item | 是否使用 Dataset 模式；`--local` 不创建 Dataset Experiment |
-| Experiment 有 Score，但 Scores 主列表没有 | 显式选择 `Environment = sdk-experiment`；该内部环境默认被隐藏 |
-| 路由或 intent 错误 | intent 相关 Observation |
-| ticker 错误 | ticker 子图、候选结果和后端校验调用 |
-| 回复错误 | 业务节点、后端响应和 render Observation |
-| 文本断言 Score 缺失 | Evaluator/Rule 是否启用，`datasetId` 和根 Observation 条件是否匹配 |
-| Score 与结果不一致 | `expectedOutput`、实际 output 和 Evaluator comment |
-| 多轮上下文错误 | Session ID、thread ID 和各轮 Trace |
-| 用例 Trace 与 LangGraph Trace 分离 | `traceparent`、`trust_inbound_traceparent` 和 `langfuse_trace_id` |
+| `upload_golden_to_langfuse.py` | git 黄金用例 → 平台 Dataset |
+| `upload_prompt_to_langfuse.py` | git 提示词 → 平台演练资产，不替代生产真源 |
+| `upload_evaluators.py` | 可选平台 Code Evaluator 与 Online Rule 同步 |
+| `upload_score_configs.py` | 人工 Score Config 与 Annotation Queue 同步 |
+| `node_dataset.py` | 审阅后的节点标注发布、导出和安全节点 Experiment 调试 |
 
-Online Evaluator 异步执行，Experiment 完成后 Score 可能稍后显示。自托管环境还需启用 evaluator worker/dispatcher。
+参数和安全调用见 [脚本说明](../../scripts/langfuse/README.md)。该目录不再有黄金集执行脚本。
+写类节点不自动回放；节点样本调试不替代 `tests/datasets/` 验收。
 
-## 7. `scripts/langfuse/` 脚本
+## 8. 意图集与业务集
 
-| 文件 | 用途 |
-|---|---|
-| `upload_golden_to_langfuse.py` | `--sync-all` 按 fixtures 相对路径同步全部 JSONL；也支持手动指定来源和 Dataset |
-| `upload_evaluators.py` | 读取集中定义，按套件（`--suite` 或 dataset 前缀 `intent/` / `intent_` / `intent-`）同步 Code Evaluators 和全局或指定 Dataset 的 Online Rules |
-| `upload_score_configs.py` | 读取集中定义，全量同步人工 Score Configs 与 Annotation Queues（queue 定义里按名称引用 config，脚本解析成 id 后绑定）|
-| `langfuse_eval.py` | 执行 Dataset Experiment 或本地评测（`--suite intent` 不跑 Judge，trace tags 带套件名）|
-| `upload_prompt_to_langfuse.py` | 把 git 的提示词推到 Langfuse（单轮实验用；**不从 Langfuse 拉回**）|
-| `_definitions.py` | 读取并校验本地 JSON 定义，不单独执行 |
-| `_public_api.py` | 上传脚本共用的 Public API 客户端，不单独执行 |
+- **意图集**：逐轮标注产品／动作／入口，标的子集标注原文表达及允许的交易品种。
+  普通冻结样例调唯一解析节点，快速样例调入口节点；引用上一轮回复等回放样例走主图和所选后端。
+- **业务集**：主图调用 mock 或 Java，比较实际参数和业务回复；真后端验收必须使用授权身份和数据。
+- **标的子集**：直接评联合解析结果，不追加第二次模型提取，不由 app 补证券代码或计算近月；
+  `reference.backend_codes` 仅作参考，不参与原文表达评分。
+- **评分**：意图由 `harness/intent_scoring.py` 判定，业务由 `harness/evaluation.py`／`differ.py` 判定。
+  两类黄金集均本地同步给结论，不进 CI 自动批量调用真实模型。
 
-## 8. 两套件：意图集 / 业务集分离
-
-意图识别只依赖 LLM，业务操作（询价 / 下单 / 平仓）依赖 Java 后端与授权账号。两类用例放在
-不同目录、上传到不同 Dataset、绑定不同 Evaluator，互不污染：
-
-| 维度 | 意图集（intent） | 业务集（business） |
-|---|---|---|
-| fixture 目录 | `tests/datasets/intent/<product>.jsonl` | `tests/datasets/biz/*.jsonl` |
-| 用例形态 | A 方言子集：逐轮 `expected.{product_type, intent}`，**不写** `response_*` | A 方言：卡片文本断言（`response_contains` 等） |
-| 期望值来源 | 业务方审阅的逐轮产品/意图标签，枚举由 lint 校验 | 业务方审阅的参数与卡片断言，不用实际回复自评分 |
-| 运行方式 | 冻结用例经 `/v1/nodes/run` 执行联合解析，不调 Java 后端；回放用例走主图 + `mock_api`（`metadata.backend=mock`） | 真后端 / staging |
-| Dataset 命名 | fixtures 相对路径去掉 `.jsonl`（如 `intent/option_close`；兼容历史 `intent_` / `intent-`） | fixtures 相对路径去掉 `.jsonl`（如 `biz/option_close`） |
-| 自动评分 | `det_intent_match_pass`（`harness/evaluators/intent_match.py`）+ 标的识别子集 `det_instrument_match_pass`（`harness/evaluators/instrument_match.py`） | `det_business_pass` 比较全部显式字段和文本断言；Online 文本评分只作补充 |
-| LLM Judge | 不跑，确定性评分 | 不跑，已删除 Judge 运行入口 |
-| Trace tags | `eval, intent` | `eval, business` |
-
-`upload_evaluators.py` 按套件绑定 Rule：`--dataset-name intent/swap_instrument` 创建意图集 Rule；`intent_` / `intent-` 历史命名仍识别。`--dataset-name biz/option_close` 按业务集绑定文本断言 Rule。
-不要给意图集绑全局（all-datasets）Rule，否则 intent_match 会对业务集 Item 产生大量失败 Score。
-
-### 8.1 意图集从业务集派生
-
-```bash
-# 统计：哪些 case 缺逐轮 intent 标注
-python scripts/derive_intent_fixtures.py --dry-run
-# 写草稿到 /opt/work-file/code-tmp/aigc-langgraph-tmp/intent_drafts/<product>.jsonl（未标注轮 intent 为空并带 review.pending）
-python scripts/derive_intent_fixtures.py --out /opt/work-file/code-tmp/aigc-langgraph-tmp/intent_drafts
-# 业务方 review 补齐 intent 后，只把已完整标注的 case 写进意图集
-python scripts/derive_intent_fixtures.py --source /opt/work-file/code-tmp/aigc-langgraph-tmp/intent_drafts --only-labeled --out tests/datasets/intent
-python scripts/check_dataset_consistency.py --verbose
-```
-
-脚本只做确定性搬运：`product_type` 沿用原标签或按 category 前缀推导，`intent` 只沿用已有标注，
-不用模型猜；lint 会拒绝空 intent、非法枚举、文本断言和非 `intent-` 前缀的 id。
-
-### 8.1a 标的识别子集（`tests/datasets/intent/swap_instrument.jsonl`）
-
-标的识别是意图集里的独立数据集：LangGraph 只提取用户原文里的标的表达（`placeOrderWindCode` 逐字保留）
-和市场限定（`placeOrderTransactionType`），权威识别由 Java 完成，所以它同样只调 LLM：单轮用例走意图子链，
-runner 在 swap `place_order_request` 之后追加参数抽取子图（候选抽取 → 归一化），不含提交节点。
-`expected.instruments[i]` 给出**原文表达的任一候选**与**交易品种候选**，`instrument_match` 按订单无序匹配：
-
-```bash
-# 从三份 swap 业务集派生（订单数以卡片 标的代码 行为准；--ignore-token 只影响抽取，不改 send_text）
-python scripts/derive_instrument_fixtures.py --dry-run --ignore-token "11125测试短名（张天琪专用）" --ignore-token "聚鸣价值精选" --ignore-token "临沂阿凡提"
-python scripts/derive_instrument_fixtures.py --only-reviewed --ignore-token "…" --out tests/datasets/intent/swap_instrument.jsonl
-python scripts/langfuse/upload_golden_to_langfuse.py --sync-all
-python scripts/langfuse/upload_evaluators.py --dataset-name intent/swap_instrument --apply   # 绑 intent_match + instrument_match
-python scripts/langfuse/langfuse_eval.py --dataset intent/swap_instrument --concurrency 3 --no-judge
-```
-
-`reference.backend_codes` 保留后端码仅供核对。
-
-### 8.2 执行
-
-```bash
-# 意图集：冻结用例只需 LLM 网关；含回放用例时先起 mock_api，并以 OTC_API_BASE_URL 指向它
-python scripts/langfuse/upload_golden_to_langfuse.py --sync-all
-python scripts/langfuse/upload_evaluators.py --dataset-name intent/option_close --apply
-python scripts/langfuse/langfuse_eval.py --dataset intent/option_close --concurrency 3 --no-judge
-# 本地不上传：路径含 intent/ 自动判定套件
-python scripts/langfuse/langfuse_eval.py --local tests/datasets/intent --concurrency 3 --no-judge
-
-# 业务集：真后端 / staging，写类流程串行
-python scripts/langfuse/upload_evaluators.py --dataset-name biz/swap_prod --apply
-python scripts/langfuse/langfuse_eval.py --dataset biz/swap_prod --concurrency 1 --no-judge
-```
-
-本地与平台 Dataset 都按结构化 `expected` 和文本断言直接评分；缺失断言、执行结果或轮次都记为失败。
-
-### 8.3 运行方式：意图集本地运行，不进 CI
-
-- `langfuse_eval.py --local` 经已启动的 LangGraph HTTP 入口执行用例，并创建 SDK Experiment。
-- Python 脚本不计分；Langfuse 根据 Dataset 和 Evaluation Rule 异步运行 `harness/evaluators/*.js`。
-- `.github/workflows/intent-eval.yml` 已删除；该批量评测不进 CI。
-- 业务集（`biz/`）依赖 Java 后端与授权账号，只在开发 / staging 环境用 `--dataset biz/option_close` 或
-  `scripts/local_eval.py` 跑，不进 CI；依赖矩阵见 `docs/testing/README.md` §一a
-
-意图数据集的 `metadata.evaluator_names` 来自实际断言：普通意图只绑定 `intent-match`；标的集另绑 `instrument-match`。不要将不适用的评分器绑定到整个项目。上传器使用数据集命名空间生成稳定 Item ID，原始案例 ID 保留在 metadata，防止不同数据集相互覆盖。
+数据格式、固定时段、引用断言和标注覆盖详见 [数据集说明](../../tests/datasets/README.md)。

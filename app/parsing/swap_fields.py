@@ -179,11 +179,11 @@ class SwapTickerPick(WireModel):
     model_config = ConfigDict(extra="forbid")
 
     order_id: str | None = Field(default=None, alias="orderId", description="目标订单号（引用消息中的 H- 单号）")
-    order_seq: int | None = Field(default=None, alias="orderSeq", description="目标订单在 candidate_list 中的序号（orderId 缺失时用）")
-    idx: int | None = Field(default=None, description="目标订单下标（0 起；orderId / orderSeq 都缺失时的兜底）")
+    order_seq: int | None = Field(default=None, alias="orderSeq", description="引用订单显示的序号；第N笔按引用订单列表位置定位，不按本次提交数组定位；所有提供的订单身份必须一致")
+    idx: int | None = Field(default=None, description="目标在本次 orders 提交数组中的零起下标；不是引用第N笔位置或候选块下标；仅在定位确定时提供，并与orderId/orderSeq一致")
     seq: int | None = Field(default=None, description="候选标的在本单 candidates 中的序号（seq → code）")
     direct_ref: str | None = Field(default=None, alias="directRef", description="用户原文中的候选代码或名称指针；必须唯一命中本订单候选，不得直接成为最终代码")
-    evidence: str = Field(default="", description="本轮原文的连续选择片段，多订单必须含明确订单范围")
+    evidence: str = Field(default="", description="本轮原文的连续选择片段，多订单标的选择必须含明确订单范围")
     confidence: float | None = Field(default=None, ge=0, le=1, description="选择识别置信度；模型指针必须提供，不能替代原文与范围校验")
 
 
@@ -201,12 +201,12 @@ class SwapCounterpartyPick(WireModel):
     model_config = ConfigDict(extra="forbid")
 
     order_id: str | None = Field(default=None, alias="orderId", description="目标订单号（引用消息中的 H- 单号）")
-    order_seq: int | None = Field(default=None, alias="orderSeq", description="目标订单序号（单订单场景可省略）")
-    idx: int | None = Field(default=None, description="目标订单下标（0 起；orderId / orderSeq 都缺失时的兜底）")
+    order_seq: int | None = Field(default=None, alias="orderSeq", description="引用显示的订单序号；第N笔按引用列表位置绑定订单号，不能按本次提交数组定位")
+    idx: int | None = Field(default=None, description="目标在本次orders提交数组中的零起下标，不是引用位置；与orderId/orderSeq一致")
     letter: str | None = Field(default=None, description="对手列表中的字母标识（如 A / B，对应 sort）")
     ordinal: int | None = Field(default=None, description="对手列表中的第 N 个（1 起，映射为 sort 字母）")
     direct_name: str | None = Field(default=None, alias="directName", description="对手名称原文（精确匹配优先，唯一子串次之；多命中不算）")
-    evidence: str = Field(default="", description="本轮原文的连续选择片段，多订单必须含明确订单范围")
+    evidence: str = Field(default="", description="本轮连续选择原文；显式范围只用于指定订单，无范围的字母或唯一名称可用于引用中所有对手待补充订单，不能改已完整订单")
     confidence: float | None = Field(default=None, ge=0, le=1, description="选择识别置信度；模型指针必须提供，不能替代原文与范围校验")
 
 

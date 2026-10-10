@@ -13,11 +13,13 @@ from app.subgraphs.request_boundary import (
     send_cleaned_request,
     stage_request,
 )
+from app.subgraphs.swap.selection_rules import validate_applied_picks
 from app.tools.swap_client import SwapClientHttpx, SwapIntentionType
 
 
 async def prepare_swap_request(state: AgentState, *, intent: str, order_list: list[dict[str, Any]] | None = None) -> dict[str, Any]:
     """保护本次身份与字段，只准备请求；没有 HTTP 副作用。"""
+    validate_applied_picks(state)
     orders, rejected = protect_orders(state, order_list or [], product="swap")
     payload: dict[str, Any] = {"type": SwapIntentionType(intent).value, "orderList": orders}
     update = stage_request(state, "swap", payload, intent)
@@ -27,18 +29,21 @@ async def prepare_swap_request(state: AgentState, *, intent: str, order_list: li
 @safe_node
 async def swap_clean_request(state: AgentState) -> dict[str, Any]:
     """清洗独立出站副本，保留原参数与完整省略/转换记录。"""
+    validate_applied_picks(state)
     return clean_pending_request(state, "swap")
 
 
 @safe_node
 async def swap_submit(state: AgentState) -> dict[str, Any]:
     """提交写请求及 Dify JSON 回退请求，不自动重试。"""
+    validate_applied_picks(state)
     return await send_cleaned_request(state, "swap", SwapClientHttpx())
 
 
 @io_node
 async def swap_query_backend(state: AgentState) -> dict[str, Any]:
     """独立只读 HTTP 查询可重试，不包含模型或清洗阶段。"""
+    validate_applied_picks(state)
     return await send_cleaned_request(state, "swap", SwapClientHttpx())
 
 
@@ -47,6 +52,7 @@ async def call_swap_backend(state: AgentState, *, intent: str, order_list: list[
     prepared = await prepare_swap_request(state, intent=intent, order_list=order_list)
     current = cast(AgentState, {**state, **prepared,
         "field_records": merge_fields(state.get("field_records"), prepared.get("field_records"))})
+    validate_applied_picks(current)
     cleaned = clean_pending_request(current, "swap")
     result = await send_cleaned_request(cast(AgentState, {**current, **cleaned}), "swap", SwapClientHttpx())
     return {**prepared, **cleaned, **result}

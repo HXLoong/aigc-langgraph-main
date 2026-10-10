@@ -238,26 +238,7 @@ Invoke-RestMethod `
 
 ## 7. 自动化验证
 
-节点接口、注册表、执行器和 State 准备器的专项测试：
-
-```powershell
-.venv/Scripts/python.exe -m pytest `
-    tests/test_app_startup_import.py `
-    tests/test_nodes_run_api.py `
-    tests/test_nodes_execution.py `
-    tests/test_nodes_prepare.py `
-    -q
-```
-
-可选的真实 MySQL 持久化测试：
-
-```powershell
-$env:RUN_LOCAL_MYSQL_TESTS = '1'
-.venv/Scripts/python.exe -m pytest tests/integration/test_nodes_persist_mysql.py -q
-Remove-Item Env:RUN_LOCAL_MYSQL_TESTS
-```
-
-完整回归仍按仓库统一命令执行。
+节点调试 API 是人工诊断入口，不维护独立 pytest 测试集；项目自动化测试聚焦 app 核心业务，黄金集通过 `python -m harness run` 执行。需要检查节点 API 行为时，可按本指南中的请求示例直接调用本地服务。
 
 实现入口：[路由](../../app/api/nodes.py)、[注册表](../../app/node_execution/registry.py)、[准备器](../../app/node_execution/prepare.py)、[校验器](../../app/node_execution/validation.py)、[执行器](../../app/node_execution/executor.py)。
 

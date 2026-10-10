@@ -4,6 +4,7 @@ from __future__ import annotations
 import re
 from typing import Any, TypedDict
 
+from app.domain.confirmation import confirmation_attempt
 from app.domain.order_ids import CLOSE_ORDER_ID_EXACT8_TOKEN as ORDER_ID_EXACT8_TOKEN
 from app.domain.order_ids import CLOSE_ORDER_ID_STRICT_TOKEN as ORDER_ID_STRICT_TOKEN
 
@@ -20,6 +21,29 @@ _RAW_CONTRACT_RE = re.compile(r"(OPT[G]?-[A-Z0-9]+)")
 
 _DETAIL_END_MARKERS = ("若以上订单执行平仓操作", "期权平仓订单")
 _CLOSE_RESULT_MARKERS = ("以下平仓申请，请核对详情后确认", "参数需要完善", "只能全部平仓")
+_NON_PLACE_ACTION = re.compile(r"查询|查一下|查下|查看|查持仓|查订单|查进度|持仓查询|订单查询|撤单|撤销|取消|撤掉|撤回|撤了")
+_CLOSE_ACTION = re.compile(r"平仓|全平|平掉|平多|平空|平一半|平\s*[零一二两三四五六七八九十百\d]|全部平")
+_CLOSE_PARAMETERS = re.compile(
+    r"限价|市价|POV|TWAP|最大跟量|积极跟量|名义本金|金额|价格|跟量|保留|剩余|留\s*\d"
+    r"|\d+(?:\.\d+)?\s*(?:%|％|万|亿|元|[wW]|成|分钟)|\d{1,2}:\d{2}", re.I,
+)
+
+
+def needs_close_order_context(raw_content: str | None, quote_content: str | None) -> bool:
+    """仅本次明确平仓或引用订单补参需要预查询；身份本身不触发读取。"""
+    raw = (raw_content or "").strip()
+    quote = quote_content or ""
+    if not raw or confirmation_attempt(raw) or _NON_PLACE_ACTION.search(raw):
+        return False
+    if re.search(r"是否|能否|如果|假如|[?？]|(?:不要|别|不需要|不想)\s*(?:平|撤)", raw):
+        return False
+    if _CLOSE_ACTION.search(raw):
+        return True
+    if "持仓" in raw or "可平" in raw:
+        return False
+    referenced_close = bool(_RAW_ORDER_ID_RE.search(quote) or _RAW_CONTRACT_RE.search(quote))
+    current_target = bool(_RAW_ORDER_ID_RE.search(raw) or _RAW_CONTRACT_RE.search(raw))
+    return bool((referenced_close or current_target) and _CLOSE_PARAMETERS.search(raw))
 
 
 class ReferenceParseResult(TypedDict):
@@ -193,4 +217,4 @@ def parse_reference_message(
     )
 
 
-__all__ = ["parse_reference_message", "ReferenceParseResult"]
+__all__ = ["parse_reference_message", "ReferenceParseResult", "needs_close_order_context"]

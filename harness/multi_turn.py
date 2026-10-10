@@ -184,6 +184,8 @@ async def _run_case_turns(
                 "quote_content": quote,
                 "at_bot": spec.at_bot,
                 "fast_query": spec.fast_query,
+                "robot_version": spec.robot_version,
+                "existing_command": spec.existing_command,
                 "conversation_id": conversation_id,
             }
             endpoint = f"{base_url.rstrip('/')}/v1/workflows/run"

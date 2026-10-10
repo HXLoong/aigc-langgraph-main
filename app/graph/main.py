@@ -1,4 +1,4 @@
-"""主图组装：会话保护 → 三类业务入口 → 单业务动作的产品路由。"""
+"""主图组装：会话保护 → 存量优先与版本分流 → 单业务动作的产品路由。"""
 from __future__ import annotations
 
 from collections.abc import Callable
@@ -44,14 +44,19 @@ def _route_after_ingest(state: AgentState) -> str:
     """入口准备异常或会话过期时退出，不进入三分支业务路由。"""
     if has_error(state) or state.get("session_status") == "expired":
         return "render"
-    return "prepare_input"
+    return "entry_route"
 
 
 def _route_after_input(state: AgentState) -> str:
     """准备故障直接回复；明确拒绝先写消息意图，均不进入交易分支。"""
     if has_error(state):
         return "render"
-    return "persist_intent" if state.get("reply_text") else "entry_route"
+    return "persist_intent" if state.get("reply_text") else "pre_route"
+
+
+def _route_after_entry(state: AgentState) -> str:
+    """入口错误先收尾，版本静默分支不写回消息意图。"""
+    return "render" if has_error(state) else _route_entry(state)
 
 
 def _route_after_intent(state: AgentState) -> str:
@@ -79,7 +84,7 @@ def build_main_graph(
     checkpointer: BaseCheckpointSaver[Any] | None = None,
     message_client_factory: Callable[[], MessageClient] | None = None,
 ) -> CompiledStateGraph[AgentState, None, AgentState, AgentState]:
-    """会话与附件保护后分流，普通指令只联合解析一次并进入一个产品子图。
+    """会话保护后先版本分流，普通指令读取附件后只联合解析一次。
 
     快速询价与存量查询沿既有外部入口；普通流程先准备只读上下文，
     再执行唯一模型节点。子图错误沿 cascade 收尾，回复后记录历史与审计。
@@ -114,16 +119,18 @@ def build_main_graph(
     g.add_conditional_edges(
         "ingest",
         _route_after_ingest,
-        {"prepare_input": "prepare_input", "render": "render"},
+        {"entry_route": "entry_route", "render": "render"},
     )
-    g.add_conditional_edges("prepare_input", _route_after_input, ["entry_route", "persist_intent", "render"])
+    g.add_conditional_edges("prepare_input", _route_after_input, ["pre_route", "persist_intent", "render"])
     g.add_conditional_edges(
         "entry_route",
-        _route_entry,
+        _route_after_entry,
         {
             "quick_inquiry": "quick_inquiry",
             "existing_command_query": "existing_command_query",
-            "pre_route": "pre_route",
+            "pre_route": "prepare_input",
+            "ignore": "render",
+            "render": "render",
         },
     )
     g.add_edge("pre_route", "intent_route")
@@ -139,10 +146,8 @@ def build_main_graph(
             "fallback": "fallback",
         },
     )
-    for sub in ("swap", "option", "option_close", "fallback"):
+    for sub in ("swap", "option", "option_close", "fallback", "quick_inquiry", "existing_command_query"):
         g.add_edge(sub, "persist_intent")
-    for sub in ("quick_inquiry", "existing_command_query"):
-        g.add_edge(sub, "render")
     # 3. 保留消息写回、真实回复、历史和审计，整体只返回本次结果。
     g.add_edge("persist_intent", "render")
     g.add_edge("render", "remember_confirmed_params")
