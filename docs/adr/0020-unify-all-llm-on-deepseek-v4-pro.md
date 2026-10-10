@@ -1,7 +1,10 @@
 # ADR 0020 · 通用模型配置与 DeepSeek Pro 当前基线
 
-- 状态：已采纳（通用配置与工厂已实现；切换模型后的真实链路验收单独执行）
-- 日期：2026-09-24；修订：2026-09-28
+## 状态
+
+- 状态：已采纳
+- 日期：2026-09-24
+- 修订日期：2026-09-28
 - 关系：模型请求额度与附件边界见 [ADR 0031](./0031-single-model-request-per-message.md)，评测断言见 [ADR 0005](./0005-annotation-roles-judge-plus-business-spotcheck.md)
 - 作者：图灵科技 + Tony
 

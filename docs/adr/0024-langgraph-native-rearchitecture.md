@@ -1,7 +1,10 @@
 # ADR 0024 · LangGraph 原生重构：退出 Dify 形态的目标架构
 
-- 状态：已采纳（已冻结：后续决策开新编号）
+## 状态
+
+- 状态：已采纳
 - 日期：2026-09-17
+- 编辑约定：后续实质性决策使用新编号
 - 关系：D3 的模型调用与重试边界由 [0031](./0031-single-model-request-per-message.md) 修订；D4 的调用端幂等职责与单次调用回执见 [0026](./0026-request-idempotency-uncertain-receipts-reconciliation.md)；后续拆出 [0025](./0025-instrument-resolution-delegated-to-backend.md) 标的移交后端、[0027](./0027-field-evidence-contract.md) 字段证据、[0028](./0028-session-entry-and-multi-instruction-send-orchestration.md) 入口分流、[0029](./0029-node-level-debug-api-and-regression-workbench.md) 节点层；D8 门槛统一到 [0030](./0030-goal-restatement-native-langgraph-dataset-eval-harness.md) D3
 - 作者：图灵科技 + Tony
 
@@ -61,7 +64,7 @@
 
 ### D6 · 评估契约：harness 为唯一门
 
-- CI 在 push / PR 上运行（fast job：ruff + mypy + 一致性 lint + 快速测试；slow job：全量测试；真实 MySQL 用例仅在本地 / 联调环境显式开启，不进入 CI）。
+- CI 在 push / PR 上运行 ruff、mypy 和 app 核心快速测试；不运行 slow 全量测试，真实后端黄金集由 Harness 在 CI 外显式评测。
 - `harness/` 是唯一评测门（节点层见 ADR 0029）：统一加载各方言数据集；后端业务拒绝单独成桶、不算通过；多轮早停后未执行轮次记失败；`--backend dry-run` 真实生效。
 - 写类用例须有 `expected.place_params`；每个线上 P0 / P1 先补数据集用例再修代码。
 - 节点公共契约只维护在 `app/node_execution/catalog.py`，应用与 harness 各自决定暴露范围；写节点禁止回放。

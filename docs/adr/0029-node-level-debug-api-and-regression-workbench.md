@@ -1,6 +1,8 @@
 # ADR 0029 · 节点级调试接口与节点回归工作台（含私有工具 HTTP 录放）
 
-- 状态：已采纳（节点执行能力已建成，Langfuse 回归闭环待迁移）
+## 状态
+
+- 状态：已采纳
 - 日期：2026-09-24
 - 关系：在 [ADR 0024](./0024-langgraph-native-rearchitecture.md) D6 全链路评测门之下增加节点层；沿用 [ADR 0002](./0002-comprehensive-runtime-harness.md)
 - 使用指南：[docs/development/nodes-run.md](../development/nodes-run.md)

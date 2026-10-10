@@ -1,6 +1,8 @@
 # ADR 0009 · 数据库：MySQL 协议 + TDSQL for MySQL 生产环境
 
-- 状态：已采纳（checkpointer 已接线；TDSQL 现场兼容性待首次部署实测）
+## 状态
+
+- 状态：已采纳
 - 日期：2026-05-10
 - 作者：图灵科技 + Tony
 

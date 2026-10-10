@@ -1,5 +1,7 @@
 # ADR 0030 · 目标重述：原生 LangGraph 重构 + 数据集评测 + Harness 工程
 
+## 状态
+
 - 状态：已采纳
 - 日期：2026-09-22
 - 关系：修订 [ADR 0001](./0001-rewrite-app-with-harness-first.md)（上线节奏段）、[ADR 0002](./0002-comprehensive-runtime-harness.md)（阶段表改为能力面）、[ADR 0005](./0005-annotation-roles-judge-plus-business-spotcheck.md)、[ADR 0019](./0019-incident-severity-thresholds.md)、[ADR 0024](./0024-langgraph-native-rearchitecture.md) D8

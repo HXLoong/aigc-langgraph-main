@@ -1,6 +1,8 @@
 # ADR 0003 · 提示词版本化：git 分支 + 单文件
 
-- 状态：已采纳（形态为 git 分支 + 单文件；旧代码待迁移）
+## 状态
+
+- 状态：已采纳
 - 日期：2026-05-10
 - 关系：2026-09-29 由"同目录文件并存"改为"git 分支 + 单文件"；提示词真源与 PromptSpec 见 [ADR 0023](./0023-prompt-as-code-langgraph.md)；灰度切流沿用按群 `agentUrl` 的金丝雀模型（[ADR 0024](./0024-langgraph-native-rearchitecture.md)）
 - 作者：图灵科技 + Tony

@@ -1,6 +1,8 @@
 # ADR 0019 · 故障升级阈值（P0 / P1 / P2 量化判定）
 
-- 状态：已采纳（阈值表与 `app/observability/alerts.py` 一致，由 CI lint 守护）
+## 状态
+
+- 状态：已采纳
 - 日期：2026-05-12
 - 关系：模型零重试的观察口径随 [ADR 0031](./0031-single-model-request-per-message.md) 重测；与 [ADR 0030](./0030-goal-restatement-native-langgraph-dataset-eval-harness.md) D3 上线观察层互补
 - 作者：图灵科技 + Tony

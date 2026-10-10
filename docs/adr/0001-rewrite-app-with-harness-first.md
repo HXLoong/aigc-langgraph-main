@@ -1,6 +1,8 @@
 # ADR 0001 · 推倒重写 `app/`，按 Harness-first 范式落实 LangGraph 替换 Dify
 
-- 状态：已采纳（重写已完成）
+## 状态
+
+- 状态：已采纳
 - 日期：2026-05-10
 - 关系：D5 与「备选方案」的评估轴由 [ADR 0031](./0031-single-model-request-per-message.md) 修订；标的职责见 [ADR 0025](./0025-instrument-resolution-delegated-to-backend.md)；协议演进见 [ADR 0024](./0024-langgraph-native-rearchitecture.md) D7；评测门见 [ADR 0030](./0030-goal-restatement-native-langgraph-dataset-eval-harness.md) D3
 - 作者：图灵科技 + Tony

@@ -1,6 +1,8 @@
 # ADR 0026 · 调用端幂等职责与单次调用回执契约
 
-- 状态：已采纳（职责规范，代码待调整）
+## 状态
+
+- 状态：已采纳
 - 日期：2026-09-24
 - 关系：修订 [ADR 0024](./0024-langgraph-native-rearchitecture.md) D4 的幂等职责；单次调用模型额度见 [ADR 0031](./0031-single-model-request-per-message.md)；补充 [ADR 0021](./0021-text-confirm-replaces-interrupt.md) 确认链路的回执语义；错误分类进入 [ADR 0019](./0019-incident-severity-thresholds.md) 告警
 - 作者：图灵科技 + Tony
