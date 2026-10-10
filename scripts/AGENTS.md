@@ -53,11 +53,14 @@
 | `local_backend_seed.py` | 导入本地 GOATS 失败边界验收用的合成身份与证券种子（见 `docs/testing/local-backend-seed.md`）|
 | `goats_api_mock/` | 本地 GOATS 期权 mock（端口 20000，期权生命周期验收用；见其 README）|
 
-### 一致性工具（按需手动运行）
+### 一致性 lint（提交前本地跑）
 
 | 脚本 | 用途 |
 |---|---|
-| `check_dataset_consistency.py` | 数据集一致性检查（现役 biz 业务集 + intent 意图集）|
+| `check_alert_threshold_consistency.py` | 告警阈值一致性 lint |
+| `check_dataset_consistency.py` | 数据集一致性 lint（现役 biz 业务集 + intent 意图集）|
+| `check_adr_refs.py` | ADR 互引虚悬 + 代码路径与 Markdown 链接存在性 lint（跳过删除线段）|
+| `check_docs_layout.py` | docs/ 存放规则 lint：目录白名单、kebab-case 命名、带日期报告只进 `reports/`、相对链接与全仓 `docs/...` 引用有效 |
 
 ### 数据维护
 
